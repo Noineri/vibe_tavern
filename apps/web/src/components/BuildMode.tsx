@@ -1,7 +1,5 @@
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import type { ProviderProfileRecord } from "../app-client.js";
-import type { ConnectionState } from "./app-shell-types.js";
 
 export interface BuildCharacterDraft {
   name: string;
@@ -15,25 +13,7 @@ export interface BuildPersonaDraft {
   description: string;
 }
 
-interface BuildConnectionSettingsProps {
-  connection: ConnectionState;
-  connectionHint: string;
-  connectionStatus: string;
-  providerProfiles: ProviderProfileRecord[];
-  selectedProviderProfileId: string;
-  canConnect: boolean;
-  canRefreshModels: boolean;
-  onSelectedProviderProfileChange: (providerProfileId: string) => void;
-  onLoadProviderProfile: () => void;
-  onConnectSavedProfile: () => void;
-  onDeleteProviderProfile: () => void;
-  onPatchConnection: (patch: Partial<ConnectionState>) => void;
-  onConnect: () => void;
-  onRefreshModels: () => void;
-  onSaveProviderProfile: () => void;
-}
-
-export type BuildTab = "character" | "lorebook" | "persona" | "trace" | "settings";
+export type BuildTab = "character" | "lorebook" | "persona" | "trace";
 
 interface BuildModeProps {
   activeTab: BuildTab;
@@ -46,12 +26,9 @@ interface BuildModeProps {
   personaName: string;
   personaDescription: string;
   promptTraceCount: number;
-  providerLabel: string;
-  connectionStatus: string;
   isSaving: boolean;
   saveNotice: string;
   importSurface: ReactNode;
-  connectionSettings: BuildConnectionSettingsProps;
   onTabChange: (tab: BuildTab) => void;
   onSave: (draft: BuildCharacterDraft) => void;
   onSavePersona: (draft: BuildPersonaDraft) => void;
@@ -93,6 +70,7 @@ export function BuildMode(input: BuildModeProps) {
       draft.systemPrompt !== input.systemPrompt,
     [draft, input.characterName, input.description, input.scenario, input.systemPrompt],
   );
+
   const isPersonaDirty = useMemo(
     () =>
       personaDraft.name !== input.personaName ||
@@ -101,17 +79,11 @@ export function BuildMode(input: BuildModeProps) {
   );
 
   function patchDraft<K extends keyof BuildCharacterDraft>(key: K, value: BuildCharacterDraft[K]): void {
-    setDraft((current) => ({
-      ...current,
-      [key]: value,
-    }));
+    setDraft((current) => ({ ...current, [key]: value }));
   }
 
   function patchPersonaDraft<K extends keyof BuildPersonaDraft>(key: K, value: BuildPersonaDraft[K]): void {
-    setPersonaDraft((current) => ({
-      ...current,
-      [key]: value,
-    }));
+    setPersonaDraft((current) => ({ ...current, [key]: value }));
   }
 
   function resetDraft(): void {
@@ -130,258 +102,67 @@ export function BuildMode(input: BuildModeProps) {
     });
   }
 
-  function renderTabContent() {
-    if (input.activeTab === "lorebook") {
-      return (
-        <div className="build-content">
-          <div className="build-title">Lorebook</div>
-          <div className="build-copy">
-            Import a SillyTavern lorebook JSON and attach it to the active character from Build Mode.
-          </div>
-          {input.importSurface}
-        </div>
-      );
-    }
-
-    if (input.activeTab === "persona") {
-      return (
-        <div className="build-content">
-          <div className="build-title">Persona</div>
-          <label className="build-field">
-            <span>Name</span>
-            <input
-              value={personaDraft.name}
-              disabled={input.isSaving || !input.personaId}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => patchPersonaDraft("name", event.target.value)}
-            />
-          </label>
-          <label className="build-field">
-            <span>Description</span>
-            <textarea
-              value={personaDraft.description}
-              disabled={input.isSaving || !input.personaId}
-              onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-                patchPersonaDraft("description", event.target.value)
-              }
-            />
-          </label>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <button
-              className="pill-btn active"
-              disabled={input.isSaving || !input.personaId || !personaDraft.name.trim() || !isPersonaDirty}
-              onClick={() => input.onSavePersona({
-                name: personaDraft.name.trim(),
-                description: personaDraft.description,
-              })}
-            >
-              {input.isSaving ? "Saving..." : "Save"}
-            </button>
-            <button
-              className="pill-btn"
-              disabled={input.isSaving || !input.personaId || !isPersonaDirty}
-              onClick={resetPersonaDraft}
-            >
-              Reset
-            </button>
-            <span className="build-copy" style={{ margin: 0 }}>
-              {!input.personaId
-                ? "No persona is attached to this chat."
-                : isPersonaDirty
-                ? "Unsaved changes"
-                : "Saved state"}
-            </span>
-          </div>
-        </div>
-      );
-    }
-
-    if (input.activeTab === "trace") {
-      return (
-        <div className="build-content">
-          <div className="build-title">Prompt Trace</div>
-          <div className="build-copy">
-            Prompt Trace is sourced from the active snapshot. Recorded traces for this chat: {input.promptTraceCount}.
-          </div>
-        </div>
-      );
-    }
-
-    if (input.activeTab === "settings") {
-      const settings = input.connectionSettings;
-
-      return (
-        <div className="build-content">
-          <div className="build-title">Provider Settings</div>
-          <div className="build-copy">
-            Saved provider profiles, model selection, and connection state live in Build Mode.
-          </div>
-          <div className="api-body" style={{ padding: 0 }}>
-            <div className="api-field">
-              <label htmlFor="build-provider-profile">Saved profile</label>
-              <select
-                id="build-provider-profile"
-                value={settings.selectedProviderProfileId}
-                onChange={(event) => settings.onSelectedProviderProfileChange(event.target.value)}
-              >
-                <option value="">Select a saved profile</option>
-                {settings.providerProfiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name} · {profile.type}
-                  </option>
-                ))}
-              </select>
-              <div className="api-hint">Status: {settings.connectionStatus}</div>
-            </div>
-
-            <div className="api-row" style={{ marginBottom: 16 }}>
-              <button className="api-test-btn idle" type="button" onClick={settings.onLoadProviderProfile}>
-                Load
-              </button>
-              <button className="api-test-btn idle" type="button" onClick={settings.onConnectSavedProfile}>
-                Connect saved
-              </button>
-              <button className="api-test-btn err" type="button" onClick={settings.onDeleteProviderProfile}>
-                Delete
-              </button>
-            </div>
-
-            <div className="api-field">
-              <label htmlFor="build-provider-name">Profile name</label>
-              <input
-                id="build-provider-name"
-                value={settings.connection.providerLabel}
-                onChange={(event) => settings.onPatchConnection({ providerLabel: event.target.value })}
-              />
-            </div>
-
-            <div className="api-field">
-              <label htmlFor="build-provider-url">Base URL</label>
-              <input
-                id="build-provider-url"
-                value={settings.connection.baseUrl}
-                onChange={(event) => settings.onPatchConnection({ baseUrl: event.target.value })}
-              />
-            </div>
-
-            <div className="api-field">
-              <label htmlFor="build-provider-key">API key</label>
-              <input
-                id="build-provider-key"
-                type="password"
-                value={settings.connection.apiKey}
-                placeholder={settings.connection.hasStoredApiKey ? "Stored on backend" : "Paste API key"}
-                onChange={(event) => settings.onPatchConnection({ apiKey: event.target.value })}
-              />
-            </div>
-
-            <div className="api-row" style={{ marginBottom: 16 }}>
-              <div className="api-field">
-                <label htmlFor="build-provider-model">Model</label>
-                <select
-                  id="build-provider-model"
-                  value={settings.connection.model}
-                  onChange={(event) => settings.onPatchConnection({ model: event.target.value })}
-                >
-                  <option value="">Select a model</option>
-                  {settings.connection.models.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button
-                className="api-test-btn idle"
-                type="button"
-                disabled={!settings.canRefreshModels}
-                onClick={settings.onRefreshModels}
-              >
-                Refresh models
-              </button>
-            </div>
-
-            <div className="api-hint" style={{ marginBottom: 16 }}>
-              {settings.connectionHint}
-            </div>
-
-            <div className="api-row">
-              <button
-                className="api-save-btn"
-                type="button"
-                disabled={!settings.canConnect}
-                onClick={settings.onConnect}
-              >
-                Save and connect
-              </button>
-              <button className="api-cancel-btn" type="button" onClick={settings.onSaveProviderProfile}>
-                Save profile
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
+  function renderCharacter(): ReactNode {
     return (
-      <div className="build-content">
-        <div className="build-title">{input.characterName}</div>
-        <div className="build-copy">
-          Character Card fields are edited here and saved back into the current runtime snapshot.
+      <div className="build-placeholder">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <div className="build-section-title">{draft.name || "Unnamed"}</div>
+          <button
+            className="api-save-btn"
+            style={{ height: 28, padding: "0 12px" }}
+            disabled={input.isSaving || !draft.name.trim() || !isDirty}
+            onClick={() =>
+              input.onSave({
+                name: draft.name.trim(),
+                description: draft.description,
+                scenario: draft.scenario,
+                systemPrompt: draft.systemPrompt,
+              })
+            }
+          >
+            {input.isSaving ? "Saving..." : "Save"}
+          </button>
         </div>
+        <div className="build-section-sub">Character card - edit inline</div>
         {input.importSurface}
-        <label className="build-field">
-          <span>Name</span>
+        <div className="build-field">
+          <label>Name</label>
           <input
+            type="text"
             value={draft.name}
             disabled={input.isSaving}
             onChange={(event: ChangeEvent<HTMLInputElement>) => patchDraft("name", event.target.value)}
           />
-        </label>
-        <label className="build-field">
-          <span>Description</span>
+        </div>
+        <div className="build-field">
+          <label>Description</label>
           <textarea
             value={draft.description}
             disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-              patchDraft("description", event.target.value)
-            }
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("description", event.target.value)}
           />
-        </label>
-        <label className="build-field">
-          <span>Scenario</span>
+        </div>
+        <div className="build-field">
+          <label>Scenario</label>
           <textarea
             value={draft.scenario}
             disabled={input.isSaving}
             onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("scenario", event.target.value)}
           />
-        </label>
-        <label className="build-field">
-          <span>System Prompt</span>
+        </div>
+        <div className="build-field">
+          <label>System Prompt</label>
           <textarea
             value={draft.systemPrompt}
             disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-              patchDraft("systemPrompt", event.target.value)
-            }
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("systemPrompt", event.target.value)}
           />
-        </label>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <button
-            className="pill-btn active"
-            disabled={input.isSaving || !draft.name.trim() || !isDirty}
-            onClick={() => input.onSave({
-              name: draft.name.trim(),
-              description: draft.description,
-              scenario: draft.scenario,
-              systemPrompt: draft.systemPrompt,
-            })}
-          >
-            {input.isSaving ? "Saving..." : "Save"}
-          </button>
-          <button className="pill-btn" disabled={input.isSaving || !isDirty} onClick={resetDraft}>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+          <button className="api-cancel-btn" disabled={input.isSaving || !isDirty} onClick={resetDraft}>
             Reset
           </button>
-          <span className="build-copy" style={{ margin: 0 }}>
+          <span className="build-section-sub" style={{ margin: 0 }}>
             {input.saveNotice || (isDirty ? "Unsaved changes" : "Saved state")}
           </span>
         </div>
@@ -389,42 +170,168 @@ export function BuildMode(input: BuildModeProps) {
     );
   }
 
+  function renderPersona(): ReactNode {
+    return (
+      <div className="build-placeholder">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <div className="build-section-title">{personaDraft.name || "Your persona"}</div>
+          <button
+            className="api-save-btn"
+            style={{ height: 28, padding: "0 12px" }}
+            disabled={input.isSaving || !input.personaId || !personaDraft.name.trim() || !isPersonaDirty}
+            onClick={() =>
+              input.onSavePersona({
+                name: personaDraft.name.trim(),
+                description: personaDraft.description,
+              })
+            }
+          >
+            {input.isSaving ? "Saving..." : "Save"}
+          </button>
+        </div>
+        <div className="build-section-sub">Your persona - how you appear in chat.</div>
+        <div className="build-field">
+          <label>Name</label>
+          <input
+            type="text"
+            value={personaDraft.name}
+            disabled={input.isSaving || !input.personaId}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => patchPersonaDraft("name", event.target.value)}
+          />
+        </div>
+        <div className="build-field">
+          <label>Description</label>
+          <textarea
+            value={personaDraft.description}
+            disabled={input.isSaving || !input.personaId}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+              patchPersonaDraft("description", event.target.value)
+            }
+          />
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+          <button
+            className="api-cancel-btn"
+            disabled={input.isSaving || !input.personaId || !isPersonaDirty}
+            onClick={resetPersonaDraft}
+          >
+            Reset
+          </button>
+          <span className="build-section-sub" style={{ margin: 0 }}>
+            {!input.personaId
+              ? "No persona attached to this chat."
+              : isPersonaDirty
+              ? "Unsaved changes"
+              : "Saved state"}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  function renderLorebook(): ReactNode {
+    return (
+      <div className="build-placeholder">
+        <div className="build-section-title">Lorebook</div>
+        <div className="build-section-sub">
+          Import a SillyTavern lorebook JSON and attach it to the active character.
+        </div>
+        {input.importSurface}
+        <div
+          style={{
+            marginTop: 20,
+            height: 120,
+            background: "var(--s2)",
+            borderRadius: 8,
+            border: "1px dashed var(--border2)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--t3)",
+            fontSize: 13,
+            fontFamily: "var(--font-body)",
+            fontStyle: "italic",
+          }}
+        >
+          Full entry editor coming in a later phase.
+        </div>
+      </div>
+    );
+  }
+
+  function renderTrace(): ReactNode {
+    return (
+      <div className="build-placeholder">
+        <div className="build-section-title">Prompt Trace</div>
+        <div className="build-section-sub">
+          Prompt trace is captured per generation. Recorded traces for this chat: {input.promptTraceCount}.
+        </div>
+        <div
+          style={{
+            marginTop: 20,
+            height: 120,
+            background: "var(--s2)",
+            borderRadius: 8,
+            border: "1px dashed var(--border2)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--t3)",
+            fontSize: 13,
+            fontFamily: "var(--font-body)",
+            fontStyle: "italic",
+          }}
+        >
+          Layered prompt viewer coming in a later phase.
+        </div>
+      </div>
+    );
+  }
+
+  function renderTabContent(): ReactNode {
+    switch (input.activeTab) {
+      case "lorebook":
+        return renderLorebook();
+      case "persona":
+        return renderPersona();
+      case "trace":
+        return renderTrace();
+      case "character":
+      default:
+        return renderCharacter();
+    }
+  }
+
   return (
-    <section className="build-shell">
-      <nav className="build-nav">
-        <div className="sidebar-label">Build Mode</div>
+    <div className="build-wrap">
+      <div className="build-nav">
+        <div className="build-nav-title">Editor</div>
         <button
-          className={`build-nav-item${input.activeTab === "character" ? " active" : ""}`}
+          className={input.activeTab === "character" ? "build-nav-item" + " act" : "build-nav-item"}
           onClick={() => input.onTabChange("character")}
         >
           Character Card
         </button>
         <button
-          className={`build-nav-item${input.activeTab === "lorebook" ? " active" : ""}`}
+          className={input.activeTab === "lorebook" ? "build-nav-item" + " act" : "build-nav-item"}
           onClick={() => input.onTabChange("lorebook")}
         >
           Lorebook
         </button>
         <button
-          className={`build-nav-item${input.activeTab === "persona" ? " active" : ""}`}
+          className={input.activeTab === "persona" ? "build-nav-item" + " act" : "build-nav-item"}
           onClick={() => input.onTabChange("persona")}
         >
           Persona
         </button>
         <button
-          className={`build-nav-item${input.activeTab === "trace" ? " active" : ""}`}
+          className={input.activeTab === "trace" ? "build-nav-item" + " act" : "build-nav-item"}
           onClick={() => input.onTabChange("trace")}
         >
           Prompt Trace
         </button>
-        <button
-          className={`build-nav-item${input.activeTab === "settings" ? " active" : ""}`}
-          onClick={() => input.onTabChange("settings")}
-        >
-          Provider Settings
-        </button>
-      </nav>
-      {renderTabContent()}
-    </section>
+      </div>
+      <div className="build-content">{renderTabContent()}</div>
+    </div>
   );
 }

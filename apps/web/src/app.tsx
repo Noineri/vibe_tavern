@@ -72,23 +72,6 @@ export function App() {
     app.setMode("build");
     app.setBuildTab("trace");
   };
-  const connectionSettings = {
-    connection: app.connection,
-    connectionHint: app.renderConnectionHint(),
-    connectionStatus: app.renderConnectionStatus(),
-    providerProfiles: app.providerProfiles,
-    selectedProviderProfileId: app.selectedProviderProfileId,
-    canConnect: app.canConnect,
-    canRefreshModels: app.canRefreshModels,
-    onSelectedProviderProfileChange: app.setSelectedProviderProfileId,
-    onLoadProviderProfile: app.handleLoadProviderProfile,
-    onConnectSavedProfile: app.handleConnectSavedProfile,
-    onDeleteProviderProfile: app.handleDeleteProviderProfile,
-    onPatchConnection: app.patchConnection,
-    onConnect: app.handleConnect,
-    onRefreshModels: app.handleRefreshProviderModels,
-    onSaveProviderProfile: app.handleSaveProviderProfile,
-  };
 
   const shellSurface = isPlayMode ? (
     <PlayMode
@@ -139,12 +122,9 @@ export function App() {
       personaName={snapshot.persona?.name ?? ""}
       personaDescription={snapshot.persona?.description ?? ""}
       promptTraceCount={snapshot.promptTraceHistory.length}
-      providerLabel={app.connection.providerLabel || "No provider"}
-      connectionStatus={app.renderConnectionStatus()}
       isSaving={app.isSavingCharacter}
       saveNotice={app.characterSaveNotice}
       importSurface={importSurface}
-      connectionSettings={connectionSettings}
       onTabChange={app.setBuildTab}
       onSave={(draft) => void app.handleSaveCharacter(draft)}
       onSavePersona={(draft) => void app.handleSavePersona(draft)}
