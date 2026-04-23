@@ -33,6 +33,15 @@ CREATE TABLE IF NOT EXISTS provider_profiles (
 );
 `,
   },
+  {
+    version: "0004_character_v3_fields",
+    sql: `
+ALTER TABLE characters ADD COLUMN mes_example TEXT;
+ALTER TABLE characters ADD COLUMN alternate_greetings_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE characters ADD COLUMN post_history_instructions TEXT;
+ALTER TABLE characters ADD COLUMN creator_notes TEXT;
+`,
+  },
 ];
 
 export function getLatestMigrationVersion(): string {

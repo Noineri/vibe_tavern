@@ -121,6 +121,10 @@ export function App() {
       description={snapshot.character.description}
       scenario={snapshot.character.scenario}
       systemPrompt={snapshot.character.systemPrompt}
+      mesExample={snapshot.character.mesExample}
+      alternateGreetings={snapshot.character.alternateGreetings}
+      postHistoryInstructions={snapshot.character.postHistoryInstructions}
+      creatorNotes={snapshot.character.creatorNotes}
       personaId={snapshot.persona?.id ?? null}
       personaName={snapshot.persona?.name ?? ""}
       personaDescription={snapshot.persona?.description ?? ""}

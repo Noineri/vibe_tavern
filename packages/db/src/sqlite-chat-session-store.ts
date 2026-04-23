@@ -127,6 +127,10 @@ type CharacterRow = SqliteRow & {
   name: string;
   description: string;
   default_scenario: string | null;
+  mes_example: string | null;
+  alternate_greetings_json: string;
+  post_history_instructions: string | null;
+  creator_notes: string | null;
   avatar_asset_id: string | null;
   status: string;
   created_at: string;
@@ -178,13 +182,18 @@ export class SqliteChatSessionStore implements ChatSessionStore {
   upsertCharacter(input: Character): void {
     this.db.execute(
       `INSERT INTO characters (
-        id, slug, name, description, default_scenario, avatar_asset_id, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, slug, name, description, default_scenario, mes_example, alternate_greetings_json,
+        post_history_instructions, creator_notes, avatar_asset_id, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         slug = excluded.slug,
         name = excluded.name,
         description = excluded.description,
         default_scenario = excluded.default_scenario,
+        mes_example = excluded.mes_example,
+        alternate_greetings_json = excluded.alternate_greetings_json,
+        post_history_instructions = excluded.post_history_instructions,
+        creator_notes = excluded.creator_notes,
         avatar_asset_id = excluded.avatar_asset_id,
         status = excluded.status,
         updated_at = excluded.updated_at`,
@@ -194,6 +203,10 @@ export class SqliteChatSessionStore implements ChatSessionStore {
         input.name,
         input.description,
         input.defaultScenario,
+        input.mesExample,
+        JSON.stringify(input.alternateGreetings),
+        input.postHistoryInstructions,
+        input.creatorNotes,
         input.avatarAssetId,
         input.status,
         input.createdAt,
@@ -403,7 +416,8 @@ export class SqliteChatSessionStore implements ChatSessionStore {
   listCharacters(): Character[] {
     return this.db
       .queryAll<CharacterRow>(
-        `SELECT id, slug, name, description, default_scenario, avatar_asset_id, status, created_at, updated_at
+        `SELECT id, slug, name, description, default_scenario, mes_example, alternate_greetings_json,
+                post_history_instructions, creator_notes, avatar_asset_id, status, created_at, updated_at
          FROM characters
          ORDER BY created_at ASC, id ASC`,
       )
@@ -1199,6 +1213,10 @@ function mapCharacter(row: CharacterRow): Character {
     name: row.name,
     description: row.description,
     defaultScenario: row.default_scenario,
+    mesExample: row.mes_example,
+    alternateGreetings: parseJson<string[]>(row.alternate_greetings_json),
+    postHistoryInstructions: row.post_history_instructions,
+    creatorNotes: row.creator_notes,
     avatarAssetId: row.avatar_asset_id,
     status: row.status as Character["status"],
     createdAt: row.created_at,

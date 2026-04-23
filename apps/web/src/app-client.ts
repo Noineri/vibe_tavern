@@ -37,6 +37,10 @@ export interface AppSnapshot {
     scenario: string;
     systemPrompt: string;
     subtitle: string;
+    mesExample: string | null;
+    alternateGreetings: string[];
+    postHistoryInstructions: string | null;
+    creatorNotes: string | null;
   };
   persona: {
     id: string;
@@ -111,6 +115,10 @@ export async function updateCharacter(
     description: string;
     scenario: string;
     systemPrompt: string;
+    mesExample: string | null;
+    alternateGreetings: string[];
+    postHistoryInstructions: string | null;
+    creatorNotes: string | null;
   },
 ): Promise<AppSnapshot> {
   return normalizeSnapshot(await requestJson(`/api/characters/${characterId}`, {

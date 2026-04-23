@@ -48,6 +48,10 @@ export interface Character {
   name: string;
   description: string;
   defaultScenario: string | null;
+  mesExample: string | null;
+  alternateGreetings: string[];
+  postHistoryInstructions: string | null;
+  creatorNotes: string | null;
   avatarAssetId: string | null;
   status: "active" | "draft" | "archived";
   createdAt: Timestamp;

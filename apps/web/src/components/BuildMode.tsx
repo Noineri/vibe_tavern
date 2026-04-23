@@ -6,6 +6,10 @@ export interface BuildCharacterDraft {
   description: string;
   scenario: string;
   systemPrompt: string;
+  mesExample: string;
+  alternateGreetings: string[];
+  postHistoryInstructions: string;
+  creatorNotes: string;
 }
 
 export interface BuildPersonaDraft {
@@ -22,6 +26,10 @@ interface BuildModeProps {
   description: string;
   scenario: string;
   systemPrompt: string;
+  mesExample: string | null;
+  alternateGreetings: string[];
+  postHistoryInstructions: string | null;
+  creatorNotes: string | null;
   personaId: string | null;
   personaName: string;
   personaDescription: string;
@@ -40,6 +48,10 @@ export function BuildMode(input: BuildModeProps) {
     description: input.description,
     scenario: input.scenario,
     systemPrompt: input.systemPrompt,
+    mesExample: input.mesExample || "",
+    alternateGreetings: input.alternateGreetings || [],
+    postHistoryInstructions: input.postHistoryInstructions || "",
+    creatorNotes: input.creatorNotes || "",
   });
   const [personaDraft, setPersonaDraft] = useState<BuildPersonaDraft>({
     name: input.personaName,
@@ -52,8 +64,12 @@ export function BuildMode(input: BuildModeProps) {
       description: input.description,
       scenario: input.scenario,
       systemPrompt: input.systemPrompt,
+      mesExample: input.mesExample || "",
+      alternateGreetings: input.alternateGreetings || [],
+      postHistoryInstructions: input.postHistoryInstructions || "",
+      creatorNotes: input.creatorNotes || "",
     });
-  }, [input.characterId, input.characterName, input.description, input.scenario, input.systemPrompt]);
+  }, [input.characterId, input.characterName, input.description, input.scenario, input.systemPrompt, input.mesExample, input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes]);
 
   useEffect(() => {
     setPersonaDraft({
@@ -67,8 +83,12 @@ export function BuildMode(input: BuildModeProps) {
       draft.name !== input.characterName ||
       draft.description !== input.description ||
       draft.scenario !== input.scenario ||
-      draft.systemPrompt !== input.systemPrompt,
-    [draft, input.characterName, input.description, input.scenario, input.systemPrompt],
+      draft.systemPrompt !== input.systemPrompt ||
+      draft.mesExample !== (input.mesExample || "") ||
+      draft.alternateGreetings.join("\n---\n") !== (input.alternateGreetings || []).join("\n---\n") ||
+      draft.postHistoryInstructions !== (input.postHistoryInstructions || "") ||
+      draft.creatorNotes !== (input.creatorNotes || ""),
+    [draft, input.characterName, input.description, input.scenario, input.systemPrompt, input.mesExample, input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes],
   );
 
   const isPersonaDirty = useMemo(
@@ -92,6 +112,10 @@ export function BuildMode(input: BuildModeProps) {
       description: input.description,
       scenario: input.scenario,
       systemPrompt: input.systemPrompt,
+      mesExample: input.mesExample || "",
+      alternateGreetings: input.alternateGreetings || [],
+      postHistoryInstructions: input.postHistoryInstructions || "",
+      creatorNotes: input.creatorNotes || "",
     });
   }
 
@@ -117,6 +141,10 @@ export function BuildMode(input: BuildModeProps) {
                 description: draft.description,
                 scenario: draft.scenario,
                 systemPrompt: draft.systemPrompt,
+                mesExample: draft.mesExample,
+                alternateGreetings: draft.alternateGreetings,
+                postHistoryInstructions: draft.postHistoryInstructions,
+                creatorNotes: draft.creatorNotes,
               })
             }
           >
@@ -156,6 +184,40 @@ export function BuildMode(input: BuildModeProps) {
             value={draft.systemPrompt}
             disabled={input.isSaving}
             onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("systemPrompt", event.target.value)}
+          />
+        </div>
+        <div className="build-field">
+          <label>Message Examples</label>
+          <textarea
+            value={draft.mesExample}
+            disabled={input.isSaving}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("mesExample", event.target.value)}
+            placeholder="<START>..."
+          />
+        </div>
+        <div className="build-field">
+          <label>Post-History Instructions (Jailbreak)</label>
+          <textarea
+            value={draft.postHistoryInstructions}
+            disabled={input.isSaving}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("postHistoryInstructions", event.target.value)}
+          />
+        </div>
+        <div className="build-field">
+          <label>Alternate Greetings</label>
+          <textarea
+            value={draft.alternateGreetings.join("\n---\n")}
+            disabled={input.isSaving}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setDraft({ ...draft, alternateGreetings: event.target.value.split("\n---\n").filter(Boolean) })}
+            placeholder="Separate alternate greetings with '---' on a new line."
+          />
+        </div>
+        <div className="build-field">
+          <label>Creator Notes</label>
+          <textarea
+            value={draft.creatorNotes}
+            disabled={input.isSaving}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("creatorNotes", event.target.value)}
           />
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>

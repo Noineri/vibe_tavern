@@ -41,6 +41,10 @@ type CharacterRecord = {
   description: string;
   scenario: string;
   systemPrompt: string;
+  mesExample: string | null;
+  alternateGreetings: string[];
+  postHistoryInstructions: string | null;
+  creatorNotes: string | null;
   subtitle: string;
 };
 
@@ -163,6 +167,10 @@ class StaticPromptResolver implements PromptAssemblyResolver {
       description: character.description,
       scenario: character.scenario,
       systemPrompt: character.systemPrompt,
+      mesExample: character.mesExample,
+      alternateGreetings: character.alternateGreetings,
+      postHistoryInstructions: character.postHistoryInstructions,
+      creatorNotes: character.creatorNotes,
       subtitle: character.subtitle,
     };
   }
@@ -533,6 +541,10 @@ export class PrototypeSessionRuntime {
       description?: string;
       scenario?: string;
       systemPrompt?: string;
+      mesExample?: string | null;
+      alternateGreetings?: string[];
+      postHistoryInstructions?: string | null;
+      creatorNotes?: string | null;
     },
   ): PrototypeSnapshot {
     const currentCharacter = this.store.listCharacters().find((character) => character.id === characterId);
@@ -556,6 +568,10 @@ export class PrototypeSessionRuntime {
       name: nextName,
       description: nextDescription,
       defaultScenario: nextScenario || null,
+      mesExample: input.mesExample !== undefined ? input.mesExample : currentCharacter.mesExample,
+      alternateGreetings: input.alternateGreetings ?? currentCharacter.alternateGreetings,
+      postHistoryInstructions: input.postHistoryInstructions !== undefined ? input.postHistoryInstructions : currentCharacter.postHistoryInstructions,
+      creatorNotes: input.creatorNotes !== undefined ? input.creatorNotes : currentCharacter.creatorNotes,
       updatedAt: now,
     };
 
@@ -567,6 +583,10 @@ export class PrototypeSessionRuntime {
             description: nextDescription,
             scenario: nextScenario,
             systemPrompt: nextSystemPrompt,
+            mesExample: input.mesExample !== undefined ? input.mesExample : currentCharacter.mesExample,
+            alternateGreetings: input.alternateGreetings ?? currentCharacter.alternateGreetings,
+            postHistoryInstructions: input.postHistoryInstructions !== undefined ? input.postHistoryInstructions : currentCharacter.postHistoryInstructions,
+            creatorNotes: input.creatorNotes !== undefined ? input.creatorNotes : currentCharacter.creatorNotes,
           }),
         }
       : null;
@@ -962,6 +982,10 @@ function toCharacterRecord(
     description: character.description,
     scenario: character.defaultScenario ?? "",
     systemPrompt: (data.system_prompt as string) || "",
+    mesExample: character.mesExample,
+    alternateGreetings: character.alternateGreetings,
+    postHistoryInstructions: character.postHistoryInstructions,
+    creatorNotes: character.creatorNotes,
     subtitle: subtitleCandidate,
   };
 }
@@ -973,6 +997,10 @@ function applyCharacterEditsToDefinition(
     description: string;
     scenario: string;
     systemPrompt: string;
+    mesExample: string | null;
+    alternateGreetings: string[];
+    postHistoryInstructions: string | null;
+    creatorNotes: string | null;
   },
 ): Record<string, unknown> {
   const cloned = JSON.parse(JSON.stringify(definition)) as Record<string, unknown>;
@@ -986,10 +1014,18 @@ function applyCharacterEditsToDefinition(
   cloned.description = input.description;
   cloned.scenario = input.scenario;
   cloned.system_prompt = input.systemPrompt;
+  cloned.mes_example = input.mesExample;
+  cloned.alternate_greetings = input.alternateGreetings;
+  cloned.post_history_instructions = input.postHistoryInstructions;
+  cloned.creator_notes = input.creatorNotes;
   target.name = input.name;
   target.description = input.description;
   target.scenario = input.scenario;
   target.system_prompt = input.systemPrompt;
+  target.mes_example = input.mesExample;
+  target.alternate_greetings = input.alternateGreetings;
+  target.post_history_instructions = input.postHistoryInstructions;
+  target.creator_notes = input.creatorNotes;
   return cloned;
 }
 

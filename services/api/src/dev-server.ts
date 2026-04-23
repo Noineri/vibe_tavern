@@ -41,7 +41,7 @@ const runtime = {
     const result = await liveChatOrchestrator.sendMessage({ chatId, content: body.content, profile, model: body.model });
     return result.snapshot;
   },
-  updateCharacter: (characterId: string, body: { chatId?: string; name?: string; description?: string; scenario?: string; systemPrompt?: string }) =>
+  updateCharacter: (characterId: string, body: { chatId?: string; name?: string; description?: string; scenario?: string; systemPrompt?: string; mesExample?: string | null; alternateGreetings?: string[]; postHistoryInstructions?: string | null; creatorNotes?: string | null }) =>
     sessionRuntime.updateCharacter(characterId, body),
   updatePersona: (personaId: string, body: { chatId?: string; name?: string; description?: string }) =>
     sessionRuntime.updatePersona(personaId, body),
@@ -227,8 +227,12 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
         chatId: string;
         name: string;
         description: string;
-        personality: string;
-        tags: string[];
+        scenario: string;
+        systemPrompt: string;
+        mesExample?: string | null;
+        alternateGreetings?: string[];
+        postHistoryInstructions?: string | null;
+        creatorNotes?: string | null;
       }),
     );
     return;

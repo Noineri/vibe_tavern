@@ -511,6 +511,10 @@ export function useRpPlatformApp() {
         description: draftInput.description,
         scenario: draftInput.scenario,
         systemPrompt: draftInput.systemPrompt,
+        mesExample: draftInput.mesExample,
+        alternateGreetings: draftInput.alternateGreetings,
+        postHistoryInstructions: draftInput.postHistoryInstructions,
+        creatorNotes: draftInput.creatorNotes,
       });
       refresh(activeChatId, nextSnapshot);
       setCharacterSaveNotice("Character card saved.");
