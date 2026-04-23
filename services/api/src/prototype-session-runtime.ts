@@ -125,6 +125,11 @@ interface ClientProviderProfileRecord {
   hasStoredApiKey: boolean;
 }
 
+interface CachedProviderModelsRecord {
+  models: Array<{ id: string; label: string }>;
+  cachedAt: string;
+}
+
 export interface PrototypeImportResult {
   activeChatId: ChatId;
   snapshot: PrototypeSnapshot;
@@ -272,6 +277,7 @@ export class PrototypeSessionRuntime {
   private readonly promptService: PromptAssemblyService;
   private readonly chatOrder: ChatId[] = [];
   private readonly pendingPromptTraceByChat = new Map<ChatId, PendingPromptTraceTurn>();
+  private readonly providerModelsCache = new Map<string, CachedProviderModelsRecord>();
 
   constructor(store: ChatSessionStore = createDefaultPrototypeStore()) {
     this.store = store;
@@ -324,11 +330,6 @@ export class PrototypeSessionRuntime {
     };
   }
 
-  getLatestPromptTrace(chatId: ChatId, branchId?: ChatBranchId): PromptTraceRecordDto | null {
-    const trace = this.store.getLatestPromptTrace(chatId, branchId);
-    return trace ? mapPromptTraceRecord(trace) : null;
-  }
-
   getPromptTraceHistory(
     chatId: ChatId,
     branchId?: ChatBranchId,
@@ -347,35 +348,16 @@ export class PrototypeSessionRuntime {
     return this.getSnapshot(chatId);
   }
 
-  sendMessage(chatId: ChatId, content: string): PrototypeSnapshot {
-    const trimmed = content.trim();
-    if (!trimmed) {
-      return this.getSnapshot(chatId);
-    }
+  listPersonas(): Array<{ id: string; name: string; description: string }> {
+    return this.store.listPersonas().map((p) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+    }));
+  }
 
-    this.chatApp.appendUserMessage(chatId, {
-      content: trimmed,
-      mode: "reply",
-    });
-
-    const assembled = this.assemblePrompt(chatId);
-    const chat = this.store.getChat(chatId)!;
-    const reply = synthesizeAssistantReply({
-      characterName: this.resolver.getCharacter(chat.characterId).name,
-      userText: trimmed,
-      prompt: assembled.prompt,
-    });
-
-    const assistantMessage = this.store.appendMessage({
-      chatId,
-      branchId: chat.activeBranchId,
-      role: "assistant",
-      authorType: "assistant",
-      content: reply,
-    });
-
-    this.pendingPromptTraceByChat.delete(chatId);
-    this.persistPromptTrace(assistantMessage.id, assembled.promptTraceDraft);
+  setChatPersona(chatId: ChatId, personaId: string): PrototypeSnapshot {
+    this.store.updateChatPersona(chatId, personaId as import("@rp-platform/domain").PersonaId);
     return this.getSnapshot(chatId);
   }
 
@@ -527,6 +509,22 @@ export class PrototypeSessionRuntime {
     return profile ? this.toClientProviderProfile(profile) : null;
   }
 
+  getCachedProviderModels(providerProfileId: string): CachedProviderModelsRecord | null {
+    return this.providerModelsCache.get(providerProfileId) ?? null;
+  }
+
+  setCachedProviderModels(
+    providerProfileId: string,
+    models: Array<{ id: string; label: string }>,
+  ): CachedProviderModelsRecord {
+    const cached = {
+      models,
+      cachedAt: new Date().toISOString(),
+    };
+    this.providerModelsCache.set(providerProfileId, cached);
+    return cached;
+  }
+
   updateCharacter(
     characterId: CharacterId,
     input: {
@@ -534,6 +532,7 @@ export class PrototypeSessionRuntime {
       name?: string;
       description?: string;
       scenario?: string;
+      systemPrompt?: string;
     },
   ): PrototypeSnapshot {
     const currentCharacter = this.store.listCharacters().find((character) => character.id === characterId);
@@ -549,6 +548,9 @@ export class PrototypeSessionRuntime {
     const now = new Date().toISOString();
     const nextDescription = input.description ?? currentCharacter.description;
     const nextScenario = input.scenario ?? currentCharacter.defaultScenario ?? "";
+    const currentVersion = this.store.getLatestCharacterVersion(characterId);
+    const currentRecord = this.characters.get(characterId);
+    const nextSystemPrompt = input.systemPrompt ?? currentRecord?.systemPrompt ?? "";
     const updatedCharacter: Character = {
       ...currentCharacter,
       name: nextName,
@@ -557,7 +559,6 @@ export class PrototypeSessionRuntime {
       updatedAt: now,
     };
 
-    const currentVersion = this.store.getLatestCharacterVersion(characterId);
     const updatedVersion = currentVersion
       ? {
           ...currentVersion,
@@ -565,6 +566,7 @@ export class PrototypeSessionRuntime {
             name: nextName,
             description: nextDescription,
             scenario: nextScenario,
+            systemPrompt: nextSystemPrompt,
           }),
         }
       : null;
@@ -589,26 +591,63 @@ export class PrototypeSessionRuntime {
     return this.getSnapshot(targetChatId);
   }
 
-  sleepBranch(chatId: ChatId): PrototypeSnapshot {
-    const { branchState } = this.chatApp.getChatState(chatId);
-    const lastMessage = branchState.messages[branchState.messages.length - 1];
-    if (!lastMessage) {
-      return this.getSnapshot(chatId);
+  updatePersona(
+    personaId: string,
+    input: {
+      chatId?: ChatId;
+      name?: string;
+      description?: string;
+    },
+  ): PrototypeSnapshot {
+    const currentPersonaRecord = this.personas.get(personaId);
+    if (!currentPersonaRecord) {
+      throw new Error(`Persona '${personaId}' was not found.`);
+    }
+    const currentPersona = this.store.getChat(input.chatId ?? this.chatOrder[0] ?? "")?.personaId === personaId
+      ? this.defaultPersona
+      : {
+          id: personaId,
+          name: currentPersonaRecord.name,
+          description: currentPersonaRecord.description,
+          pronouns: null,
+          avatarAssetId: null,
+          defaultForNewChats: personaId === this.defaultPersona.id,
+          createdAt: this.defaultPersona.createdAt,
+          updatedAt: this.defaultPersona.updatedAt,
+        };
+
+    const nextName = (input.name ?? currentPersona.name).trim();
+    if (!nextName) {
+      throw new Error("Persona name is required.");
     }
 
-    this.chatApp.sleepBranch(chatId, {
-      branchId: branchState.branch.id,
-      kind: "scene",
-      summary: summarizeBranch(branchState.messages),
-      coversThroughMessageId: lastMessage.id,
+    const now = new Date().toISOString();
+    const nextDescription = input.description ?? currentPersona.description;
+    const updatedPersona: Persona = {
+      ...currentPersona,
+      name: nextName,
+      description: nextDescription,
+      updatedAt: now,
+    };
+
+    this.store.upsertPersona(updatedPersona);
+    this.personas.set(personaId, {
+      id: updatedPersona.id,
+      name: updatedPersona.name,
+      description: updatedPersona.description,
     });
 
-    return this.getSnapshot(chatId);
-  }
+    const preferredChat = input.chatId ? this.store.getChat(input.chatId) : null;
+    const targetChatId =
+      (preferredChat?.personaId === personaId ? preferredChat.id : null) ??
+      this.store.listChats().find((chat) => chat.personaId === personaId)?.id ??
+      this.chatOrder[0];
 
-  refreshPrompt(chatId: ChatId): PrototypeSnapshot {
-    this.assemblePrompt(chatId);
-    return this.getSnapshot(chatId);
+    if (!targetChatId) {
+      throw new Error("No chat is available for the updated persona.");
+    }
+
+    return this.getSnapshot(targetChatId);
   }
 
   assemblePromptPreview(
@@ -829,34 +868,6 @@ export class PrototypeSessionRuntime {
   }
 }
 
-function summarizeBranch(messages: Message[]): string {
-  const slice = messages.slice(-4);
-  const parts = slice.map((message) => {
-    const speaker = message.role === "user" ? "User" : "Character";
-    return `${speaker}: ${message.content.replace(/\s+/g, " ").trim()}`;
-  });
-  return parts.join(" ");
-}
-
-function synthesizeAssistantReply(input: {
-  characterName: string;
-  userText: string;
-  prompt: AssemblePromptResponse;
-}): string {
-  const firstLore = input.prompt.activatedLoreEntries[0];
-  const retrieval = input.prompt.retrievedMemories[0] as
-    | { sourceType?: string; score?: number }
-    | undefined;
-
-  const loreSentence = firstLore
-    ? `${input.characterName} responds with the active scene context still pressing at the edges.`
-    : `${input.characterName} answers without breaking the current scene.`;
-  const memorySentence = retrieval?.sourceType
-    ? `The reply is shaped by ${retrieval.sourceType} recall rather than generic filler.`
-    : "The reply stays close to the immediate exchange.";
-
-  return `${loreSentence}\n\nShe studies your words: "${input.userText}". ${memorySentence} The next beat lands a little closer, a little more precise, as if the room itself is listening for what you say next.`;
-}
 
 function createDefaultPrototypeStore(): ChatSessionStore {
   const storeMode = (process.env.RP_PLATFORM_CHAT_STORE ?? "sqlite").toLowerCase();
@@ -864,21 +875,14 @@ function createDefaultPrototypeStore(): ChatSessionStore {
     return new InMemoryChatSessionStore();
   }
 
-  try {
-    const dbPath = resolve(process.cwd(), process.env.RP_PLATFORM_DB_PATH ?? "data/prototype.sqlite");
-    mkdirSync(dirname(dbPath), {
-      recursive: true,
-    });
+  const dbPath = resolve(process.cwd(), process.env.RP_PLATFORM_DB_PATH ?? "data/prototype.sqlite");
+  mkdirSync(dirname(dbPath), {
+    recursive: true,
+  });
 
-    const adapter = new NodeSqliteDatabaseAdapter(dbPath);
-    applySqliteMigrations(adapter);
-    return new SqliteChatSessionStore(adapter);
-  } catch (error) {
-    console.warn(
-      `Falling back to in-memory chat store because SQLite initialization failed: ${error instanceof Error ? error.message : "unknown error"}`,
-    );
-    return new InMemoryChatSessionStore();
-  }
+  const adapter = new NodeSqliteDatabaseAdapter(dbPath);
+  applySqliteMigrations(adapter);
+  return new SqliteChatSessionStore(adapter);
 }
 
 function mapPromptTraceRecord(trace: PromptTrace): PromptTraceRecordDto {
@@ -968,6 +972,7 @@ function applyCharacterEditsToDefinition(
     name: string;
     description: string;
     scenario: string;
+    systemPrompt: string;
   },
 ): Record<string, unknown> {
   const cloned = JSON.parse(JSON.stringify(definition)) as Record<string, unknown>;
@@ -980,9 +985,11 @@ function applyCharacterEditsToDefinition(
   cloned.name = input.name;
   cloned.description = input.description;
   cloned.scenario = input.scenario;
+  cloned.system_prompt = input.systemPrompt;
   target.name = input.name;
   target.description = input.description;
   target.scenario = input.scenario;
+  target.system_prompt = input.systemPrompt;
   return cloned;
 }
 

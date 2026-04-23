@@ -3,7 +3,6 @@ import type { OpenAiModelOption } from "../openai-compatible.js";
 
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "error";
 export type AppMode = "play" | "build";
-export type SidePanel = "trace" | "closed";
 export type ThemeMode = "dark" | "light";
 
 export interface ConnectionState {

@@ -1,4 +1,4 @@
-import type { AssemblePromptResponse, PromptTraceRecordDto } from "@rp-platform/api-contracts";
+import type { PromptTraceRecordDto } from "@rp-platform/api-contracts";
 import type { Chat, ChatBranch, ChatBranchId, ChatId, Message, MessageVariant } from "@rp-platform/domain";
 import { getGatewayBaseUrl } from "./gateway-client.js";
 
@@ -9,6 +9,12 @@ export interface ChatListItem {
   subtitle: string;
   activeBranchLabel: string;
   messageCount: number;
+}
+
+export interface PersonaRecord {
+  id: string;
+  name: string;
+  description: string;
 }
 
 export interface AppSnapshot {
@@ -29,6 +35,7 @@ export interface AppSnapshot {
     name: string;
     description: string;
     scenario: string;
+    systemPrompt: string;
     subtitle: string;
   };
   persona: {
@@ -41,11 +48,6 @@ export interface AppSnapshot {
 export interface AppMessage extends Message {
   variants: MessageVariant[];
   selectedVariantIndex: number | null;
-}
-
-export interface PreparedTurn {
-  prompt: AssemblePromptResponse;
-  snapshot: AppSnapshot;
 }
 
 export interface ImportJsonResponse {
@@ -108,6 +110,7 @@ export async function updateCharacter(
     name: string;
     description: string;
     scenario: string;
+    systemPrompt: string;
   },
 ): Promise<AppSnapshot> {
   return normalizeSnapshot(await requestJson(`/api/characters/${characterId}`, {
@@ -116,21 +119,29 @@ export async function updateCharacter(
   }));
 }
 
-export async function prepareLiveTurn(
-  chatId: ChatId,
-  content: string,
-): Promise<PreparedTurn> {
-  const response = await requestJson<PreparedTurn>(`/api/chats/${chatId}/prepare-live-turn`, {
-    method: "POST",
-    body: {
-      content,
-    },
-  });
+export async function updatePersona(
+  personaId: string,
+  input: {
+    chatId?: ChatId;
+    name: string;
+    description: string;
+  },
+): Promise<AppSnapshot> {
+  return normalizeSnapshot(await requestJson(`/api/personas/${personaId}`, {
+    method: "PATCH",
+    body: input,
+  }));
+}
 
-  return {
-    ...response,
-    snapshot: normalizeSnapshot(response.snapshot),
-  };
+export async function listPersonas(): Promise<PersonaRecord[]> {
+  return requestJson("/api/personas");
+}
+
+export async function setChatPersona(chatId: import("@rp-platform/domain").ChatId, personaId: string): Promise<AppSnapshot> {
+  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/set-persona`, {
+    method: "POST",
+    body: { personaId }
+  }));
 }
 
 export async function sendChatMessage(
@@ -142,44 +153,6 @@ export async function sendChatMessage(
   },
 ): Promise<AppSnapshot> {
   return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/messages`, {
-    method: "POST",
-    body: input,
-  }));
-}
-
-export async function appendAssistantReply(
-  chatId: ChatId,
-  content: string,
-): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/assistant`, {
-    method: "POST",
-    body: {
-      content,
-    },
-  }));
-}
-
-export async function assembleCurrentPrompt(
-  chatId: ChatId,
-  options?: {
-    excludeMessageId?: string;
-  },
-): Promise<AssemblePromptResponse> {
-  return requestJson(`/api/chats/${chatId}/assemble-prompt`, {
-    method: "POST",
-    body: options,
-  });
-}
-
-export async function appendMessageVariant(
-  chatId: ChatId,
-  messageId: string,
-  input: {
-    content: string;
-    finishReason?: string | null;
-  },
-): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/messages/${messageId}/variants`, {
     method: "POST",
     body: input,
   }));
@@ -217,20 +190,22 @@ export async function deleteChatMessage(
   }));
 }
 
+export async function regenerateChatMessage(
+  chatId: ChatId,
+  messageId: string,
+  input: {
+    providerProfileId: string;
+    model: string;
+  },
+): Promise<AppSnapshot> {
+  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/messages/${messageId}/regenerate`, {
+    method: "POST",
+    body: input,
+  }));
+}
+
 export async function forkBranch(chatId: ChatId): Promise<AppSnapshot> {
   return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/fork`, {
-    method: "POST",
-  }));
-}
-
-export async function sleepBranch(chatId: ChatId): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/sleep`, {
-    method: "POST",
-  }));
-}
-
-export async function refreshPrompt(chatId: ChatId): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/refresh-prompt`, {
     method: "POST",
   }));
 }
@@ -305,52 +280,6 @@ export async function fetchProviderProfileModels(
   return requestJson(`/api/providers/${providerProfileId}/models`, {
     method: "POST",
   });
-}
-
-export async function generateProviderProfileReply(
-  providerProfileId: string,
-  input: {
-    model: string;
-    prompt: AssemblePromptResponse;
-  },
-): Promise<string> {
-  const response = await requestJson<{ content?: string }>(`/api/providers/${providerProfileId}/generate`, {
-    method: "POST",
-    body: input,
-  });
-
-  if (!response.content?.trim()) {
-    throw new Error("Saved profile generation returned empty content.");
-  }
-
-  return response.content;
-}
-
-export async function fetchPromptTraceHistory(
-  chatId: ChatId,
-  options?: {
-    branchId?: ChatBranchId;
-    limit?: number;
-  },
-): Promise<PromptTraceRecordDto[]> {
-  const params = new URLSearchParams();
-  if (options?.branchId) {
-    params.set("branchId", options.branchId);
-  }
-  if (typeof options?.limit === "number") {
-    params.set("limit", String(options.limit));
-  }
-
-  const suffix = params.size > 0 ? `?${params.toString()}` : "";
-  return requestJson(`/api/chats/${chatId}/prompt-traces${suffix}`);
-}
-
-export async function fetchLatestPromptTrace(
-  chatId: ChatId,
-  branchId?: ChatBranchId,
-): Promise<PromptTraceRecordDto | null> {
-  const suffix = branchId ? `?branchId=${encodeURIComponent(branchId)}` : "";
-  return requestJson(`/api/chats/${chatId}/prompt-traces/latest${suffix}`);
 }
 
 async function requestJson<T>(

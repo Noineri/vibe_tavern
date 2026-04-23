@@ -1,3 +1,5 @@
+import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
+
 export type ProviderType = 'openai_compat' | 'anthropic' | 'google' | 'cohere';
 
 export interface ProviderProfile {
@@ -26,8 +28,16 @@ export interface ConnectionResult {
 export interface ProviderAdapter {
   type: ProviderType;
   /**
-   * Performs a fast health check and retrieves available models.
-   * Should not block for more than a few seconds.
+   * Performs a fast local activation check.
+   * It should validate profile shape without blocking on remote model fetch.
    */
   testConnection(profile: Omit<ProviderProfile, 'type'>): Promise<ConnectionResult>;
+  listModels(profile: Omit<ProviderProfile, "type">): Promise<ModelInfo[]>;
+  generateReply(
+    profile: Omit<ProviderProfile, "type">,
+    input: {
+      model: string;
+      prompt: AssemblePromptResponse;
+    },
+  ): Promise<string>;
 }

@@ -52,6 +52,9 @@ export interface InputAreaProps {
   isSending: boolean;
   canSend: boolean;
   notice: string;
+  personas: Array<{ id: string; name: string; description: string }>;
+  activePersonaId: string | null;
+  onSetPersona: (personaId: string) => void;
   onDraftChange: (value: string) => void;
   onSend: () => void;
 }

@@ -112,6 +112,8 @@ export interface ChatSessionStore {
   upsertCharacter(input: Character): void;
   upsertCharacterVersion(input: CharacterVersion): void;
   upsertPersona(input: Persona): void;
+  listPersonas(): Persona[];
+  updateChatPersona(chatId: ChatId, personaId: PersonaId): void;
   upsertGenerationPreset(input: GenerationPreset): void;
   upsertToolProfile(input: ToolProfile): void;
   upsertLorebook(input: Lorebook): void;
@@ -189,6 +191,21 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
 
   upsertPersona(input: Persona): void {
     this.personas.set(input.id, { ...input });
+  }
+
+  listPersonas(): Persona[] {
+    return Array.from(this.personas.values())
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((p) => ({ ...p }));
+  }
+
+  updateChatPersona(chatId: ChatId, personaId: PersonaId): void {
+    const chat = this.requireChat(chatId);
+    if (!this.personas.has(personaId)) {
+      throw new Error(`Persona '${personaId}' was not found.`);
+    }
+    chat.personaId = personaId;
+    this.touchChat(chat);
   }
 
   upsertGenerationPreset(input: GenerationPreset): void {

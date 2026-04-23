@@ -45,6 +45,8 @@ const runtime = {
     sessionRuntime.updateCharacter(characterId, body),
   updatePersona: (personaId: string, body: { chatId?: string; name?: string; description?: string }) =>
     sessionRuntime.updatePersona(personaId, body),
+  listPersonas: () => sessionRuntime.listPersonas(),
+  setChatPersona: (chatId: string, personaId: string) => sessionRuntime.setChatPersona(chatId, personaId),
   updateLorebook: (_lorebookId: string, _body: { chatId: string; lorebookRaw: string }) => {
     throw new Error("Lorebook patch route is not wired in this baseline.");
   },
@@ -107,6 +109,11 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
 
   if (method === "GET" && url.pathname === "/api/bootstrap") {
     writeJson(response, 200, runtime.bootstrap());
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/personas") {
+    writeJson(response, 200, runtime.listPersonas());
     return;
   }
 
@@ -188,6 +195,13 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
         body as { content: string; providerProfileId: string; model: string },
       ),
     );
+    return;
+  }
+
+  const setPersonaMatch = /^\/api\/chats\/([^/]+)\/set-persona$/.exec(url.pathname);
+  if (method === "POST" && setPersonaMatch) {
+    const body = await readJsonBody(request);
+    writeJson(response, 200, runtime.setChatPersona(setPersonaMatch[1], body.personaId));
     return;
   }
 

@@ -13,6 +13,7 @@ import type {
   MessageVariant,
   MessageVariantId,
   Persona,
+  PersonaId,
   PromptTrace,
   SummaryMemorySnapshot,
   ToolProfile,
@@ -87,6 +88,17 @@ type MessageVariantRow = SqliteRow & {
   is_selected: number;
   finish_reason: string | null;
   created_at: string;
+};
+
+type PersonaRow = SqliteRow & {
+  id: string;
+  name: string;
+  description: string;
+  pronouns: string | null;
+  avatar_asset_id: string | null;
+  default_for_new_chats: number;
+  created_at: string;
+  updated_at: string;
 };
 
 type PromptTraceRow = SqliteRow & {
@@ -239,6 +251,42 @@ export class SqliteChatSessionStore implements ChatSessionStore {
         input.updatedAt,
       ],
     );
+  }
+
+  listPersonas(): Persona[] {
+    return this.db
+      .queryAll<PersonaRow>(
+        `SELECT id, name, description, pronouns, avatar_asset_id, default_for_new_chats, created_at, updated_at
+         FROM personas
+         ORDER BY name ASC`
+      )
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        pronouns: row.pronouns,
+        avatarAssetId: row.avatar_asset_id,
+        defaultForNewChats: row.default_for_new_chats === 1,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+  }
+
+  updateChatPersona(chatId: ChatId, personaId: PersonaId): void {
+    this.db.transaction(() => {
+      this.requireChat(chatId);
+      const timestamp = this.clock.now();
+      const personaExists = this.db.queryOne(`SELECT 1 FROM personas WHERE id = ?`, [personaId]);
+      if (!personaExists) {
+        throw new Error(`Persona '${personaId}' was not found.`);
+      }
+      this.db.execute(`UPDATE chats SET persona_id = ?, updated_at = ? WHERE id = ?`, [
+        personaId,
+        timestamp,
+        chatId,
+      ]);
+      this.touchChat(chatId, timestamp);
+    });
   }
 
   upsertGenerationPreset(input: GenerationPreset): void {

@@ -1,10 +1,9 @@
 import type { ChangeEvent, KeyboardEvent } from "react";
 import type { InputAreaProps } from "./play-mode-types.js";
-import { Icons } from "./shared/icons.js";
+import { PersonaQuickSwitch } from "./PersonaQuickSwitch.js";
 
 export function InputArea(input: InputAreaProps) {
   const sendButtonText = input.isSending ? "Sending..." : "Send";
-  const pillLabel = formatPersonaPill(input.personaName, input.characterName);
 
   return (
     <div className="input-area">
@@ -25,10 +24,7 @@ export function InputArea(input: InputAreaProps) {
           rows={2}
         />
         <div className="input-row">
-          <span className="char-pill" title={input.personaName || input.characterName}>
-            <span>{pillLabel}</span>
-            <Icons.Caret direction="d" />
-          </span>
+          <PersonaQuickSwitch personas={input.personas} activePersonaId={input.activePersonaId} onSelect={input.onSetPersona} />
           <div className="sep-v" />
           <span className="tok-c" title={input.notice || input.sendLabel}>
             {input.tokenCount.toLocaleString()}
@@ -48,12 +44,4 @@ export function InputArea(input: InputAreaProps) {
       </div>
     </div>
   );
-}
-
-function formatPersonaPill(personaName: string, characterName: string): string {
-  const source = personaName || characterName;
-  if (!source) return "";
-  const trimmed = source.trim();
-  const first = trimmed.split(/\s+/)[0];
-  return first ?? trimmed;
 }

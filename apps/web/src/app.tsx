@@ -108,6 +108,9 @@ export function App() {
         notice: app.chatNotice,
         onDraftChange: app.setDraft,
         onSend: () => void app.handleSend(),
+        personas: app.personas,
+        activePersonaId: app.snapshot?.persona?.id ?? null,
+        onSetPersona: app.handleSetChatPersona,
       }}
     />
   ) : (

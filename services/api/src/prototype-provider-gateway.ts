@@ -11,6 +11,9 @@ export interface ProviderModelOption {
   label: string;
 }
 
+const MODEL_LIST_TIMEOUT_MS = 45_000;
+const CHAT_COMPLETION_TIMEOUT_MS = 45_000;
+
 type ChatCompletionRole = "system" | "user" | "assistant" | "tool";
 
 interface ChatCompletionMessage {
@@ -54,11 +57,20 @@ export async function listProviderModels(
   input: Omit<ProviderConnectionInput, "model">,
 ): Promise<ProviderModelOption[]> {
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
-  const response = await fetch(buildModelsUrl(baseUrl), {
-    method: "GET",
-    headers: buildHeaders(input.apiKey),
-    signal: AbortSignal.timeout(6_000),
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(buildModelsUrl(baseUrl), {
+      method: "GET",
+      headers: buildHeaders(input.apiKey),
+      signal: AbortSignal.timeout(MODEL_LIST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw wrapProviderNetworkError(error, {
+      operation: "Model list request",
+      timeoutMs: MODEL_LIST_TIMEOUT_MS,
+    });
+  }
 
   if (!response.ok) {
     throw new Error(`Model list request failed: ${response.status} ${response.statusText}`);
@@ -88,17 +100,26 @@ export async function generateProviderReply(
   prompt: AssemblePromptResponse,
 ): Promise<string> {
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: buildHeaders(input.apiKey),
-    body: JSON.stringify({
-      model: input.model,
-      messages: extractChatCompletionMessages(prompt),
-      temperature: 0.9,
-      stream: false,
-    }),
-    signal: AbortSignal.timeout(30_000),
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: buildHeaders(input.apiKey),
+      body: JSON.stringify({
+        model: input.model,
+        messages: extractChatCompletionMessages(prompt),
+        temperature: 0.9,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(CHAT_COMPLETION_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw wrapProviderNetworkError(error, {
+      operation: "Chat completion request",
+      timeoutMs: CHAT_COMPLETION_TIMEOUT_MS,
+    });
+  }
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
@@ -191,4 +212,26 @@ function extractChoiceContent(
   }
 
   return (choice.text ?? "").trim();
+}
+
+function wrapProviderNetworkError(
+  error: unknown,
+  input: {
+    operation: string;
+    timeoutMs: number;
+  },
+): Error {
+  const timeoutSeconds = Math.floor(input.timeoutMs / 1000);
+  if (
+    error instanceof Error &&
+    (error.name === "TimeoutError" || /aborted due to timeout/i.test(error.message))
+  ) {
+    return new Error(`${input.operation} timed out after ${timeoutSeconds}s.`);
+  }
+
+  if (error instanceof Error) {
+    return error;
+  }
+
+  return new Error(`${input.operation} failed.`);
 }
