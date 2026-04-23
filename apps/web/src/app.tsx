@@ -8,6 +8,18 @@ import { useRpPlatformApp } from "./hooks/use-rp-platform-app.js";
 
 export function App() {
   const app = useRpPlatformApp();
+  const isPlayMode = app.mode === "play";
+  const importSurface = (
+    <ImportSurface
+      isImportDragActive={app.isImportDragActive}
+      isImporting={app.isImporting}
+      importNotice={app.importNotice}
+      onDragOver={app.handleImportDragOver}
+      onDragLeave={app.handleImportDragLeave}
+      onDrop={app.handleImportDrop}
+      onFileChange={app.handleImportInputChange}
+    />
+  );
 
   if (app.isLoading) {
     return (
@@ -39,11 +51,12 @@ export function App() {
     return (
       <div className="app">
         <main className="main" style={{ alignItems: "center", display: "flex", justifyContent: "center" }}>
-          <div style={{ display: "grid", gap: 12, maxWidth: 520, padding: 24 }}>
+          <div style={{ display: "grid", gap: 12, maxWidth: 520, padding: 24, width: "100%" }}>
             <div className="build-section-title">Claw Tavern</div>
             <div className="build-section-sub">
               Import a character card or lorebook to create the first active snapshot for the web shell.
             </div>
+            {importSurface}
           </div>
         </main>
       </div>
@@ -54,17 +67,11 @@ export function App() {
   const activeChatId = app.activeChatId ?? snapshot.activeChat.id;
   const personaName = snapshot.persona?.name ?? "No persona";
   const providerConnected = app.connection.status === "connected";
-  const importSurface = (
-    <ImportSurface
-      isImportDragActive={app.isImportDragActive}
-      isImporting={app.isImporting}
-      importNotice={app.importNotice}
-      onDragOver={app.handleImportDragOver}
-      onDragLeave={app.handleImportDragLeave}
-      onDrop={app.handleImportDrop}
-      onFileChange={app.handleImportInputChange}
-    />
-  );
+  const switchMode = () => app.setMode(isPlayMode ? "build" : "play");
+  const openPromptTrace = () => {
+    app.setMode("build");
+    app.setBuildTab("trace");
+  };
   const connectionSettings = {
     connection: app.connection,
     connectionHint: app.renderConnectionHint(),
@@ -82,6 +89,66 @@ export function App() {
     onRefreshModels: app.handleRefreshProviderModels,
     onSaveProviderProfile: app.handleSaveProviderProfile,
   };
+
+  const shellSurface = isPlayMode ? (
+    <PlayMode
+      messageList={{
+        characterName: snapshot.character.name,
+        scenario: snapshot.character.scenario,
+        branches: snapshot.branches,
+        activeBranchId: snapshot.activeBranch.id,
+        messages: snapshot.messages,
+        pendingUserMessageContent: app.pendingUserMessageContent,
+        editingMessageId: app.editingMessageId,
+        editingDraft: app.editingDraft,
+        isSending: app.isSending,
+        messageActionId: app.messageActionId,
+        onActivateBranch: (branchId) => void app.handleActivateBranch(branchId),
+        onFork: () => void app.handleFork(),
+        onStartEdit: app.handleStartEdit,
+        onEditingDraftChange: app.setEditingDraft,
+        onCancelEdit: app.handleCancelEdit,
+        onSaveEdit: (messageId) => void app.handleSaveMessageEdit(messageId),
+        onDelete: (messageId) => void app.handleDeleteMessage(messageId),
+        onRegenerate: (messageId) => void app.handleRegenerateMessage(messageId),
+        onSelectVariant: (messageId, variantIndex) =>
+          void app.handleSelectMessageVariant(messageId, variantIndex),
+      }}
+      inputArea={{
+        characterName: snapshot.character.name,
+        draft: app.draft,
+        tokenCount: app.draft.trim().length,
+        sendLabel: app.renderSendLabel(),
+        isSending: app.isSending,
+        canSend: Boolean(app.draft.trim()) && !app.isSending && app.canUseLiveApi,
+        notice: app.chatNotice,
+        onDraftChange: app.setDraft,
+        onSend: () => void app.handleSend(),
+      }}
+    />
+  ) : (
+    <BuildMode
+      activeTab={app.buildTab}
+      characterId={snapshot.character.id}
+      characterName={snapshot.character.name}
+      description={snapshot.character.description}
+      scenario={snapshot.character.scenario}
+      systemPrompt={snapshot.character.systemPrompt}
+      personaId={snapshot.persona?.id ?? null}
+      personaName={snapshot.persona?.name ?? ""}
+      personaDescription={snapshot.persona?.description ?? ""}
+      promptTraceCount={snapshot.promptTraceHistory.length}
+      providerLabel={app.connection.providerLabel || "No provider"}
+      connectionStatus={app.renderConnectionStatus()}
+      isSaving={app.isSavingCharacter}
+      saveNotice={app.characterSaveNotice}
+      importSurface={importSurface}
+      connectionSettings={connectionSettings}
+      onTabChange={app.setBuildTab}
+      onSave={(draft) => void app.handleSaveCharacter(draft)}
+      onSavePersona={(draft) => void app.handleSavePersona(draft)}
+    />
+  );
 
   return (
     <div className="app">
@@ -107,73 +174,12 @@ export function App() {
           mode={app.mode}
           theme={app.theme}
           onOpenProviderSettings={app.openConnectionPanel}
-          onOpenTracePanel={() => {
-            app.setMode("build");
-            app.setBuildTab("trace");
-          }}
-          onToggleMode={() => app.setMode(app.mode === "play" ? "build" : "play")}
+          onOpenTracePanel={openPromptTrace}
+          onToggleMode={switchMode}
           onToggleTheme={() => app.setTheme(app.theme === "dark" ? "light" : "dark")}
         />
 
-        {app.mode === "play" ? (
-          <PlayMode
-            messageList={{
-              characterName: snapshot.character.name,
-              scenario: snapshot.character.scenario,
-              branches: snapshot.branches,
-              activeBranchId: snapshot.activeBranch.id,
-              messages: snapshot.messages,
-              pendingUserMessageContent: app.pendingUserMessageContent,
-              editingMessageId: app.editingMessageId,
-              editingDraft: app.editingDraft,
-              isSending: app.isSending,
-              messageActionId: app.messageActionId,
-              onActivateBranch: (branchId) => void app.handleActivateBranch(branchId),
-              onFork: () => void app.handleFork(),
-              onStartEdit: app.handleStartEdit,
-              onEditingDraftChange: app.setEditingDraft,
-              onCancelEdit: app.handleCancelEdit,
-              onSaveEdit: (messageId) => void app.handleSaveMessageEdit(messageId),
-              onDelete: (messageId) => void app.handleDeleteMessage(messageId),
-              onRegenerate: (messageId) => void app.handleRegenerateMessage(messageId),
-              onSelectVariant: (messageId, variantIndex) =>
-                void app.handleSelectMessageVariant(messageId, variantIndex),
-            }}
-            inputArea={{
-              characterName: snapshot.character.name,
-              draft: app.draft,
-              tokenCount: app.draft.trim().length,
-              sendLabel: app.renderSendLabel(),
-              isSending: app.isSending,
-              canSend: Boolean(app.draft.trim()) && !app.isSending && app.canUseLiveApi,
-              notice: app.chatNotice,
-              onDraftChange: app.setDraft,
-              onSend: () => void app.handleSend(),
-            }}
-          />
-        ) : (
-          <BuildMode
-            activeTab={app.buildTab}
-            characterId={snapshot.character.id}
-            characterName={snapshot.character.name}
-            description={snapshot.character.description}
-            scenario={snapshot.character.scenario}
-            systemPrompt={snapshot.character.systemPrompt}
-            personaId={snapshot.persona?.id ?? null}
-            personaName={snapshot.persona?.name ?? ""}
-            personaDescription={snapshot.persona?.description ?? ""}
-            promptTraceCount={snapshot.promptTraceHistory.length}
-            providerLabel={app.connection.providerLabel || "No provider"}
-            connectionStatus={app.renderConnectionStatus()}
-            isSaving={app.isSavingCharacter}
-            saveNotice={app.characterSaveNotice}
-            importSurface={importSurface}
-            connectionSettings={connectionSettings}
-            onTabChange={app.setBuildTab}
-            onSave={(draft) => void app.handleSaveCharacter(draft)}
-            onSavePersona={(draft) => void app.handleSavePersona(draft)}
-          />
-        )}
+        {shellSurface}
       </main>
 
       <ProviderModal

@@ -134,10 +134,9 @@ export function BuildMode(input: BuildModeProps) {
     if (input.activeTab === "lorebook") {
       return (
         <div className="build-content">
-          <div className="build-title">Lorebook import</div>
+          <div className="build-title">Lorebook</div>
           <div className="build-copy">
-            This tab is now live as an import surface. Drop a SillyTavern lorebook JSON here to attach
-            it to the current character.
+            Import a SillyTavern lorebook JSON and attach it to the active character from Build Mode.
           </div>
           {input.importSurface}
         </div>
@@ -201,7 +200,7 @@ export function BuildMode(input: BuildModeProps) {
         <div className="build-content">
           <div className="build-title">Prompt Trace</div>
           <div className="build-copy">
-            Trace history is already functional in Play Mode. Current recorded traces for this chat: {input.promptTraceCount}.
+            Prompt Trace is sourced from the active snapshot. Recorded traces for this chat: {input.promptTraceCount}.
           </div>
         </div>
       );
@@ -212,9 +211,9 @@ export function BuildMode(input: BuildModeProps) {
 
       return (
         <div className="build-content">
-          <div className="build-title">Generation Settings</div>
+          <div className="build-title">Provider Settings</div>
           <div className="build-copy">
-            Provider settings now live here instead of the right chat panel.
+            Saved provider profiles, model selection, and connection state live in Build Mode.
           </div>
           <div className="api-body" style={{ padding: 0 }}>
             <div className="api-field">
@@ -327,8 +326,7 @@ export function BuildMode(input: BuildModeProps) {
       <div className="build-content">
         <div className="build-title">{input.characterName}</div>
         <div className="build-copy">
-          Character editor is now live. You can switch tabs, edit the card fields, and save changes back
-          into the local prototype runtime.
+          Character Card fields are edited here and saved back into the current runtime snapshot.
         </div>
         {input.importSurface}
         <label className="build-field">
@@ -394,7 +392,7 @@ export function BuildMode(input: BuildModeProps) {
   return (
     <section className="build-shell">
       <nav className="build-nav">
-        <div className="sidebar-label">Editors</div>
+        <div className="sidebar-label">Build Mode</div>
         <button
           className={`build-nav-item${input.activeTab === "character" ? " active" : ""}`}
           onClick={() => input.onTabChange("character")}
@@ -423,7 +421,7 @@ export function BuildMode(input: BuildModeProps) {
           className={`build-nav-item${input.activeTab === "settings" ? " active" : ""}`}
           onClick={() => input.onTabChange("settings")}
         >
-          Generation Settings
+          Provider Settings
         </button>
       </nav>
       {renderTabContent()}

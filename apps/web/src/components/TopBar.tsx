@@ -36,22 +36,27 @@ export function TopBar(input: TopBarProps) {
           </span>
           <span className="memory-dot" />
           <span>
-            {input.activatedLoreCount} lore - {input.retrievedMemoryCount} memory
+            {input.activatedLoreCount} lore · {input.retrievedMemoryCount} memory
           </span>
         </button>
         <button className="provider-badge" onClick={input.onOpenProviderSettings}>
-          <span className={`provider-dot${input.providerConnected ? " connected" : ""}`} />
+          <span className={`provider-dot ${input.providerConnected ? "ok" : "none"}`} />
           <span className="provider-name">{input.providerLabel}</span>
           <span className="provider-divider">-</span>
           <span className="provider-model" title={input.providerModelLabel}>
             {input.providerModelLabel}
           </span>
         </button>
-        <button className="mode-pill" onClick={input.onToggleMode}>
+        <button
+          className="mode-pill"
+          onClick={input.onToggleMode}
+          aria-label={input.mode === "play" ? "Switch to Build Mode" : "Switch to Play Mode"}
+          title={input.mode === "play" ? "Switch to Build Mode" : "Switch to Play Mode"}
+        >
           <span className="icon-inline">
-            {input.mode === "play" ? <Icons.Wrench /> : <Icons.User />}
+            {input.mode === "play" ? <Icons.User /> : <Icons.Wrench />}
           </span>
-          {input.mode === "play" ? "Build" : "Play"}
+          {input.mode === "play" ? "Play Mode" : "Build Mode"}
         </button>
         <button
           className="iBtn"

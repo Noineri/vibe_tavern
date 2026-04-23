@@ -16,10 +16,10 @@ interface SidebarProps {
 
 export function Sidebar(input: SidebarProps) {
   return (
-    <aside className={`sidebar${input.sidebarCollapsed ? " is-collapsed" : ""}`}>
+    <aside className={`sidebar${input.sidebarCollapsed ? " col" : ""}`}>
       <div className="sb-head">
         <div className="logo-mark">r</div>
-        {!input.sidebarCollapsed && <div className="app-name">RP Platform</div>}
+        {!input.sidebarCollapsed && <div className="app-name">Claw Tavern</div>}
         <button
           className="iBtn"
           aria-label={input.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -70,7 +70,7 @@ export function Sidebar(input: SidebarProps) {
               <span className="sb-ava">Y</span>
               <span>{input.personaName}</span>
               <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--t3)", flexShrink: 0 }}>
-                Explorer
+                Your Persona
               </span>
             </div>
           </section>

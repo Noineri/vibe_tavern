@@ -32,9 +32,9 @@ export function ProviderModal(input: ProviderModalProps) {
       <div className="provider-modal" onClick={(event) => event.stopPropagation()}>
         <div className="provider-modal-head">
           <div>
-            <div className="sidebar-label">Provider</div>
-            <div className="provider-modal-title">API connection</div>
-            <div className="provider-modal-copy">Saved profiles, model list, and active chat connection.</div>
+            <div className="sidebar-label">Build Mode</div>
+            <div className="provider-modal-title">Provider Settings</div>
+            <div className="provider-modal-copy">Saved profiles, model list, and active Claw Tavern connection.</div>
           </div>
           <button className="icon-btn" aria-label="Close provider settings" title="Close provider settings" onClick={input.onClose}>
             <Icons.Close />
