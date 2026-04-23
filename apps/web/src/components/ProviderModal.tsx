@@ -1,5 +1,4 @@
 import type { ProviderProfileRecord } from "../app-client.js";
-import { ConnectionSettingsForm } from "./ConnectionSettingsForm.js";
 import type { ConnectionState } from "./app-shell-types.js";
 import { Icons } from "./shared/icons.js";
 
@@ -42,23 +41,109 @@ export function ProviderModal(input: ProviderModalProps) {
           </button>
         </div>
         <div className="provider-modal-body">
-          <ConnectionSettingsForm
-            connection={input.connection}
-            connectionHint={input.connectionHint}
-            connectionStatus={input.connectionStatus}
-            providerProfiles={input.providerProfiles}
-            selectedProviderProfileId={input.selectedProviderProfileId}
-            canConnect={input.canConnect}
-            canRefreshModels={input.canRefreshModels}
-            onSelectedProviderProfileChange={input.onSelectedProviderProfileChange}
-            onLoadProviderProfile={input.onLoadProviderProfile}
-            onConnectSavedProfile={input.onConnectSavedProfile}
-            onDeleteProviderProfile={input.onDeleteProviderProfile}
-            onPatchConnection={input.onPatchConnection}
-            onConnect={input.onConnect}
-            onRefreshModels={input.onRefreshModels}
-            onSaveProviderProfile={input.onSaveProviderProfile}
-          />
+          <div className="api-body" style={{ padding: 0 }}>
+            <div className="api-field">
+              <label htmlFor="provider-modal-profile">Saved profile</label>
+              <select
+                id="provider-modal-profile"
+                value={input.selectedProviderProfileId}
+                onChange={(event) => input.onSelectedProviderProfileChange(event.target.value)}
+              >
+                <option value="">Select a saved profile</option>
+                {input.providerProfiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name} · {profile.type}
+                  </option>
+                ))}
+              </select>
+              <div className="api-hint">Status: {input.connectionStatus}</div>
+            </div>
+
+            <div className="api-row" style={{ marginBottom: 16 }}>
+              <button className="api-test-btn idle" type="button" onClick={input.onLoadProviderProfile}>
+                Load
+              </button>
+              <button className="api-test-btn idle" type="button" onClick={input.onConnectSavedProfile}>
+                Connect saved
+              </button>
+              <button className="api-test-btn err" type="button" onClick={input.onDeleteProviderProfile}>
+                Delete
+              </button>
+            </div>
+
+            <div className="api-field">
+              <label htmlFor="provider-modal-name">Profile name</label>
+              <input
+                id="provider-modal-name"
+                value={input.connection.providerLabel}
+                onChange={(event) => input.onPatchConnection({ providerLabel: event.target.value })}
+              />
+            </div>
+
+            <div className="api-field">
+              <label htmlFor="provider-modal-url">Base URL</label>
+              <input
+                id="provider-modal-url"
+                value={input.connection.baseUrl}
+                onChange={(event) => input.onPatchConnection({ baseUrl: event.target.value })}
+              />
+            </div>
+
+            <div className="api-field">
+              <label htmlFor="provider-modal-key">API key</label>
+              <input
+                id="provider-modal-key"
+                type="password"
+                value={input.connection.apiKey}
+                placeholder={input.connection.hasStoredApiKey ? "Stored on backend" : "Paste API key"}
+                onChange={(event) => input.onPatchConnection({ apiKey: event.target.value })}
+              />
+            </div>
+
+            <div className="api-row" style={{ marginBottom: 16 }}>
+              <div className="api-field">
+                <label htmlFor="provider-modal-model">Model</label>
+                <select
+                  id="provider-modal-model"
+                  value={input.connection.model}
+                  onChange={(event) => input.onPatchConnection({ model: event.target.value })}
+                >
+                  <option value="">Select a model</option>
+                  {input.connection.models.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                className="api-test-btn idle"
+                type="button"
+                disabled={!input.canRefreshModels}
+                onClick={input.onRefreshModels}
+              >
+                Refresh models
+              </button>
+            </div>
+
+            <div className="api-hint" style={{ marginBottom: 16 }}>
+              {input.connectionHint}
+            </div>
+
+            <div className="api-row">
+              <button
+                className="api-save-btn"
+                type="button"
+                disabled={!input.canConnect}
+                onClick={input.onConnect}
+              >
+                Save and connect
+              </button>
+              <button className="api-cancel-btn" type="button" onClick={input.onSaveProviderProfile}>
+                Save profile
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
