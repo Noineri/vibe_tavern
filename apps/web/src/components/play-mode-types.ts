@@ -10,7 +10,6 @@ export interface MessageBlockProps {
   isBusy: boolean;
   canBranch: boolean;
   canRegenerate: boolean;
-  showSeparator: boolean;
   onBranch: () => void;
   onStartEdit: () => void;
   onEditingDraftChange: (value: string) => void;
