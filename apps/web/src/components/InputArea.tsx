@@ -1,16 +1,20 @@
 import type { ChangeEvent, KeyboardEvent } from "react";
 import type { InputAreaProps } from "./play-mode-types.js";
+import { Icons } from "./shared/icons.js";
 
 export function InputArea(input: InputAreaProps) {
   const sendButtonText = input.isSending ? "Sending..." : "Send";
+  const pillLabel = formatPersonaPill(input.personaName, input.characterName);
 
   return (
-    <section className="input-area">
+    <div className="input-area">
       <div className="input-box">
         <textarea
           className="input-ta"
           value={input.draft}
-          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => input.onDraftChange(event.target.value)}
+          onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+            input.onDraftChange(event.target.value)
+          }
           onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
             if (event.key === "Enter" && !event.shiftKey && input.canSend) {
               event.preventDefault();
@@ -22,11 +26,12 @@ export function InputArea(input: InputAreaProps) {
         />
         <div className="input-row">
           <span className="char-pill" title={input.personaName || input.characterName}>
-            {input.personaName || input.characterName}
+            <span>{pillLabel}</span>
+            <Icons.Caret direction="d" />
           </span>
           <div className="sep-v" />
           <span className="tok-c" title={input.notice || input.sendLabel}>
-            {input.tokenCount} tokens
+            {input.tokenCount.toLocaleString()}
           </span>
           <div className="input-r">
             <button
@@ -41,6 +46,14 @@ export function InputArea(input: InputAreaProps) {
           </div>
         </div>
       </div>
-    </section>
+    </div>
   );
+}
+
+function formatPersonaPill(personaName: string, characterName: string): string {
+  const source = personaName || characterName;
+  if (!source) return "";
+  const trimmed = source.trim();
+  const first = trimmed.split(/\s+/)[0];
+  return first ?? trimmed;
 }
