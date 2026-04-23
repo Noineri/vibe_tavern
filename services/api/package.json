@@ -1,0 +1,20 @@
+{
+  "name": "@rp-platform/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/services/api/src/index.js",
+  "types": "./dist/services/api/src/index.d.ts",
+  "scripts": {
+    "dev": "node dist/services/api/src/dev-server.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@rp-platform/api-contracts": "0.1.0",
+    "@rp-platform/db": "0.1.0",
+    "@rp-platform/domain": "0.1.0",
+    "@rp-platform/import-export": "0.1.0",
+    "@rp-platform/prompt-pipeline": "0.1.0"
+  }
+}

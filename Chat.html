@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claw Tavern</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;1,400;1,500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:#0d0c0b;--surface:#131210;--s2:#1c1a17;--s3:#252220;
+  --border:#2d2925;--border2:#3a3530;
+  --t1:#e4ddd4;--t2:#9a9088;--t3:#5a534c;--t4:#3a342e;
+  --accent:oklch(0.72 0.14 75);--accent-t:oklch(0.78 0.12 75);
+  --accent-dim:rgba(212,168,50,0.1);--accent-hover:rgba(212,168,50,0.18);
+  --user-bg:#17191a;
+  --font-ui:'DM Sans',system-ui,sans-serif;
+  --font-body:'Lora',Georgia,serif;
+  --r:6px;--sw:248px;--mw:820px;--mfs:15.5px;
+}
+:root.light{
+  --bg:#f7f4f0;--surface:#fdfaf6;--s2:#f0ece5;--s3:#e5e0d8;
+  --border:#ddd7ce;--border2:#ccc5bb;
+  --t1:#1c1914;--t2:#7a736a;--t3:#b0a89e;--t4:#d5cfc8;
+  --accent:oklch(0.52 0.14 75);--accent-t:oklch(0.46 0.14 75);
+  --accent-dim:rgba(155,116,18,0.08);--accent-hover:rgba(155,116,18,0.14);
+  --user-bg:#edeae5;
+}
+html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(--t1);overflow:hidden}
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+/* ── Layout ── */
+.app{display:flex;height:100vh;overflow:hidden}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+
+/* ── Sidebar ── */
+.sidebar{
+  width:var(--sw);min-width:var(--sw);
+  background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;
+  transition:width .18s ease,min-width .18s ease;flex-shrink:0;
+}
+.sidebar.col{width:48px;min-width:48px}
+.sb-head{height:52px;display:flex;align-items:center;padding:0 10px;border-bottom:1px solid var(--border);gap:9px;flex-shrink:0}
+.logo-mark{width:26px;height:26px;background:var(--accent);border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:var(--font-body);font-style:italic;font-size:13px;color:#fff;font-weight:500}
+.app-name{font-family:var(--font-body);font-size:14px;font-weight:500;color:var(--t1);flex:1;white-space:nowrap;overflow:hidden;letter-spacing:-.01em}
+.iBtn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:5px;cursor:pointer;color:var(--t3);transition:background .1s,color .1s;flex-shrink:0}
+.iBtn:hover{background:var(--s2);color:var(--t1)}
+.sb-sec{padding:6px 0;border-bottom:1px solid var(--border)}
+.sb-sec.grow{flex:1;overflow-y:auto;border-bottom:none}
+.sb-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);padding:4px 13px 5px;font-weight:500}
+.sb-item{display:flex;align-items:center;gap:9px;padding:6px 10px;cursor:pointer;border-radius:4px;margin:0 4px;font-size:13px;color:var(--t2);transition:background .1s,color .1s;white-space:nowrap;overflow:hidden}
+.sb-item:hover{background:var(--s2);color:var(--t1)}
+.sb-item.act{background:var(--accent-dim);color:var(--accent-t)}
+.sb-ava{width:24px;height:24px;border-radius:50%;background:var(--s3);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--t2);font-family:var(--font-body);font-style:italic;overflow:hidden}
+.sb-ava.on{background:var(--accent);color:#fff}
+.sb-ava img{width:100%;height:100%;object-fit:cover;object-position:top center}
+.sb-chat{display:flex;flex-direction:column;padding:6px 10px;cursor:pointer;border-radius:4px;margin:0 4px;transition:background .1s;overflow:hidden}
+.sb-chat:hover{background:var(--s2)}
+.sb-chat.act{background:var(--accent-dim)}
+.sb-ct{font-size:13px;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-cm{font-size:11px;color:var(--t3);margin-top:1px}
+.sb-chat.act .sb-ct{color:var(--accent-t)}
+.sb-foot{padding:6px 4px;border-top:1px solid var(--border);margin-top:auto;flex-shrink:0}
+
+/* ── Header ── */
+.chat-header{height:52px;display:flex;align-items:center;padding:0 20px;border-bottom:1px solid var(--border);gap:12px;flex-shrink:0;background:var(--surface)}
+.char-info{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.char-ava{
+  width:32px;height:32px;border-radius:50%;background:var(--s3);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-body);font-style:italic;font-size:13px;color:var(--t2);
+  overflow:hidden;cursor:pointer;transition:opacity .15s;border:1.5px solid transparent
+}
+.char-ava:hover{opacity:.85;border-color:var(--accent)}
+.char-ava img{width:100%;height:100%;object-fit:cover;object-position:top center}
+.char-name{font-size:14px;font-weight:500;color:var(--t1);line-height:1.2}
+.char-sub{font-size:11px;color:var(--t3);margin-top:1px}
+.hdr-right{display:flex;align-items:center;gap:7px}
+
+/* ── Memory Badge ── */
+.mem-badge{display:flex;align-items:center;gap:5px;background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--t2);cursor:pointer;position:relative;transition:border-color .15s,color .15s;flex-shrink:0}
+.mem-badge:hover{border-color:var(--accent);color:var(--accent-t)}
+.mem-dot{width:6px;height:6px;border-radius:50%;background:oklch(0.68 0.16 145);flex-shrink:0}
+.mem-pop{position:absolute;top:calc(100% + 8px);right:0;width:270px;background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:13px 15px;z-index:200;box-shadow:0 12px 32px rgba(0,0,0,.4)}
+.mem-pop-ttl{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px;font-weight:500}
+.mem-ent{font-size:12px;color:var(--t2);padding:5px 0;border-bottom:1px solid var(--border);line-height:1.45}
+.mem-ent:last-child{border-bottom:none}
+.mem-ent strong{color:var(--t1);font-weight:500}
+
+.mode-pill{font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;background:var(--accent-dim);color:var(--accent-t);cursor:pointer;letter-spacing:.02em;transition:background .15s;white-space:nowrap}
+.mode-pill:hover{background:var(--accent-hover)}
+
+/* ── Avatar Float ── */
+.ava-float{position:fixed;z-index:100;user-select:none;}
+.ava-float-img{display:block;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.45);cursor:grab;-webkit-user-drag:none;max-width:320px;width:320px;}
+.ava-float-img:active{cursor:grabbing}
+.ava-float-close{position:absolute;top:6px;right:6px;width:24px;height:24px;background:rgba(0,0,0,.55);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:0;transition:opacity .15s;color:#fff;}
+.ava-float:hover .ava-float-close{opacity:1}
+.ava-float-hint{position:absolute;bottom:-20px;left:0;right:0;text-align:center;font-size:10px;color:var(--t3);pointer-events:none;opacity:0;transition:opacity .15s;white-space:nowrap;}
+.ava-float:hover .ava-float-hint{opacity:1}
+/* mini avatars in messages */
+.msg-mini-ava{width:20px;height:20px;border-radius:50%;background:var(--s3);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--t3);font-family:var(--font-body);font-style:italic}
+.msg-mini-ava img{width:100%;height:100%;object-fit:cover;object-position:top center}
+
+/* ── Messages ── */
+.msgs{flex:1;overflow-y:auto;padding:28px 0 12px}
+.scene-note{text-align:center;font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--t3);padding:4px 24px 26px;max-width:var(--mw);margin:0 auto}
+.msg-wrap{max-width:var(--mw);margin:0 auto;padding:0 28px;position:relative}
+.msg-block{position:relative;padding:10px 0}
+.msg-block:hover .msg-acts{opacity:1}
+.msg-lbl{font-size:11px;font-weight:500;letter-spacing:.04em;color:var(--t3);margin-bottom:5px;display:flex;align-items:center;gap:7px}
+.msg-lbl.char-lbl{color:var(--accent-t);opacity:.85}
+.msg-body{font-family:var(--font-body);font-size:var(--mfs);line-height:1.82;color:var(--t1)}
+.msg-body p+p{margin-top:.9em}
+.msg-body em{color:var(--t2);font-style:italic}
+.user-wrap{background:var(--user-bg);border-radius:6px;padding:13px 16px;margin:2px 0}
+.user-wrap .msg-body{opacity:.88}
+
+/* swipe */
+.swipe-ctrl{display:flex;align-items:center;gap:4px}
+.sw-btn{width:18px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:3px;cursor:pointer;color:var(--t3);transition:background .1s,color .1s}
+.sw-btn:hover{background:var(--s2);color:var(--t1)}
+.sw-n{font-size:10px;color:var(--t3);font-variant-numeric:tabular-nums;min-width:22px;text-align:center}
+
+/* actions */
+.msg-acts{opacity:0;transition:opacity .15s;display:flex;gap:1px;margin-top:6px;align-items:center}
+.act-btn{font-size:11px;font-family:var(--font-ui);color:var(--t3);padding:3px 7px;border-radius:4px;cursor:pointer;transition:background .1s,color .1s;display:flex;align-items:center;gap:4px}
+.act-btn:hover{background:var(--s2);color:var(--t2)}
+
+/* generating */
+.gen-cur{display:inline-flex;align-items:center;gap:3px;margin-left:3px;vertical-align:middle}
+.gen-cur span{width:4px;height:4px;background:var(--accent);border-radius:50%;animation:genp 1.3s ease-in-out infinite}
+.gen-cur span:nth-child(2){animation-delay:.18s}
+.gen-cur span:nth-child(3){animation-delay:.36s}
+@keyframes genp{0%,60%,100%{opacity:.25;transform:scale(.75)}30%{opacity:1;transform:scale(1)}}
+
+/* edit */
+.edit-ta{width:100%;background:var(--s2);border:1px solid var(--accent);border-radius:6px;padding:10px 12px;font-family:var(--font-body);font-size:var(--mfs);line-height:1.82;color:var(--t1);resize:none;outline:none;min-height:80px}
+.edit-acts{display:flex;gap:6px;margin-top:6px}
+.edit-btn{font-size:12px;font-family:var(--font-ui);padding:5px 12px;border-radius:5px;cursor:pointer;font-weight:500;transition:filter .1s,background .1s}
+.edit-btn.sv{background:var(--accent);color:#fff}
+.edit-btn.sv:hover{filter:brightness(1.1)}
+.edit-btn.cn{background:var(--s2);color:var(--t2)}
+.edit-btn.cn:hover{background:var(--s3)}
+
+/* tool call */
+.tool-wrap{max-width:var(--mw);margin:4px auto;padding:0 28px}
+.tool-inner{display:flex;align-items:flex-start;gap:8px;padding:7px 11px;background:var(--surface);border:1px solid var(--border);border-radius:6px;cursor:pointer;transition:border-color .15s;font-size:12px;color:var(--t3);font-family:var(--font-ui)}
+.tool-inner:hover{border-color:var(--border2)}
+.tool-inner.open{border-color:var(--accent)}
+.tool-n{color:var(--t2);font-weight:500}
+.tool-q{color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.tool-chev{margin-left:auto;flex-shrink:0;transition:transform .18s}
+.tool-chev.r{transform:rotate(90deg)}
+.tool-body{padding:9px 11px 11px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px;width:100%}
+.tool-res{background:var(--s2);border-radius:4px;padding:8px 10px}
+.tool-rn{font-size:11px;font-weight:500;color:var(--accent-t);margin-bottom:2px}
+.tool-rs{font-size:12px;color:var(--t2);line-height:1.5}
+
+/* separator */
+.msg-sep{max-width:var(--mw);margin:8px auto 6px;padding:0 28px}
+.msg-sep-l{height:1px;background:var(--border);opacity:.4}
+
+/* ── Input ── */
+.input-area{padding:10px 16px 14px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.input-box{background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:hidden;transition:border-color .15s}
+.input-box:focus-within{border-color:var(--border2)}
+.input-ta{width:100%;background:transparent;border:none;outline:none;padding:11px 14px 7px;font-family:var(--font-body);font-size:14.5px;line-height:1.65;color:var(--t1);resize:none;min-height:48px;max-height:140px}
+.input-ta::placeholder{color:var(--t4)}
+.input-row{display:flex;align-items:center;padding:5px 10px 8px;gap:6px}
+.char-pill{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:500;color:var(--accent-t);background:var(--accent-dim);padding:3px 9px;border-radius:20px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.sep-v{width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0}
+.tok-c{font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.input-r{margin-left:auto;display:flex;align-items:center;gap:5px}
+.send-btn{height:28px;padding:0 14px;background:var(--accent);color:#fff;border-radius:5px;font-size:12.5px;font-weight:500;font-family:var(--font-ui);cursor:pointer;transition:filter .1s,opacity .15s;white-space:nowrap;display:flex;align-items:center;gap:5px}
+.send-btn:hover{filter:brightness(1.1)}
+.send-btn:disabled{opacity:.45;cursor:default;filter:none}
+
+/* ── Build Mode ── */
+.build-wrap{flex:1;display:flex;overflow:hidden}
+.build-nav{width:200px;min-width:200px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:8px 0}
+.build-nav-title{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);padding:8px 14px 6px;font-weight:500}
+.build-nav-item{display:flex;align-items:center;gap:9px;padding:7px 12px;cursor:pointer;border-radius:4px;margin:0 4px;font-size:13px;color:var(--t2);transition:background .1s,color .1s}
+.build-nav-item:hover{background:var(--s2);color:var(--t1)}
+.build-nav-item.act{background:var(--accent-dim);color:var(--accent-t)}
+.build-content{flex:1;overflow-y:auto;padding:32px 40px}
+.build-placeholder{max-width:600px}
+.build-section-title{font-family:var(--font-body);font-size:22px;font-weight:500;color:var(--t1);margin-bottom:6px}
+.build-section-sub{font-size:13px;color:var(--t2);margin-bottom:28px;line-height:1.55}
+.build-field{margin-bottom:20px}
+.build-field label{display:block;font-size:11px;font-weight:500;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin-bottom:6px}
+.build-field textarea,.build-field input{
+  width:100%;background:var(--s2);border:1px solid var(--border);border-radius:6px;
+  padding:10px 12px;font-family:var(--font-body);font-size:14px;line-height:1.7;
+  color:var(--t1);outline:none;resize:vertical;transition:border-color .15s
+}
+.build-field textarea:focus,.build-field input:focus{border-color:var(--accent)}
+.build-field textarea{min-height:120px}
+.build-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.build-tag{font-size:11px;background:var(--s3);color:var(--t2);border-radius:4px;padding:3px 9px;cursor:pointer;transition:background .1s}
+.build-tag:hover{background:var(--border2);color:var(--t1)}
+.build-tag.on{background:var(--accent-dim);color:var(--accent-t)}
+
+/* ── Tweaks ── */
+.tweaks-panel{position:fixed;bottom:72px;right:14px;width:210px;background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:13px 15px;z-index:300;box-shadow:0 8px 28px rgba(0,0,0,.35)}
+.tw-title{font-size:11px;font-weight:600;color:var(--t1);margin-bottom:11px;letter-spacing:.05em;text-transform:uppercase}
+.tw-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+.tw-lbl{font-size:12px;color:var(--t2)}
+.tw-sel{font-size:11px;font-family:var(--font-ui);background:var(--s2);color:var(--t1);border:1px solid var(--border);border-radius:4px;padding:3px 6px;outline:none}
+.toggle{position:relative;width:30px;height:17px;cursor:pointer;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.tgl-sl{position:absolute;inset:0;background:var(--s3);border-radius:9px;transition:background .18s}
+.tgl-sl::before{content:'';position:absolute;width:11px;height:11px;left:3px;top:3px;background:var(--t3);border-radius:50%;transition:transform .18s,background .18s}
+.toggle input:checked+.tgl-sl{background:var(--accent)}
+.toggle input:checked+.tgl-sl::before{transform:translateX(13px);background:#fff}
+
+/* ── Provider Badge ── */
+.provider-badge{display:flex;align-items:center;gap:5px;background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--t2);cursor:pointer;transition:border-color .15s,color .15s;flex-shrink:0;font-family:var(--font-ui)}
+.provider-badge:hover{border-color:var(--border2);color:var(--t1)}
+.provider-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;transition:background .3s}
+.provider-dot.ok{background:oklch(0.68 0.16 145)}
+.provider-dot.none{background:var(--t4)}
+.provider-dot.err{background:oklch(0.62 0.2 25)}
+.provider-name{font-weight:500;color:var(--t1)}
+
+/* ── API Modal ── */
+.api-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+.api-modal{background:var(--surface);border:1px solid var(--border2);border-radius:12px;width:500px;max-width:calc(100vw - 32px);max-height:calc(100vh - 60px);display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.5);overflow:hidden}
+.api-head{padding:18px 20px 0;flex-shrink:0}
+.api-title{font-family:var(--font-body);font-size:18px;font-weight:500;color:var(--t1);margin-bottom:2px}
+.api-sub{font-size:12px;color:var(--t3);margin-bottom:14px}
+.api-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);padding-bottom:0}
+.api-tab{font-size:12.5px;font-weight:500;padding:7px 14px;cursor:pointer;color:var(--t3);border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s,border-color .15s;display:flex;align-items:center;gap:6px}
+.api-tab:hover{color:var(--t1)}
+.api-tab.act{color:var(--accent-t);border-bottom-color:var(--accent)}
+.api-tab-dot{width:5px;height:5px;border-radius:50%;background:var(--t4);flex-shrink:0}
+.api-tab-dot.ok{background:oklch(0.68 0.16 145)}
+.api-body{flex:1;overflow-y:auto;padding:20px}
+.api-field{margin-bottom:16px}
+.api-field label{display:block;font-size:10.5px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);margin-bottom:6px}
+.api-field input,.api-field select{width:100%;background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:8px 11px;font-family:var(--font-ui);font-size:13px;color:var(--t1);outline:none;transition:border-color .15s}
+.api-field input:focus,.api-field select:focus{border-color:var(--accent)}
+.api-field input[type="password"]{font-family:monospace;letter-spacing:.05em}
+.api-hint{font-size:11px;color:var(--t3);margin-top:5px;line-height:1.5}
+.api-hint a{color:var(--accent-t);text-decoration:none}
+.api-hint a:hover{text-decoration:underline}
+.api-row{display:flex;gap:8px;align-items:flex-end}
+.api-row .api-field{flex:1;margin-bottom:0}
+.api-test-btn{height:34px;padding:0 14px;border-radius:6px;font-size:12px;font-weight:500;font-family:var(--font-ui);cursor:pointer;white-space:nowrap;flex-shrink:0;transition:filter .1s,background .1s}
+.api-test-btn.idle{background:var(--s3);color:var(--t2)}
+.api-test-btn.idle:hover{background:var(--border2);color:var(--t1)}
+.api-test-btn.ok{background:oklch(0.28 0.06 145);color:oklch(0.78 0.14 145)}
+.api-test-btn.err{background:oklch(0.22 0.06 25);color:oklch(0.72 0.18 25)}
+.api-section-title{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin:18px 0 10px;padding-top:14px;border-top:1px solid var(--border)}
+.api-section-title:first-child{margin-top:0;border-top:none;padding-top:0}
+.api-model-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:16px}
+.api-model-card{border:1px solid var(--border);border-radius:7px;padding:9px 11px;cursor:pointer;transition:border-color .15s,background .15s}
+.api-model-card:hover{background:var(--s2);border-color:var(--border2)}
+.api-model-card.sel{border-color:var(--accent);background:var(--accent-dim)}
+.api-model-name{font-size:12.5px;font-weight:500;color:var(--t1);margin-bottom:2px}
+.api-model-meta{font-size:11px;color:var(--t3)}
+.api-foot{padding:14px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.api-save-btn{height:32px;padding:0 18px;background:var(--accent);color:#fff;border-radius:6px;font-size:12.5px;font-weight:500;font-family:var(--font-ui);cursor:pointer;transition:filter .1s}
+.api-save-btn:hover{filter:brightness(1.1)}
+.api-cancel-btn{height:32px;padding:0 14px;background:transparent;color:var(--t3);border-radius:6px;font-size:12.5px;font-family:var(--font-ui);cursor:pointer;transition:color .15s}
+.api-cancel-btn:hover{color:var(--t1)}
+.api-status{flex:1;font-size:11px;color:var(--t3)}
+.api-status.ok{color:oklch(0.68 0.16 145)}
+.api-status.err{color:oklch(0.65 0.2 25)}
+
+/* ── Tweaks toggle button ── */
+.tweaks-fab{position:fixed;bottom:16px;right:16px;width:34px;height:34px;border-radius:50%;background:var(--s2);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--t3);transition:background .15s,color .15s,border-color .15s;z-index:299;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+.tweaks-fab:hover{background:var(--s3);color:var(--t1);border-color:var(--border2)}
+.tweaks-fab.on{background:var(--accent-dim);color:var(--accent-t);border-color:var(--accent)}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "theme": "dark",
+  "fontSize": 16,
+  "messageWidth": "wide",
+  "lang": "ru"
+}/*EDITMODE-END*/;
+
+/* ── i18n ── */
+const STRINGS = {
+  en:{
+    characters:'Characters',chats:'Chats',yourPersona:'Your persona',active:'active',
+    play:'Play',build:'Build',back:'← Back to Play',
+    send:'Send',generating:'Generating…',placeholder:'Continue the story…',
+    copy:'copy',edit:'edit',branch:'branch',regen:'regen',
+    loreBadge:'3 lore · 1 RAG',activeEntries:'Active lore entries',ragThisTurn:'RAG retrieval — this turn',
+    twDark:'Dark theme',twFontSize:'Font size',twWidth:'Width',twLang:'Language',
+    twSmall:'Small',twMedium:'Medium',twLarge:'Large',
+    twNarrow:'Narrow',twWide:'Wide',
+    buildCharCard:'Character Card',buildLorebook:'Lorebook',buildPersona:'Persona',buildPromptTrace:'Prompt Trace',buildSettings:'Gen Settings',
+    charNameLabel:'Name',charDescLabel:'Description',charPersonalityLabel:'Personality',charTagsLabel:'Tags',
+  },
+  ru:{
+    characters:'Персонажи',chats:'Чаты',yourPersona:'Ваша персона',active:'активен',
+    play:'Игра',build:'Редактор',back:'← Вернуться',
+    send:'Отправить',generating:'Генерация…',placeholder:'Продолжить историю…',
+    copy:'копировать',edit:'редакт.',branch:'ветка',regen:'переген.',
+    loreBadge:'3 лора · 1 RAG',activeEntries:'Активные записи лора',ragThisTurn:'RAG — этот ход',
+    twDark:'Тёмная тема',twFontSize:'Размер шрифта',twWidth:'Ширина',twLang:'Язык',
+    twSmall:'Мелкий',twMedium:'Средний',twLarge:'Крупный',
+    twNarrow:'Узко',twWide:'Широко',
+    buildCharCard:'Карта персонажа',buildLorebook:'Лорбук',buildPersona:'Персона',buildPromptTrace:'Трассировка',buildSettings:'Настройки',
+    charNameLabel:'Имя',charDescLabel:'Описание',charPersonalityLabel:'Личность',charTagsLabel:'Теги',
+  }
+};
+
+/* ── Data ── */
+const CHARS = [
+  { id:1, name:'Elara Ashmore', init:'E', active:true,  avatar:'avatars/Andrea.png' },
+  { id:2, name:'Viktor Crane',  init:'V', active:false, avatar:null },
+  { id:3, name:'Мира',          init:'М', active:false, avatar:'avatars/Nate & Cole.png' },
+];
+const CHATS = [
+  { id:1, title:'The Abandoned Lighthouse', meta:'Elara · 47 msgs · just now' },
+  { id:2, title:'Tavern Scene',             meta:'Viktor · 23 msgs · yesterday' },
+  { id:3, title:"The Oracle's Chamber",    meta:'Мира · 8 msgs · 3 days ago' },
+];
+const INIT_MSGS = [
+  { id:1, type:'scene', content:'The Abandoned Lighthouse · stormy night · coastal cliffs, 1947' },
+  { id:2, type:'char', character:'Elara', swipes:3, curSwipe:2,
+    content:`The lighthouse keeper's log lay open on the salt-crusted desk, its pages yellowed and brittle with age. Elara ran her finger along the final entry — the handwriting, usually so meticulous, had devolved into a frantic scrawl.
+
+"They came at low tide," she read aloud, her voice barely audible above the wind pressing against the warped wooden shutters. She glanced back at you, something cautious in her eyes.
+
+The lamp above had not turned in forty years. Yet she could swear she heard the mechanism groaning — slow, deliberate rotations in the dark.` },
+  { id:3, type:'user',
+    content:`I move closer to the desk and examine the log more carefully, looking for a date on that last entry. "Who came at low tide? What were they?"` },
+  { id:4, type:'tool', toolName:'Memory Search', query:'"low tide" "lighthouse" "barrier stones"',
+    results:[
+      { name:'Tidal Wraiths', snippet:'Entities that manifest only when the tide retreats beyond the barrier stones. They do not cast shadows. They do not leave footprints.' },
+      { name:'Ashmore Lighthouse', snippet:'Decommissioned 1983 after keeper Marcus Vane vanished. His final log entry: "Do not let them past the stones."' },
+    ]},
+  { id:5, type:'char', character:'Elara', swipes:1, curSwipe:1,
+    content:`The date was smudged — water damage, or something else — but the month was still legible: *November*. The year had been torn away entirely, leaving a ragged edge where the corner of the page should have been.
+
+"They," she murmured, tilting the log toward the pale light seeping through the grime-coated window. She paused, leaning closer.
+
+*"...do not leave footprints. Do not cast shadows. But the stones remember."*
+
+She set the log down and looked at you. "The barrier stones," she said, something shifting in her expression — not quite fear, not quite recognition. "I've seen markings on the rocks below. I thought they were just erosion."` },
+  { id:6, type:'user',
+    content:`"Show me. We should look at them before the storm gets any worse." I check the oil in my lantern and pull on my coat.` },
+  { id:7, type:'char', character:'Elara', swipes:1, curSwipe:1, generating:true,
+    content:`She hesitates — just a moment — then reaches for the oilskin coat hanging beside the door. "Stay close," she says quietly.` },
+];
+
+/* ── Helpers ── */
+function parseBody(text) {
+  return text.split(/(\*[^*]+\*)/g).map((p, i) =>
+    p.startsWith('*') && p.endsWith('*') ? <em key={i}>{p.slice(1,-1)}</em> : p
+  );
+}
+function renderParas(text) {
+  return text.split('\n\n').filter(Boolean).map((p, i) => (
+    <p key={i} style={{marginTop: i > 0 ? '.88em' : 0}}>{parseBody(p)}</p>
+  ));
+}
+
+/* ── Icons ── */
+const Ic = {
+  sun:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="8" cy="8" r="3.2"/><line x1="8" y1="1" x2="8" y2="2.8"/><line x1="8" y1="13.2" x2="8" y2="15"/><line x1="1" y1="8" x2="2.8" y2="8"/><line x1="13.2" y1="8" x2="15" y2="8"/><line x1="3.2" y1="3.2" x2="4.3" y2="4.3"/><line x1="11.7" y1="11.7" x2="12.8" y2="12.8"/><line x1="11.7" y1="3.2" x2="12.8" y2="4.3"/><line x1="3.2" y1="11.7" x2="4.3" y2="12.8"/></svg>,
+  moon:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M13 10.5A6.5 6.5 0 0 1 5.5 3a6.5 6.5 0 1 0 7.5 7.5z"/></svg>,
+  copy:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v6.5A1.5 1.5 0 0 0 3 11h2"/></svg>,
+  edit:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M11.5 2.5l2 2L5 13l-2.5.5L3 11z"/></svg>,
+  branch:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><path d="M4 6v4"/><path d="M12 6v2.5A1.5 1.5 0 0 1 10.5 10H4"/></svg>,
+  regen:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M13.5 8A5.5 5.5 0 1 1 10 3H13.5"/><polyline points="10,3 13.5,3 13.5,6.5"/></svg>,
+  caret:(d)=><svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.9" style={{transform:d==='l'?'rotate(180deg)':d==='d'?'rotate(90deg)':d==='u'?'rotate(270deg)':undefined}}><polyline points="6 3 11 8 6 13"/></svg>,
+  settings:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M11.54 4.46l1.41-1.41M3.05 12.95l1.41-1.41"/></svg>,
+  menu:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="10" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>,
+  plus:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/></svg>,
+  tool:()=><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 2v1.5M8 12.5V14M2 8h1.5M12.5 8H14M3.76 3.76l1.06 1.06M11.18 11.18l1.06 1.06M11.18 3.76l1.06 1.06M3.76 11.18l1.06 1.06"/></svg>,
+  del:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="2 4 14 4"/><path d="M5 4V2.5h6V4"/><rect x="3" y="4" width="10" height="9.5" rx="1"/><line x1="6.5" y1="7" x2="6.5" y2="10.5"/><line x1="9.5" y1="7" x2="9.5" y2="10.5"/></svg>,
+  close:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><line x1="3" y1="3" x2="13" y2="13"/><line x1="13" y1="3" x2="3" y2="13"/></svg>,
+  wrench:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10 2a4 4 0 0 0-3.9 4.8L2 11a1.5 1.5 0 0 0 0 2.1l.9.9A1.5 1.5 0 0 0 5 14l4.2-4.1A4 4 0 1 0 10 2z"/></svg>,
+  key:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="6" cy="7" r="3.5"/><line x1="8.5" y1="9.5" x2="14" y2="15"/><line x1="11" y1="12" x2="13" y2="14"/></svg>,
+  sliders:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/><circle cx="5" cy="4" r="1.8" fill="var(--bg)" strokeWidth="1.5"/><circle cx="10" cy="8" r="1.8" fill="var(--bg)" strokeWidth="1.5"/><circle cx="6" cy="12" r="1.8" fill="var(--bg)" strokeWidth="1.5"/></svg>,
+  check:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="2 8 6 12 14 4"/></svg>,
+  book:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 2h8a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3"/><path d="M3 2a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1"/><line x1="8" y1="2" x2="8" y2="14"/></svg>,
+  user:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="5.5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>,
+  trace:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="2,12 5,8 8,10 11,5 14,7"/><circle cx="14" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg>,
+};
+
+/* ── API Provider Config ── */
+const PROVIDERS = {
+  openai:    { label:'OpenAI',     color:'oklch(0.7 0.15 145)', models:[
+    { id:'gpt-4o',          name:'GPT-4o',         meta:'128k ctx · multimodal' },
+    { id:'gpt-4o-mini',     name:'GPT-4o Mini',    meta:'128k ctx · fast' },
+    { id:'gpt-4-turbo',     name:'GPT-4 Turbo',    meta:'128k ctx' },
+    { id:'gpt-3.5-turbo',   name:'GPT-3.5 Turbo',  meta:'16k ctx · cheap' },
+  ]},
+  anthropic: { label:'Anthropic',  color:'oklch(0.7 0.15 55)',  models:[
+    { id:'claude-opus-4',   name:'Claude Opus 4',  meta:'200k ctx · best quality' },
+    { id:'claude-sonnet-4', name:'Claude Sonnet 4',meta:'200k ctx · balanced' },
+    { id:'claude-haiku-4',  name:'Claude Haiku 4', meta:'200k ctx · fast' },
+  ]},
+  openrouter:{ label:'OpenRouter', color:'oklch(0.7 0.15 290)', models:[
+    { id:'auto',            name:'Auto (best)',     meta:'routes to best model' },
+    { id:'deepseek/v3',     name:'DeepSeek V3',    meta:'64k ctx' },
+    { id:'meta/llama-3.3',  name:'Llama 3.3 70B',  meta:'128k ctx · free tier' },
+    { id:'mistral/large',   name:'Mistral Large',  meta:'128k ctx' },
+  ]},
+  local:     { label:'Local',      color:'oklch(0.7 0.08 220)', models:[
+    { id:'custom',          name:'Custom model',   meta:'defined by base URL' },
+  ]},
+};
+
+function ApiProviderModal({ onClose, providerCfg, setProviderCfg }) {
+  const [tab, setTab] = useState(providerCfg.activeProvider);
+  const [cfg, setCfg] = useState(providerCfg);
+  const [testState, setTestState] = useState({}); // { openai: 'ok'|'err'|'loading' }
+
+  const updateTab = (key, val) => setCfg(c => ({ ...c, [tab]: { ...c[tab], [key]: val } }));
+  const currentCfg = cfg[tab] || {};
+  const provider = PROVIDERS[tab];
+
+  const handleTest = () => {
+    setTestState(s => ({ ...s, [tab]: 'loading' }));
+    setTimeout(() => {
+      const ok = !!(currentCfg.apiKey || tab === 'local');
+      setTestState(s => ({ ...s, [tab]: ok ? 'ok' : 'err' }));
+    }, 1100);
+  };
+
+  const handleSave = () => {
+    const next = { ...cfg, activeProvider: tab };
+    setProviderCfg(next);
+    onClose();
+  };
+
+  const tabDotClass = (pid) => {
+    const c = providerCfg[pid];
+    if (pid === providerCfg.activeProvider && c?.apiKey) return 'ok';
+    return 'none';
+  };
+
+  return (
+    <div className="api-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="api-modal">
+        <div className="api-head">
+          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between'}}>
+            <div>
+              <div className="api-title">API провайдер</div>
+              <div className="api-sub">Выберите провайдера и настройте подключение</div>
+            </div>
+            <div className="iBtn" onClick={onClose}><Ic.close/></div>
+          </div>
+          <div className="api-tabs">
+            {Object.entries(PROVIDERS).map(([pid, p]) => (
+              <div key={pid} className={`api-tab${tab===pid?' act':''}`} onClick={() => setTab(pid)}>
+                <span className={`api-tab-dot ${tabDotClass(pid)}`}/>
+                {p.label}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="api-body">
+          {/* Model selection */}
+          <div className="api-section-title">Модель</div>
+          <div className="api-model-grid">
+            {provider.models.map(m => (
+              <div key={m.id}
+                className={`api-model-card${currentCfg.model === m.id ? ' sel' : ''}`}
+                onClick={() => updateTab('model', m.id)}>
+                <div className="api-model-name">{m.name}</div>
+                <div className="api-model-meta">{m.meta}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Credentials */}
+          {tab !== 'local' && (
+            <>
+              <div className="api-section-title">Авторизация</div>
+              <div className="api-row">
+                <div className="api-field">
+                  <label>API ключ</label>
+                  <input type="password"
+                    placeholder={tab==='openai'?'sk-…':tab==='anthropic'?'sk-ant-…':'sk-or-…'}
+                    value={currentCfg.apiKey || ''}
+                    onChange={e => updateTab('apiKey', e.target.value)}
+                  />
+                  <div className="api-hint">
+                    {tab==='openai' && <><a href="#" onClick={e=>e.preventDefault()}>platform.openai.com</a> → API keys</>}
+                    {tab==='anthropic' && <><a href="#" onClick={e=>e.preventDefault()}>console.anthropic.com</a> → API keys</>}
+                    {tab==='openrouter' && <><a href="#" onClick={e=>e.preventDefault()}>openrouter.ai</a> → Keys</>}
+                  </div>
+                </div>
+                <div style={{marginBottom:0}}>
+                  <button
+                    className={`api-test-btn ${testState[tab] === 'ok' ? 'ok' : testState[tab] === 'err' ? 'err' : 'idle'}`}
+                    onClick={handleTest}
+                    style={{height:34}}>
+                    {testState[tab] === 'loading' ? '…' :
+                     testState[tab] === 'ok' ? '✓ OK' :
+                     testState[tab] === 'err' ? '✗ Ошибка' : 'Проверить'}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Local / custom base URL */}
+          {(tab === 'local' || tab === 'openrouter') && (
+            <>
+              {tab === 'local' && <div className="api-section-title">Подключение</div>}
+              <div className="api-field" style={{marginTop: tab==='openrouter'?12:0}}>
+                <label>Base URL {tab === 'openrouter' ? '(опционально)' : ''}</label>
+                <input type="text"
+                  placeholder={tab==='local'?'http://localhost:11434/v1':'https://openrouter.ai/api/v1'}
+                  value={currentCfg.baseUrl || ''}
+                  onChange={e => updateTab('baseUrl', e.target.value)}
+                />
+                {tab === 'local' && (
+                  <div className="api-hint">Совместим с Ollama, LM Studio, KoboldCPP, TabbyAPI (OpenAI-формат)</div>
+                )}
+              </div>
+              {tab === 'local' && (
+                <div className="api-row">
+                  <div className="api-field">
+                    <label>Имя модели</label>
+                    <input type="text" placeholder="llama3.3:latest"
+                      value={currentCfg.localModel || ''}
+                      onChange={e => updateTab('localModel', e.target.value)}
+                    />
+                  </div>
+                  <button className={`api-test-btn ${testState[tab]==='ok'?'ok':testState[tab]==='err'?'err':'idle'}`}
+                    onClick={handleTest} style={{height:34}}>
+                    {testState[tab]==='loading'?'…':testState[tab]==='ok'?'✓ OK':testState[tab]==='err'?'✗ Недоступен':'Пинг'}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Gen params */}
+          <div className="api-section-title">Параметры генерации</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <div className="api-field" style={{marginBottom:0}}>
+              <label>Temperature</label>
+              <input type="number" min="0" max="2" step="0.05"
+                value={currentCfg.temperature ?? 0.9}
+                onChange={e => updateTab('temperature', parseFloat(e.target.value))}/>
+            </div>
+            <div className="api-field" style={{marginBottom:0}}>
+              <label>Max tokens</label>
+              <input type="number" min="64" max="8192" step="64"
+                value={currentCfg.maxTokens ?? 1024}
+                onChange={e => updateTab('maxTokens', parseInt(e.target.value))}/>
+            </div>
+          </div>
+        </div>
+
+        <div className="api-foot">
+          <div className={`api-status ${testState[tab]==='ok'?'ok':testState[tab]==='err'?'err':''}`}>
+            {testState[tab]==='ok' && '✓ Соединение установлено'}
+            {testState[tab]==='err' && '✗ Не удалось подключиться'}
+            {!testState[tab] && (tab==='local'?'Локальный сервер':'Ключ не проверен')}
+          </div>
+          <button className="api-cancel-btn" onClick={onClose}>Отмена</button>
+          <button className="api-save-btn" onClick={handleSave}>
+            Сохранить и активировать
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Avatar Float ── */
+function AvatarPanel({ src, onClose }) {
+  const [pos, setPos] = useState({ x: window.innerWidth - 360, y: 80 });
+  const [scale, setScale] = useState(1);
+  const dragging = useRef(false);
+  const dragStart = useRef({ x:0, y:0 });
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      e.preventDefault();
+      setScale(s => Math.max(0.3, Math.min(4, s * (1 - e.deltaY * 0.001))));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  const onMD = (e) => {
+    e.preventDefault();
+    dragging.current = true;
+    dragStart.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
+  };
+  const onMM = useCallback((e) => {
+    if (!dragging.current) return;
+    setPos({ x: e.clientX - dragStart.current.x, y: e.clientY - dragStart.current.y });
+  }, []);
+  const onMU = () => { dragging.current = false; };
+
+  useEffect(() => {
+    window.addEventListener('mousemove', onMM);
+    window.addEventListener('mouseup', onMU);
+    return () => { window.removeEventListener('mousemove', onMM); window.removeEventListener('mouseup', onMU); };
+  }, [onMM]);
+
+  return (
+    <div ref={ref} className="ava-float" style={{ left: pos.x, top: pos.y }}>
+      <img src={src} className="ava-float-img"
+        style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}
+        onMouseDown={onMD}
+        draggable={false}
+      />
+      <div className="ava-float-close" onClick={onClose}><Ic.close/></div>
+      <div className="ava-float-hint">drag · scroll to zoom</div>
+    </div>
+  );
+}
+
+/* ── Memory Badge ── */
+function MemBadge({ t }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+  return (
+    <div className="mem-badge" ref={ref} onClick={() => setOpen(o => !o)}>
+      <div className="mem-dot"/>
+      <span>{t.loreBadge}</span>
+      {open && (
+        <div className="mem-pop">
+          <div className="mem-pop-ttl">{t.activeEntries}</div>
+          <div className="mem-ent"><strong>Tidal Wraiths</strong> — barrier stones, low tide, shadows</div>
+          <div className="mem-ent"><strong>Ashmore Lighthouse</strong> — 1983, Marcus Vane, decommissioned</div>
+          <div className="mem-ent"><strong>Coastal Lore: The Stones</strong> — ancient markers, glyphs</div>
+          <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid var(--border)'}}>
+            <div className="mem-pop-ttl" style={{marginBottom:5}}>{t.ragThisTurn}</div>
+            <div className="mem-ent" style={{fontStyle:'italic',fontSize:11,fontFamily:'var(--font-body)'}}>
+              "Do not let them past the stones." — Memory #47
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Tool Block ── */
+function ToolBlock({ msg }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="tool-wrap">
+      <div className={`tool-inner${open?' open':''}`} style={{flexDirection:'column',cursor:'pointer'}}
+        onClick={() => setOpen(o => !o)}>
+        <div style={{display:'flex',alignItems:'center',gap:8,width:'100%'}}>
+          <Ic.tool/>
+          <span className="tool-n">{msg.toolName}</span>
+          <span className="tool-q">{msg.query}</span>
+          <span className={`tool-chev${open?' r':''}`}>{Ic.caret('r')}</span>
+        </div>
+        {open && (
+          <div className="tool-body">
+            {msg.results.map((r,i) => (
+              <div className="tool-res" key={i}>
+                <div className="tool-rn">{r.name}</div>
+                <div className="tool-rs">{r.snippet}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Message Block ── */
+function MsgBlock({ msg, t, onEdit, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [editVal, setEditVal] = useState(msg.content || '');
+  const [swipe, setSwipe] = useState(msg.curSwipe || 1);
+
+  if (msg.type === 'scene') return <div className="scene-note">{msg.content}</div>;
+  if (msg.type === 'tool') return <ToolBlock msg={msg}/>;
+
+  const isChar = msg.type === 'char';
+  const isGen = !!msg.generating;
+  const saveEdit = () => { setEditing(false); onEdit && onEdit(msg.id, editVal); };
+  const cancelEdit = () => { setEditing(false); setEditVal(msg.content); };
+
+  return (
+    <div className="msg-wrap">
+      <div className="msg-block">
+        <div className={`msg-lbl${isChar?' char-lbl':''}`}>
+          {isChar ? (
+            <>
+              <div className="msg-mini-ava">
+                <img src="avatars/Andrea.png" alt=""/>
+              </div>
+              <span>{msg.character}</span>
+              {msg.swipes > 1 && (
+                <span className="swipe-ctrl">
+                  <span className="sw-btn" onClick={() => setSwipe(s => Math.max(1,s-1))}>{Ic.caret('l')}</span>
+                  <span className="sw-n">{swipe}/{msg.swipes}</span>
+                  <span className="sw-btn" onClick={() => setSwipe(s => Math.min(msg.swipes,s+1))}>{Ic.caret('r')}</span>
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="msg-mini-ava" style={{background:'var(--s3)',fontSize:9}}>Y</div>
+              <span>You</span>
+            </>
+          )}
+        </div>
+
+        {editing ? (
+          <>
+            <textarea className="edit-ta" value={editVal}
+              onChange={e => setEditVal(e.target.value)}
+              onKeyDown={e => { if (e.key==='Escape') cancelEdit(); }}
+              autoFocus/>
+            <div className="edit-acts">
+              <span className="edit-btn sv" onClick={saveEdit}>Save</span>
+              <span className="edit-btn cn" onClick={cancelEdit}>Cancel</span>
+            </div>
+          </>
+        ) : msg.type === 'user' ? (
+          <div className="user-wrap">
+            <div className="msg-body">{renderParas(msg.content)}</div>
+          </div>
+        ) : (
+          <div className="msg-body">
+            {renderParas(msg.content)}
+            {isGen && <span className="gen-cur"><span/><span/><span/></span>}
+          </div>
+        )}
+
+        {!editing && !isGen && (
+          <div className="msg-acts">
+            <span className="act-btn" onClick={() => navigator.clipboard?.writeText(msg.content).catch(()=>{})}><Ic.copy/>{t.copy}</span>
+            <span className="act-btn" onClick={() => setEditing(true)}><Ic.edit/>{t.edit}</span>
+            <span className="act-btn"><Ic.branch/>{t.branch}</span>
+            {isChar && <span className="act-btn"><Ic.regen/>{t.regen}</span>}
+            <span className="act-btn" style={{marginLeft:'auto'}} onClick={() => onDelete && onDelete(msg.id)}><Ic.del/></span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Sidebar ── */
+function Sidebar({ col, setCol, activeChat, setActiveChat, t, onAvatarClick }) {
+  return (
+    <div className={`sidebar${col?' col':''}`}>
+      <div className="sb-head">
+        <div className="logo-mark">c</div>
+        {!col && <span className="app-name">Claw Tavern</span>}
+        <div className="iBtn" onClick={() => setCol(c=>!c)}><Ic.menu/></div>
+      </div>
+
+      {!col && <>
+        <div className="sb-sec">
+          <div className="sb-lbl">{t.characters}</div>
+          {CHARS.map(c => (
+            <div key={c.id} className={`sb-item${c.active?' act':''}`}>
+              <div className={`sb-ava${c.active?' on':''}`}
+                style={{cursor: c.avatar ? 'pointer' : 'default'}}
+                onClick={() => c.avatar && onAvatarClick()}>
+                {c.avatar ? <img src={c.avatar} alt={c.name}/> : c.init}
+              </div>
+              <span style={{overflow:'hidden',textOverflow:'ellipsis'}}>{c.name}</span>
+              {c.active && <span style={{marginLeft:'auto',fontSize:10,color:'var(--accent-t)',flexShrink:0}}>{t.active}</span>}
+            </div>
+          ))}
+        </div>
+
+        <div className="sb-sec grow">
+          <div style={{display:'flex',alignItems:'center',paddingRight:10}}>
+            <div className="sb-lbl" style={{flex:1}}>{t.chats}</div>
+            <div className="iBtn" style={{width:20,height:20}}><Ic.plus/></div>
+          </div>
+          {CHATS.map(c => (
+            <div key={c.id} className={`sb-chat${c.id===activeChat?' act':''}`} onClick={() => setActiveChat(c.id)}>
+              <div className="sb-ct">{c.title}</div>
+              <div className="sb-cm">{c.meta}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="sb-foot">
+          <div className="sb-item">
+            <div className="sb-ava">Y</div>
+            <span>{t.yourPersona}</span>
+            <span style={{marginLeft:'auto',fontSize:10,color:'var(--t3)',flexShrink:0}}>Explorer</span>
+          </div>
+        </div>
+      </>}
+    </div>
+  );
+}
+
+/* ── Build Mode ── */
+function BuildMode({ t, onBack }) {
+  const [active, setActive] = useState('char');
+  const navItems = [
+    { id:'char',  icon: <Ic.wrench/>,  label: t.buildCharCard },
+    { id:'lore',  icon: <Ic.book/>,    label: t.buildLorebook },
+    { id:'persona',icon:<Ic.user/>,    label: t.buildPersona },
+    { id:'trace', icon: <Ic.trace/>,   label: t.buildPromptTrace },
+    { id:'gen',   icon: <Ic.settings/>,label: t.buildSettings },
+  ];
+  const charTags = ['mysterious','ghost','female','lighthouse','1940s','melancholic'];
+  const [activeTags, setActiveTags] = useState(['mysterious','female','melancholic']);
+  const toggleTag = (tag) => setActiveTags(ts => ts.includes(tag) ? ts.filter(t=>t!==tag) : [...ts,tag]);
+
+  return (
+    <div className="build-wrap">
+      <div className="build-nav">
+        <div style={{padding:'8px 14px 4px',display:'flex',alignItems:'center',gap:8}}>
+          <div className="iBtn" onClick={onBack} style={{color:'var(--accent-t)',gap:4,width:'auto',padding:'0 2px'}}>
+            <span style={{fontSize:12}}>{t.back}</span>
+          </div>
+        </div>
+        <div className="build-nav-title" style={{marginTop:8}}>Editor</div>
+        {navItems.map(n => (
+          <div key={n.id} className={`build-nav-item${active===n.id?' act':''}`} onClick={() => setActive(n.id)}>
+            {n.icon}<span>{n.label}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="build-content">
+        {active === 'char' && (
+          <div className="build-placeholder">
+            <div className="build-section-title">Elara Ashmore</div>
+            <div className="build-section-sub">Character card · last edited just now</div>
+            <div className="build-field">
+              <label>{t.charNameLabel}</label>
+              <input type="text" defaultValue="Elara Ashmore"/>
+            </div>
+            <div className="build-field">
+              <label>{t.charDescLabel}</label>
+              <textarea defaultValue="A spectral lighthouse keeper bound to the Ashmore cliffs. She died in November 1947 during a storm, moments after sealing the barrier stones. She does not know she is dead.&#10;&#10;She speaks carefully, choosing words like a person afraid that saying too much will unravel something important. She trusts slowly. She notices everything."/>
+            </div>
+            <div className="build-field">
+              <label>{t.charPersonalityLabel}</label>
+              <textarea defaultValue="Quiet, watchful, melancholic. A former keeper of secrets — both the lighthouse's and her own. She is drawn to those who ask questions instead of giving answers." style={{minHeight:80}}/>
+            </div>
+            <div className="build-field">
+              <label>{t.charTagsLabel}</label>
+              <div className="build-tags">
+                {charTags.map(tag => (
+                  <span key={tag} className={`build-tag${activeTags.includes(tag)?' on':''}`} onClick={() => toggleTag(tag)}>{tag}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+        {active !== 'char' && (
+          <div className="build-placeholder">
+            <div className="build-section-title">{navItems.find(n=>n.id===active)?.label}</div>
+            <div className="build-section-sub" style={{color:'var(--t3)'}}>
+              {active === 'lore' && 'Define world entries, activation keywords, and injection order.'}
+              {active === 'persona' && 'Set how you appear to the model — name, role, relationship.'}
+              {active === 'trace' && 'Inspect every token sent to the model: system prompt, injected lore, memories, conversation.'}
+              {active === 'gen' && 'Temperature, context size, stop tokens, model selection.'}
+            </div>
+            <div style={{height:120,background:'var(--s2)',borderRadius:8,border:'1px dashed var(--border2)',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--t3)',fontSize:13,fontFamily:'var(--font-body)',fontStyle:'italic'}}>
+              coming soon
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── App ── */
+function App() {
+  const [settings, setSettings] = useState(TWEAK_DEFAULTS);
+  const [tweaksOn, setTweaksOn] = useState(false);
+  const [providerOpen, setProviderOpen] = useState(false);
+  const [providerCfg, setProviderCfg] = useState({
+    activeProvider: 'openai',
+    openai:    { model: 'gpt-4o',           apiKey: '', temperature: 0.9, maxTokens: 1024 },
+    anthropic: { model: 'claude-sonnet-4',  apiKey: '', temperature: 0.9, maxTokens: 1024 },
+    openrouter:{ model: 'auto',             apiKey: '', temperature: 0.9, maxTokens: 1024 },
+    local:     { model: 'custom', baseUrl: 'http://localhost:11434/v1', localModel: '', temperature: 0.9, maxTokens: 1024 },
+  });
+  const [col, setCol] = useState(false);
+  const [activeChat, setActiveChat] = useState(1);
+  const [msgs, setMsgs] = useState(INIT_MSGS);
+  const [input, setInput] = useState('');
+  const [appMode, setAppMode] = useState('play'); // 'play' | 'build'
+  const [avatarOpen, setAvatarOpen] = useState(false);
+  const endRef = useRef(null);
+
+  const t = STRINGS[settings.lang] || STRINGS.en;
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('light', settings.theme === 'light');
+  }, [settings.theme]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--mfs', settings.fontSize + 'px');
+  }, [settings.fontSize]);
+
+  useEffect(() => {
+    const w = {narrow:'560px', medium:'680px', wide:'860px'}[settings.messageWidth] || '820px';
+    document.documentElement.style.setProperty('--mw', w);
+  }, [settings.messageWidth]);
+
+  useEffect(() => {
+    const h = (e) => {
+      if (e.data?.type === '__activate_edit_mode') setTweaksOn(true);
+      if (e.data?.type === '__deactivate_edit_mode') setTweaksOn(false);
+    };
+    window.addEventListener('message', h);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', h);
+  }, []);
+
+  const setSetting = (k, v) => {
+    const next = {...settings, [k]: v};
+    setSettings(next);
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: next }, '*');
+  };
+
+  const isGenerating = msgs[msgs.length-1]?.generating;
+
+  const handleSend = () => {
+    if (!input.trim() || isGenerating) return;
+    const userMsg = { id:Date.now(), type:'user', content:input.trim() };
+    setMsgs(m => [...m, userMsg]);
+    setInput('');
+    setTimeout(() => {
+      const charMsg = { id:Date.now()+1, type:'char', character:'Elara', swipes:1, curSwipe:1, generating:true,
+        content:`She steps out into the gale, pulling her coat tight against the driving rain. The path down to the shore is treacherous in the dark.` };
+      setMsgs(m => [...m, charMsg]);
+    }, 400);
+    setTimeout(() => {
+      setMsgs(m => m.map(msg => msg.generating ? {...msg, generating:false} : msg));
+    }, 3200);
+  };
+
+  const handleEdit = (id, text) => setMsgs(m => m.map(msg => msg.id===id ? {...msg, content:text} : msg));
+  const handleDelete = (id) => setMsgs(m => m.filter(msg => msg.id !== id));
+
+  return (
+    <div className="app">
+      <Sidebar col={col} setCol={setCol} activeChat={activeChat} setActiveChat={setActiveChat}
+        t={t} onAvatarClick={() => setAvatarOpen(true)}/>
+
+      <div className="main">
+        {/* Header */}
+        <div className="chat-header">
+          <div className="char-info">
+            <div className="char-ava" onClick={() => setAvatarOpen(o => !o)}>
+              <img src="avatars/Andrea.png" alt="Elara"/>
+            </div>
+            <div>
+              <div className="char-name">Elara Ashmore</div>
+              <div className="char-sub">The Abandoned Lighthouse</div>
+            </div>
+          </div>
+          <div className="hdr-right">
+            {appMode === 'play' && <MemBadge t={t}/>}
+            {/* Provider badge */}
+            {(() => {
+              const pid = providerCfg.activeProvider;
+              const prov = PROVIDERS[pid];
+              const pcfg = providerCfg[pid];
+              const hasKey = pid === 'local' || !!pcfg?.apiKey;
+              const modelLabel = pid === 'local'
+                ? (pcfg?.localModel || 'local')
+                : (prov?.models.find(m => m.id === pcfg?.model)?.name || pcfg?.model || '—');
+              return (
+                <div className="provider-badge" onClick={() => setProviderOpen(true)} title="Настройки API провайдера">
+                  <div className={`provider-dot ${hasKey ? 'ok' : 'none'}`}/>
+                  <span className="provider-name">{prov?.label}</span>
+                  <span style={{color:'var(--t3)'}}>·</span>
+                  <span style={{color:'var(--t2)',maxWidth:110,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{modelLabel}</span>
+                  {Ic.caret('d')}
+                </div>
+              );
+            })()}
+            <div className="mode-pill" onClick={() => setAppMode(m => m==='play'?'build':'play')}>
+              {appMode === 'play' ? t.build : t.play}
+            </div>
+            <div className="iBtn" title="API провайдер" onClick={() => setProviderOpen(true)}><Ic.settings/></div>
+            <div className="iBtn"
+              title={settings.theme==='dark'?'Light':'Dark'}
+              onClick={() => setSetting('theme', settings.theme==='dark'?'light':'dark')}>
+              {settings.theme==='dark' ? <Ic.sun/> : <Ic.moon/>}
+            </div>
+          </div>
+        </div>
+
+        {/* Body */}
+        {appMode === 'build' ? (
+          <BuildMode t={t} onBack={() => setAppMode('play')}/>
+        ) : (
+          <>
+            <div className="msgs">
+              {msgs.map((msg, i) => (
+                <React.Fragment key={msg.id}>
+                  {i > 0 && msgs[i-1].type !== 'scene' && msgs[i-1].type !== 'tool' && msg.type !== 'tool' && msg.type !== 'scene' && (
+                    <div className="msg-sep"><div className="msg-sep-l"/></div>
+                  )}
+                  <MsgBlock msg={msg} t={t} onEdit={handleEdit} onDelete={handleDelete}/>
+                </React.Fragment>
+              ))}
+              <div ref={endRef}/>
+            </div>
+            <div className="input-area">
+              <div className="input-box">
+                <textarea className="input-ta"
+                  placeholder={t.placeholder}
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                  rows={2}
+                />
+                <div className="input-row">
+                  <span className="char-pill">Elara {Ic.caret('d')}</span>
+                  <div className="sep-v"/>
+                  <span className="tok-c">2,847 / 8k</span>
+                  <div className="input-r">
+                    <div className="iBtn"><Ic.settings/></div>
+                    <button className="send-btn" disabled={!!isGenerating} onClick={handleSend}>
+                      {isGenerating ? t.generating : t.send}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {avatarOpen && <AvatarPanel src="avatars/Andrea.png" onClose={() => setAvatarOpen(false)}/>}
+          </>
+        )}
+      </div>
+
+      {/* API Provider Modal */}
+      {providerOpen && (
+        <ApiProviderModal
+          onClose={() => setProviderOpen(false)}
+          providerCfg={providerCfg}
+          setProviderCfg={setProviderCfg}
+        />
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

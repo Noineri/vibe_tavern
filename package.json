@@ -1,0 +1,30 @@
+{
+  "name": "rp-platform",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "build:api-stack": "npm run build --workspace @rp-platform/api-contracts && npm run build --workspace @rp-platform/domain && npm run build --workspace @rp-platform/prompt-pipeline && npm run build --workspace @rp-platform/db && npm run build --workspace @rp-platform/import-export && npm run build --workspace @rp-platform/api",
+    "dev": "node ./scripts/dev-supervisor.cjs",
+    "typecheck": "npm run typecheck --workspaces",
+    "dev:api": "npm run build:api-stack && npm run dev --workspace @rp-platform/api",
+    "dev:web": "npm run dev --workspace @rp-platform/web"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.9"
+  },
+  "dependencies": {
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  }
+}

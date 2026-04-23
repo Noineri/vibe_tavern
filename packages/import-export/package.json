@@ -1,0 +1,16 @@
+{
+  "name": "@rp-platform/import-export",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/import-export/src/index.js",
+  "types": "./dist/import-export/src/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "smoke:fixtures": "npm run build && node ./dist/import-export/src/fixture-smoke.js"
+  },
+  "dependencies": {
+    "@rp-platform/domain": "0.1.0"
+  }
+}

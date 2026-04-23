@@ -1,0 +1,24 @@
+{
+  "name": "@rp-platform/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@rp-platform/api": "0.1.0",
+    "@rp-platform/api-contracts": "0.1.0",
+    "@rp-platform/db": "0.1.0",
+    "@rp-platform/domain": "0.1.0",
+    "@rp-platform/prompt-pipeline": "0.1.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.0",
+    "vite": "^7.1.12"
+  }
+}

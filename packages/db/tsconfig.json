@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "outDir": "dist",
+    "types": [
+      "node"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@rp-platform/domain": [
+        "../domain/src/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*.ts"
+  ]
+}

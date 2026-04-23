@@ -1,0 +1,41 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "outDir": "dist",
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node",
+      "vite/client"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@rp-platform/api": [
+        "../../services/api/src/index.ts"
+      ],
+      "@rp-platform/api-contracts": [
+        "../../packages/api-contracts/src/index.ts"
+      ],
+      "@rp-platform/db": [
+        "../../packages/db/src/index.ts"
+      ],
+      "@rp-platform/domain": [
+        "../../packages/domain/src/index.ts"
+      ],
+      "@rp-platform/prompt-pipeline": [
+        "../../packages/prompt-pipeline/src/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.d.ts",
+    "vite.config.ts"
+  ]
+}

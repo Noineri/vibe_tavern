@@ -1,0 +1,31 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "outDir": "dist",
+    "types": [
+      "node"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@rp-platform/api-contracts": [
+        "../../packages/api-contracts/src/index.ts"
+      ],
+      "@rp-platform/db": [
+        "../../packages/db/src/index.ts"
+      ],
+      "@rp-platform/domain": [
+        "../../packages/domain/src/index.ts"
+      ],
+      "@rp-platform/import-export": [
+        "../../packages/import-export/src/index.ts"
+      ],
+      "@rp-platform/prompt-pipeline": [
+        "../../packages/prompt-pipeline/src/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*.ts"
+  ]
+}
