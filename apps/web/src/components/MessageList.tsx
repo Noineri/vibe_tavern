@@ -27,6 +27,7 @@ export function MessageList(input: MessageListProps) {
             message={message}
             characterName={input.characterName}
             isEditing={input.editingMessageId === message.id}
+            isGenerating={message.role === "assistant" && input.isSending && isLastAssistantMessage(input.messages, message.id)}
             editingDraft={input.editingDraft}
             isBusy={input.isSending || input.messageActionId === message.id}
             canBranch={isLastMessage(input.messages, message.id)}
@@ -60,21 +61,39 @@ export function MessageList(input: MessageListProps) {
                 </div>
               </div>
             </article>
-            <article className="msg-wrap">
-              <div className="msg-block">
-                <div className="msg-lbl char-lbl">
-                  <span className="msg-mini-ava">{input.characterName.slice(0, 1).toUpperCase()}</span>
-                  <span>{input.characterName}</span>
-                </div>
-                <div className="msg-body msg-body-generating">
-                  <span className="gen-cur" aria-label="Generating response">
-                    <span />
-                    <span />
-                    <span />
-                  </span>
-                </div>
-              </div>
-            </article>
+            <MessageBlock
+              message={{
+                id: "pending-assistant",
+                chatId: input.messages[0]?.chatId ?? "pending-chat",
+                branchId: input.activeBranchId,
+                role: "assistant",
+                authorType: "assistant",
+                content: "",
+                state: "pending",
+                position: input.messages.length,
+                createdAt: new Date(0).toISOString(),
+                updatedAt: new Date(0).toISOString(),
+                variants: [],
+                selectedVariantIndex: null,
+              }}
+              characterName={input.characterName}
+              isEditing={false}
+              isGenerating
+              editingDraft=""
+              isBusy
+              canBranch={false}
+              canRegenerate={false}
+              showSeparator={input.messages.length > 0}
+              onBranch={() => undefined}
+              onStartEdit={() => undefined}
+              onEditingDraftChange={() => undefined}
+              onCancelEdit={() => undefined}
+              onSaveEdit={() => undefined}
+              onDelete={() => undefined}
+              onRegenerate={() => undefined}
+              onSelectPreviousVariant={() => undefined}
+              onSelectNextVariant={() => undefined}
+            />
           </>
         )}
       </div>

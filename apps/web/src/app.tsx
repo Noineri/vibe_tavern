@@ -116,6 +116,7 @@ export function App() {
       }}
       inputArea={{
         characterName: snapshot.character.name,
+        personaName,
         draft: app.draft,
         tokenCount: app.draft.trim().length,
         sendLabel: app.renderSendLabel(),

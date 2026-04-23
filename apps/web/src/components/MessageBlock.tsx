@@ -9,6 +9,7 @@ export function MessageBlock(input: MessageBlockProps) {
   const variants = Array.isArray(input.message.variants) ? input.message.variants : [];
   const variantCount = variants.length;
   const selectedVariantIndex = input.message.selectedVariantIndex ?? 0;
+  const isGenerating = Boolean(input.isGenerating);
 
   return (
     <>
@@ -22,6 +23,25 @@ export function MessageBlock(input: MessageBlockProps) {
           <div className={`msg-lbl${isUser ? "" : " char-lbl"}`}>
             <span className="msg-mini-ava">{isUser ? "Y" : initials(input.characterName)}</span>
             <span>{isUser ? "You" : input.characterName}</span>
+            {!isUser && variantCount > 1 && (
+              <span className="swipe-ctrl">
+                <button
+                  className="sw-btn"
+                  disabled={input.isBusy || selectedVariantIndex <= 0}
+                  onClick={input.onSelectPreviousVariant}
+                >
+                  <Icons.Caret direction="l" />
+                </button>
+                <span className="sw-n">{selectedVariantIndex + 1}/{variantCount}</span>
+                <button
+                  className="sw-btn"
+                  disabled={input.isBusy || selectedVariantIndex >= variantCount - 1}
+                  onClick={input.onSelectNextVariant}
+                >
+                  <Icons.Caret direction="r" />
+                </button>
+              </span>
+            )}
           </div>
 
           {input.isEditing ? (
@@ -46,31 +66,20 @@ export function MessageBlock(input: MessageBlockProps) {
             <div className="user-wrap">
               <Markdown className="msg-body" text={input.message.content} />
             </div>
+          ) : isGenerating ? (
+            <div className="msg-body">
+              <span className="gen-cur" aria-label="Generating response">
+                <span />
+                <span />
+                <span />
+              </span>
+            </div>
           ) : (
             <Markdown className="msg-body" text={input.message.content} />
           )}
 
-          {!input.isEditing && (
+          {!input.isEditing && !isGenerating && (
             <div className="msg-acts">
-              {variantCount > 1 && (
-                <>
-                  <button
-                    className="act-btn"
-                    disabled={input.isBusy || selectedVariantIndex <= 0}
-                    onClick={input.onSelectPreviousVariant}
-                  >
-                    <span className="btn-label">&lt;</span>
-                  </button>
-                  <span className="btn-label">[{selectedVariantIndex + 1}/{variantCount}]</span>
-                  <button
-                    className="act-btn"
-                    disabled={input.isBusy || selectedVariantIndex >= variantCount - 1}
-                    onClick={input.onSelectNextVariant}
-                  >
-                    <span className="btn-label">&gt;</span>
-                  </button>
-                </>
-              )}
               <button
                 className="act-btn"
                 disabled={input.isBusy}

@@ -5,6 +5,7 @@ export interface MessageBlockProps {
   message: AppMessage;
   characterName: string;
   isEditing: boolean;
+  isGenerating?: boolean;
   editingDraft: string;
   isBusy: boolean;
   canBranch: boolean;
@@ -45,10 +46,13 @@ export interface MessageListProps {
 
 export interface InputAreaProps {
   characterName: string;
+  personaName: string;
   draft: string;
   tokenCount: number;
   sendLabel: string;
   isSending: boolean;
+  canSend: boolean;
+  notice: string;
   onDraftChange: (value: string) => void;
   onSend: () => void;
 }

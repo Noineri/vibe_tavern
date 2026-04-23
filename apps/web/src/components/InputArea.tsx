@@ -12,7 +12,7 @@ export function InputArea(input: InputAreaProps) {
             value={input.draft}
             onChange={(event: ChangeEvent<HTMLTextAreaElement>) => input.onDraftChange(event.target.value)}
             onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
-              if (event.key === "Enter" && !event.shiftKey && !input.isSending) {
+              if (event.key === "Enter" && !event.shiftKey && input.canSend) {
                 event.preventDefault();
                 input.onSend();
               }
@@ -20,13 +20,13 @@ export function InputArea(input: InputAreaProps) {
             placeholder="Continue the story..."
           />
           <div className="input-row">
-            <span className="char-pill">{input.characterName}</span>
+            <span className="char-pill">{input.personaName || input.characterName}</span>
             <div className="sep-v" />
-            <span className="tok-c">tokens {input.tokenCount}</span>
+            <span className="tok-c">{input.tokenCount} tokens</span>
             <div className="input-r">
               <button
                 className="send-btn"
-                disabled={input.isSending}
+                disabled={!input.canSend}
                 onClick={input.onSend}
                 aria-label={input.sendLabel}
                 title={input.sendLabel}
@@ -36,6 +36,7 @@ export function InputArea(input: InputAreaProps) {
             </div>
           </div>
         </div>
+        {input.notice && <div className="composer-notice">{input.notice}</div>}
       </div>
     </section>
   );
