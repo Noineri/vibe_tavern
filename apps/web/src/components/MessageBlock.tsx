@@ -10,6 +10,11 @@ export function MessageBlock(input: MessageBlockProps) {
   const variantCount = variants.length;
   const selectedVariantIndex = input.message.selectedVariantIndex ?? 0;
   const isGenerating = Boolean(input.isGenerating);
+  const copyLabel = "copy";
+  const editLabel = "edit";
+  const branchLabel = "branch";
+  const regenLabel = "regen";
+  const deleteLabel = "delete";
 
   return (
     <>
@@ -84,29 +89,56 @@ export function MessageBlock(input: MessageBlockProps) {
                 className="act-btn"
                 disabled={input.isBusy}
                 onClick={() => void navigator.clipboard?.writeText(input.message.content)}
+                title={copyLabel}
+                aria-label={copyLabel}
               >
                 <Icons.Copy />
-                <span className="btn-label">copy</span>
+                {copyLabel}
               </button>
-              <button className="act-btn" disabled={input.isBusy} onClick={input.onStartEdit}>
+              <button
+                className="act-btn"
+                disabled={input.isBusy}
+                onClick={input.onStartEdit}
+                title={editLabel}
+                aria-label={editLabel}
+              >
                 <Icons.Edit />
-                <span className="btn-label">edit</span>
+                {editLabel}
               </button>
               {input.canBranch && (
-                <button className="act-btn" disabled={input.isBusy} onClick={input.onBranch}>
+                <button
+                  className="act-btn"
+                  disabled={input.isBusy}
+                  onClick={input.onBranch}
+                  title={branchLabel}
+                  aria-label={branchLabel}
+                >
                   <Icons.Branch />
-                  <span className="btn-label">branch</span>
+                  {branchLabel}
                 </button>
               )}
               {input.canRegenerate && (
-                <button className="act-btn" disabled={input.isBusy} onClick={input.onRegenerate}>
+                <button
+                  className="act-btn"
+                  disabled={input.isBusy}
+                  onClick={input.onRegenerate}
+                  title={regenLabel}
+                  aria-label={regenLabel}
+                >
                   <Icons.Regen />
-                  <span className="btn-label">regen</span>
+                  {regenLabel}
                 </button>
               )}
-              <button className="act-btn act-btn-danger" disabled={input.isBusy} onClick={input.onDelete}>
+              <button
+                className="act-btn"
+                style={{ marginLeft: "auto" }}
+                disabled={input.isBusy}
+                onClick={input.onDelete}
+                title={deleteLabel}
+                aria-label={deleteLabel}
+              >
                 <Icons.Trash />
-                <span className="btn-label">delete</span>
+                {deleteLabel}
               </button>
             </div>
           )}
