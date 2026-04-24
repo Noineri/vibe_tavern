@@ -508,6 +508,26 @@ export class PrototypeSessionRuntime {
     this.store.deleteProviderProfile(id);
   }
 
+  createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
+    const entry = this.store.createLoreEntry(lorebookId, input);
+    this.refreshLoreEntriesCache(lorebookId);
+    return entry;
+  }
+
+  updateLoreEntry(entryId: string, input: Partial<Omit<LoreEntry, "id" | "lorebookId">>): LoreEntry {
+    const entry = this.store.updateLoreEntry(entryId, input);
+    this.refreshLoreEntriesCache(entry.lorebookId);
+    return entry;
+  }
+
+  deleteLoreEntry(entryId: string): void {
+    this.store.deleteLoreEntry(entryId);
+    this.importedLoreEntriesByCharacter.clear();
+    for (const character of this.store.listCharacters()) {
+      this.importedLoreEntriesByCharacter.set(character.id, this.store.listLoreEntriesForCharacter(character.id));
+    }
+  }
+
   getProviderProfile(id: string): StoredProviderProfileRecord | null {
     return this.store.getProviderProfile(id) as StoredProviderProfileRecord | null;
   }
@@ -885,6 +905,14 @@ export class PrototypeSessionRuntime {
     }
 
     return fallback;
+  }
+
+  private refreshLoreEntriesCache(lorebookId: string): void {
+    void lorebookId;
+    this.importedLoreEntriesByCharacter.clear();
+    for (const character of this.store.listCharacters()) {
+      this.importedLoreEntriesByCharacter.set(character.id, this.store.listLoreEntriesForCharacter(character.id));
+    }
   }
 }
 

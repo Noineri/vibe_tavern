@@ -406,6 +406,86 @@ export class SqliteChatSessionStore implements ChatSessionStore {
     });
   }
 
+  createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
+    const entryId = this.idGenerator.next("lore_entry");
+    this.db.execute(
+      `INSERT INTO lore_entries (
+        id, lorebook_id, title, content, keys_json, secondary_keys_json, logic,
+        position, depth, priority, sticky_window, cooldown_window, delay_window, enabled, metadata_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        entryId,
+        lorebookId,
+        input.title,
+        input.content,
+        JSON.stringify(input.keys),
+        JSON.stringify(input.secondaryKeys),
+        input.logic,
+        input.position,
+        input.depth,
+        input.priority,
+        input.stickyWindow,
+        input.cooldownWindow,
+        input.delayWindow,
+        input.enabled ? 1 : 0,
+        JSON.stringify(input.metadata),
+      ],
+    );
+
+    return this.requireLoreEntry(entryId);
+  }
+
+  updateLoreEntry(entryId: string, input: Partial<Omit<LoreEntry, "id" | "lorebookId">>): LoreEntry {
+    const current = this.requireLoreEntry(entryId);
+    const updated: LoreEntry = {
+      ...current,
+      ...input,
+      keys: input.keys ?? current.keys,
+      secondaryKeys: input.secondaryKeys ?? current.secondaryKeys,
+      metadata: input.metadata ?? current.metadata,
+    };
+
+    this.db.execute(
+      `UPDATE lore_entries SET
+        title = ?,
+        content = ?,
+        keys_json = ?,
+        secondary_keys_json = ?,
+        logic = ?,
+        position = ?,
+        depth = ?,
+        priority = ?,
+        sticky_window = ?,
+        cooldown_window = ?,
+        delay_window = ?,
+        enabled = ?,
+        metadata_json = ?
+      WHERE id = ?`,
+      [
+        updated.title,
+        updated.content,
+        JSON.stringify(updated.keys),
+        JSON.stringify(updated.secondaryKeys),
+        updated.logic,
+        updated.position,
+        updated.depth,
+        updated.priority,
+        updated.stickyWindow,
+        updated.cooldownWindow,
+        updated.delayWindow,
+        updated.enabled ? 1 : 0,
+        JSON.stringify(updated.metadata),
+        entryId,
+      ],
+    );
+
+    return this.requireLoreEntry(entryId);
+  }
+
+  deleteLoreEntry(entryId: string): void {
+    this.db.execute(`DELETE FROM lore_entries WHERE id = ?`, [entryId]);
+  }
+
   linkCharacterLorebook(characterId: string, lorebookId: string): void {
     this.db.execute(
       `INSERT OR IGNORE INTO character_lorebooks (character_id, lorebook_id) VALUES (?, ?)`,
@@ -1100,6 +1180,20 @@ export class SqliteChatSessionStore implements ChatSessionStore {
       throw new Error(`Message '${messageId}' was not found.`);
     }
     return mapMessage(row);
+  }
+
+  private requireLoreEntry(entryId: string): LoreEntry {
+    const row = this.db.queryOne<LoreEntryRow>(
+      `SELECT id, lorebook_id, title, content, keys_json, secondary_keys_json, logic,
+              position, depth, priority, sticky_window, cooldown_window, delay_window, enabled, metadata_json
+       FROM lore_entries
+       WHERE id = ?`,
+      [entryId],
+    );
+    if (!row) {
+      throw new Error(`Lore entry '${entryId}' was not found.`);
+    }
+    return mapLoreEntry(row);
   }
 
   private requireMessageVariant(variantId: MessageVariantId): MessageVariant {

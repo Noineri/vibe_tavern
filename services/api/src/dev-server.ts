@@ -50,6 +50,9 @@ const runtime = {
   updateLorebook: (_lorebookId: string, _body: { chatId: string; lorebookRaw: string }) => {
     throw new Error("Lorebook patch route is not wired in this baseline.");
   },
+  createLoreEntry: (lorebookId: string, body: any) => sessionRuntime.createLoreEntry(lorebookId, body),
+  updateLoreEntry: (entryId: string, body: any) => sessionRuntime.updateLoreEntry(entryId, body),
+  deleteLoreEntry: (entryId: string) => sessionRuntime.deleteLoreEntry(entryId),
   listProviderProfiles: () => sessionRuntime.listProviderProfiles(),
   fetchProviderProfile: (providerProfileId: string) => {
     const profile = sessionRuntime.getProviderProfileForClient(providerProfileId);
@@ -261,7 +264,26 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
       response,
       200,
       runtime.updateLorebook(lorebookMatch[1], body as { chatId: string; lorebookRaw: string }),
-    );
+      );
+    return;
+  }
+
+  const createLoreEntryMatch = /^\/api\/lorebooks\/([^/]+)\/entries$/.exec(url.pathname);
+  if (method === "POST" && createLoreEntryMatch) {
+    const body = await readJsonBody(request);
+    writeJson(response, 200, runtime.createLoreEntry(createLoreEntryMatch[1], body));
+    return;
+  }
+
+  const updateLoreEntryMatch = /^\/api\/lorebooks\/([^/]+)\/entries\/([^/]+)$/.exec(url.pathname);
+  if (method === "PATCH" && updateLoreEntryMatch) {
+    const body = await readJsonBody(request);
+    writeJson(response, 200, runtime.updateLoreEntry(updateLoreEntryMatch[2], body));
+    return;
+  }
+  if (method === "DELETE" && updateLoreEntryMatch) {
+    runtime.deleteLoreEntry(updateLoreEntryMatch[2]);
+    writeJson(response, 200, { ok: true });
     return;
   }
 

@@ -118,6 +118,9 @@ export interface ChatSessionStore {
   upsertToolProfile(input: ToolProfile): void;
   upsertLorebook(input: Lorebook): void;
   replaceLoreEntries(lorebookId: string, entries: LoreEntry[]): void;
+  createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry;
+  updateLoreEntry(entryId: string, input: Partial<Omit<LoreEntry, "id" | "lorebookId">>): LoreEntry;
+  deleteLoreEntry(entryId: string): void;
   linkCharacterLorebook(characterId: CharacterId, lorebookId: string): void;
   listCharacters(): Character[];
   getLatestCharacterVersion(characterId: CharacterId): CharacterVersion | null;
@@ -241,6 +244,42 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
         metadata: cloneLooseRecord(entry.metadata),
       });
     }
+  }
+
+  createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
+    const entry: LoreEntry = {
+      ...input,
+      id: this.nextId("lore_entry"),
+      lorebookId,
+      keys: [...input.keys],
+      secondaryKeys: [...input.secondaryKeys],
+      metadata: cloneLooseRecord(input.metadata),
+    };
+
+    this.loreEntries.set(entry.id, entry);
+    return cloneLoreEntry(entry);
+  }
+
+  updateLoreEntry(entryId: string, input: Partial<Omit<LoreEntry, "id" | "lorebookId">>): LoreEntry {
+    const current = this.loreEntries.get(entryId);
+    if (!current) {
+      throw new Error(`Lore entry '${entryId}' was not found.`);
+    }
+
+    const updated: LoreEntry = {
+      ...current,
+      ...input,
+      keys: input.keys ? [...input.keys] : [...current.keys],
+      secondaryKeys: input.secondaryKeys ? [...input.secondaryKeys] : [...current.secondaryKeys],
+      metadata: input.metadata ? cloneLooseRecord(input.metadata) : cloneLooseRecord(current.metadata),
+    };
+
+    this.loreEntries.set(entryId, updated);
+    return cloneLoreEntry(updated);
+  }
+
+  deleteLoreEntry(entryId: string): void {
+    this.loreEntries.delete(entryId);
   }
 
   linkCharacterLorebook(characterId: CharacterId, lorebookId: string): void {
@@ -846,6 +885,15 @@ function cloneMessage(message: Message): Message {
 
 function cloneMessageVariant(variant: MessageVariant): MessageVariant {
   return { ...variant };
+}
+
+function cloneLoreEntry(entry: LoreEntry): LoreEntry {
+  return {
+    ...entry,
+    keys: [...entry.keys],
+    secondaryKeys: [...entry.secondaryKeys],
+    metadata: cloneLooseRecord(entry.metadata),
+  };
 }
 
 function cloneSummary(snapshot: SummaryMemorySnapshot): SummaryMemorySnapshot {
