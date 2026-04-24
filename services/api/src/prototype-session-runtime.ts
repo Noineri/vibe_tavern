@@ -372,10 +372,10 @@ export class PrototypeSessionRuntime {
     return this.getSnapshot(chatId);
   }
 
-  prepareLiveTurn(chatId: ChatId, content: string): PreparedLiveTurn {
+  prepareLiveTurn(chatId: ChatId, content: string, model: string): PreparedLiveTurn {
     const trimmed = content.trim();
     if (!trimmed) {
-      const assembled = this.assemblePrompt(chatId);
+      const assembled = this.assemblePrompt(chatId, undefined, { model });
       return {
         prompt: assembled.prompt,
         snapshot: this.getSnapshot(chatId),
@@ -387,7 +387,7 @@ export class PrototypeSessionRuntime {
       mode: "reply",
     });
 
-    const assembled = this.assemblePrompt(chatId);
+    const assembled = this.assemblePrompt(chatId, undefined, { model });
     this.pendingPromptTraceByChat.set(chatId, {
       branchId: assembled.branchId,
       draft: assembled.promptTraceDraft,
@@ -399,7 +399,7 @@ export class PrototypeSessionRuntime {
     };
   }
 
-  appendAssistantReply(chatId: ChatId, content: string): PrototypeSnapshot {
+  appendAssistantReply(chatId: ChatId, content: string, latencyMs: number): PrototypeSnapshot {
     const chat = this.store.getChat(chatId)!;
     const fallbackDraft = this.assemblePrompt(chatId, chat.activeBranchId).promptTraceDraft;
 
@@ -412,14 +412,15 @@ export class PrototypeSessionRuntime {
     });
 
     const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId);
-    this.persistPromptTrace(assistantMessage.id, pending?.draft ?? fallbackDraft);
+    const baseDraft = pending?.draft ?? fallbackDraft;
+    this.persistPromptTrace(assistantMessage.id, { ...baseDraft, latencyMs });
     return this.getSnapshot(chatId);
   }
 
   appendMessageVariant(
     chatId: ChatId,
     messageId: MessageId,
-    input: { content: string; finishReason?: string | null },
+    input: { content: string; finishReason?: string | null; latencyMs: number },
   ): PrototypeSnapshot {
     const trimmed = input.content.trim();
     if (!trimmed) {
@@ -437,7 +438,8 @@ export class PrototypeSessionRuntime {
       isSelected: true,
     });
     const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId);
-    this.persistPromptTrace(messageId, pending?.draft ?? fallbackDraft);
+    const baseDraft = pending?.draft ?? fallbackDraft;
+    this.persistPromptTrace(messageId, { ...baseDraft, latencyMs: input.latencyMs });
     return this.getSnapshot(chatId);
   }
 
@@ -735,12 +737,13 @@ export class PrototypeSessionRuntime {
 
   assemblePromptPreview(
     chatId: ChatId,
-    options?: { excludeMessageId?: MessageId },
+    options: { excludeMessageId?: MessageId; model: string },
   ): AssemblePromptResponse {
     const assembled = this.assemblePrompt(chatId, undefined, {
-      excludeMessageIds: options?.excludeMessageId ? [options.excludeMessageId] : [],
+      excludeMessageIds: options.excludeMessageId ? [options.excludeMessageId] : [],
+      model: options.model,
     });
-    if (options?.excludeMessageId) {
+    if (options.excludeMessageId) {
       this.pendingPromptTraceByChat.set(chatId, {
         branchId: assembled.branchId,
         draft: assembled.promptTraceDraft,
@@ -905,11 +908,12 @@ export class PrototypeSessionRuntime {
   private assemblePrompt(
     chatId: ChatId,
     branchId?: ChatBranchId,
-    options?: { excludeMessageIds?: MessageId[] },
+    options?: { excludeMessageIds?: MessageId[]; model?: string },
   ) {
     return this.promptService.assembleForChat({
       chatId,
       branchId,
+      model: options?.model ?? "unresolved_model",
       outputConstraints: "Reply in 1-3 paragraphs.",
       excludeMessageIds: options?.excludeMessageIds,
     });

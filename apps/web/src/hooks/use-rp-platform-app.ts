@@ -126,6 +126,7 @@ export function useRpPlatformApp() {
     () => providerProfiles.find((profile) => profile.isActive) ?? null,
     [providerProfiles],
   );
+  const canSendViaActiveProfile = activeProviderProfile !== null && Boolean(activeProviderProfile.defaultModel);
   const characterTabs = useMemo(() => (snapshot ? buildCharacterTabs(snapshot) : []), [snapshot]);
 
   useEffect(() => {
@@ -238,8 +239,10 @@ export function useRpPlatformApp() {
       return;
     }
 
-    if (!canUseLiveApi || !connection.activeProviderProfileId) {
-      setChatNotice("Message sending is unavailable until a saved provider profile is connected and a model is selected.");
+    if (!canSendViaActiveProfile) {
+      setChatNotice(
+        "Message sending is unavailable until a provider profile is activated and its default model is set. Open Provider settings, pick a model, press Save profile, then Set as active.",
+      );
       return;
     }
 
@@ -251,8 +254,6 @@ export function useRpPlatformApp() {
     try {
       refresh(activeChatId, await sendChatMessage(activeChatId, {
         content: trimmed,
-        providerProfileId: connection.activeProviderProfileId,
-        model: connection.model,
       }));
     } catch (error) {
       refresh(activeChatId, await fetchChat(activeChatId));
@@ -660,17 +661,18 @@ export function useRpPlatformApp() {
       return;
     }
 
+    if (!canSendViaActiveProfile) {
+      setChatNotice(
+        "Regeneration is unavailable until a provider profile is activated and its default model is set.",
+      );
+      return;
+    }
+
     setIsSending(true);
     setMessageActionId(messageId);
     setChatNotice("");
     try {
-      if (!connection.activeProviderProfileId || !connection.model) {
-        throw new Error("No active provider profile is connected.");
-      }
-      refresh(activeChatId, await regenerateChatMessage(activeChatId, messageId, {
-        providerProfileId: connection.activeProviderProfileId,
-        model: connection.model,
-      }));
+      refresh(activeChatId, await regenerateChatMessage(activeChatId, messageId));
     } catch (error) {
       refresh(activeChatId, await fetchChat(activeChatId));
       setChatNotice(error instanceof Error ? error.message : "Regeneration failed.");
@@ -822,6 +824,7 @@ export function useRpPlatformApp() {
     canConnect,
     canRefreshModels,
     canUseLiveApi,
+    canSendViaActiveProfile,
     activeProviderProfile,
     handleActivateProviderProfile,
     personas,

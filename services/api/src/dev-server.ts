@@ -26,9 +26,20 @@ const runtime = {
     throw new Error("Chat settings route is not wired in this baseline.");
   },
   branchChat: (chatId: string, _messageId: string) => sessionRuntime.forkBranch(chatId),
-  regenerateMessage: async (chatId: string, messageId: string, body: { providerProfileId: string; model: string }) => {
-    const profile = getRequiredProviderProfile(body.providerProfileId);
-    const result = await liveChatOrchestrator.regenerateMessage({ chatId, messageId, profile, model: body.model });
+  regenerateMessage: async (chatId: string, messageId: string, _body: unknown) => {
+    const profile = sessionRuntime.resolveActiveProviderProfile();
+    if (!profile) {
+      throw new Error("No active provider profile. Activate one in Provider settings.");
+    }
+    if (!profile.defaultModel) {
+      throw new Error("Active provider profile has no default model. Pick a model and save the profile.");
+    }
+    const result = await liveChatOrchestrator.regenerateMessage({
+      chatId,
+      messageId,
+      profile,
+      model: profile.defaultModel,
+    });
     return result.snapshot;
   },
   selectVariant: (chatId: string, messageId: string, variantIndex: number) =>
@@ -36,9 +47,20 @@ const runtime = {
   editMessage: (chatId: string, messageId: string, content: string) =>
     sessionRuntime.editMessage(chatId, messageId, content),
   deleteMessage: (chatId: string, messageId: string) => sessionRuntime.deleteMessage(chatId, messageId),
-  sendMessage: async (chatId: string, body: { content: string; providerProfileId: string; model: string }) => {
-    const profile = getRequiredProviderProfile(body.providerProfileId);
-    const result = await liveChatOrchestrator.sendMessage({ chatId, content: body.content, profile, model: body.model });
+  sendMessage: async (chatId: string, body: { content: string }) => {
+    const profile = sessionRuntime.resolveActiveProviderProfile();
+    if (!profile) {
+      throw new Error("No active provider profile. Activate one in Provider settings.");
+    }
+    if (!profile.defaultModel) {
+      throw new Error("Active provider profile has no default model. Pick a model and save the profile.");
+    }
+    const result = await liveChatOrchestrator.sendMessage({
+      chatId,
+      content: body.content,
+      profile,
+      model: profile.defaultModel,
+    });
     return result.snapshot;
   },
   updateCharacter: (characterId: string, body: { chatId?: string; name?: string; description?: string; scenario?: string; systemPrompt?: string; mesExample?: string | null; alternateGreetings?: string[]; postHistoryInstructions?: string | null; creatorNotes?: string | null }) =>
@@ -169,7 +191,7 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
       await runtime.regenerateMessage(
         messageRegenerateMatch[1],
         messageRegenerateMatch[2],
-        body as { providerProfileId: string; model: string },
+        body,
       ),
     );
     return;
@@ -201,7 +223,7 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
       200,
       await runtime.sendMessage(
         messagesCreateMatch[1],
-        body as { content: string; providerProfileId: string; model: string },
+        body as { content: string },
       ),
     );
     return;

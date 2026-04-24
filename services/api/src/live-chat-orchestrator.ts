@@ -28,12 +28,14 @@ export class LiveChatOrchestrator {
     reply: string;
     snapshot: PrototypeSnapshot;
   }> {
-    const prepared = this.runtime.prepareLiveTurn(input.chatId, input.content);
+    const prepared = this.runtime.prepareLiveTurn(input.chatId, input.content, input.model);
+    const startedAt = Date.now();
     const reply = await this.providers.generateProfileReply(input.profile, {
       model: input.model,
       prompt: prepared.prompt,
     });
-    const snapshot = this.runtime.appendAssistantReply(input.chatId, reply);
+    const latencyMs = Date.now() - startedAt;
+    const snapshot = this.runtime.appendAssistantReply(input.chatId, reply, latencyMs);
 
     return {
       preparedMessageCount: prepared.snapshot.messages.length,
@@ -55,13 +57,17 @@ export class LiveChatOrchestrator {
   }> {
     const prompt = this.runtime.assemblePromptPreview(input.chatId, {
       excludeMessageId: input.messageId,
+      model: input.model,
     });
+    const startedAt = Date.now();
     const reply = await this.providers.generateProfileReply(input.profile, {
       model: input.model,
       prompt,
     });
+    const latencyMs = Date.now() - startedAt;
     const snapshot = this.runtime.appendMessageVariant(input.chatId, input.messageId, {
       content: reply,
+      latencyMs,
     });
 
     return {

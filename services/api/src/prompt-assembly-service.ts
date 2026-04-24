@@ -55,6 +55,7 @@ export interface PromptAssemblyResolver {
 export interface AssemblePromptForChatInput {
   chatId: ChatId;
   branchId?: ChatBranchId;
+  model: string;
   outputConstraints?: string | null;
   recentMessageLimit?: number;
   excludeMessageIds?: MessageId[];
@@ -163,7 +164,7 @@ export class PromptAssemblyService {
       promptTraceDraft: {
         chatId: chat.id,
         branchId,
-        model: "unresolved_model",
+        model: input.model,
         presetName: systemPreset?.id ?? chat.generationPresetId,
         assembledLayers: result.layers.map((layer) => mapPromptLayerDto(layer)),
         tokenAccounting: {

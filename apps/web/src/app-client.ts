@@ -174,8 +174,6 @@ export async function sendChatMessage(
   chatId: ChatId,
   input: {
     content: string;
-    providerProfileId: string;
-    model: string;
   },
 ): Promise<AppSnapshot> {
   return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/messages`, {
@@ -219,14 +217,10 @@ export async function deleteChatMessage(
 export async function regenerateChatMessage(
   chatId: ChatId,
   messageId: string,
-  input: {
-    providerProfileId: string;
-    model: string;
-  },
 ): Promise<AppSnapshot> {
   return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/messages/${messageId}/regenerate`, {
     method: "POST",
-    body: input,
+    body: {},
   }));
 }
 
