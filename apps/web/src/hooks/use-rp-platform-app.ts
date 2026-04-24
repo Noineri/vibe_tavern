@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
 import {
   activateBranch,
+  activateProviderProfile,
   bootstrapApp,
   connectProviderProfile,
   deleteChatMessage,
@@ -19,6 +20,7 @@ import {
   sendChatMessage,
   updateCharacter,
   updatePersona,
+  updateProviderProfile,
   type AppMessage,
   type AppSnapshot,
   type ProviderProfileRecord,
@@ -120,6 +122,10 @@ export function useRpPlatformApp() {
   const canConnect = Boolean(connection.providerLabel.trim() && connection.baseUrl.trim());
   const canRefreshModels = Boolean(connection.activeProviderProfileId || selectedProviderProfileId);
   const canUseLiveApi = connection.status === "connected" && Boolean(connection.model);
+  const activeProviderProfile = useMemo(
+    () => providerProfiles.find((profile) => profile.isActive) ?? null,
+    [providerProfiles],
+  );
   const characterTabs = useMemo(() => (snapshot ? buildCharacterTabs(snapshot) : []), [snapshot]);
 
   useEffect(() => {
@@ -340,16 +346,29 @@ export function useRpPlatformApp() {
       return;
     }
 
+    const existingId = selectedProviderProfileId && providerProfiles.some((profile) => profile.id === selectedProviderProfileId)
+      ? selectedProviderProfileId
+      : "";
+
     try {
-      const saved = await saveProviderProfile({
-        id: selectedProviderProfileId || undefined,
-        name,
-        type: "openai_compat",
-        endpoint,
-        apiKey: connection.apiKey.trim() || undefined,
-        defaultModel: connection.model.trim() || null,
-        contextBudget: 8192,
-      });
+      const apiKeyInput = connection.apiKey.trim();
+      const saved = existingId
+        ? await updateProviderProfile(existingId, {
+            name,
+            type: "openai_compat",
+            endpoint,
+            apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
+            defaultModel: connection.model.trim() || null,
+            contextBudget: 8192,
+          })
+        : await saveProviderProfile({
+            name,
+            type: "openai_compat",
+            endpoint,
+            apiKey: apiKeyInput || undefined,
+            defaultModel: connection.model.trim() || null,
+            contextBudget: 8192,
+          });
 
       await loadProviderProfiles();
       setSelectedProviderProfileId(saved.id);
@@ -366,6 +385,21 @@ export function useRpPlatformApp() {
       patchConnection({
         status: "error",
         error: error instanceof Error ? error.message : "Could not save provider profile.",
+      });
+    }
+  }
+
+  async function handleActivateProviderProfile(providerProfileId: string): Promise<void> {
+    if (!providerProfileId) {
+      return;
+    }
+    try {
+      await activateProviderProfile(providerProfileId);
+      await loadProviderProfiles();
+    } catch (error) {
+      patchConnection({
+        status: "error",
+        error: error instanceof Error ? error.message : "Could not activate provider profile.",
       });
     }
   }
@@ -788,6 +822,8 @@ export function useRpPlatformApp() {
     canConnect,
     canRefreshModels,
     canUseLiveApi,
+    activeProviderProfile,
+    handleActivateProviderProfile,
     personas,
     renderConnectionStatus,
     renderSendLabel,

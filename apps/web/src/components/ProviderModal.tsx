@@ -9,12 +9,14 @@ interface ProviderModalProps {
   connectionStatus: string;
   providerProfiles: ProviderProfileRecord[];
   selectedProviderProfileId: string;
+  activeProviderProfileId: string | null;
   canConnect: boolean;
   canRefreshModels: boolean;
   onClose: () => void;
   onSelectedProviderProfileChange: (providerProfileId: string) => void;
   onLoadProviderProfile: () => void;
   onConnectSavedProfile: () => void;
+  onActivateProviderProfile: (providerProfileId: string) => void;
   onDeleteProviderProfile: () => void;
   onPatchConnection: (patch: Partial<ConnectionState>) => void;
   onConnect: () => void;
@@ -42,6 +44,11 @@ export function ProviderModal(input: ProviderModalProps) {
         </div>
         <div className="provider-modal-body">
           <div className="api-body" style={{ padding: 0 }}>
+            {input.providerProfiles.length > 0 && !input.activeProviderProfileId && (
+              <div className="api-hint" style={{ marginBottom: 12, color: "var(--accent)" }}>
+                No active profile selected. Pick one below and click "Set as active".
+              </div>
+            )}
             <div className="api-field">
               <label htmlFor="provider-modal-profile">Saved profile</label>
               <select
@@ -52,7 +59,7 @@ export function ProviderModal(input: ProviderModalProps) {
                 <option value="">Select a saved profile</option>
                 {input.providerProfiles.map((profile) => (
                   <option key={profile.id} value={profile.id}>
-                    {profile.name} · {profile.type}
+                    {profile.isActive ? "★ " : ""}{profile.name} · {profile.type}
                   </option>
                 ))}
               </select>
@@ -65,6 +72,17 @@ export function ProviderModal(input: ProviderModalProps) {
               </button>
               <button className="api-test-btn idle" type="button" onClick={input.onConnectSavedProfile}>
                 Connect saved
+              </button>
+              <button
+                className="api-test-btn idle"
+                type="button"
+                disabled={
+                  !input.selectedProviderProfileId ||
+                  input.selectedProviderProfileId === input.activeProviderProfileId
+                }
+                onClick={() => input.onActivateProviderProfile(input.selectedProviderProfileId)}
+              >
+                Set as active
               </button>
               <button className="api-test-btn err" type="button" onClick={input.onDeleteProviderProfile}>
                 Delete

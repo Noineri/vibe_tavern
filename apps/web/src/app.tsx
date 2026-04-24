@@ -158,8 +158,8 @@ export function App() {
           characterSubtitle={snapshot.character.subtitle}
           activatedLoreCount={app.activePromptTrace?.activatedLoreEntries.length ?? 0}
           retrievedMemoryCount={app.activePromptTrace?.retrievedMemories.length ?? 0}
-          providerLabel={app.connection.providerLabel || "No provider"}
-          providerModelLabel={app.connection.model || "No model selected"}
+          providerLabel={app.activeProviderProfile?.name || "No provider"}
+          providerModelLabel={app.activeProviderProfile?.defaultModel || app.connection.model || "No model selected"}
           providerConnected={providerConnected}
           mode={app.mode}
           theme={app.theme}
@@ -179,6 +179,8 @@ export function App() {
         connectionStatus={app.renderConnectionStatus()}
         providerProfiles={app.providerProfiles}
         selectedProviderProfileId={app.selectedProviderProfileId}
+        activeProviderProfileId={app.activeProviderProfile?.id ?? null}
+        onActivateProviderProfile={app.handleActivateProviderProfile}
         canConnect={app.canConnect}
         canRefreshModels={app.canRefreshModels}
         onClose={app.closeConnectionPanel}

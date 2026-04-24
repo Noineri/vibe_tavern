@@ -74,6 +74,7 @@ export interface ProviderProfileRecord {
   endpoint: string;
   defaultModel?: string | null;
   contextBudget?: number | null;
+  isActive: boolean;
   hasStoredApiKey: boolean;
 }
 
@@ -307,8 +308,43 @@ export async function fetchProviderProfileModels(
   });
 }
 
+export async function activateProviderProfile(
+  providerProfileId: string,
+): Promise<ProviderProfileRecord> {
+  return requestJson(`/api/providers/${providerProfileId}/activate`, {
+    method: "POST",
+  });
+}
+
+export async function updateProviderProfile(
+  providerProfileId: string,
+  patch: {
+    name?: string;
+    type?: string;
+    endpoint?: string;
+    apiKey?: string | null;
+    defaultModel?: string | null;
+    contextBudget?: number | null;
+  },
+): Promise<ProviderProfileRecord> {
+  return requestJson(`/api/providers/${providerProfileId}`, {
+    method: "PATCH",
+    body: patch,
+  });
+}
+
 export async function listLoreEntries(lorebookId: string): Promise<LoreEntryRecord[]> {
   return requestJson(`/api/lorebooks/${lorebookId}/entries`);
+}
+
+export async function testLoreActivation(
+  lorebookId: string,
+  text: string,
+): Promise<{ activatedIds: string[]; totalEntries: number }> {
+  return requestJson(`/api/lorebooks/${lorebookId}/test-activation`, {
+    method: "POST",
+    body: { text },
+  });
 }
 
 export async function createLoreEntry(lorebookId: string, entry: Partial<LoreEntryRecord>): Promise<LoreEntryRecord> {
