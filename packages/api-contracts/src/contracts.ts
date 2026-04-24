@@ -84,6 +84,12 @@ export interface AssemblePromptResponse {
   finalPayload: Record<string, unknown>;
 }
 
+export interface ProviderProbeResponse {
+  success: boolean;
+  error?: string;
+  modelCount?: number;
+}
+
 export interface PromptTraceRecordDto extends AssemblePromptResponse {
   id: string;
   chatId: ChatId;
