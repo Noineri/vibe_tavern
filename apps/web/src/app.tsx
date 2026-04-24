@@ -129,6 +129,8 @@ export function App() {
       personaName={snapshot.persona?.name ?? ""}
       personaDescription={snapshot.persona?.description ?? ""}
       promptTraceCount={snapshot.promptTraceHistory.length}
+      activeTrace={app.activePromptTrace}
+      promptPayloadText={app.promptPayloadText}
       isSaving={app.isSavingCharacter}
       saveNotice={app.characterSaveNotice}
       importSurface={importSurface}

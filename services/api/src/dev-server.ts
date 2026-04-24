@@ -51,8 +51,9 @@ const runtime = {
     throw new Error("Lorebook patch route is not wired in this baseline.");
   },
   createLoreEntry: (lorebookId: string, body: any) => sessionRuntime.createLoreEntry(lorebookId, body),
-  updateLoreEntry: (entryId: string, body: any) => sessionRuntime.updateLoreEntry(entryId, body),
-  deleteLoreEntry: (entryId: string) => sessionRuntime.deleteLoreEntry(entryId),
+  updateLoreEntry: (lorebookId: string, entryId: string, body: any) => sessionRuntime.updateLoreEntry(lorebookId, entryId, body),
+  deleteLoreEntry: (lorebookId: string, entryId: string) => sessionRuntime.deleteLoreEntry(lorebookId, entryId),
+  listLoreEntries: (lorebookId: string) => sessionRuntime.listLoreEntries(lorebookId),
   listProviderProfiles: () => sessionRuntime.listProviderProfiles(),
   fetchProviderProfile: (providerProfileId: string) => {
     const profile = sessionRuntime.getProviderProfileForClient(providerProfileId);
@@ -269,6 +270,10 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
   }
 
   const createLoreEntryMatch = /^\/api\/lorebooks\/([^/]+)\/entries$/.exec(url.pathname);
+  if (method === "GET" && createLoreEntryMatch) {
+    writeJson(response, 200, runtime.listLoreEntries(createLoreEntryMatch[1]));
+    return;
+  }
   if (method === "POST" && createLoreEntryMatch) {
     const body = await readJsonBody(request);
     writeJson(response, 200, runtime.createLoreEntry(createLoreEntryMatch[1], body));
@@ -278,11 +283,11 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
   const updateLoreEntryMatch = /^\/api\/lorebooks\/([^/]+)\/entries\/([^/]+)$/.exec(url.pathname);
   if (method === "PATCH" && updateLoreEntryMatch) {
     const body = await readJsonBody(request);
-    writeJson(response, 200, runtime.updateLoreEntry(updateLoreEntryMatch[2], body));
+    writeJson(response, 200, runtime.updateLoreEntry(updateLoreEntryMatch[1], updateLoreEntryMatch[2], body));
     return;
   }
   if (method === "DELETE" && updateLoreEntryMatch) {
-    runtime.deleteLoreEntry(updateLoreEntryMatch[2]);
+    runtime.deleteLoreEntry(updateLoreEntryMatch[1], updateLoreEntryMatch[2]);
     writeJson(response, 200, { ok: true });
     return;
   }

@@ -514,18 +514,15 @@ export class PrototypeSessionRuntime {
     return entry;
   }
 
-  updateLoreEntry(entryId: string, input: Partial<Omit<LoreEntry, "id" | "lorebookId">>): LoreEntry {
+  updateLoreEntry(lorebookId: string, entryId: string, input: Partial<Omit<LoreEntry, "id" | "lorebookId">>): LoreEntry {
     const entry = this.store.updateLoreEntry(entryId, input);
-    this.refreshLoreEntriesCache(entry.lorebookId);
+    this.refreshLoreEntriesCache(lorebookId);
     return entry;
   }
 
-  deleteLoreEntry(entryId: string): void {
+  deleteLoreEntry(lorebookId: string, entryId: string): void {
     this.store.deleteLoreEntry(entryId);
-    this.importedLoreEntriesByCharacter.clear();
-    for (const character of this.store.listCharacters()) {
-      this.importedLoreEntriesByCharacter.set(character.id, this.store.listLoreEntriesForCharacter(character.id));
-    }
+    this.refreshLoreEntriesCache(lorebookId);
   }
 
   getProviderProfile(id: string): StoredProviderProfileRecord | null {
@@ -704,6 +701,10 @@ export class PrototypeSessionRuntime {
       });
     }
     return assembled.prompt;
+  }
+
+  listLoreEntries(lorebookId: string): LoreEntry[] {
+    return this.store.listLoreEntriesForCharacter(lorebookId);
   }
 
   importJson(input: {

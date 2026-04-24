@@ -88,6 +88,23 @@ export interface ProviderConnectionResult {
   error?: string;
 }
 
+export interface LoreEntryRecord {
+  id: string;
+  lorebookId: string;
+  title: string;
+  content: string;
+  keys: string[];
+  secondaryKeys: string[];
+  logic: string;
+  position: string;
+  depth: number;
+  priority: number;
+  stickyWindow: number;
+  cooldownWindow: number;
+  delayWindow: number;
+  enabled: boolean;
+}
+
 export async function bootstrapApp(): Promise<{
   initialChatId: ChatId | null;
   snapshot: AppSnapshot | null;
@@ -288,6 +305,22 @@ export async function fetchProviderProfileModels(
   return requestJson(`/api/providers/${providerProfileId}/models`, {
     method: "POST",
   });
+}
+
+export async function listLoreEntries(lorebookId: string): Promise<LoreEntryRecord[]> {
+  return requestJson(`/api/lorebooks/${lorebookId}/entries`);
+}
+
+export async function createLoreEntry(lorebookId: string, entry: Partial<LoreEntryRecord>): Promise<LoreEntryRecord> {
+  return requestJson(`/api/lorebooks/${lorebookId}/entries`, { method: "POST", body: entry });
+}
+
+export async function updateLoreEntry(lorebookId: string, entryId: string, entry: Partial<LoreEntryRecord>): Promise<LoreEntryRecord> {
+  return requestJson(`/api/lorebooks/${lorebookId}/entries/${entryId}`, { method: "PATCH", body: entry });
+}
+
+export async function deleteLoreEntry(lorebookId: string, entryId: string): Promise<void> {
+  await requestJson(`/api/lorebooks/${lorebookId}/entries/${entryId}`, { method: "DELETE" });
 }
 
 async function requestJson<T>(

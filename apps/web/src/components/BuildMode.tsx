@@ -1,5 +1,7 @@
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import type { PromptTraceRecordDto } from "@rp-platform/api-contracts";
+import { LorebookEditor } from "./LorebookEditor.js";
 
 export interface BuildCharacterDraft {
   name: string;
@@ -34,6 +36,8 @@ interface BuildModeProps {
   personaName: string;
   personaDescription: string;
   promptTraceCount: number;
+  activeTrace: PromptTraceRecordDto | null;
+  promptPayloadText: string;
   isSaving: boolean;
   saveNotice: string;
   importSurface: ReactNode;
@@ -293,59 +297,66 @@ export function BuildMode(input: BuildModeProps) {
 
   function renderLorebook(): ReactNode {
     return (
-      <div className="build-placeholder">
-        <div className="build-section-title">Lorebook</div>
-        <div className="build-section-sub">
-          Import a SillyTavern lorebook JSON and attach it to the active character.
-        </div>
-        {input.importSurface}
-        <div
-          style={{
-            marginTop: 20,
-            height: 120,
-            background: "var(--s2)",
-            borderRadius: 8,
-            border: "1px dashed var(--border2)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "var(--t3)",
-            fontSize: 13,
-            fontFamily: "var(--font-body)",
-            fontStyle: "italic",
-          }}
-        >
-          Full entry editor coming in a later phase.
-        </div>
-      </div>
+      <LorebookEditor charName={input.characterName} lorebookId={input.characterId} />
     );
   }
 
   function renderTrace(): ReactNode {
     return (
-      <div className="build-placeholder">
-        <div className="build-section-title">Prompt Trace</div>
-        <div className="build-section-sub">
+      <div className="build-placeholder" style={{ maxWidth: 800 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <div className="build-section-title">Prompt Trace</div>
+          {input.activeTrace && (
+            <div className="tok-c ok" style={{ fontSize: 13, background: "var(--s2)", padding: "4px 10px", borderRadius: 20 }}>
+              Total: {input.activeTrace.tokenAccounting?.total ?? input.activeTrace.layers.reduce((sum, l) => sum + l.tokenCount, 0)} tokens
+            </div>
+          )}
+        </div>
+        <div className="build-section-sub" style={{ color: "var(--t3)" }}>
           Prompt trace is captured per generation. Recorded traces for this chat: {input.promptTraceCount}.
         </div>
-        <div
-          style={{
-            marginTop: 20,
-            height: 120,
-            background: "var(--s2)",
-            borderRadius: 8,
-            border: "1px dashed var(--border2)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "var(--t3)",
-            fontSize: 13,
-            fontFamily: "var(--font-body)",
-            fontStyle: "italic",
-          }}
-        >
-          Layered prompt viewer coming in a later phase.
-        </div>
+
+        {input.activeTrace ? (
+          <div className="trace-container">
+            {input.activeTrace.layers.map((layer, index) => (
+              <div className="trace-layer" key={layer.id}>
+                <div
+                  className={`trace-head ${layer.sourceType === "system_preset" ? "sys" : layer.sourceType.includes("memory") || layer.sourceType === "lore_entry" ? "rag" : "msg"}`}
+                  onClick={(e) => {
+                    const next = e.currentTarget.nextElementSibling as HTMLElement;
+                    if (next) next.style.display = next.style.display === "none" ? "block" : "none";
+                  }}
+                  style={{ cursor: "pointer", padding: "10px 14px", background: "var(--s2)", border: "1px solid var(--border)", borderRadius: 6, display: "flex", justifyContent: "space-between", marginBottom: 6 }}
+                >
+                  <div>
+                    <strong>{index + 1}. {layer.sourceType}</strong>
+                    <span style={{ color: "var(--t3)", marginLeft: 6 }}>{layer.sourceId}</span>
+                  </div>
+                  <div className="trace-meta">
+                    <span style={{ fontSize: 12, color: "var(--t2)" }}>{layer.tokenCount} tokens</span>
+                  </div>
+                </div>
+                <div className="trace-body" style={{ display: "none", padding: "12px", background: "var(--bg)", border: "1px solid var(--border2)", borderRadius: 6, marginBottom: 12, whiteSpace: "pre-wrap", fontFamily: "monospace", fontSize: 12, color: "var(--t2)" }}>
+                  {layer.text}
+                </div>
+              </div>
+            ))}
+
+            <div style={{ marginTop: 20 }}>
+              <button
+                className="api-test-btn idle"
+                onClick={() => alert(input.promptPayloadText)}
+                style={{ padding: "8px 16px", borderRadius: 6, cursor: "pointer" }}
+              >
+                View Raw JSON Payload
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ marginTop: 20, height: 120, background: "var(--s2)", borderRadius: 8, border: "1px dashed var(--border2)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--t3)", fontSize: 13, fontFamily: "var(--font-body)", fontStyle: "italic" }}>
+            No traces recorded yet. Send a message to generate one.
+          </div>
+        )}
       </div>
     );
   }
