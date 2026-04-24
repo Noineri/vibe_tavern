@@ -59,6 +59,7 @@ export interface AssemblePromptForChatInput {
   outputConstraints?: string | null;
   recentMessageLimit?: number;
   excludeMessageIds?: MessageId[];
+  contextBudget?: number | null;
 }
 
 export interface AssemblePromptForChatResult {
@@ -142,6 +143,7 @@ export class PromptAssemblyService {
       recentMessages,
       toolInstructions: this.resolver.getToolInstructions(chat.toolProfileId),
       outputConstraints: input.outputConstraints ?? null,
+      contextBudget: input.contextBudget ?? null,
     });
 
     return {

@@ -910,12 +910,14 @@ export class PrototypeSessionRuntime {
     branchId?: ChatBranchId,
     options?: { excludeMessageIds?: MessageId[]; model?: string },
   ) {
+    const activeProfileForAssembly = this.resolveActiveProviderProfile();
     return this.promptService.assembleForChat({
       chatId,
       branchId,
       model: options?.model ?? "unresolved_model",
       outputConstraints: "Reply in 1-3 paragraphs.",
       excludeMessageIds: options?.excludeMessageIds,
+      contextBudget: activeProfileForAssembly?.contextBudget ?? null,
     });
   }
 

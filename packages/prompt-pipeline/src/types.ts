@@ -67,6 +67,7 @@ export interface PromptAssemblyContext {
   recentMessages: RecentMessage[];
   toolInstructions?: string | null;
   outputConstraints?: string | null;
+  contextBudget?: number | null;
 }
 
 export interface PromptAssemblyResult {

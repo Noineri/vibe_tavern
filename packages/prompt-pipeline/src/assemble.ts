@@ -5,6 +5,7 @@ import type {
   PromptLayerPosition,
   RecentMessage,
 } from "./types.js";
+import { findSafeCompactionBoundary } from "./compaction.js";
 
 function estimateTokens(text: string): number {
   const normalized = text.trim();
@@ -203,7 +204,46 @@ export function assemblePrompt(context: PromptAssemblyContext): PromptAssemblyRe
     );
   }
 
-  const historyText = formatRecentMessages(context.recentMessages);
+  let recentMessagesForHistory = context.recentMessages;
+
+  if (
+    typeof context.contextBudget === "number" &&
+    context.contextBudget > 0 &&
+    context.recentMessages.length > 3
+  ) {
+    const nonHistoryTokens = layers.reduce((sum, layer) => sum + layer.tokenCount, 0);
+    const fullHistoryTokens = estimateTokens(formatRecentMessages(context.recentMessages));
+    const totalBeforeCompaction = nonHistoryTokens + fullHistoryTokens;
+
+    if (totalBeforeCompaction > context.contextBudget) {
+      const preserveCount = Math.max(2, Math.ceil(context.recentMessages.length / 2));
+      const keepFrom = findSafeCompactionBoundary(
+        context.recentMessages as unknown as Parameters<typeof findSafeCompactionBoundary>[0],
+        preserveCount,
+      );
+      if (keepFrom > 0) {
+        recentMessagesForHistory = context.recentMessages.slice(keepFrom);
+        const preservedTokens = estimateTokens(formatRecentMessages(recentMessagesForHistory));
+        const droppedCount = context.recentMessages.length - recentMessagesForHistory.length;
+        layers.push(
+          makeLayer({
+            id: "preflight_compaction",
+            sourceType: "compaction",
+            sourceId: "preflight",
+            priority: 50,
+            reason: `preflight_compaction_dropped_${droppedCount}`,
+            text:
+              `[Preflight compaction] Kept ${recentMessagesForHistory.length} of ` +
+              `${context.recentMessages.length} recent messages ` +
+              `(~${preservedTokens} tokens after compaction, ` +
+              `${totalBeforeCompaction} tokens before, budget ${context.contextBudget}).`,
+          }),
+        );
+      }
+    }
+  }
+
+  const historyText = formatRecentMessages(recentMessagesForHistory);
   if (historyText) {
     layers.push(
       makeLayer({
@@ -237,7 +277,7 @@ export function assemblePrompt(context: PromptAssemblyContext): PromptAssemblyRe
             content: layer.text,
             layerId: layer.id,
           })),
-        ...context.recentMessages.map((message) => ({
+        ...recentMessagesForHistory.map((message) => ({
           role: message.role,
           content: message.content,
           messageId: message.id,
