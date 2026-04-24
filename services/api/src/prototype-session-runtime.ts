@@ -32,6 +32,7 @@ import {
   importCharacterCardV3Json,
   importStLorebookJson,
 } from "../../../packages/import-export/src/index.js";
+import { activateLoreEntries, type ActivatableLoreEntry } from "@rp-platform/prompt-pipeline";
 import { ChatApplicationService } from "./chat-application-service.js";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "./prompt-assembly-service.js";
 
@@ -750,6 +751,31 @@ export class PrototypeSessionRuntime {
 
   listLoreEntries(lorebookId: string): LoreEntry[] {
     return this.store.listLoreEntriesForCharacter(lorebookId);
+  }
+
+  testLoreActivation(
+    lorebookId: string,
+    text: string,
+  ): { activatedIds: string[]; totalEntries: number } {
+    const entries = this.listLoreEntries(lorebookId);
+    const activatable: ActivatableLoreEntry[] = entries.map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      content: entry.content,
+      keys: entry.keys,
+      secondaryKeys: entry.secondaryKeys,
+      logic: entry.logic,
+      position: entry.position,
+      priority: entry.priority,
+      enabled: entry.enabled,
+    }));
+    const activated = activateLoreEntries(activatable, {
+      recentMessagesText: text,
+    });
+    return {
+      activatedIds: activated.map((entry) => entry.id),
+      totalEntries: entries.length,
+    };
   }
 
   importJson(input: {

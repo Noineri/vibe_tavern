@@ -5,6 +5,7 @@ import {
   createLoreEntry,
   updateLoreEntry,
   deleteLoreEntry,
+  testLoreActivation,
   type LoreEntryRecord,
 } from "../app-client.js";
 
@@ -146,32 +147,38 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
     deleteLoreEntry(lorebookId, activeId).catch(() => {});
   }
 
-  function runTest(): void {
-    if (!testText.trim() || !active || active.keys.length === 0) {
-      setTestResult({ ok: false, msg: "Enter text and add at least one key." });
+  async function runTest(): Promise<void> {
+    if (!testText.trim()) {
+      setTestResult({ ok: false, msg: "Enter test text." });
       return;
     }
-    const txt = testText.toLowerCase();
-    let hit = false;
-
-    if (active.logic === "AND_ANY") {
-      hit = active.keys.some((k) => txt.includes(k.toLowerCase()));
-    } else if (active.logic === "AND_ALL") {
-      hit = active.keys.every((k) => txt.includes(k.toLowerCase()));
-    } else if (active.logic === "NOT_ANY") {
-      hit = !active.keys.some((k) => txt.includes(k.toLowerCase()));
+    if (!active) {
+      setTestResult({ ok: false, msg: "Select an entry first." });
+      return;
     }
-
-    if (hit && active.secondaryKeys.length > 0) {
-      hit = active.secondaryKeys.some((k) => txt.includes(k.toLowerCase()));
-    }
-
     if (!active.enabled) {
       setTestResult({ ok: false, msg: "Entry is disabled, so it will not activate." });
-    } else if (hit) {
-      setTestResult({ ok: true, msg: `Activated! Will be inserted (${active.position}, depth ${active.depth}).` });
-    } else {
-      setTestResult({ ok: false, msg: `Not activated. Keys not found (Logic: ${active.logic}).` });
+      return;
+    }
+    try {
+      const result = await testLoreActivation(lorebookId, testText);
+      const hit = result.activatedIds.includes(active.id);
+      if (hit) {
+        setTestResult({
+          ok: true,
+          msg: `Activated! Will be inserted (${active.position}, depth ${active.depth}). Total activated: ${result.activatedIds.length}/${result.totalEntries}.`,
+        });
+      } else {
+        setTestResult({
+          ok: false,
+          msg: `Not activated. Keys/logic did not match. Total activated: ${result.activatedIds.length}/${result.totalEntries}.`,
+        });
+      }
+    } catch (error) {
+      setTestResult({
+        ok: false,
+        msg: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
   }
 

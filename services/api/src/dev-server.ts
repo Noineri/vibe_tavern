@@ -54,6 +54,8 @@ const runtime = {
   updateLoreEntry: (lorebookId: string, entryId: string, body: any) => sessionRuntime.updateLoreEntry(lorebookId, entryId, body),
   deleteLoreEntry: (lorebookId: string, entryId: string) => sessionRuntime.deleteLoreEntry(lorebookId, entryId),
   listLoreEntries: (lorebookId: string) => sessionRuntime.listLoreEntries(lorebookId),
+  testLoreActivation: (lorebookId: string, body: { text: string }) =>
+    sessionRuntime.testLoreActivation(lorebookId, body.text),
   listProviderProfiles: () => sessionRuntime.listProviderProfiles(),
   fetchProviderProfile: (providerProfileId: string) => {
     const profile = sessionRuntime.getProviderProfileForClient(providerProfileId);
@@ -269,6 +271,17 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
       200,
       runtime.updateLorebook(lorebookMatch[1], body as { chatId: string; lorebookRaw: string }),
       );
+    return;
+  }
+
+  const testActivationMatch = /^\/api\/lorebooks\/([^/]+)\/test-activation$/.exec(url.pathname);
+  if (method === "POST" && testActivationMatch) {
+    const body = await readJsonBody(request);
+    writeJson(
+      response,
+      200,
+      runtime.testLoreActivation(testActivationMatch[1], body as { text: string }),
+    );
     return;
   }
 
