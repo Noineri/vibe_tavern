@@ -5,19 +5,19 @@ import {
   activateBranch,
   activateProviderProfile,
   bootstrapApp,
-  connectProviderProfile,
   deleteChatMessage,
   deleteProviderProfile,
   editChatMessage,
   fetchChat,
   fetchProviderProfile,
-  fetchProviderProfileModels,
+  fetchProviderProfileModels as fetchModelsForProviderProfile,
   forkBranch,
   listProviderProfiles,
   regenerateChatMessage,
   saveProviderProfile,
   selectMessageVariant,
   sendChatMessage,
+  testProviderProfile,
   updateCharacter,
   updatePersona,
   updateProviderProfile,
@@ -33,7 +33,7 @@ import type {
   ThemeMode,
 } from "../components/app-shell-types.js";
 import type { BuildCharacterDraft, BuildPersonaDraft, BuildTab } from "../components/BuildMode.js";
-import { normalizeOpenAiCompatibleBaseUrl, type OpenAiModelOption } from "../openai-compatible.js";
+import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import { useCharacterImport } from "./use-character-import.js";
 
 const STORAGE_KEY = "rp-platform.connection-settings";
@@ -300,7 +300,7 @@ export function useRpPlatformApp() {
         error: "",
       });
 
-      await handleConnectSavedProfileById(saved.id);
+      await handleTestSavedProviderProfile(saved.id);
     } catch (error) {
       patchConnection({
         status: "error",
@@ -435,52 +435,28 @@ export function useRpPlatformApp() {
       return;
     }
 
-    await handleConnectSavedProfileById(selectedProviderProfileId);
+    await handleTestSavedProviderProfile(selectedProviderProfileId);
   }
 
-  async function handleConnectSavedProfileById(providerProfileId: string): Promise<void> {
+  async function handleTestSavedProviderProfile(providerProfileId: string): Promise<void> {
     if (!providerProfileId) {
       return;
     }
 
-    setConnection((current) => ({
-      ...current,
-      status: "connecting",
-      error: "",
-    }));
+    setChatNotice("");
 
     try {
-      const [profile, result] = await Promise.all([
-        fetchProviderProfile(providerProfileId),
-        connectProviderProfile(providerProfileId),
-      ]);
-      if (!result.success) {
-        throw new Error(result.error || "Provider connection failed.");
+      const result = await testProviderProfile(providerProfileId);
+      if (result.success) {
+        const countHint = typeof result.modelCount === "number"
+          ? ` Provider advertises ${result.modelCount} models — press Refresh models to load them.`
+          : "";
+        setChatNotice(`Connection verified.${countHint}`);
+      } else {
+        setChatNotice(result.error ?? "Connection probe failed.");
       }
-
-      const models = normalizeConnectedModels(result.models);
-      setConnection((current) => ({
-        ...current,
-        providerLabel: profile.name,
-        baseUrl: normalizeOpenAiCompatibleBaseUrl(profile.endpoint),
-        apiKey: "",
-        activeProviderProfileId: profile.id,
-        hasStoredApiKey: profile.hasStoredApiKey,
-        status: "connected",
-        error: "",
-        models: models.length > 0 ? models : current.models,
-        model:
-          current.model && models.some((entry) => entry.id === current.model)
-            ? current.model
-            : profile.defaultModel && models.some((entry) => entry.id === profile.defaultModel)
-            ? profile.defaultModel
-            : profile.defaultModel ?? models[0]?.id ?? current.model,
-      }));
     } catch (error) {
-      patchConnection({
-        status: "error",
-        error: error instanceof Error ? error.message : "Could not connect saved profile.",
-      });
+      setChatNotice(error instanceof Error ? error.message : "Connection probe failed.");
     }
   }
 
@@ -497,11 +473,11 @@ export function useRpPlatformApp() {
     }));
 
     try {
-      const [profile, result] = await Promise.all([
+      const [profile, response] = await Promise.all([
         fetchProviderProfile(providerProfileId),
-        fetchProviderProfileModels(providerProfileId),
+        fetchModelsForProviderProfile(providerProfileId),
       ]);
-      const models = result.models;
+      const models = response.models;
       setConnection((current) => ({
         ...current,
         providerLabel: profile.name,
@@ -880,22 +856,6 @@ function buildCharacterTabs(snapshot: AppSnapshot): CharacterTab[] {
 
 function formatImportWarnings(count: number): string {
   return count > 0 ? ` (${count} warning${count === 1 ? "" : "s"})` : "";
-}
-
-function normalizeConnectedModels(
-  models: Array<{
-    id: string;
-    name?: string;
-    context_length?: number;
-    owned_by?: string;
-  }>,
-): OpenAiModelOption[] {
-  return models.map((model) => ({
-    id: model.id,
-    label: model.name?.trim() || model.owned_by?.trim()
-      ? [model.id, model.name || model.owned_by].filter(Boolean).join(" - ")
-      : model.id,
-  }));
 }
 
 function readSavedConnectionState(): SavedConnectionState | null {

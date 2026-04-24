@@ -1,4 +1,4 @@
-import type { PromptTraceRecordDto } from "@rp-platform/api-contracts";
+import type { PromptTraceRecordDto, ProviderProbeResponse } from "@rp-platform/api-contracts";
 import type { Chat, ChatBranch, ChatBranchId, ChatId, Message, MessageVariant } from "@rp-platform/domain";
 import { getGatewayBaseUrl } from "./gateway-client.js";
 
@@ -76,17 +76,6 @@ export interface ProviderProfileRecord {
   contextBudget?: number | null;
   isActive: boolean;
   hasStoredApiKey: boolean;
-}
-
-export interface ProviderConnectionResult {
-  success: boolean;
-  models: Array<{
-    id: string;
-    name?: string;
-    context_length?: number;
-    owned_by?: string;
-  }>;
-  error?: string;
 }
 
 export interface LoreEntryRecord {
@@ -286,11 +275,21 @@ export async function deleteProviderProfile(providerProfileId: string): Promise<
   });
 }
 
-export async function connectProviderProfile(
-  providerProfileId: string,
-): Promise<ProviderConnectionResult> {
-  return requestJson(`/api/providers/${providerProfileId}/connect`, {
+export async function testProviderDraft(
+  input: { endpoint: string; apiKey: string },
+): Promise<ProviderProbeResponse> {
+  return requestJson<ProviderProbeResponse>("/api/providers/test", {
     method: "POST",
+    body: input,
+  });
+}
+
+export async function testProviderProfile(
+  providerProfileId: string,
+): Promise<ProviderProbeResponse> {
+  return requestJson<ProviderProbeResponse>(`/api/providers/${providerProfileId}/test`, {
+    method: "POST",
+    body: {},
   });
 }
 
