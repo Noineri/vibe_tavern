@@ -1,5 +1,5 @@
 import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
-import { ProviderProfile, ConnectionResult, ProviderAdapter, ProviderType, ModelInfo } from './types.js';
+import { ProviderProfile, ProviderAdapter, ProviderType, ModelInfo } from './types.js';
 import { OpenAICompatAdapter } from './openai.js';
 
 export class ProviderManager {
@@ -12,23 +12,6 @@ export class ProviderManager {
 
   registerAdapter(adapter: ProviderAdapter) {
     this.adapters.set(adapter.type, adapter);
-  }
-
-  /**
-   * Performs a fast connection test and model fetch for a given profile.
-   */
-  async testProfileConnection(profile: ProviderProfile): Promise<ConnectionResult> {
-    const adapter = this.adapters.get(profile.type);
-
-    if (!adapter) {
-      return {
-        success: false,
-        models: [],
-        error: `Unsupported provider type: ${profile.type}`,
-      };
-    }
-
-    return await adapter.testConnection(profile);
   }
 
   async listModels(profile: ProviderProfile): Promise<ModelInfo[]> {

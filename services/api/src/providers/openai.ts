@@ -6,11 +6,8 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
 } from "../prototype-provider-gateway.js";
 
-const connectionProbeMethodName = `test${"Connection"}` as const;
-
 export class OpenAICompatAdapter implements ProviderAdapter {
   type = "openai_compat" as const;
-  declare [connectionProbeMethodName]: ProviderAdapter[typeof connectionProbeMethodName];
 
   async listModels(profile: Omit<ProviderProfile, "type">): Promise<ModelInfo[]> {
     const normalizedEndpoint = normalizeOpenAiCompatibleBaseUrl(profile.endpoint ?? "");

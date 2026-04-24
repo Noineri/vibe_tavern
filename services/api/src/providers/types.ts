@@ -19,19 +19,8 @@ export interface ModelInfo {
   owned_by?: string;
 }
 
-export interface ConnectionResult {
-  success: boolean;
-  models: ModelInfo[];
-  error?: string;
-}
-
 export interface ProviderAdapter {
   type: ProviderType;
-  /**
-   * Performs a fast local activation check.
-   * It should validate profile shape without blocking on remote model fetch.
-   */
-  testConnection(profile: Omit<ProviderProfile, 'type'>): Promise<ConnectionResult>;
   listModels(profile: Omit<ProviderProfile, "type">): Promise<ModelInfo[]>;
   generateReply(
     profile: Omit<ProviderProfile, "type">,
