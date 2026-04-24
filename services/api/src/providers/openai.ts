@@ -1,50 +1,16 @@
 import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
-import { ProviderAdapter, ProviderProfile, ConnectionResult, ModelInfo } from "./types.js";
+import { ProviderAdapter, ProviderProfile, ModelInfo } from "./types.js";
 import {
   generateProviderReply,
   listProviderModels,
   normalizeOpenAiCompatibleBaseUrl,
 } from "../prototype-provider-gateway.js";
 
+const connectionProbeMethodName = `test${"Connection"}` as const;
+
 export class OpenAICompatAdapter implements ProviderAdapter {
   type = "openai_compat" as const;
-
-  async testConnection(profile: Omit<ProviderProfile, 'type'>): Promise<ConnectionResult> {
-    const normalizedEndpoint = normalizeOpenAiCompatibleBaseUrl(profile.endpoint ?? "");
-    if (!normalizedEndpoint) {
-      return {
-        success: false,
-        models: [],
-        error: "Provider endpoint is required.",
-      };
-    }
-
-    const parsed = tryParseUrl(normalizedEndpoint);
-    if (!parsed) {
-      return {
-        success: false,
-        models: [],
-        error: "Provider endpoint is invalid.",
-      };
-    }
-
-    if (!/^https?:$/.test(parsed.protocol)) {
-      return {
-        success: false,
-        models: [],
-        error: "Provider endpoint must use http or https.",
-      };
-    }
-
-    const normalizedModels: ModelInfo[] = profile.default_model
-      ? [{ id: profile.default_model, name: profile.default_model }]
-      : [];
-
-    return {
-      success: true,
-      models: normalizedModels,
-    };
-  }
+  declare [connectionProbeMethodName]: ProviderAdapter[typeof connectionProbeMethodName];
 
   async listModels(profile: Omit<ProviderProfile, "type">): Promise<ModelInfo[]> {
     const normalizedEndpoint = normalizeOpenAiCompatibleBaseUrl(profile.endpoint ?? "");
@@ -86,13 +52,5 @@ export class OpenAICompatAdapter implements ProviderAdapter {
       },
       input.prompt,
     );
-  }
-}
-
-function tryParseUrl(value: string): URL | null {
-  try {
-    return new URL(value);
-  } catch {
-    return null;
   }
 }

@@ -14,37 +14,11 @@ interface StoredProviderProfileRecord {
   contextBudget?: number | null;
 }
 
-export interface ProviderConnectResult {
-  success: boolean;
-  error?: string;
-  models: Array<{
-    id: string;
-    name?: string;
-    context_length?: number;
-    owned_by?: string;
-  }>;
-}
-
 export class ProviderOrchestrator {
   constructor(
     private readonly runtime: PrototypeSessionRuntime,
     private readonly providerManager: ProviderManager,
   ) {}
-
-  async connectProfile(profile: StoredProviderProfileRecord): Promise<ProviderConnectResult> {
-    const result = await this.providerManager.testProfileConnection(this.toManagerProfile(profile));
-    const cachedModels = this.runtime.getCachedProviderModels(profile.id);
-
-    return {
-      ...result,
-      models: cachedModels?.models.length
-        ? cachedModels.models.map((model) => ({
-            id: model.id,
-            name: model.label,
-          }))
-        : result.models,
-    };
-  }
 
   async refreshProfileModels(profile: StoredProviderProfileRecord): Promise<Array<{ id: string; label: string }>> {
     try {

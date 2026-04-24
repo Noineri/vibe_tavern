@@ -11,8 +11,15 @@ export interface ProviderModelOption {
   label: string;
 }
 
+const PROBE_TIMEOUT_MS = 8_000;
 const MODEL_LIST_TIMEOUT_MS = 45_000;
 const CHAT_COMPLETION_TIMEOUT_MS = 45_000;
+
+export interface ProviderProbeResult {
+  success: boolean;
+  error?: string;
+  modelCount?: number;
+}
 
 type ChatCompletionRole = "system" | "user" | "assistant" | "tool";
 
@@ -51,6 +58,55 @@ export function normalizeOpenAiCompatibleBaseUrl(baseUrl: string): string {
   }
 
   return normalized;
+}
+
+export async function probeProviderConnection(
+  input: { baseUrl: string; apiKey: string },
+): Promise<ProviderProbeResult> {
+  const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
+  if (!baseUrl) {
+    return { success: false, error: "Provider endpoint is required." };
+  }
+  const parsed = tryParseUrl(baseUrl);
+  if (!parsed) {
+    return { success: false, error: "Provider endpoint is invalid." };
+  }
+  if (!/^https?:$/.test(parsed.protocol)) {
+    return { success: false, error: "Provider endpoint must use http or https." };
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(buildModelsUrl(baseUrl), {
+      method: "GET",
+      headers: buildHeaders(input.apiKey),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
+  } catch (error) {
+    return {
+      success: false,
+      error: `Network error during probe: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
+  if (response.ok) {
+    let modelCount: number | undefined;
+    try {
+      const payload = (await response.json()) as OpenAiModelsResponse;
+      modelCount = Array.isArray(payload.data) ? payload.data.length : undefined;
+    } catch {
+      modelCount = undefined;
+    }
+    return { success: true, modelCount };
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    return { success: false, error: `Authentication rejected (${response.status} ${response.statusText}).` };
+  }
+  if (response.status === 404) {
+    return { success: false, error: "Provider does not expose a /models endpoint." };
+  }
+  return { success: false, error: `Probe failed: ${response.status} ${response.statusText}` };
 }
 
 export async function listProviderModels(
@@ -153,6 +209,14 @@ function buildModelsUrl(baseUrl: string): string {
   }
 
   return `${baseUrl}/models`;
+}
+
+function tryParseUrl(value: string): URL | null {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
 }
 
 function extractChatCompletionMessages(

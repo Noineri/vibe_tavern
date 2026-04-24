@@ -4,6 +4,7 @@ import { URL } from "node:url";
 import { LiveChatOrchestrator } from "./live-chat-orchestrator.js";
 import { PrototypeSessionRuntime } from "./prototype-session-runtime.js";
 import { ProviderOrchestrator } from "./provider-orchestrator.js";
+import { probeProviderConnection } from "./prototype-provider-gateway.js";
 import { ProviderManager } from "./providers/manager.js";
 
 const host = process.env.RP_PLATFORM_API_HOST ?? "127.0.0.1";
@@ -86,17 +87,22 @@ const runtime = {
     }
     return profile;
   },
-  connectProviderProfile: async (providerProfileId: string) =>
-    providerOrchestrator.connectProfile(getRequiredProviderProfile(providerProfileId)),
   activateProviderProfile: (providerProfileId: string) => sessionRuntime.activateProviderProfile(providerProfileId),
   updateProviderProfile: (providerProfileId: string, body: unknown) =>
     sessionRuntime.updateProviderProfile(providerProfileId, body as any),
   saveProviderDraft: async (body: unknown) => sessionRuntime.saveProviderProfile(body),
-  testProviderDraft: async (_body: unknown) => ({
-    success: false,
-    models: [],
-    error: "Provider draft test is not wired in this baseline.",
-  }),
+  testProviderDraft: async (body: { endpoint?: string; apiKey?: string } | null) => {
+    const endpoint = (body?.endpoint ?? "").trim();
+    const apiKey = (body?.apiKey ?? "").trim();
+    return probeProviderConnection({ baseUrl: endpoint, apiKey });
+  },
+  testProviderProfile: async (providerProfileId: string) => {
+    const profile = getRequiredProviderProfile(providerProfileId);
+    return probeProviderConnection({
+      baseUrl: profile.endpoint,
+      apiKey: profile.apiKey ?? "",
+    });
+  },
   deleteProviderProfile: (providerProfileId: string) => sessionRuntime.deleteProviderProfile(providerProfileId),
   fetchProviderModels: async (providerProfileId: string) => ({
     models: await providerOrchestrator.refreshProfileModels(getRequiredProviderProfile(providerProfileId)),
@@ -381,15 +387,15 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
     return;
   }
 
-  const providerConnectMatch = /^\/api\/providers\/([^/]+)\/connect$/.exec(url.pathname);
-  if (method === "POST" && providerConnectMatch) {
-    writeJson(response, 200, await runtime.connectProviderProfile(providerConnectMatch[1]));
-    return;
-  }
-
   const providerModelsMatch = /^\/api\/providers\/([^/]+)\/models$/.exec(url.pathname);
   if (method === "POST" && providerModelsMatch) {
     writeJson(response, 200, await runtime.fetchProviderModels(providerModelsMatch[1]));
+    return;
+  }
+
+  const providerTestSavedMatch = /^\/api\/providers\/([^/]+)\/test$/.exec(url.pathname);
+  if (method === "POST" && providerTestSavedMatch) {
+    writeJson(response, 200, await runtime.testProviderProfile(providerTestSavedMatch[1]));
     return;
   }
 
