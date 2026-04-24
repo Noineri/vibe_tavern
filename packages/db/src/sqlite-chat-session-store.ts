@@ -1047,10 +1047,11 @@ export class SqliteChatSessionStore implements ChatSessionStore {
   upsertProviderProfile(profile: any): void {
     const timestamp = this.clock.now();
     const id = profile.id || (this.idGenerator.next("provider") as string);
+    const isActive = profile.isActive === true ? 1 : 0;
     this.db.execute(
       `INSERT INTO provider_profiles (
-        id, name, type, endpoint, api_key, default_model, context_budget, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, name, type, endpoint, api_key, default_model, context_budget, is_active, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         type = excluded.type,
@@ -1067,6 +1068,7 @@ export class SqliteChatSessionStore implements ChatSessionStore {
         profile.apiKey || null,
         profile.defaultModel || null,
         profile.contextBudget ?? 8192,
+        isActive,
         profile.createdAt || timestamp,
         timestamp,
       ],
@@ -1076,24 +1078,50 @@ export class SqliteChatSessionStore implements ChatSessionStore {
   listProviderProfiles(): any[] {
     return this.db.queryAll<any>(
       `SELECT id, name, type, endpoint, api_key as apiKey, default_model as defaultModel,
-              context_budget as contextBudget, created_at as createdAt, updated_at as updatedAt
+              context_budget as contextBudget, is_active as isActiveInt,
+              created_at as createdAt, updated_at as updatedAt
        FROM provider_profiles
        ORDER BY name ASC`,
-    );
+    ).map((row) => ({ ...row, isActive: row.isActiveInt === 1 }));
   }
 
   getProviderProfile(id: string): any | null {
-    return this.db.queryOne<any>(
+    const row = this.db.queryOne<any>(
       `SELECT id, name, type, endpoint, api_key as apiKey, default_model as defaultModel,
-              context_budget as contextBudget, created_at as createdAt, updated_at as updatedAt
+              context_budget as contextBudget, is_active as isActiveInt,
+              created_at as createdAt, updated_at as updatedAt
        FROM provider_profiles
        WHERE id = ?`,
       [id],
     );
+    return row ? { ...row, isActive: row.isActiveInt === 1 } : null;
   }
 
   deleteProviderProfile(id: string): void {
     this.db.execute(`DELETE FROM provider_profiles WHERE id = ?`, [id]);
+  }
+
+  setActiveProviderProfile(id: string): void {
+    this.db.transaction(() => {
+      const exists = this.db.queryOne(`SELECT 1 FROM provider_profiles WHERE id = ?`, [id]);
+      if (!exists) {
+        throw new Error(`Provider profile '${id}' was not found.`);
+      }
+      this.db.execute(`UPDATE provider_profiles SET is_active = 0 WHERE is_active = 1`, []);
+      this.db.execute(`UPDATE provider_profiles SET is_active = 1 WHERE id = ?`, [id]);
+    });
+  }
+
+  getActiveProviderProfile(): any | null {
+    const row = this.db.queryOne<any>(
+      `SELECT id, name, type, endpoint, api_key as apiKey, default_model as defaultModel,
+              context_budget as contextBudget, is_active as isActiveInt,
+              created_at as createdAt, updated_at as updatedAt
+       FROM provider_profiles
+       WHERE is_active = 1
+       LIMIT 1`,
+    );
+    return row ? { ...row, isActive: true } : null;
   }
 
   private getBranch(branchId: ChatBranchId): ChatBranch | null {

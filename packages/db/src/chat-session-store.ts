@@ -149,6 +149,8 @@ export interface ChatSessionStore {
   listProviderProfiles(): any[];
   getProviderProfile(id: string): any | null;
   deleteProviderProfile(id: string): void;
+  setActiveProviderProfile(id: string): void;
+  getActiveProviderProfile(): any | null;
 }
 
 interface StoredBranchState {
@@ -759,7 +761,9 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
 
   upsertProviderProfile(profile: any): void {
     const id = profile.id || (this.nextId("provider") as string);
-    this.providerProfiles.set(id, { ...profile, id });
+    const existing = this.providerProfiles.get(id);
+    const isActive = profile.isActive !== undefined ? profile.isActive : existing?.isActive ?? false;
+    this.providerProfiles.set(id, { ...existing, ...profile, id, isActive });
   }
 
   listProviderProfiles(): any[] {
@@ -773,6 +777,24 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
 
   deleteProviderProfile(id: string): void {
     this.providerProfiles.delete(id);
+  }
+
+  setActiveProviderProfile(id: string): void {
+    if (!this.providerProfiles.has(id)) {
+      throw new Error(`Provider profile '${id}' was not found.`);
+    }
+    for (const [key, profile] of this.providerProfiles) {
+      this.providerProfiles.set(key, { ...profile, isActive: key === id });
+    }
+  }
+
+  getActiveProviderProfile(): any | null {
+    for (const profile of this.providerProfiles.values()) {
+      if (profile.isActive) {
+        return { ...profile };
+      }
+    }
+    return null;
   }
 
   private getStoredBranchState(

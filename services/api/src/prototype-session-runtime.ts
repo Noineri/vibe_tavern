@@ -113,6 +113,7 @@ interface StoredProviderProfileRecord {
   apiKey: string | null;
   defaultModel?: string | null;
   contextBudget?: number | null;
+  isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -124,6 +125,7 @@ interface ClientProviderProfileRecord {
   endpoint: string;
   defaultModel?: string | null;
   contextBudget?: number | null;
+  isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
   hasStoredApiKey: boolean;
@@ -508,6 +510,49 @@ export class PrototypeSessionRuntime {
     this.store.deleteProviderProfile(id);
   }
 
+  activateProviderProfile(id: string): ClientProviderProfileRecord {
+    this.store.setActiveProviderProfile(id);
+    const profile = this.store.getProviderProfile(id) as StoredProviderProfileRecord | null;
+    if (!profile) {
+      throw new Error(`Provider profile '${id}' was not found after activation.`);
+    }
+    return this.toClientProviderProfile(profile);
+  }
+
+  resolveActiveProviderProfile(): StoredProviderProfileRecord | null {
+    return this.store.getActiveProviderProfile() as StoredProviderProfileRecord | null;
+  }
+
+  updateProviderProfile(
+    id: string,
+    patch: {
+      name?: string;
+      type?: string;
+      endpoint?: string;
+      apiKey?: unknown;
+      defaultModel?: string | null;
+      contextBudget?: number | null;
+    },
+  ): ClientProviderProfileRecord {
+    const existing = this.store.getProviderProfile(id) as StoredProviderProfileRecord | null;
+    if (!existing) {
+      throw new Error(`Provider profile '${id}' was not found.`);
+    }
+    const hasApiKeyInput = Object.prototype.hasOwnProperty.call(patch, "apiKey");
+    const apiKey = hasApiKeyInput
+      ? this.resolveStoredApiKey(patch.apiKey, existing.apiKey ?? null)
+      : (existing.apiKey ?? null);
+    const merged: StoredProviderProfileRecord = {
+      ...existing,
+      ...patch,
+      apiKey,
+      id,
+      isActive: existing.isActive,
+    };
+    this.store.upsertProviderProfile(merged);
+    return this.toClientProviderProfile(merged);
+  }
+
   createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
     const entry = this.store.createLoreEntry(lorebookId, input);
     this.refreshLoreEntriesCache(lorebookId);
@@ -889,6 +934,7 @@ export class PrototypeSessionRuntime {
       endpoint: profile.endpoint,
       defaultModel: profile.defaultModel ?? null,
       contextBudget: profile.contextBudget ?? null,
+      isActive: profile.isActive === true,
       createdAt: profile.createdAt,
       updatedAt: profile.updatedAt,
       hasStoredApiKey: Boolean(profile.apiKey),

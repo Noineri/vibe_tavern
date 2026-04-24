@@ -64,6 +64,9 @@ const runtime = {
   },
   connectProviderProfile: async (providerProfileId: string) =>
     providerOrchestrator.connectProfile(getRequiredProviderProfile(providerProfileId)),
+  activateProviderProfile: (providerProfileId: string) => sessionRuntime.activateProviderProfile(providerProfileId),
+  updateProviderProfile: (providerProfileId: string, body: unknown) =>
+    sessionRuntime.updateProviderProfile(providerProfileId, body as any),
   saveProviderDraft: async (body: unknown) => sessionRuntime.saveProviderProfile(body),
   testProviderDraft: async (_body: unknown) => ({
     success: false,
@@ -309,6 +312,12 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
     return;
   }
 
+  if (method === "PATCH" && providerMatch) {
+    const body = await readJsonBody(request);
+    writeJson(response, 200, await runtime.updateProviderProfile(providerMatch[1], body));
+    return;
+  }
+
   if (method === "POST" && url.pathname === "/api/providers/test") {
     const body = await readJsonBody(request);
     writeJson(response, 200, await runtime.testProviderDraft(body as any));
@@ -328,6 +337,12 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
   if (method === "POST" && url.pathname === "/api/providers") {
     const body = await readJsonBody(request);
     writeJson(response, 200, await runtime.saveProviderDraft(body as any));
+    return;
+  }
+
+  const providerActivateMatch = /^\/api\/providers\/([^/]+)\/activate$/.exec(url.pathname);
+  if (method === "POST" && providerActivateMatch) {
+    writeJson(response, 200, runtime.activateProviderProfile(providerActivateMatch[1]));
     return;
   }
 

@@ -42,6 +42,21 @@ ALTER TABLE characters ADD COLUMN post_history_instructions TEXT;
 ALTER TABLE characters ADD COLUMN creator_notes TEXT;
 `,
   },
+  {
+    version: "0005_provider_profile_is_active",
+    sql: `
+ALTER TABLE provider_profiles ADD COLUMN is_active INTEGER NOT NULL DEFAULT 0;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_profiles_active
+  ON provider_profiles(is_active)
+  WHERE is_active = 1;
+UPDATE provider_profiles SET is_active = 1
+  WHERE id = (
+    SELECT id FROM provider_profiles
+    ORDER BY updated_at DESC, id DESC
+    LIMIT 1
+  );
+`,
+  },
 ];
 
 export function getLatestMigrationVersion(): string {
