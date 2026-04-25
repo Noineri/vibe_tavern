@@ -184,6 +184,45 @@ export const TerminalIcon: FC = () => (
 
 export const SendIcon: FC = TerminalIcon;
 
+export const SearchIcon: FC = () => (
+  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <circle cx="7" cy="7" r="4.5" />
+    <line x1="10.5" y1="10.5" x2="14" y2="14" />
+  </svg>
+);
+
+export const ImportIcon: FC = () => (
+  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M8 1.5v8" />
+    <polyline points="5,6.5 8,9.5 11,6.5" />
+    <path d="M2.5 11v2A1.5 1.5 0 0 0 4 14.5h8a1.5 1.5 0 0 0 1.5-1.5v-2" />
+  </svg>
+);
+
+export const EllipsisIcon: FC = () => (
+  <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" stroke="none">
+    <circle cx="3" cy="8" r="1.4" />
+    <circle cx="8" cy="8" r="1.4" />
+    <circle cx="13" cy="8" r="1.4" />
+  </svg>
+);
+
+export const DownloadIcon: FC = () => (
+  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M8 2v8" />
+    <polyline points="5,7 8,10 11,7" />
+    <line x1="2.5" y1="13.5" x2="13.5" y2="13.5" />
+  </svg>
+);
+
+export const StackIcon: FC = () => (
+  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <polygon points="8,2 14,5 8,8 2,5" />
+    <polyline points="2,8 8,11 14,8" />
+    <polyline points="2,11 8,14 14,11" />
+  </svg>
+);
+
 export const Icons = {
   Sun: SunIcon,
   Moon: MoonIcon,
@@ -207,4 +246,9 @@ export const Icons = {
   Trace: TraceIcon,
   Terminal: TerminalIcon,
   Send: SendIcon,
+  Search: SearchIcon,
+  Import: ImportIcon,
+  Ellipsis: EllipsisIcon,
+  Download: DownloadIcon,
+  Stack: StackIcon,
 } as const;

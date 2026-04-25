@@ -145,9 +145,14 @@ export function App() {
         activeChatId={activeChatId}
         characterTabs={app.characterTabs}
         chats={snapshot.chats}
+        branches={snapshot.branches}
+        activeBranchId={snapshot.activeBranch.id}
         personaName={personaName}
         onToggleCollapsed={() => app.setSidebarCollapsed(!app.sidebarCollapsed)}
         onSwitchChat={(chatId) => void app.handleSwitchChat(chatId)}
+        onActivateBranch={(branchId) => void app.handleActivateBranch(branchId)}
+        onFork={() => void app.handleFork()}
+        onImportFiles={(files) => void app.handleImportFiles(files)}
         onOpenPromptManager={app.openPromptManager}
         onOpenPersonaManager={app.openPersonaModal}
       />

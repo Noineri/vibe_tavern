@@ -854,6 +854,7 @@ export function useRpPlatformApp() {
     handleImportDragLeave,
     handleImportDrop,
     handleImportInputChange,
+    handleImportFiles,
   };
 }
 
