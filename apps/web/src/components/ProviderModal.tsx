@@ -43,7 +43,7 @@ export function ProviderModal(input: ProviderModalProps) {
               <div className="api-sub">Saved profiles, model list, and active Claw Tavern connection.</div>
             </div>
             <button
-              className="icon-btn"
+              className="iBtn"
               aria-label="Close provider settings"
               title="Close provider settings"
               onClick={input.onClose}

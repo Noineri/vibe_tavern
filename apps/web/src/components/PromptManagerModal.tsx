@@ -23,7 +23,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               <div className="api-sub">System, post-history, and summary/tools instructions per preset.</div>
             </div>
             <button
-              className="icon-btn"
+              className="iBtn"
               aria-label="Close prompt manager"
               title="Close prompt manager"
               onClick={input.onClose}
@@ -46,6 +46,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               </div>
               <div
                 className="pm-add-btn"
+                role="button"
+                tabIndex={0}
                 style={{ opacity: 0.45, cursor: "not-allowed" }}
                 title="Backend pending — D3 follow-up"
               >
@@ -121,6 +123,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         <div className="api-foot">
           <span
             className="act-btn"
+            role="button"
+            tabIndex={0}
             style={{ color: "var(--t3)", padding: "6px 12px", opacity: 0.45, cursor: "not-allowed" }}
             title="Backend pending — D3 follow-up"
           >

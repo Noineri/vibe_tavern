@@ -30,11 +30,11 @@ export function TopBar(input: TopBarProps) {
       </div>
 
       <div className="hdr-right">
-        <button className="memory-badge" onClick={input.onOpenTracePanel}>
+        <button className="mem-badge" onClick={input.onOpenTracePanel}>
           <span className="icon-inline">
             <Icons.Trace />
           </span>
-          <span className="memory-dot" />
+          <span className="mem-dot" />
           <span>
             {input.activatedLoreCount} lore · {input.retrievedMemoryCount} memory
           </span>

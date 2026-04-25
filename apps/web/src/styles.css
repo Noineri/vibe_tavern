@@ -6,6 +6,7 @@
  */
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+button{border:0;background:transparent;font:inherit;color:inherit}
 
 :root{
   --bg:#0d0c0b;--surface:#131210;--s2:#1c1a17;--s3:#252220;
@@ -164,12 +165,13 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 
 /* в”Ђв”Ђ Input в”Ђв”Ђ */
 .input-area{padding:10px 16px 14px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0}
-.input-box{background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:hidden;transition:border-color .15s}
+.input-box{background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:visible;transition:border-color .15s}
 .input-box:focus-within{border-color:var(--border2)}
 .input-ta{width:100%;background:transparent;border:none;outline:none;padding:11px 14px 7px;font-family:var(--font-body);font-size:14.5px;line-height:1.65;color:var(--t1);resize:none;min-height:48px;max-height:140px}
 .input-ta::placeholder{color:var(--t4)}
 .input-row{display:flex;align-items:center;padding:5px 10px 8px;gap:6px}
 .char-pill{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:500;color:var(--accent-t);background:var(--accent-dim);padding:3px 9px;border-radius:20px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.pill-btn{display:flex;align-items:center;gap:4px;background:none;border:none;color:inherit;font:inherit;cursor:pointer;padding:3px 9px;border-radius:20px}
 .sep-v{width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0}
 .tok-c{font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums;white-space:nowrap}
 .input-r{margin-left:auto;display:flex;align-items:center;gap:5px}

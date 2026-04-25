@@ -262,7 +262,7 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                 />
                 <div className="build-tags">
                   {active.keys.map((k) => (
-                    <span key={k} className="build-tag on" onClick={() => removeKey("keys", k)}>
+                    <span key={k} className="build-tag on" role="button" tabIndex={0} onClick={() => removeKey("keys", k)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") removeKey("keys", k); }}>
                       {k} ✕
                     </span>
                   ))}
@@ -279,7 +279,7 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                 />
                 <div className="build-tags">
                   {active.secondaryKeys.map((k) => (
-                    <span key={k} className="build-tag on" onClick={() => removeKey("secondaryKeys", k)}>
+                    <span key={k} className="build-tag on" role="button" tabIndex={0} onClick={() => removeKey("secondaryKeys", k)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") removeKey("secondaryKeys", k); }}>
                       {k} ✕
                     </span>
                   ))}

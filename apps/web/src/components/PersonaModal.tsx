@@ -72,7 +72,7 @@ export function PersonaModal(input: PersonaModalProps) {
               <div className="api-sub">Whose voice are you using in chat?</div>
             </div>
             <button
-              className="icon-btn"
+              className="iBtn"
               aria-label="Close persona manager"
               title="Close persona manager"
               onClick={input.onClose}
@@ -141,15 +141,20 @@ export function PersonaModal(input: PersonaModalProps) {
                         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                           <div
                             className="persona-edit-btn"
+                            role="button"
+                            tabIndex={0}
                             onClick={(event) => {
                               event.stopPropagation();
                               startEdit(persona);
                             }}
+                            onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.stopPropagation(); startEdit(persona); } }}
                           >
                             <Icons.Edit /> Edit
                           </div>
                           <div
                             className="persona-edit-btn"
+                            role="button"
+                            tabIndex={0}
                             style={{ opacity: 0.45, cursor: "not-allowed" }}
                             title="Backend pending — see BACKEND_BACKLOG B-persona-lifecycle"
                             onClick={(event) => event.stopPropagation()}
@@ -158,6 +163,8 @@ export function PersonaModal(input: PersonaModalProps) {
                           </div>
                           <div
                             className="persona-edit-btn"
+                            role="button"
+                            tabIndex={0}
                             style={{ opacity: 0.45, cursor: "not-allowed", color: "oklch(0.6 0.15 25)" }}
                             title="Backend pending — see BACKEND_BACKLOG B-persona-lifecycle"
                             onClick={(event) => event.stopPropagation()}
@@ -173,6 +180,8 @@ export function PersonaModal(input: PersonaModalProps) {
             })}
             <div
               className="add-btn-row"
+              role="button"
+              tabIndex={0}
               style={{ opacity: 0.45, cursor: "not-allowed" }}
               title="Backend pending — see BACKEND_BACKLOG B-persona-lifecycle"
             >

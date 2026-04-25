@@ -135,14 +135,14 @@ export function Sidebar(input: SidebarProps) {
                         onClick={(event) => event.stopPropagation()}
                         style={{ top: 28, right: 4 }}
                       >
-                        <div className="sb-menu-item disabled" title={BACKEND_PENDING_TITLE}>
+                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
                           <Icons.Download /> Export
                         </div>
-                        <div className="sb-menu-item disabled" title={BACKEND_PENDING_TITLE}>
+                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
                           <Icons.Book /> Archive
                         </div>
                         <div className="sb-menu-sep" />
-                        <div className="sb-menu-item danger disabled" title={BACKEND_PENDING_TITLE}>
+                        <div className="sb-menu-item danger disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
                           <Icons.Trash /> Delete
                         </div>
                       </div>
@@ -219,23 +219,23 @@ export function Sidebar(input: SidebarProps) {
 
                     {chatMenuOpen && (
                       <div className="sb-chat-menu-popover" ref={chatMenuRef} onClick={(event) => event.stopPropagation()}>
-                        <div className="sb-menu-item disabled" title={BACKEND_PENDING_TITLE}>
+                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
                           <Icons.Edit /> Rename
                         </div>
-                        <div className="sb-menu-item disabled" title={BACKEND_PENDING_TITLE}>
+                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
                           <Icons.Copy /> Clone chat
                         </div>
-                        <div className="sb-menu-item disabled" title={BACKEND_PENDING_TITLE}>
+                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
                           <Icons.Download /> Export (JSONL)
                         </div>
-                        <div className="sb-menu-item disabled" title={BACKEND_PENDING_TITLE}>
+                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
                           <Icons.Download /> Export Markdown
                         </div>
-                        <div className="sb-menu-item disabled" title={BACKEND_PENDING_TITLE}>
+                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
                           <Icons.Download /> Export Prompt Trace
                         </div>
                         <div className="sb-menu-sep" />
-                        <div className="sb-menu-item danger disabled" title={BACKEND_PENDING_TITLE}>
+                        <div className="sb-menu-item danger disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
                           <Icons.Trash /> Delete
                         </div>
                       </div>
@@ -267,18 +267,21 @@ export function Sidebar(input: SidebarProps) {
                         })}
                         <div
                           className="sb-branch-action"
+                          role="button"
+                          tabIndex={0}
                           onClick={(event) => {
                             event.stopPropagation();
                             input.onFork();
                             setBranchPopId(null);
                           }}
+                          onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.stopPropagation(); input.onFork(); setBranchPopId(null); } }}
                         >
                           + Fork from here
                         </div>
-                        <div className="sb-branch-action" style={{ opacity: 0.45, cursor: "not-allowed" }} title={BACKEND_PENDING_TITLE}>
+                        <div className="sb-branch-action" role="button" tabIndex={0} aria-disabled="true" style={{ opacity: 0.45, cursor: "not-allowed" }} title={BACKEND_PENDING_TITLE}>
                           Merge branch
                         </div>
-                        <div className="sb-branch-action" style={{ opacity: 0.45, cursor: "not-allowed" }} title={BACKEND_PENDING_TITLE}>
+                        <div className="sb-branch-action" role="button" tabIndex={0} aria-disabled="true" style={{ opacity: 0.45, cursor: "not-allowed" }} title={BACKEND_PENDING_TITLE}>
                           Delete branch
                         </div>
                       </div>

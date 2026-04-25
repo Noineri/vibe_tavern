@@ -38,7 +38,6 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
       <button
         className="pill-btn"
         onClick={() => setIsOpen(!isOpen)}
-        style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "inherit", font: "inherit", cursor: "pointer", padding: "3px 9px", borderRadius: 20 }}
       >
         <span>{activePersona.name}</span>
         <Icons.Caret direction={isOpen ? "u" : "d"} />
