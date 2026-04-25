@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
 import { Icons } from "./shared/icons.js";
 import { EmptyState } from "./shared/empty-state.js";
+import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 
 interface PersonaListItem {
   id: string;
@@ -17,6 +18,10 @@ interface PersonaModalProps {
   onClose: () => void;
   onSaveEdit: (personaId: string, draft: { name: string; description: string }) => void;
   onSetActive: (personaId: string) => void;
+  onCreatePersona: (input: { name: string; description: string }) => Promise<{ id: string } | null>;
+  onDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
+  onGetPersonalLorebookStatus: (personaId: string) => Promise<{ enabled: boolean; lorebookId: string | null }>;
+  onSetPersonalLorebookEnabled: (personaId: string, enabled: boolean) => Promise<{ enabled: boolean; lorebookId: string | null } | null>;
 }
 
 export function PersonaModal(input: PersonaModalProps) {
@@ -24,6 +29,10 @@ export function PersonaModal(input: PersonaModalProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string>("");
+  const [personalLorebookEnabled, setPersonalLorebookEnabled] = useState<boolean>(false);
+  const [personalLorebookLoading, setPersonalLorebookLoading] = useState<boolean>(false);
 
   useEffect(() => {
     if (input.isOpen) {
@@ -31,6 +40,16 @@ export function PersonaModal(input: PersonaModalProps) {
       setEditingId(null);
     }
   }, [input.isOpen, input.activePersonaId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (input.isOpen && selectedId) {
+      input.onGetPersonalLorebookStatus(selectedId).then((status) => {
+        if (!cancelled) setPersonalLorebookEnabled(status.enabled);
+      }).catch(() => { /* ignore */ });
+    }
+    return () => { cancelled = true; };
+  }, [input.isOpen, selectedId]);
 
   if (!input.isOpen) return null;
 
@@ -60,6 +79,34 @@ export function PersonaModal(input: PersonaModalProps) {
 
   return (
     <div className="api-overlay" onClick={input.onClose}>
+      {confirmDeleteId && (
+        <DestructiveConfirmModal
+          title="Delete persona?"
+          body={
+            <>
+              Are you sure? Persona <b>{input.personas.find((p) => p.id === confirmDeleteId)?.name ?? "Untitled"}</b> will be deleted permanently.
+              {deleteError && <div style={{ marginTop: 8, color: "oklch(0.6 0.15 25)" }}>{deleteError}</div>}
+            </>
+          }
+          confirmLabel="Delete"
+          onConfirm={async () => {
+            const id = confirmDeleteId;
+            if (!id) return;
+            const result = await input.onDeletePersona(id);
+            if (result.ok) {
+              setConfirmDeleteId(null);
+              setDeleteError("");
+              if (selectedId === id) setSelectedId(null);
+            } else {
+              setDeleteError(result.error ?? "Delete failed.");
+            }
+          }}
+          onCancel={() => {
+            setConfirmDeleteId(null);
+            setDeleteError("");
+          }}
+        />
+      )}
       <div
         className="api-modal"
         style={{ maxWidth: 480 }}
@@ -87,7 +134,7 @@ export function PersonaModal(input: PersonaModalProps) {
               <EmptyState
                 icon={<Icons.User />}
                 title="No personas"
-                sub="Persona creation is not yet wired to the backend."
+                sub="Create one to get started."
               />
             )}
             {input.personas.map((persona) => {
@@ -156,7 +203,7 @@ export function PersonaModal(input: PersonaModalProps) {
                             role="button"
                             tabIndex={0}
                             style={{ opacity: 0.45, cursor: "not-allowed" }}
-                            title="Backend pending — see BACKEND_BACKLOG B-persona-lifecycle"
+                            title="Duplicate not yet implemented"
                             onClick={(event) => event.stopPropagation()}
                           >
                             <Icons.Copy /> Duplicate
@@ -165,9 +212,12 @@ export function PersonaModal(input: PersonaModalProps) {
                             className="persona-edit-btn"
                             role="button"
                             tabIndex={0}
-                            style={{ opacity: 0.45, cursor: "not-allowed", color: "oklch(0.6 0.15 25)" }}
-                            title="Backend pending — see BACKEND_BACKLOG B-persona-lifecycle"
-                            onClick={(event) => event.stopPropagation()}
+                            style={{ color: "oklch(0.6 0.15 25)", cursor: "pointer" }}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setConfirmDeleteId(persona.id);
+                              setDeleteError("");
+                            }}
                           >
                             <Icons.Trash /> Delete
                           </div>
@@ -178,31 +228,49 @@ export function PersonaModal(input: PersonaModalProps) {
                 </div>
               );
             })}
-            <div
+            <button
               className="add-btn-row"
-              role="button"
-              tabIndex={0}
-              style={{ opacity: 0.45, cursor: "not-allowed" }}
-              title="Backend pending — see BACKEND_BACKLOG B-persona-lifecycle"
+              onClick={async () => {
+                const created = await input.onCreatePersona({ name: "New persona", description: "" });
+                if (created) {
+                  setSelectedId(created.id);
+                  setEditingId(created.id);
+                  setEditName("New persona");
+                  setEditDescription("");
+                }
+              }}
+              style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "var(--t1)", textAlign: "left", display: "flex", alignItems: "center" }}
             >
               <Icons.Plus /> <span style={{ marginLeft: 6 }}>Create new persona</span>
-            </div>
+            </button>
           </div>
 
           <div className="api-section-title" style={{ marginTop: 24 }}>Persona settings</div>
           <div className="api-field">
             <label
-              style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--t1)", textTransform: "none", letterSpacing: 0, fontSize: 13, fontWeight: 400, cursor: "not-allowed", opacity: 0.6 }}
-              title="Backend pending — see BACKEND_BACKLOG B-persona-lifecycle"
+              style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--t1)", textTransform: "none", letterSpacing: 0, fontSize: 13, fontWeight: 400, cursor: selectedPersona && !personalLorebookLoading ? "pointer" : "not-allowed", opacity: selectedPersona ? 1 : 0.6 }}
+              title={selectedPersona ? "Toggle personal lorebook for this persona" : "Select a persona first"}
             >
               <span className="toggle">
-                <input type="checkbox" disabled />
+                <input
+                  type="checkbox"
+                  checked={personalLorebookEnabled}
+                  disabled={!selectedPersona || personalLorebookLoading}
+                  onChange={async () => {
+                    if (!selectedPersona) return;
+                    const next = !personalLorebookEnabled;
+                    setPersonalLorebookLoading(true);
+                    const result = await input.onSetPersonalLorebookEnabled(selectedPersona.id, next);
+                    setPersonalLorebookLoading(false);
+                    if (result) setPersonalLorebookEnabled(result.enabled);
+                  }}
+                />
                 <span className="tgl-sl" />
               </span>
               Personal Lorebook (per-persona RAG)
             </label>
             <div className="api-hint" style={{ marginTop: 8 }}>
-              When enabled, facts and worldbuilding tied to this persona will be injected into context via RAG. Backend pending.
+              When enabled, facts and worldbuilding tied to this persona will be injected into context via RAG.
             </div>
           </div>
         </div>

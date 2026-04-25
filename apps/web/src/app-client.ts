@@ -152,6 +152,30 @@ export async function listPersonas(): Promise<PersonaRecord[]> {
   return requestJson("/api/personas");
 }
 
+export async function createPersona(input: {
+  name: string;
+  description: string;
+  pronouns?: string | null;
+  defaultForNewChats?: boolean;
+}): Promise<PersonaRecord> {
+  return requestJson("/api/personas", { method: "POST", body: input });
+}
+
+export async function deletePersona(personaId: string): Promise<void> {
+  await requestJson(`/api/personas/${personaId}`, { method: "DELETE" });
+}
+
+export async function getPersonalLorebookStatus(personaId: string): Promise<{ enabled: boolean; lorebookId: string | null }> {
+  return requestJson(`/api/personas/${personaId}/personal-lorebook`);
+}
+
+export async function setPersonalLorebookEnabled(personaId: string, enabled: boolean): Promise<{ enabled: boolean; lorebookId: string | null }> {
+  return requestJson(`/api/personas/${personaId}/personal-lorebook`, {
+    method: "PUT",
+    body: { enabled },
+  });
+}
+
 export async function setChatPersona(chatId: import("@rp-platform/domain").ChatId, personaId: string): Promise<AppSnapshot> {
   return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/set-persona`, {
     method: "POST",
@@ -375,7 +399,7 @@ export async function renameChat(chatId: ChatId, title: string): Promise<{ chatI
 async function requestJson<T>(
   path: string,
   options?: {
-    method?: "DELETE" | "GET" | "PATCH" | "POST";
+    method?: "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
     body?: unknown;
   },
 ): Promise<T> {

@@ -223,6 +223,13 @@ export function App() {
         onClose={app.closePersonaModal}
         onSaveEdit={(personaId, draft) => void app.handleSavePersona(personaId, draft)}
         onSetActive={(personaId) => void app.handleSetChatPersona(personaId)}
+        onCreatePersona={app.handleCreatePersona}
+        onDeletePersona={app.handleDeletePersona}
+        onGetPersonalLorebookStatus={async (personaId) => {
+          const { getPersonalLorebookStatus } = await import("./app-client.js");
+          return getPersonalLorebookStatus(personaId);
+        }}
+        onSetPersonalLorebookEnabled={app.handleSetPersonalLorebook}
       />
 
       {app.confirmDestroy && (

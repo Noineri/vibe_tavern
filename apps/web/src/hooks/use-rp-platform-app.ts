@@ -600,6 +600,39 @@ export function useRpPlatformApp() {
     }
   }
 
+  async function handleCreatePersona(input: { name: string; description: string }): Promise<{ id: string } | null> {
+    try {
+      const created = await (await import("../app-client.js")).createPersona({
+        name: input.name.trim(),
+        description: input.description.trim(),
+      });
+      await loadPersonas();
+      return { id: created.id };
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Failed to create persona.");
+      return null;
+    }
+  }
+
+  async function handleDeletePersona(personaId: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      await (await import("../app-client.js")).deletePersona(personaId);
+      await loadPersonas();
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "Failed to delete persona." };
+    }
+  }
+
+  async function handleSetPersonalLorebook(personaId: string, enabled: boolean): Promise<{ enabled: boolean; lorebookId: string | null } | null> {
+    try {
+      return await (await import("../app-client.js")).setPersonalLorebookEnabled(personaId, enabled);
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Failed to update personal lorebook.");
+      return null;
+    }
+  }
+
   async function handleFork(): Promise<void> {
     if (!activeChatId) {
       return;
@@ -880,6 +913,9 @@ export function useRpPlatformApp() {
     handleSaveCharacter,
     handleSavePersona,
     handleSetChatPersona,
+    handleCreatePersona,
+    handleDeletePersona,
+    handleSetPersonalLorebook,
     handleFork,
     handleActivateBranch,
     handleStartEdit,
