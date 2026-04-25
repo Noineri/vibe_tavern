@@ -126,3 +126,12 @@ export interface CreatePersonaRequest {
   pronouns?: string | null;
   defaultForNewChats?: boolean;
 }
+
+export interface PersonalLorebookStatus {
+  enabled: boolean;
+  lorebookId: string | null;
+}
+
+export interface SetPersonalLorebookRequest {
+  enabled: boolean;
+}

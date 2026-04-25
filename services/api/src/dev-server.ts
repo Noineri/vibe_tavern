@@ -73,6 +73,8 @@ const runtime = {
   createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) =>
     sessionRuntime.createPersona(body),
   deletePersona: (personaId: string) => sessionRuntime.deletePersona(personaId),
+  getPersonalLorebookStatus: (personaId: string) => sessionRuntime.getPersonalLorebookStatus(personaId),
+  setPersonalLorebookEnabled: (personaId: string, enabled: boolean) => sessionRuntime.setPersonalLorebookEnabled(personaId, enabled),
   updateLorebook: (_lorebookId: string, _body: { chatId: string; lorebookRaw: string }) => {
     throw new Error("Lorebook patch route is not wired in this baseline.");
   },
@@ -345,6 +347,28 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
       const message = error instanceof Error ? error.message : "Unknown error";
       const status = /referenced by one or more chats/i.test(message) ? 409 : /not found/i.test(message) ? 404 : 500;
       writeJson(response, status, { error: message });
+    }
+    return;
+  }
+
+  const personaPersonalLorebookMatch = /^\/api\/personas\/([^/]+)\/personal-lorebook$/.exec(url.pathname);
+  if (method === "GET" && personaPersonalLorebookMatch) {
+    try {
+      writeJson(response, 200, runtime.getPersonalLorebookStatus(personaPersonalLorebookMatch[1]));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      writeJson(response, /not found/i.test(message) ? 404 : 500, { error: message });
+    }
+    return;
+  }
+  if (method === "PUT" && personaPersonalLorebookMatch) {
+    const body = await readJsonBody(request);
+    const enabled = body.enabled === true;
+    try {
+      writeJson(response, 200, runtime.setPersonalLorebookEnabled(personaPersonalLorebookMatch[1], enabled));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      writeJson(response, /not found/i.test(message) ? 404 : 500, { error: message });
     }
     return;
   }

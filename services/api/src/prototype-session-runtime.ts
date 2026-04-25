@@ -396,6 +396,25 @@ export class PrototypeSessionRuntime {
     this.store.deletePersona(personaId as import("@rp-platform/domain").PersonaId);
   }
 
+  getPersonalLorebookStatus(personaId: string): { enabled: boolean; lorebookId: string | null } {
+    const result = this.store.getPersonalLorebookForPersona(personaId as import("@rp-platform/domain").PersonaId);
+    return result ? { enabled: true, lorebookId: result.lorebookId } : { enabled: false, lorebookId: null };
+  }
+
+  setPersonalLorebookEnabled(personaId: string, enabled: boolean): { enabled: boolean; lorebookId: string | null } {
+    const typedPersonaId = personaId as import("@rp-platform/domain").PersonaId;
+    if (enabled) {
+      const persona = this.store.listPersonas().find((p) => p.id === personaId);
+      if (!persona) {
+        throw new Error(`Persona '${personaId}' was not found.`);
+      }
+      const result = this.store.enablePersonalLorebookForPersona(typedPersonaId, `__personal__:${personaId}`);
+      return { enabled: true, lorebookId: result.lorebookId };
+    }
+    this.store.disablePersonalLorebookForPersona(typedPersonaId);
+    return { enabled: false, lorebookId: null };
+  }
+
   prepareLiveTurn(chatId: ChatId, content: string, model: string): PreparedLiveTurn {
     const trimmed = content.trim();
     if (!trimmed) {

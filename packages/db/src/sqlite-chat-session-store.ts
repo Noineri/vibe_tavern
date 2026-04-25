@@ -9,6 +9,7 @@ import type {
   GenerationPreset,
   LoreEntry,
   Lorebook,
+  LorebookId,
   Message,
   MessageId,
   MessageVariant,
@@ -357,6 +358,55 @@ export class SqliteChatSessionStore implements ChatSessionStore {
         chatId,
       ]);
       this.touchChat(chatId, timestamp);
+    });
+  }
+
+  getPersonalLorebookForPersona(personaId: PersonaId): { lorebookId: LorebookId } | null {
+    const row = this.db.queryOne<{ id: string }>(
+      `SELECT lb.id AS id
+       FROM persona_lorebooks pl
+       JOIN lorebooks lb ON lb.id = pl.lorebook_id
+       WHERE pl.persona_id = ?
+         AND lb.scope_type = 'persona'
+         AND lb.name = ?
+       LIMIT 1`,
+      [personaId, `__personal__:${personaId}`],
+    );
+    return row ? { lorebookId: row.id as LorebookId } : null;
+  }
+
+  enablePersonalLorebookForPersona(personaId: PersonaId, name: string): { lorebookId: LorebookId } {
+    return this.db.transaction(() => {
+      const personaExists = this.db.queryOne(`SELECT 1 FROM personas WHERE id = ?`, [personaId]);
+      if (!personaExists) {
+        throw new Error(`Persona '${personaId}' was not found.`);
+      }
+      const existing = this.getPersonalLorebookForPersona(personaId);
+      if (existing) return existing;
+      const timestamp = this.clock.now();
+      const lorebookId = this.idGenerator.next("lorebook") as LorebookId;
+      this.db.execute(
+        `INSERT INTO lorebooks (id, name, scope_type, description, created_at, updated_at)
+         VALUES (?, ?, 'persona', ?, ?, ?)`,
+        [lorebookId, name, "Personal lorebook auto-created for persona.", timestamp, timestamp],
+      );
+      this.db.execute(
+        `INSERT INTO persona_lorebooks (persona_id, lorebook_id) VALUES (?, ?)`,
+        [personaId, lorebookId],
+      );
+      return { lorebookId };
+    });
+  }
+
+  disablePersonalLorebookForPersona(personaId: PersonaId): void {
+    this.db.transaction(() => {
+      const existing = this.getPersonalLorebookForPersona(personaId);
+      if (!existing) return;
+      this.db.execute(
+        `DELETE FROM persona_lorebooks WHERE persona_id = ? AND lorebook_id = ?`,
+        [personaId, existing.lorebookId],
+      );
+      this.db.execute(`DELETE FROM lorebooks WHERE id = ?`, [existing.lorebookId]);
     });
   }
 

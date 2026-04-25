@@ -11,6 +11,7 @@ import type {
   GenerationPreset,
   LoreEntry,
   Lorebook,
+  LorebookId,
   Message,
   MessageId,
   MessageVariant,
@@ -116,6 +117,9 @@ export interface ChatSessionStore {
   createPersona(input: { name: string; description: string; pronouns: string | null; defaultForNewChats: boolean }): Persona;
   deletePersona(personaId: PersonaId): void;
   countChatsForPersona(personaId: PersonaId): number;
+  getPersonalLorebookForPersona(personaId: PersonaId): { lorebookId: LorebookId } | null;
+  enablePersonalLorebookForPersona(personaId: PersonaId, name: string): { lorebookId: LorebookId };
+  disablePersonalLorebookForPersona(personaId: PersonaId): void;
   updateChatPersona(chatId: ChatId, personaId: PersonaId): void;
   upsertGenerationPreset(input: GenerationPreset): void;
   upsertToolProfile(input: ToolProfile): void;
@@ -176,6 +180,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
   private readonly lorebooks = new Map<string, Lorebook>();
   private readonly loreEntries = new Map<string, LoreEntry>();
   private readonly characterLorebooks = new Map<CharacterId, Set<string>>();
+  private readonly personaLorebooks = new Map<PersonaId, Set<LorebookId>>();
   private readonly chats = new Map<ChatId, Chat>();
   private readonly branches = new Map<ChatBranchId, StoredBranchState>();
   private readonly branchIdsByChat = new Map<ChatId, ChatBranchId[]>();
@@ -254,6 +259,48 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     }
     chat.personaId = personaId;
     this.touchChat(chat);
+  }
+
+  getPersonalLorebookForPersona(personaId: PersonaId): { lorebookId: LorebookId } | null {
+    const links = this.personaLorebooks.get(personaId);
+    if (!links) return null;
+    for (const lorebookId of links) {
+      const lorebook = this.lorebooks.get(lorebookId);
+      if (lorebook && lorebook.scopeType === "persona" && lorebook.name === `__personal__:${personaId}`) {
+        return { lorebookId };
+      }
+    }
+    return null;
+  }
+
+  enablePersonalLorebookForPersona(personaId: PersonaId, name: string): { lorebookId: LorebookId } {
+    if (!this.personas.has(personaId)) {
+      throw new Error(`Persona '${personaId}' was not found.`);
+    }
+    const existing = this.getPersonalLorebookForPersona(personaId);
+    if (existing) return existing;
+    const timestamp = new Date().toISOString();
+    const lorebookId = `lorebook_${Math.random().toString(36).slice(2, 10)}` as LorebookId;
+    this.lorebooks.set(lorebookId, {
+      id: lorebookId,
+      name,
+      scopeType: "persona",
+      description: "Personal lorebook auto-created for persona.",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    if (!this.personaLorebooks.has(personaId)) {
+      this.personaLorebooks.set(personaId, new Set());
+    }
+    this.personaLorebooks.get(personaId)!.add(lorebookId);
+    return { lorebookId };
+  }
+
+  disablePersonalLorebookForPersona(personaId: PersonaId): void {
+    const existing = this.getPersonalLorebookForPersona(personaId);
+    if (!existing) return;
+    this.personaLorebooks.get(personaId)?.delete(existing.lorebookId);
+    this.lorebooks.delete(existing.lorebookId);
   }
 
   upsertGenerationPreset(input: GenerationPreset): void {
