@@ -113,6 +113,9 @@ export interface ChatSessionStore {
   upsertCharacterVersion(input: CharacterVersion): void;
   upsertPersona(input: Persona): void;
   listPersonas(): Persona[];
+  createPersona(input: { name: string; description: string; pronouns: string | null; defaultForNewChats: boolean }): Persona;
+  deletePersona(personaId: PersonaId): void;
+  countChatsForPersona(personaId: PersonaId): number;
   updateChatPersona(chatId: ChatId, personaId: PersonaId): void;
   upsertGenerationPreset(input: GenerationPreset): void;
   upsertToolProfile(input: ToolProfile): void;
@@ -207,6 +210,41 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     return Array.from(this.personas.values())
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((p) => ({ ...p }));
+  }
+
+  createPersona(input: { name: string; description: string; pronouns: string | null; defaultForNewChats: boolean }): Persona {
+    const timestamp = new Date().toISOString();
+    const id = `persona_${Math.random().toString(36).slice(2, 10)}` as PersonaId;
+    const persona: Persona = {
+      id,
+      name: input.name,
+      description: input.description,
+      pronouns: input.pronouns,
+      avatarAssetId: null,
+      defaultForNewChats: input.defaultForNewChats,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    this.personas.set(id, persona);
+    return persona;
+  }
+
+  deletePersona(personaId: PersonaId): void {
+    if (!this.personas.has(personaId)) {
+      throw new Error(`Persona '${personaId}' was not found.`);
+    }
+    if (this.countChatsForPersona(personaId) > 0) {
+      throw new Error(`Persona '${personaId}' is referenced by one or more chats and cannot be deleted.`);
+    }
+    this.personas.delete(personaId);
+  }
+
+  countChatsForPersona(personaId: PersonaId): number {
+    let count = 0;
+    for (const chat of this.chats.values()) {
+      if (chat.personaId === personaId) count += 1;
+    }
+    return count;
   }
 
   updateChatPersona(chatId: ChatId, personaId: PersonaId): void {

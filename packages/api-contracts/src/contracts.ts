@@ -119,3 +119,10 @@ export interface RenameChatResponse {
   chatId: string;
   title: string;
 }
+
+export interface CreatePersonaRequest {
+  name: string;
+  description: string;
+  pronouns?: string | null;
+  defaultForNewChats?: boolean;
+}

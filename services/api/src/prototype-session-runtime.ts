@@ -372,6 +372,30 @@ export class PrototypeSessionRuntime {
     return this.getSnapshot(chatId);
   }
 
+  createPersona(input: {
+    name: string;
+    description: string;
+    pronouns?: string | null;
+    defaultForNewChats?: boolean;
+  }): { id: string; name: string; description: string } {
+    const trimmedName = (input.name ?? "").trim();
+    const trimmedDescription = (input.description ?? "").trim();
+    if (!trimmedName) {
+      throw new Error("Persona name is required.");
+    }
+    const persona = this.store.createPersona({
+      name: trimmedName,
+      description: trimmedDescription,
+      pronouns: input.pronouns?.trim() || null,
+      defaultForNewChats: input.defaultForNewChats === true,
+    });
+    return { id: persona.id, name: persona.name, description: persona.description };
+  }
+
+  deletePersona(personaId: string): void {
+    this.store.deletePersona(personaId as import("@rp-platform/domain").PersonaId);
+  }
+
   prepareLiveTurn(chatId: ChatId, content: string, model: string): PreparedLiveTurn {
     const trimmed = content.trim();
     if (!trimmed) {

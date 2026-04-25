@@ -286,6 +286,63 @@ export class SqliteChatSessionStore implements ChatSessionStore {
       }));
   }
 
+  createPersona(input: { name: string; description: string; pronouns: string | null; defaultForNewChats: boolean }): Persona {
+    return this.db.transaction(() => {
+      const timestamp = this.clock.now();
+      const id = this.idGenerator.next("persona") as PersonaId;
+      this.db.execute(
+        `INSERT INTO personas (
+          id, name, description, pronouns, avatar_asset_id, default_for_new_chats, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          input.name,
+          input.description,
+          input.pronouns,
+          null,
+          input.defaultForNewChats ? 1 : 0,
+          timestamp,
+          timestamp,
+        ],
+      );
+      return {
+        id,
+        name: input.name,
+        description: input.description,
+        pronouns: input.pronouns,
+        avatarAssetId: null,
+        defaultForNewChats: input.defaultForNewChats,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+    });
+  }
+
+  deletePersona(personaId: PersonaId): void {
+    this.db.transaction(() => {
+      const exists = this.db.queryOne(`SELECT 1 FROM personas WHERE id = ?`, [personaId]);
+      if (!exists) {
+        throw new Error(`Persona '${personaId}' was not found.`);
+      }
+      const referencingChats = this.db.queryOne<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM chats WHERE persona_id = ?`,
+        [personaId],
+      );
+      if ((referencingChats?.n ?? 0) > 0) {
+        throw new Error(`Persona '${personaId}' is referenced by one or more chats and cannot be deleted.`);
+      }
+      this.db.execute(`DELETE FROM personas WHERE id = ?`, [personaId]);
+    });
+  }
+
+  countChatsForPersona(personaId: PersonaId): number {
+    const row = this.db.queryOne<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM chats WHERE persona_id = ?`,
+      [personaId],
+    );
+    return row?.n ?? 0;
+  }
+
   updateChatPersona(chatId: ChatId, personaId: PersonaId): void {
     this.db.transaction(() => {
       this.requireChat(chatId);

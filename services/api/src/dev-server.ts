@@ -70,6 +70,9 @@ const runtime = {
     sessionRuntime.updatePersona(personaId, body),
   listPersonas: () => sessionRuntime.listPersonas(),
   setChatPersona: (chatId: string, personaId: string) => sessionRuntime.setChatPersona(chatId, personaId),
+  createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) =>
+    sessionRuntime.createPersona(body),
+  deletePersona: (personaId: string) => sessionRuntime.deletePersona(personaId),
   updateLorebook: (_lorebookId: string, _body: { chatId: string; lorebookRaw: string }) => {
     throw new Error("Lorebook patch route is not wired in this baseline.");
   },
@@ -156,6 +159,12 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
 
   if (method === "GET" && url.pathname === "/api/personas") {
     writeJson(response, 200, runtime.listPersonas());
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/personas") {
+    const body = await readJsonBody(request);
+    writeJson(response, 201, runtime.createPersona(body as { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }));
     return;
   }
 
@@ -325,6 +334,18 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
         systemPrompt: string;
       }),
     );
+    return;
+  }
+
+  if (method === "DELETE" && personaMatch) {
+    try {
+      runtime.deletePersona(personaMatch[1]);
+      writeEmpty(response, 204);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      const status = /referenced by one or more chats/i.test(message) ? 409 : /not found/i.test(message) ? 404 : 500;
+      writeJson(response, status, { error: message });
+    }
     return;
   }
 
