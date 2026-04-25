@@ -352,6 +352,26 @@ export async function deleteLoreEntry(lorebookId: string, entryId: string): Prom
   await requestJson(`/api/lorebooks/${lorebookId}/entries/${entryId}`, { method: "DELETE" });
 }
 
+export async function archiveCharacter(characterId: string): Promise<{ characterId: string; status: "archived" }> {
+  return requestJson(`/api/characters/${characterId}/archive`, { method: "PATCH" });
+}
+
+export async function unarchiveCharacter(characterId: string): Promise<{ characterId: string; status: "active" }> {
+  return requestJson(`/api/characters/${characterId}/unarchive`, { method: "PATCH" });
+}
+
+export async function deleteCharacter(characterId: string): Promise<void> {
+  await requestJson(`/api/characters/${characterId}`, { method: "DELETE" });
+}
+
+export async function deleteChat(chatId: ChatId): Promise<void> {
+  await requestJson(`/api/chats/${chatId}`, { method: "DELETE" });
+}
+
+export async function renameChat(chatId: ChatId, title: string): Promise<{ chatId: string; title: string }> {
+  return requestJson(`/api/chats/${chatId}/title`, { method: "PATCH", body: { title } });
+}
+
 async function requestJson<T>(
   path: string,
   options?: {

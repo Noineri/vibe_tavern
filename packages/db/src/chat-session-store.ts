@@ -144,6 +144,11 @@ export interface ChatSessionStore {
   getLatestPromptTrace(chatId: ChatId, branchId?: ChatBranchId): PromptTrace | null;
   listPromptTraces(input: ListPromptTracesInput): PromptTrace[];
 
+  setCharacterStatus(characterId: CharacterId, status: "active" | "archived"): void;
+  deleteCharacter(characterId: CharacterId): void;
+  deleteChat(chatId: ChatId): void;
+  renameChat(chatId: ChatId, title: string): void;
+
   // Provider Profiles
   upsertProviderProfile(profile: any): void;
   listProviderProfiles(): any[];
@@ -764,6 +769,80 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     const existing = this.providerProfiles.get(id);
     const isActive = profile.isActive !== undefined ? profile.isActive : existing?.isActive ?? false;
     this.providerProfiles.set(id, { ...existing, ...profile, id, isActive });
+  }
+
+  setCharacterStatus(characterId: CharacterId, status: "active" | "archived"): void {
+    const character = this.characters.get(characterId);
+    if (character) {
+      character.status = status;
+      character.updatedAt = this.nowTimestamp();
+    }
+  }
+
+  deleteCharacter(characterId: CharacterId): void {
+    const chatIdsToDelete: ChatId[] = [];
+    for (const [chatId, chat] of this.chats.entries()) {
+      if (chat.characterId === characterId) {
+        chatIdsToDelete.push(chatId);
+      }
+    }
+    for (const chatId of chatIdsToDelete) {
+      const branchIds = this.branchIdsByChat.get(chatId) ?? [];
+      for (const branchId of branchIds) {
+        const state = this.branches.get(branchId);
+        if (state) {
+          for (const message of state.messages) {
+            for (const [variantId, variant] of this.messageVariants.entries()) {
+              if (variant.messageId === message.id) {
+                this.messageVariants.delete(variantId);
+              }
+            }
+          }
+          this.branches.delete(branchId);
+        }
+      }
+      this.branchIdsByChat.delete(chatId);
+      this.chats.delete(chatId);
+    }
+    for (const [traceId, trace] of this.promptTraces.entries()) {
+      if (trace.chatId === characterId || chatIdsToDelete.includes(trace.chatId)) {
+        this.promptTraces.delete(traceId);
+      }
+    }
+    this.characterVersions.delete(characterId);
+    this.characters.delete(characterId);
+  }
+
+  deleteChat(chatId: ChatId): void {
+    const branchIds = this.branchIdsByChat.get(chatId) ?? [];
+    for (const branchId of branchIds) {
+      const state = this.branches.get(branchId);
+      if (state) {
+        for (const message of state.messages) {
+          for (const [variantId, variant] of this.messageVariants.entries()) {
+            if (variant.messageId === message.id) {
+              this.messageVariants.delete(variantId);
+            }
+          }
+        }
+        this.branches.delete(branchId);
+      }
+    }
+    this.branchIdsByChat.delete(chatId);
+    for (const [traceId, trace] of this.promptTraces.entries()) {
+      if (trace.chatId === chatId) {
+        this.promptTraces.delete(traceId);
+      }
+    }
+    this.chats.delete(chatId);
+  }
+
+  renameChat(chatId: ChatId, title: string): void {
+    const chat = this.chats.get(chatId);
+    if (chat) {
+      chat.title = title;
+      chat.updatedAt = this.nowTimestamp();
+    }
   }
 
   listProviderProfiles(): any[] {

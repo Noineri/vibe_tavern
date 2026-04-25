@@ -4,6 +4,7 @@ import type {
   ChatBranchId,
   ChatId,
   Character,
+  CharacterId,
   CharacterVersion,
   GenerationPreset,
   LoreEntry,
@@ -1041,6 +1042,92 @@ export class SqliteChatSessionStore implements ChatSessionStore {
     }
 
     return this.db.queryAll<PromptTraceRow>(sql, params).map(mapPromptTrace);
+  }
+
+  setCharacterStatus(characterId: CharacterId, status: "active" | "archived"): void {
+    const timestamp = this.clock.now();
+    this.db.execute(
+      `UPDATE characters SET status = ?, updated_at = ? WHERE id = ?`,
+      [status, timestamp, characterId],
+    );
+  }
+
+  deleteCharacter(characterId: CharacterId): void {
+    this.db.transaction(() => {
+      this.db.execute(
+        `DELETE FROM prompt_traces WHERE chat_id IN (SELECT id FROM chats WHERE character_id = ?)`,
+        [characterId],
+      );
+      this.db.execute(
+        `DELETE FROM message_variants WHERE message_id IN (SELECT m.id FROM messages m INNER JOIN chats c ON c.id = m.chat_id WHERE c.character_id = ?)`,
+        [characterId],
+      );
+      this.db.execute(
+        `DELETE FROM messages WHERE chat_id IN (SELECT id FROM chats WHERE character_id = ?)`,
+        [characterId],
+      );
+      this.db.execute(
+        `DELETE FROM summary_memory_snapshots WHERE chat_id IN (SELECT id FROM chats WHERE character_id = ?)`,
+        [characterId],
+      );
+      this.db.execute(
+        `DELETE FROM chat_branches WHERE chat_id IN (SELECT id FROM chats WHERE character_id = ?)`,
+        [characterId],
+      );
+      this.db.execute(
+        `DELETE FROM retrieved_memory_hits WHERE chat_id IN (SELECT id FROM chats WHERE character_id = ?)`,
+        [characterId],
+      );
+      this.db.execute(
+        `DELETE FROM chat_capabilities WHERE chat_id IN (SELECT id FROM chats WHERE character_id = ?)`,
+        [characterId],
+      );
+      this.db.execute(
+        `DELETE FROM chat_lorebooks WHERE chat_id IN (SELECT id FROM chats WHERE character_id = ?)`,
+        [characterId],
+      );
+      this.db.execute(
+        `DELETE FROM chats WHERE character_id = ?`,
+        [characterId],
+      );
+      this.db.execute(
+        `DELETE FROM character_lorebooks WHERE character_id = ?`,
+        [characterId],
+      );
+      this.db.execute(
+        `DELETE FROM character_versions WHERE character_id = ?`,
+        [characterId],
+      );
+      this.db.execute(
+        `DELETE FROM characters WHERE id = ?`,
+        [characterId],
+      );
+    });
+  }
+
+  deleteChat(chatId: ChatId): void {
+    this.db.transaction(() => {
+      this.db.execute(`DELETE FROM prompt_traces WHERE chat_id = ?`, [chatId]);
+      this.db.execute(
+        `DELETE FROM message_variants WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?)`,
+        [chatId],
+      );
+      this.db.execute(`DELETE FROM messages WHERE chat_id = ?`, [chatId]);
+      this.db.execute(`DELETE FROM summary_memory_snapshots WHERE chat_id = ?`, [chatId]);
+      this.db.execute(`DELETE FROM chat_branches WHERE chat_id = ?`, [chatId]);
+      this.db.execute(`DELETE FROM retrieved_memory_hits WHERE chat_id = ?`, [chatId]);
+      this.db.execute(`DELETE FROM chat_capabilities WHERE chat_id = ?`, [chatId]);
+      this.db.execute(`DELETE FROM chat_lorebooks WHERE chat_id = ?`, [chatId]);
+      this.db.execute(`DELETE FROM chats WHERE id = ?`, [chatId]);
+    });
+  }
+
+  renameChat(chatId: ChatId, title: string): void {
+    const timestamp = this.clock.now();
+    this.db.execute(
+      `UPDATE chats SET title = ?, updated_at = ? WHERE id = ?`,
+      [title, timestamp, chatId],
+    );
   }
 
   // Provider Profiles

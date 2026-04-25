@@ -13,6 +13,8 @@ interface SidebarProps {
   branches: ChatBranch[];
   activeBranchId: ChatBranchId | null;
   personaName: string;
+  renamingChatId: ChatId | null;
+  renameDraft: string;
   onToggleCollapsed: () => void;
   onSwitchChat: (chatId: ChatId) => void;
   onActivateBranch: (branchId: ChatBranchId) => void;
@@ -20,6 +22,19 @@ interface SidebarProps {
   onImportFiles: (files: FileList | File[]) => void;
   onOpenPromptManager: () => void;
   onOpenPersonaManager: () => void;
+  onArchiveCharacter: (characterId: string) => void;
+  onDeleteCharacter: (characterId: string) => void;
+  onDeleteChat: (chatId: ChatId) => void;
+  onRenameChat: (chatId: ChatId, title: string) => void;
+  onRenameStart: (chatId: ChatId, currentTitle: string) => void;
+  onRenameDraftChange: (draft: string) => void;
+  onRenameCancel: () => void;
+  onRequestDestructiveConfirm: (config: {
+    title: string;
+    body: import("react").ReactNode;
+    confirmLabel: string;
+    onConfirm: () => void;
+  }) => void;
 }
 
 const BACKEND_PENDING_TITLE = "Backend pending — see BACKEND_BACKLOG B8";
@@ -138,11 +153,30 @@ export function Sidebar(input: SidebarProps) {
                         <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
                           <Icons.Download /> Export
                         </div>
-                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
+                        <div
+                          className="sb-menu-item"
+                          role="menuitem"
+                          onClick={() => {
+                            setCharMenuId(null);
+                            input.onArchiveCharacter(character.id);
+                          }}
+                        >
                           <Icons.Book /> Archive
                         </div>
                         <div className="sb-menu-sep" />
-                        <div className="sb-menu-item danger disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
+                        <div
+                          className="sb-menu-item danger"
+                          role="menuitem"
+                          onClick={() => {
+                            setCharMenuId(null);
+                            input.onRequestDestructiveConfirm({
+                              title: "Delete character?",
+                              body: <>Are you sure? <b>{character.name}</b> and all its chats will be deleted permanently.</>,
+                              confirmLabel: "Delete",
+                              onConfirm: () => input.onDeleteCharacter(character.id),
+                            });
+                          }}
+                        >
                           <Icons.Trash /> Delete
                         </div>
                       </div>
@@ -180,7 +214,31 @@ export function Sidebar(input: SidebarProps) {
                     style={{ position: "relative", zIndex: chatMenuOpen || branchPopOpen ? 100 : 1, cursor: "pointer" }}
                     onClick={() => input.onSwitchChat(chat.id)}
                   >
-                    <div className="sb-ct">{chat.title}</div>
+                    {input.renamingChatId === chat.id ? (
+                      <input
+                        className="sb-chat-rename-input"
+                        value={input.renameDraft}
+                        autoFocus
+                        onChange={(event) => input.onRenameDraftChange(event.target.value)}
+                        onClick={(event) => event.stopPropagation()}
+                        onBlur={() => {
+                          if (input.renameDraft.trim()) {
+                            input.onRenameChat(chat.id, input.renameDraft.trim());
+                          } else {
+                            input.onRenameCancel();
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && input.renameDraft.trim()) {
+                            input.onRenameChat(chat.id, input.renameDraft.trim());
+                          } else if (event.key === "Escape") {
+                            input.onRenameCancel();
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div className="sb-ct">{chat.title}</div>
+                    )}
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 1 }}>
                       <div className="sb-cm" style={{ marginTop: 0 }}>
                         {chat.characterName} · {chat.messageCount} msgs
@@ -219,7 +277,14 @@ export function Sidebar(input: SidebarProps) {
 
                     {chatMenuOpen && (
                       <div className="sb-chat-menu-popover" ref={chatMenuRef} onClick={(event) => event.stopPropagation()}>
-                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
+                        <div
+                          className="sb-menu-item"
+                          role="menuitem"
+                          onClick={() => {
+                            setChatMenuId(null);
+                            input.onRenameStart(chat.id, chat.title);
+                          }}
+                        >
                           <Icons.Edit /> Rename
                         </div>
                         <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
@@ -235,7 +300,19 @@ export function Sidebar(input: SidebarProps) {
                           <Icons.Download /> Export Prompt Trace
                         </div>
                         <div className="sb-menu-sep" />
-                        <div className="sb-menu-item danger disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
+                        <div
+                          className="sb-menu-item danger"
+                          role="menuitem"
+                          onClick={() => {
+                            setChatMenuId(null);
+                            input.onRequestDestructiveConfirm({
+                              title: "Delete chat?",
+                              body: <>Delete <b>{chat.title}</b>? All messages on every branch will be removed.</>,
+                              confirmLabel: "Delete",
+                              onConfirm: () => input.onDeleteChat(chat.id),
+                            });
+                          }}
+                        >
                           <Icons.Trash /> Delete
                         </div>
                       </div>

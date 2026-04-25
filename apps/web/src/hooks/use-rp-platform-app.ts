@@ -1,11 +1,14 @@
-import type { ChangeEvent, DragEvent } from "react";
+import type { ChangeEvent, DragEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
 import {
   activateBranch,
   activateProviderProfile,
+  archiveCharacter,
   bootstrapApp,
   deleteChatMessage,
+  deleteCharacter,
+  deleteChat,
   deleteProviderProfile,
   editChatMessage,
   fetchChat,
@@ -14,10 +17,12 @@ import {
   forkBranch,
   listProviderProfiles,
   regenerateChatMessage,
+  renameChat,
   saveProviderProfile,
   selectMessageVariant,
   sendChatMessage,
   testProviderProfile,
+  unarchiveCharacter,
   updateCharacter,
   updatePersona,
   updateProviderProfile,
@@ -86,6 +91,14 @@ export function useRpPlatformApp() {
   const [messageActionId, setMessageActionId] = useState<string | null>(null);
   const [pendingUserMessageContent, setPendingUserMessageContent] = useState<string | null>(null);
   const [chatNotice, setChatNotice] = useState("");
+  const [confirmDestroy, setConfirmDestroy] = useState<{
+    title: string;
+    body: ReactNode;
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
+  const [renamingChatId, setRenamingChatId] = useState<ChatId | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const [isSavingCharacter, setIsSavingCharacter] = useState(false);
   const [characterSaveNotice, setCharacterSaveNotice] = useState("");
   const { importFile, isImporting } = useCharacterImport();
@@ -738,6 +751,31 @@ export function useRpPlatformApp() {
     }
   }
 
+  async function handleArchiveCharacter(characterId: string): Promise<void> {
+    await archiveCharacter(characterId);
+    await loadBootstrap();
+  }
+
+  async function handleUnarchiveCharacter(characterId: string): Promise<void> {
+    await unarchiveCharacter(characterId);
+    await loadBootstrap();
+  }
+
+  async function handleDeleteCharacter(characterId: string): Promise<void> {
+    await deleteCharacter(characterId);
+    await loadBootstrap();
+  }
+
+  async function handleDeleteChat(chatId: ChatId): Promise<void> {
+    await deleteChat(chatId);
+    await loadBootstrap();
+  }
+
+  async function handleRenameChat(chatId: ChatId, title: string): Promise<void> {
+    await renameChat(chatId, title);
+    await loadBootstrap();
+  }
+
   function renderConnectionStatus(): string {
     if (connection.status === "connecting") {
       return "connecting...";
@@ -855,6 +893,17 @@ export function useRpPlatformApp() {
     handleImportDrop,
     handleImportInputChange,
     handleImportFiles,
+    confirmDestroy,
+    setConfirmDestroy,
+    renamingChatId,
+    renameDraft,
+    setRenamingChatId,
+    setRenameDraft,
+    handleArchiveCharacter,
+    handleUnarchiveCharacter,
+    handleDeleteCharacter,
+    handleDeleteChat,
+    handleRenameChat,
   };
 }
 

@@ -6,6 +6,7 @@ import { PromptManagerModal } from "./components/PromptManagerModal.js";
 import { ProviderModal } from "./components/ProviderModal.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { TopBar } from "./components/TopBar.js";
+import { DestructiveConfirmModal } from "./components/shared/destructive-confirm-modal.js";
 import { useRpPlatformApp } from "./hooks/use-rp-platform-app.js";
 
 export function App() {
@@ -155,6 +156,16 @@ export function App() {
         onImportFiles={(files) => void app.handleImportFiles(files)}
         onOpenPromptManager={app.openPromptManager}
         onOpenPersonaManager={app.openPersonaModal}
+        renamingChatId={app.renamingChatId}
+        renameDraft={app.renameDraft}
+        onArchiveCharacter={(characterId) => void app.handleArchiveCharacter(characterId)}
+        onDeleteCharacter={(characterId) => void app.handleDeleteCharacter(characterId)}
+        onDeleteChat={(chatId) => void app.handleDeleteChat(chatId)}
+        onRenameChat={(chatId, title) => void app.handleRenameChat(chatId, title)}
+        onRenameStart={(chatId, title) => { app.setRenamingChatId(chatId); app.setRenameDraft(title); }}
+        onRenameDraftChange={app.setRenameDraft}
+        onRenameCancel={() => app.setRenamingChatId(null)}
+        onRequestDestructiveConfirm={(config) => app.setConfirmDestroy(config)}
       />
 
       <main className="main">
@@ -213,6 +224,19 @@ export function App() {
         onSaveEdit={(personaId, draft) => void app.handleSavePersona(personaId, draft)}
         onSetActive={(personaId) => void app.handleSetChatPersona(personaId)}
       />
+
+      {app.confirmDestroy && (
+        <DestructiveConfirmModal
+          title={app.confirmDestroy.title}
+          body={app.confirmDestroy.body}
+          confirmLabel={app.confirmDestroy.confirmLabel}
+          onConfirm={() => {
+            app.confirmDestroy!.onConfirm();
+            app.setConfirmDestroy(null);
+          }}
+          onCancel={() => app.setConfirmDestroy(null)}
+        />
+      )}
     </div>
   );
 }

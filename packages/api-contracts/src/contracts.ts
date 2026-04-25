@@ -100,3 +100,22 @@ export interface PromptTraceRecordDto extends AssemblePromptResponse {
   latencyMs: number;
   createdAt: string;
 }
+
+export interface ArchiveCharacterResponse {
+  characterId: string;
+  status: "archived";
+}
+
+export interface UnarchiveCharacterResponse {
+  characterId: string;
+  status: "active";
+}
+
+export interface RenameChatRequest {
+  title: string;
+}
+
+export interface RenameChatResponse {
+  chatId: string;
+  title: string;
+}

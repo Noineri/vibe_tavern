@@ -110,6 +110,11 @@ const runtime = {
   importJson: (body: { fileName: string; jsonText: string; chatId?: string }) => sessionRuntime.importJson(body),
   forkBranch: (chatId: string) => sessionRuntime.forkBranch(chatId),
   activateBranch: (chatId: string, branchId: string) => sessionRuntime.activateBranch(chatId, branchId),
+  archiveCharacter: (characterId: string) => sessionRuntime.archiveCharacter(characterId),
+  unarchiveCharacter: (characterId: string) => sessionRuntime.unarchiveCharacter(characterId),
+  deleteCharacter: (characterId: string) => sessionRuntime.deleteCharacter(characterId),
+  deleteChat: (chatId: string) => sessionRuntime.deleteChat(chatId),
+  renameChat: (chatId: string, title: string) => sessionRuntime.renameChat(chatId, title),
 };
 
 const server = createServer(async (request, response) => {
@@ -254,6 +259,32 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
     return;
   }
 
+  const chatRootMatch = /^\/api\/chats\/([^/]+)$/.exec(url.pathname);
+  if (method === "DELETE" && chatRootMatch) {
+    runtime.deleteChat(chatRootMatch[1]);
+    writeEmpty(response, 204);
+    return;
+  }
+
+  const renameChatMatch = /^\/api\/chats\/([^/]+)\/title$/.exec(url.pathname);
+  if (method === "PATCH" && renameChatMatch) {
+    const body = await readJsonBody(request);
+    writeJson(response, 200, runtime.renameChat(renameChatMatch[1], body.title as string));
+    return;
+  }
+
+  const archiveCharMatch = /^\/api\/characters\/([^/]+)\/archive$/.exec(url.pathname);
+  if (method === "PATCH" && archiveCharMatch) {
+    writeJson(response, 200, runtime.archiveCharacter(archiveCharMatch[1]));
+    return;
+  }
+
+  const unarchiveCharMatch = /^\/api\/characters\/([^/]+)\/unarchive$/.exec(url.pathname);
+  if (method === "PATCH" && unarchiveCharMatch) {
+    writeJson(response, 200, runtime.unarchiveCharacter(unarchiveCharMatch[1]));
+    return;
+  }
+
   const characterMatch = /^\/api\/characters\/([^/]+)$/.exec(url.pathname);
   if (method === "PATCH" && characterMatch) {
     const body = await readJsonBody(request);
@@ -272,6 +303,12 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
         creatorNotes?: string | null;
       }),
     );
+    return;
+  }
+
+  if (method === "DELETE" && characterMatch) {
+    runtime.deleteCharacter(characterMatch[1]);
+    writeEmpty(response, 204);
     return;
   }
 

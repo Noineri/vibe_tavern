@@ -479,6 +479,52 @@ export class PrototypeSessionRuntime {
     return this.getSnapshot(chatId);
   }
 
+  archiveCharacter(characterId: string): { characterId: string; status: "archived" } {
+    this.store.setCharacterStatus(characterId as CharacterId, "archived");
+    const character = this.characters.get(characterId);
+    if (character) {
+      const chatId = this.store.listChats().find((c) => c.characterId === characterId)?.id;
+      if (chatId) {
+        const chatIndex = this.chatOrder.indexOf(chatId);
+        if (chatIndex !== -1) {
+          this.chatOrder.splice(chatIndex, 1);
+        }
+      }
+    }
+    return { characterId, status: "archived" };
+  }
+
+  unarchiveCharacter(characterId: string): { characterId: string; status: "active" } {
+    this.store.setCharacterStatus(characterId as CharacterId, "active");
+    return { characterId, status: "active" };
+  }
+
+  deleteCharacter(characterId: string): void {
+    const chatIds = this.store.listChats()
+      .filter((c) => c.characterId === characterId)
+      .map((c) => c.id);
+    for (const chatId of chatIds) {
+      const idx = this.chatOrder.indexOf(chatId);
+      if (idx !== -1) this.chatOrder.splice(idx, 1);
+      this.pendingPromptTraceByChat.delete(chatId);
+    }
+    this.characters.delete(characterId);
+    this.importedLoreEntriesByCharacter.delete(characterId as CharacterId);
+    this.store.deleteCharacter(characterId as CharacterId);
+  }
+
+  deleteChat(chatId: string): void {
+    const idx = this.chatOrder.indexOf(chatId as ChatId);
+    if (idx !== -1) this.chatOrder.splice(idx, 1);
+    this.pendingPromptTraceByChat.delete(chatId as ChatId);
+    this.store.deleteChat(chatId as ChatId);
+  }
+
+  renameChat(chatId: string, title: string): { chatId: string; title: string } {
+    this.store.renameChat(chatId as ChatId, title);
+    return { chatId, title };
+  }
+
   listProviderProfiles(): ClientProviderProfileRecord[] {
     return this.store
       .listProviderProfiles()
