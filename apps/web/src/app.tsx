@@ -1,5 +1,6 @@
 import { BuildMode } from "./components/BuildMode.js";
 import { ImportSurface } from "./components/ImportSurface.js";
+import { PersonaModal } from "./components/PersonaModal.js";
 import { PlayMode } from "./components/PlayMode.js";
 import { PromptManagerModal } from "./components/PromptManagerModal.js";
 import { ProviderModal } from "./components/ProviderModal.js";
@@ -126,9 +127,6 @@ export function App() {
       alternateGreetings={snapshot.character.alternateGreetings}
       postHistoryInstructions={snapshot.character.postHistoryInstructions}
       creatorNotes={snapshot.character.creatorNotes}
-      personaId={snapshot.persona?.id ?? null}
-      personaName={snapshot.persona?.name ?? ""}
-      personaDescription={snapshot.persona?.description ?? ""}
       promptTraceCount={snapshot.promptTraceHistory.length}
       activeTrace={app.activePromptTrace}
       promptPayloadText={app.promptPayloadText}
@@ -137,7 +135,6 @@ export function App() {
       importSurface={importSurface}
       onTabChange={app.setBuildTab}
       onSave={(draft) => void app.handleSaveCharacter(draft)}
-      onSavePersona={(draft) => void app.handleSavePersona(draft)}
     />
   );
 
@@ -152,6 +149,7 @@ export function App() {
         onToggleCollapsed={() => app.setSidebarCollapsed(!app.sidebarCollapsed)}
         onSwitchChat={(chatId) => void app.handleSwitchChat(chatId)}
         onOpenPromptManager={app.openPromptManager}
+        onOpenPersonaManager={app.openPersonaModal}
       />
 
       <main className="main">
@@ -199,6 +197,16 @@ export function App() {
       <PromptManagerModal
         isOpen={app.isPromptManagerOpen}
         onClose={app.closePromptManager}
+      />
+
+      <PersonaModal
+        isOpen={app.isPersonaModalOpen}
+        personas={app.personas}
+        activePersonaId={app.snapshot?.persona?.id ?? null}
+        isSaving={app.isSavingCharacter}
+        onClose={app.closePersonaModal}
+        onSaveEdit={(personaId, draft) => void app.handleSavePersona(personaId, draft)}
+        onSetActive={(personaId) => void app.handleSetChatPersona(personaId)}
       />
     </div>
   );

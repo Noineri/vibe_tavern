@@ -32,7 +32,7 @@ import type {
   SavedConnectionState,
   ThemeMode,
 } from "../components/app-shell-types.js";
-import type { BuildCharacterDraft, BuildPersonaDraft, BuildTab } from "../components/BuildMode.js";
+import type { BuildCharacterDraft, BuildTab } from "../components/BuildMode.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import { useCharacterImport } from "./use-character-import.js";
 
@@ -75,6 +75,7 @@ export function useRpPlatformApp() {
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [isProviderModalOpen, setIsProviderModalOpen] = useState(false);
   const [isPromptManagerOpen, setPromptManagerOpen] = useState(false);
+  const [isPersonaModalOpen, setPersonaModalOpen] = useState(false);
   const [connection, setConnection] = useState<ConnectionState>(() => createInitialConnectionState());
   const [isImportDragActive, setIsImportDragActive] = useState(false);
   const [importNotice, setImportNotice] = useState("");
@@ -240,6 +241,14 @@ export function useRpPlatformApp() {
 
   function closePromptManager(): void {
     setPromptManagerOpen(false);
+  }
+
+  function openPersonaModal(): void {
+    setPersonaModalOpen(true);
+  }
+
+  function closePersonaModal(): void {
+    setPersonaModalOpen(false);
   }
 
   async function handleSend(): Promise<void> {
@@ -545,8 +554,8 @@ export function useRpPlatformApp() {
     }
   }
 
-  async function handleSavePersona(draftInput: BuildPersonaDraft): Promise<void> {
-    if (!activeChatId || !snapshot?.persona?.id) {
+  async function handleSavePersona(personaId: string, draftInput: { name: string; description: string }): Promise<void> {
+    if (!activeChatId) {
       return;
     }
 
@@ -554,7 +563,7 @@ export function useRpPlatformApp() {
     setCharacterSaveNotice("");
 
     try {
-      const nextSnapshot = await updatePersona(snapshot.persona.id, {
+      const nextSnapshot = await updatePersona(personaId, {
         chatId: activeChatId,
         name: draftInput.name,
         description: draftInput.description,
@@ -792,6 +801,9 @@ export function useRpPlatformApp() {
     isPromptManagerOpen,
     openPromptManager,
     closePromptManager,
+    isPersonaModalOpen,
+    openPersonaModal,
+    closePersonaModal,
     connection,
     patchConnection,
     isImportDragActive,

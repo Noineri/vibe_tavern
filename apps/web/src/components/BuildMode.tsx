@@ -14,12 +14,7 @@ export interface BuildCharacterDraft {
   creatorNotes: string;
 }
 
-export interface BuildPersonaDraft {
-  name: string;
-  description: string;
-}
-
-export type BuildTab = "character" | "lorebook" | "persona" | "trace";
+export type BuildTab = "character" | "lorebook" | "trace";
 
 interface BuildModeProps {
   activeTab: BuildTab;
@@ -32,9 +27,6 @@ interface BuildModeProps {
   alternateGreetings: string[];
   postHistoryInstructions: string | null;
   creatorNotes: string | null;
-  personaId: string | null;
-  personaName: string;
-  personaDescription: string;
   promptTraceCount: number;
   activeTrace: PromptTraceRecordDto | null;
   promptPayloadText: string;
@@ -43,7 +35,6 @@ interface BuildModeProps {
   importSurface: ReactNode;
   onTabChange: (tab: BuildTab) => void;
   onSave: (draft: BuildCharacterDraft) => void;
-  onSavePersona: (draft: BuildPersonaDraft) => void;
 }
 
 export function BuildMode(input: BuildModeProps) {
@@ -56,10 +47,6 @@ export function BuildMode(input: BuildModeProps) {
     alternateGreetings: input.alternateGreetings || [],
     postHistoryInstructions: input.postHistoryInstructions || "",
     creatorNotes: input.creatorNotes || "",
-  });
-  const [personaDraft, setPersonaDraft] = useState<BuildPersonaDraft>({
-    name: input.personaName,
-    description: input.personaDescription,
   });
 
   useEffect(() => {
@@ -75,13 +62,6 @@ export function BuildMode(input: BuildModeProps) {
     });
   }, [input.characterId, input.characterName, input.description, input.scenario, input.systemPrompt, input.mesExample, input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes]);
 
-  useEffect(() => {
-    setPersonaDraft({
-      name: input.personaName,
-      description: input.personaDescription,
-    });
-  }, [input.personaName, input.personaDescription, input.personaId]);
-
   const isDirty = useMemo(
     () =>
       draft.name !== input.characterName ||
@@ -95,19 +75,8 @@ export function BuildMode(input: BuildModeProps) {
     [draft, input.characterName, input.description, input.scenario, input.systemPrompt, input.mesExample, input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes],
   );
 
-  const isPersonaDirty = useMemo(
-    () =>
-      personaDraft.name !== input.personaName ||
-      personaDraft.description !== input.personaDescription,
-    [personaDraft, input.personaName, input.personaDescription],
-  );
-
   function patchDraft<K extends keyof BuildCharacterDraft>(key: K, value: BuildCharacterDraft[K]): void {
     setDraft((current) => ({ ...current, [key]: value }));
-  }
-
-  function patchPersonaDraft<K extends keyof BuildPersonaDraft>(key: K, value: BuildPersonaDraft[K]): void {
-    setPersonaDraft((current) => ({ ...current, [key]: value }));
   }
 
   function resetDraft(): void {
@@ -120,13 +89,6 @@ export function BuildMode(input: BuildModeProps) {
       alternateGreetings: input.alternateGreetings || [],
       postHistoryInstructions: input.postHistoryInstructions || "",
       creatorNotes: input.creatorNotes || "",
-    });
-  }
-
-  function resetPersonaDraft(): void {
-    setPersonaDraft({
-      name: input.personaName,
-      description: input.personaDescription,
     });
   }
 
@@ -236,65 +198,6 @@ export function BuildMode(input: BuildModeProps) {
     );
   }
 
-  function renderPersona(): ReactNode {
-    return (
-      <div className="build-placeholder">
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <div className="build-section-title">{personaDraft.name || "Your persona"}</div>
-          <button
-            className="api-save-btn"
-            style={{ height: 28, padding: "0 12px" }}
-            disabled={input.isSaving || !input.personaId || !personaDraft.name.trim() || !isPersonaDirty}
-            onClick={() =>
-              input.onSavePersona({
-                name: personaDraft.name.trim(),
-                description: personaDraft.description,
-              })
-            }
-          >
-            {input.isSaving ? "Saving..." : "Save"}
-          </button>
-        </div>
-        <div className="build-section-sub">Your persona - how you appear in chat.</div>
-        <div className="build-field">
-          <label>Name</label>
-          <input
-            type="text"
-            value={personaDraft.name}
-            disabled={input.isSaving || !input.personaId}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => patchPersonaDraft("name", event.target.value)}
-          />
-        </div>
-        <div className="build-field">
-          <label>Description</label>
-          <textarea
-            value={personaDraft.description}
-            disabled={input.isSaving || !input.personaId}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-              patchPersonaDraft("description", event.target.value)
-            }
-          />
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
-          <button
-            className="api-cancel-btn"
-            disabled={input.isSaving || !input.personaId || !isPersonaDirty}
-            onClick={resetPersonaDraft}
-          >
-            Reset
-          </button>
-          <span className="build-section-sub" style={{ margin: 0 }}>
-            {!input.personaId
-              ? "No persona attached to this chat."
-              : isPersonaDirty
-              ? "Unsaved changes"
-              : "Saved state"}
-          </span>
-        </div>
-      </div>
-    );
-  }
-
   function renderLorebook(): ReactNode {
     return (
       <LorebookEditor charName={input.characterName} lorebookId={input.characterId} />
@@ -365,8 +268,6 @@ export function BuildMode(input: BuildModeProps) {
     switch (input.activeTab) {
       case "lorebook":
         return renderLorebook();
-      case "persona":
-        return renderPersona();
       case "trace":
         return renderTrace();
       case "character":
@@ -390,12 +291,6 @@ export function BuildMode(input: BuildModeProps) {
           onClick={() => input.onTabChange("lorebook")}
         >
           Lorebook
-        </button>
-        <button
-          className={input.activeTab === "persona" ? "build-nav-item" + " act" : "build-nav-item"}
-          onClick={() => input.onTabChange("persona")}
-        >
-          Persona
         </button>
         <button
           className={input.activeTab === "trace" ? "build-nav-item" + " act" : "build-nav-item"}
