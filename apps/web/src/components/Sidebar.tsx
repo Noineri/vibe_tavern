@@ -12,6 +12,7 @@ interface SidebarProps {
   personaName: string;
   onToggleCollapsed: () => void;
   onSwitchChat: (chatId: ChatId) => void;
+  onOpenPromptManager: () => void;
 }
 
 export function Sidebar(input: SidebarProps) {
@@ -66,6 +67,23 @@ export function Sidebar(input: SidebarProps) {
           </section>
 
           <section className="sb-foot">
+            <div
+              className="sb-item"
+              role="button"
+              tabIndex={0}
+              onClick={input.onOpenPromptManager}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  input.onOpenPromptManager();
+                }
+              }}
+            >
+              <span className="sb-ava" style={{ background: "transparent", color: "var(--t2)" }}>
+                <Icons.Terminal />
+              </span>
+              <span>Prompt Manager</span>
+            </div>
             <div className="sb-item">
               <span className="sb-ava">Y</span>
               <span>{input.personaName}</span>

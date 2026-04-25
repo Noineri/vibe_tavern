@@ -74,6 +74,7 @@ export function useRpPlatformApp() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [isProviderModalOpen, setIsProviderModalOpen] = useState(false);
+  const [isPromptManagerOpen, setPromptManagerOpen] = useState(false);
   const [connection, setConnection] = useState<ConnectionState>(() => createInitialConnectionState());
   const [isImportDragActive, setIsImportDragActive] = useState(false);
   const [importNotice, setImportNotice] = useState("");
@@ -231,6 +232,14 @@ export function useRpPlatformApp() {
 
   function closeConnectionPanel(): void {
     setIsProviderModalOpen(false);
+  }
+
+  function openPromptManager(): void {
+    setPromptManagerOpen(true);
+  }
+
+  function closePromptManager(): void {
+    setPromptManagerOpen(false);
   }
 
   async function handleSend(): Promise<void> {
@@ -780,6 +789,9 @@ export function useRpPlatformApp() {
     isProviderModalOpen,
     openConnectionPanel,
     closeConnectionPanel,
+    isPromptManagerOpen,
+    openPromptManager,
+    closePromptManager,
     connection,
     patchConnection,
     isImportDragActive,

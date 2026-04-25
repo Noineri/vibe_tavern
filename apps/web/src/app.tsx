@@ -1,6 +1,7 @@
 import { BuildMode } from "./components/BuildMode.js";
 import { ImportSurface } from "./components/ImportSurface.js";
 import { PlayMode } from "./components/PlayMode.js";
+import { PromptManagerModal } from "./components/PromptManagerModal.js";
 import { ProviderModal } from "./components/ProviderModal.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { TopBar } from "./components/TopBar.js";
@@ -150,6 +151,7 @@ export function App() {
         personaName={personaName}
         onToggleCollapsed={() => app.setSidebarCollapsed(!app.sidebarCollapsed)}
         onSwitchChat={(chatId) => void app.handleSwitchChat(chatId)}
+        onOpenPromptManager={app.openPromptManager}
       />
 
       <main className="main">
@@ -192,6 +194,11 @@ export function App() {
         onConnect={app.handleConnect}
         onRefreshModels={app.handleRefreshProviderModels}
         onSaveProviderProfile={app.handleSaveProviderProfile}
+      />
+
+      <PromptManagerModal
+        isOpen={app.isPromptManagerOpen}
+        onClose={app.closePromptManager}
       />
     </div>
   );
