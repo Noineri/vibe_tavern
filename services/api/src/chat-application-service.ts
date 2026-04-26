@@ -3,6 +3,9 @@ import type {
   CreateBranchResponse,
   CreateChatRequest,
   CreateChatResponse,
+  DeleteBranchResponse,
+  MergeBranchRequest,
+  MergeBranchResponse,
   SendMessageRequest,
   SleepBranchRequest,
   SleepBranchResponse,
@@ -108,6 +111,30 @@ export class ChatApplicationService {
     });
 
     return mapSleepResponse(snapshot);
+  }
+
+  mergeBranch(chatId: ChatId, input: MergeBranchRequest): MergeBranchResponse {
+    const result = this.store.mergeBranch({
+      chatId,
+      sourceBranchId: input.sourceBranchId,
+      targetBranchId: input.targetBranchId,
+    });
+
+    return {
+      chatId,
+      activeBranchId: result.activeBranchId,
+      appendedMessageCount: result.appendedMessageCount,
+    };
+  }
+
+  deleteBranch(chatId: ChatId, branchId: ChatBranchId): DeleteBranchResponse {
+    const result = this.store.deleteBranch(chatId, branchId);
+
+    return {
+      chatId,
+      activeBranchId: result.activeBranchId,
+      deletedBranchId: result.deletedBranchId,
+    };
   }
 
   private requireChat(chatId: ChatId): Chat {
