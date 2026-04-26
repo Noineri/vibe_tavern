@@ -10,10 +10,6 @@ CREATE TABLE IF NOT EXISTS characters (
   name TEXT NOT NULL,
   description TEXT NOT NULL,
   default_scenario TEXT,
-  mes_example TEXT,
-  alternate_greetings_json TEXT NOT NULL DEFAULT '[]',
-  post_history_instructions TEXT,
-  creator_notes TEXT,
   avatar_asset_id TEXT,
   status TEXT NOT NULL,
   created_at TEXT NOT NULL,
@@ -162,14 +158,9 @@ CREATE TABLE IF NOT EXISTS provider_profiles (
   api_key TEXT,
   default_model TEXT,
   context_budget INTEGER NOT NULL DEFAULT 8192,
-  is_active INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_profiles_active
-  ON provider_profiles(is_active)
-  WHERE is_active = 1;
 
 CREATE INDEX IF NOT EXISTS idx_chat_branches_chat_id
 ON chat_branches(chat_id);
