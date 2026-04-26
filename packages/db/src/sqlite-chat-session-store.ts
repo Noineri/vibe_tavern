@@ -283,6 +283,31 @@ export class SqliteChatSessionStore implements ChatSessionStore {
     );
   }
 
+  getPersona(personaId: PersonaId): Persona | null {
+    const row = this.db.queryOne<PersonaRow>(
+      `SELECT
+         id, name, description, pronouns, avatar_asset_id, default_for_new_chats, created_at, updated_at
+       FROM personas
+       WHERE id = ?`,
+      [personaId],
+    );
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id as PersonaId,
+      name: row.name,
+      description: row.description,
+      pronouns: row.pronouns,
+      avatarAssetId: row.avatar_asset_id,
+      defaultForNewChats: Boolean(row.default_for_new_chats),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
   listPersonas(): Persona[] {
     return this.db
       .queryAll<PersonaRow>(
