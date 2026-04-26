@@ -1,12 +1,13 @@
 services:
-  app:
+  rp_platform:
+    container_name: rp_platform
     build: .
     ports:
       - "8787:8787"
       - "3000:3000"
     volumes:
-      - app-data:/app/data
+      - data:/app/data
     restart: unless-stopped
 
 volumes:
-  app-data:
+  data:
