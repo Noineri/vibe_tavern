@@ -41,6 +41,21 @@ import type { BuildCharacterDraft, BuildTab } from "../components/BuildMode.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import { useCharacterImport } from "./use-character-import.js";
 
+function replaceUiMacros(
+  text: string,
+  context: { characterName: string; personaName?: string | null; personaDescription?: string | null },
+): string {
+  if (!text) return text;
+  const userName = context.personaName?.trim() || "User";
+  return text
+    .replace(/\{\{\s*char\s*\}\}/gi, context.characterName)
+    .replace(/\{\{\s*user\s*\}\}/gi, userName)
+    .replace(/\{\{\s*persona\s*\}\}/gi, context.personaDescription ?? "")
+    .replace(/<USER>/gi, userName)
+    .replace(/<BOT>/gi, context.characterName)
+    .replace(/<CHAR>/gi, context.characterName);
+}
+
 const STORAGE_KEY = "rp-platform.connection-settings";
 const THEME_STORAGE_KEY = "rp-platform.theme";
 
@@ -193,6 +208,33 @@ export function useRpPlatformApp() {
   );
   const canSendViaActiveProfile = activeProviderProfile !== null && Boolean(activeProviderProfile.defaultModel);
   const characterTabs = useMemo(() => (snapshot ? buildCharacterTabs(snapshot) : []), [snapshot]);
+  const macroContext = useMemo(
+    () => snapshot ? {
+      characterName: snapshot.character.name,
+      personaName: snapshot.persona?.name ?? null,
+      personaDescription: snapshot.persona?.description ?? null,
+    } : null,
+    [snapshot],
+  );
+  const displayScenario = useMemo(
+    () => snapshot && macroContext ? replaceUiMacros(snapshot.character.scenario, macroContext) : "",
+    [macroContext, snapshot],
+  );
+  const displayMessages = useMemo(
+    () => snapshot && macroContext
+      ? snapshot.messages.map((message) => ({
+        ...message,
+        content: replaceUiMacros(message.content, macroContext),
+      }))
+      : [],
+    [macroContext, snapshot],
+  );
+  const displayPendingUserMessageContent = useMemo(
+    () => pendingUserMessageContent && macroContext
+      ? replaceUiMacros(pendingUserMessageContent, macroContext)
+      : pendingUserMessageContent,
+    [macroContext, pendingUserMessageContent],
+  );
 
   useEffect(() => {
     persistConnectionState(connection);
@@ -938,6 +980,9 @@ export function useRpPlatformApp() {
     setEditingDraft,
     messageActionId,
     pendingUserMessageContent,
+    displayPendingUserMessageContent,
+    displayMessages,
+    displayScenario,
     chatNotice,
     isSavingCharacter,
     characterSaveNotice,
