@@ -13,6 +13,7 @@ interface SidebarProps {
   branches: ChatBranch[];
   activeBranchId: ChatBranchId | null;
   personaName: string;
+  activePromptTraceId: string | null;
   renamingChatId: ChatId | null;
   renameDraft: string;
   onToggleCollapsed: () => void;
@@ -22,6 +23,11 @@ interface SidebarProps {
   onImportFiles: (files: FileList | File[]) => void;
   onOpenPromptManager: () => void;
   onOpenPersonaManager: () => void;
+  onCreateChat: (characterId?: string) => void;
+  onCloneChat: (chatId: ChatId) => void;
+  onExportCharacter: (characterId: string) => void;
+  onExportChatJsonl: (chatId: ChatId) => void;
+  onExportPromptTrace: (traceId: string) => void;
   onArchiveCharacter: (characterId: string) => void;
   onDeleteCharacter: (characterId: string) => void;
   onDeleteChat: (chatId: ChatId) => void;
@@ -150,7 +156,14 @@ export function Sidebar(input: SidebarProps) {
                         onClick={(event) => event.stopPropagation()}
                         style={{ top: 28, right: 4 }}
                       >
-                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
+                        <div
+                          className="sb-menu-item"
+                          role="menuitem"
+                          onClick={() => {
+                            setCharMenuId(null);
+                            input.onExportCharacter(character.id);
+                          }}
+                        >
                           <Icons.Download /> Export
                         </div>
                         <div
@@ -193,7 +206,7 @@ export function Sidebar(input: SidebarProps) {
               <button className="iBtn" style={{ width: 20, height: 20 }} onClick={triggerImport} title="Import chat (JSONL)">
                 <Icons.Import />
               </button>
-              <button className="iBtn" style={{ width: 20, height: 20, opacity: 0.45, cursor: "not-allowed" }} title={BACKEND_PENDING_TITLE} disabled>
+              <button className="iBtn" style={{ width: 20, height: 20 }} onClick={() => { const activeTab = input.characterTabs.find((tab) => tab.chatId === input.activeChatId); input.onCreateChat(activeTab?.id); }} title="New chat for active character">
                 <Icons.Plus />
               </button>
             </div>
@@ -287,16 +300,41 @@ export function Sidebar(input: SidebarProps) {
                         >
                           <Icons.Edit /> Rename
                         </div>
-                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
+                        <div
+                          className="sb-menu-item"
+                          role="menuitem"
+                          onClick={() => {
+                            setChatMenuId(null);
+                            input.onCloneChat(chat.id);
+                          }}
+                        >
                           <Icons.Copy /> Clone chat
                         </div>
-                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
+                        <div
+                          className="sb-menu-item"
+                          role="menuitem"
+                          onClick={() => {
+                            setChatMenuId(null);
+                            input.onExportChatJsonl(chat.id);
+                          }}
+                        >
                           <Icons.Download /> Export (JSONL)
                         </div>
-                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
+                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title="Markdown export is deferred; use JSONL export">
                           <Icons.Download /> Export Markdown
                         </div>
-                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title={BACKEND_PENDING_TITLE}>
+                        <div
+                          className={`sb-menu-item${chat.id === input.activeChatId && input.activePromptTraceId ? "" : " disabled"}`}
+                          role="menuitem"
+                          aria-disabled={chat.id !== input.activeChatId || !input.activePromptTraceId}
+                          title={chat.id !== input.activeChatId || !input.activePromptTraceId ? "No prompt trace available for this chat" : ""}
+                          onClick={() => {
+                            if (chat.id === input.activeChatId && input.activePromptTraceId) {
+                              setChatMenuId(null);
+                              input.onExportPromptTrace(input.activePromptTraceId);
+                            }
+                          }}
+                        >
                           <Icons.Download /> Export Prompt Trace
                         </div>
                         <div className="sb-menu-sep" />

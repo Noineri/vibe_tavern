@@ -6,11 +6,16 @@ import {
   activateProviderProfile,
   archiveCharacter,
   bootstrapApp,
+  cloneChat,
+  createChat,
   deleteChatMessage,
   deleteCharacter,
   deleteChat,
   deleteProviderProfile,
   editChatMessage,
+  exportCharacter,
+  exportChatJsonl,
+  exportPromptTrace,
   fetchChat,
   fetchProviderProfile,
   fetchProviderProfileModels as fetchModelsForProviderProfile,
@@ -902,6 +907,57 @@ export function useRpPlatformApp() {
     await loadBootstrap();
   }
 
+  async function handleCreateChat(characterId?: string): Promise<void> {
+    const resolvedId = characterId ?? snapshot?.character.id;
+    if (!resolvedId) return;
+    try {
+      const next = await createChat(resolvedId);
+      refresh(next.activeChat.id, next);
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Failed to create chat.");
+    }
+  }
+
+  async function handleCloneChat(chatId: ChatId): Promise<void> {
+    try {
+      const next = await cloneChat(chatId);
+      refresh(next.activeChat.id, next);
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Failed to clone chat.");
+    }
+  }
+
+  async function handleExportCharacter(characterId: string): Promise<void> {
+    try {
+      const data = await exportCharacter(characterId);
+      const name = snapshot?.character.name ?? "character";
+      const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
+      downloadTextFile(`${safeName}.chara_card_v3.json`, JSON.stringify(data, null, 2), "application/json");
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Failed to export character.");
+    }
+  }
+
+  async function handleExportChatJsonl(chatId: ChatId): Promise<void> {
+    try {
+      const text = await exportChatJsonl(chatId);
+      const chatItem = snapshot?.chats.find((c) => c.id === chatId);
+      const safeTitle = (chatItem?.title ?? "chat").replace(/[^a-zA-Z0-9_-]/g, "_");
+      downloadTextFile(`${safeTitle}.jsonl`, text, "application/x-ndjson");
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Failed to export chat.");
+    }
+  }
+
+  async function handleExportPromptTrace(traceId: string): Promise<void> {
+    try {
+      const data = await exportPromptTrace(traceId);
+      downloadTextFile(`prompt-trace-${traceId}.json`, JSON.stringify(data, null, 2), "application/json");
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Failed to export prompt trace.");
+    }
+  }
+
   function renderConnectionStatus(): string {
     if (connection.status === "connecting") {
       return "connecting...";
@@ -1042,6 +1098,12 @@ export function useRpPlatformApp() {
     handleDeleteCharacter,
     handleDeleteChat,
     handleRenameChat,
+    activePromptTraceId: activePromptTrace?.id ?? null,
+    onCreateChat: handleCreateChat,
+    onCloneChat: handleCloneChat,
+    onExportCharacter: handleExportCharacter,
+    onExportChatJsonl: handleExportChatJsonl,
+    onExportPromptTrace: handleExportPromptTrace,
   };
 }
 
@@ -1113,4 +1175,16 @@ function persistTheme(theme: ThemeMode): void {
   } catch {
     // Ignore theme persistence failures in the UI shell.
   }
+}
+
+function downloadTextFile(fileName: string, text: string, mimeType: string): void {
+  const blob = new Blob([text], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
 }
