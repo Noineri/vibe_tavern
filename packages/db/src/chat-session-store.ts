@@ -126,7 +126,9 @@ export interface ChatSessionStore {
   disablePersonalLorebookForPersona(personaId: PersonaId): void;
   updateChatPersona(chatId: ChatId, personaId: PersonaId): void;
   upsertGenerationPreset(input: GenerationPreset): void;
+  getGenerationPreset(id: GenerationPresetId): GenerationPreset | null;
   upsertToolProfile(input: ToolProfile): void;
+  getToolProfile(id: ToolProfileId): ToolProfile | null;
   upsertLorebook(input: Lorebook): void;
   replaceLoreEntries(lorebookId: string, entries: LoreEntry[]): void;
   createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry;
@@ -332,11 +334,21 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     });
   }
 
+  getGenerationPreset(id: GenerationPresetId): GenerationPreset | null {
+    const preset = this.generationPresets.get(id);
+    return preset ? { ...preset, metadata: JSON.parse(JSON.stringify(preset.metadata)) } : null;
+  }
+
   upsertToolProfile(input: ToolProfile): void {
     this.toolProfiles.set(input.id, {
       ...input,
       metadata: cloneLooseRecord(input.metadata),
     });
+  }
+
+  getToolProfile(id: ToolProfileId): ToolProfile | null {
+    const profile = this.toolProfiles.get(id);
+    return profile ? { ...profile, metadata: JSON.parse(JSON.stringify(profile.metadata)) } : null;
   }
 
   upsertLorebook(input: Lorebook): void {

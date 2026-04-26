@@ -7,6 +7,7 @@ import type {
   CharacterId,
   CharacterVersion,
   GenerationPreset,
+  GenerationPresetId,
   LoreEntry,
   Lorebook,
   LorebookId,
@@ -22,6 +23,7 @@ import type {
   PromptTraceId,
   SummaryMemorySnapshot,
   ToolProfile,
+  ToolProfileId,
 } from "@rp-platform/domain";
 
 import type {
@@ -481,6 +483,32 @@ export class SqliteChatSessionStore implements ChatSessionStore {
     );
   }
 
+  getGenerationPreset(id: GenerationPresetId): GenerationPreset | null {
+    const row = this.db.queryOne<SqliteRow & any>(
+      `SELECT
+         id, name, temperature, top_p, top_k, presence_penalty, frequency_penalty,
+         max_output_tokens, system_style_note, metadata_json
+       FROM generation_presets
+       WHERE id = ?`,
+      [id],
+    );
+
+    if (!row) return null;
+
+    return {
+      id: row.id as GenerationPresetId,
+      name: row.name,
+      temperature: row.temperature,
+      topP: row.top_p,
+      topK: row.top_k,
+      presencePenalty: row.presence_penalty,
+      frequencyPenalty: row.frequency_penalty,
+      maxOutputTokens: row.max_output_tokens,
+      systemStyleNote: row.system_style_note,
+      metadata: JSON.parse(row.metadata_json),
+    };
+  }
+
   upsertToolProfile(input: ToolProfile): void {
     this.db.execute(
       `INSERT INTO tool_profiles (
@@ -499,6 +527,26 @@ export class SqliteChatSessionStore implements ChatSessionStore {
         JSON.stringify(input.metadata),
       ],
     );
+  }
+
+  getToolProfile(id: ToolProfileId): ToolProfile | null {
+    const row = this.db.queryOne<SqliteRow & any>(
+      `SELECT
+         id, name, mode, instructions, metadata_json
+       FROM tool_profiles
+       WHERE id = ?`,
+      [id],
+    );
+
+    if (!row) return null;
+
+    return {
+      id: row.id as ToolProfileId,
+      name: row.name,
+      mode: row.mode as ToolProfile["mode"],
+      instructions: row.instructions,
+      metadata: JSON.parse(row.metadata_json),
+    };
   }
 
   upsertLorebook(input: Lorebook): void {
