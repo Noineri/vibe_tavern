@@ -159,6 +159,9 @@ export interface ChatSessionStore {
   deleteChat(chatId: ChatId): void;
   renameChat(chatId: ChatId, title: string): void;
 
+  mergeBranch(input: { chatId: ChatId; sourceBranchId: ChatBranchId; targetBranchId: ChatBranchId }): { appendedMessageCount: number; activeBranchId: ChatBranchId };
+  deleteBranch(chatId: ChatId, branchId: ChatBranchId): { activeBranchId: ChatBranchId; deletedBranchId: ChatBranchId };
+
   cloneChat(chatId: ChatId, title?: string): CreateChatSessionResult;
   getPromptTrace(promptTraceId: PromptTraceId): PromptTrace | null;
 
@@ -941,6 +944,115 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
       chat.title = title;
       chat.updatedAt = this.nowTimestamp();
     }
+  }
+
+  mergeBranch(input: { chatId: ChatId; sourceBranchId: ChatBranchId; targetBranchId: ChatBranchId }): { appendedMessageCount: number; activeBranchId: ChatBranchId } {
+    const chat = this.requireChat(input.chatId);
+    const sourceState = this.requireBranch(input.chatId, input.sourceBranchId);
+    const targetState = this.requireBranch(input.chatId, input.targetBranchId);
+
+    if (input.sourceBranchId === input.targetBranchId) {
+      throw new Error("Source branch and target branch must be different.");
+    }
+
+    const timestamp = this.nowTimestamp();
+    const startPosition = targetState.messages.length;
+    const copiedMessageIds = new Map<MessageId, MessageId>();
+
+    const copiedMessages = sourceState.messages.map((message, index) => {
+      const nextId = this.nextId("msg") as MessageId;
+      copiedMessageIds.set(message.id, nextId);
+      return {
+        ...message,
+        id: nextId,
+        chatId: input.chatId,
+        branchId: input.targetBranchId,
+        position: startPosition + index,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+    });
+
+    for (const message of sourceState.messages) {
+      const nextMessageId = copiedMessageIds.get(message.id);
+      if (!nextMessageId) continue;
+      const variants = this.listMessageVariants(message.id);
+      for (const variant of variants) {
+        const variantId = this.nextId("variant") as MessageVariantId;
+        this.messageVariants.set(variantId, {
+          ...variant,
+          id: variantId,
+          messageId: nextMessageId,
+          createdAt: timestamp,
+        });
+      }
+    }
+
+    targetState.messages.push(...copiedMessages);
+    chat.activeBranchId = input.targetBranchId;
+    this.touchChat(chat, timestamp);
+
+    return {
+      appendedMessageCount: copiedMessages.length,
+      activeBranchId: input.targetBranchId,
+    };
+  }
+
+  deleteBranch(chatId: ChatId, branchId: ChatBranchId): { activeBranchId: ChatBranchId; deletedBranchId: ChatBranchId } {
+    const chat = this.requireChat(chatId);
+    const branchState = this.requireBranch(chatId, branchId);
+
+    if (branchState.branch.parentBranchId === null) {
+      throw new Error("Cannot delete the root/main branch.");
+    }
+
+    const chatBranchIds = this.branchIdsByChat.get(chatId) ?? [];
+    if (chatBranchIds.length <= 1) {
+      throw new Error("Cannot delete the last branch.");
+    }
+
+    const fallbackBranchId = chatBranchIds.find((id) => {
+      const state = this.branches.get(id);
+      return state && state.branch.parentBranchId === null;
+    });
+
+    if (!fallbackBranchId) {
+      throw new Error("Could not resolve fallback root branch.");
+    }
+
+    if (chat.activeBranchId === branchId) {
+      chat.activeBranchId = fallbackBranchId;
+    }
+
+    const parentId = branchState.branch.parentBranchId;
+    for (const [id, state] of this.branches.entries()) {
+      if (state.branch.parentBranchId === branchId) {
+        state.branch = { ...state.branch, parentBranchId: parentId };
+      }
+    }
+
+    for (const message of branchState.messages) {
+      for (const [variantId, variant] of this.messageVariants.entries()) {
+        if (variant.messageId === message.id) {
+          this.messageVariants.delete(variantId);
+        }
+      }
+    }
+
+    for (const [traceId, trace] of this.promptTraces.entries()) {
+      if (trace.branchId === branchId) {
+        this.promptTraces.delete(traceId);
+      }
+    }
+
+    this.branches.delete(branchId);
+    this.branchIdsByChat.set(chatId, chatBranchIds.filter((id) => id !== branchId));
+    this.touchChat(chat);
+
+    return {
+      activeBranchId: chat.activeBranchId,
+      deletedBranchId: branchId,
+    };
   }
 
   cloneChat(chatId: ChatId, title?: string): CreateChatSessionResult {

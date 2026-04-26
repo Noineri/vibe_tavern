@@ -1252,6 +1252,141 @@ export class SqliteChatSessionStore implements ChatSessionStore {
     );
   }
 
+  mergeBranch(input: { chatId: ChatId; sourceBranchId: ChatBranchId; targetBranchId: ChatBranchId }): { appendedMessageCount: number; activeBranchId: ChatBranchId } {
+    return this.db.transaction(() => {
+      const chat = this.requireChat(input.chatId);
+      this.requireBranch(input.chatId, input.sourceBranchId);
+      this.requireBranch(input.chatId, input.targetBranchId);
+
+      if (input.sourceBranchId === input.targetBranchId) {
+        throw new Error("Source branch and target branch must be different.");
+      }
+
+      const timestamp = this.clock.now();
+      const sourceMessages = this.listMessagesForBranch(input.sourceBranchId);
+      const startPosition = this.nextMessagePosition(input.targetBranchId);
+      const copiedMessageIds = new Map<MessageId, MessageId>();
+
+      sourceMessages.forEach((message, index) => {
+        const nextId = this.idGenerator.next("msg") as MessageId;
+        copiedMessageIds.set(message.id, nextId);
+        this.db.execute(
+          `INSERT INTO messages (
+            id, chat_id, branch_id, role, author_type, position, content, state, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            nextId,
+            input.chatId,
+            input.targetBranchId,
+            message.role,
+            message.authorType,
+            startPosition + index,
+            message.content,
+            message.state,
+            timestamp,
+            timestamp,
+          ],
+        );
+
+        this.listMessageVariants(message.id).forEach((variant) => {
+          this.db.execute(
+            `INSERT INTO message_variants (
+              id, message_id, variant_index, content, is_selected, finish_reason, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+              this.idGenerator.next("variant") as MessageVariantId,
+              nextId,
+              variant.variantIndex,
+              variant.content,
+              variant.isSelected ? 1 : 0,
+              variant.finishReason,
+              timestamp,
+            ],
+          );
+        });
+      });
+
+      this.db.execute(
+        `UPDATE chats SET active_branch_id = ?, updated_at = ? WHERE id = ?`,
+        [input.targetBranchId, timestamp, chat.id],
+      );
+
+      return {
+        appendedMessageCount: sourceMessages.length,
+        activeBranchId: input.targetBranchId,
+      };
+    });
+  }
+
+  deleteBranch(chatId: ChatId, branchId: ChatBranchId): { activeBranchId: ChatBranchId; deletedBranchId: ChatBranchId } {
+    return this.db.transaction(() => {
+      const chat = this.requireChat(chatId);
+      const branch = this.requireBranch(chatId, branchId);
+
+      if (branch.parentBranchId === null) {
+        throw new Error("Cannot delete the root/main branch.");
+      }
+
+      const branchCount = this.db.queryOne<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM chat_branches WHERE chat_id = ?`,
+        [chatId],
+      );
+      if ((branchCount?.n ?? 0) <= 1) {
+        throw new Error("Cannot delete the last branch.");
+      }
+
+      const fallbackBranch = this.db.queryOne<ChatBranchRow>(
+        `SELECT id, chat_id, parent_branch_id, forked_from_message_id, label, created_at
+         FROM chat_branches
+         WHERE chat_id = ? AND parent_branch_id IS NULL
+         LIMIT 1`,
+        [chatId],
+      );
+      if (!fallbackBranch) {
+        throw new Error("Could not resolve fallback root branch.");
+      }
+      const fallbackBranchId = fallbackBranch.id as ChatBranchId;
+
+      if (chat.activeBranchId === branchId) {
+        this.db.execute(
+          `UPDATE chats SET active_branch_id = ?, updated_at = ? WHERE id = ?`,
+          [fallbackBranchId, this.clock.now(), chatId],
+        );
+      }
+
+      this.db.execute(
+        `UPDATE chat_branches SET parent_branch_id = ? WHERE chat_id = ? AND parent_branch_id = ?`,
+        [branch.parentBranchId, chatId, branchId],
+      );
+
+      this.db.execute(
+        `DELETE FROM prompt_traces WHERE branch_id = ? AND chat_id = ?`,
+        [branchId, chatId],
+      );
+
+      const messageIds = this.db.queryAll<{ id: string }>(
+        `SELECT id FROM messages WHERE branch_id = ?`,
+        [branchId],
+      ).map((r) => r.id);
+
+      for (const messageId of messageIds) {
+        this.db.execute(`DELETE FROM message_variants WHERE message_id = ?`, [messageId]);
+      }
+
+      this.db.execute(`DELETE FROM messages WHERE branch_id = ?`, [branchId]);
+      this.db.execute(`DELETE FROM summary_memory_snapshots WHERE branch_id = ? AND chat_id = ?`, [branchId, chatId]);
+      this.db.execute(`DELETE FROM chat_branches WHERE id = ?`, [branchId]);
+
+      this.touchChat(chatId);
+
+      const updatedChat = this.requireChat(chatId);
+      return {
+        activeBranchId: updatedChat.activeBranchId,
+        deletedBranchId: branchId,
+      };
+    });
+  }
+
   cloneChat(chatId: ChatId, title?: string): CreateChatSessionResult {
     return this.db.transaction(() => {
       const sourceChat = this.requireChat(chatId);

@@ -117,6 +117,9 @@ const runtime = {
   importJson: (body: { fileName: string; jsonText: string; chatId?: string }) => sessionRuntime.importJson(body),
   forkBranch: (chatId: string) => sessionRuntime.forkBranch(chatId),
   activateBranch: (chatId: string, branchId: string) => sessionRuntime.activateBranch(chatId, branchId),
+  mergeBranch: (chatId: string, sourceBranchId: string, targetBranchId: string) =>
+    sessionRuntime.mergeBranch(chatId, sourceBranchId, targetBranchId),
+  deleteBranch: (chatId: string, branchId: string) => sessionRuntime.deleteBranch(chatId, branchId),
   archiveCharacter: (characterId: string) => sessionRuntime.archiveCharacter(characterId),
   unarchiveCharacter: (characterId: string) => sessionRuntime.unarchiveCharacter(characterId),
   deleteCharacter: (characterId: string) => sessionRuntime.deleteCharacter(characterId),
@@ -297,6 +300,19 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
   const activateBranchMatch = /^\/api\/chats\/([^/]+)\/branches\/([^/]+)\/activate$/.exec(url.pathname);
   if (method === "POST" && activateBranchMatch) {
     writeJson(response, 200, runtime.activateBranch(activateBranchMatch[1], activateBranchMatch[2]));
+    return;
+  }
+
+  const branchMergeMatch = /^\/api\/chats\/([^/]+)\/branches\/merge$/.exec(url.pathname);
+  if (method === "POST" && branchMergeMatch) {
+    const body = await readJsonBody(request);
+    writeJson(response, 200, runtime.mergeBranch(branchMergeMatch[1], body.sourceBranchId as string, body.targetBranchId as string));
+    return;
+  }
+
+  const branchDeleteMatch = /^\/api\/chats\/([^/]+)\/branches\/([^/]+)$/.exec(url.pathname);
+  if (method === "DELETE" && branchDeleteMatch) {
+    writeJson(response, 200, runtime.deleteBranch(branchDeleteMatch[1], branchDeleteMatch[2]));
     return;
   }
 

@@ -535,6 +535,21 @@ export class PrototypeSessionRuntime {
     return this.getSnapshot(chatId);
   }
 
+  mergeBranch(chatId: string, sourceBranchId: string, targetBranchId: string): PrototypeSnapshot {
+    this.chatApp.mergeBranch(chatId as ChatId, {
+      sourceBranchId: sourceBranchId as ChatBranchId,
+      targetBranchId: targetBranchId as ChatBranchId,
+    });
+    this.pendingPromptTraceByChat.delete(chatId as ChatId);
+    return this.getSnapshot(chatId as ChatId);
+  }
+
+  deleteBranch(chatId: string, branchId: string): PrototypeSnapshot {
+    this.chatApp.deleteBranch(chatId as ChatId, branchId as ChatBranchId);
+    this.pendingPromptTraceByChat.delete(chatId as ChatId);
+    return this.getSnapshot(chatId as ChatId);
+  }
+
   archiveCharacter(characterId: string): { characterId: string; status: "archived" } {
     this.store.setCharacterStatus(characterId as CharacterId, "archived");
     const character = this.characters.get(characterId);
