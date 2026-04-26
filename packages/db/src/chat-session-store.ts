@@ -116,6 +116,7 @@ export interface ChatSessionStore {
   upsertCharacter(input: Character): void;
   upsertCharacterVersion(input: CharacterVersion): void;
   upsertPersona(input: Persona): void;
+  getPersona(personaId: PersonaId): Persona | null;
   listPersonas(): Persona[];
   createPersona(input: { name: string; description: string; pronouns: string | null; defaultForNewChats: boolean }): Persona;
   deletePersona(personaId: PersonaId): void;
@@ -225,6 +226,11 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
 
   upsertPersona(input: Persona): void {
     this.personas.set(input.id, { ...input });
+  }
+
+  getPersona(personaId: PersonaId): Persona | null {
+    const persona = this.personas.get(personaId);
+    return persona ? { ...persona } : null;
   }
 
   listPersonas(): Persona[] {
