@@ -32,6 +32,7 @@ import {
   importCharacterCardV3Json,
   importStLorebookJson,
 } from "../../../packages/import-export/src/index.js";
+import { serializeSillyTavernChat } from "../../../packages/import-export/src/chats/st-chat.js";
 import { activateLoreEntries, replaceMacros, type ActivatableLoreEntry } from "@rp-platform/prompt-pipeline";
 import { ChatApplicationService } from "./chat-application-service.js";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "./prompt-assembly-service.js";
@@ -578,6 +579,110 @@ export class PrototypeSessionRuntime {
   renameChat(chatId: string, title: string): { chatId: string; title: string } {
     this.store.renameChat(chatId as ChatId, title);
     return { chatId, title };
+  }
+
+  createChatForCharacter(characterId: string): PrototypeSnapshot {
+    const character = this.characters.get(characterId);
+    if (!character) {
+      throw new Error(`Character '${characterId}' was not found.`);
+    }
+
+    const created = this.chatApp.createChat({
+      characterId: characterId as CharacterId,
+      personaId: this.defaultPersona.id,
+      title: `${character.name} chat`,
+      generationPresetId: this.defaultPreset.id,
+      toolProfileId: this.defaultToolProfile.id,
+    });
+
+    this.chatOrder.unshift(created.id as ChatId);
+    return this.getSnapshot(created.id as ChatId);
+  }
+
+  cloneChat(chatId: string): PrototypeSnapshot {
+    const result = this.store.cloneChat(chatId as ChatId);
+    this.chatOrder.unshift(result.chat.id);
+    return this.getSnapshot(result.chat.id);
+  }
+
+  exportCharacter(characterId: string): Record<string, unknown> {
+    const character = this.store.listCharacters().find((c) => c.id === characterId);
+    if (!character) {
+      throw new Error(`Character '${characterId}' was not found.`);
+    }
+    const version = this.store.getLatestCharacterVersion(characterId as CharacterId);
+    const definition = version?.definition;
+    const characterRecord = this.characters.get(characterId);
+
+    if (definition && (definition as Record<string, unknown>).spec === "chara_card_v3") {
+      return definition as Record<string, unknown>;
+    }
+
+    const data: Record<string, unknown> = {
+      name: character.name,
+      description: character.description,
+      scenario: character.defaultScenario ?? "",
+      first_mes: "",
+      mes_example: character.mesExample ?? "",
+      creator_notes: character.creatorNotes ?? "",
+      system_prompt: characterRecord?.systemPrompt ?? "",
+      post_history_instructions: character.postHistoryInstructions ?? "",
+      alternate_greetings: character.alternateGreetings ?? [],
+      extensions: {},
+    };
+
+    return {
+      spec: "chara_card_v3",
+      spec_version: "3.0",
+      data,
+    };
+  }
+
+  exportChatJsonl(chatId: string): string {
+    const chat = this.store.getChat(chatId as ChatId);
+    if (!chat) {
+      throw new Error(`Chat '${chatId}' was not found.`);
+    }
+    const branchState = this.store.getBranchState(chat.id, chat.activeBranchId);
+    if (!branchState) {
+      throw new Error(`Branch '${chat.activeBranchId}' was not found for chat '${chatId}'.`);
+    }
+
+    const character = this.characters.get(chat.characterId);
+    const persona = this.resolver.getPersona(chat.personaId);
+    const userName = persona?.name ?? "User";
+    const characterName = character?.name ?? "Assistant";
+
+    return serializeSillyTavernChat({
+      userName,
+      characterName,
+      messages: branchState.messages.map((message) => {
+        const variants = this.store.listMessageVariants(message.id);
+        const swipes = variants.length > 1
+          ? variants.map((v) => v.content)
+          : undefined;
+        const selectedVariant = variants.find((v) => v.isSelected);
+        const swipeId = selectedVariant?.variantIndex ?? 0;
+
+        return {
+          name: message.role === "user" ? userName : characterName,
+          isUser: message.role === "user",
+          isSystem: message.role === "system",
+          content: selectedVariant?.content ?? message.content,
+          sendDate: message.createdAt,
+          swipes,
+          swipeId: swipes ? swipeId : undefined,
+        };
+      }),
+    });
+  }
+
+  exportPromptTrace(traceId: string): PromptTraceRecordDto {
+    const trace = this.store.getPromptTrace(traceId as import("@rp-platform/domain").PromptTraceId);
+    if (!trace) {
+      throw new Error(`Prompt trace '${traceId}' was not found.`);
+    }
+    return mapPromptTraceRecord(trace);
   }
 
   listProviderProfiles(): ClientProviderProfileRecord[] {

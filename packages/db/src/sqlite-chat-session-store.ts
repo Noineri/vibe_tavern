@@ -19,6 +19,7 @@ import type {
   PromptPreset,
   PromptPresetId,
   PromptTrace,
+  PromptTraceId,
   SummaryMemorySnapshot,
   ToolProfile,
 } from "@rp-platform/domain";
@@ -1249,6 +1250,98 @@ export class SqliteChatSessionStore implements ChatSessionStore {
       `UPDATE chats SET title = ?, updated_at = ? WHERE id = ?`,
       [title, timestamp, chatId],
     );
+  }
+
+  cloneChat(chatId: ChatId, title?: string): CreateChatSessionResult {
+    return this.db.transaction(() => {
+      const sourceChat = this.requireChat(chatId);
+      const sourceBranchState = this.requireBranchState(chatId, sourceChat.activeBranchId);
+      const timestamp = this.clock.now();
+      const newChatId = this.idGenerator.next("chat") as ChatId;
+      const newRootBranchId = this.idGenerator.next("branch") as ChatBranchId;
+
+      this.db.execute(
+        `INSERT INTO chats (
+          id, character_id, persona_id, title, status, active_branch_id,
+          generation_preset_id, tool_profile_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          newChatId,
+          sourceChat.characterId,
+          sourceChat.personaId,
+          title ?? `${sourceChat.title} (copy)`,
+          "active",
+          newRootBranchId,
+          sourceChat.generationPresetId,
+          sourceChat.toolProfileId,
+          timestamp,
+          timestamp,
+        ],
+      );
+
+      this.db.execute(
+        `INSERT INTO chat_branches (
+          id, chat_id, parent_branch_id, forked_from_message_id, label, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+        [newRootBranchId, newChatId, null, null, "main", timestamp],
+      );
+
+      const copiedMessageIds = new Map<MessageId, MessageId>();
+      sourceBranchState.messages.forEach((message, index) => {
+        const nextId = this.idGenerator.next("msg") as MessageId;
+        copiedMessageIds.set(message.id, nextId);
+        this.db.execute(
+          `INSERT INTO messages (
+            id, chat_id, branch_id, role, author_type, position, content, state, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            nextId,
+            newChatId,
+            newRootBranchId,
+            message.role,
+            message.authorType,
+            index,
+            message.content,
+            message.state,
+            timestamp,
+            timestamp,
+          ],
+        );
+
+        this.listMessageVariants(message.id).forEach((variant) => {
+          this.db.execute(
+            `INSERT INTO message_variants (
+              id, message_id, variant_index, content, is_selected, finish_reason, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+              this.idGenerator.next("variant") as MessageVariantId,
+              nextId,
+              variant.variantIndex,
+              variant.content,
+              variant.isSelected ? 1 : 0,
+              variant.finishReason,
+              timestamp,
+            ],
+          );
+        });
+      });
+
+      const chat = this.requireChat(newChatId);
+      const rootBranch = this.requireBranch(newChatId, newRootBranchId);
+      return { chat, rootBranch };
+    });
+  }
+
+  getPromptTrace(promptTraceId: PromptTraceId): PromptTrace | null {
+    const row = this.db.queryOne<PromptTraceRow>(
+      `SELECT id, chat_id, branch_id, message_id, model, preset_name,
+              assembled_layers_json, token_accounting_json, activated_lore_entries_json,
+              retrieved_memories_json, final_payload_json, latency_ms, created_at
+       FROM prompt_traces
+       WHERE id = ?`,
+      [promptTraceId],
+    );
+    return row ? mapPromptTrace(row) : null;
   }
 
   // Provider Profiles
