@@ -104,6 +104,8 @@ export function useRpPlatformApp() {
   const { importFile, isImporting } = useCharacterImport();
 
   const [personas, setPersonas] = useState<import("../app-client.js").PersonaRecord[]>([]);
+  const [promptPresets, setPromptPresets] = useState<import("@rp-platform/api-contracts").PromptPresetDto[]>([]);
+  const [activePromptPresetId, setActivePromptPresetId] = useState<string | null>(null);
 
   async function loadPersonas(): Promise<void> {
     try {
@@ -116,6 +118,54 @@ export function useRpPlatformApp() {
   useEffect(() => {
     void loadPersonas();
   }, []);
+
+  async function loadPromptPresets(): Promise<void> {
+    try {
+      const list = await (await import("../app-client.js")).listPromptPresets();
+      setPromptPresets(list);
+      if (list.length > 0 && !list.find((p) => p.id === activePromptPresetId)) {
+        setActivePromptPresetId(list[0].id);
+      } else if (list.length === 0) {
+        setActivePromptPresetId(null);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleCreatePromptPreset(input: { name: string; bindModel?: string; system?: string; jailbreak?: string; summary?: string; tools?: string }): Promise<{ id: string } | null> {
+    try {
+      const created = await (await import("../app-client.js")).createPromptPreset(input);
+      await loadPromptPresets();
+      setActivePromptPresetId(created.id);
+      return { id: created.id };
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Failed to create preset.");
+      return null;
+    }
+  }
+
+  async function handleUpdatePromptPreset(presetId: string, patch: Partial<Omit<import("@rp-platform/api-contracts").PromptPresetDto, "id" | "createdAt" | "updatedAt">>): Promise<boolean> {
+    try {
+      const updated = await (await import("../app-client.js")).updatePromptPreset(presetId, patch);
+      setPromptPresets((current) => current.map((p) => p.id === presetId ? updated : p));
+      return true;
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Failed to save preset.");
+      return false;
+    }
+  }
+
+  async function handleDeletePromptPreset(presetId: string): Promise<boolean> {
+    try {
+      await (await import("../app-client.js")).deletePromptPreset(presetId);
+      await loadPromptPresets();
+      return true;
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Failed to delete preset.");
+      return false;
+    }
+  }
 
   const activePromptTrace = useMemo(() => {
     if (!snapshot) {
@@ -250,6 +300,7 @@ export function useRpPlatformApp() {
 
   function openPromptManager(): void {
     setPromptManagerOpen(true);
+    void loadPromptPresets();
   }
 
   function closePromptManager(): void {
@@ -916,6 +967,12 @@ export function useRpPlatformApp() {
     handleCreatePersona,
     handleDeletePersona,
     handleSetPersonalLorebook,
+    promptPresets,
+    activePromptPresetId,
+    setActivePromptPresetId,
+    handleCreatePromptPreset,
+    handleUpdatePromptPreset,
+    handleDeletePromptPreset,
     handleFork,
     handleActivateBranch,
     handleStartEdit,

@@ -1,4 +1,4 @@
-import type { PromptTraceRecordDto, ProviderProbeResponse } from "@rp-platform/api-contracts";
+import type { PromptPresetDto, PromptTraceRecordDto, ProviderProbeResponse } from "@rp-platform/api-contracts";
 import type { Chat, ChatBranch, ChatBranchId, ChatId, Message, MessageVariant } from "@rp-platform/domain";
 import { getGatewayBaseUrl } from "./gateway-client.js";
 
@@ -163,6 +163,32 @@ export async function createPersona(input: {
 
 export async function deletePersona(personaId: string): Promise<void> {
   await requestJson(`/api/personas/${personaId}`, { method: "DELETE" });
+}
+
+export async function listPromptPresets(): Promise<PromptPresetDto[]> {
+  return requestJson("/api/prompt-presets");
+}
+
+export async function createPromptPreset(input: {
+  name: string;
+  bindModel?: string;
+  system?: string;
+  jailbreak?: string;
+  summary?: string;
+  tools?: string;
+}): Promise<PromptPresetDto> {
+  return requestJson("/api/prompt-presets", { method: "POST", body: input });
+}
+
+export async function updatePromptPreset(
+  presetId: string,
+  patch: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">>,
+): Promise<PromptPresetDto> {
+  return requestJson(`/api/prompt-presets/${presetId}`, { method: "PATCH", body: patch });
+}
+
+export async function deletePromptPreset(presetId: string): Promise<void> {
+  await requestJson(`/api/prompt-presets/${presetId}`, { method: "DELETE" });
 }
 
 export async function getPersonalLorebookStatus(personaId: string): Promise<{ enabled: boolean; lorebookId: string | null }> {
