@@ -32,7 +32,7 @@ import {
   importCharacterCardV3Json,
   importStLorebookJson,
 } from "../../../packages/import-export/src/index.js";
-import { activateLoreEntries, type ActivatableLoreEntry } from "@rp-platform/prompt-pipeline";
+import { activateLoreEntries, replaceMacros, type ActivatableLoreEntry } from "@rp-platform/prompt-pipeline";
 import { ChatApplicationService } from "./chat-application-service.js";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "./prompt-assembly-service.js";
 
@@ -425,8 +425,20 @@ export class PrototypeSessionRuntime {
       };
     }
 
+    const chat = this.store.getChat(chatId);
+    if (!chat) {
+      throw new Error(`Chat '${chatId}' was not found.`);
+    }
+    const character = this.resolver.getCharacter(chat.characterId);
+    const persona = this.resolver.getPersona(chat.personaId);
+    const expandedContent = replaceMacros(trimmed, {
+      charName: character.name,
+      userName: persona?.name ?? "User",
+      personaDescription: persona?.description,
+    });
+
     this.chatApp.appendUserMessage(chatId, {
-      content: trimmed,
+      content: expandedContent,
       mode: "reply",
     });
 
