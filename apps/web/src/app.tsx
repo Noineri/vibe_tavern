@@ -80,11 +80,11 @@ export function App() {
     <PlayMode
       messageList={{
         characterName: snapshot.character.name,
-        scenario: snapshot.character.scenario,
+        scenario: app.displayScenario,
         branches: snapshot.branches,
         activeBranchId: snapshot.activeBranch.id,
-        messages: snapshot.messages,
-        pendingUserMessageContent: app.pendingUserMessageContent,
+        messages: app.displayMessages,
+        pendingUserMessageContent: app.displayPendingUserMessageContent,
         editingMessageId: app.editingMessageId,
         editingDraft: app.editingDraft,
         isSending: app.isSending,
