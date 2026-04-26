@@ -423,12 +423,55 @@ function getProcessLogPath(label) {
 }
 
 function resolveNpmCliPath() {
-  const candidate = path.join(path.dirname(nodeExecutable), "node_modules", "npm", "bin", "npm-cli.js");
-  if (!fs.existsSync(candidate)) {
-    throw new Error(`npm CLI was not found at ${candidate}`);
+  // Candidate 1: Windows / nvm-style — npm lives next to node.exe
+  // (e.g. C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js)
+  const nodeDir = path.dirname(nodeExecutable);
+  const candidateNextToNode = path.join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js");
+  if (fs.existsSync(candidateNextToNode)) {
+    return candidateNextToNode;
   }
 
-  return candidate;
+  // Candidate 2: Linux system packages (Debian/Ubuntu/Fedora) — npm is under
+  // /usr/lib/node_modules even though node lives in /usr/bin.
+  const parentDir = path.dirname(nodeDir);
+  const candidateLibNodeModules = path.join(parentDir, "lib", "node_modules", "npm", "bin", "npm-cli.js");
+  if (fs.existsSync(candidateLibNodeModules)) {
+    return candidateLibNodeModules;
+  }
+
+  // Candidate 3: macOS Homebrew — node at /opt/homebrew/bin/node or
+  // /usr/local/bin/node, npm modules in ../lib/node_modules.
+  // (Already covered by candidate 2 on most setups, but be explicit.)
+  const homebrewLibCandidates = ["/opt/homebrew", "/usr/local"].map((prefix) =>
+    path.join(prefix, "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+  );
+  for (const candidate of homebrewLibCandidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  // Candidate 4: Fallback — resolve dynamically via "npm root -g".
+  try {
+    const npmRoot = require("node:child_process")
+      .execSync("npm root -g", { encoding: "utf-8" })
+      .trim();
+    const candidateFromNpmRoot = path.join(npmRoot, "npm", "bin", "npm-cli.js");
+    if (fs.existsSync(candidateFromNpmRoot)) {
+      return candidateFromNpmRoot;
+    }
+  } catch {
+    // npm root -g failed, fall through to the error below.
+  }
+
+  throw new Error(
+    `npm CLI was not found.\n` +
+      `  Tried:\n` +
+      `    - ${candidateNextToNode}\n` +
+      `    - ${candidateLibNodeModules}\n` +
+      `    - ${homebrewLibCandidates.join("\n    - ")}\n` +
+      `  Please ensure npm is installed and accessible.`,
+  );
 }
 
 function logInfo(message) {
