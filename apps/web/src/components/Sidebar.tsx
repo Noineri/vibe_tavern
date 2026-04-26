@@ -41,6 +41,8 @@ interface SidebarProps {
     confirmLabel: string;
     onConfirm: () => void;
   }) => void;
+  onMergeActiveBranchIntoRoot: () => void;
+  onDeleteActiveBranch: () => void;
 }
 
 const BACKEND_PENDING_TITLE = "Backend pending — see BACKEND_BACKLOG B8";
@@ -393,12 +395,54 @@ export function Sidebar(input: SidebarProps) {
                         >
                           + Fork from here
                         </div>
-                        <div className="sb-branch-action" role="button" tabIndex={0} aria-disabled="true" style={{ opacity: 0.45, cursor: "not-allowed" }} title={BACKEND_PENDING_TITLE}>
-                          Merge branch
-                        </div>
-                        <div className="sb-branch-action" role="button" tabIndex={0} aria-disabled="true" style={{ opacity: 0.45, cursor: "not-allowed" }} title={BACKEND_PENDING_TITLE}>
-                          Delete branch
-                        </div>
+                        {(() => {
+                          const rootBranch = input.branches.find((b) => b.parentBranchId === null);
+                          const activeIsRoot = rootBranch != null && input.activeBranchId === rootBranch.id;
+                          const canAct = !activeIsRoot && input.branches.length > 1;
+                          return (
+                            <>
+                              <div
+                                className={`sb-branch-action${canAct ? "" : " disabled"}`}
+                                role="button"
+                                tabIndex={0}
+                                aria-disabled={!canAct}
+                                style={canAct ? undefined : { opacity: 0.45, cursor: "not-allowed" }}
+                                title={canAct ? "" : "Switch to a non-main branch first"}
+                                onClick={(event) => {
+                                  if (!canAct) return;
+                                  event.stopPropagation();
+                                  input.onMergeActiveBranchIntoRoot();
+                                  setBranchPopId(null);
+                                }}
+                                onKeyDown={(event) => { if (canAct && (event.key === "Enter" || event.key === " ")) { event.stopPropagation(); input.onMergeActiveBranchIntoRoot(); setBranchPopId(null); } }}
+                              >
+                                Merge active branch into main
+                              </div>
+                              <div
+                                className={`sb-branch-action${canAct ? "" : " disabled"}`}
+                                role="button"
+                                tabIndex={0}
+                                aria-disabled={!canAct}
+                                style={canAct ? undefined : { opacity: 0.45, cursor: "not-allowed" }}
+                                title={canAct ? "" : "Switch to a non-main branch first"}
+                                onClick={(event) => {
+                                  if (!canAct) return;
+                                  event.stopPropagation();
+                                  input.onRequestDestructiveConfirm({
+                                    title: "Delete branch?",
+                                    body: "Delete the active branch and its messages? Main timeline will stay.",
+                                    confirmLabel: "Delete branch",
+                                    onConfirm: () => input.onDeleteActiveBranch(),
+                                  });
+                                  setBranchPopId(null);
+                                }}
+                                onKeyDown={(event) => { if (canAct && (event.key === "Enter" || event.key === " ")) { event.stopPropagation(); input.onRequestDestructiveConfirm({ title: "Delete branch?", body: "Delete the active branch and its messages? Main timeline will stay.", confirmLabel: "Delete branch", onConfirm: () => input.onDeleteActiveBranch() }); setBranchPopId(null); } }}
+                              >
+                                Delete branch
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
