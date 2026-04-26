@@ -15,3 +15,4 @@ export type SummaryMemorySnapshotId = Id;
 export type RetrievedMemoryHitId = Id;
 export type PromptTraceId = Id;
 export type ToolProfileId = Id;
+export type PromptPresetId = Id;

@@ -135,3 +135,33 @@ export interface PersonalLorebookStatus {
 export interface SetPersonalLorebookRequest {
   enabled: boolean;
 }
+
+export interface PromptPresetDto {
+  id: string;
+  name: string;
+  bindModel: string;
+  system: string;
+  jailbreak: string;
+  summary: string;
+  tools: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePromptPresetRequest {
+  name: string;
+  bindModel?: string;
+  system?: string;
+  jailbreak?: string;
+  summary?: string;
+  tools?: string;
+}
+
+export interface UpdatePromptPresetRequest {
+  name?: string;
+  bindModel?: string;
+  system?: string;
+  jailbreak?: string;
+  summary?: string;
+  tools?: string;
+}

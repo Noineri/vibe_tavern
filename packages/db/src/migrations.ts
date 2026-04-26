@@ -54,7 +54,23 @@ UPDATE provider_profiles SET is_active = 1
     SELECT id FROM provider_profiles
     ORDER BY updated_at DESC, id DESC
     LIMIT 1
-  );
+);
+`,
+  },
+  {
+    version: "0006_prompt_presets",
+    sql: `
+CREATE TABLE IF NOT EXISTS prompt_presets (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  bind_model TEXT NOT NULL DEFAULT '',
+  system TEXT NOT NULL DEFAULT '',
+  jailbreak TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '',
+  tools TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `,
   },
 ];

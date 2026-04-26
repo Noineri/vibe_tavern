@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import type { AssemblePromptResponse, PromptTraceRecordDto } from "@rp-platform/api-contracts";
+import type { AssemblePromptResponse, PromptTraceRecordDto, PromptPresetDto } from "@rp-platform/api-contracts";
 import {
   InMemoryChatSessionStore,
   NodeSqliteDatabaseAdapter,
@@ -947,6 +947,62 @@ export class PrototypeSessionRuntime {
         attachedToCharacterName: this.resolver.getCharacter(chat.characterId).name,
       },
     };
+  }
+
+  listPromptPresets(): PromptPresetDto[] {
+    return this.store.listPromptPresets().map((p) => ({
+      id: p.id,
+      name: p.name,
+      bindModel: p.bindModel,
+      system: p.system,
+      jailbreak: p.jailbreak,
+      summary: p.summary,
+      tools: p.tools,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    }));
+  }
+
+  createPromptPreset(input: {
+    name: string;
+    bindModel?: string;
+    system?: string;
+    jailbreak?: string;
+    summary?: string;
+    tools?: string;
+  }): PromptPresetDto {
+    const trimmed = (input.name ?? "").trim();
+    if (!trimmed) {
+      throw new Error("Preset name is required.");
+    }
+    const created = this.store.createPromptPreset({
+      name: trimmed,
+      bindModel: input.bindModel ?? "",
+      system: input.system ?? "",
+      jailbreak: input.jailbreak ?? "",
+      summary: input.summary ?? "",
+      tools: input.tools ?? "",
+    });
+    return { ...created };
+  }
+
+  updatePromptPreset(presetId: string, patch: {
+    name?: string;
+    bindModel?: string;
+    system?: string;
+    jailbreak?: string;
+    summary?: string;
+    tools?: string;
+  }): PromptPresetDto {
+    const next = this.store.updatePromptPreset(
+      presetId as import("@rp-platform/domain").PromptPresetId,
+      patch,
+    );
+    return { ...next };
+  }
+
+  deletePromptPreset(presetId: string): void {
+    this.store.deletePromptPreset(presetId as import("@rp-platform/domain").PromptPresetId);
   }
 
   private seed(): void {

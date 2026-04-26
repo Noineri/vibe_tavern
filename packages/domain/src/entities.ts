@@ -10,6 +10,7 @@ import type {
   MessageId,
   MessageVariantId,
   PersonaId,
+  PromptPresetId,
   PromptTraceId,
   RetrievedMemoryHitId,
   SummaryMemorySnapshotId,
@@ -228,4 +229,16 @@ export interface ToolProfile {
   mode: ToolProfileMode;
   instructions: string | null;
   metadata: Record<string, unknown>;
+}
+
+export interface PromptPreset {
+  id: PromptPresetId;
+  name: string;
+  bindModel: string;
+  system: string;
+  jailbreak: string;
+  summary: string;
+  tools: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
