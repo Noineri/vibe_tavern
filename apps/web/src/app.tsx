@@ -213,6 +213,12 @@ export function App() {
       <PromptManagerModal
         isOpen={app.isPromptManagerOpen}
         onClose={app.closePromptManager}
+        presets={app.promptPresets}
+        activePresetId={app.activePromptPresetId}
+        setActivePresetId={app.setActivePromptPresetId}
+        onCreate={app.handleCreatePromptPreset}
+        onUpdate={app.handleUpdatePromptPreset}
+        onDelete={app.handleDeletePromptPreset}
       />
 
       <PersonaModal
