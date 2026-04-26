@@ -43,6 +43,7 @@ type CharacterRecord = {
   description: string;
   scenario: string;
   systemPrompt: string;
+  personality: string | null;
   mesExample: string | null;
   alternateGreetings: string[];
   postHistoryInstructions: string | null;
@@ -171,6 +172,7 @@ class StaticPromptResolver implements PromptAssemblyResolver {
       description: character.description,
       scenario: character.scenario,
       systemPrompt: character.systemPrompt,
+      personality: character.personality,
       mesExample: character.mesExample,
       alternateGreetings: character.alternateGreetings,
       postHistoryInstructions: character.postHistoryInstructions,
@@ -1366,6 +1368,7 @@ function toCharacterRecord(
     description: character.description,
     scenario: character.defaultScenario ?? "",
     systemPrompt: (data.system_prompt as string) || "",
+    personality: (data.personality as string) || null,
     mesExample: character.mesExample,
     alternateGreetings: character.alternateGreetings,
     postHistoryInstructions: character.postHistoryInstructions,

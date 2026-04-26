@@ -30,6 +30,7 @@ export interface PromptAssemblyContext {
     description: string;
     scenario?: string | null;
     systemPrompt?: string | null;
+    personality?: string | null;
   };
   persona?: {
     id: string;
@@ -65,6 +66,8 @@ export interface PromptAssemblyContext {
     score: number;
   }>;
   recentMessages: RecentMessage[];
+  mesExample?: string | null;
+  postHistoryInstructions?: string | null;
   toolInstructions?: string | null;
   outputConstraints?: string | null;
   contextBudget?: number | null;

@@ -20,6 +20,12 @@ export interface PromptAssemblyResolver {
     description: string;
     scenario?: string | null;
     systemPrompt?: string | null;
+    personality?: string | null;
+    mesExample?: string | null;
+    alternateGreetings?: string[];
+    postHistoryInstructions?: string | null;
+    creatorNotes?: string | null;
+    subtitle?: string;
   };
   getPersona(
     personaId: string,
@@ -113,7 +119,14 @@ export class PromptAssemblyService {
 
     const result = assemblePrompt({
       chatId: chat.id,
-      character,
+      character: {
+        id: character.id,
+        name: character.name,
+        description: character.description,
+        scenario: character.scenario,
+        systemPrompt: character.systemPrompt,
+        personality: character.personality,
+      },
       persona,
       systemPreset,
       activeLoreEntries: activeLoreEntries.map((entry) => ({
@@ -141,6 +154,8 @@ export class PromptAssemblyService {
         score: memory.score,
       })),
       recentMessages,
+      mesExample: character.mesExample,
+      postHistoryInstructions: character.postHistoryInstructions,
       toolInstructions: this.resolver.getToolInstructions(chat.toolProfileId),
       outputConstraints: input.outputConstraints ?? null,
       contextBudget: input.contextBudget ?? null,

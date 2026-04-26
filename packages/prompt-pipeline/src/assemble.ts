@@ -49,11 +49,17 @@ function makeLayer(input: {
   };
 }
 
+const POSITION_RANK: Record<PromptLayerPosition, number> = {
+  before_prompt: 0,
+  in_prompt: 1,
+  in_chat: 2,
+  hidden_system: 3,
+};
+
 function sortLayers(layers: PromptLayer[]): PromptLayer[] {
   return [...layers].sort((a, b) => {
-    if (a.position !== b.position) {
-      return a.position.localeCompare(b.position);
-    }
+    const posDiff = POSITION_RANK[a.position] - POSITION_RANK[b.position];
+    if (posDiff !== 0) return posDiff;
     return b.priority - a.priority;
   });
 }
@@ -79,6 +85,7 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
       description: applyMacros(context.character.description, mc),
       scenario: context.character.scenario != null ? applyMacros(context.character.scenario, mc) : context.character.scenario,
       systemPrompt: context.character.systemPrompt != null ? applyMacros(context.character.systemPrompt, mc) : context.character.systemPrompt,
+      personality: context.character.personality != null ? applyMacros(context.character.personality, mc) : context.character.personality,
     },
     persona: context.persona ? {
       ...context.persona,
@@ -110,6 +117,8 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
       ...msg,
       content: applyMacros(msg.content, mc),
     })),
+    mesExample: context.mesExample != null ? applyMacros(context.mesExample, mc) : context.mesExample,
+    postHistoryInstructions: context.postHistoryInstructions != null ? applyMacros(context.postHistoryInstructions, mc) : context.postHistoryInstructions,
     toolInstructions: context.toolInstructions != null ? applyMacros(context.toolInstructions, mc) : context.toolInstructions,
     outputConstraints: context.outputConstraints != null ? applyMacros(context.outputConstraints, mc) : context.outputConstraints,
   };
@@ -157,6 +166,18 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceId: context.character.id,
         priority: 900,
         text: characterBase,
+      }),
+    );
+  }
+
+  if (context.character.personality?.trim()) {
+    layers.push(
+      makeLayer({
+        id: "character_personality",
+        sourceType: "character",
+        sourceId: context.character.id,
+        priority: 890,
+        text: context.character.personality,
       }),
     );
   }
@@ -315,8 +336,39 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     );
   }
 
+  if (context.mesExample?.trim()) {
+    layers.push(
+      makeLayer({
+        id: "mes_example",
+        sourceType: "character",
+        sourceId: context.character.id,
+        priority: 150,
+        text: `[Example messages]\n${context.mesExample}`,
+      }),
+    );
+  }
+
+  if (context.postHistoryInstructions?.trim()) {
+    layers.push(
+      makeLayer({
+        id: "post_history_instructions",
+        sourceType: "character",
+        sourceId: context.character.id,
+        priority: 160,
+        text: context.postHistoryInstructions,
+      }),
+    );
+  }
+
   const orderedLayers = sortLayers(layers).filter((layer) => layer.text.length > 0);
   const totalTokenEstimate = orderedLayers.reduce((sum, layer) => sum + layer.tokenCount, 0);
+
+  const nonHiddenLayers = orderedLayers.filter(
+    (layer) => layer.position !== "hidden_system" && layer.sourceType !== "chat_history",
+  );
+  const beforePrompt = nonHiddenLayers.filter((l) => l.position === "before_prompt");
+  const inPrompt = nonHiddenLayers.filter((l) => l.position === "in_prompt");
+  const inChat = nonHiddenLayers.filter((l) => l.position === "in_chat");
 
   return {
     layers: orderedLayers,
@@ -329,13 +381,21 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     droppedLayers,
     finalPayload: {
       messages: [
-        ...orderedLayers
-          .filter((layer) => layer.sourceType !== "chat_history")
-          .map((layer) => ({
-            role: "system",
-            content: layer.text,
-            layerId: layer.id,
-          })),
+        ...beforePrompt.map((layer) => ({
+          role: "system" as const,
+          content: layer.text,
+          layerId: layer.id,
+        })),
+        ...inPrompt.map((layer) => ({
+          role: "system" as const,
+          content: layer.text,
+          layerId: layer.id,
+        })),
+        ...inChat.map((layer) => ({
+          role: "system" as const,
+          content: layer.text,
+          layerId: layer.id,
+        })),
         ...recentMessagesForHistory.map((message) => ({
           role: message.role,
           content: message.content,
