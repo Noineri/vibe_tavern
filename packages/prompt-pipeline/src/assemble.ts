@@ -6,6 +6,7 @@ import type {
   RecentMessage,
 } from "./types.js";
 import { findSafeCompactionBoundary } from "./compaction.js";
+import { replaceMacros, type MacroContext } from "./macros.js";
 
 function estimateTokens(text: string): number {
   const normalized = text.trim();
@@ -57,7 +58,65 @@ function sortLayers(layers: PromptLayer[]): PromptLayer[] {
   });
 }
 
-export function assemblePrompt(context: PromptAssemblyContext): PromptAssemblyResult {
+function buildMacroContext(context: PromptAssemblyContext): MacroContext {
+  return {
+    charName: context.character.name,
+    userName: context.persona?.name ?? "User",
+    personaDescription: context.persona?.description,
+  };
+}
+
+function applyMacros(text: string | null | undefined, mc: MacroContext): string {
+  return text ? replaceMacros(text, mc) : "";
+}
+
+function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyContext {
+  const mc = buildMacroContext(context);
+  return {
+    ...context,
+    character: {
+      ...context.character,
+      description: applyMacros(context.character.description, mc),
+      scenario: context.character.scenario != null ? applyMacros(context.character.scenario, mc) : context.character.scenario,
+      systemPrompt: context.character.systemPrompt != null ? applyMacros(context.character.systemPrompt, mc) : context.character.systemPrompt,
+    },
+    persona: context.persona ? {
+      ...context.persona,
+      description: applyMacros(context.persona.description, mc),
+    } : context.persona,
+    systemPreset: context.systemPreset ? {
+      ...context.systemPreset,
+      text: applyMacros(context.systemPreset.text, mc),
+    } : context.systemPreset,
+    activeLoreEntries: context.activeLoreEntries?.map((entry) => ({
+      ...entry,
+      title: applyMacros(entry.title, mc),
+      content: applyMacros(entry.content, mc),
+    })),
+    generationRules: context.generationRules?.map((rule) => ({
+      ...rule,
+      title: applyMacros(rule.title, mc),
+      content: applyMacros(rule.content, mc),
+    })),
+    summaryMemory: context.summaryMemory?.map((s) => ({
+      ...s,
+      summary: applyMacros(s.summary, mc),
+    })),
+    retrievalMemory: context.retrievalMemory?.map((m) => ({
+      ...m,
+      content: applyMacros(m.content, mc),
+    })),
+    recentMessages: context.recentMessages.map((msg) => ({
+      ...msg,
+      content: applyMacros(msg.content, mc),
+    })),
+    toolInstructions: context.toolInstructions != null ? applyMacros(context.toolInstructions, mc) : context.toolInstructions,
+    outputConstraints: context.outputConstraints != null ? applyMacros(context.outputConstraints, mc) : context.outputConstraints,
+  };
+}
+
+export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssemblyResult {
+  const context = applyMacrosToContext(rawContext);
   const layers: PromptLayer[] = [];
   const droppedLayers: Array<{ id: string; reason: string }> = [];
 
