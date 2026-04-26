@@ -422,6 +422,50 @@ export async function renameChat(chatId: ChatId, title: string): Promise<{ chatI
   return requestJson(`/api/chats/${chatId}/title`, { method: "PATCH", body: { title } });
 }
 
+export async function createChat(characterId: string): Promise<AppSnapshot> {
+  return normalizeSnapshot(await requestJson("/api/chats", {
+    method: "POST",
+    body: { characterId },
+  }));
+}
+
+export async function cloneChat(chatId: ChatId): Promise<AppSnapshot> {
+  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/clone`, {
+    method: "POST",
+  }));
+}
+
+export async function exportCharacter(characterId: string): Promise<Record<string, unknown>> {
+  return requestJson(`/api/characters/${characterId}/export`);
+}
+
+export async function exportChatJsonl(chatId: ChatId): Promise<string> {
+  return requestText(`/api/chats/${chatId}/export.jsonl`);
+}
+
+export async function exportPromptTrace(traceId: string): Promise<Record<string, unknown>> {
+  return requestJson(`/api/prompt-traces/${traceId}/export`);
+}
+
+async function requestText(path: string): Promise<string> {
+  const response = await fetch(`${getGatewayBaseUrl()}${path}`, {
+    method: "GET",
+  });
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    let errorMsg = `Request failed: ${response.status}`;
+    try {
+      const parsed = JSON.parse(text) as { error?: string };
+      if (parsed.error) errorMsg = parsed.error;
+    } catch { /* use default */ }
+    throw new Error(errorMsg);
+  }
+
+  return text;
+}
+
 async function requestJson<T>(
   path: string,
   options?: {
