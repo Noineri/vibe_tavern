@@ -17,9 +17,11 @@ const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime, providerOr
 const runtime = {
   bootstrap: () => sessionRuntime.getBootstrapState(),
   getChatSnapshot: (chatId: string) => sessionRuntime.getSnapshot(chatId),
-  createChat: (_sourceChatId?: string) => {
-    throw new Error("Chat creation route is not wired in this baseline.");
-  },
+  createChatForCharacter: (characterId: string) => sessionRuntime.createChatForCharacter(characterId),
+  cloneChat: (chatId: string) => sessionRuntime.cloneChat(chatId),
+  exportCharacter: (characterId: string) => sessionRuntime.exportCharacter(characterId),
+  exportChatJsonl: (chatId: string) => sessionRuntime.exportChatJsonl(chatId),
+  exportPromptTrace: (traceId: string) => sessionRuntime.exportPromptTrace(traceId),
   updateChatSettings: (
     _chatId: string,
     _body: { title: string; subtitle: string; scenario: string; systemPrompt: string },
@@ -182,7 +184,31 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
 
   if (method === "POST" && url.pathname === "/api/chats") {
     const body = await readJsonBody(request);
-    writeJson(response, 200, runtime.createChat(body.sourceChatId));
+    writeJson(response, 200, runtime.createChatForCharacter(body.characterId as string));
+    return;
+  }
+
+  const chatCloneMatch = /^\/api\/chats\/([^/]+)\/clone$/.exec(url.pathname);
+  if (method === "POST" && chatCloneMatch) {
+    writeJson(response, 200, runtime.cloneChat(chatCloneMatch[1]));
+    return;
+  }
+
+  const characterExportMatch = /^\/api\/characters\/([^/]+)\/export$/.exec(url.pathname);
+  if (method === "GET" && characterExportMatch) {
+    writeJson(response, 200, runtime.exportCharacter(characterExportMatch[1]));
+    return;
+  }
+
+  const chatExportJsonlMatch = /^\/api\/chats\/([^/]+)\/export\.jsonl$/.exec(url.pathname);
+  if (method === "GET" && chatExportJsonlMatch) {
+    writeText(response, 200, "application/x-ndjson; charset=utf-8", runtime.exportChatJsonl(chatExportJsonlMatch[1]));
+    return;
+  }
+
+  const promptTraceExportMatch = /^\/api\/prompt-traces\/([^/]+)\/export$/.exec(url.pathname);
+  if (method === "GET" && promptTraceExportMatch) {
+    writeJson(response, 200, runtime.exportPromptTrace(promptTraceExportMatch[1]));
     return;
   }
 
@@ -553,6 +579,15 @@ function writeEmpty(response: ServerResponse, statusCode: number) {
   response.setHeader("Access-Control-Allow-Headers", "Content-Type");
   response.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
   response.end();
+}
+
+function writeText(response: ServerResponse, statusCode: number, contentType: string, payload: string) {
+  response.statusCode = statusCode;
+  response.setHeader("Access-Control-Allow-Origin", "*");
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  response.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
+  response.setHeader("Content-Type", contentType);
+  response.end(payload);
 }
 
 function getRequiredProviderProfile(providerProfileId: string) {

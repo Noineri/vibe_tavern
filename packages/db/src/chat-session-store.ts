@@ -22,6 +22,7 @@ import type {
   PromptPreset,
   PromptPresetId,
   PromptTrace,
+  PromptTraceId,
   SummaryKind,
   SummaryMemorySnapshot,
   ToolProfile,
@@ -157,6 +158,9 @@ export interface ChatSessionStore {
   deleteCharacter(characterId: CharacterId): void;
   deleteChat(chatId: ChatId): void;
   renameChat(chatId: ChatId, title: string): void;
+
+  cloneChat(chatId: ChatId, title?: string): CreateChatSessionResult;
+  getPromptTrace(promptTraceId: PromptTraceId): PromptTrace | null;
 
   // Provider Profiles
   upsertProviderProfile(profile: any): void;
@@ -937,6 +941,89 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
       chat.title = title;
       chat.updatedAt = this.nowTimestamp();
     }
+  }
+
+  cloneChat(chatId: ChatId, title?: string): CreateChatSessionResult {
+    const sourceChat = this.requireChat(chatId);
+    const sourceBranchId = sourceChat.activeBranchId;
+    const sourceState = this.getStoredBranchState(chatId, sourceBranchId);
+    if (!sourceState) {
+      throw new Error(`Branch '${sourceBranchId}' was not found for chat '${chatId}'.`);
+    }
+
+    const timestamp = this.nowTimestamp();
+    const newChatId = this.nextId("chat") as ChatId;
+    const newRootBranchId = this.nextId("branch") as ChatBranchId;
+
+    const newChat: Chat = {
+      id: newChatId,
+      characterId: sourceChat.characterId,
+      personaId: sourceChat.personaId,
+      title: title ?? `${sourceChat.title} (copy)`,
+      status: "active",
+      activeBranchId: newRootBranchId,
+      generationPresetId: sourceChat.generationPresetId,
+      toolProfileId: sourceChat.toolProfileId,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    const newRootBranch: ChatBranch = {
+      id: newRootBranchId,
+      chatId: newChatId,
+      parentBranchId: null,
+      forkedFromMessageId: null,
+      label: "main",
+      createdAt: timestamp,
+    };
+
+    const copiedMessageIds = new Map<MessageId, MessageId>();
+    const copiedMessages = sourceState.messages.map((message, index) => {
+      const nextId = this.nextId("msg") as MessageId;
+      copiedMessageIds.set(message.id, nextId);
+      return {
+        ...message,
+        id: nextId,
+        chatId: newChatId,
+        branchId: newRootBranchId,
+        position: index,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+    });
+
+    for (const message of sourceState.messages) {
+      const nextMessageId = copiedMessageIds.get(message.id);
+      if (!nextMessageId) continue;
+      const variants = this.listMessageVariants(message.id);
+      for (const variant of variants) {
+        const variantId = this.nextId("variant") as MessageVariantId;
+        this.messageVariants.set(variantId, {
+          ...variant,
+          id: variantId,
+          messageId: nextMessageId,
+          createdAt: timestamp,
+        });
+      }
+    }
+
+    this.chats.set(newChatId, newChat);
+    this.branches.set(newRootBranchId, {
+      branch: newRootBranch,
+      messages: copiedMessages,
+      summaries: [],
+    });
+    this.branchIdsByChat.set(newChatId, [newRootBranchId]);
+
+    return {
+      chat: cloneChat(newChat),
+      rootBranch: cloneBranch(newRootBranch),
+    };
+  }
+
+  getPromptTrace(promptTraceId: PromptTraceId): PromptTrace | null {
+    const trace = this.promptTraces.get(promptTraceId);
+    return trace ? clonePromptTrace(trace) : null;
   }
 
   listProviderProfiles(): any[] {

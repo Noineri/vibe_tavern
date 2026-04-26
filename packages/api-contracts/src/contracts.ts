@@ -165,3 +165,15 @@ export interface UpdatePromptPresetRequest {
   summary?: string;
   tools?: string;
 }
+
+export interface CreateCharacterChatRequest {
+  characterId: CharacterId;
+  title?: string;
+}
+
+export interface CloneChatResponse {
+  chatId: ChatId;
+  snapshot: unknown;
+}
+
+export type ExportCharacterResponse = Record<string, unknown>;

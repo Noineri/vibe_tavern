@@ -136,3 +136,49 @@ export function parseSillyTavernChat(
 
   return { metadata, messages };
 }
+
+export interface SerializeMessageInput {
+  name: string;
+  isUser: boolean;
+  isSystem: boolean;
+  content: string;
+  sendDate: string;
+  swipes?: string[];
+  swipeId?: number;
+}
+
+export interface SerializeSillyTavernChatOptions {
+  userName?: string;
+  characterName?: string;
+  chatMetadata?: Record<string, unknown>;
+  messages: SerializeMessageInput[];
+}
+
+export function serializeSillyTavernChat(options: SerializeSillyTavernChatOptions): string {
+  const lines: string[] = [];
+
+  const metaLine: Record<string, unknown> = {};
+  if (options.userName) metaLine.user_name = options.userName;
+  if (options.characterName) metaLine.character_name = options.characterName;
+  if (options.chatMetadata) metaLine.chat_metadata = options.chatMetadata;
+  lines.push(JSON.stringify(metaLine));
+
+  for (const msg of options.messages) {
+    const line: Record<string, unknown> = {
+      name: msg.name,
+      is_user: msg.isUser,
+      is_system: msg.isSystem,
+      mes: msg.content,
+      send_date: msg.sendDate,
+    };
+
+    if (msg.swipes && msg.swipes.length > 0) {
+      line.swipes = msg.swipes;
+      line.swipe_id = msg.swipeId ?? 0;
+    }
+
+    lines.push(JSON.stringify(line));
+  }
+
+  return lines.join("\n");
+}
