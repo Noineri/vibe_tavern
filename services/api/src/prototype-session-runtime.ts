@@ -256,7 +256,7 @@ export class PrototypeSessionRuntime {
     ],
   ]);
   private readonly importedLoreEntriesByCharacter = new Map<CharacterId, LoreEntry[]>();
-  private readonly defaultPersona: Persona = {
+  private defaultPersona: Persona = {
     id: "persona_explorer",
     name: "Explorer",
     description:
@@ -392,11 +392,17 @@ export class PrototypeSessionRuntime {
       pronouns: input.pronouns?.trim() || null,
       defaultForNewChats: input.defaultForNewChats === true,
     });
+    this.personas.set(persona.id, {
+      id: persona.id,
+      name: persona.name,
+      description: persona.description,
+    });
     return { id: persona.id, name: persona.name, description: persona.description };
   }
 
   deletePersona(personaId: string): void {
     this.store.deletePersona(personaId as import("@rp-platform/domain").PersonaId);
+    this.personas.delete(personaId);
   }
 
   getPersonalLorebookStatus(personaId: string): { enabled: boolean; lorebookId: string | null } {
@@ -911,18 +917,16 @@ export class PrototypeSessionRuntime {
     if (!currentPersonaRecord) {
       throw new Error(`Persona '${personaId}' was not found.`);
     }
-    const currentPersona = this.store.getChat(input.chatId ?? this.chatOrder[0] ?? "")?.personaId === personaId
-      ? this.defaultPersona
-      : {
-          id: personaId,
-          name: currentPersonaRecord.name,
-          description: currentPersonaRecord.description,
-          pronouns: null,
-          avatarAssetId: null,
-          defaultForNewChats: personaId === this.defaultPersona.id,
-          createdAt: this.defaultPersona.createdAt,
-          updatedAt: this.defaultPersona.updatedAt,
-        };
+    const currentPersona: Persona = {
+      id: personaId,
+      name: currentPersonaRecord.name,
+      description: currentPersonaRecord.description,
+      pronouns: null,
+      avatarAssetId: null,
+      defaultForNewChats: personaId === this.defaultPersona.id,
+      createdAt: this.defaultPersona.createdAt,
+      updatedAt: this.defaultPersona.updatedAt,
+    };
 
     const nextName = (input.name ?? currentPersona.name).trim();
     if (!nextName) {
@@ -944,6 +948,9 @@ export class PrototypeSessionRuntime {
       name: updatedPersona.name,
       description: updatedPersona.description,
     });
+    if (personaId === this.defaultPersona.id) {
+      this.defaultPersona = updatedPersona;
+    }
 
     const preferredChat = input.chatId ? this.store.getChat(input.chatId) : null;
     const targetChatId =
