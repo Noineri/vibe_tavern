@@ -120,6 +120,10 @@ const runtime = {
   deleteCharacter: (characterId: string) => sessionRuntime.deleteCharacter(characterId),
   deleteChat: (chatId: string) => sessionRuntime.deleteChat(chatId),
   renameChat: (chatId: string, title: string) => sessionRuntime.renameChat(chatId, title),
+  listPromptPresets: () => sessionRuntime.listPromptPresets(),
+  createPromptPreset: (body: any) => sessionRuntime.createPromptPreset(body),
+  updatePromptPreset: (presetId: string, body: any) => sessionRuntime.updatePromptPreset(presetId, body),
+  deletePromptPreset: (presetId: string) => sessionRuntime.deletePromptPreset(presetId),
 };
 
 const server = createServer(async (request, response) => {
@@ -415,6 +419,42 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
   if (method === "DELETE" && updateLoreEntryMatch) {
     runtime.deleteLoreEntry(updateLoreEntryMatch[1], updateLoreEntryMatch[2]);
     writeJson(response, 200, { ok: true });
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/prompt-presets") {
+    writeJson(response, 200, runtime.listPromptPresets());
+    return;
+  }
+  if (method === "POST" && url.pathname === "/api/prompt-presets") {
+    const body = await readJsonBody(request);
+    try {
+      writeJson(response, 201, runtime.createPromptPreset(body as any));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      writeJson(response, /required/i.test(message) ? 400 : 500, { error: message });
+    }
+    return;
+  }
+  const promptPresetMatch = /^\/api\/prompt-presets\/([^/]+)$/.exec(url.pathname);
+  if (method === "PATCH" && promptPresetMatch) {
+    const body = await readJsonBody(request);
+    try {
+      writeJson(response, 200, runtime.updatePromptPreset(promptPresetMatch[1], body as any));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      writeJson(response, /not found/i.test(message) ? 404 : 500, { error: message });
+    }
+    return;
+  }
+  if (method === "DELETE" && promptPresetMatch) {
+    try {
+      runtime.deletePromptPreset(promptPresetMatch[1]);
+      writeEmpty(response, 204);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      writeJson(response, /not found/i.test(message) ? 404 : 500, { error: message });
+    }
     return;
   }
 

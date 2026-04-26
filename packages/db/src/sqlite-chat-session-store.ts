@@ -16,6 +16,8 @@ import type {
   MessageVariantId,
   Persona,
   PersonaId,
+  PromptPreset,
+  PromptPresetId,
   PromptTrace,
   SummaryMemorySnapshot,
   ToolProfile,
@@ -166,6 +168,18 @@ type LoreEntryRow = SqliteRow & {
   delay_window: number;
   enabled: number;
   metadata_json: string;
+};
+
+type PromptPresetRow = SqliteRow & {
+  id: string;
+  name: string;
+  bind_model: string;
+  system: string;
+  jailbreak: string;
+  summary: string;
+  tools: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export class SqliteChatSessionStore implements ChatSessionStore {
@@ -1318,6 +1332,64 @@ export class SqliteChatSessionStore implements ChatSessionStore {
     return row ? { ...row, isActive: true } : null;
   }
 
+  listPromptPresets(): PromptPreset[] {
+    return this.db
+      .queryAll<PromptPresetRow>(
+        `SELECT id, name, bind_model, system, jailbreak, summary, tools, created_at, updated_at
+         FROM prompt_presets
+         ORDER BY name ASC`,
+      )
+      .map(mapPromptPreset);
+  }
+
+  getPromptPreset(presetId: PromptPresetId): PromptPreset | null {
+    const row = this.db.queryOne<PromptPresetRow>(
+      `SELECT id, name, bind_model, system, jailbreak, summary, tools, created_at, updated_at
+       FROM prompt_presets WHERE id = ?`,
+      [presetId],
+    );
+    return row ? mapPromptPreset(row) : null;
+  }
+
+  createPromptPreset(input: { name: string; bindModel: string; system: string; jailbreak: string; summary: string; tools: string }): PromptPreset {
+    return this.db.transaction(() => {
+      const timestamp = this.clock.now();
+      const id = this.idGenerator.next("prompt_preset") as PromptPresetId;
+      this.db.execute(
+        `INSERT INTO prompt_presets (id, name, bind_model, system, jailbreak, summary, tools, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, input.name, input.bindModel, input.system, input.jailbreak, input.summary, input.tools, timestamp, timestamp],
+      );
+      return { id, ...input, createdAt: timestamp, updatedAt: timestamp };
+    });
+  }
+
+  updatePromptPreset(presetId: PromptPresetId, patch: Partial<Omit<PromptPreset, "id" | "createdAt" | "updatedAt">>): PromptPreset {
+    return this.db.transaction(() => {
+      const current = this.getPromptPreset(presetId);
+      if (!current) {
+        throw new Error(`Prompt preset '${presetId}' was not found.`);
+      }
+      const next = { ...current, ...patch };
+      const timestamp = this.clock.now();
+      this.db.execute(
+        `UPDATE prompt_presets SET name = ?, bind_model = ?, system = ?, jailbreak = ?, summary = ?, tools = ?, updated_at = ? WHERE id = ?`,
+        [next.name, next.bindModel, next.system, next.jailbreak, next.summary, next.tools, timestamp, presetId],
+      );
+      return { ...next, updatedAt: timestamp };
+    });
+  }
+
+  deletePromptPreset(presetId: PromptPresetId): void {
+    this.db.transaction(() => {
+      const exists = this.db.queryOne(`SELECT 1 FROM prompt_presets WHERE id = ?`, [presetId]);
+      if (!exists) {
+        throw new Error(`Prompt preset '${presetId}' was not found.`);
+      }
+      this.db.execute(`DELETE FROM prompt_presets WHERE id = ?`, [presetId]);
+    });
+  }
+
   private getBranch(branchId: ChatBranchId): ChatBranch | null {
     const row = this.db.queryOne<ChatBranchRow>(
       `SELECT id, chat_id, parent_branch_id, forked_from_message_id, label, created_at
@@ -1643,4 +1715,18 @@ function mapPromptTrace(row: PromptTraceRow): PromptTrace {
 
 function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
+}
+
+function mapPromptPreset(row: PromptPresetRow): PromptPreset {
+  return {
+    id: row.id as PromptPresetId,
+    name: row.name,
+    bindModel: row.bind_model,
+    system: row.system,
+    jailbreak: row.jailbreak,
+    summary: row.summary,
+    tools: row.tools,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }

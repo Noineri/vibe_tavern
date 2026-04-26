@@ -19,6 +19,8 @@ import type {
   MessageRole,
   Persona,
   PersonaId,
+  PromptPreset,
+  PromptPresetId,
   PromptTrace,
   SummaryKind,
   SummaryMemorySnapshot,
@@ -163,6 +165,12 @@ export interface ChatSessionStore {
   deleteProviderProfile(id: string): void;
   setActiveProviderProfile(id: string): void;
   getActiveProviderProfile(): any | null;
+
+  listPromptPresets(): PromptPreset[];
+  getPromptPreset(presetId: PromptPresetId): PromptPreset | null;
+  createPromptPreset(input: { name: string; bindModel: string; system: string; jailbreak: string; summary: string; tools: string }): PromptPreset;
+  updatePromptPreset(presetId: PromptPresetId, patch: { name?: string; bindModel?: string; system?: string; jailbreak?: string; summary?: string; tools?: string }): PromptPreset;
+  deletePromptPreset(presetId: PromptPresetId): void;
 }
 
 interface StoredBranchState {
@@ -187,6 +195,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
   private readonly messageVariants = new Map<MessageVariantId, MessageVariant>();
   private readonly promptTraces = new Map<string, PromptTrace>();
   private readonly providerProfiles = new Map<string, any>();
+  private readonly promptPresets = new Map<PromptPresetId, PromptPreset>();
   private readonly clock;
   private readonly idGenerator;
 
@@ -959,6 +968,39 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
       }
     }
     return null;
+  }
+
+  listPromptPresets(): PromptPreset[] {
+    return [...this.promptPresets.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  getPromptPreset(presetId: PromptPresetId): PromptPreset | null {
+    return this.promptPresets.get(presetId) ?? null;
+  }
+
+  createPromptPreset(input: { name: string; bindModel: string; system: string; jailbreak: string; summary: string; tools: string }): PromptPreset {
+    const timestamp = this.nowTimestamp();
+    const id = this.nextId("prompt_preset") as PromptPresetId;
+    const preset: PromptPreset = { id, ...input, createdAt: timestamp, updatedAt: timestamp };
+    this.promptPresets.set(id, preset);
+    return preset;
+  }
+
+  updatePromptPreset(presetId: PromptPresetId, patch: Partial<Omit<PromptPreset, "id" | "createdAt" | "updatedAt">>): PromptPreset {
+    const current = this.promptPresets.get(presetId);
+    if (!current) {
+      throw new Error(`Prompt preset '${presetId}' was not found.`);
+    }
+    const next: PromptPreset = { ...current, ...patch, updatedAt: this.nowTimestamp() };
+    this.promptPresets.set(presetId, next);
+    return next;
+  }
+
+  deletePromptPreset(presetId: PromptPresetId): void {
+    if (!this.promptPresets.has(presetId)) {
+      throw new Error(`Prompt preset '${presetId}' was not found.`);
+    }
+    this.promptPresets.delete(presetId);
   }
 
   private getStoredBranchState(
