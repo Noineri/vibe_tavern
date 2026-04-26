@@ -278,6 +278,26 @@ export async function activateBranch(
   }));
 }
 
+export async function mergeBranch(
+  chatId: ChatId,
+  sourceBranchId: ChatBranchId,
+  targetBranchId: ChatBranchId,
+): Promise<AppSnapshot> {
+  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/branches/merge`, {
+    method: "POST",
+    body: { sourceBranchId, targetBranchId },
+  }));
+}
+
+export async function deleteBranch(
+  chatId: ChatId,
+  branchId: ChatBranchId,
+): Promise<AppSnapshot> {
+  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/branches/${branchId}`, {
+    method: "DELETE",
+  }));
+}
+
 export async function importJson(input: {
   fileName: string;
   jsonText: string;

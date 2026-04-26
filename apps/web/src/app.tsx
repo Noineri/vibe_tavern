@@ -172,6 +172,8 @@ export function App() {
         onRenameDraftChange={app.setRenameDraft}
         onRenameCancel={() => app.setRenamingChatId(null)}
         onRequestDestructiveConfirm={(config) => app.setConfirmDestroy(config)}
+        onMergeActiveBranchIntoRoot={() => void app.handleMergeActiveBranchIntoRoot()}
+        onDeleteActiveBranch={() => void app.handleDeleteActiveBranch()}
       />
 
       <main className="main">
