@@ -1,5 +1,5 @@
 import type { ChangeEvent, DragEvent, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
 import type { ProviderProbeResponse } from "@rp-platform/api-contracts";
 import {
@@ -19,8 +19,11 @@ import {
   exportChatJsonl,
   exportPromptTrace,
   fetchChat,
+  fetchModelsByEndpoint as fetchModelsByEndpointClient,
   fetchProviderProfile,
   fetchProviderProfileModels as fetchModelsForProviderProfile,
+  testProfileChat as testProfileChatClient,
+  testProviderChat as testProviderChatClient,
   forkBranch,
   listProviderProfiles,
   mergeBranch,
@@ -141,6 +144,7 @@ export function useRpPlatformApp() {
   const [isSavingCharacter, setIsSavingCharacter] = useState(false);
   const [characterSaveNotice, setCharacterSaveNotice] = useState("");
   const { importFile, isImporting } = useCharacterImport();
+  const modelsCache = useRef<Map<string, { models: Array<{ id: string; label: string }>; ts: number }>>(new Map());
 
   const [personas, setPersonas] = useState<import("../app-client.js").PersonaRecord[]>([]);
   const [promptPresets, setPromptPresets] = useState<import("@rp-platform/api-contracts").PromptPresetDto[]>([]);
@@ -599,6 +603,17 @@ export function useRpPlatformApp() {
     try {
       await activateProviderProfile(providerProfileId);
       await loadProviderProfiles();
+      const profile = await fetchProviderProfile(providerProfileId);
+      patchConnection({
+        providerLabel: profile.name,
+        baseUrl: normalizeOpenAiCompatibleBaseUrl(profile.endpoint),
+        apiKey: "",
+        model: profile.defaultModel ?? "",
+        activeProviderProfileId: profile.id,
+        hasStoredApiKey: profile.hasStoredApiKey,
+        status: "connected",
+        error: "",
+      });
     } catch (error) {
       patchConnection({
         status: "error",
@@ -696,8 +711,37 @@ export function useRpPlatformApp() {
     return testProviderDraft({ endpoint, apiKey });
   }
 
+  async function handleTestChat(
+    profileId: string | null,
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+  ): Promise<import("../app-client.js").TestChatResponse> {
+    if (profileId) {
+      return testProfileChatClient(profileId, model);
+    }
+    return testProviderChatClient(baseUrl, apiKey, model);
+  }
+
   async function handleFetchModelsForProfile(providerProfileId: string): Promise<Array<{ id: string; label: string }>> {
     const response = await fetchModelsForProviderProfile(providerProfileId);
+    return response.models;
+  }
+
+  async function handleFetchModelsByEndpoint(
+    baseUrl: string,
+    apiKey?: string,
+    useCache = true,
+  ): Promise<Array<{ id: string; label: string }>> {
+    const cacheKey = `${baseUrl}::${apiKey ?? ""}`;
+    if (useCache) {
+      const cached = modelsCache.current.get(cacheKey);
+      if (cached && Date.now() - cached.ts < 5 * 60_000) {
+        return cached.models;
+      }
+    }
+    const response = await fetchModelsByEndpointClient(baseUrl, apiKey);
+    modelsCache.current.set(cacheKey, { models: response.models, ts: Date.now() });
     return response.models;
   }
 
@@ -1271,7 +1315,9 @@ export function useRpPlatformApp() {
     handleCreateProviderProfile,
     handleDuplicateProviderProfile,
     handleTestDraftConnection,
+    handleTestChat,
     handleFetchModelsForProfile,
+    handleFetchModelsByEndpoint,
     handleRefreshProfiles,
     handleSaveProviderProfileFromForm,
     personas,

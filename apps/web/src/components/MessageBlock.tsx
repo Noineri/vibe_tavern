@@ -67,7 +67,7 @@ export function MessageBlock(input: MessageBlockProps) {
           <div className="user-wrap">
             <Markdown className="msg-body" text={input.message.content} />
           </div>
-        ) : isGenerating ? (
+        ) : isGenerating && !input.message.content?.trim() ? (
           <div className="msg-body">
             <span className="gen-cur" aria-label="Generating response">
               <span />
@@ -76,7 +76,16 @@ export function MessageBlock(input: MessageBlockProps) {
             </span>
           </div>
         ) : (
-          <Markdown className="msg-body" text={input.message.content} />
+          <>
+            <Markdown className="msg-body" text={input.message.content} />
+            {isGenerating && (
+              <span className="gen-cur" aria-label="Generating response">
+                <span />
+                <span />
+                <span />
+              </span>
+            )}
+          </>
         )}
 
         {!input.isEditing && !isGenerating && (
