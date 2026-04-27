@@ -8,6 +8,7 @@ import {
   archiveCharacter,
   bootstrapApp,
   cloneChat,
+  createCharacter,
   createChat,
   deleteBranch,
   deleteChatMessage,
@@ -132,6 +133,7 @@ export function useRpPlatformApp() {
   const [messageActionId, setMessageActionId] = useState<string | null>(null);
   const [pendingUserMessageContent, setPendingUserMessageContent] = useState<string | null>(null);
   const [chatNotice, setChatNotice] = useState("");
+  const [isFirstRun, setIsFirstRun] = useState(false);
   const [confirmDestroy, setConfirmDestroy] = useState<{
     title: string;
     body: ReactNode;
@@ -327,6 +329,7 @@ export function useRpPlatformApp() {
       const boot = await bootstrapApp();
       setActiveChatId(boot.initialChatId);
       setSnapshot(boot.snapshot);
+      setIsFirstRun(boot.isFirstRun);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Could not load application state.");
     } finally {
@@ -1162,6 +1165,26 @@ export function useRpPlatformApp() {
     }
   }
 
+  async function handleCreateCharacter(input: { name: string; description?: string; firstMessage?: string }): Promise<void> {
+    try {
+      const result = await createCharacter(input);
+      setIsFirstRun(false);
+      refresh(result.activeChatId, result.snapshot);
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Failed to create character.");
+    }
+  }
+
+  async function handleFreeChat(): Promise<void> {
+    try {
+      const next = await createChat();
+      setIsFirstRun(false);
+      refresh(next.activeChat.id, next);
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Failed to create free chat.");
+    }
+  }
+
   async function handleCloneChat(chatId: ChatId): Promise<void> {
     try {
       const next = await cloneChat(chatId);
@@ -1350,6 +1373,9 @@ export function useRpPlatformApp() {
     handleDeleteChat,
     handleRenameChat,
     activePromptTraceId: activePromptTrace?.id ?? null,
+    isFirstRun,
+    handleCreateCharacter,
+    handleFreeChat,
     onCreateChat: handleCreateChat,
     onCloneChat: handleCloneChat,
     onExportCharacter: handleExportCharacter,
