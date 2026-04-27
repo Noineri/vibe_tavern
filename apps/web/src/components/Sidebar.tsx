@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ChatId, ChatBranchId, ChatBranch } from "@rp-platform/domain";
 import type { AppSnapshot, ChatListItem } from "../app-client.js";
 import type { CharacterTab } from "./app-shell-types.js";
@@ -51,6 +52,8 @@ export function Sidebar(input: SidebarProps) {
   const [charMenuId, setCharMenuId] = useState<string | null>(null);
   const [chatMenuId, setChatMenuId] = useState<ChatId | null>(null);
   const [branchPopId, setBranchPopId] = useState<ChatId | null>(null);
+  const [charMenuPos, setCharMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const [chatMenuPos, setChatMenuPos] = useState<{ top: number; right: number } | null>(null);
 
   const charMenuRef = useRef<HTMLDivElement | null>(null);
   const chatMenuRef = useRef<HTMLDivElement | null>(null);
@@ -77,6 +80,14 @@ export function Sidebar(input: SidebarProps) {
       input.onImportFiles(event.target.files);
     }
     event.target.value = "";
+  }
+
+  function calcPopoverPos(triggerEl: HTMLElement): { top: number; right: number } {
+    const rect = triggerEl.getBoundingClientRect();
+    return {
+      top: rect.bottom + 4,
+      right: window.innerWidth - rect.right,
+    };
   }
 
   return (
@@ -142,7 +153,8 @@ export function Sidebar(input: SidebarProps) {
                           title="Character actions"
                           onClick={(event) => {
                             event.stopPropagation();
-                            setCharMenuId(menuOpen ? null : character.id);
+                            setCharMenuId(character.id);
+                            setCharMenuPos(calcPopoverPos(event.currentTarget));
                             setChatMenuId(null);
                             setBranchPopId(null);
                           }}
@@ -151,18 +163,18 @@ export function Sidebar(input: SidebarProps) {
                         </button>
                       </div>
                     )}
-                    {menuOpen && (
+                    {menuOpen && charMenuPos && createPortal(
                       <div
                         className="sb-chat-menu-popover"
                         ref={charMenuRef}
                         onClick={(event) => event.stopPropagation()}
-                        style={{ top: 28, right: 4 }}
+                        style={{ top: charMenuPos.top, right: charMenuPos.right }}
                       >
                         <div
                           className="sb-menu-item"
                           role="menuitem"
                           onClick={() => {
-                            setCharMenuId(null);
+                            setCharMenuId(null); setCharMenuPos(null);
                             input.onExportCharacter(character.id);
                           }}
                         >
@@ -172,7 +184,7 @@ export function Sidebar(input: SidebarProps) {
                           className="sb-menu-item"
                           role="menuitem"
                           onClick={() => {
-                            setCharMenuId(null);
+                            setCharMenuId(null); setCharMenuPos(null);
                             input.onArchiveCharacter(character.id);
                           }}
                         >
@@ -183,7 +195,7 @@ export function Sidebar(input: SidebarProps) {
                           className="sb-menu-item danger"
                           role="menuitem"
                           onClick={() => {
-                            setCharMenuId(null);
+                            setCharMenuId(null); setCharMenuPos(null);
                             input.onRequestDestructiveConfirm({
                               title: "Delete character?",
                               body: <>Are you sure? <b>{character.name}</b> and all its chats will be deleted permanently.</>,
@@ -194,7 +206,8 @@ export function Sidebar(input: SidebarProps) {
                         >
                           <Icons.Trash /> Delete
                         </div>
-                      </div>
+                      </div>,
+                      document.body
                     )}
                   </div>
                 );
@@ -281,7 +294,8 @@ export function Sidebar(input: SidebarProps) {
                           title="Chat actions"
                           onClick={(event) => {
                             event.stopPropagation();
-                            setChatMenuId(chatMenuOpen ? null : chat.id);
+                            setChatMenuId(chat.id);
+                            setChatMenuPos(calcPopoverPos(event.currentTarget));
                             setBranchPopId(null);
                           }}
                         >
@@ -290,13 +304,18 @@ export function Sidebar(input: SidebarProps) {
                       </div>
                     )}
 
-                    {chatMenuOpen && (
-                      <div className="sb-chat-menu-popover" ref={chatMenuRef} onClick={(event) => event.stopPropagation()}>
+                    {chatMenuOpen && chatMenuPos && createPortal(
+                      <div
+                        className="sb-chat-menu-popover"
+                        ref={chatMenuRef}
+                        onClick={(event) => event.stopPropagation()}
+                        style={{ top: chatMenuPos.top, right: chatMenuPos.right }}
+                      >
                         <div
                           className="sb-menu-item"
                           role="menuitem"
                           onClick={() => {
-                            setChatMenuId(null);
+                            setChatMenuId(null); setChatMenuPos(null);
                             input.onRenameStart(chat.id, chat.title);
                           }}
                         >
@@ -306,7 +325,7 @@ export function Sidebar(input: SidebarProps) {
                           className="sb-menu-item"
                           role="menuitem"
                           onClick={() => {
-                            setChatMenuId(null);
+                            setChatMenuId(null); setChatMenuPos(null);
                             input.onCloneChat(chat.id);
                           }}
                         >
@@ -316,7 +335,7 @@ export function Sidebar(input: SidebarProps) {
                           className="sb-menu-item"
                           role="menuitem"
                           onClick={() => {
-                            setChatMenuId(null);
+                            setChatMenuId(null); setChatMenuPos(null);
                             input.onExportChatJsonl(chat.id);
                           }}
                         >
@@ -332,7 +351,7 @@ export function Sidebar(input: SidebarProps) {
                           title={chat.id !== input.activeChatId || !input.activePromptTraceId ? "No prompt trace available for this chat" : ""}
                           onClick={() => {
                             if (chat.id === input.activeChatId && input.activePromptTraceId) {
-                              setChatMenuId(null);
+                              setChatMenuId(null); setChatMenuPos(null);
                               input.onExportPromptTrace(input.activePromptTraceId);
                             }
                           }}
@@ -344,7 +363,7 @@ export function Sidebar(input: SidebarProps) {
                           className="sb-menu-item danger"
                           role="menuitem"
                           onClick={() => {
-                            setChatMenuId(null);
+                            setChatMenuId(null); setChatMenuPos(null);
                             input.onRequestDestructiveConfirm({
                               title: "Delete chat?",
                               body: <>Delete <b>{chat.title}</b>? All messages on every branch will be removed.</>,
@@ -355,7 +374,8 @@ export function Sidebar(input: SidebarProps) {
                         >
                           <Icons.Trash /> Delete
                         </div>
-                      </div>
+                      </div>,
+                      document.body
                     )}
 
                     {branchPopOpen && isActive && (
