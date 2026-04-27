@@ -700,6 +700,17 @@ export class SqliteChatSessionStore implements ChatSessionStore {
       .map(mapCharacter);
   }
 
+  getCharacter(characterId: CharacterId): Character | null {
+    const row = this.db.queryOne<CharacterRow>(
+      `SELECT id, slug, name, description, default_scenario, mes_example, alternate_greetings_json,
+              post_history_instructions, creator_notes, avatar_asset_id, status, created_at, updated_at
+       FROM characters
+       WHERE id = ?`,
+      [characterId],
+    );
+    return row ? mapCharacter(row) : null;
+  }
+
   getLatestCharacterVersion(characterId: string): CharacterVersion | null {
     const row = this.db.queryOne<CharacterVersionRow>(
       `SELECT id, character_id, version_number, title, card_format, definition_json, is_active, created_at
