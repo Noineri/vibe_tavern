@@ -16,6 +16,7 @@ import type {
   Character,
   CharacterId,
   CharacterVersion,
+  CharacterVersionId,
   GenerationPreset,
   GenerationRule,
   LoreEntry,
@@ -97,6 +98,7 @@ export interface PreparedLiveTurn {
 export interface BootstrapState {
   initialChatId: ChatId | null;
   snapshot: SessionSnapshot | null;
+  isFirstRun: boolean;
 }
 
 interface PendingPromptTraceTurn {
@@ -288,6 +290,7 @@ export class SessionRuntime {
     return {
       initialChatId,
       snapshot: initialChatId ? this.getSnapshot(initialChatId) : null,
+      isFirstRun: this.store.listCharacters().length === 0,
     };
   }
 
@@ -511,15 +514,6 @@ export class SessionRuntime {
     return this.getSnapshot(chatId);
   }
 
-  mergeBranch(chatId: string, sourceBranchId: string, targetBranchId: string): SessionSnapshot {
-    this.chatApp.mergeBranch(chatId as ChatId, {
-      sourceBranchId: sourceBranchId as ChatBranchId,
-      targetBranchId: targetBranchId as ChatBranchId,
-    });
-    this.pendingPromptTraceByChat.delete(chatId as ChatId);
-    return this.getSnapshot(chatId as ChatId);
-  }
-
   deleteBranch(chatId: string, branchId: string): SessionSnapshot {
     this.chatApp.deleteBranch(chatId as ChatId, branchId as ChatBranchId);
     this.pendingPromptTraceByChat.delete(chatId as ChatId);
@@ -600,6 +594,119 @@ export class SessionRuntime {
       }
     }
 
+    return this.getSnapshot(created.id as ChatId);
+  }
+
+  createCharacterFromScratch(input: {
+    name: string;
+    description?: string;
+    firstMessage?: string;
+  }): ImportResult {
+    const timestamp = new Date().toISOString();
+    const characterId = `char_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterId;
+    const versionId = `ver_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterVersionId;
+
+    const character: Character = {
+      id: characterId,
+      slug: input.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-zа-яё0-9-]/gi, ''),
+      name: input.name,
+      description: input.description ?? '',
+      defaultScenario: null,
+      mesExample: null,
+      alternateGreetings: input.firstMessage ? [input.firstMessage] : [],
+      postHistoryInstructions: null,
+      creatorNotes: null,
+      avatarAssetId: null,
+      status: 'active',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    const version: CharacterVersion = {
+      id: versionId,
+      characterId,
+      versionNumber: 1,
+      title: 'Initial',
+      cardFormat: 'st_v3',
+      definition: {},
+      isActive: true,
+      createdAt: timestamp,
+    };
+
+    this.store.upsertCharacter(character);
+    this.store.upsertCharacterVersion(version);
+
+    const created = this.chatApp.createChat({
+      characterId,
+      personaId: "persona_explorer" as import("@rp-platform/domain").PersonaId,
+      title: input.name,
+      generationPresetId: this.defaultPreset.id,
+      toolProfileId: this.defaultToolProfile.id,
+    });
+
+    this.chatOrder.unshift(created.id as ChatId);
+
+    if (input.firstMessage?.trim()) {
+      this.seedImportedOpening(created.id as ChatId, input.firstMessage);
+    }
+
+    return {
+      activeChatId: created.id as ChatId,
+      snapshot: this.getSnapshot(created.id as ChatId),
+      imported: {
+        kind: 'character',
+        name: input.name,
+        fileName: '',
+        warningCount: 0,
+        warnings: [],
+      },
+    };
+  }
+
+  createFreeChat(): SessionSnapshot {
+    const timestamp = new Date().toISOString();
+    const characterId = `free_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterId;
+    const versionId = `fver_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterVersionId;
+
+    const character: Character = {
+      id: characterId,
+      slug: 'free-chat',
+      name: 'Free chat',
+      description: '',
+      defaultScenario: null,
+      mesExample: null,
+      alternateGreetings: [],
+      postHistoryInstructions: null,
+      creatorNotes: null,
+      avatarAssetId: null,
+      status: 'draft',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    const version: CharacterVersion = {
+      id: versionId,
+      characterId,
+      versionNumber: 1,
+      title: 'Free chat',
+      cardFormat: 'st_v3',
+      definition: {},
+      isActive: true,
+      createdAt: timestamp,
+    };
+
+    this.store.upsertCharacter(character);
+    this.store.upsertCharacterVersion(version);
+
+    const created = this.chatApp.createChat({
+      characterId,
+      personaId: "persona_explorer" as import("@rp-platform/domain").PersonaId,
+      title: 'Free chat',
+      generationPresetId: this.defaultPreset.id,
+      toolProfileId: this.defaultToolProfile.id,
+    });
+
+    this.chatOrder.unshift(created.id as ChatId);
     return this.getSnapshot(created.id as ChatId);
   }
 
