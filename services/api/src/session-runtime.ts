@@ -1282,6 +1282,17 @@ export class SessionRuntime {
     if (!this.store.getToolProfile(this.defaultToolProfile.id)) {
       this.store.upsertToolProfile(this.defaultToolProfile);
     }
+
+    if (this.store.listPromptPresets().length === 0) {
+      this.store.createPromptPreset({
+        name: "Стандартный",
+        bindModel: "",
+        system: "Write {{char}}'s next reply in a fictional chat between {{char}} and {{user}}.",
+        jailbreak: "",
+        summary: "",
+        tools: "",
+      });
+    }
   }
 
   private assemblePrompt(
