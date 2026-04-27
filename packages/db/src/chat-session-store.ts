@@ -136,6 +136,7 @@ export interface ChatSessionStore {
   deleteLoreEntry(entryId: string): void;
   linkCharacterLorebook(characterId: CharacterId, lorebookId: string): void;
   listCharacters(): Character[];
+  getCharacter(characterId: CharacterId): Character | null;
   getLatestCharacterVersion(characterId: CharacterId): CharacterVersion | null;
   listLoreEntriesForCharacter(characterId: CharacterId): LoreEntry[];
   createChat(input: CreateChatSessionInput): CreateChatSessionResult;
@@ -418,6 +419,11 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     return Array.from(this.characters.values())
       .sort((left, right) => compareTimestampsAsc(left.createdAt, right.createdAt, left.id, right.id))
       .map((character) => ({ ...character }));
+  }
+
+  getCharacter(characterId: CharacterId): Character | null {
+    const character = this.characters.get(characterId);
+    return character ? { ...character } : null;
   }
 
   getLatestCharacterVersion(characterId: CharacterId): CharacterVersion | null {
