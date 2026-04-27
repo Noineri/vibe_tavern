@@ -205,6 +205,7 @@ export function App() {
         onDuplicateProfile={app.handleDuplicateProviderProfile}
         onDeleteProfile={async (id: string) => { await app.handleDeleteProviderProfile(id); }}
         onActivateProfile={app.handleActivateProviderProfile}
+        onSaveProfile={app.handleSaveProviderProfileFromForm}
         onTestDraft={app.handleTestDraftConnection}
         onRefreshModels={app.handleFetchModelsForProfile}
         onRefreshProfiles={async () => { await app.handleRefreshProfiles(); }}
