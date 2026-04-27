@@ -6,6 +6,7 @@ import { PromptManagerModal } from "./components/PromptManagerModal.js";
 import { ProviderModal } from "./components/ProviderModal.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { TopBar } from "./components/TopBar.js";
+import { WelcomeScreen } from "./components/WelcomeScreen.js";
 import { DestructiveConfirmModal } from "./components/shared/destructive-confirm-modal.js";
 import { useRpPlatformApp } from "./hooks/use-rp-platform-app.js";
 
@@ -249,6 +250,14 @@ export function App() {
             app.setConfirmDestroy(null);
           }}
           onCancel={() => app.setConfirmDestroy(null)}
+        />
+      )}
+
+      {app.isFirstRun && (
+        <WelcomeScreen
+          onCreateCharacter={(input) => app.handleCreateCharacter(input)}
+          onImportFiles={(files) => void app.handleImportFiles(files)}
+          onFreeChat={() => app.handleFreeChat()}
         />
       )}
     </div>

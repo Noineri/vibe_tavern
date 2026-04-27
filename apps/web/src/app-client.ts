@@ -112,15 +112,18 @@ export interface LoreEntryRecord {
 export async function bootstrapApp(): Promise<{
   initialChatId: ChatId | null;
   snapshot: AppSnapshot | null;
+  isFirstRun: boolean;
 }> {
   const response = await requestJson<{
     initialChatId: ChatId | null;
     snapshot: AppSnapshot | null;
+    isFirstRun?: boolean;
   }>("/api/bootstrap");
 
   return {
     initialChatId: response.initialChatId,
     snapshot: response.snapshot ? normalizeSnapshot(response.snapshot) : null,
+    isFirstRun: response.isFirstRun ?? false,
   };
 }
 
@@ -508,11 +511,29 @@ export async function renameChat(chatId: ChatId, title: string): Promise<{ chatI
   return requestJson(`/api/chats/${chatId}/title`, { method: "PATCH", body: { title } });
 }
 
-export async function createChat(characterId: string): Promise<AppSnapshot> {
+export async function createChat(characterId?: string): Promise<AppSnapshot> {
+  const body: Record<string, string> = {};
+  if (characterId) body.characterId = characterId;
   return normalizeSnapshot(await requestJson("/api/chats", {
     method: "POST",
-    body: { characterId },
+    body,
   }));
+}
+
+export async function createCharacter(input: {
+  name: string;
+  description?: string;
+  firstMessage?: string;
+}): Promise<ImportJsonResponse> {
+  const response = await requestJson<ImportJsonResponse>("/api/characters", {
+    method: "POST",
+    body: input,
+  });
+
+  return {
+    ...response,
+    snapshot: normalizeSnapshot(response.snapshot),
+  };
 }
 
 export async function cloneChat(chatId: ChatId): Promise<AppSnapshot> {
