@@ -730,7 +730,24 @@ export class SessionRuntime {
   }
 
   createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
-    return this.store.createLoreEntry(lorebookId, input);
+    let resolvedLorebookId = lorebookId;
+    const existing = this.store.listLoreEntriesForCharacter(lorebookId);
+    if (existing.length > 0 && existing[0].lorebookId) {
+      resolvedLorebookId = existing[0].lorebookId;
+    } else {
+      const lorebook: Lorebook = {
+        id: `lorebook_${Date.now()}`,
+        name: `${lorebookId} lorebook`,
+        scopeType: "character",
+        description: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      this.store.upsertLorebook(lorebook);
+      this.store.linkCharacterLorebook(lorebookId, lorebook.id);
+      resolvedLorebookId = lorebook.id;
+    }
+    return this.store.createLoreEntry(resolvedLorebookId, input);
   }
 
   updateLoreEntry(lorebookId: string, entryId: string, input: Partial<Omit<LoreEntry, "id" | "lorebookId">>): LoreEntry {
