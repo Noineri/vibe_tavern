@@ -73,6 +73,24 @@ CREATE TABLE IF NOT EXISTS prompt_presets (
 );
 `,
   },
+  {
+    version: "0007_provider_samplers",
+    sql: `
+ALTER TABLE provider_profiles ADD COLUMN temperature REAL NOT NULL DEFAULT 0.9;
+ALTER TABLE provider_profiles ADD COLUMN top_p REAL NOT NULL DEFAULT 1.0;
+ALTER TABLE provider_profiles ADD COLUMN min_p REAL NOT NULL DEFAULT 0.05;
+ALTER TABLE provider_profiles ADD COLUMN top_k INTEGER NOT NULL DEFAULT 40;
+ALTER TABLE provider_profiles ADD COLUMN typical_p REAL NOT NULL DEFAULT 1.0;
+ALTER TABLE provider_profiles ADD COLUMN rep_pen REAL NOT NULL DEFAULT 1.1;
+ALTER TABLE provider_profiles ADD COLUMN freq_pen REAL NOT NULL DEFAULT 0.0;
+ALTER TABLE provider_profiles ADD COLUMN pres_pen REAL NOT NULL DEFAULT 0.0;
+ALTER TABLE provider_profiles ADD COLUMN max_tokens INTEGER NOT NULL DEFAULT 8192;
+ALTER TABLE provider_profiles ADD COLUMN stop_seq TEXT NOT NULL DEFAULT '';
+ALTER TABLE provider_profiles ADD COLUMN seed TEXT DEFAULT NULL;
+ALTER TABLE provider_profiles ADD COLUMN reasoning_effort TEXT NOT NULL DEFAULT 'medium';
+ALTER TABLE provider_profiles ADD COLUMN stream_response INTEGER NOT NULL DEFAULT 1;
+`,
+  },
 ];
 
 export function getLatestMigrationVersion(): string {
