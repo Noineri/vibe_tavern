@@ -3,6 +3,9 @@ import { ProviderProfile, ProviderAdapter, ProviderType, ModelInfo } from './typ
 import { OpenAICompatAdapter } from './openai.js';
 import { AnthropicAdapter } from './anthropic.js';
 import { GoogleAdapter } from './google.js';
+import { OllamaAdapter } from './ollama.js';
+import { LlamaCppAdapter } from './llamacpp.js';
+import { KoboldCppAdapter } from './koboldcpp.js';
 
 export class ProviderManager {
   private adapters: Map<ProviderType, ProviderAdapter> = new Map();
@@ -11,6 +14,9 @@ export class ProviderManager {
     this.registerAdapter(new OpenAICompatAdapter());
     this.registerAdapter(new AnthropicAdapter());
     this.registerAdapter(new GoogleAdapter());
+    this.registerAdapter(new OllamaAdapter());
+    this.registerAdapter(new LlamaCppAdapter());
+    this.registerAdapter(new KoboldCppAdapter());
   }
 
   registerAdapter(adapter: ProviderAdapter) {
