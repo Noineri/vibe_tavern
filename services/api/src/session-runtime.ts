@@ -57,7 +57,7 @@ type PersonaRecord = {
   description: string;
 };
 
-export interface PrototypeChatListItem {
+export interface ChatListItem {
   id: ChatId;
   title: string;
   characterName: string;
@@ -66,12 +66,12 @@ export interface PrototypeChatListItem {
   messageCount: number;
 }
 
-export interface PrototypeSnapshot {
-  chats: PrototypeChatListItem[];
+export interface SessionSnapshot {
+  chats: ChatListItem[];
   activeChat: Chat;
   activeBranch: ChatBranch;
   branches: ChatBranch[];
-  messages: PrototypeMessageDto[];
+  messages: MessageDto[];
   summaries: Array<{
     id: string;
     kind: string;
@@ -83,19 +83,19 @@ export interface PrototypeSnapshot {
   persona: PersonaRecord | null;
 }
 
-export interface PrototypeMessageDto extends Message {
+export interface MessageDto extends Message {
   variants: MessageVariant[];
   selectedVariantIndex: number | null;
 }
 
 export interface PreparedLiveTurn {
   prompt: AssemblePromptResponse;
-  snapshot: PrototypeSnapshot;
+  snapshot: SessionSnapshot;
 }
 
-export interface PrototypeBootstrapState {
+export interface BootstrapState {
   initialChatId: ChatId | null;
-  snapshot: PrototypeSnapshot | null;
+  snapshot: SessionSnapshot | null;
 }
 
 interface PendingPromptTraceTurn {
@@ -134,9 +134,9 @@ interface CachedProviderModelsRecord {
   cachedAt: string;
 }
 
-export interface PrototypeImportResult {
+export interface ImportResult {
   activeChatId: ChatId;
-  snapshot: PrototypeSnapshot;
+  snapshot: SessionSnapshot;
   imported: {
     kind: "character" | "lorebook";
     name: string;
@@ -219,7 +219,7 @@ class StaticPromptResolver implements PromptAssemblyResolver {
   }
 }
 
-export class PrototypeSessionRuntime {
+export class SessionRuntime {
   private readonly store: ChatSessionStore;
   private readonly defaultPreset: GenerationPreset = {
     id: "preset_default",
@@ -247,16 +247,16 @@ export class PrototypeSessionRuntime {
   private readonly pendingPromptTraceByChat = new Map<ChatId, PendingPromptTraceTurn>();
   private readonly providerModelsCache = new Map<string, CachedProviderModelsRecord>();
 
-  constructor(store: ChatSessionStore = createDefaultPrototypeStore()) {
+  constructor(store: ChatSessionStore = createDefaultSessionStore()) {
     this.store = store;
-    this.ensurePrototypeReferences();
+    this.ensureDefaultReferences();
     this.resolver = new StaticPromptResolver(this.store);
     this.chatApp = new ChatApplicationService(this.store);
     this.promptService = new PromptAssemblyService(this.store, this.resolver);
     this.seed();
   }
 
-  getBootstrapState(): PrototypeBootstrapState {
+  getBootstrapState(): BootstrapState {
     const initialChatId = this.chatOrder[0] ?? null;
     return {
       initialChatId,
@@ -264,7 +264,7 @@ export class PrototypeSessionRuntime {
     };
   }
 
-  getSnapshot(chatId: ChatId): PrototypeSnapshot {
+  getSnapshot(chatId: ChatId): SessionSnapshot {
     const { chat, branchState } = this.chatApp.getChatState(chatId);
     const branches = this.store.listBranches(chat.id);
     const character = this.resolver.getCharacter(chat.characterId);
@@ -277,7 +277,7 @@ export class PrototypeSessionRuntime {
       activeBranch: branchState.branch,
       branches,
       messages: branchState.messages.map((message) =>
-        mapPrototypeMessage(message, this.store.listMessageVariants(message.id)),
+        mapMessageDto(message, this.store.listMessageVariants(message.id)),
       ),
       summaries: branchState.summaries.map((summary) => ({
         id: summary.id,
@@ -305,7 +305,7 @@ export class PrototypeSessionRuntime {
       .map(mapPromptTraceRecord);
   }
 
-  switchChat(chatId: ChatId): PrototypeSnapshot {
+  switchChat(chatId: ChatId): SessionSnapshot {
     return this.getSnapshot(chatId);
   }
 
@@ -317,7 +317,7 @@ export class PrototypeSessionRuntime {
     }));
   }
 
-  setChatPersona(chatId: ChatId, personaId: string): PrototypeSnapshot {
+  setChatPersona(chatId: ChatId, personaId: string): SessionSnapshot {
     this.store.updateChatPersona(chatId, personaId as import("@rp-platform/domain").PersonaId);
     return this.getSnapshot(chatId);
   }
@@ -404,7 +404,7 @@ export class PrototypeSessionRuntime {
     };
   }
 
-  appendAssistantReply(chatId: ChatId, content: string, latencyMs: number): PrototypeSnapshot {
+  appendAssistantReply(chatId: ChatId, content: string, latencyMs: number): SessionSnapshot {
     const chat = this.store.getChat(chatId)!;
     const fallbackDraft = this.assemblePrompt(chatId, chat.activeBranchId).promptTraceDraft;
 
@@ -426,7 +426,7 @@ export class PrototypeSessionRuntime {
     chatId: ChatId,
     messageId: MessageId,
     input: { content: string; finishReason?: string | null; latencyMs: number },
-  ): PrototypeSnapshot {
+  ): SessionSnapshot {
     const trimmed = input.content.trim();
     if (!trimmed) {
       return this.getSnapshot(chatId);
@@ -448,22 +448,22 @@ export class PrototypeSessionRuntime {
     return this.getSnapshot(chatId);
   }
 
-  selectMessageVariant(chatId: ChatId, messageId: MessageId, variantIndex: number): PrototypeSnapshot {
+  selectMessageVariant(chatId: ChatId, messageId: MessageId, variantIndex: number): SessionSnapshot {
     this.store.selectMessageVariant(messageId, variantIndex);
     return this.getSnapshot(chatId);
   }
 
-  editMessage(chatId: ChatId, messageId: string, content: string): PrototypeSnapshot {
+  editMessage(chatId: ChatId, messageId: string, content: string): SessionSnapshot {
     this.chatApp.editMessage(messageId, content);
     return this.getSnapshot(chatId);
   }
 
-  deleteMessage(chatId: ChatId, messageId: string): PrototypeSnapshot {
+  deleteMessage(chatId: ChatId, messageId: string): SessionSnapshot {
     this.chatApp.deleteMessage(messageId);
     return this.getSnapshot(chatId);
   }
 
-  forkBranch(chatId: ChatId): PrototypeSnapshot {
+  forkBranch(chatId: ChatId): SessionSnapshot {
     const { branchState } = this.chatApp.getChatState(chatId);
     const lastMessage = branchState.messages[branchState.messages.length - 1];
 
@@ -478,13 +478,13 @@ export class PrototypeSessionRuntime {
     return this.getSnapshot(chatId);
   }
 
-  activateBranch(chatId: ChatId, branchId: ChatBranchId): PrototypeSnapshot {
+  activateBranch(chatId: ChatId, branchId: ChatBranchId): SessionSnapshot {
     this.chatApp.activateBranch(chatId, branchId);
     this.pendingPromptTraceByChat.delete(chatId);
     return this.getSnapshot(chatId);
   }
 
-  mergeBranch(chatId: string, sourceBranchId: string, targetBranchId: string): PrototypeSnapshot {
+  mergeBranch(chatId: string, sourceBranchId: string, targetBranchId: string): SessionSnapshot {
     this.chatApp.mergeBranch(chatId as ChatId, {
       sourceBranchId: sourceBranchId as ChatBranchId,
       targetBranchId: targetBranchId as ChatBranchId,
@@ -493,7 +493,7 @@ export class PrototypeSessionRuntime {
     return this.getSnapshot(chatId as ChatId);
   }
 
-  deleteBranch(chatId: string, branchId: string): PrototypeSnapshot {
+  deleteBranch(chatId: string, branchId: string): SessionSnapshot {
     this.chatApp.deleteBranch(chatId as ChatId, branchId as ChatBranchId);
     this.pendingPromptTraceByChat.delete(chatId as ChatId);
     return this.getSnapshot(chatId as ChatId);
@@ -543,7 +543,7 @@ export class PrototypeSessionRuntime {
     return { chatId, title };
   }
 
-  createChatForCharacter(characterId: string): PrototypeSnapshot {
+  createChatForCharacter(characterId: string): SessionSnapshot {
     const character = this.store.getCharacter(characterId as CharacterId);
     if (!character) {
       throw new Error(`Character '${characterId}' was not found.`);
@@ -561,7 +561,7 @@ export class PrototypeSessionRuntime {
     return this.getSnapshot(created.id as ChatId);
   }
 
-  cloneChat(chatId: string): PrototypeSnapshot {
+  cloneChat(chatId: string): SessionSnapshot {
     const result = this.store.cloneChat(chatId as ChatId);
     this.chatOrder.unshift(result.chat.id);
     return this.getSnapshot(result.chat.id);
@@ -779,7 +779,7 @@ export class PrototypeSessionRuntime {
       postHistoryInstructions?: string | null;
       creatorNotes?: string | null;
     },
-  ): PrototypeSnapshot {
+  ): SessionSnapshot {
     const currentCharacter = this.store.listCharacters().find((character) => character.id === characterId);
     if (!currentCharacter) {
       throw new Error(`Character '${characterId}' was not found.`);
@@ -849,7 +849,7 @@ export class PrototypeSessionRuntime {
       name?: string;
       description?: string;
     },
-  ): PrototypeSnapshot {
+  ): SessionSnapshot {
     const currentPersona = this.store.getPersona(personaId as import("@rp-platform/domain").PersonaId);
     if (!currentPersona) {
       throw new Error(`Persona '${personaId}' was not found.`);
@@ -932,7 +932,7 @@ export class PrototypeSessionRuntime {
     fileName: string;
     jsonText: string;
     chatId?: string;
-  }): PrototypeImportResult {
+  }): ImportResult {
     const trimmed = input.jsonText.trim();
     if (!trimmed) {
       throw new Error("Import payload is empty.");
@@ -1081,7 +1081,7 @@ export class PrototypeSessionRuntime {
     this.persistPromptTrace(message.id, assembled.promptTraceDraft);
   }
 
-  private ensurePrototypeReferences(): void {
+  private ensureDefaultReferences(): void {
     const defaultPersonaId = "persona_explorer" as import("@rp-platform/domain").PersonaId;
     if (!this.store.getPersona(defaultPersonaId)) {
       this.store.upsertPersona({
@@ -1144,7 +1144,7 @@ export class PrototypeSessionRuntime {
     return pending;
   }
 
-  private toChatListItem(chatId: ChatId): PrototypeChatListItem {
+  private toChatListItem(chatId: ChatId): ChatListItem {
     const chat = this.store.getChat(chatId)!;
     const branchState = this.store.getBranchState(chat.id, chat.activeBranchId)!;
     let characterName = "Unknown";
@@ -1195,13 +1195,13 @@ export class PrototypeSessionRuntime {
 }
 
 
-function createDefaultPrototypeStore(): ChatSessionStore {
+function createDefaultSessionStore(): ChatSessionStore {
   const storeMode = (process.env.RP_PLATFORM_CHAT_STORE ?? "sqlite").toLowerCase();
   if (storeMode === "memory" || storeMode === "in-memory") {
     return new InMemoryChatSessionStore();
   }
 
-  const dbPath = resolve(process.cwd(), process.env.RP_PLATFORM_DB_PATH ?? "data/prototype.sqlite");
+  const dbPath = resolve(process.cwd(), process.env.RP_PLATFORM_DB_PATH ?? "data/app.sqlite");
   mkdirSync(dirname(dbPath), {
     recursive: true,
   });
@@ -1336,7 +1336,7 @@ function applyCharacterEditsToDefinition(
   return cloned;
 }
 
-function mapPrototypeMessage(message: Message, variants: MessageVariant[]): PrototypeMessageDto {
+function mapMessageDto(message: Message, variants: MessageVariant[]): MessageDto {
   const selectedVariant = variants.find((variant) => variant.isSelected) ?? null;
   return {
     ...message,

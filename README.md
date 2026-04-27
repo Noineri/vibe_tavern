@@ -88,7 +88,7 @@ API реализован в [services/api/src/dev-server.ts](../rp_platform/serv
 - обновление данных персонажа
 - chat/message/branch операции для прототипного runtime
 
-Основная orchestration-логика находится в [services/api/src/prototype-session-runtime.ts](../rp_platform/services/api/src/prototype-session-runtime.ts), [services/api/src/live-chat-orchestrator.ts](../rp_platform/services/api/src/live-chat-orchestrator.ts) и [services/api/src/provider-orchestrator.ts](../rp_platform/services/api/src/provider-orchestrator.ts).
+Основная orchestration-логика находится в [services/api/src/session-runtime.ts](../rp_platform/services/api/src/session-runtime.ts), [services/api/src/live-chat-orchestrator.ts](../rp_platform/services/api/src/live-chat-orchestrator.ts) и [services/api/src/provider-orchestrator.ts](../rp_platform/services/api/src/provider-orchestrator.ts).
 
 - Runtime собирает snapshot состояния для UI.
 - Импортированный character card автоматически создаёт chat.
@@ -118,7 +118,7 @@ API реализован в [services/api/src/dev-server.ts](../rp_platform/serv
 
 По умолчанию runtime использует SQLite.
 
-- Файл БД по умолчанию: `data/prototype.sqlite`.
+- Файл БД по умолчанию: `data/app.sqlite`.
 - Если выставить `RP_PLATFORM_CHAT_STORE=memory`, runtime перейдёт на in-memory store.
 - Если инициализация SQLite падает, runtime автоматически откатывается на in-memory режим.
 - SQLite schema и migrations лежат в `packages/db`.
@@ -146,7 +146,7 @@ API реализован в [services/api/src/dev-server.ts](../rp_platform/serv
 - `RP_PLATFORM_LOG_DIR` — каталог логов launcher
 - `RP_PLATFORM_LOG_FILE` — файл лога launcher
 - `RP_PLATFORM_CHAT_STORE` — `sqlite` или `memory`
-- `RP_PLATFORM_DB_PATH` — путь к SQLite-файлу, по умолчанию `data/prototype.sqlite`
+- `RP_PLATFORM_DB_PATH` — путь к SQLite-файлу, по умолчанию `data/app.sqlite`
 - `VITE_RP_API_URL` — base URL, который использует frontend для вызова API
 - `VITE_RP_DEFAULT_PROVIDER_LABEL` — дефолтное имя провайдера в UI
 - `VITE_RP_DEFAULT_BASE_URL` — дефолтный base URL провайдера в UI

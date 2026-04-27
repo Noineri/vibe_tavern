@@ -1,6 +1,6 @@
 import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
 import type { ProviderManager } from "./providers/manager.js";
-import type { PrototypeSessionRuntime } from "./prototype-session-runtime.js";
+import type { SessionRuntime } from "./session-runtime.js";
 
 type SupportedProviderType = "openai_compat" | "anthropic" | "google" | "cohere";
 
@@ -16,7 +16,7 @@ interface StoredProviderProfileRecord {
 
 export class ProviderOrchestrator {
   constructor(
-    private readonly runtime: PrototypeSessionRuntime,
+    private readonly runtime: SessionRuntime,
     private readonly providerManager: ProviderManager,
   ) {}
 

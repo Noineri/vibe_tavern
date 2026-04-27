@@ -4,7 +4,7 @@ import {
   generateProviderReply,
   listProviderModels,
   normalizeOpenAiCompatibleBaseUrl,
-} from "../prototype-provider-gateway.js";
+} from "../provider-gateway.js";
 
 export class OpenAICompatAdapter implements ProviderAdapter {
   type = "openai_compat" as const;

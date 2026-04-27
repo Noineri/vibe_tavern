@@ -14,7 +14,7 @@ RUN mkdir -p /app/data
 
 ENV RP_PLATFORM_API_HOST=0.0.0.0
 ENV RP_PLATFORM_API_PORT=8787
-ENV RP_PLATFORM_DB_PATH=/app/data/prototype.sqlite
+ENV RP_PLATFORM_DB_PATH=/app/data/app.sqlite
 ENV RP_PLATFORM_WEB_PORT=3000
 ENV NODE_ENV=production
 
