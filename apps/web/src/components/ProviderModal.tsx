@@ -108,6 +108,7 @@ export function ProviderModal({
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [profileSearch, setProfileSearch] = useState("");
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const { dirty, saveState, markDirty, triggerSave, reset } = useDirtyState();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -253,17 +254,25 @@ export function ProviderModal({
   const handleFetchModels = async () => {
     if (!form) return;
     setFetching(true);
+    setFetchError(null);
     try {
       const saved = await onSaveProfile(form);
       const profileId = saved?.id ?? editingId;
-      if (!profileId) return;
+      if (!profileId) {
+        setFetchError("Could not save profile — missing endpoint or name.");
+        return;
+      }
       const fetched = await onRefreshModels(profileId);
+      if (fetched.length === 0) {
+        setFetchError("No models returned. Check endpoint URL and API key.");
+      }
       setModels(fetched);
       if (fetched.length > 0 && (!form.model || !fetched.find((m) => m.id === form.model))) {
         updateForm("model", fetched[0].id);
       }
-    } catch {
+    } catch (err) {
       setModels([]);
+      setFetchError(err instanceof Error ? err.message : "Failed to fetch models.");
     } finally {
       setFetching(false);
     }
@@ -823,6 +832,33 @@ export function ProviderModal({
                       )}
                     </button>
                   </div>
+                  {fetchError && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "oklch(0.72 0.14 70)",
+                        marginTop: -8,
+                        marginBottom: 12,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                      >
+                        <circle cx="8" cy="8" r="6.5" />
+                        <line x1="8" y1="5" x2="8" y2="9" />
+                        <circle cx="8" cy="11.5" r="0.8" fill="currentColor" stroke="none" />
+                      </svg>
+                      {fetchError}
+                    </div>
+                  )}
 
                   <div className="api-section-title">Samplers (Advanced)</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
