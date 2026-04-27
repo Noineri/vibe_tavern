@@ -150,28 +150,15 @@ export interface PrototypeImportResult {
 class StaticPromptResolver implements PromptAssemblyResolver {
   constructor(
     private readonly store: ChatSessionStore,
-    private readonly characters: Map<string, CharacterRecord>,
-    private readonly importedLoreEntriesByCharacter: Map<CharacterId, LoreEntry[]>,
   ) {}
 
   getCharacter(characterId: string) {
-    const character = this.characters.get(characterId);
+    const character = this.store.getCharacter(characterId as CharacterId);
     if (!character) {
       throw new Error(`Character '${characterId}' was not found.`);
     }
-    return {
-      id: character.id,
-      name: character.name,
-      description: character.description,
-      scenario: character.scenario,
-      systemPrompt: character.systemPrompt,
-      personality: character.personality,
-      mesExample: character.mesExample,
-      alternateGreetings: character.alternateGreetings,
-      postHistoryInstructions: character.postHistoryInstructions,
-      creatorNotes: character.creatorNotes,
-      subtitle: character.subtitle,
-    };
+    const version = this.store.getLatestCharacterVersion(character.id);
+    return toCharacterRecord(character, version);
   }
 
   getPersona(personaId: string) {
@@ -216,7 +203,7 @@ class StaticPromptResolver implements PromptAssemblyResolver {
     const lower = input.recentText.toLowerCase();
     const chat = this.store.getChat(input.chatId);
     const importedEntries = chat
-      ? this.importedLoreEntriesByCharacter.get(chat.characterId) ?? []
+      ? this.store.listLoreEntriesForCharacter(chat.characterId as CharacterId)
       : [];
 
     return importedEntries.filter((entry) => entryMatchesRecentText(entry, lower));
@@ -234,8 +221,6 @@ class StaticPromptResolver implements PromptAssemblyResolver {
 
 export class PrototypeSessionRuntime {
   private readonly store: ChatSessionStore;
-  private readonly characters = new Map<string, CharacterRecord>();
-  private readonly importedLoreEntriesByCharacter = new Map<CharacterId, LoreEntry[]>();
   private readonly defaultPreset: GenerationPreset = {
     id: "preset_default",
     name: "Default RP",
@@ -265,12 +250,7 @@ export class PrototypeSessionRuntime {
   constructor(store: ChatSessionStore = createDefaultPrototypeStore()) {
     this.store = store;
     this.ensurePrototypeReferences();
-    this.restoreImportedDataFromStore();
-    this.resolver = new StaticPromptResolver(
-      this.store,
-      this.characters,
-      this.importedLoreEntriesByCharacter,
-    );
+    this.resolver = new StaticPromptResolver(this.store);
     this.chatApp = new ChatApplicationService(this.store);
     this.promptService = new PromptAssemblyService(this.store, this.resolver);
     this.seed();
@@ -521,7 +501,7 @@ export class PrototypeSessionRuntime {
 
   archiveCharacter(characterId: string): { characterId: string; status: "archived" } {
     this.store.setCharacterStatus(characterId as CharacterId, "archived");
-    const character = this.characters.get(characterId);
+    const character = this.store.getCharacter(characterId as CharacterId);
     if (character) {
       const chatId = this.store.listChats().find((c) => c.characterId === characterId)?.id;
       if (chatId) {
@@ -548,8 +528,6 @@ export class PrototypeSessionRuntime {
       if (idx !== -1) this.chatOrder.splice(idx, 1);
       this.pendingPromptTraceByChat.delete(chatId);
     }
-    this.characters.delete(characterId);
-    this.importedLoreEntriesByCharacter.delete(characterId as CharacterId);
     this.store.deleteCharacter(characterId as CharacterId);
   }
 
@@ -566,7 +544,7 @@ export class PrototypeSessionRuntime {
   }
 
   createChatForCharacter(characterId: string): PrototypeSnapshot {
-    const character = this.characters.get(characterId);
+    const character = this.store.getCharacter(characterId as CharacterId);
     if (!character) {
       throw new Error(`Character '${characterId}' was not found.`);
     }
@@ -596,7 +574,10 @@ export class PrototypeSessionRuntime {
     }
     const version = this.store.getLatestCharacterVersion(characterId as CharacterId);
     const definition = version?.definition;
-    const characterRecord = this.characters.get(characterId);
+    let characterRecord: CharacterRecord | null = null;
+    try {
+      characterRecord = this.resolver.getCharacter(characterId);
+    } catch {}
 
     if (definition && (definition as Record<string, unknown>).spec === "chara_card_v3") {
       return definition as Record<string, unknown>;
@@ -632,10 +613,12 @@ export class PrototypeSessionRuntime {
       throw new Error(`Branch '${chat.activeBranchId}' was not found for chat '${chatId}'.`);
     }
 
-    const character = this.characters.get(chat.characterId);
+    let characterName = "Assistant";
+    try {
+      characterName = this.resolver.getCharacter(chat.characterId).name;
+    } catch {}
     const persona = this.resolver.getPersona(chat.personaId);
     const userName = persona?.name ?? "User";
-    const characterName = character?.name ?? "Assistant";
 
     return serializeSillyTavernChat({
       userName,
@@ -747,20 +730,15 @@ export class PrototypeSessionRuntime {
   }
 
   createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
-    const entry = this.store.createLoreEntry(lorebookId, input);
-    this.refreshLoreEntriesCache(lorebookId);
-    return entry;
+    return this.store.createLoreEntry(lorebookId, input);
   }
 
   updateLoreEntry(lorebookId: string, entryId: string, input: Partial<Omit<LoreEntry, "id" | "lorebookId">>): LoreEntry {
-    const entry = this.store.updateLoreEntry(entryId, input);
-    this.refreshLoreEntriesCache(lorebookId);
-    return entry;
+    return this.store.updateLoreEntry(entryId, input);
   }
 
   deleteLoreEntry(lorebookId: string, entryId: string): void {
     this.store.deleteLoreEntry(entryId);
-    this.refreshLoreEntriesCache(lorebookId);
   }
 
   getProviderProfile(id: string): StoredProviderProfileRecord | null {
@@ -816,8 +794,8 @@ export class PrototypeSessionRuntime {
     const nextDescription = input.description ?? currentCharacter.description;
     const nextScenario = input.scenario ?? currentCharacter.defaultScenario ?? "";
     const currentVersion = this.store.getLatestCharacterVersion(characterId);
-    const currentRecord = this.characters.get(characterId);
-    const nextSystemPrompt = input.systemPrompt ?? currentRecord?.systemPrompt ?? "";
+    const currentRecord = toCharacterRecord(currentCharacter, currentVersion);
+    const nextSystemPrompt = input.systemPrompt ?? currentRecord.systemPrompt;
     const updatedCharacter: Character = {
       ...currentCharacter,
       name: nextName,
@@ -850,8 +828,6 @@ export class PrototypeSessionRuntime {
     if (updatedVersion) {
       this.store.upsertCharacterVersion(updatedVersion);
     }
-
-    this.characters.set(characterId, toCharacterRecord(updatedCharacter, updatedVersion ?? currentVersion));
 
     const preferredChat = input.chatId ? this.store.getChat(input.chatId) : null;
     const targetChatId =
@@ -968,10 +944,6 @@ export class PrototypeSessionRuntime {
       const imported = importCharacterCardV3Json(parsed);
       this.store.upsertCharacter(imported.character);
       this.store.upsertCharacterVersion(imported.version);
-      this.characters.set(
-        imported.character.id,
-        toCharacterRecord(imported.character, imported.version),
-      );
 
       const created = this.chatApp.createChat({
         characterId: imported.character.id,
@@ -1012,10 +984,6 @@ export class PrototypeSessionRuntime {
     this.store.upsertLorebook(lorebook);
     this.store.replaceLoreEntries(lorebook.id, imported.entries);
     this.store.linkCharacterLorebook(chat.characterId, lorebook.id);
-    this.importedLoreEntriesByCharacter.set(
-      chat.characterId,
-      this.store.listLoreEntriesForCharacter(chat.characterId),
-    );
 
     return {
       activeChatId,
@@ -1088,9 +1056,7 @@ export class PrototypeSessionRuntime {
   }
 
   private seed(): void {
-    const existingChats = this.store
-      .listChats()
-      .filter((chat) => this.characters.has(chat.characterId));
+    const existingChats = this.store.listChats();
     if (existingChats.length > 0) {
       this.chatOrder.push(...existingChats.map((chat) => chat.id));
       return;
@@ -1139,17 +1105,6 @@ export class PrototypeSessionRuntime {
     }
   }
 
-  private restoreImportedDataFromStore(): void {
-    for (const character of this.store.listCharacters()) {
-      const version = this.store.getLatestCharacterVersion(character.id);
-      this.characters.set(character.id, toCharacterRecord(character, version));
-      this.importedLoreEntriesByCharacter.set(
-        character.id,
-        this.store.listLoreEntriesForCharacter(character.id),
-      );
-    }
-  }
-
   private assemblePrompt(
     chatId: ChatId,
     branchId?: ChatBranchId,
@@ -1192,12 +1147,18 @@ export class PrototypeSessionRuntime {
   private toChatListItem(chatId: ChatId): PrototypeChatListItem {
     const chat = this.store.getChat(chatId)!;
     const branchState = this.store.getBranchState(chat.id, chat.activeBranchId)!;
-    const character = this.resolver.getCharacter(chat.characterId);
+    let characterName = "Unknown";
+    let subtitle = "";
+    try {
+      const charRecord = this.resolver.getCharacter(chat.characterId);
+      characterName = charRecord.name;
+      subtitle = charRecord.subtitle;
+    } catch {}
     return {
       id: chat.id,
       title: chat.title,
-      characterName: character.name,
-      subtitle: character.subtitle,
+      characterName,
+      subtitle,
       activeBranchLabel: branchState.branch.label,
       messageCount: branchState.messages.length,
     };
@@ -1231,13 +1192,6 @@ export class PrototypeSessionRuntime {
     return fallback;
   }
 
-  private refreshLoreEntriesCache(lorebookId: string): void {
-    void lorebookId;
-    this.importedLoreEntriesByCharacter.clear();
-    for (const character of this.store.listCharacters()) {
-      this.importedLoreEntriesByCharacter.set(character.id, this.store.listLoreEntriesForCharacter(character.id));
-    }
-  }
 }
 
 
