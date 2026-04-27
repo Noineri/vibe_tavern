@@ -60,6 +60,7 @@ type PersonaRecord = {
 export interface ChatListItem {
   id: ChatId;
   title: string;
+  characterId: CharacterId;
   characterName: string;
   subtitle: string;
   activeBranchLabel: string;
@@ -558,6 +559,21 @@ export class SessionRuntime {
     });
 
     this.chatOrder.unshift(created.id as ChatId);
+
+    const greeting = character.alternateGreetings?.[0];
+    if (greeting) {
+      const chat = this.store.getChat(created.id as ChatId);
+      if (chat) {
+        this.store.appendMessage({
+          chatId: created.id as ChatId,
+          branchId: chat.activeBranchId,
+          role: "assistant",
+          authorType: "assistant",
+          content: greeting,
+        });
+      }
+    }
+
     return this.getSnapshot(created.id as ChatId);
   }
 
@@ -1174,6 +1190,7 @@ export class SessionRuntime {
     return {
       id: chat.id,
       title: chat.title,
+      characterId: chat.characterId,
       characterName,
       subtitle,
       activeBranchLabel: branchState.branch.label,
