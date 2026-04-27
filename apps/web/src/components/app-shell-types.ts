@@ -15,6 +15,8 @@ export interface ConnectionState {
   status: ConnectionStatus;
   error: string;
   models: OpenAiModelOption[];
+  providerType: string;
+  providerPreset: string;
 }
 
 export interface SavedConnectionState {

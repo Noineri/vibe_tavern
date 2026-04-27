@@ -85,6 +85,8 @@ function createInitialConnectionState(): ConnectionState {
     status: "idle",
     error: "",
     models: [],
+    providerType: "openai_compat",
+    providerPreset: "",
   };
 }
 
@@ -412,7 +414,7 @@ export function useRpPlatformApp() {
       const saved = await saveProviderProfile({
         id: selectedProviderProfileId || connection.activeProviderProfileId || undefined,
         name: connection.providerLabel.trim(),
-        type: "openai_compat",
+        type: connection.providerType || "openai_compat",
         endpoint: normalizedBaseUrl,
         apiKey: connection.apiKey.trim() || undefined,
         defaultModel: connection.model.trim() || null,
@@ -457,6 +459,8 @@ export function useRpPlatformApp() {
         models: [],
         status: "idle",
         error: "",
+        providerType: profile.type || "openai_compat",
+        providerPreset: "",
       });
     } catch (error) {
       patchConnection({
@@ -487,7 +491,7 @@ export function useRpPlatformApp() {
       const saved = existingId
         ? await updateProviderProfile(existingId, {
             name,
-            type: "openai_compat",
+            type: connection.providerType || "openai_compat",
             endpoint,
             apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
             defaultModel: connection.model.trim() || null,
@@ -495,7 +499,7 @@ export function useRpPlatformApp() {
           })
         : await saveProviderProfile({
             name,
-            type: "openai_compat",
+            type: connection.providerType || "openai_compat",
             endpoint,
             apiKey: apiKeyInput || undefined,
             defaultModel: connection.model.trim() || null,
