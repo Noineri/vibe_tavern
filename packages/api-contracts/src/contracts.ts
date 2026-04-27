@@ -178,17 +178,6 @@ export interface CloneChatResponse {
 
 export type ExportCharacterResponse = Record<string, unknown>;
 
-export interface MergeBranchRequest {
-  sourceBranchId: ChatBranchId;
-  targetBranchId: ChatBranchId;
-}
-
-export interface MergeBranchResponse {
-  chatId: ChatId;
-  activeBranchId: ChatBranchId;
-  appendedMessageCount: number;
-}
-
 export interface DeleteBranchResponse {
   chatId: ChatId;
   activeBranchId: ChatBranchId;
