@@ -4,7 +4,7 @@ import { URL } from "node:url";
 import { LiveChatOrchestrator } from "./live-chat-orchestrator.js";
 import { SessionRuntime } from "./session-runtime.js";
 import { ProviderOrchestrator } from "./provider-orchestrator.js";
-import { probeProviderConnection } from "./provider-gateway.js";
+import { listProviderModels, normalizeOpenAiCompatibleBaseUrl, probeProviderConnection, testProviderChat } from "./provider-gateway.js";
 import { ProviderManager } from "./providers/manager.js";
 
 const host = process.env.RP_PLATFORM_API_HOST ?? "127.0.0.1";
@@ -114,6 +114,10 @@ const runtime = {
   fetchProviderModels: async (providerProfileId: string) => ({
     models: await providerOrchestrator.refreshProfileModels(getRequiredProviderProfile(providerProfileId)),
   }),
+  fetchModelsByEndpoint: async (baseUrl: string, apiKey?: string) => {
+    const normalized = normalizeOpenAiCompatibleBaseUrl(baseUrl);
+    return listProviderModels({ baseUrl: normalized, apiKey: apiKey ?? "" });
+  },
   importJson: (body: { fileName: string; jsonText: string; chatId?: string }) => sessionRuntime.importJson(body),
   forkBranch: (chatId: string) => sessionRuntime.forkBranch(chatId),
   activateBranch: (chatId: string, branchId: string) => sessionRuntime.activateBranch(chatId, branchId),
@@ -551,6 +555,37 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
     return;
   }
 
+  if (method === "POST" && url.pathname === "/api/providers/fetch-models") {
+    const body = await readJsonBody(request);
+    const baseUrl = typeof body?.baseUrl === "string" ? body.baseUrl : "";
+    const apiKey = typeof body?.apiKey === "string" ? body.apiKey : "";
+    if (!baseUrl.trim()) {
+      writeJson(response, 400, { error: "baseUrl is required." });
+      return;
+    }
+    try {
+      const models = await runtime.fetchModelsByEndpoint(baseUrl, apiKey);
+      writeJson(response, 200, { models });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to fetch models.";
+      writeJson(response, 502, { error: message });
+    }
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/providers/test-chat") {
+    const body = await readJsonBody(request);
+    const baseUrl = typeof body?.baseUrl === "string" ? body.baseUrl : "";
+    const apiKey = typeof body?.apiKey === "string" ? body.apiKey : "";
+    const model = typeof body?.model === "string" ? body.model : "";
+    if (!baseUrl || !model) {
+      writeJson(response, 400, { error: "baseUrl and model are required." });
+      return;
+    }
+    writeJson(response, 200, await testProviderChat({ baseUrl, apiKey, model }));
+    return;
+  }
+
   const providerModelsMatch = /^\/api\/providers\/([^/]+)\/models$/.exec(url.pathname);
   if (method === "POST" && providerModelsMatch) {
     writeJson(response, 200, await runtime.fetchProviderModels(providerModelsMatch[1]));
@@ -560,6 +595,23 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
   const providerTestSavedMatch = /^\/api\/providers\/([^/]+)\/test$/.exec(url.pathname);
   if (method === "POST" && providerTestSavedMatch) {
     writeJson(response, 200, await runtime.testProviderProfile(providerTestSavedMatch[1]));
+    return;
+  }
+
+  const profileTestChatMatch = /^\/api\/providers\/([^/]+)\/test-chat$/.exec(url.pathname);
+  if (method === "POST" && profileTestChatMatch) {
+    const body = await readJsonBody(request);
+    const model = typeof body?.model === "string" ? body.model : "";
+    if (!model) {
+      writeJson(response, 400, { error: "model is required." });
+      return;
+    }
+    const profile = getRequiredProviderProfile(profileTestChatMatch[1]);
+    writeJson(response, 200, await testProviderChat({
+      baseUrl: profile.endpoint,
+      apiKey: profile.apiKey ?? "",
+      model,
+    }));
     return;
   }
 

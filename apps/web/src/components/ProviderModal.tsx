@@ -52,7 +52,8 @@ interface ProviderModalProps {
   onActivateProfile: (id: string) => Promise<void>;
   onSaveProfile: (form: FormState) => Promise<ProviderProfileRecord | null>;
   onTestDraft: (endpoint: string, apiKey: string) => Promise<ProviderProbeResponse>;
-  onRefreshModels: (providerProfileId: string) => Promise<ModelOption[]>;
+  onTestChat: (profileId: string | null, baseUrl: string, apiKey: string, model: string) => Promise<{ success: boolean; reply?: string; error?: string }>;
+  onFetchModels: (baseUrl: string, apiKey?: string, useCache?: boolean) => Promise<ModelOption[]>;
   onRefreshProfiles: () => Promise<void>;
 }
 
@@ -94,7 +95,8 @@ export function ProviderModal({
   onActivateProfile,
   onSaveProfile,
   onTestDraft,
-  onRefreshModels,
+  onTestChat,
+  onFetchModels,
   onRefreshProfiles,
 }: ProviderModalProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -109,8 +111,17 @@ export function ProviderModal({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [profileSearch, setProfileSearch] = useState("");
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [testingChat, setTestingChat] = useState(false);
+  const [chatResult, setChatResult] = useState<{ reply?: string; error?: string } | null>(null);
   const { dirty, saveState, markDirty, triggerSave, reset } = useDirtyState();
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const loadCachedModels = async (baseUrl: string, apiKey?: string) => {
+    try {
+      const cached = await onFetchModels(baseUrl, apiKey, true);
+      if (cached.length > 0) setModels(cached);
+    } catch {}
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -120,9 +131,9 @@ export function ProviderModal({
       if (p) {
         setEditingId(p.id);
         setForm(profileToForm(p));
+        if (p.endpoint) void loadCachedModels(p.endpoint, undefined);
       }
     }
-    setModels([]);
     setTestOk(null);
     reset();
   }, [isOpen]);
@@ -176,6 +187,7 @@ export function ProviderModal({
       setForm(profileToForm(p));
       setTestOk(null);
       setModels([]);
+      if (p.endpoint) void loadCachedModels(p.endpoint, undefined);
       reset();
     }
   };
@@ -244,6 +256,11 @@ export function ProviderModal({
     try {
       const result = await onTestDraft(form.baseUrl, form.apiKey);
       setTestOk(result.success);
+      if (result.success && form.baseUrl.trim()) {
+        const apiKey = form.apiKey.trim() || undefined;
+        const fetched = await onFetchModels(form.baseUrl.trim(), apiKey, true);
+        if (fetched.length > 0) setModels(fetched);
+      }
     } catch {
       setTestOk(false);
     } finally {
@@ -251,18 +268,35 @@ export function ProviderModal({
     }
   };
 
+  const handleTestChat = async () => {
+    if (!form) return;
+    const endpoint = form.baseUrl.trim();
+    const model = form.model.trim();
+    if (!endpoint || !model) return;
+    setTestingChat(true);
+    setChatResult(null);
+    try {
+      const result = await onTestChat(editingId, endpoint, form.apiKey.trim(), model);
+      setChatResult(result);
+    } catch (err) {
+      setChatResult({ error: err instanceof Error ? err.message : "Request failed." });
+    } finally {
+      setTestingChat(false);
+    }
+  };
+
   const handleFetchModels = async () => {
     if (!form) return;
+    const endpoint = form.baseUrl.trim();
+    if (!endpoint) {
+      setFetchError("Endpoint URL is required.");
+      return;
+    }
     setFetching(true);
     setFetchError(null);
     try {
-      const saved = await onSaveProfile(form);
-      const profileId = saved?.id ?? editingId;
-      if (!profileId) {
-        setFetchError("Could not save profile — missing endpoint or name.");
-        return;
-      }
-      const fetched = await onRefreshModels(profileId);
+      const apiKey = form.apiKey.trim() || undefined;
+      const fetched = await onFetchModels(endpoint, apiKey, false);
       if (fetched.length === 0) {
         setFetchError("No models returned. Check endpoint URL and API key.");
       }
@@ -665,6 +699,38 @@ export function ProviderModal({
                         )}
                       </div>
                     )}
+                    {(form.apiKey || form.hasStoredApiKey) && form.model.trim() && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                        <button
+                          className={`api-test-btn ${testingChat ? "testing" : chatResult?.reply ? "ok" : chatResult?.error ? "err" : "idle"}`}
+                          style={{ height: 30, fontSize: 12 }}
+                          onClick={() => void handleTestChat()}
+                          disabled={testingChat}
+                        >
+                          Test &quot;Hi&quot;
+                        </button>
+                      </div>
+                    )}
+                    {chatResult && (
+                      <div className="test-chat-result">
+                        {chatResult.reply && (
+                          <div className="test-chat-reply">
+                            <Icons.Check />
+                            <span>{chatResult.reply.length > 200 ? chatResult.reply.slice(0, 200) + "..." : chatResult.reply}</span>
+                          </div>
+                        )}
+                        {chatResult.error && (
+                          <div className="test-chat-error">
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                              <circle cx="8" cy="8" r="6.5" />
+                              <line x1="8" y1="5" x2="8" y2="9" />
+                              <circle cx="8" cy="11.5" r="0.8" fill="currentColor" stroke="none" />
+                            </svg>
+                            <span>{chatResult.error}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="api-section-title">Model</div>
@@ -881,8 +947,11 @@ export function ProviderModal({
                         min="1024"
                         max="2000000"
                         step="1024"
-                        value={form.maxTokens}
-                        onChange={(e) => updateForm("maxTokens", parseInt(e.target.value) || 8192)}
+                        value={form.maxTokens || ""}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          updateForm("maxTokens", v === "" ? 0 : parseInt(v) || 0);
+                        }}
                       />
                     </div>
                     <div className="api-field" style={{ marginBottom: 0 }}>

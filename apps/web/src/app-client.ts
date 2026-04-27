@@ -398,6 +398,43 @@ export async function fetchProviderProfileModels(
   });
 }
 
+export async function fetchModelsByEndpoint(
+  baseUrl: string,
+  apiKey?: string,
+): Promise<{ models: Array<{ id: string; label: string }> }> {
+  return requestJson("/api/providers/fetch-models", {
+    method: "POST",
+    body: { baseUrl, apiKey: apiKey ?? "" },
+  });
+}
+
+export interface TestChatResponse {
+  success: boolean;
+  reply?: string;
+  error?: string;
+}
+
+export async function testProviderChat(
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+): Promise<TestChatResponse> {
+  return requestJson("/api/providers/test-chat", {
+    method: "POST",
+    body: { baseUrl, apiKey, model },
+  });
+}
+
+export async function testProfileChat(
+  providerProfileId: string,
+  model: string,
+): Promise<TestChatResponse> {
+  return requestJson(`/api/providers/${providerProfileId}/test-chat`, {
+    method: "POST",
+    body: { model },
+  });
+}
+
 export async function activateProviderProfile(
   providerProfileId: string,
 ): Promise<ProviderProfileRecord> {

@@ -11,9 +11,10 @@ export interface ProviderModelOption {
   label: string;
 }
 
-const PROBE_TIMEOUT_MS = 8_000;
-const MODEL_LIST_TIMEOUT_MS = 45_000;
+const PROBE_TIMEOUT_MS = 5_000;
+const MODEL_LIST_TIMEOUT_MS = 10_000;
 const CHAT_COMPLETION_TIMEOUT_MS = 45_000;
+const TEST_CHAT_TIMEOUT_MS = 15_000;
 
 export interface ProviderProbeResult {
   success: boolean;
@@ -109,19 +110,74 @@ export async function probeProviderConnection(
   return { success: false, error: `Probe failed: ${response.status} ${response.statusText}` };
 }
 
+export interface TestChatResult {
+  success: boolean;
+  reply?: string;
+  error?: string;
+}
+
+export async function testProviderChat(
+  input: ProviderConnectionInput,
+): Promise<TestChatResult> {
+  const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
+  if (!baseUrl) return { success: false, error: "Provider endpoint is required." };
+  if (!input.model) return { success: false, error: "Model is required." };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TEST_CHAT_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: buildHeaders(input.apiKey),
+      body: JSON.stringify({
+        model: input.model,
+        messages: [{ role: "user", content: "Hi" }],
+        max_tokens: 64,
+        temperature: 0.7,
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      return { success: false, error: `${response.status} ${response.statusText}${errorText ? `: ${errorText.slice(0, 200)}` : ""}` };
+    }
+
+    const payload = (await response.json()) as OpenAiChatCompletionResponse;
+    const content = extractChoiceContent(payload.choices?.[0]);
+    return { success: true, reply: content || "(empty response)" };
+  } catch (error) {
+    clearTimeout(timer);
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    if (error instanceof Error && (error.name === "TimeoutError" || /aborted/i.test(error.message))) {
+      return { success: false, error: `Timed out after ${Math.floor(TEST_CHAT_TIMEOUT_MS / 1000)}s.` };
+    }
+    return { success: false, error: msg };
+  }
+}
+
 export async function listProviderModels(
   input: Omit<ProviderConnectionInput, "model">,
 ): Promise<ProviderModelOption[]> {
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
+  const url = buildModelsUrl(baseUrl);
   let response: Response;
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MODEL_LIST_TIMEOUT_MS);
+
   try {
-    response = await fetch(buildModelsUrl(baseUrl), {
+    response = await fetch(url, {
       method: "GET",
       headers: buildHeaders(input.apiKey),
-      signal: AbortSignal.timeout(MODEL_LIST_TIMEOUT_MS),
+      signal: controller.signal,
     });
+    clearTimeout(timer);
   } catch (error) {
+    clearTimeout(timer);
     throw wrapProviderNetworkError(error, {
       operation: "Model list request",
       timeoutMs: MODEL_LIST_TIMEOUT_MS,
@@ -196,18 +252,16 @@ export async function generateProviderReply(
 }
 
 function buildHeaders(apiKey: string): HeadersInit {
-  return {
+  const headers: Record<string, string> = {
     Accept: "application/json",
-    Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json",
   };
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+  return headers;
 }
 
 function buildModelsUrl(baseUrl: string): string {
-  if (baseUrl.includes("nano-gpt.com")) {
-    return `${baseUrl}/models?detailed=true`;
-  }
-
   return `${baseUrl}/models`;
 }
 

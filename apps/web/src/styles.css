@@ -354,6 +354,11 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .api-test-result{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:4px;font-family:var(--font-ui)}
 .api-test-result.ok{color:oklch(0.72 0.14 145);background:oklch(0.72 0.14 145 / 0.1)}
 .api-test-result.err{color:oklch(0.65 0.18 25);background:oklch(0.65 0.18 25 / 0.1)}
+.test-chat-result{margin-top:6px;padding:8px 12px;border-radius:6px;font-size:12px;font-family:var(--font-ui);max-width:100%;overflow:hidden}
+.test-chat-reply{display:flex;align-items:flex-start;gap:6px;color:oklch(0.75 0.12 155);background:oklch(0.75 0.12 155 / 0.08);padding:8px 10px;border-radius:6px;word-break:break-word}
+.test-chat-reply svg{flex-shrink:0;margin-top:2px}
+.test-chat-error{display:flex;align-items:flex-start;gap:6px;color:oklch(0.65 0.18 25);background:oklch(0.65 0.18 25 / 0.08);padding:8px 10px;border-radius:6px;word-break:break-word}
+.test-chat-error svg{flex-shrink:0;margin-top:2px}
 .field-warning{font-size:11px;color:oklch(0.72 0.14 70);margin-top:4px;display:flex;align-items:center;gap:4px}
 .field-warning svg{width:12px;height:12px}
 @media(max-width:768px){.provider-badge{display:none}}
