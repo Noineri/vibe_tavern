@@ -5,6 +5,7 @@ import { getGatewayBaseUrl } from "./gateway-client.js";
 export interface ChatListItem {
   id: ChatId;
   title: string;
+  characterId: string;
   characterName: string;
   subtitle: string;
   activeBranchLabel: string;

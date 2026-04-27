@@ -1154,13 +1154,13 @@ function buildCharacterTabs(snapshot: AppSnapshot): CharacterTab[] {
   const result: CharacterTab[] = [];
 
   for (const chat of snapshot.chats) {
-    if (seen.has(chat.characterName)) {
+    if (seen.has(chat.characterId)) {
       continue;
     }
 
-    seen.add(chat.characterName);
+    seen.add(chat.characterId);
     result.push({
-      id: chat.characterName,
+      id: chat.characterId,
       name: chat.characterName,
       subtitle: chat.subtitle,
       chatId: chat.id,
