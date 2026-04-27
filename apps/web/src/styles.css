@@ -115,6 +115,8 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .msg-body{font-family:var(--font-body);font-size:var(--mfs);line-height:1.82;color:var(--t1)}
 .msg-body p+p{margin-top:.9em}
 .msg-body em{color:var(--t2);font-style:italic}
+.msg-hr{border:none;border-top:1px solid var(--border);margin:.6em 0}
+.scene-meta{font-size:.85em;color:var(--t3);font-style:italic;font-family:var(--font-ui);margin-top:.4em}
 .user-wrap{background:var(--user-bg);border-radius:6px;padding:13px 16px;margin:2px 0}
 .user-wrap .msg-body{opacity:.88}
 
