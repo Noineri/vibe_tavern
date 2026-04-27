@@ -77,6 +77,19 @@ export interface ProviderProfileRecord {
   contextBudget?: number | null;
   isActive: boolean;
   hasStoredApiKey: boolean;
+  temperature: number;
+  topP: number;
+  minP: number;
+  topK: number;
+  typicalP: number;
+  repPen: number;
+  freqPen: number;
+  presPen: number;
+  maxTokens: number;
+  stopSeq: string;
+  seed: string | null;
+  reasoningEffort: string;
+  streamResponse: boolean;
 }
 
 export interface LoreEntryRecord {
@@ -333,6 +346,19 @@ export async function saveProviderProfile(input: {
   apiKey?: string | null;
   defaultModel?: string | null;
   contextBudget?: number | null;
+  temperature?: number;
+  topP?: number;
+  minP?: number;
+  topK?: number;
+  typicalP?: number;
+  repPen?: number;
+  freqPen?: number;
+  presPen?: number;
+  maxTokens?: number;
+  stopSeq?: string;
+  seed?: string | null;
+  reasoningEffort?: string;
+  streamResponse?: boolean;
 }): Promise<ProviderProfileRecord> {
   return requestJson("/api/providers", {
     method: "POST",
@@ -389,6 +415,19 @@ export async function updateProviderProfile(
     apiKey?: string | null;
     defaultModel?: string | null;
     contextBudget?: number | null;
+    temperature?: number;
+    topP?: number;
+    minP?: number;
+    topK?: number;
+    typicalP?: number;
+    repPen?: number;
+    freqPen?: number;
+    presPen?: number;
+    maxTokens?: number;
+    stopSeq?: string;
+    seed?: string | null;
+    reasoningEffort?: string;
+    streamResponse?: boolean;
   },
 ): Promise<ProviderProfileRecord> {
   return requestJson(`/api/providers/${providerProfileId}`, {

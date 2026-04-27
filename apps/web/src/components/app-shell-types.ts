@@ -17,6 +17,19 @@ export interface ConnectionState {
   models: OpenAiModelOption[];
   providerType: string;
   providerPreset: string;
+  temperature: number;
+  topP: number;
+  minP: number;
+  topK: number;
+  typicalP: number;
+  repPen: number;
+  freqPen: number;
+  presPen: number;
+  maxTokens: number;
+  stopSeq: string;
+  seed: string | null;
+  reasoningEffort: string;
+  streamResponse: boolean;
 }
 
 export interface SavedConnectionState {
