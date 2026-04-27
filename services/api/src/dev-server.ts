@@ -2,14 +2,14 @@ import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { URL } from "node:url";
 import { LiveChatOrchestrator } from "./live-chat-orchestrator.js";
-import { PrototypeSessionRuntime } from "./prototype-session-runtime.js";
+import { SessionRuntime } from "./session-runtime.js";
 import { ProviderOrchestrator } from "./provider-orchestrator.js";
-import { probeProviderConnection } from "./prototype-provider-gateway.js";
+import { probeProviderConnection } from "./provider-gateway.js";
 import { ProviderManager } from "./providers/manager.js";
 
 const host = process.env.RP_PLATFORM_API_HOST ?? "127.0.0.1";
 const port = Number(process.env.RP_PLATFORM_API_PORT ?? "8787");
-const sessionRuntime = new PrototypeSessionRuntime();
+const sessionRuntime = new SessionRuntime();
 const providerManager = new ProviderManager();
 const providerOrchestrator = new ProviderOrchestrator(sessionRuntime, providerManager);
 const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime, providerOrchestrator);

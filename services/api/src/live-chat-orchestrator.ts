@@ -1,4 +1,4 @@
-import type { PrototypeSessionRuntime, PrototypeSnapshot } from "./prototype-session-runtime.js";
+import type { SessionRuntime, SessionSnapshot } from "./session-runtime.js";
 import type { ProviderOrchestrator } from "./provider-orchestrator.js";
 
 interface StoredProviderProfileRecord {
@@ -13,7 +13,7 @@ interface StoredProviderProfileRecord {
 
 export class LiveChatOrchestrator {
   constructor(
-    private readonly runtime: PrototypeSessionRuntime,
+    private readonly runtime: SessionRuntime,
     private readonly providers: ProviderOrchestrator,
   ) {}
 
@@ -26,7 +26,7 @@ export class LiveChatOrchestrator {
     preparedMessageCount: number;
     promptMessageCount: number;
     reply: string;
-    snapshot: PrototypeSnapshot;
+    snapshot: SessionSnapshot;
   }> {
     const prepared = this.runtime.prepareLiveTurn(input.chatId, input.content, input.model);
     const startedAt = Date.now();
@@ -53,7 +53,7 @@ export class LiveChatOrchestrator {
   }): Promise<{
     promptMessageCount: number;
     reply: string;
-    snapshot: PrototypeSnapshot;
+    snapshot: SessionSnapshot;
   }> {
     const prompt = this.runtime.assemblePromptPreview(input.chatId, {
       excludeMessageId: input.messageId,
