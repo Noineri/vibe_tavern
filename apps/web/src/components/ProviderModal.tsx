@@ -12,7 +12,7 @@ import { useDirtyState } from "./shared/use-dirty-state.js";
 import { ConfirmCloseModal } from "./shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 
-interface FormState {
+export interface FormState {
   id: string;
   name: string;
   type: string;
@@ -50,6 +50,7 @@ interface ProviderModalProps {
   onDuplicateProfile: (id: string) => Promise<ProviderProfileRecord | null>;
   onDeleteProfile: (id: string) => Promise<void>;
   onActivateProfile: (id: string) => Promise<void>;
+  onSaveProfile: (form: FormState) => Promise<ProviderProfileRecord | null>;
   onTestDraft: (endpoint: string, apiKey: string) => Promise<ProviderProbeResponse>;
   onRefreshModels: (providerProfileId: string) => Promise<ModelOption[]>;
   onRefreshProfiles: () => Promise<void>;
@@ -91,6 +92,7 @@ export function ProviderModal({
   onDuplicateProfile,
   onDeleteProfile,
   onActivateProfile,
+  onSaveProfile,
   onTestDraft,
   onRefreshModels,
   onRefreshProfiles,
@@ -220,10 +222,9 @@ export function ProviderModal({
 
   const handleSaveProfile = async () => {
     if (!form) return;
-    await onRefreshProfiles();
-    const refreshed = providerProfiles.find((p) => p.id === editingId);
-    if (refreshed) {
-      setForm(profileToForm(refreshed));
+    const saved = await onSaveProfile(form);
+    if (saved) {
+      setForm(profileToForm(saved));
     }
     reset();
   };

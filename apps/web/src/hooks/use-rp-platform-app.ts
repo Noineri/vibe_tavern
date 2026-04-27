@@ -705,6 +705,44 @@ export function useRpPlatformApp() {
     await loadProviderProfiles();
   }
 
+  async function handleSaveProviderProfileFromForm(
+    form: import("../components/ProviderModal.js").FormState,
+  ): Promise<ProviderProfileRecord | null> {
+    const name = form.name.trim();
+    const endpoint = form.baseUrl.trim();
+    if (!name || !endpoint) return null;
+    const apiKeyInput = form.apiKey.trim();
+    const patch = {
+      name,
+      type: form.type || "openai_compat",
+      endpoint,
+      apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
+      defaultModel: form.model.trim() || null,
+      contextBudget: form.maxTokens || 8192,
+      temperature: form.temperature,
+      topP: form.topP,
+      minP: form.minP,
+      topK: form.topK,
+      typicalP: form.typicalP,
+      repPen: form.repPen,
+      freqPen: form.freqPen,
+      presPen: form.presPen,
+      maxTokens: form.maxTokens,
+      stopSeq: form.stopSeq,
+      seed: form.seed,
+      reasoningEffort: form.reasoningEffort,
+      streamResponse: form.streamResponse,
+    };
+    try {
+      const saved = await updateProviderProfile(form.id, patch);
+      await loadProviderProfiles();
+      return saved;
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Could not save provider profile.");
+      return null;
+    }
+  }
+
   async function handleConnectSavedProfile(): Promise<void> {
     if (!selectedProviderProfileId) {
       return;
@@ -1235,6 +1273,7 @@ export function useRpPlatformApp() {
     handleTestDraftConnection,
     handleFetchModelsForProfile,
     handleRefreshProfiles,
+    handleSaveProviderProfileFromForm,
     personas,
     renderSendLabel,
     handleSend,
