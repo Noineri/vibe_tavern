@@ -1,13 +1,16 @@
 import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
 import { ProviderProfile, ProviderAdapter, ProviderType, ModelInfo } from './types.js';
 import { OpenAICompatAdapter } from './openai.js';
+import { AnthropicAdapter } from './anthropic.js';
+import { GoogleAdapter } from './google.js';
 
 export class ProviderManager {
   private adapters: Map<ProviderType, ProviderAdapter> = new Map();
 
   constructor() {
     this.registerAdapter(new OpenAICompatAdapter());
-    // Anthropic and others will be registered here
+    this.registerAdapter(new AnthropicAdapter());
+    this.registerAdapter(new GoogleAdapter());
   }
 
   registerAdapter(adapter: ProviderAdapter) {
