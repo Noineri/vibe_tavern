@@ -57,11 +57,6 @@ type PersonaRecord = {
   description: string;
 };
 
-type PresetRecord = {
-  id: string;
-  text: string;
-};
-
 export interface PrototypeChatListItem {
   id: ChatId;
   title: string;
@@ -156,7 +151,6 @@ class StaticPromptResolver implements PromptAssemblyResolver {
   constructor(
     private readonly store: ChatSessionStore,
     private readonly characters: Map<string, CharacterRecord>,
-    private readonly presets: Map<string, PresetRecord>,
     private readonly importedLoreEntriesByCharacter: Map<CharacterId, LoreEntry[]>,
   ) {}
 
@@ -187,7 +181,12 @@ class StaticPromptResolver implements PromptAssemblyResolver {
   }
 
   getGenerationPreset(presetId: string) {
-    return this.presets.get(presetId) ?? null;
+    const preset = this.store.getGenerationPreset(presetId as import("@rp-platform/domain").GenerationPresetId);
+    if (!preset) return null;
+    return {
+      id: preset.id,
+      text: preset.systemStyleNote ?? "",
+    };
   }
 
   listGenerationRules(chatId: ChatId): GenerationRule[] {
@@ -236,15 +235,6 @@ class StaticPromptResolver implements PromptAssemblyResolver {
 export class PrototypeSessionRuntime {
   private readonly store: ChatSessionStore;
   private readonly characters = new Map<string, CharacterRecord>();
-  private readonly presets = new Map<string, PresetRecord>([
-    [
-      "preset_default",
-      {
-        id: "preset_default",
-        text: "Write immersive fictional roleplay. Stay inside the scene. Do not narrate for the user.",
-      },
-    ],
-  ]);
   private readonly importedLoreEntriesByCharacter = new Map<CharacterId, LoreEntry[]>();
   private readonly defaultPreset: GenerationPreset = {
     id: "preset_default",
@@ -279,7 +269,6 @@ export class PrototypeSessionRuntime {
     this.resolver = new StaticPromptResolver(
       this.store,
       this.characters,
-      this.presets,
       this.importedLoreEntriesByCharacter,
     );
     this.chatApp = new ChatApplicationService(this.store);
@@ -1140,8 +1129,14 @@ export class PrototypeSessionRuntime {
         updatedAt: "2026-04-22T00:00:00.000Z",
       });
     }
-    this.store.upsertGenerationPreset(this.defaultPreset);
-    this.store.upsertToolProfile(this.defaultToolProfile);
+
+    if (!this.store.getGenerationPreset(this.defaultPreset.id)) {
+      this.store.upsertGenerationPreset(this.defaultPreset);
+    }
+
+    if (!this.store.getToolProfile(this.defaultToolProfile.id)) {
+      this.store.upsertToolProfile(this.defaultToolProfile);
+    }
   }
 
   private restoreImportedDataFromStore(): void {
