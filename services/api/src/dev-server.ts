@@ -121,8 +121,6 @@ const runtime = {
   importJson: (body: { fileName: string; jsonText: string; chatId?: string }) => sessionRuntime.importJson(body),
   forkBranch: (chatId: string) => sessionRuntime.forkBranch(chatId),
   activateBranch: (chatId: string, branchId: string) => sessionRuntime.activateBranch(chatId, branchId),
-  mergeBranch: (chatId: string, sourceBranchId: string, targetBranchId: string) =>
-    sessionRuntime.mergeBranch(chatId, sourceBranchId, targetBranchId),
   deleteBranch: (chatId: string, branchId: string) => sessionRuntime.deleteBranch(chatId, branchId),
   archiveCharacter: (characterId: string) => sessionRuntime.archiveCharacter(characterId),
   unarchiveCharacter: (characterId: string) => sessionRuntime.unarchiveCharacter(characterId),
@@ -189,9 +187,29 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
     return;
   }
 
+  if (method === "POST" && url.pathname === "/api/characters") {
+    const body = await readJsonBody(request);
+    const name = (body as any).name;
+    if (!name || typeof name !== "string" || !name.trim()) {
+      writeJson(response, 400, { error: "name is required" });
+      return;
+    }
+    writeJson(response, 201, sessionRuntime.createCharacterFromScratch({
+      name: name.trim(),
+      description: (body as any).description ?? undefined,
+      firstMessage: (body as any).firstMessage ?? undefined,
+    }));
+    return;
+  }
+
   if (method === "POST" && url.pathname === "/api/chats") {
     const body = await readJsonBody(request);
-    writeJson(response, 200, runtime.createChatForCharacter(body.characterId as string));
+    const characterId = (body as any).characterId;
+    if (!characterId) {
+      writeJson(response, 200, sessionRuntime.createFreeChat());
+      return;
+    }
+    writeJson(response, 200, runtime.createChatForCharacter(characterId as string));
     return;
   }
 
@@ -304,13 +322,6 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
   const activateBranchMatch = /^\/api\/chats\/([^/]+)\/branches\/([^/]+)\/activate$/.exec(url.pathname);
   if (method === "POST" && activateBranchMatch) {
     writeJson(response, 200, runtime.activateBranch(activateBranchMatch[1], activateBranchMatch[2]));
-    return;
-  }
-
-  const branchMergeMatch = /^\/api\/chats\/([^/]+)\/branches\/merge$/.exec(url.pathname);
-  if (method === "POST" && branchMergeMatch) {
-    const body = await readJsonBody(request);
-    writeJson(response, 200, runtime.mergeBranch(branchMergeMatch[1], body.sourceBranchId as string, body.targetBranchId as string));
     return;
   }
 
