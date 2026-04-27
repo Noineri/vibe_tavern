@@ -163,7 +163,6 @@ export interface ChatSessionStore {
   deleteChat(chatId: ChatId): void;
   renameChat(chatId: ChatId, title: string): void;
 
-  mergeBranch(input: { chatId: ChatId; sourceBranchId: ChatBranchId; targetBranchId: ChatBranchId }): { appendedMessageCount: number; activeBranchId: ChatBranchId };
   deleteBranch(chatId: ChatId, branchId: ChatBranchId): { activeBranchId: ChatBranchId; deletedBranchId: ChatBranchId };
 
   cloneChat(chatId: ChatId, title?: string): CreateChatSessionResult;
@@ -968,58 +967,6 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
       chat.title = title;
       chat.updatedAt = this.nowTimestamp();
     }
-  }
-
-  mergeBranch(input: { chatId: ChatId; sourceBranchId: ChatBranchId; targetBranchId: ChatBranchId }): { appendedMessageCount: number; activeBranchId: ChatBranchId } {
-    const chat = this.requireChat(input.chatId);
-    const sourceState = this.requireBranch(input.chatId, input.sourceBranchId);
-    const targetState = this.requireBranch(input.chatId, input.targetBranchId);
-
-    if (input.sourceBranchId === input.targetBranchId) {
-      throw new Error("Source branch and target branch must be different.");
-    }
-
-    const timestamp = this.nowTimestamp();
-    const startPosition = targetState.messages.length;
-    const copiedMessageIds = new Map<MessageId, MessageId>();
-
-    const copiedMessages = sourceState.messages.map((message, index) => {
-      const nextId = this.nextId("msg") as MessageId;
-      copiedMessageIds.set(message.id, nextId);
-      return {
-        ...message,
-        id: nextId,
-        chatId: input.chatId,
-        branchId: input.targetBranchId,
-        position: startPosition + index,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      };
-    });
-
-    for (const message of sourceState.messages) {
-      const nextMessageId = copiedMessageIds.get(message.id);
-      if (!nextMessageId) continue;
-      const variants = this.listMessageVariants(message.id);
-      for (const variant of variants) {
-        const variantId = this.nextId("variant") as MessageVariantId;
-        this.messageVariants.set(variantId, {
-          ...variant,
-          id: variantId,
-          messageId: nextMessageId,
-          createdAt: timestamp,
-        });
-      }
-    }
-
-    targetState.messages.push(...copiedMessages);
-    chat.activeBranchId = input.targetBranchId;
-    this.touchChat(chat, timestamp);
-
-    return {
-      appendedMessageCount: copiedMessages.length,
-      activeBranchId: input.targetBranchId,
-    };
   }
 
   deleteBranch(chatId: ChatId, branchId: ChatBranchId): { activeBranchId: ChatBranchId; deletedBranchId: ChatBranchId } {
