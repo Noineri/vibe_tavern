@@ -198,24 +198,16 @@ export function App() {
 
       <ProviderModal
         isOpen={app.isProviderModalOpen}
-        connection={app.connection}
-        connectionHint={app.renderConnectionHint()}
-        connectionStatus={app.renderConnectionStatus()}
         providerProfiles={app.providerProfiles}
-        selectedProviderProfileId={app.selectedProviderProfileId}
         activeProviderProfileId={app.activeProviderProfile?.id ?? null}
-        onActivateProviderProfile={app.handleActivateProviderProfile}
-        canConnect={app.canConnect}
-        canRefreshModels={app.canRefreshModels}
         onClose={app.closeConnectionPanel}
-        onSelectedProviderProfileChange={app.setSelectedProviderProfileId}
-        onLoadProviderProfile={app.handleLoadProviderProfile}
-        onConnectSavedProfile={app.handleConnectSavedProfile}
-        onDeleteProviderProfile={app.handleDeleteProviderProfile}
-        onPatchConnection={app.patchConnection}
-        onConnect={app.handleConnect}
-        onRefreshModels={app.handleRefreshProviderModels}
-        onSaveProviderProfile={app.handleSaveProviderProfile}
+        onCreateProfile={app.handleCreateProviderProfile}
+        onDuplicateProfile={app.handleDuplicateProviderProfile}
+        onDeleteProfile={async (id: string) => { await app.handleDeleteProviderProfile(id); }}
+        onActivateProfile={app.handleActivateProviderProfile}
+        onTestDraft={app.handleTestDraftConnection}
+        onRefreshModels={app.handleFetchModelsForProfile}
+        onRefreshProfiles={async () => { await app.handleRefreshProfiles(); }}
       />
 
       <PromptManagerModal

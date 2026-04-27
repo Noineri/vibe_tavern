@@ -1,6 +1,7 @@
 import type { ChangeEvent, DragEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
+import type { ProviderProbeResponse } from "@rp-platform/api-contracts";
 import {
   activateBranch,
   activateProviderProfile,
@@ -28,6 +29,7 @@ import {
   saveProviderProfile,
   selectMessageVariant,
   sendChatMessage,
+  testProviderDraft,
   testProviderProfile,
   unarchiveCharacter,
   updateCharacter,
@@ -87,6 +89,19 @@ function createInitialConnectionState(): ConnectionState {
     models: [],
     providerType: "openai_compat",
     providerPreset: "",
+    temperature: 0.9,
+    topP: 1.0,
+    minP: 0.05,
+    topK: 40,
+    typicalP: 1.0,
+    repPen: 1.1,
+    freqPen: 0.0,
+    presPen: 0.0,
+    maxTokens: 8192,
+    stopSeq: "",
+    seed: null,
+    reasoningEffort: "medium",
+    streamResponse: true,
   };
 }
 
@@ -418,7 +433,20 @@ export function useRpPlatformApp() {
         endpoint: normalizedBaseUrl,
         apiKey: connection.apiKey.trim() || undefined,
         defaultModel: connection.model.trim() || null,
-        contextBudget: 8192,
+        contextBudget: connection.maxTokens || 8192,
+        temperature: connection.temperature,
+        topP: connection.topP,
+        minP: connection.minP,
+        topK: connection.topK,
+        typicalP: connection.typicalP,
+        repPen: connection.repPen,
+        freqPen: connection.freqPen,
+        presPen: connection.presPen,
+        maxTokens: connection.maxTokens,
+        stopSeq: connection.stopSeq,
+        seed: connection.seed,
+        reasoningEffort: connection.reasoningEffort,
+        streamResponse: connection.streamResponse,
       });
 
       await loadProviderProfiles();
@@ -461,6 +489,19 @@ export function useRpPlatformApp() {
         error: "",
         providerType: profile.type || "openai_compat",
         providerPreset: "",
+        temperature: profile.temperature ?? 0.9,
+        topP: profile.topP ?? 1.0,
+        minP: profile.minP ?? 0.05,
+        topK: profile.topK ?? 40,
+        typicalP: profile.typicalP ?? 1.0,
+        repPen: profile.repPen ?? 1.1,
+        freqPen: profile.freqPen ?? 0.0,
+        presPen: profile.presPen ?? 0.0,
+        maxTokens: profile.maxTokens ?? 8192,
+        stopSeq: profile.stopSeq ?? "",
+        seed: profile.seed ?? null,
+        reasoningEffort: profile.reasoningEffort ?? "medium",
+        streamResponse: profile.streamResponse ?? true,
       });
     } catch (error) {
       patchConnection({
@@ -495,7 +536,20 @@ export function useRpPlatformApp() {
             endpoint,
             apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
             defaultModel: connection.model.trim() || null,
-            contextBudget: 8192,
+            contextBudget: connection.maxTokens || 8192,
+            temperature: connection.temperature,
+            topP: connection.topP,
+            minP: connection.minP,
+            topK: connection.topK,
+            typicalP: connection.typicalP,
+            repPen: connection.repPen,
+            freqPen: connection.freqPen,
+            presPen: connection.presPen,
+            maxTokens: connection.maxTokens,
+            stopSeq: connection.stopSeq,
+            seed: connection.seed,
+            reasoningEffort: connection.reasoningEffort,
+            streamResponse: connection.streamResponse,
           })
         : await saveProviderProfile({
             name,
@@ -503,7 +557,20 @@ export function useRpPlatformApp() {
             endpoint,
             apiKey: apiKeyInput || undefined,
             defaultModel: connection.model.trim() || null,
-            contextBudget: 8192,
+            contextBudget: connection.maxTokens || 8192,
+            temperature: connection.temperature,
+            topP: connection.topP,
+            minP: connection.minP,
+            topK: connection.topK,
+            typicalP: connection.typicalP,
+            repPen: connection.repPen,
+            freqPen: connection.freqPen,
+            presPen: connection.presPen,
+            maxTokens: connection.maxTokens,
+            stopSeq: connection.stopSeq,
+            seed: connection.seed,
+            reasoningEffort: connection.reasoningEffort,
+            streamResponse: connection.streamResponse,
           });
 
       await loadProviderProfiles();
@@ -540,15 +607,16 @@ export function useRpPlatformApp() {
     }
   }
 
-  async function handleDeleteProviderProfile(): Promise<void> {
-    if (!selectedProviderProfileId) {
+  async function handleDeleteProviderProfile(providerProfileId?: string): Promise<void> {
+    const targetId = providerProfileId || selectedProviderProfileId;
+    if (!targetId) {
       return;
     }
 
     try {
-      await deleteProviderProfile(selectedProviderProfileId);
+      await deleteProviderProfile(targetId);
       await loadProviderProfiles();
-      if (connection.activeProviderProfileId === selectedProviderProfileId) {
+      if (connection.activeProviderProfileId === targetId) {
         patchConnection({
           activeProviderProfileId: null,
           hasStoredApiKey: false,
@@ -563,6 +631,78 @@ export function useRpPlatformApp() {
         error: error instanceof Error ? error.message : "Could not delete provider profile.",
       });
     }
+  }
+
+  async function handleCreateProviderProfile(): Promise<ProviderProfileRecord | null> {
+    try {
+      const saved = await saveProviderProfile({
+        name: "Новый профиль",
+        type: "openai_compat",
+        endpoint: "",
+        temperature: 0.9,
+        topP: 1.0,
+        minP: 0.05,
+        topK: 40,
+        typicalP: 1.0,
+        repPen: 1.1,
+        freqPen: 0.0,
+        presPen: 0.0,
+        maxTokens: 8192,
+        stopSeq: "",
+        seed: null,
+        reasoningEffort: "medium",
+        streamResponse: true,
+      });
+      await loadProviderProfiles();
+      return saved;
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Failed to create provider profile.");
+      return null;
+    }
+  }
+
+  async function handleDuplicateProviderProfile(id: string): Promise<ProviderProfileRecord | null> {
+    const existing = providerProfiles.find((p) => p.id === id);
+    if (!existing) return null;
+    try {
+      const saved = await saveProviderProfile({
+        name: `${existing.name} (copy)`,
+        type: existing.type,
+        endpoint: existing.endpoint,
+        defaultModel: existing.defaultModel,
+        temperature: existing.temperature ?? 0.9,
+        topP: existing.topP ?? 1.0,
+        minP: existing.minP ?? 0.05,
+        topK: existing.topK ?? 40,
+        typicalP: existing.typicalP ?? 1.0,
+        repPen: existing.repPen ?? 1.1,
+        freqPen: existing.freqPen ?? 0.0,
+        presPen: existing.presPen ?? 0.0,
+        maxTokens: existing.maxTokens ?? 8192,
+        stopSeq: existing.stopSeq ?? "",
+        seed: existing.seed ?? null,
+        reasoningEffort: existing.reasoningEffort ?? "medium",
+        streamResponse: existing.streamResponse ?? true,
+      });
+      await loadProviderProfiles();
+      return saved;
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Failed to duplicate provider profile.");
+      return null;
+    }
+  }
+
+  async function handleTestDraftConnection(endpoint: string, apiKey: string): Promise<ProviderProbeResponse> {
+    return testProviderDraft({ endpoint, apiKey });
+  }
+
+  async function handleFetchModelsForProfile(providerProfileId: string): Promise<Array<{ id: string; label: string }>> {
+    const response = await fetchModelsForProviderProfile(providerProfileId);
+    return response.models;
+  }
+
+  async function handleRefreshProfiles(): Promise<void> {
+    await loadProviderProfiles();
   }
 
   async function handleConnectSavedProfile(): Promise<void> {
@@ -1090,10 +1230,13 @@ export function useRpPlatformApp() {
     canSendViaActiveProfile,
     activeProviderProfile,
     handleActivateProviderProfile,
+    handleCreateProviderProfile,
+    handleDuplicateProviderProfile,
+    handleTestDraftConnection,
+    handleFetchModelsForProfile,
+    handleRefreshProfiles,
     personas,
-    renderConnectionStatus,
     renderSendLabel,
-    renderConnectionHint,
     handleSend,
     handleConnect,
     handleLoadProviderProfile,
