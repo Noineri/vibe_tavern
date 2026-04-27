@@ -42,7 +42,6 @@ interface SidebarProps {
     confirmLabel: string;
     onConfirm: () => void;
   }) => void;
-  onMergeActiveBranchIntoRoot: () => void;
   onDeleteActiveBranch: () => void;
 }
 
@@ -392,7 +391,6 @@ export function Sidebar(input: SidebarProps) {
                               onClick={(event) => {
                                 event.stopPropagation();
                                 input.onActivateBranch(branch.id);
-                                setBranchPopId(null);
                               }}
                             >
                               <div className="sb-br-title">{branch.label || "Unnamed branch"}</div>
@@ -409,9 +407,8 @@ export function Sidebar(input: SidebarProps) {
                           onClick={(event) => {
                             event.stopPropagation();
                             input.onFork();
-                            setBranchPopId(null);
                           }}
-                          onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.stopPropagation(); input.onFork(); setBranchPopId(null); } }}
+                          onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.stopPropagation(); input.onFork(); } }}
                         >
                           + Fork from here
                         </div>
@@ -420,47 +417,24 @@ export function Sidebar(input: SidebarProps) {
                           const activeIsRoot = rootBranch != null && input.activeBranchId === rootBranch.id;
                           const canAct = !activeIsRoot && input.branches.length > 1;
                           return (
-                            <>
-                              <div
-                                className={`sb-branch-action${canAct ? "" : " disabled"}`}
-                                role="button"
-                                tabIndex={0}
-                                aria-disabled={!canAct}
-                                style={canAct ? undefined : { opacity: 0.45, cursor: "not-allowed" }}
-                                title={canAct ? "" : "Switch to a non-main branch first"}
-                                onClick={(event) => {
-                                  if (!canAct) return;
-                                  event.stopPropagation();
-                                  input.onMergeActiveBranchIntoRoot();
-                                  setBranchPopId(null);
-                                }}
-                                onKeyDown={(event) => { if (canAct && (event.key === "Enter" || event.key === " ")) { event.stopPropagation(); input.onMergeActiveBranchIntoRoot(); setBranchPopId(null); } }}
-                              >
-                                Merge active branch into main
-                              </div>
-                              <div
-                                className={`sb-branch-action${canAct ? "" : " disabled"}`}
-                                role="button"
-                                tabIndex={0}
-                                aria-disabled={!canAct}
-                                style={canAct ? undefined : { opacity: 0.45, cursor: "not-allowed" }}
-                                title={canAct ? "" : "Switch to a non-main branch first"}
-                                onClick={(event) => {
-                                  if (!canAct) return;
-                                  event.stopPropagation();
-                                  input.onRequestDestructiveConfirm({
-                                    title: "Delete branch?",
-                                    body: "Delete the active branch and its messages? Main timeline will stay.",
-                                    confirmLabel: "Delete branch",
-                                    onConfirm: () => input.onDeleteActiveBranch(),
-                                  });
-                                  setBranchPopId(null);
-                                }}
-                                onKeyDown={(event) => { if (canAct && (event.key === "Enter" || event.key === " ")) { event.stopPropagation(); input.onRequestDestructiveConfirm({ title: "Delete branch?", body: "Delete the active branch and its messages? Main timeline will stay.", confirmLabel: "Delete branch", onConfirm: () => input.onDeleteActiveBranch() }); setBranchPopId(null); } }}
-                              >
-                                Delete branch
-                              </div>
-                            </>
+                            <div className={`sb-branch-action${canAct ? "" : " disabled"}`}
+                              role="button" tabIndex={0} aria-disabled={!canAct}
+                              style={canAct ? undefined : { opacity: 0.45, cursor: "not-allowed" }}
+                              title={canAct ? "" : "Switch to a non-main branch first"}
+                              onClick={(event) => {
+                                if (!canAct) return;
+                                event.stopPropagation();
+                                input.onRequestDestructiveConfirm({
+                                  title: "Delete branch?",
+                                  body: "Delete the active branch and its messages? Main timeline will stay.",
+                                  confirmLabel: "Delete branch",
+                                  onConfirm: () => input.onDeleteActiveBranch(),
+                                });
+                              }}
+                              onKeyDown={(event) => { if (canAct && (event.key === "Enter" || event.key === " ")) { event.stopPropagation(); input.onRequestDestructiveConfirm({ title: "Delete branch?", body: "Delete the active branch and its messages? Main timeline will stay.", confirmLabel: "Delete branch", onConfirm: () => input.onDeleteActiveBranch(), }); } }}
+                            >
+                              Delete branch
+                            </div>
                           );
                         })()}
                       </div>

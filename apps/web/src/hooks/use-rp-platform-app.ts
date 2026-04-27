@@ -26,7 +26,6 @@ import {
   testProviderChat as testProviderChatClient,
   forkBranch,
   listProviderProfiles,
-  mergeBranch,
   regenerateChatMessage,
   renameChat,
   saveProviderProfile,
@@ -973,23 +972,6 @@ export function useRpPlatformApp() {
     refresh(activeChatId, await activateBranch(activeChatId, branchId));
   }
 
-  async function handleMergeActiveBranchIntoRoot(): Promise<void> {
-    if (!activeChatId || !snapshot) {
-      return;
-    }
-    const activeBranch = snapshot.activeBranch;
-    const rootBranch = snapshot.branches.find((b) => b.parentBranchId === null);
-    if (!rootBranch || activeBranch.id === rootBranch.id) {
-      setChatNotice("Cannot merge: active branch is already the main timeline.");
-      return;
-    }
-    try {
-      refresh(activeChatId, await mergeBranch(activeChatId, activeBranch.id, rootBranch.id));
-    } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Branch merge failed.");
-    }
-  }
-
   async function handleDeleteActiveBranch(): Promise<void> {
     if (!activeChatId || !snapshot) {
       return;
@@ -1344,7 +1326,6 @@ export function useRpPlatformApp() {
     handleDeletePromptPreset,
     handleFork,
     handleActivateBranch,
-    handleMergeActiveBranchIntoRoot,
     handleDeleteActiveBranch,
     handleStartEdit,
     handleCancelEdit,
