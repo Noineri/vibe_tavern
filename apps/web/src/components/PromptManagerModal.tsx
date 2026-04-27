@@ -4,6 +4,7 @@ import { ConfirmCloseModal } from "./shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { EmptyState } from "./shared/empty-state.js";
 import { Icons } from "./shared/icons.js";
+import { SaveBtn } from "./shared/save-btn.js";
 import { useDirtyState } from "./shared/use-dirty-state.js";
 
 interface PromptManagerModalProps {
@@ -298,14 +299,13 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               <Icons.Trash /> Delete preset
             </span>
           )}
-          <button
-            className="api-save-btn"
+          <SaveBtn
+            dirty={dirtyState.dirty}
+            saveState={dirtyState.saveState}
+            onClick={handleSave}
             disabled={!activePreset || !dirtyState.dirty}
             style={{ marginLeft: "auto" }}
-            onClick={handleSave}
-          >
-            Save
-          </button>
+          />
           <button className="api-cancel-btn" onClick={handleClose} style={{ marginLeft: 8 }}>
             Close
           </button>
