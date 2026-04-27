@@ -112,6 +112,19 @@ interface StoredProviderProfileRecord {
   apiKey: string | null;
   defaultModel?: string | null;
   contextBudget?: number | null;
+  temperature?: number;
+  topP?: number;
+  minP?: number;
+  topK?: number;
+  typicalP?: number;
+  repPen?: number;
+  freqPen?: number;
+  presPen?: number;
+  maxTokens?: number;
+  stopSeq?: string;
+  seed?: string | null;
+  reasoningEffort?: string;
+  streamResponse?: boolean;
   isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -124,6 +137,19 @@ interface ClientProviderProfileRecord {
   endpoint: string;
   defaultModel?: string | null;
   contextBudget?: number | null;
+  temperature?: number;
+  topP?: number;
+  minP?: number;
+  topK?: number;
+  typicalP?: number;
+  repPen?: number;
+  freqPen?: number;
+  presPen?: number;
+  maxTokens?: number;
+  stopSeq?: string;
+  seed?: string | null;
+  reasoningEffort?: string;
+  streamResponse?: boolean;
   isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -724,6 +750,19 @@ export class SessionRuntime {
       apiKey?: unknown;
       defaultModel?: string | null;
       contextBudget?: number | null;
+      temperature?: number;
+      topP?: number;
+      minP?: number;
+      topK?: number;
+      typicalP?: number;
+      repPen?: number;
+      freqPen?: number;
+      presPen?: number;
+      maxTokens?: number;
+      stopSeq?: string;
+      seed?: string | null;
+      reasoningEffort?: string;
+      streamResponse?: boolean;
     },
   ): ClientProviderProfileRecord {
     const existing = this.store.getProviderProfile(id) as StoredProviderProfileRecord | null;
@@ -1206,6 +1245,19 @@ export class SessionRuntime {
       endpoint: profile.endpoint,
       defaultModel: profile.defaultModel ?? null,
       contextBudget: profile.contextBudget ?? null,
+      temperature: profile.temperature ?? 0.9,
+      topP: profile.topP ?? 1.0,
+      minP: profile.minP ?? 0.05,
+      topK: profile.topK ?? 40,
+      typicalP: profile.typicalP ?? 1.0,
+      repPen: profile.repPen ?? 1.1,
+      freqPen: profile.freqPen ?? 0.0,
+      presPen: profile.presPen ?? 0.0,
+      maxTokens: profile.maxTokens ?? 8192,
+      stopSeq: profile.stopSeq ?? '',
+      seed: profile.seed ?? null,
+      reasoningEffort: profile.reasoningEffort ?? 'medium',
+      streamResponse: profile.streamResponse !== false,
       isActive: profile.isActive === true,
       createdAt: profile.createdAt,
       updatedAt: profile.updatedAt,

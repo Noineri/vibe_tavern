@@ -1570,8 +1570,11 @@ export class SqliteChatSessionStore implements ChatSessionStore {
     const isActive = profile.isActive === true ? 1 : 0;
     this.db.execute(
       `INSERT INTO provider_profiles (
-        id, name, type, endpoint, api_key, default_model, context_budget, is_active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, name, type, endpoint, api_key, default_model, context_budget, is_active,
+        temperature, top_p, min_p, top_k, typical_p, rep_pen, freq_pen, pres_pen,
+        max_tokens, stop_seq, seed, reasoning_effort, stream_response,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         type = excluded.type,
@@ -1579,6 +1582,19 @@ export class SqliteChatSessionStore implements ChatSessionStore {
         api_key = excluded.api_key,
         default_model = excluded.default_model,
         context_budget = excluded.context_budget,
+        temperature = excluded.temperature,
+        top_p = excluded.top_p,
+        min_p = excluded.min_p,
+        top_k = excluded.top_k,
+        typical_p = excluded.typical_p,
+        rep_pen = excluded.rep_pen,
+        freq_pen = excluded.freq_pen,
+        pres_pen = excluded.pres_pen,
+        max_tokens = excluded.max_tokens,
+        stop_seq = excluded.stop_seq,
+        seed = excluded.seed,
+        reasoning_effort = excluded.reasoning_effort,
+        stream_response = excluded.stream_response,
         updated_at = excluded.updated_at`,
       [
         id,
@@ -1589,6 +1605,19 @@ export class SqliteChatSessionStore implements ChatSessionStore {
         profile.defaultModel || null,
         profile.contextBudget ?? 8192,
         isActive,
+        profile.temperature ?? 0.9,
+        profile.topP ?? 1.0,
+        profile.minP ?? 0.05,
+        profile.topK ?? 40,
+        profile.typicalP ?? 1.0,
+        profile.repPen ?? 1.1,
+        profile.freqPen ?? 0.0,
+        profile.presPen ?? 0.0,
+        profile.maxTokens ?? 8192,
+        profile.stopSeq ?? '',
+        profile.seed ?? null,
+        profile.reasoningEffort ?? 'medium',
+        profile.streamResponse === false ? 0 : 1,
         profile.createdAt || timestamp,
         timestamp,
       ],
@@ -1599,22 +1628,36 @@ export class SqliteChatSessionStore implements ChatSessionStore {
     return this.db.queryAll<any>(
       `SELECT id, name, type, endpoint, api_key as apiKey, default_model as defaultModel,
               context_budget as contextBudget, is_active as isActiveInt,
+              temperature, top_p as topP, min_p as minP, top_k as topK, typical_p as typicalP,
+              rep_pen as repPen, freq_pen as freqPen, pres_pen as presPen,
+              max_tokens as maxTokens, stop_seq as stopSeq, seed,
+              reasoning_effort as reasoningEffort, stream_response as streamResponseInt,
               created_at as createdAt, updated_at as updatedAt
        FROM provider_profiles
        ORDER BY name ASC`,
-    ).map((row) => ({ ...row, isActive: row.isActiveInt === 1 }));
+    ).map((row) => ({
+      ...row,
+      isActive: row.isActiveInt === 1,
+      streamResponse: row.streamResponseInt === 1,
+    }));
   }
 
   getProviderProfile(id: string): any | null {
     const row = this.db.queryOne<any>(
       `SELECT id, name, type, endpoint, api_key as apiKey, default_model as defaultModel,
               context_budget as contextBudget, is_active as isActiveInt,
+              temperature, top_p as topP, min_p as minP, top_k as topK, typical_p as typicalP,
+              rep_pen as repPen, freq_pen as freqPen, pres_pen as presPen,
+              max_tokens as maxTokens, stop_seq as stopSeq, seed,
+              reasoning_effort as reasoningEffort, stream_response as streamResponseInt,
               created_at as createdAt, updated_at as updatedAt
        FROM provider_profiles
        WHERE id = ?`,
       [id],
     );
-    return row ? { ...row, isActive: row.isActiveInt === 1 } : null;
+    return row
+      ? { ...row, isActive: row.isActiveInt === 1, streamResponse: row.streamResponseInt === 1 }
+      : null;
   }
 
   deleteProviderProfile(id: string): void {
@@ -1636,12 +1679,18 @@ export class SqliteChatSessionStore implements ChatSessionStore {
     const row = this.db.queryOne<any>(
       `SELECT id, name, type, endpoint, api_key as apiKey, default_model as defaultModel,
               context_budget as contextBudget, is_active as isActiveInt,
+              temperature, top_p as topP, min_p as minP, top_k as topK, typical_p as typicalP,
+              rep_pen as repPen, freq_pen as freqPen, pres_pen as presPen,
+              max_tokens as maxTokens, stop_seq as stopSeq, seed,
+              reasoning_effort as reasoningEffort, stream_response as streamResponseInt,
               created_at as createdAt, updated_at as updatedAt
        FROM provider_profiles
        WHERE is_active = 1
        LIMIT 1`,
     );
-    return row ? { ...row, isActive: true } : null;
+    return row
+      ? { ...row, isActive: true, streamResponse: row.streamResponseInt === 1 }
+      : null;
   }
 
   listPromptPresets(): PromptPreset[] {
