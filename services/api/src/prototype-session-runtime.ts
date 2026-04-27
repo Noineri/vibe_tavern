@@ -156,7 +156,6 @@ class StaticPromptResolver implements PromptAssemblyResolver {
   constructor(
     private readonly store: ChatSessionStore,
     private readonly characters: Map<string, CharacterRecord>,
-    private readonly personas: Map<string, PersonaRecord>,
     private readonly presets: Map<string, PresetRecord>,
     private readonly importedLoreEntriesByCharacter: Map<CharacterId, LoreEntry[]>,
   ) {}
@@ -182,7 +181,9 @@ class StaticPromptResolver implements PromptAssemblyResolver {
   }
 
   getPersona(personaId: string) {
-    return this.personas.get(personaId) ?? null;
+    const p = this.store.getPersona(personaId as import("@rp-platform/domain").PersonaId);
+    if (!p) return null;
+    return { id: p.id, name: p.name, description: p.description };
   }
 
   getGenerationPreset(presetId: string) {
@@ -235,17 +236,6 @@ class StaticPromptResolver implements PromptAssemblyResolver {
 export class PrototypeSessionRuntime {
   private readonly store: ChatSessionStore;
   private readonly characters = new Map<string, CharacterRecord>();
-  private readonly personas = new Map<string, PersonaRecord>([
-    [
-      "persona_explorer",
-      {
-        id: "persona_explorer",
-        name: "Explorer",
-        description:
-          "Curious, observant, and willing to follow the scene deeper instead of trying to dominate it.",
-      },
-    ],
-  ]);
   private readonly presets = new Map<string, PresetRecord>([
     [
       "preset_default",
@@ -256,17 +246,6 @@ export class PrototypeSessionRuntime {
     ],
   ]);
   private readonly importedLoreEntriesByCharacter = new Map<CharacterId, LoreEntry[]>();
-  private defaultPersona: Persona = {
-    id: "persona_explorer",
-    name: "Explorer",
-    description:
-      "Curious, observant, and willing to follow the scene deeper instead of trying to dominate it.",
-    pronouns: null,
-    avatarAssetId: null,
-    defaultForNewChats: true,
-    createdAt: "2026-04-22T00:00:00.000Z",
-    updatedAt: "2026-04-22T00:00:00.000Z",
-  };
   private readonly defaultPreset: GenerationPreset = {
     id: "preset_default",
     name: "Default RP",
@@ -300,7 +279,6 @@ export class PrototypeSessionRuntime {
     this.resolver = new StaticPromptResolver(
       this.store,
       this.characters,
-      this.personas,
       this.presets,
       this.importedLoreEntriesByCharacter,
     );
@@ -392,17 +370,11 @@ export class PrototypeSessionRuntime {
       pronouns: input.pronouns?.trim() || null,
       defaultForNewChats: input.defaultForNewChats === true,
     });
-    this.personas.set(persona.id, {
-      id: persona.id,
-      name: persona.name,
-      description: persona.description,
-    });
     return { id: persona.id, name: persona.name, description: persona.description };
   }
 
   deletePersona(personaId: string): void {
     this.store.deletePersona(personaId as import("@rp-platform/domain").PersonaId);
-    this.personas.delete(personaId);
   }
 
   getPersonalLorebookStatus(personaId: string): { enabled: boolean; lorebookId: string | null } {
@@ -413,7 +385,7 @@ export class PrototypeSessionRuntime {
   setPersonalLorebookEnabled(personaId: string, enabled: boolean): { enabled: boolean; lorebookId: string | null } {
     const typedPersonaId = personaId as import("@rp-platform/domain").PersonaId;
     if (enabled) {
-      const persona = this.store.listPersonas().find((p) => p.id === personaId);
+      const persona = this.store.getPersona(personaId as import("@rp-platform/domain").PersonaId);
       if (!persona) {
         throw new Error(`Persona '${personaId}' was not found.`);
       }
@@ -612,7 +584,7 @@ export class PrototypeSessionRuntime {
 
     const created = this.chatApp.createChat({
       characterId: characterId as CharacterId,
-      personaId: this.defaultPersona.id,
+      personaId: "persona_explorer" as import("@rp-platform/domain").PersonaId,
       title: `${character.name} chat`,
       generationPresetId: this.defaultPreset.id,
       toolProfileId: this.defaultToolProfile.id,
@@ -913,44 +885,24 @@ export class PrototypeSessionRuntime {
       description?: string;
     },
   ): PrototypeSnapshot {
-    const currentPersonaRecord = this.personas.get(personaId);
-    if (!currentPersonaRecord) {
+    const currentPersona = this.store.getPersona(personaId as import("@rp-platform/domain").PersonaId);
+    if (!currentPersona) {
       throw new Error(`Persona '${personaId}' was not found.`);
     }
-    const currentPersona: Persona = {
-      id: personaId,
-      name: currentPersonaRecord.name,
-      description: currentPersonaRecord.description,
-      pronouns: null,
-      avatarAssetId: null,
-      defaultForNewChats: personaId === this.defaultPersona.id,
-      createdAt: this.defaultPersona.createdAt,
-      updatedAt: this.defaultPersona.updatedAt,
-    };
 
     const nextName = (input.name ?? currentPersona.name).trim();
     if (!nextName) {
       throw new Error("Persona name is required.");
     }
 
-    const now = new Date().toISOString();
     const nextDescription = input.description ?? currentPersona.description;
-    const updatedPersona: Persona = {
+    
+    this.store.upsertPersona({
       ...currentPersona,
       name: nextName,
       description: nextDescription,
-      updatedAt: now,
-    };
-
-    this.store.upsertPersona(updatedPersona);
-    this.personas.set(personaId, {
-      id: updatedPersona.id,
-      name: updatedPersona.name,
-      description: updatedPersona.description,
+      updatedAt: new Date().toISOString(),
     });
-    if (personaId === this.defaultPersona.id) {
-      this.defaultPersona = updatedPersona;
-    }
 
     const preferredChat = input.chatId ? this.store.getChat(input.chatId) : null;
     const targetChatId =
@@ -1175,7 +1127,19 @@ export class PrototypeSessionRuntime {
   }
 
   private ensurePrototypeReferences(): void {
-    this.store.upsertPersona(this.defaultPersona);
+    const defaultPersonaId = "persona_explorer" as import("@rp-platform/domain").PersonaId;
+    if (!this.store.getPersona(defaultPersonaId)) {
+      this.store.upsertPersona({
+        id: defaultPersonaId,
+        name: "Explorer",
+        description: "Curious, observant, and willing to follow the scene deeper instead of trying to dominate it.",
+        pronouns: null,
+        avatarAssetId: null,
+        defaultForNewChats: true,
+        createdAt: "2026-04-22T00:00:00.000Z",
+        updatedAt: "2026-04-22T00:00:00.000Z",
+      });
+    }
     this.store.upsertGenerationPreset(this.defaultPreset);
     this.store.upsertToolProfile(this.defaultToolProfile);
   }
