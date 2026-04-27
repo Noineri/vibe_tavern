@@ -43,10 +43,6 @@ function toLocal(e: LoreEntryRecord): LocalEntry {
   };
 }
 
-function generateId(): string {
-  return `lore_entry_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
 export function LorebookEditor({ charName, lorebookId }: { charName: string; lorebookId: string }) {
   const [entries, setEntries] = useState<LocalEntry[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -85,39 +81,29 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
     }
   }
 
-  function handleAddEntry(): void {
-    const newEntry: LocalEntry = {
-      id: generateId(),
-      title: "New entry",
-      keys: [],
-      secondaryKeys: [],
-      logic: "AND_ANY",
-      position: "before_char",
-      depth: 4,
-      priority: 10,
-      sticky: 0,
-      cooldown: 0,
-      delay: 0,
-      enabled: true,
-      content: "",
-    };
-    setEntries([newEntry, ...entries]);
-    setActiveId(newEntry.id);
-    setTestResult(null);
-    createLoreEntry(lorebookId, {
-      title: newEntry.title,
-      content: newEntry.content,
-      keys: newEntry.keys,
-      secondaryKeys: newEntry.secondaryKeys,
-      logic: newEntry.logic,
-      position: newEntry.position,
-      depth: newEntry.depth,
-      priority: newEntry.priority,
-      stickyWindow: newEntry.sticky,
-      cooldownWindow: newEntry.cooldown,
-      delayWindow: newEntry.delay,
-      enabled: newEntry.enabled,
-    }).catch(() => {});
+  async function handleAddEntry(): Promise<void> {
+    try {
+      const serverEntry = await createLoreEntry(lorebookId, {
+        title: "New entry",
+        content: "",
+        keys: [],
+        secondaryKeys: [],
+        logic: "and_any",
+        position: "in_prompt",
+        depth: 4,
+        priority: 10,
+        stickyWindow: 0,
+        cooldownWindow: 0,
+        delayWindow: 0,
+        enabled: true,
+      });
+      const local = toLocal(serverEntry);
+      setEntries([local, ...entries]);
+      setActiveId(local.id);
+      setTestResult(null);
+    } catch {
+      // silently ignore — existing pattern in this component
+    }
   }
 
   function handleKeyAdd(e: KeyboardEvent<HTMLInputElement>, type: "keys" | "secondaryKeys"): void {
@@ -305,10 +291,10 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                     fontFamily: "var(--font-ui)",
                   }}
                 >
-                  <option value="AND_ANY">AND ANY</option>
-                  <option value="AND_ALL">AND ALL</option>
-                  <option value="NOT_ANY">NOT ANY</option>
-                  <option value="NOT_ALL">NOT ALL</option>
+                  <option value="and_any">AND ANY</option>
+                  <option value="and_all">AND ALL</option>
+                  <option value="not_any">NOT ANY</option>
+                  <option value="not_all">NOT ALL</option>
                 </select>
               </div>
               <div className="build-field">
@@ -328,11 +314,10 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                     fontFamily: "var(--font-ui)",
                   }}
                 >
-                  <option value="before_char">Before Char</option>
-                  <option value="after_char">After Char</option>
-                  <option value="top">Top</option>
-                  <option value="bottom">Bottom</option>
-                  <option value="at_depth">At Depth @</option>
+                  <option value="before_prompt">Before Prompt</option>
+                  <option value="in_prompt">In Prompt</option>
+                  <option value="in_chat">In Chat</option>
+                  <option value="hidden_system">Hidden System</option>
                 </select>
               </div>
               <div className="build-field">
