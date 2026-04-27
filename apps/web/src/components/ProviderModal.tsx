@@ -1,5 +1,6 @@
 import type { ProviderProfileRecord } from "../app-client.js";
 import type { ConnectionState } from "./app-shell-types.js";
+import { PRESET_GROUPS, PROVIDER_PRESETS, TYPE_LABELS, getPresetGroup } from "../provider-presets.js";
 import { Icons } from "./shared/icons.js";
 
 interface ProviderModalProps {
@@ -113,6 +114,73 @@ export function ProviderModal(input: ProviderModalProps) {
               )}
 
               <div className="api-hint" style={{ marginBottom: 12 }}>Status: {input.connectionStatus}</div>
+
+              <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+                <div className="api-field" style={{ flex: 1, marginBottom: 0 }}>
+                  <label>Provider preset</label>
+                  <select
+                    value={getPresetGroup(input.connection.providerPreset) || ""}
+                    onChange={(event) => {
+                      const group = event.target.value as "" | "cloud" | "native" | "local";
+                      if (!group) {
+                        input.onPatchConnection({ providerPreset: "", providerType: "openai_compat" });
+                      } else {
+                        const first = PROVIDER_PRESETS.find((f) => f.group === group);
+                        if (first) {
+                          input.onPatchConnection({
+                            providerPreset: first.id,
+                            providerType: first.type,
+                            baseUrl: first.baseUrl,
+                          });
+                        }
+                      }
+                    }}
+                    style={{ height: 34 }}
+                  >
+                    <option value="">Custom</option>
+                    {PRESET_GROUPS.map((g) => (
+                      <option key={g.id} value={g.id}>{g.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="api-field" style={{ flex: 1, marginBottom: 0 }}>
+                  <label>API format</label>
+                  <select
+                    value={input.connection.providerPreset || ""}
+                    onChange={(event) => {
+                      const presetId = event.target.value;
+                      if (!presetId) {
+                        input.onPatchConnection({ providerPreset: "", providerType: "openai_compat" });
+                      } else {
+                        const fmt = PROVIDER_PRESETS.find((f) => f.id === presetId);
+                        if (fmt) {
+                          input.onPatchConnection({
+                            providerPreset: fmt.id,
+                            providerType: fmt.type,
+                            baseUrl: fmt.baseUrl,
+                          });
+                        }
+                      }
+                    }}
+                    style={{ height: 34 }}
+                  >
+                    <option value="">Custom</option>
+                    {PROVIDER_PRESETS
+                      .filter((f) => !getPresetGroup(input.connection.providerPreset) || f.group === getPresetGroup(input.connection.providerPreset))
+                      .map((f) => (
+                        <option key={f.id} value={f.id}>{f.label}</option>
+                      ))}
+                  </select>
+                </div>
+                <div className="api-field" style={{ flex: 1, marginBottom: 0 }}>
+                  <label>Adapter type</label>
+                  <input
+                    value={TYPE_LABELS[input.connection.providerType] || input.connection.providerType}
+                    readOnly
+                    style={{ opacity: 0.72, height: 34 }}
+                  />
+                </div>
+              </div>
 
               <div className="api-row" style={{ marginBottom: 16 }}>
                 <button className="api-test-btn idle" type="button" onClick={input.onLoadProviderProfile}>
