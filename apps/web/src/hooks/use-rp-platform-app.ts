@@ -329,7 +329,7 @@ export function useRpPlatformApp() {
       const boot = await bootstrapApp();
       setActiveChatId(boot.initialChatId);
       setSnapshot(boot.snapshot);
-      setIsFirstRun(boot.isFirstRun);
+      setIsFirstRun(boot.isFirstRun || import.meta.env.VITE_FORCE_FIRST_RUN === 'true');
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Could not load application state.");
     } finally {
