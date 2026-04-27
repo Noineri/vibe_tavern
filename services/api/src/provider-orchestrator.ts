@@ -1,8 +1,7 @@
 import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
 import type { ProviderManager } from "./providers/manager.js";
+import type { ProviderType } from "./providers/types.js";
 import type { SessionRuntime } from "./session-runtime.js";
-
-type SupportedProviderType = "openai_compat" | "anthropic" | "google" | "cohere";
 
 interface StoredProviderProfileRecord {
   id: string;
@@ -61,7 +60,7 @@ export class ProviderOrchestrator {
     return {
       id: profile.id,
       name: profile.name,
-      type: profile.type as SupportedProviderType,
+      type: profile.type as ProviderType,
       endpoint: profile.endpoint,
       api_key: profile.apiKey ?? "",
       default_model: profile.defaultModel ?? null,

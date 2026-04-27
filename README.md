@@ -112,7 +112,7 @@ API реализован в [services/api/src/dev-server.ts](../rp_platform/serv
 - Для списка моделей используется OpenAI-compatible endpoint `GET /models`.
 - Для генерации используется OpenAI-compatible endpoint `POST /chat/completions`.
 - Реально подключённый adapter сейчас один: `openai_compat`.
-- Типы для `anthropic`, `google` и `cohere` уже заведены, но полноценные adapters пока не подключены.
+- Типы для `anthropic` и `google` уже заведены, но полноценные adapters пока не подключены.
 
 ### Хранение данных
 
