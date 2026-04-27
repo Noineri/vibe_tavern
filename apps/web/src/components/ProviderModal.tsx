@@ -251,16 +251,19 @@ export function ProviderModal({
   };
 
   const handleFetchModels = async () => {
-    if (!editingId) return;
+    if (!form) return;
     setFetching(true);
     try {
-      const fetched = await onRefreshModels(editingId);
+      const saved = await onSaveProfile(form);
+      const profileId = saved?.id ?? editingId;
+      if (!profileId) return;
+      const fetched = await onRefreshModels(profileId);
       setModels(fetched);
-      if (fetched.length > 0 && (!form?.model || !fetched.find((m) => m.id === form.model))) {
+      if (fetched.length > 0 && (!form.model || !fetched.find((m) => m.id === form.model))) {
         updateForm("model", fetched[0].id);
       }
     } catch {
-      // ignore
+      setModels([]);
     } finally {
       setFetching(false);
     }
