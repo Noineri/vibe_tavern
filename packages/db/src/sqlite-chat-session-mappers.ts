@@ -20,7 +20,7 @@ export type ChatRow = SqliteRow & {
   title: string;
   status: string;
   active_branch_id: string;
-  generation_preset_id: string;
+  prompt_preset_id: string;
   tool_profile_id: string;
   created_at: string;
   updated_at: string;
@@ -177,7 +177,7 @@ export function mapChat(row: ChatRow): Chat {
     title: row.title,
     status: row.status as Chat["status"],
     activeBranchId: row.active_branch_id,
-    generationPresetId: row.generation_preset_id,
+    promptPresetId: row.prompt_preset_id,
     toolProfileId: row.tool_profile_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

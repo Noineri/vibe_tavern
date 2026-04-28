@@ -406,7 +406,7 @@ export function BuildMode(input: BuildModeProps) {
             {input.activeTrace.layers.map((layer, index) => (
               <div className="trace-layer" key={layer.id}>
                 <div
-                  className={`trace-head ${layer.sourceType === "system_preset" ? "sys" : layer.sourceType.includes("memory") || layer.sourceType === "lore_entry" ? "rag" : "msg"}`}
+                  className={`trace-head ${layer.sourceType === "prompt_preset" ? "sys" : layer.sourceType.includes("memory") || layer.sourceType === "lore_entry" ? "rag" : "msg"}`}
                   onClick={(e) => {
                     const next = e.currentTarget.nextElementSibling as HTMLElement;
                     if (next) next.style.display = next.style.display === "none" ? "block" : "none";

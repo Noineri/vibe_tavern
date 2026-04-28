@@ -54,15 +54,17 @@ export function App() {
   if (!app.snapshot) {
     return (
       <div className="app">
-        <main className="main" style={{ alignItems: "center", display: "flex", justifyContent: "center" }}>
-          <div style={{ display: "grid", gap: 12, maxWidth: 520, padding: 24, width: "100%" }}>
-            <div className="build-section-title">Claw Tavern</div>
-            <div className="build-section-sub">
-              Import a character card or lorebook to create the first active snapshot for the web shell.
-            </div>
-            {importSurface}
-          </div>
-        </main>
+        {app.isFirstRun ? (
+          <WelcomeScreen
+            onCreateCharacter={(input) => app.handleCreateCharacter(input)}
+            onImportFiles={(files) => void app.handleImportFiles(files)}
+            onFreeChat={() => app.handleFreeChat()}
+          />
+        ) : (
+          <main className="main" style={{ alignItems: "center", display: "flex", justifyContent: "center" }}>
+            <div className="scene-note">No active chat.</div>
+          </main>
+        )}
       </div>
     );
   }

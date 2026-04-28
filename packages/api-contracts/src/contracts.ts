@@ -2,9 +2,9 @@ import type {
   ChatBranchId,
   ChatId,
   CharacterId,
-  GenerationPresetId,
   MessageId,
   PersonaId,
+  PromptPresetId,
   SummaryKind,
   ToolProfileId,
 } from "@rp-platform/domain";
@@ -31,7 +31,7 @@ export interface CreateChatRequest {
   characterId: CharacterId;
   personaId: PersonaId;
   title: string;
-  generationPresetId: GenerationPresetId;
+  promptPresetId: PromptPresetId;
   toolProfileId: ToolProfileId;
 }
 

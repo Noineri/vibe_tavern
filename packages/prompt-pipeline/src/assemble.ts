@@ -91,19 +91,17 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
       ...context.persona,
       description: applyMacros(context.persona.description, mc),
     } : context.persona,
-    systemPreset: context.systemPreset ? {
-      ...context.systemPreset,
-      text: applyMacros(context.systemPreset.text, mc),
-    } : context.systemPreset,
+    promptPreset: context.promptPreset ? {
+      ...context.promptPreset,
+      text: applyMacros(context.promptPreset.text, mc),
+      jailbreak: context.promptPreset.jailbreak != null ? applyMacros(context.promptPreset.jailbreak, mc) : context.promptPreset.jailbreak,
+      summary: context.promptPreset.summary != null ? applyMacros(context.promptPreset.summary, mc) : context.promptPreset.summary,
+      tools: context.promptPreset.tools != null ? applyMacros(context.promptPreset.tools, mc) : context.promptPreset.tools,
+    } : context.promptPreset,
     activeLoreEntries: context.activeLoreEntries?.map((entry) => ({
       ...entry,
       title: applyMacros(entry.title, mc),
       content: applyMacros(entry.content, mc),
-    })),
-    generationRules: context.generationRules?.map((rule) => ({
-      ...rule,
-      title: applyMacros(rule.title, mc),
-      content: applyMacros(rule.content, mc),
     })),
     summaryMemory: context.summaryMemory?.map((s) => ({
       ...s,
@@ -120,7 +118,6 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
     mesExample: context.mesExample != null ? applyMacros(context.mesExample, mc) : context.mesExample,
     postHistoryInstructions: context.postHistoryInstructions != null ? applyMacros(context.postHistoryInstructions, mc) : context.postHistoryInstructions,
     toolInstructions: context.toolInstructions != null ? applyMacros(context.toolInstructions, mc) : context.toolInstructions,
-    outputConstraints: context.outputConstraints != null ? applyMacros(context.outputConstraints, mc) : context.outputConstraints,
   };
 }
 
@@ -129,14 +126,38 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   const layers: PromptLayer[] = [];
   const droppedLayers: Array<{ id: string; reason: string }> = [];
 
-  if (context.systemPreset?.text?.trim()) {
+  if (context.promptPreset?.text?.trim()) {
     layers.push(
       makeLayer({
-        id: "system_preset",
-        sourceType: "system_preset",
-        sourceId: context.systemPreset.id,
+        id: "prompt_preset_system",
+        sourceType: "prompt_preset",
+        sourceId: context.promptPreset.id,
         priority: 1000,
-        text: context.systemPreset.text,
+        text: context.promptPreset.text,
+      }),
+    );
+  }
+
+  if (context.promptPreset?.jailbreak?.trim()) {
+    layers.push(
+      makeLayer({
+        id: "prompt_preset_jailbreak",
+        sourceType: "prompt_preset",
+        sourceId: context.promptPreset.id,
+        priority: 990,
+        text: context.promptPreset.jailbreak,
+      }),
+    );
+  }
+
+  if (context.promptPreset?.summary?.trim()) {
+    layers.push(
+      makeLayer({
+        id: "prompt_preset_summary",
+        sourceType: "prompt_preset",
+        sourceId: context.promptPreset.id,
+        priority: 350,
+        text: context.promptPreset.summary,
       }),
     );
   }
@@ -212,22 +233,6 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     );
   }
 
-  for (const rule of [...(context.generationRules ?? [])].sort((a, b) => b.priority - a.priority)) {
-    if (!rule.content.trim()) {
-      droppedLayers.push({ id: rule.id, reason: "empty generation rule" });
-      continue;
-    }
-    layers.push(
-      makeLayer({
-        id: `rule_${rule.id}`,
-        sourceType: "generation_rule",
-        sourceId: rule.id,
-        priority: 700 + rule.priority,
-        text: joinNonEmpty([rule.title ? `Rule: ${rule.title}` : null, rule.content]),
-      }),
-    );
-  }
-
   for (const memory of context.summaryMemory ?? []) {
     if (!memory.summary.trim()) {
       droppedLayers.push({ id: memory.id, reason: "empty summary memory" });
@@ -268,18 +273,6 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceId: "active_tool_profile",
         priority: 300,
         text: context.toolInstructions,
-      }),
-    );
-  }
-
-  if (context.outputConstraints?.trim()) {
-    layers.push(
-      makeLayer({
-        id: "output_constraints",
-        sourceType: "output_constraints",
-        sourceId: "output_constraints",
-        priority: 200,
-        text: context.outputConstraints,
       }),
     );
   }

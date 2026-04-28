@@ -37,9 +37,13 @@ export interface PromptAssemblyContext {
     name: string;
     description: string;
   } | null;
-  systemPreset?: {
+  promptPreset?: {
     id: string;
+    name?: string;
     text: string;
+    jailbreak?: string | null;
+    summary?: string | null;
+    tools?: string | null;
   } | null;
   activeLoreEntries?: Array<{
     id: string;
@@ -47,12 +51,6 @@ export interface PromptAssemblyContext {
     content: string;
     priority: number;
     position?: PromptLayerPosition;
-  }>;
-  generationRules?: Array<{
-    id: string;
-    title: string;
-    content: string;
-    priority: number;
   }>;
   summaryMemory?: Array<{
     id: string;
@@ -69,7 +67,6 @@ export interface PromptAssemblyContext {
   mesExample?: string | null;
   postHistoryInstructions?: string | null;
   toolInstructions?: string | null;
-  outputConstraints?: string | null;
   contextBudget?: number | null;
 }
 

@@ -11,12 +11,11 @@ import type {
   CharacterId,
   CharacterVersion,
   CharacterVersionId,
-  GenerationPreset,
-  GenerationRule,
   LoreEntry,
   Message,
   MessageId,
   Persona,
+  PromptPresetId,
   PromptTrace,
   RetrievedMemoryHit,
   Lorebook,
@@ -127,36 +126,17 @@ class StaticPromptResolver implements PromptAssemblyResolver {
     return { id: p.id, name: p.name, description: p.description };
   }
 
-  getGenerationPreset(presetId: string) {
-    const preset = this.store.getGenerationPreset(presetId as import("@rp-platform/domain").GenerationPresetId);
+  getPromptPreset(presetId: string) {
+    const preset = this.store.getPromptPreset(presetId as PromptPresetId);
     if (!preset) return null;
     return {
       id: preset.id,
-      text: preset.systemStyleNote ?? "",
+      name: preset.name,
+      text: preset.system,
+      jailbreak: preset.jailbreak,
+      summary: preset.summary,
+      tools: preset.tools,
     };
-  }
-
-  listGenerationRules(chatId: ChatId): GenerationRule[] {
-    return [
-      {
-        id: `rule_scene_${chatId}`,
-        scopeType: "chat",
-        scopeId: chatId,
-        title: "Scene Discipline",
-        content: "Do not speak for the user. Advance the scene with concrete sensory detail.",
-        enabled: true,
-        priority: 30,
-      },
-      {
-        id: `rule_tone_${chatId}`,
-        scopeType: "chat",
-        scopeId: chatId,
-        title: "Tone",
-        content: "Keep the reply readable, grounded, and aimed at long-form roleplay.",
-        enabled: true,
-        priority: 20,
-      },
-    ];
   }
 
   listActiveLoreEntries(input: { chatId: ChatId; branchId: ChatBranchId; recentText: string }): LoreEntry[] {
@@ -181,18 +161,6 @@ class StaticPromptResolver implements PromptAssemblyResolver {
 
 export class SessionRuntime {
   private readonly store: ChatSessionStore;
-  private readonly defaultPreset: GenerationPreset = {
-    id: "preset_default",
-    name: "Default RP",
-    temperature: 0.85,
-    topP: null,
-    topK: null,
-    presencePenalty: null,
-    frequencyPenalty: null,
-    maxOutputTokens: null,
-    systemStyleNote: "Write immersive fictional roleplay. Stay inside the scene. Do not narrate for the user.",
-    metadata: {},
-  };
   private readonly defaultToolProfile: ToolProfile = {
     id: "tools_disabled",
     name: "Tools Disabled",
@@ -279,7 +247,20 @@ export class SessionRuntime {
   }
 
   setChatPersona(chatId: ChatId, personaId: string): SessionSnapshot {
+    const before = this.store.getChat(chatId);
     this.store.updateChatPersona(chatId, personaId as import("@rp-platform/domain").PersonaId);
+    const after = this.store.getChat(chatId);
+    console.info("[persona-switch]", {
+      chatId,
+      beforePersonaId: before?.personaId ?? null,
+      afterPersonaId: after?.personaId ?? null,
+      requestedPersonaId: personaId,
+    });
+    return this.getSnapshot(chatId);
+  }
+
+  setChatPromptPreset(chatId: ChatId, promptPresetId: string): SessionSnapshot {
+    this.store.updateChatPromptPreset(chatId, promptPresetId as PromptPresetId);
     return this.getSnapshot(chatId);
   }
 
@@ -503,9 +484,9 @@ export class SessionRuntime {
 
     const created = this.chatApp.createChat({
       characterId: characterId as CharacterId,
-      personaId: "persona_explorer" as import("@rp-platform/domain").PersonaId,
+      personaId: this.resolveDefaultPersonaId(),
       title: `${character.name} chat`,
-      generationPresetId: this.defaultPreset.id,
+      promptPresetId: this.resolveDefaultPromptPresetId(),
       toolProfileId: this.defaultToolProfile.id,
     });
 
@@ -594,9 +575,9 @@ export class SessionRuntime {
 
     const created = this.chatApp.createChat({
       characterId,
-      personaId: "persona_explorer" as import("@rp-platform/domain").PersonaId,
+      personaId: this.resolveDefaultPersonaId(),
       title: input.name,
-      generationPresetId: this.defaultPreset.id,
+      promptPresetId: this.resolveDefaultPromptPresetId(),
       toolProfileId: this.defaultToolProfile.id,
     });
 
@@ -665,9 +646,9 @@ export class SessionRuntime {
 
     const created = this.chatApp.createChat({
       characterId,
-      personaId: "persona_explorer" as import("@rp-platform/domain").PersonaId,
+      personaId: this.resolveDefaultPersonaId(),
       title: 'Free chat',
-      generationPresetId: this.defaultPreset.id,
+      promptPresetId: this.resolveDefaultPromptPresetId(),
       toolProfileId: this.defaultToolProfile.id,
     });
 
@@ -1123,9 +1104,9 @@ export class SessionRuntime {
 
       const created = this.chatApp.createChat({
         characterId: imported.character.id,
-        personaId: "persona_explorer",
+        personaId: this.resolveDefaultPersonaId(),
         title: imported.character.name,
-        generationPresetId: "preset_default",
+        promptPresetId: this.resolveDefaultPromptPresetId(),
         toolProfileId: "tools_disabled",
       });
 
@@ -1257,6 +1238,24 @@ export class SessionRuntime {
     this.persistPromptTrace(message.id, assembled.promptTraceDraft);
   }
 
+  private resolveDefaultPersonaId(): import("@rp-platform/domain").PersonaId {
+    const personas = this.store.listPersonas();
+    const defaultPersona = personas.find((persona) => persona.defaultForNewChats) ?? personas[0];
+    if (!defaultPersona) {
+      throw new Error("No persona is available for new chats.");
+    }
+    return defaultPersona.id;
+  }
+
+  private resolveDefaultPromptPresetId(): PromptPresetId {
+    const presets = this.store.listPromptPresets();
+    const globalPreset = presets.find((preset) => preset.bindModel.trim() === "") ?? presets[0];
+    if (!globalPreset) {
+      throw new Error("No prompt preset is available for new chats.");
+    }
+    return globalPreset.id;
+  }
+
   private ensureDefaultReferences(): void {
     const defaultPersonaId = "persona_explorer" as import("@rp-platform/domain").PersonaId;
     if (!this.store.getPersona(defaultPersonaId)) {
@@ -1270,10 +1269,6 @@ export class SessionRuntime {
         createdAt: "2026-04-22T00:00:00.000Z",
         updatedAt: "2026-04-22T00:00:00.000Z",
       });
-    }
-
-    if (!this.store.getGenerationPreset(this.defaultPreset.id)) {
-      this.store.upsertGenerationPreset(this.defaultPreset);
     }
 
     if (!this.store.getToolProfile(this.defaultToolProfile.id)) {
@@ -1302,7 +1297,6 @@ export class SessionRuntime {
       chatId,
       branchId,
       model: options?.model ?? "unresolved_model",
-      outputConstraints: "Reply in 1-3 paragraphs.",
       excludeMessageIds: options?.excludeMessageIds,
       contextBudget: activeProfileForAssembly?.contextBudget ?? null,
     });

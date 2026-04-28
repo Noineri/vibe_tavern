@@ -61,20 +61,20 @@ describe("assemblePrompt", () => {
     });
   });
 
-  describe("system preset", () => {
-    it("includes system_preset layer when provided", () => {
+  describe("prompt preset", () => {
+    it("includes prompt_preset layer when provided", () => {
       const result = assemblePrompt(baseContext({
-        systemPreset: { id: "preset_1", text: "Global system instructions." },
+        promptPreset: { id: "preset_1", text: "Global system instructions." },
       }));
-      const preset = result.layers.find((l) => l.id === "system_preset");
+      const preset = result.layers.find((l) => l.id === "prompt_preset_system");
       assert.ok(preset);
       assert.strictEqual(preset.text, "Global system instructions.");
-      assert.strictEqual(preset.sourceType, "system_preset");
+      assert.strictEqual(preset.sourceType, "prompt_preset");
     });
 
-    it("omits system_preset when not provided", () => {
+    it("omits prompt_preset when not provided", () => {
       const result = assemblePrompt(baseContext());
-      const preset = result.layers.find((l) => l.id === "system_preset");
+      const preset = result.layers.find((l) => l.id === "prompt_preset_system");
       assert.strictEqual(preset, undefined);
     });
   });
@@ -140,31 +140,6 @@ describe("assemblePrompt", () => {
     });
   });
 
-  describe("generation rules", () => {
-    it("includes generation rules as layers", () => {
-      const result = assemblePrompt(baseContext({
-        generationRules: [
-          { id: "rule_1", title: "Style", content: "Write in third person.", priority: 5 },
-        ],
-      }));
-      const rule = result.layers.find((l) => l.id === "rule_rule_1");
-      assert.ok(rule);
-      assert.ok(rule.text.includes("Rule: Style"));
-      assert.ok(rule.text.includes("Write in third person."));
-    });
-
-    it("drops generation rules with empty content", () => {
-      const result = assemblePrompt(baseContext({
-        generationRules: [
-          { id: "rule_empty", title: "Empty", content: "", priority: 5 },
-        ],
-      }));
-      const rule = result.layers.find((l) => l.id === "rule_rule_empty");
-      assert.strictEqual(rule, undefined);
-      assert.strictEqual(result.droppedLayers.length, 1);
-    });
-  });
-
   describe("memory", () => {
     it("includes summary memory layers", () => {
       const result = assemblePrompt(baseContext({
@@ -191,7 +166,7 @@ describe("assemblePrompt", () => {
     });
   });
 
-  describe("tool instructions and output constraints", () => {
+  describe("tool instructions", () => {
     it("includes tool_instructions layer when provided", () => {
       const result = assemblePrompt(baseContext({
         toolInstructions: "Use the search tool when needed.",
@@ -199,15 +174,6 @@ describe("assemblePrompt", () => {
       const tool = result.layers.find((l) => l.id === "tool_instructions");
       assert.ok(tool);
       assert.strictEqual(tool.text, "Use the search tool when needed.");
-    });
-
-    it("includes output_constraints layer when provided", () => {
-      const result = assemblePrompt(baseContext({
-        outputConstraints: "Keep responses under 200 words.",
-      }));
-      const oc = result.layers.find((l) => l.id === "output_constraints");
-      assert.ok(oc);
-      assert.strictEqual(oc.text, "Keep responses under 200 words.");
     });
   });
 

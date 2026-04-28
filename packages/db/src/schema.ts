@@ -9,7 +9,20 @@ CREATE TABLE IF NOT EXISTS characters (
   slug TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   description TEXT NOT NULL,
+  personality_summary TEXT,
   default_scenario TEXT,
+  first_message TEXT,
+  mes_example TEXT,
+  alternate_greetings_json TEXT NOT NULL DEFAULT '[]',
+  post_history_instructions TEXT,
+  creator_notes TEXT,
+  character_book_json TEXT,
+  depth_prompt TEXT,
+  depth_prompt_depth INTEGER,
+  depth_prompt_role TEXT,
+  extensions_json TEXT NOT NULL DEFAULT '{}',
+  system_prompt TEXT,
+  tags_json TEXT NOT NULL DEFAULT '[]',
   avatar_asset_id TEXT,
   status TEXT NOT NULL,
   created_at TEXT NOT NULL,
@@ -96,25 +109,24 @@ CREATE TABLE IF NOT EXISTS chat_lorebooks (
   FOREIGN KEY(lorebook_id) REFERENCES lorebooks(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS generation_presets (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  temperature REAL NOT NULL,
-  top_p REAL,
-  top_k INTEGER,
-  presence_penalty REAL,
-  frequency_penalty REAL,
-  max_output_tokens INTEGER,
-  system_style_note TEXT,
-  metadata_json TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS tool_profiles (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   mode TEXT NOT NULL,
   instructions TEXT,
   metadata_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS prompt_presets (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  bind_model TEXT NOT NULL DEFAULT '',
+  system TEXT NOT NULL DEFAULT '',
+  jailbreak TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '',
+  tools TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS chats (
@@ -124,13 +136,13 @@ CREATE TABLE IF NOT EXISTS chats (
   title TEXT NOT NULL,
   status TEXT NOT NULL,
   active_branch_id TEXT NOT NULL,
-  generation_preset_id TEXT NOT NULL,
+  prompt_preset_id TEXT NOT NULL,
   tool_profile_id TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY(character_id) REFERENCES characters(id) ON DELETE CASCADE,
   FOREIGN KEY(persona_id) REFERENCES personas(id) ON DELETE CASCADE,
-  FOREIGN KEY(generation_preset_id) REFERENCES generation_presets(id),
+  FOREIGN KEY(prompt_preset_id) REFERENCES prompt_presets(id),
   FOREIGN KEY(tool_profile_id) REFERENCES tool_profiles(id)
 );
 
@@ -158,6 +170,7 @@ CREATE TABLE IF NOT EXISTS provider_profiles (
   api_key TEXT,
   default_model TEXT,
   context_budget INTEGER NOT NULL DEFAULT 8192,
+  is_active INTEGER NOT NULL DEFAULT 0,
   temperature REAL NOT NULL DEFAULT 0.9,
   top_p REAL NOT NULL DEFAULT 1.0,
   min_p REAL NOT NULL DEFAULT 0.05,
@@ -174,6 +187,10 @@ CREATE TABLE IF NOT EXISTS provider_profiles (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_profiles_active
+  ON provider_profiles(is_active)
+  WHERE is_active = 1;
 
 CREATE INDEX IF NOT EXISTS idx_chat_branches_chat_id
 ON chat_branches(chat_id);
@@ -209,19 +226,6 @@ CREATE TABLE IF NOT EXISTS message_variants (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_message_variants_unique_index
 ON message_variants(message_id, variant_index);
-
-CREATE TABLE IF NOT EXISTS generation_rules (
-  id TEXT PRIMARY KEY,
-  scope_type TEXT NOT NULL,
-  scope_id TEXT NOT NULL,
-  title TEXT NOT NULL,
-  content TEXT NOT NULL,
-  enabled INTEGER NOT NULL DEFAULT 1,
-  priority INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE INDEX IF NOT EXISTS idx_generation_rules_scope
-ON generation_rules(scope_type, scope_id);
 
 CREATE TABLE IF NOT EXISTS summary_memory_snapshots (
   id TEXT PRIMARY KEY,
@@ -261,6 +265,7 @@ CREATE TABLE IF NOT EXISTS prompt_traces (
   token_accounting_json TEXT NOT NULL,
   activated_lore_entries_json TEXT NOT NULL,
   retrieved_memories_json TEXT NOT NULL,
+  final_payload_json TEXT NOT NULL DEFAULT '{}',
   latency_ms INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE,
@@ -291,7 +296,4 @@ CREATE TABLE IF NOT EXISTS chat_capabilities (
   FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
 );
 
--- Character first_message is added by migration 0008_character_first_message.
--- Character personality_summary is added by migration 0009_character_personality_summary.
--- Character advanced V3 fields are added by migration 0010_character_advanced_v3_fields.
 `;

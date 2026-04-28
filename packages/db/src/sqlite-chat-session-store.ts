@@ -6,8 +6,6 @@ import type {
   Character,
   CharacterId,
   CharacterVersion,
-  GenerationPreset,
-  GenerationPresetId,
   LoreEntry,
   Lorebook,
   LorebookId,
@@ -303,6 +301,24 @@ export class SqliteChatSessionStore implements ChatSessionStore {
     });
   }
 
+  updateChatPromptPreset(chatId: ChatId, promptPresetId: PromptPresetId): void {
+    this.db.transaction(() => {
+      const chatExists = this.db.queryOne(`SELECT 1 FROM chats WHERE id = ?`, [chatId]);
+      if (!chatExists) {
+        throw new Error(`Chat '${chatId}' was not found.`);
+      }
+      const presetExists = this.db.queryOne(`SELECT 1 FROM prompt_presets WHERE id = ?`, [promptPresetId]);
+      if (!presetExists) {
+        throw new Error(`Prompt preset '${promptPresetId}' was not found.`);
+      }
+      this.db.execute(`UPDATE chats SET prompt_preset_id = ?, updated_at = ? WHERE id = ?`, [
+        promptPresetId,
+        this.clock.now(),
+        chatId,
+      ]);
+    });
+  }
+
   getPersonalLorebookForPersona(personaId: PersonaId): { lorebookId: LorebookId } | null {
     const row = this.db.queryOne<{ id: string }>(
       `SELECT lb.id AS id
@@ -350,63 +366,6 @@ export class SqliteChatSessionStore implements ChatSessionStore {
       );
       this.db.execute(`DELETE FROM lorebooks WHERE id = ?`, [existing.lorebookId]);
     });
-  }
-
-  upsertGenerationPreset(input: GenerationPreset): void {
-    this.db.execute(
-      `INSERT INTO generation_presets (
-        id, name, temperature, top_p, top_k, presence_penalty, frequency_penalty,
-        max_output_tokens, system_style_note, metadata_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        name = excluded.name,
-        temperature = excluded.temperature,
-        top_p = excluded.top_p,
-        top_k = excluded.top_k,
-        presence_penalty = excluded.presence_penalty,
-        frequency_penalty = excluded.frequency_penalty,
-        max_output_tokens = excluded.max_output_tokens,
-        system_style_note = excluded.system_style_note,
-        metadata_json = excluded.metadata_json`,
-      [
-        input.id,
-        input.name,
-        input.temperature,
-        input.topP,
-        input.topK,
-        input.presencePenalty,
-        input.frequencyPenalty,
-        input.maxOutputTokens,
-        input.systemStyleNote,
-        JSON.stringify(input.metadata),
-      ],
-    );
-  }
-
-  getGenerationPreset(id: GenerationPresetId): GenerationPreset | null {
-    const row = this.db.queryOne<SqliteRow & any>(
-      `SELECT
-         id, name, temperature, top_p, top_k, presence_penalty, frequency_penalty,
-         max_output_tokens, system_style_note, metadata_json
-       FROM generation_presets
-       WHERE id = ?`,
-      [id],
-    );
-
-    if (!row) return null;
-
-    return {
-      id: row.id as GenerationPresetId,
-      name: row.name,
-      temperature: row.temperature,
-      topP: row.top_p,
-      topK: row.top_k,
-      presencePenalty: row.presence_penalty,
-      frequencyPenalty: row.frequency_penalty,
-      maxOutputTokens: row.max_output_tokens,
-      systemStyleNote: row.system_style_note,
-      metadata: JSON.parse(row.metadata_json),
-    };
   }
 
   upsertToolProfile(input: ToolProfile): void {
@@ -650,7 +609,7 @@ export class SqliteChatSessionStore implements ChatSessionStore {
       this.db.execute(
         `INSERT INTO chats (
           id, character_id, persona_id, title, status, active_branch_id,
-          generation_preset_id, tool_profile_id, created_at, updated_at
+          prompt_preset_id, tool_profile_id, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           chatId,
@@ -659,7 +618,7 @@ export class SqliteChatSessionStore implements ChatSessionStore {
           input.title,
           "active",
           rootBranchId,
-          input.generationPresetId,
+          input.promptPresetId,
           input.toolProfileId,
           timestamp,
           timestamp,
@@ -687,7 +646,7 @@ export class SqliteChatSessionStore implements ChatSessionStore {
     return this.db
       .queryAll<ChatRow>(
         `SELECT id, character_id, persona_id, title, status, active_branch_id,
-                generation_preset_id, tool_profile_id, created_at, updated_at
+                prompt_preset_id, tool_profile_id, created_at, updated_at
          FROM chats
          ORDER BY created_at ASC, id ASC`,
       )
@@ -697,7 +656,7 @@ export class SqliteChatSessionStore implements ChatSessionStore {
   getChat(chatId: ChatId): Chat | null {
     const row = this.db.queryOne<ChatRow>(
       `SELECT id, character_id, persona_id, title, status, active_branch_id,
-              generation_preset_id, tool_profile_id, created_at, updated_at
+              prompt_preset_id, tool_profile_id, created_at, updated_at
        FROM chats
        WHERE id = ?`,
       [chatId],
@@ -1318,7 +1277,7 @@ export class SqliteChatSessionStore implements ChatSessionStore {
       this.db.execute(
         `INSERT INTO chats (
           id, character_id, persona_id, title, status, active_branch_id,
-          generation_preset_id, tool_profile_id, created_at, updated_at
+          prompt_preset_id, tool_profile_id, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           newChatId,
@@ -1327,7 +1286,7 @@ export class SqliteChatSessionStore implements ChatSessionStore {
           title ?? `${sourceChat.title} (copy)`,
           "active",
           newRootBranchId,
-          sourceChat.generationPresetId,
+          sourceChat.promptPresetId,
           sourceChat.toolProfileId,
           timestamp,
           timestamp,
@@ -1582,6 +1541,13 @@ export class SqliteChatSessionStore implements ChatSessionStore {
       const exists = this.db.queryOne(`SELECT 1 FROM prompt_presets WHERE id = ?`, [presetId]);
       if (!exists) {
         throw new Error(`Prompt preset '${presetId}' was not found.`);
+      }
+      const referencingChats = this.db.queryOne<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM chats WHERE prompt_preset_id = ?`,
+        [presetId],
+      );
+      if ((referencingChats?.n ?? 0) > 0) {
+        throw new Error(`Prompt preset '${presetId}' is used by a chat.`);
       }
       this.db.execute(`DELETE FROM prompt_presets WHERE id = ?`, [presetId]);
     });
