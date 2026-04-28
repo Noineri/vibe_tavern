@@ -2,6 +2,7 @@ import type { AssemblePromptResponse, PromptTraceRecordDto, PromptPresetDto } fr
 import {
   type ChatSessionStore,
 } from "@rp-platform/db";
+import { logSendDebug } from "./send-debug-log.js";
 import type {
   Chat,
   ChatBranch,
@@ -361,7 +362,17 @@ export class SessionRuntime {
     const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId);
     const baseDraft = pending?.draft ?? fallbackDraft;
     this.persistPromptTrace(assistantMessage.id, { ...baseDraft, latencyMs });
-    return this.getSnapshot(chatId);
+    const snapshot = this.getSnapshot(chatId);
+    logSendDebug("prompt.trace.afterAppend", {
+      chatId,
+      messageId: assistantMessage.id,
+      traceCount: snapshot.promptTraceHistory.length,
+      latestTraceId: snapshot.promptTraceHistory[0]?.id ?? null,
+      latestTraceCreatedAt: snapshot.promptTraceHistory[0]?.createdAt ?? null,
+      latestTraceLayers: snapshot.promptTraceHistory[0]?.layers?.length ?? 0,
+      personaLayerSourceId: snapshot.promptTraceHistory[0]?.layers?.find((l: { sourceType: string }) => l.sourceType === "persona")?.sourceId ?? null,
+    });
+    return snapshot;
   }
 
   appendMessageVariant(

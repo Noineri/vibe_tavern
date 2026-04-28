@@ -398,7 +398,10 @@ export function BuildMode(input: BuildModeProps) {
           )}
         </div>
         <div className="build-section-sub" style={{ color: "var(--t3)" }}>
-          Prompt trace is captured per generation. Recorded traces for this chat: {input.promptTraceCount}.
+          {input.activeTrace
+            ? <>Showing trace <span style={{ color: "var(--t2)" }}>{input.activeTrace.id}</span> &middot; {input.activeTrace.createdAt} &middot; model: {input.activeTrace.model} &middot; {input.activeTrace.latencyMs}ms</>
+            : <>No active trace.</>
+          } &middot; Recorded: {input.promptTraceCount}.
         </div>
 
         {input.activeTrace ? (
