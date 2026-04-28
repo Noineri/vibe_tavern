@@ -100,6 +100,7 @@ export function App() {
         onRegenerate: (messageId) => void app.handleRegenerateMessage(messageId),
         onSelectVariant: (messageId, variantIndex) =>
           void app.handleSelectMessageVariant(messageId, variantIndex),
+        alternateGreetings: snapshot.character.alternateGreetings,
       }}
       inputArea={{
         characterName: snapshot.character.name,

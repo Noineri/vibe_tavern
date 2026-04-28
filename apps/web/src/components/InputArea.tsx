@@ -30,6 +30,8 @@ export function InputArea(input: InputAreaProps) {
           <div
             title={statusText}
             style={{
+              display: "inline-flex",
+              maxWidth: "calc(100% - 20px)",
               margin: "0 10px 2px",
               padding: "5px 8px",
               borderRadius: 5,
