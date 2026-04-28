@@ -6,6 +6,7 @@ import { LorebookEditor } from "./LorebookEditor.js";
 export interface BuildCharacterDraft {
   name: string;
   description: string;
+  firstMessage: string;
   scenario: string;
   systemPrompt: string;
   mesExample: string;
@@ -21,6 +22,7 @@ interface BuildModeProps {
   characterId: string;
   characterName: string;
   description: string;
+  firstMessage?: string | null;
   scenario: string;
   systemPrompt: string;
   mesExample: string | null;
@@ -41,6 +43,7 @@ export function BuildMode(input: BuildModeProps) {
   const [draft, setDraft] = useState<BuildCharacterDraft>({
     name: input.characterName,
     description: input.description,
+    firstMessage: input.firstMessage || "",
     scenario: input.scenario,
     systemPrompt: input.systemPrompt,
     mesExample: input.mesExample || "",
@@ -48,11 +51,13 @@ export function BuildMode(input: BuildModeProps) {
     postHistoryInstructions: input.postHistoryInstructions || "",
     creatorNotes: input.creatorNotes || "",
   });
+  const [altGreetIdx, setAltGreetIdx] = useState(0);
 
   useEffect(() => {
     setDraft({
       name: input.characterName,
       description: input.description,
+      firstMessage: input.firstMessage || "",
       scenario: input.scenario,
       systemPrompt: input.systemPrompt,
       mesExample: input.mesExample || "",
@@ -60,19 +65,20 @@ export function BuildMode(input: BuildModeProps) {
       postHistoryInstructions: input.postHistoryInstructions || "",
       creatorNotes: input.creatorNotes || "",
     });
-  }, [input.characterId, input.characterName, input.description, input.scenario, input.systemPrompt, input.mesExample, input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes]);
+  }, [input.characterId, input.characterName, input.description, input.firstMessage, input.scenario, input.systemPrompt, input.mesExample, input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes]);
 
   const isDirty = useMemo(
     () =>
       draft.name !== input.characterName ||
       draft.description !== input.description ||
+      draft.firstMessage !== (input.firstMessage || "") ||
       draft.scenario !== input.scenario ||
       draft.systemPrompt !== input.systemPrompt ||
       draft.mesExample !== (input.mesExample || "") ||
       draft.alternateGreetings.join("\n---\n") !== (input.alternateGreetings || []).join("\n---\n") ||
       draft.postHistoryInstructions !== (input.postHistoryInstructions || "") ||
       draft.creatorNotes !== (input.creatorNotes || ""),
-    [draft, input.characterName, input.description, input.scenario, input.systemPrompt, input.mesExample, input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes],
+    [draft, input.characterName, input.description, input.firstMessage, input.scenario, input.systemPrompt, input.mesExample, input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes],
   );
 
   function patchDraft<K extends keyof BuildCharacterDraft>(key: K, value: BuildCharacterDraft[K]): void {
@@ -83,6 +89,7 @@ export function BuildMode(input: BuildModeProps) {
     setDraft({
       name: input.characterName,
       description: input.description,
+      firstMessage: input.firstMessage || "",
       scenario: input.scenario,
       systemPrompt: input.systemPrompt,
       mesExample: input.mesExample || "",
@@ -105,6 +112,7 @@ export function BuildMode(input: BuildModeProps) {
               input.onSave({
                 name: draft.name.trim(),
                 description: draft.description,
+                firstMessage: draft.firstMessage,
                 scenario: draft.scenario,
                 systemPrompt: draft.systemPrompt,
                 mesExample: draft.mesExample,
@@ -137,6 +145,72 @@ export function BuildMode(input: BuildModeProps) {
           />
         </div>
         <div className="build-field">
+          <label>First Message (Greeting)</label>
+          <textarea
+            value={draft.firstMessage}
+            disabled={input.isSaving}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("firstMessage", event.target.value)}
+            placeholder="Первое сообщение персонажа..."
+          />
+        </div>
+        <div className="build-field">
+          <label>Alternate Greetings</label>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
+            {draft.alternateGreetings.map((_, idx) => (
+              <span
+                key={idx}
+                className={`alt-tab${idx === altGreetIdx ? " act" : ""}`}
+                onClick={() => setAltGreetIdx(idx)}
+              >
+                Alt {idx + 1}
+                <span
+                  className="alt-tab-x"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const next = [...draft.alternateGreetings];
+                    next.splice(idx, 1);
+                    setDraft({ ...draft, alternateGreetings: next });
+                    if (altGreetIdx >= next.length) setAltGreetIdx(Math.max(0, next.length - 1));
+                  }}
+                >
+                  ✕
+                </span>
+              </span>
+            ))}
+            <span
+              className="alt-tab-add"
+              onClick={() => {
+                const next = [...draft.alternateGreetings, ""];
+                setDraft({ ...draft, alternateGreetings: next });
+                setAltGreetIdx(next.length - 1);
+              }}
+            >
+              +
+            </span>
+          </div>
+          {draft.alternateGreetings.length > 0 && (
+            <textarea
+              value={draft.alternateGreetings[altGreetIdx] ?? ""}
+              disabled={input.isSaving}
+              onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
+                const next = [...draft.alternateGreetings];
+                next[altGreetIdx] = event.target.value;
+                setDraft({ ...draft, alternateGreetings: next });
+              }}
+              placeholder="Альтернативное приветствие..."
+            />
+          )}
+        </div>
+        <div className="build-field">
+          <label>Message Examples</label>
+          <textarea
+            value={draft.mesExample}
+            disabled={input.isSaving}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("mesExample", event.target.value)}
+            placeholder="<START>..."
+          />
+        </div>
+        <div className="build-field">
           <label>Scenario</label>
           <textarea
             value={draft.scenario}
@@ -153,29 +227,11 @@ export function BuildMode(input: BuildModeProps) {
           />
         </div>
         <div className="build-field">
-          <label>Message Examples</label>
-          <textarea
-            value={draft.mesExample}
-            disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("mesExample", event.target.value)}
-            placeholder="<START>..."
-          />
-        </div>
-        <div className="build-field">
           <label>Post-History Instructions (Jailbreak)</label>
           <textarea
             value={draft.postHistoryInstructions}
             disabled={input.isSaving}
             onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("postHistoryInstructions", event.target.value)}
-          />
-        </div>
-        <div className="build-field">
-          <label>Alternate Greetings</label>
-          <textarea
-            value={draft.alternateGreetings.join("\n---\n")}
-            disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setDraft({ ...draft, alternateGreetings: event.target.value.split("\n---\n").filter(Boolean) })}
-            placeholder="Separate alternate greetings with '---' on a new line."
           />
         </div>
         <div className="build-field">

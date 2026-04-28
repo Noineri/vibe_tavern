@@ -38,6 +38,7 @@ export interface AppSnapshot {
     scenario: string;
     systemPrompt: string;
     subtitle: string;
+    firstMessage: string | null;
     mesExample: string | null;
     alternateGreetings: string[];
     postHistoryInstructions: string | null;
@@ -139,6 +140,7 @@ export async function updateCharacter(
     description: string;
     scenario: string;
     systemPrompt: string;
+    firstMessage: string | null;
     mesExample: string | null;
     alternateGreetings: string[];
     postHistoryInstructions: string | null;
@@ -601,6 +603,13 @@ async function requestJson<T>(
 function normalizeSnapshot(snapshot: AppSnapshot): AppSnapshot {
   return {
     ...snapshot,
+    character: {
+      ...snapshot.character,
+      firstMessage: snapshot.character.firstMessage ?? null,
+      alternateGreetings: Array.isArray(snapshot.character.alternateGreetings)
+        ? snapshot.character.alternateGreetings
+        : [],
+    },
     chats: Array.isArray(snapshot.chats) ? snapshot.chats : [],
     branches: Array.isArray(snapshot.branches) ? snapshot.branches : [],
     messages: Array.isArray(snapshot.messages)
