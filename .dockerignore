@@ -18,5 +18,6 @@ logs/
 .vscode/
 *.tmp
 *.temp
+package-lock.json
 coverage/
 *.tsbuildinfo

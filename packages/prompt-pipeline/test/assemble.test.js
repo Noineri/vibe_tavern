@@ -1,5 +1,4 @@
-import { describe, it } from "node:test";
-import assert from "node:assert/strict";
+import { describe, it, expect } from "bun:test";
 import { assemblePrompt } from "../dist/assemble.js";
 
 function baseContext(overrides = {}) {
@@ -25,10 +24,10 @@ describe("assemblePrompt", () => {
     it("includes character_base layer with name, description, scenario", () => {
       const result = assemblePrompt(baseContext());
       const base = result.layers.find((l) => l.id === "character_base");
-      assert.ok(base);
-      assert.ok(base.text.includes("Character: Aria"));
-      assert.ok(base.text.includes("A fire mage."));
-      assert.ok(base.text.includes("Scenario: The tower burns."));
+      expect(base).toBeTruthy();
+      expect(base.text).toContain("Character: Aria");
+      expect(base.text).toContain("A fire mage.");
+      expect(base.text).toContain("Scenario: The tower burns.");
     });
 
     it("includes character_system_prompt layer when provided", () => {
@@ -41,14 +40,14 @@ describe("assemblePrompt", () => {
         },
       }));
       const sys = result.layers.find((l) => l.id === "character_system_prompt");
-      assert.ok(sys);
-      assert.strictEqual(sys.text, "You are a helpful assistant.");
+      expect(sys).toBeTruthy();
+      expect(sys.text).toBe("You are a helpful assistant.");
     });
 
     it("omits character_system_prompt when null/empty", () => {
       const result = assemblePrompt(baseContext());
       const sys = result.layers.find((l) => l.id === "character_system_prompt");
-      assert.strictEqual(sys, undefined);
+      expect(sys).toBeUndefined();
     });
 
     it("omits scenario from character_base when not provided", () => {
@@ -56,8 +55,8 @@ describe("assemblePrompt", () => {
         character: { id: "char_1", name: "Aria", description: "A mage." },
       }));
       const base = result.layers.find((l) => l.id === "character_base");
-      assert.ok(base);
-      assert.ok(!base.text.includes("Scenario"));
+      expect(base).toBeTruthy();
+      expect(base.text).not.toContain("Scenario");
     });
   });
 
@@ -67,15 +66,15 @@ describe("assemblePrompt", () => {
         promptPreset: { id: "preset_1", text: "Global system instructions." },
       }));
       const preset = result.layers.find((l) => l.id === "prompt_preset_system");
-      assert.ok(preset);
-      assert.strictEqual(preset.text, "Global system instructions.");
-      assert.strictEqual(preset.sourceType, "prompt_preset");
+      expect(preset).toBeTruthy();
+      expect(preset.text).toBe("Global system instructions.");
+      expect(preset.sourceType).toBe("prompt_preset");
     });
 
     it("omits prompt_preset when not provided", () => {
       const result = assemblePrompt(baseContext());
       const preset = result.layers.find((l) => l.id === "prompt_preset_system");
-      assert.strictEqual(preset, undefined);
+      expect(preset).toBeUndefined();
     });
   });
 
@@ -85,9 +84,9 @@ describe("assemblePrompt", () => {
         persona: { id: "persona_1", name: "Olya", description: "A scholar." },
       }));
       const persona = result.layers.find((l) => l.id === "persona");
-      assert.ok(persona);
-      assert.ok(persona.text.includes("User persona (Olya)"));
-      assert.ok(persona.text.includes("A scholar."));
+      expect(persona).toBeTruthy();
+      expect(persona.text).toContain("User persona (Olya)");
+      expect(persona.text).toContain("A scholar.");
     });
   });
 
@@ -99,9 +98,9 @@ describe("assemblePrompt", () => {
         ],
       }));
       const lore = result.layers.find((l) => l.id === "lore_lore_1");
-      assert.ok(lore);
-      assert.ok(lore.text.includes("Lore: Dragons"));
-      assert.ok(lore.text.includes("Fire-breathing creatures."));
+      expect(lore).toBeTruthy();
+      expect(lore.text).toContain("Lore: Dragons");
+      expect(lore.text).toContain("Fire-breathing creatures.");
     });
 
     it("drops lore entries with empty content", () => {
@@ -111,9 +110,9 @@ describe("assemblePrompt", () => {
         ],
       }));
       const lore = result.layers.find((l) => l.id === "lore_lore_empty");
-      assert.strictEqual(lore, undefined);
-      assert.strictEqual(result.droppedLayers.length, 1);
-      assert.strictEqual(result.droppedLayers[0].id, "lore_empty");
+      expect(lore).toBeUndefined();
+      expect(result.droppedLayers.length).toBe(1);
+      expect(result.droppedLayers[0].id).toBe("lore_empty");
     });
 
     it("sorts lore entries by priority descending", () => {
@@ -124,8 +123,8 @@ describe("assemblePrompt", () => {
         ],
       }));
       const loreLayers = result.layers.filter((l) => l.sourceType === "lore_entry");
-      assert.strictEqual(loreLayers[0].id, "lore_high");
-      assert.strictEqual(loreLayers[1].id, "lore_low");
+      expect(loreLayers[0].id).toBe("lore_high");
+      expect(loreLayers[1].id).toBe("lore_low");
     });
 
     it("passes lore position through to layer", () => {
@@ -135,8 +134,8 @@ describe("assemblePrompt", () => {
         ],
       }));
       const lore = result.layers.find((l) => l.id === "lore_lore_pos");
-      assert.ok(lore);
-      assert.strictEqual(lore.position, "before_prompt");
+      expect(lore).toBeTruthy();
+      expect(lore.position).toBe("before_prompt");
     });
   });
 
@@ -148,9 +147,9 @@ describe("assemblePrompt", () => {
         ],
       }));
       const mem = result.layers.find((l) => l.id === "summary_sum_1");
-      assert.ok(mem);
-      assert.ok(mem.text.includes("[chapter]"));
-      assert.ok(mem.text.includes("They met at the inn."));
+      expect(mem).toBeTruthy();
+      expect(mem.text).toContain("[chapter]");
+      expect(mem.text).toContain("They met at the inn.");
     });
 
     it("includes retrieval memory layers sorted by score", () => {
@@ -161,8 +160,8 @@ describe("assemblePrompt", () => {
         ],
       }));
       const retLayers = result.layers.filter((l) => l.sourceType === "retrieval_memory");
-      assert.strictEqual(retLayers[0].id, "retrieval_ret_high");
-      assert.strictEqual(retLayers[1].id, "retrieval_ret_low");
+      expect(retLayers[0].id).toBe("retrieval_ret_high");
+      expect(retLayers[1].id).toBe("retrieval_ret_low");
     });
   });
 
@@ -172,8 +171,8 @@ describe("assemblePrompt", () => {
         toolInstructions: "Use the search tool when needed.",
       }));
       const tool = result.layers.find((l) => l.id === "tool_instructions");
-      assert.ok(tool);
-      assert.strictEqual(tool.text, "Use the search tool when needed.");
+      expect(tool).toBeTruthy();
+      expect(tool.text).toBe("Use the search tool when needed.");
     });
   });
 
@@ -181,15 +180,15 @@ describe("assemblePrompt", () => {
     it("includes recent_history layer from messages", () => {
       const result = assemblePrompt(baseContext());
       const hist = result.layers.find((l) => l.id === "recent_history");
-      assert.ok(hist);
-      assert.ok(hist.text.includes("USER: Hello."));
-      assert.ok(hist.text.includes("ASSISTANT: Hi there."));
+      expect(hist).toBeTruthy();
+      expect(hist.text).toContain("USER: Hello.");
+      expect(hist.text).toContain("ASSISTANT: Hi there.");
     });
 
     it("omits recent_history when no messages", () => {
       const result = assemblePrompt(baseContext({ recentMessages: [] }));
       const hist = result.layers.find((l) => l.id === "recent_history");
-      assert.strictEqual(hist, undefined);
+      expect(hist).toBeUndefined();
     });
   });
 
@@ -206,9 +205,9 @@ describe("assemblePrompt", () => {
       const baseIdx = ids.indexOf("character_base");
       const loreIdx = ids.indexOf("lore_l1");
       const histIdx = ids.indexOf("recent_history");
-      assert.ok(presetIdx < baseIdx, "system_preset (prio 1000) before character_base (prio 900)");
-      assert.ok(baseIdx < loreIdx, "character_base (prio 900) before lore (prio 10)");
-      assert.ok(histIdx < loreIdx, "history (prio 100) before lore (prio 10)");
+      expect(presetIdx).toBeLessThan(baseIdx);
+      expect(baseIdx).toBeLessThan(loreIdx);
+      expect(histIdx).toBeLessThan(loreIdx);
     });
   });
 
@@ -218,12 +217,12 @@ describe("assemblePrompt", () => {
       const msgs = result.finalPayload.messages;
       const systemMsgs = msgs.filter((m) => m.role === "system");
       const chatMsgs = msgs.filter((m) => m.role !== "system");
-      assert.ok(systemMsgs.length >= 1, "at least one system layer");
-      assert.strictEqual(chatMsgs.length, 2);
-      assert.strictEqual(chatMsgs[0].role, "user");
-      assert.strictEqual(chatMsgs[0].content, "Hello.");
-      assert.strictEqual(chatMsgs[1].role, "assistant");
-      assert.strictEqual(chatMsgs[1].content, "Hi there.");
+      expect(systemMsgs.length).toBeGreaterThanOrEqual(1);
+      expect(chatMsgs.length).toBe(2);
+      expect(chatMsgs[0].role).toBe("user");
+      expect(chatMsgs[0].content).toBe("Hello.");
+      expect(chatMsgs[1].role).toBe("assistant");
+      expect(chatMsgs[1].content).toBe("Hi there.");
     });
 
     it("chat history messages carry messageId, layers carry layerId", () => {
@@ -231,9 +230,9 @@ describe("assemblePrompt", () => {
       const msgs = result.finalPayload.messages;
       for (const m of msgs) {
         if (m.role === "system") {
-          assert.ok(m.layerId, "system message has layerId");
+          expect(m.layerId).toBeTruthy();
         } else {
-          assert.ok(m.messageId, "chat message has messageId");
+          expect(m.messageId).toBeTruthy();
         }
       }
     });
@@ -243,7 +242,7 @@ describe("assemblePrompt", () => {
     it("totalTokenEstimate is sum of layer token counts", () => {
       const result = assemblePrompt(baseContext());
       const manualSum = result.layers.reduce((s, l) => s + l.tokenCount, 0);
-      assert.strictEqual(result.totalTokenEstimate, manualSum);
+      expect(result.totalTokenEstimate).toBe(manualSum);
     });
 
     it("activatedLoreEntries lists lore IDs", () => {
@@ -253,7 +252,7 @@ describe("assemblePrompt", () => {
           { id: "l2", title: "T", content: "C.", priority: 5 },
         ],
       }));
-      assert.deepStrictEqual(result.activatedLoreEntries, ["l1", "l2"]);
+      expect(result.activatedLoreEntries).toEqual(["l1", "l2"]);
     });
 
     it("usedMemoryBlocks combines summary and retrieval IDs", () => {
@@ -261,15 +260,15 @@ describe("assemblePrompt", () => {
         summaryMemory: [{ id: "s1", kind: "chapter", summary: "text." }],
         retrievalMemory: [{ id: "r1", sourceType: "event", content: "text.", score: 0.5 }],
       }));
-      assert.deepStrictEqual(result.usedMemoryBlocks, ["s1", "r1"]);
+      expect(result.usedMemoryBlocks).toEqual(["s1", "r1"]);
     });
   });
 
   describe("empty context", () => {
     it("produces minimal result with just character and history", () => {
       const result = assemblePrompt(baseContext());
-      assert.ok(result.layers.length >= 2, "at least character_base + recent_history");
-      assert.strictEqual(result.droppedLayers.length, 0);
+      expect(result.layers.length).toBeGreaterThanOrEqual(2);
+      expect(result.droppedLayers.length).toBe(0);
     });
   });
 });

@@ -19,6 +19,9 @@ services/api/data/
 *.db
 *.db-*
 
+# Lock files (migrated to bun.lock)
+package-lock.json
+
 # Logs
 logs/
 *.log

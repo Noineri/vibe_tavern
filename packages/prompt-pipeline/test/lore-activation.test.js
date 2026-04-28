@@ -1,5 +1,4 @@
-import { describe, it } from "node:test";
-import assert from "node:assert/strict";
+import { describe, it, expect } from "bun:test";
 import { activateLoreEntries } from "../dist/lore-activation.js";
 
 function makeEntry(overrides = {}) {
@@ -22,8 +21,8 @@ describe("activateLoreEntries", () => {
     const result = activateLoreEntries(entries, {
       recentMessagesText: "A dragon appeared.",
     });
-    assert.strictEqual(result.length, 1);
-    assert.strictEqual(result[0].id, entries[0].id);
+    expect(result.length).toBe(1);
+    expect(result[0].id).toBe(entries[0].id);
   });
 
   it("does not activate when no key matches", () => {
@@ -31,7 +30,7 @@ describe("activateLoreEntries", () => {
     const result = activateLoreEntries(entries, {
       recentMessagesText: "A dragon appeared.",
     });
-    assert.strictEqual(result.length, 0);
+    expect(result.length).toBe(0);
   });
 
   it("does not activate disabled entries", () => {
@@ -39,7 +38,7 @@ describe("activateLoreEntries", () => {
     const result = activateLoreEntries(entries, {
       recentMessagesText: "A dragon appeared.",
     });
-    assert.strictEqual(result.length, 0);
+    expect(result.length).toBe(0);
   });
 
   it("does not activate entries with empty content", () => {
@@ -47,7 +46,7 @@ describe("activateLoreEntries", () => {
     const result = activateLoreEntries(entries, {
       recentMessagesText: "A dragon appeared.",
     });
-    assert.strictEqual(result.length, 0);
+    expect(result.length).toBe(0);
   });
 
   it("sorts by priority descending", () => {
@@ -56,8 +55,8 @@ describe("activateLoreEntries", () => {
     const result = activateLoreEntries([low, high], {
       recentMessagesText: "A dragon.",
     });
-    assert.strictEqual(result[0].id, "high");
-    assert.strictEqual(result[1].id, "low");
+    expect(result[0].id).toBe("high");
+    expect(result[1].id).toBe("low");
   });
 
   describe("logic: and_any", () => {
@@ -70,7 +69,7 @@ describe("activateLoreEntries", () => {
       const result = activateLoreEntries(entries, {
         recentMessagesText: "A dragon with fire breath.",
       });
-      assert.strictEqual(result.length, 1);
+      expect(result.length).toBe(1);
     });
 
     it("activates when no secondary keys defined (passthrough)", () => {
@@ -82,7 +81,7 @@ describe("activateLoreEntries", () => {
       const result = activateLoreEntries(entries, {
         recentMessagesText: "A dragon appeared.",
       });
-      assert.strictEqual(result.length, 1);
+      expect(result.length).toBe(1);
     });
 
     it("does not activate when no secondary key matches", () => {
@@ -94,7 +93,7 @@ describe("activateLoreEntries", () => {
       const result = activateLoreEntries(entries, {
         recentMessagesText: "A dragon with fire breath.",
       });
-      assert.strictEqual(result.length, 0);
+      expect(result.length).toBe(0);
     });
   });
 
@@ -108,7 +107,7 @@ describe("activateLoreEntries", () => {
       const result = activateLoreEntries(entries, {
         recentMessagesText: "A dragon with fire and wings.",
       });
-      assert.strictEqual(result.length, 1);
+      expect(result.length).toBe(1);
     });
 
     it("does not activate when some secondary keys missing", () => {
@@ -120,7 +119,7 @@ describe("activateLoreEntries", () => {
       const result = activateLoreEntries(entries, {
         recentMessagesText: "A dragon with fire.",
       });
-      assert.strictEqual(result.length, 0);
+      expect(result.length).toBe(0);
     });
   });
 
@@ -134,7 +133,7 @@ describe("activateLoreEntries", () => {
       const result = activateLoreEntries(entries, {
         recentMessagesText: "A dragon with fire.",
       });
-      assert.strictEqual(result.length, 1);
+      expect(result.length).toBe(1);
     });
 
     it("does not activate when any secondary key matches", () => {
@@ -146,7 +145,7 @@ describe("activateLoreEntries", () => {
       const result = activateLoreEntries(entries, {
         recentMessagesText: "A dragon with fire.",
       });
-      assert.strictEqual(result.length, 0);
+      expect(result.length).toBe(0);
     });
   });
 
@@ -160,7 +159,7 @@ describe("activateLoreEntries", () => {
       const result = activateLoreEntries(entries, {
         recentMessagesText: "A dragon with fire.",
       });
-      assert.strictEqual(result.length, 1);
+      expect(result.length).toBe(1);
     });
 
     it("does not activate when all secondary keys match", () => {
@@ -172,7 +171,7 @@ describe("activateLoreEntries", () => {
       const result = activateLoreEntries(entries, {
         recentMessagesText: "A fire dragon with wings.",
       });
-      assert.strictEqual(result.length, 0);
+      expect(result.length).toBe(0);
     });
   });
 
@@ -182,7 +181,7 @@ describe("activateLoreEntries", () => {
       const result = activateLoreEntries(entries, {
         recentMessagesText: "A drake appeared.",
       });
-      assert.strictEqual(result.length, 1);
+      expect(result.length).toBe(1);
     });
 
     it("does not match invalid regex as regex", () => {
@@ -190,7 +189,7 @@ describe("activateLoreEntries", () => {
       const result = activateLoreEntries(entries, {
         recentMessagesText: "Some text.",
       });
-      assert.strictEqual(result.length, 0);
+      expect(result.length).toBe(0);
     });
   });
 
@@ -199,7 +198,7 @@ describe("activateLoreEntries", () => {
     const result = activateLoreEntries(entries, {
       recentMessagesText: "A DRAGON appeared.",
     });
-    assert.strictEqual(result.length, 1);
+    expect(result.length).toBe(1);
   });
 
   it("handles entries with no primary keys (always activate on content)", () => {
@@ -207,7 +206,7 @@ describe("activateLoreEntries", () => {
     const result = activateLoreEntries(entries, {
       recentMessagesText: "Anything at all.",
     });
-    assert.strictEqual(result.length, 1);
+    expect(result.length).toBe(1);
   });
 
   it("returns matched keys in result", () => {
@@ -215,7 +214,7 @@ describe("activateLoreEntries", () => {
     const result = activateLoreEntries(entries, {
       recentMessagesText: "A fire dragon.",
     });
-    assert.strictEqual(result.length, 1);
-    assert.deepStrictEqual(result[0].matchedPrimaryKeys, ["dragon", "fire"]);
+    expect(result.length).toBe(1);
+    expect(result[0].matchedPrimaryKeys).toEqual(["dragon", "fire"]);
   });
 });

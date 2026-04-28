@@ -2,9 +2,13 @@
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
-set "NODE_EXE=node"
-if exist "%ProgramFiles%\nodejs\node.exe" set "NODE_EXE=%ProgramFiles%\nodejs\node.exe"
-if exist "%ProgramFiles(x86)%\nodejs\node.exe" set "NODE_EXE=%ProgramFiles(x86)%\nodejs\node.exe"
+set "BUN_EXE=bun"
+where bun >nul 2>nul
+if errorlevel 1 (
+    echo Bun is not installed. Install from https://bun.sh
+    pause
+    exit /b 1
+)
 
 set "LOG_DIR=%~dp0logs"
 set "RP_PLATFORM_LOG_FILE=%LOG_DIR%\dev-launcher.log"
@@ -13,7 +17,7 @@ if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 
 > "%RP_PLATFORM_LOG_FILE%" echo === Start RP Platform.bat started at %date% %time% ===
 >> "%RP_PLATFORM_LOG_FILE%" echo Working directory: %cd%
->> "%RP_PLATFORM_LOG_FILE%" echo Node executable: %NODE_EXE%
+>> "%RP_PLATFORM_LOG_FILE%" echo Bun executable: %BUN_EXE%
 
 if exist "..\mcp\.env" (
   >> "%RP_PLATFORM_LOG_FILE%" echo Loading defaults from ..\mcp\.env
@@ -35,14 +39,14 @@ echo Web log: "%LOG_DIR%\dev-web.log"
 >> "%RP_PLATFORM_LOG_FILE%" echo VITE_RP_API_URL=%VITE_RP_API_URL%
 
  if not exist "node_modules" (
-   >> "%RP_PLATFORM_LOG_FILE%" echo node_modules missing, running npm install
+   >> "%RP_PLATFORM_LOG_FILE%" echo node_modules missing, running bun install
    echo Installing dependencies...
-   call npm install
+   call bun install
    if errorlevel 1 goto :fail
  )
 
- >> "%RP_PLATFORM_LOG_FILE%" echo Launching %NODE_EXE% .\scripts\dev-supervisor.cjs
- start "" /wait /b "%NODE_EXE%" ".\scripts\dev-supervisor.cjs"
+ >> "%RP_PLATFORM_LOG_FILE%" echo Launching %BUN_EXE% .\scripts\dev-supervisor.cjs
+ start "" /wait /b "%BUN_EXE%" ".\scripts\dev-supervisor.cjs"
  set "RP_EXIT_CODE=%ERRORLEVEL%"
  >> "%RP_PLATFORM_LOG_FILE%" echo Launcher exited with code %RP_EXIT_CODE%
  if "%RP_EXIT_CODE%"=="0" goto :eof
@@ -56,7 +60,7 @@ echo Web log: "%LOG_DIR%\dev-web.log"
   goto :eof
 
 :fail
->> "%RP_PLATFORM_LOG_FILE%" echo npm install failed with code %ERRORLEVEL%
+>> "%RP_PLATFORM_LOG_FILE%" echo bun install failed with code %ERRORLEVEL%
 echo.
 echo Failed to install dependencies.
 echo Check "%RP_PLATFORM_LOG_FILE%"
