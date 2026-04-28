@@ -7,12 +7,19 @@ export interface BuildCharacterDraft {
   name: string;
   description: string;
   firstMessage: string;
-  scenario: string;
-  systemPrompt: string;
   mesExample: string;
+  scenario: string;
+  personalitySummary: string;
+  systemPrompt: string;
   alternateGreetings: string[];
   postHistoryInstructions: string;
   creatorNotes: string;
+  characterBook: string;
+  depthPrompt: string;
+  depthPromptDepth: number;
+  depthPromptRole: string;
+  extensions: string;
+  tags: string[];
 }
 
 export type BuildTab = "character" | "lorebook" | "trace";
@@ -25,10 +32,17 @@ interface BuildModeProps {
   firstMessage?: string | null;
   scenario: string;
   systemPrompt: string;
+  subtitle?: string;
   mesExample: string | null;
   alternateGreetings: string[];
   postHistoryInstructions: string | null;
   creatorNotes: string | null;
+  characterBook?: string | null;
+  depthPrompt?: string | null;
+  depthPromptDepth?: number | null;
+  depthPromptRole?: string | null;
+  extensions?: string | null;
+  tags?: string[];
   promptTraceCount: number;
   activeTrace: PromptTraceRecordDto | null;
   promptPayloadText: string;
@@ -44,12 +58,19 @@ export function BuildMode(input: BuildModeProps) {
     name: input.characterName,
     description: input.description,
     firstMessage: input.firstMessage || "",
-    scenario: input.scenario,
-    systemPrompt: input.systemPrompt,
     mesExample: input.mesExample || "",
+    scenario: input.scenario,
+    personalitySummary: input.subtitle || "",
+    systemPrompt: input.systemPrompt,
     alternateGreetings: input.alternateGreetings || [],
     postHistoryInstructions: input.postHistoryInstructions || "",
     creatorNotes: input.creatorNotes || "",
+    characterBook: input.characterBook || "",
+    depthPrompt: input.depthPrompt || "",
+    depthPromptDepth: input.depthPromptDepth ?? 4,
+    depthPromptRole: input.depthPromptRole || "system",
+    extensions: input.extensions || "",
+    tags: input.tags || [],
   });
   const [altGreetIdx, setAltGreetIdx] = useState(0);
 
@@ -58,27 +79,41 @@ export function BuildMode(input: BuildModeProps) {
       name: input.characterName,
       description: input.description,
       firstMessage: input.firstMessage || "",
-      scenario: input.scenario,
-      systemPrompt: input.systemPrompt,
       mesExample: input.mesExample || "",
+      scenario: input.scenario,
+      personalitySummary: input.subtitle || "",
+      systemPrompt: input.systemPrompt,
       alternateGreetings: input.alternateGreetings || [],
       postHistoryInstructions: input.postHistoryInstructions || "",
       creatorNotes: input.creatorNotes || "",
+      characterBook: input.characterBook || "",
+      depthPrompt: input.depthPrompt || "",
+      depthPromptDepth: input.depthPromptDepth ?? 4,
+      depthPromptRole: input.depthPromptRole || "system",
+      extensions: input.extensions || "",
+      tags: input.tags || [],
     });
-  }, [input.characterId, input.characterName, input.description, input.firstMessage, input.scenario, input.systemPrompt, input.mesExample, input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes]);
+  }, [input.characterId, input.characterName, input.description, input.firstMessage, input.scenario, input.subtitle, input.systemPrompt, input.mesExample, input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes, input.characterBook, input.depthPrompt, input.depthPromptDepth, input.depthPromptRole, input.extensions, input.tags]);
 
   const isDirty = useMemo(
     () =>
       draft.name !== input.characterName ||
       draft.description !== input.description ||
       draft.firstMessage !== (input.firstMessage || "") ||
-      draft.scenario !== input.scenario ||
-      draft.systemPrompt !== input.systemPrompt ||
       draft.mesExample !== (input.mesExample || "") ||
+      draft.scenario !== input.scenario ||
+      draft.personalitySummary !== (input.subtitle || "") ||
+      draft.systemPrompt !== input.systemPrompt ||
       draft.alternateGreetings.join("\n---\n") !== (input.alternateGreetings || []).join("\n---\n") ||
       draft.postHistoryInstructions !== (input.postHistoryInstructions || "") ||
-      draft.creatorNotes !== (input.creatorNotes || ""),
-    [draft, input.characterName, input.description, input.firstMessage, input.scenario, input.systemPrompt, input.mesExample, input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes],
+      draft.creatorNotes !== (input.creatorNotes || "") ||
+      draft.characterBook !== (input.characterBook || "") ||
+      draft.depthPrompt !== (input.depthPrompt || "") ||
+      draft.depthPromptDepth !== (input.depthPromptDepth ?? 4) ||
+      draft.depthPromptRole !== (input.depthPromptRole || "system") ||
+      draft.extensions !== (input.extensions || "") ||
+      draft.tags.join("\n") !== (input.tags || []).join("\n"),
+    [draft, input.characterName, input.description, input.firstMessage, input.scenario, input.subtitle, input.systemPrompt, input.mesExample, input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes, input.characterBook, input.depthPrompt, input.depthPromptDepth, input.depthPromptRole, input.extensions, input.tags],
   );
 
   function patchDraft<K extends keyof BuildCharacterDraft>(key: K, value: BuildCharacterDraft[K]): void {
@@ -90,13 +125,24 @@ export function BuildMode(input: BuildModeProps) {
       name: input.characterName,
       description: input.description,
       firstMessage: input.firstMessage || "",
-      scenario: input.scenario,
-      systemPrompt: input.systemPrompt,
       mesExample: input.mesExample || "",
+      scenario: input.scenario,
+      personalitySummary: input.subtitle || "",
+      systemPrompt: input.systemPrompt,
       alternateGreetings: input.alternateGreetings || [],
       postHistoryInstructions: input.postHistoryInstructions || "",
       creatorNotes: input.creatorNotes || "",
+      characterBook: input.characterBook || "",
+      depthPrompt: input.depthPrompt || "",
+      depthPromptDepth: input.depthPromptDepth ?? 4,
+      depthPromptRole: input.depthPromptRole || "system",
+      extensions: input.extensions || "",
+      tags: input.tags || [],
     });
+  }
+
+  function updateTagDraft(value: string): void {
+    patchDraft("tags", value.split(",").map((tag) => tag.trim()).filter(Boolean));
   }
 
   function renderCharacter(): ReactNode {
@@ -113,12 +159,19 @@ export function BuildMode(input: BuildModeProps) {
                 name: draft.name.trim(),
                 description: draft.description,
                 firstMessage: draft.firstMessage,
-                scenario: draft.scenario,
-                systemPrompt: draft.systemPrompt,
                 mesExample: draft.mesExample,
+                scenario: draft.scenario,
+                personalitySummary: draft.personalitySummary,
+                systemPrompt: draft.systemPrompt,
                 alternateGreetings: draft.alternateGreetings,
                 postHistoryInstructions: draft.postHistoryInstructions,
                 creatorNotes: draft.creatorNotes,
+                characterBook: draft.characterBook,
+                depthPrompt: draft.depthPrompt,
+                depthPromptDepth: draft.depthPromptDepth,
+                depthPromptRole: draft.depthPromptRole,
+                extensions: draft.extensions,
+                tags: draft.tags,
               })
             }
           >
@@ -219,19 +272,21 @@ export function BuildMode(input: BuildModeProps) {
           />
         </div>
         <div className="build-field">
-          <label>System Prompt</label>
+          <label>Personality Summary</label>
           <textarea
-            value={draft.systemPrompt}
+            value={draft.personalitySummary}
             disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("systemPrompt", event.target.value)}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("personalitySummary", event.target.value)}
           />
         </div>
+        <div className="build-advanced-title">Advanced Fields (V3)</div>
         <div className="build-field">
-          <label>Post-History Instructions (Jailbreak)</label>
+          <label>Post-History Instructions</label>
           <textarea
             value={draft.postHistoryInstructions}
             disabled={input.isSaving}
             onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("postHistoryInstructions", event.target.value)}
+            placeholder="Инструкции, добавляемые в конец истории (Jailbreak)..."
           />
         </div>
         <div className="build-field">
@@ -240,6 +295,77 @@ export function BuildMode(input: BuildModeProps) {
             value={draft.creatorNotes}
             disabled={input.isSaving}
             onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("creatorNotes", event.target.value)}
+          />
+        </div>
+        <div className="build-field">
+          <label>Character Book (JSON)</label>
+          <textarea
+            value={draft.characterBook}
+            disabled={input.isSaving}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("characterBook", event.target.value)}
+            placeholder='{"entries":[...]}'
+          />
+        </div>
+        <div className="build-depth-row">
+          <div className="build-field build-depth-text">
+            <label>Depth Prompt</label>
+            <textarea
+              value={draft.depthPrompt}
+              disabled={input.isSaving}
+              onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("depthPrompt", event.target.value)}
+              placeholder="Prompt injected at a specific depth..."
+            />
+          </div>
+          <div className="build-field build-depth-number">
+            <label>Depth</label>
+            <input
+              type="number"
+              min={0}
+              max={999}
+              value={draft.depthPromptDepth}
+              disabled={input.isSaving}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => patchDraft("depthPromptDepth", Number(event.target.value))}
+            />
+          </div>
+          <div className="build-field build-depth-role">
+            <label>Role</label>
+            <select
+              value={draft.depthPromptRole}
+              disabled={input.isSaving}
+              onChange={(event: ChangeEvent<HTMLSelectElement>) => patchDraft("depthPromptRole", event.target.value)}
+            >
+              <option value="system">system</option>
+              <option value="user">user</option>
+              <option value="assistant">assistant</option>
+            </select>
+          </div>
+        </div>
+        <div className="build-field">
+          <label>Extensions (JSON)</label>
+          <textarea
+            value={draft.extensions}
+            disabled={input.isSaving}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("extensions", event.target.value)}
+            placeholder='{"talkativeness":"0.5",...}'
+          />
+        </div>
+        <div className="build-field">
+          <label>System Prompt Override</label>
+          <textarea
+            value={draft.systemPrompt}
+            disabled={input.isSaving}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("systemPrompt", event.target.value)}
+            placeholder="Оставьте пустым для использования глобального промпта..."
+          />
+        </div>
+        <div className="build-field">
+          <label>Tags</label>
+          <input
+            type="text"
+            value={draft.tags.join(", ")}
+            disabled={input.isSaving}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => updateTagDraft(event.target.value)}
+            placeholder="tag, another tag"
           />
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>

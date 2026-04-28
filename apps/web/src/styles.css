@@ -194,13 +194,16 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .build-section-sub{font-size:13px;color:var(--t2);margin-bottom:28px;line-height:1.55}
 .build-field{margin-bottom:20px}
 .build-field label{display:block;font-size:11px;font-weight:500;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin-bottom:6px}
-.build-field textarea,.build-field input{
+.build-field textarea,.build-field input,.build-field select{
   width:100%;background:var(--s2);border:1px solid var(--border);border-radius:6px;
   padding:10px 12px;font-family:var(--font-body);font-size:14px;line-height:1.7;
   color:var(--t1);outline:none;resize:vertical;transition:border-color .15s
 }
-.build-field textarea:focus,.build-field input:focus{border-color:var(--accent)}
+.build-field textarea:focus,.build-field input:focus,.build-field select:focus{border-color:var(--accent)}
 .build-field textarea{min-height:120px}
+.build-advanced-title{font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;margin:24px 0 12px;border-bottom:1px solid var(--border);padding-bottom:6px}
+.build-depth-row{display:flex;gap:12px;align-items:flex-end}
+.build-depth-text{flex:1}.build-depth-number{width:80px;flex:none}.build-depth-role{width:120px;flex:none}
 .build-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .build-tag{font-size:11px;background:var(--s3);color:var(--t2);border-radius:4px;padding:3px 9px;cursor:pointer;transition:background .1s}
 .build-tag:hover{background:var(--border2);color:var(--t1)}
