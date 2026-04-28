@@ -10,6 +10,7 @@ export interface MessageBlockProps {
   isBusy: boolean;
   canBranch: boolean;
   canRegenerate: boolean;
+  greetingOptions?: string[];
   onBranch: () => void;
   onStartEdit: () => void;
   onEditingDraftChange: (value: string) => void;
@@ -32,6 +33,7 @@ export interface MessageListProps {
   editingDraft: string;
   isSending: boolean;
   messageActionId: string | null;
+  alternateGreetings?: string[];
   onActivateBranch: (branchId: ChatBranchId) => void;
   onFork: () => void;
   onStartEdit: (message: AppMessage) => void;

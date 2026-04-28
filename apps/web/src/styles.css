@@ -390,3 +390,11 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .ws-btn--primary:disabled{opacity:.4;cursor:default}
 .ws-btn--ghost{background:transparent;color:var(--t2);padding:10px 12px}
 .ws-btn--ghost:hover{color:var(--t1)}
+
+.alt-tab{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:12px;border:1px solid var(--border);background:var(--s2);color:var(--t2)}
+.alt-tab.act{background:var(--accent-dim);border-color:var(--accent);color:var(--accent-t)}
+.alt-tab-x{font-size:10px;cursor:pointer;margin-left:2px}
+.alt-tab-add{display:inline-flex;align-items:center;justify-content:center;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:12px;border:1px dashed var(--border);background:transparent;color:var(--t3)}
+.greeting-swipe{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--t3);margin-left:8px}
+.greeting-swipe-btn{cursor:pointer;color:var(--t2);font-size:13px}
+.greeting-swipe-btn:hover{color:var(--accent)}
