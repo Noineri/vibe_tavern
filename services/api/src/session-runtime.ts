@@ -45,6 +45,7 @@ type CharacterRecord = {
   scenario: string;
   systemPrompt: string;
   personality: string | null;
+  firstMessage: string | null;
   mesExample: string | null;
   alternateGreetings: string[];
   postHistoryInstructions: string | null;
@@ -580,7 +581,7 @@ export class SessionRuntime {
 
     this.chatOrder.unshift(created.id as ChatId);
 
-    const greeting = character.alternateGreetings?.[0];
+    const greeting = character.firstMessage;
     if (greeting) {
       const chat = this.store.getChat(created.id as ChatId);
       if (chat) {
@@ -612,8 +613,9 @@ export class SessionRuntime {
       name: input.name,
       description: input.description ?? '',
       defaultScenario: null,
+      firstMessage: input.firstMessage?.trim() || null,
       mesExample: null,
-      alternateGreetings: input.firstMessage ? [input.firstMessage] : [],
+      alternateGreetings: [],
       postHistoryInstructions: null,
       creatorNotes: null,
       avatarAssetId: null,
@@ -674,6 +676,7 @@ export class SessionRuntime {
       name: 'Free chat',
       description: '',
       defaultScenario: null,
+      firstMessage: null,
       mesExample: null,
       alternateGreetings: [],
       postHistoryInstructions: null,
@@ -736,7 +739,7 @@ export class SessionRuntime {
       name: character.name,
       description: character.description,
       scenario: character.defaultScenario ?? "",
-      first_mes: "",
+      first_mes: character.firstMessage ?? "",
       mes_example: character.mesExample ?? "",
       creator_notes: character.creatorNotes ?? "",
       system_prompt: characterRecord?.systemPrompt ?? "",
@@ -953,6 +956,7 @@ export class SessionRuntime {
       description?: string;
       scenario?: string;
       systemPrompt?: string;
+      firstMessage?: string | null;
       mesExample?: string | null;
       alternateGreetings?: string[];
       postHistoryInstructions?: string | null;
@@ -980,6 +984,7 @@ export class SessionRuntime {
       name: nextName,
       description: nextDescription,
       defaultScenario: nextScenario || null,
+      firstMessage: input.firstMessage !== undefined ? input.firstMessage : currentCharacter.firstMessage,
       mesExample: input.mesExample !== undefined ? input.mesExample : currentCharacter.mesExample,
       alternateGreetings: input.alternateGreetings ?? currentCharacter.alternateGreetings,
       postHistoryInstructions: input.postHistoryInstructions !== undefined ? input.postHistoryInstructions : currentCharacter.postHistoryInstructions,
@@ -995,6 +1000,7 @@ export class SessionRuntime {
             description: nextDescription,
             scenario: nextScenario,
             systemPrompt: nextSystemPrompt,
+            firstMessage: input.firstMessage !== undefined ? input.firstMessage : currentCharacter.firstMessage,
             mesExample: input.mesExample !== undefined ? input.mesExample : currentCharacter.mesExample,
             alternateGreetings: input.alternateGreetings ?? currentCharacter.alternateGreetings,
             postHistoryInstructions: input.postHistoryInstructions !== undefined ? input.postHistoryInstructions : currentCharacter.postHistoryInstructions,
@@ -1493,6 +1499,7 @@ function toCharacterRecord(
     scenario: character.defaultScenario ?? "",
     systemPrompt: (data.system_prompt as string) || "",
     personality: (data.personality as string) || null,
+    firstMessage: character.firstMessage,
     mesExample: character.mesExample,
     alternateGreetings: character.alternateGreetings,
     postHistoryInstructions: character.postHistoryInstructions,
@@ -1508,6 +1515,7 @@ function applyCharacterEditsToDefinition(
     description: string;
     scenario: string;
     systemPrompt: string;
+    firstMessage: string | null;
     mesExample: string | null;
     alternateGreetings: string[];
     postHistoryInstructions: string | null;
@@ -1525,6 +1533,7 @@ function applyCharacterEditsToDefinition(
   cloned.description = input.description;
   cloned.scenario = input.scenario;
   cloned.system_prompt = input.systemPrompt;
+  cloned.first_mes = input.firstMessage;
   cloned.mes_example = input.mesExample;
   cloned.alternate_greetings = input.alternateGreetings;
   cloned.post_history_instructions = input.postHistoryInstructions;
@@ -1533,6 +1542,7 @@ function applyCharacterEditsToDefinition(
   target.description = input.description;
   target.scenario = input.scenario;
   target.system_prompt = input.systemPrompt;
+  target.first_mes = input.firstMessage;
   target.mes_example = input.mesExample;
   target.alternate_greetings = input.alternateGreetings;
   target.post_history_instructions = input.postHistoryInstructions;

@@ -171,6 +171,18 @@ export interface CreateCharacterChatRequest {
   title?: string;
 }
 
+export interface CharacterDto {
+  id: CharacterId;
+  name: string;
+  description: string;
+  scenario: string;
+  firstMessage: string | null;
+  mesExample: string | null;
+  alternateGreetings: string[];
+  postHistoryInstructions: string | null;
+  creatorNotes: string | null;
+}
+
 export interface CloneChatResponse {
   chatId: ChatId;
   snapshot: unknown;

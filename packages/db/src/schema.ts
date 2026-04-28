@@ -290,4 +290,6 @@ CREATE TABLE IF NOT EXISTS chat_capabilities (
   PRIMARY KEY(chat_id, capability_key),
   FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
 );
+
+-- Character first_message is added by migration 0008_character_first_message.
 `;
