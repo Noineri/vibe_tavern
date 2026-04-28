@@ -103,6 +103,18 @@ ALTER TABLE characters ADD COLUMN first_message TEXT;
 ALTER TABLE characters ADD COLUMN personality_summary TEXT;
 `,
   },
+  {
+    version: "0010_character_advanced_v3_fields",
+    sql: `
+ALTER TABLE characters ADD COLUMN character_book_json TEXT;
+ALTER TABLE characters ADD COLUMN depth_prompt TEXT;
+ALTER TABLE characters ADD COLUMN depth_prompt_depth INTEGER;
+ALTER TABLE characters ADD COLUMN depth_prompt_role TEXT;
+ALTER TABLE characters ADD COLUMN extensions_json TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE characters ADD COLUMN system_prompt TEXT;
+ALTER TABLE characters ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
+`,
+  },
 ];
 
 export function getLatestMigrationVersion(): string {

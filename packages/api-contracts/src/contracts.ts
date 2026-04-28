@@ -148,6 +148,12 @@ export interface UpdateCharacterRequest {
   alternateGreetings?: string[];
   postHistoryInstructions?: string | null;
   creatorNotes?: string | null;
+  characterBook?: Record<string, unknown> | null;
+  depthPrompt?: string | null;
+  depthPromptDepth?: number | null;
+  depthPromptRole?: string | null;
+  extensions?: Record<string, unknown>;
+  tags?: string[];
 }
 
 export interface PersonalLorebookStatus {
@@ -205,6 +211,13 @@ export interface CharacterDto {
   alternateGreetings: string[];
   postHistoryInstructions: string | null;
   creatorNotes: string | null;
+  characterBook: Record<string, unknown> | null;
+  depthPrompt: string | null;
+  depthPromptDepth: number | null;
+  depthPromptRole: string | null;
+  extensions: Record<string, unknown>;
+  systemPrompt: string | null;
+  tags: string[];
 }
 
 export interface CloneChatResponse {

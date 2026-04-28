@@ -51,6 +51,12 @@ type CharacterRecord = {
   alternateGreetings: string[];
   postHistoryInstructions: string | null;
   creatorNotes: string | null;
+  characterBook: Record<string, unknown> | null;
+  depthPrompt: string | null;
+  depthPromptDepth: number | null;
+  depthPromptRole: string | null;
+  extensions: Record<string, unknown>;
+  tags: string[];
   subtitle: string;
 };
 
@@ -624,6 +630,13 @@ export class SessionRuntime {
       alternateGreetings: input.alternateGreetings ?? [],
       postHistoryInstructions: null,
       creatorNotes: null,
+      characterBook: null,
+      depthPrompt: null,
+      depthPromptDepth: null,
+      depthPromptRole: null,
+      extensions: {},
+      systemPrompt: null,
+      tags: [],
       avatarAssetId: null,
       status: 'active',
       createdAt: timestamp,
@@ -700,6 +713,13 @@ export class SessionRuntime {
       alternateGreetings: [],
       postHistoryInstructions: null,
       creatorNotes: null,
+      characterBook: null,
+      depthPrompt: null,
+      depthPromptDepth: null,
+      depthPromptRole: null,
+      extensions: {},
+      systemPrompt: null,
+      tags: [],
       avatarAssetId: null,
       status: 'draft',
       createdAt: timestamp,
@@ -762,10 +782,15 @@ export class SessionRuntime {
       first_mes: character.firstMessage ?? "",
       mes_example: character.mesExample ?? "",
       creator_notes: character.creatorNotes ?? "",
-      system_prompt: characterRecord?.systemPrompt ?? "",
+      system_prompt: character.systemPrompt ?? characterRecord?.systemPrompt ?? "",
       post_history_instructions: character.postHistoryInstructions ?? "",
+      character_book: character.characterBook ?? undefined,
+      depth_prompt: character.depthPrompt ?? "",
+      depth_prompt_depth: character.depthPromptDepth,
+      depth_prompt_role: character.depthPromptRole ?? "",
       alternate_greetings: character.alternateGreetings ?? [],
-      extensions: {},
+      extensions: character.extensions,
+      tags: character.tags,
     };
 
     return {
@@ -982,6 +1007,12 @@ export class SessionRuntime {
       alternateGreetings?: string[];
       postHistoryInstructions?: string | null;
       creatorNotes?: string | null;
+      characterBook?: Record<string, unknown> | null;
+      depthPrompt?: string | null;
+      depthPromptDepth?: number | null;
+      depthPromptRole?: string | null;
+      extensions?: Record<string, unknown>;
+      tags?: string[];
     },
   ): SessionSnapshot {
     const currentCharacter = this.store.listCharacters().find((character) => character.id === characterId);
@@ -1000,7 +1031,7 @@ export class SessionRuntime {
     const nextScenario = input.scenario ?? currentCharacter.defaultScenario ?? "";
     const currentVersion = this.store.getLatestCharacterVersion(characterId);
     const currentRecord = toCharacterRecord(currentCharacter, currentVersion);
-    const nextSystemPrompt = input.systemPrompt ?? currentRecord.systemPrompt;
+    const nextSystemPrompt = input.systemPrompt ?? currentCharacter.systemPrompt ?? currentRecord.systemPrompt;
     const updatedCharacter: Character = {
       ...currentCharacter,
       name: nextName,
@@ -1012,6 +1043,13 @@ export class SessionRuntime {
       alternateGreetings: input.alternateGreetings ?? currentCharacter.alternateGreetings,
       postHistoryInstructions: input.postHistoryInstructions !== undefined ? input.postHistoryInstructions : currentCharacter.postHistoryInstructions,
       creatorNotes: input.creatorNotes !== undefined ? input.creatorNotes : currentCharacter.creatorNotes,
+      characterBook: input.characterBook !== undefined ? input.characterBook : currentCharacter.characterBook,
+      depthPrompt: input.depthPrompt !== undefined ? input.depthPrompt : currentCharacter.depthPrompt,
+      depthPromptDepth: input.depthPromptDepth !== undefined ? input.depthPromptDepth : currentCharacter.depthPromptDepth,
+      depthPromptRole: input.depthPromptRole !== undefined ? input.depthPromptRole : currentCharacter.depthPromptRole,
+      extensions: input.extensions ?? currentCharacter.extensions,
+      systemPrompt: nextSystemPrompt || null,
+      tags: input.tags ?? currentCharacter.tags,
       updatedAt: now,
     };
 
@@ -1029,6 +1067,12 @@ export class SessionRuntime {
             alternateGreetings: input.alternateGreetings ?? currentCharacter.alternateGreetings,
             postHistoryInstructions: input.postHistoryInstructions !== undefined ? input.postHistoryInstructions : currentCharacter.postHistoryInstructions,
             creatorNotes: input.creatorNotes !== undefined ? input.creatorNotes : currentCharacter.creatorNotes,
+            characterBook: input.characterBook !== undefined ? input.characterBook : currentCharacter.characterBook,
+            depthPrompt: input.depthPrompt !== undefined ? input.depthPrompt : currentCharacter.depthPrompt,
+            depthPromptDepth: input.depthPromptDepth !== undefined ? input.depthPromptDepth : currentCharacter.depthPromptDepth,
+            depthPromptRole: input.depthPromptRole !== undefined ? input.depthPromptRole : currentCharacter.depthPromptRole,
+            extensions: input.extensions ?? currentCharacter.extensions,
+            tags: input.tags ?? currentCharacter.tags,
           }),
         }
       : null;
@@ -1521,7 +1565,7 @@ function toCharacterRecord(
     name: character.name,
     description: character.description,
     scenario: character.defaultScenario ?? "",
-    systemPrompt: (data.system_prompt as string) || "",
+    systemPrompt: character.systemPrompt ?? ((data.system_prompt as string) || ""),
     personality: character.personalitySummary ?? ((data.personality as string) || null),
     personalitySummary: character.personalitySummary ?? ((data.personality as string) || null),
     firstMessage: character.firstMessage,
@@ -1529,6 +1573,12 @@ function toCharacterRecord(
     alternateGreetings: character.alternateGreetings,
     postHistoryInstructions: character.postHistoryInstructions,
     creatorNotes: character.creatorNotes,
+    characterBook: character.characterBook,
+    depthPrompt: character.depthPrompt,
+    depthPromptDepth: character.depthPromptDepth,
+    depthPromptRole: character.depthPromptRole,
+    extensions: character.extensions,
+    tags: character.tags,
     subtitle: subtitleCandidate,
   };
 }
@@ -1546,6 +1596,12 @@ function applyCharacterEditsToDefinition(
     alternateGreetings: string[];
     postHistoryInstructions: string | null;
     creatorNotes: string | null;
+    characterBook: Record<string, unknown> | null;
+    depthPrompt: string | null;
+    depthPromptDepth: number | null;
+    depthPromptRole: string | null;
+    extensions: Record<string, unknown>;
+    tags: string[];
   },
 ): Record<string, unknown> {
   const cloned = JSON.parse(JSON.stringify(definition)) as Record<string, unknown>;
@@ -1565,6 +1621,12 @@ function applyCharacterEditsToDefinition(
   cloned.alternate_greetings = input.alternateGreetings;
   cloned.post_history_instructions = input.postHistoryInstructions;
   cloned.creator_notes = input.creatorNotes;
+  cloned.character_book = input.characterBook;
+  cloned.depth_prompt = input.depthPrompt;
+  cloned.depth_prompt_depth = input.depthPromptDepth;
+  cloned.depth_prompt_role = input.depthPromptRole;
+  cloned.extensions = input.extensions;
+  cloned.tags = input.tags;
   target.name = input.name;
   target.description = input.description;
   target.personality = input.personalitySummary;
@@ -1575,6 +1637,12 @@ function applyCharacterEditsToDefinition(
   target.alternate_greetings = input.alternateGreetings;
   target.post_history_instructions = input.postHistoryInstructions;
   target.creator_notes = input.creatorNotes;
+  target.character_book = input.characterBook;
+  target.depth_prompt = input.depthPrompt;
+  target.depth_prompt_depth = input.depthPromptDepth;
+  target.depth_prompt_role = input.depthPromptRole;
+  target.extensions = input.extensions;
+  target.tags = input.tags;
   return cloned;
 }
 

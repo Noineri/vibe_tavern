@@ -293,4 +293,5 @@ CREATE TABLE IF NOT EXISTS chat_capabilities (
 
 -- Character first_message is added by migration 0008_character_first_message.
 -- Character personality_summary is added by migration 0009_character_personality_summary.
+-- Character advanced V3 fields are added by migration 0010_character_advanced_v3_fields.
 `;
