@@ -279,14 +279,10 @@ export function useRpPlatformApp() {
   }, []);
 
   useEffect(() => {
-    setSelectedTraceId((current) => {
-      if (current && snapshot?.promptTraceHistory.some((trace) => trace.id === current)) {
-        return current;
-      }
-
-      return snapshot?.promptTrace?.id ?? snapshot?.promptTraceHistory[0]?.id ?? null;
-    });
-  }, [snapshot]);
+    setSelectedTraceId(
+      snapshot?.promptTrace?.id ?? snapshot?.promptTraceHistory[0]?.id ?? null,
+    );
+  }, [snapshot?.promptTrace?.id, snapshot?.promptTraceHistory]);
 
   useEffect(() => {
     if (!editingMessageId || !snapshot) {
@@ -401,9 +397,11 @@ export function useRpPlatformApp() {
 
     try {
       void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.request", { activeChatId }));
-      refresh(activeChatId, await sendChatMessage(activeChatId, {
+      const nextSnapshot = await sendChatMessage(activeChatId, {
         content: trimmed,
-      }));
+      });
+      refresh(activeChatId, nextSnapshot);
+      setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
       void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.success", { activeChatId }));
     } catch (error) {
       void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.error", {
@@ -621,7 +619,9 @@ export function useRpPlatformApp() {
     setMessageActionId(messageId);
     setChatNotice("");
     try {
-      refresh(activeChatId, await regenerateChatMessage(activeChatId, messageId));
+      const nextSnapshot = await regenerateChatMessage(activeChatId, messageId);
+      refresh(activeChatId, nextSnapshot);
+      setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
     } catch (error) {
       refresh(activeChatId, await fetchChat(activeChatId));
       setChatNotice(error instanceof Error ? error.message : "Regeneration failed.");
