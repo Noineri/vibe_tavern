@@ -66,7 +66,7 @@ npm run typecheck
 
 ### Web-клиент
 
-Frontend сосредоточен вокруг [apps/web/src/app.tsx](../rp_platform/apps/web/src/app.tsx), [apps/web/src/hooks/use-rp-platform-app.ts](../rp_platform/apps/web/src/hooks/use-rp-platform-app.ts) и [apps/web/src/app-client.ts](../rp_platform/apps/web/src/app-client.ts).
+Frontend сосредоточен вокруг [apps/web/src/app.tsx](../rp_platform/apps/web/src/app.tsx), [apps/web/src/hooks/use-rp-platform-app.ts](../rp_platform/apps/web/src/hooks/use-rp-platform-app.ts), [apps/web/src/hooks/use-provider-profiles.ts](../rp_platform/apps/web/src/hooks/use-provider-profiles.ts) и [apps/web/src/app-client.ts](../rp_platform/apps/web/src/app-client.ts).
 
 - UI стартует пустым, пока не импортирован первый персонаж.
 - Есть режимы play и build.

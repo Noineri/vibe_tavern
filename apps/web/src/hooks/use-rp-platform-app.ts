@@ -1,10 +1,8 @@
 import type { ChangeEvent, DragEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
-import type { ProviderProbeResponse } from "@rp-platform/api-contracts";
 import {
   activateBranch,
-  activateProviderProfile,
   archiveCharacter,
   bootstrapApp,
   cloneChat,
@@ -14,33 +12,21 @@ import {
   deleteChatMessage,
   deleteCharacter,
   deleteChat,
-  deleteProviderProfile,
   editChatMessage,
   exportCharacter,
   exportChatJsonl,
   exportPromptTrace,
   fetchChat,
-  fetchModelsByEndpoint as fetchModelsByEndpointClient,
-  fetchProviderProfile,
-  fetchProviderProfileModels as fetchModelsForProviderProfile,
-  testProfileChat as testProfileChatClient,
-  testProviderChat as testProviderChatClient,
   forkBranch,
-  listProviderProfiles,
   regenerateChatMessage,
   renameChat,
-  saveProviderProfile,
   selectMessageVariant,
   sendChatMessage,
-  testProviderDraft,
-  testProviderProfile,
   unarchiveCharacter,
   updateCharacter,
   updatePersona,
-  updateProviderProfile,
   type AppMessage,
   type AppSnapshot,
-  type ProviderProfileRecord,
 } from "../app-client.js";
 import type {
   AppMode,
@@ -52,6 +38,7 @@ import type {
 import type { BuildCharacterDraft, BuildTab } from "../components/BuildMode.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import { useCharacterImport } from "./use-character-import.js";
+import { useProviderProfiles } from "./use-provider-profiles.js";
 
 function replaceUiMacros(
   text: string,
@@ -126,8 +113,6 @@ export function useRpPlatformApp() {
   const [connection, setConnection] = useState<ConnectionState>(() => createInitialConnectionState());
   const [isImportDragActive, setIsImportDragActive] = useState(false);
   const [importNotice, setImportNotice] = useState("");
-  const [providerProfiles, setProviderProfiles] = useState<ProviderProfileRecord[]>([]);
-  const [selectedProviderProfileId, setSelectedProviderProfileId] = useState("");
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState("");
   const [messageActionId, setMessageActionId] = useState<string | null>(null);
@@ -145,7 +130,6 @@ export function useRpPlatformApp() {
   const [isSavingCharacter, setIsSavingCharacter] = useState(false);
   const [characterSaveNotice, setCharacterSaveNotice] = useState("");
   const { importFile, isImporting } = useCharacterImport();
-  const modelsCache = useRef<Map<string, { models: Array<{ id: string; label: string }>; ts: number }>>(new Map());
 
   const [personas, setPersonas] = useState<import("../app-client.js").PersonaRecord[]>([]);
   const [promptPresets, setPromptPresets] = useState<import("@rp-platform/api-contracts").PromptPresetDto[]>([]);
@@ -228,14 +212,13 @@ export function useRpPlatformApp() {
     () => JSON.stringify(activePromptTrace?.finalPayload ?? {}, null, 2),
     [activePromptTrace],
   );
-  const canConnect = Boolean(connection.providerLabel.trim() && connection.baseUrl.trim());
-  const canRefreshModels = Boolean(connection.activeProviderProfileId || selectedProviderProfileId);
   const canUseLiveApi = connection.status === "connected" && Boolean(connection.model);
-  const activeProviderProfile = useMemo(
-    () => providerProfiles.find((profile) => profile.isActive) ?? null,
-    [providerProfiles],
-  );
-  const canSendViaActiveProfile = activeProviderProfile !== null && Boolean(activeProviderProfile.defaultModel);
+  const provider = useProviderProfiles({
+    connection,
+    patchConnection,
+    setConnection,
+    setChatNotice,
+  });
   const characterTabs = useMemo(() => (snapshot ? buildCharacterTabs(snapshot) : []), [snapshot]);
   const macroContext = useMemo(
     () => snapshot ? {
@@ -279,10 +262,6 @@ export function useRpPlatformApp() {
   }, []);
 
   useEffect(() => {
-    void loadProviderProfiles();
-  }, []);
-
-  useEffect(() => {
     setSelectedTraceId((current) => {
       if (current && snapshot?.promptTraceHistory.some((trace) => trace.id === current)) {
         return current;
@@ -305,15 +284,6 @@ export function useRpPlatformApp() {
   }, [editingMessageId, snapshot]);
 
   useEffect(() => {
-    setSelectedProviderProfileId((current) => {
-      if (current && providerProfiles.some((profile) => profile.id === current)) {
-        return current;
-      }
-      return providerProfiles[0]?.id ?? "";
-    });
-  }, [providerProfiles]);
-
-  useEffect(() => {
     setCharacterSaveNotice("");
   }, [snapshot?.character.id]);
 
@@ -334,18 +304,6 @@ export function useRpPlatformApp() {
       setLoadError(error instanceof Error ? error.message : "Could not load application state.");
     } finally {
       setIsLoading(false);
-    }
-  }
-
-  async function loadProviderProfiles(): Promise<void> {
-    try {
-      setProviderProfiles(await listProviderProfiles());
-    } catch (error) {
-      setConnection((current) => ({
-        ...current,
-        error:
-          error instanceof Error ? error.message : "Could not load saved provider profiles.",
-      }));
     }
   }
 
@@ -393,7 +351,7 @@ export function useRpPlatformApp() {
       return;
     }
 
-    if (!canSendViaActiveProfile) {
+    if (!provider.canSendViaActiveProfile) {
       setChatNotice(
         "Message sending is unavailable until a provider profile is activated and its default model is set. Open Provider settings, pick a model, press Save profile, then Set as active.",
       );
@@ -415,450 +373,6 @@ export function useRpPlatformApp() {
     } finally {
       setPendingUserMessageContent(null);
       setIsSending(false);
-    }
-  }
-
-  async function handleConnect(): Promise<void> {
-    if (!canConnect) {
-      return;
-    }
-
-    const normalizedBaseUrl = normalizeOpenAiCompatibleBaseUrl(connection.baseUrl);
-    setConnection((current) => ({
-      ...current,
-      baseUrl: normalizedBaseUrl,
-      status: "connecting",
-      error: "",
-    }));
-
-    try {
-      const saved = await saveProviderProfile({
-        id: selectedProviderProfileId || connection.activeProviderProfileId || undefined,
-        name: connection.providerLabel.trim(),
-        type: connection.providerType || "openai_compat",
-        endpoint: normalizedBaseUrl,
-        apiKey: connection.apiKey.trim() || undefined,
-        defaultModel: connection.model.trim() || null,
-        contextBudget: connection.maxTokens || 8192,
-        temperature: connection.temperature,
-        topP: connection.topP,
-        minP: connection.minP,
-        topK: connection.topK,
-        typicalP: connection.typicalP,
-        repPen: connection.repPen,
-        freqPen: connection.freqPen,
-        presPen: connection.presPen,
-        maxTokens: connection.maxTokens,
-        stopSeq: connection.stopSeq,
-        seed: connection.seed,
-        reasoningEffort: connection.reasoningEffort,
-        streamResponse: connection.streamResponse,
-      });
-
-      await loadProviderProfiles();
-      setSelectedProviderProfileId(saved.id);
-      patchConnection({
-        providerLabel: saved.name,
-        baseUrl: normalizeOpenAiCompatibleBaseUrl(saved.endpoint),
-        apiKey: "",
-        model: saved.defaultModel ?? connection.model,
-        activeProviderProfileId: saved.id,
-        hasStoredApiKey: saved.hasStoredApiKey,
-        error: "",
-      });
-
-      await handleTestSavedProviderProfile(saved.id);
-    } catch (error) {
-      patchConnection({
-        status: "error",
-        error: error instanceof Error ? error.message : "Could not save and connect provider profile.",
-      });
-    }
-  }
-
-  async function handleLoadProviderProfile(): Promise<void> {
-    if (!selectedProviderProfileId) {
-      return;
-    }
-
-    try {
-      const profile = await fetchProviderProfile(selectedProviderProfileId);
-      patchConnection({
-        providerLabel: profile.name,
-        baseUrl: normalizeOpenAiCompatibleBaseUrl(profile.endpoint),
-        apiKey: "",
-        model: profile.defaultModel ?? "",
-        activeProviderProfileId: profile.id,
-        hasStoredApiKey: profile.hasStoredApiKey,
-        models: [],
-        status: "idle",
-        error: "",
-        providerType: profile.type || "openai_compat",
-        providerPreset: "",
-        temperature: profile.temperature ?? 0.9,
-        topP: profile.topP ?? 1.0,
-        minP: profile.minP ?? 0.05,
-        topK: profile.topK ?? 40,
-        typicalP: profile.typicalP ?? 1.0,
-        repPen: profile.repPen ?? 1.1,
-        freqPen: profile.freqPen ?? 0.0,
-        presPen: profile.presPen ?? 0.0,
-        maxTokens: profile.maxTokens ?? 8192,
-        stopSeq: profile.stopSeq ?? "",
-        seed: profile.seed ?? null,
-        reasoningEffort: profile.reasoningEffort ?? "medium",
-        streamResponse: profile.streamResponse ?? true,
-      });
-    } catch (error) {
-      patchConnection({
-        status: "error",
-        error: error instanceof Error ? error.message : "Could not load saved profile.",
-      });
-    }
-  }
-
-  async function handleSaveProviderProfile(): Promise<void> {
-    const name = connection.providerLabel.trim();
-    const endpoint = normalizeOpenAiCompatibleBaseUrl(connection.baseUrl);
-
-    if (!name || !endpoint) {
-      patchConnection({
-        status: "error",
-        error: "Provider name and base URL are required to save a profile.",
-      });
-      return;
-    }
-
-    const existingId = selectedProviderProfileId && providerProfiles.some((profile) => profile.id === selectedProviderProfileId)
-      ? selectedProviderProfileId
-      : "";
-
-    try {
-      const apiKeyInput = connection.apiKey.trim();
-      const saved = existingId
-        ? await updateProviderProfile(existingId, {
-            name,
-            type: connection.providerType || "openai_compat",
-            endpoint,
-            apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
-            defaultModel: connection.model.trim() || null,
-            contextBudget: connection.maxTokens || 8192,
-            temperature: connection.temperature,
-            topP: connection.topP,
-            minP: connection.minP,
-            topK: connection.topK,
-            typicalP: connection.typicalP,
-            repPen: connection.repPen,
-            freqPen: connection.freqPen,
-            presPen: connection.presPen,
-            maxTokens: connection.maxTokens,
-            stopSeq: connection.stopSeq,
-            seed: connection.seed,
-            reasoningEffort: connection.reasoningEffort,
-            streamResponse: connection.streamResponse,
-          })
-        : await saveProviderProfile({
-            name,
-            type: connection.providerType || "openai_compat",
-            endpoint,
-            apiKey: apiKeyInput || undefined,
-            defaultModel: connection.model.trim() || null,
-            contextBudget: connection.maxTokens || 8192,
-            temperature: connection.temperature,
-            topP: connection.topP,
-            minP: connection.minP,
-            topK: connection.topK,
-            typicalP: connection.typicalP,
-            repPen: connection.repPen,
-            freqPen: connection.freqPen,
-            presPen: connection.presPen,
-            maxTokens: connection.maxTokens,
-            stopSeq: connection.stopSeq,
-            seed: connection.seed,
-            reasoningEffort: connection.reasoningEffort,
-            streamResponse: connection.streamResponse,
-          });
-
-      await loadProviderProfiles();
-      setSelectedProviderProfileId(saved.id);
-      patchConnection({
-        providerLabel: saved.name,
-        baseUrl: normalizeOpenAiCompatibleBaseUrl(saved.endpoint),
-        apiKey: "",
-        model: saved.defaultModel ?? connection.model,
-        activeProviderProfileId: saved.id,
-        hasStoredApiKey: saved.hasStoredApiKey,
-        error: "",
-      });
-    } catch (error) {
-      patchConnection({
-        status: "error",
-        error: error instanceof Error ? error.message : "Could not save provider profile.",
-      });
-    }
-  }
-
-  async function handleActivateProviderProfile(providerProfileId: string): Promise<void> {
-    if (!providerProfileId) {
-      return;
-    }
-    try {
-      await activateProviderProfile(providerProfileId);
-      await loadProviderProfiles();
-      const profile = await fetchProviderProfile(providerProfileId);
-      patchConnection({
-        providerLabel: profile.name,
-        baseUrl: normalizeOpenAiCompatibleBaseUrl(profile.endpoint),
-        apiKey: "",
-        model: profile.defaultModel ?? "",
-        activeProviderProfileId: profile.id,
-        hasStoredApiKey: profile.hasStoredApiKey,
-        status: "connected",
-        error: "",
-      });
-    } catch (error) {
-      patchConnection({
-        status: "error",
-        error: error instanceof Error ? error.message : "Could not activate provider profile.",
-      });
-    }
-  }
-
-  async function handleDeleteProviderProfile(providerProfileId?: string): Promise<void> {
-    const targetId = providerProfileId || selectedProviderProfileId;
-    if (!targetId) {
-      return;
-    }
-
-    try {
-      await deleteProviderProfile(targetId);
-      await loadProviderProfiles();
-      if (connection.activeProviderProfileId === targetId) {
-        patchConnection({
-          activeProviderProfileId: null,
-          hasStoredApiKey: false,
-          status: "idle",
-          models: [],
-        });
-      }
-      setSelectedProviderProfileId("");
-    } catch (error) {
-      patchConnection({
-        status: "error",
-        error: error instanceof Error ? error.message : "Could not delete provider profile.",
-      });
-    }
-  }
-
-  async function handleCreateProviderProfile(): Promise<ProviderProfileRecord | null> {
-    try {
-      const saved = await saveProviderProfile({
-        name: "Новый профиль",
-        type: "openai_compat",
-        endpoint: "",
-        temperature: 0.9,
-        topP: 1.0,
-        minP: 0.05,
-        topK: 40,
-        typicalP: 1.0,
-        repPen: 1.1,
-        freqPen: 0.0,
-        presPen: 0.0,
-        maxTokens: 8192,
-        stopSeq: "",
-        seed: null,
-        reasoningEffort: "medium",
-        streamResponse: true,
-      });
-      await loadProviderProfiles();
-      return saved;
-    } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to create provider profile.");
-      return null;
-    }
-  }
-
-  async function handleDuplicateProviderProfile(id: string): Promise<ProviderProfileRecord | null> {
-    const existing = providerProfiles.find((p) => p.id === id);
-    if (!existing) return null;
-    try {
-      const saved = await saveProviderProfile({
-        name: `${existing.name} (copy)`,
-        type: existing.type,
-        endpoint: existing.endpoint,
-        defaultModel: existing.defaultModel,
-        temperature: existing.temperature ?? 0.9,
-        topP: existing.topP ?? 1.0,
-        minP: existing.minP ?? 0.05,
-        topK: existing.topK ?? 40,
-        typicalP: existing.typicalP ?? 1.0,
-        repPen: existing.repPen ?? 1.1,
-        freqPen: existing.freqPen ?? 0.0,
-        presPen: existing.presPen ?? 0.0,
-        maxTokens: existing.maxTokens ?? 8192,
-        stopSeq: existing.stopSeq ?? "",
-        seed: existing.seed ?? null,
-        reasoningEffort: existing.reasoningEffort ?? "medium",
-        streamResponse: existing.streamResponse ?? true,
-      });
-      await loadProviderProfiles();
-      return saved;
-    } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to duplicate provider profile.");
-      return null;
-    }
-  }
-
-  async function handleTestDraftConnection(endpoint: string, apiKey: string): Promise<ProviderProbeResponse> {
-    return testProviderDraft({ endpoint, apiKey });
-  }
-
-  async function handleTestChat(
-    profileId: string | null,
-    baseUrl: string,
-    apiKey: string,
-    model: string,
-  ): Promise<import("../app-client.js").TestChatResponse> {
-    if (profileId) {
-      return testProfileChatClient(profileId, model);
-    }
-    return testProviderChatClient(baseUrl, apiKey, model);
-  }
-
-  async function handleFetchModelsForProfile(providerProfileId: string): Promise<Array<{ id: string; label: string }>> {
-    const response = await fetchModelsForProviderProfile(providerProfileId);
-    return response.models;
-  }
-
-  async function handleFetchModelsByEndpoint(
-    baseUrl: string,
-    apiKey?: string,
-    useCache = true,
-  ): Promise<Array<{ id: string; label: string }>> {
-    const cacheKey = `${baseUrl}::${apiKey ?? ""}`;
-    if (useCache) {
-      const cached = modelsCache.current.get(cacheKey);
-      if (cached && Date.now() - cached.ts < 5 * 60_000) {
-        return cached.models;
-      }
-    }
-    const response = await fetchModelsByEndpointClient(baseUrl, apiKey);
-    modelsCache.current.set(cacheKey, { models: response.models, ts: Date.now() });
-    return response.models;
-  }
-
-  async function handleRefreshProfiles(): Promise<void> {
-    await loadProviderProfiles();
-  }
-
-  async function handleSaveProviderProfileFromForm(
-    form: import("../components/ProviderModal.js").FormState,
-  ): Promise<ProviderProfileRecord | null> {
-    const name = form.name.trim();
-    const endpoint = form.baseUrl.trim();
-    if (!name || !endpoint) return null;
-    const apiKeyInput = form.apiKey.trim();
-    const patch = {
-      name,
-      type: form.type || "openai_compat",
-      endpoint,
-      apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
-      defaultModel: form.model.trim() || null,
-      contextBudget: form.maxTokens || 8192,
-      temperature: form.temperature,
-      topP: form.topP,
-      minP: form.minP,
-      topK: form.topK,
-      typicalP: form.typicalP,
-      repPen: form.repPen,
-      freqPen: form.freqPen,
-      presPen: form.presPen,
-      maxTokens: form.maxTokens,
-      stopSeq: form.stopSeq,
-      seed: form.seed,
-      reasoningEffort: form.reasoningEffort,
-      streamResponse: form.streamResponse,
-    };
-    try {
-      const saved = await updateProviderProfile(form.id, patch);
-      await loadProviderProfiles();
-      return saved;
-    } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Could not save provider profile.");
-      return null;
-    }
-  }
-
-  async function handleConnectSavedProfile(): Promise<void> {
-    if (!selectedProviderProfileId) {
-      return;
-    }
-
-    await handleTestSavedProviderProfile(selectedProviderProfileId);
-  }
-
-  async function handleTestSavedProviderProfile(providerProfileId: string): Promise<void> {
-    if (!providerProfileId) {
-      return;
-    }
-
-    setChatNotice("");
-
-    try {
-      const result = await testProviderProfile(providerProfileId);
-      if (result.success) {
-        const countHint = typeof result.modelCount === "number"
-          ? ` Provider advertises ${result.modelCount} models — press Refresh models to load them.`
-          : "";
-        setChatNotice(`Connection verified.${countHint}`);
-      } else {
-        setChatNotice(result.error ?? "Connection probe failed.");
-      }
-    } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Connection probe failed.");
-    }
-  }
-
-  async function handleRefreshProviderModels(): Promise<void> {
-    const providerProfileId = connection.activeProviderProfileId || selectedProviderProfileId;
-    if (!providerProfileId) {
-      return;
-    }
-
-    setConnection((current) => ({
-      ...current,
-      status: "connecting",
-      error: "",
-    }));
-
-    try {
-      const [profile, response] = await Promise.all([
-        fetchProviderProfile(providerProfileId),
-        fetchModelsForProviderProfile(providerProfileId),
-      ]);
-      const models = response.models;
-      setConnection((current) => ({
-        ...current,
-        providerLabel: profile.name,
-        baseUrl: normalizeOpenAiCompatibleBaseUrl(profile.endpoint),
-        apiKey: "",
-        activeProviderProfileId: profile.id,
-        hasStoredApiKey: profile.hasStoredApiKey,
-        status: "connected",
-        error: "",
-        models,
-        model:
-          current.model && models.some((entry) => entry.id === current.model)
-            ? current.model
-            : profile.defaultModel && models.some((entry) => entry.id === profile.defaultModel)
-            ? profile.defaultModel
-            : models[0]?.id ?? current.model,
-      }));
-    } catch (error) {
-      patchConnection({
-        status: connection.activeProviderProfileId ? "connected" : "error",
-        error: error instanceof Error ? error.message : "Could not refresh model list.",
-      });
     }
   }
 
@@ -1054,7 +568,7 @@ export function useRpPlatformApp() {
       return;
     }
 
-    if (!canSendViaActiveProfile) {
+    if (!provider.canSendViaActiveProfile) {
       setChatNotice(
         "Regeneration is unavailable until a provider profile is activated and its default model is set.",
       );
@@ -1303,9 +817,9 @@ export function useRpPlatformApp() {
     patchConnection,
     isImportDragActive,
     importNotice,
-    providerProfiles,
-    selectedProviderProfileId,
-    setSelectedProviderProfileId,
+    providerProfiles: provider.providerProfiles,
+    selectedProviderProfileId: provider.selectedProviderProfileId,
+    setSelectedProviderProfileId: provider.setSelectedProviderProfileId,
     editingMessageId,
     editingDraft,
     setEditingDraft,
@@ -1319,29 +833,29 @@ export function useRpPlatformApp() {
     characterSaveNotice,
     isImporting,
     characterTabs,
-    canConnect,
-    canRefreshModels,
+    canConnect: provider.canConnect,
+    canRefreshModels: provider.canRefreshModels,
     canUseLiveApi,
-    canSendViaActiveProfile,
-    activeProviderProfile,
-    handleActivateProviderProfile,
-    handleCreateProviderProfile,
-    handleDuplicateProviderProfile,
-    handleTestDraftConnection,
-    handleTestChat,
-    handleFetchModelsForProfile,
-    handleFetchModelsByEndpoint,
-    handleRefreshProfiles,
-    handleSaveProviderProfileFromForm,
+    canSendViaActiveProfile: provider.canSendViaActiveProfile,
+    activeProviderProfile: provider.activeProviderProfile,
+    handleActivateProviderProfile: provider.handleActivateProviderProfile,
+    handleCreateProviderProfile: provider.handleCreateProviderProfile,
+    handleDuplicateProviderProfile: provider.handleDuplicateProviderProfile,
+    handleTestDraftConnection: provider.handleTestDraftConnection,
+    handleTestChat: provider.handleTestChat,
+    handleFetchModelsForProfile: provider.handleFetchModelsForProfile,
+    handleFetchModelsByEndpoint: provider.handleFetchModelsByEndpoint,
+    handleRefreshProfiles: provider.handleRefreshProfiles,
+    handleSaveProviderProfileFromForm: provider.handleSaveProviderProfileFromForm,
     personas,
     renderSendLabel,
     handleSend,
-    handleConnect,
-    handleLoadProviderProfile,
-    handleSaveProviderProfile,
-    handleDeleteProviderProfile,
-    handleConnectSavedProfile,
-    handleRefreshProviderModels,
+    handleConnect: provider.handleConnect,
+    handleLoadProviderProfile: provider.handleLoadProviderProfile,
+    handleSaveProviderProfile: provider.handleSaveProviderProfile,
+    handleDeleteProviderProfile: provider.handleDeleteProviderProfile,
+    handleConnectSavedProfile: provider.handleConnectSavedProfile,
+    handleRefreshProviderModels: provider.handleRefreshProviderModels,
     handleSwitchChat,
     handleSaveCharacter,
     handleSavePersona,
