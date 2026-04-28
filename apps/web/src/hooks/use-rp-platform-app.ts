@@ -879,6 +879,7 @@ export function useRpPlatformApp() {
         chatId: activeChatId,
         name: draftInput.name,
         description: draftInput.description,
+        subtitle: draftInput.personalitySummary,
         firstMessage: draftInput.firstMessage,
         scenario: draftInput.scenario,
         systemPrompt: draftInput.systemPrompt,
@@ -886,6 +887,12 @@ export function useRpPlatformApp() {
         alternateGreetings: draftInput.alternateGreetings,
         postHistoryInstructions: draftInput.postHistoryInstructions,
         creatorNotes: draftInput.creatorNotes,
+        characterBook: draftInput.characterBook,
+        depthPrompt: draftInput.depthPrompt,
+        depthPromptDepth: draftInput.depthPromptDepth,
+        depthPromptRole: draftInput.depthPromptRole,
+        extensions: draftInput.extensions,
+        tags: draftInput.tags,
       });
       refresh(activeChatId, nextSnapshot);
       setCharacterSaveNotice("Character card saved.");
