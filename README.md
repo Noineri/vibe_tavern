@@ -88,7 +88,7 @@ API реализован в [services/api/src/dev-server.ts](../rp_platform/serv
 - обновление данных персонажа
 - chat/message/branch операции для прототипного runtime
 
-Основная orchestration-логика находится в [services/api/src/session-runtime.ts](../rp_platform/services/api/src/session-runtime.ts), [services/api/src/live-chat-orchestrator.ts](../rp_platform/services/api/src/live-chat-orchestrator.ts) и [services/api/src/provider-orchestrator.ts](../rp_platform/services/api/src/provider-orchestrator.ts).
+Основная orchestration-логика находится в [services/api/src/session-runtime.ts](../rp_platform/services/api/src/session-runtime.ts) и его helper-модулях: [session-runtime-dto.ts](../rp_platform/services/api/src/session-runtime-dto.ts) (DTO mapping, prompt trace records, provider profile mapping), [session-runtime-character.ts](../rp_platform/services/api/src/session-runtime-character.ts) (character/card record mapping), и [session-runtime-store.ts](../rp_platform/services/api/src/session-runtime-store.ts) (default store creation). Orchestrators: [services/api/src/live-chat-orchestrator.ts](../rp_platform/services/api/src/live-chat-orchestrator.ts) и [services/api/src/provider-orchestrator.ts](../rp_platform/services/api/src/provider-orchestrator.ts).
 
 - Runtime собирает snapshot состояния для UI.
 - Импортированный character card автоматически создаёт chat.
