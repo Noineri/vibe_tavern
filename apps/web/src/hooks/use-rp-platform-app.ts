@@ -161,11 +161,28 @@ export function useRpPlatformApp() {
     }
   }
 
+  useEffect(() => {
+    if (snapshot?.activeChat.promptPresetId) {
+      setActivePromptPresetId(snapshot.activeChat.promptPresetId);
+    }
+  }, [snapshot?.activeChat.promptPresetId]);
+
+  async function handleSetActivePromptPresetId(presetId: string | null): Promise<void> {
+    setActivePromptPresetId(presetId);
+    if (!activeChatId || !presetId) return;
+    try {
+      const nextSnapshot = await (await import("../app-client.js")).setChatPromptPreset(activeChatId, presetId);
+      refresh(activeChatId, nextSnapshot);
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : "Failed to set prompt preset.");
+    }
+  }
+
   async function handleCreatePromptPreset(input: { name: string; bindModel?: string; system?: string; jailbreak?: string; summary?: string; tools?: string }): Promise<{ id: string } | null> {
     try {
       const created = await (await import("../app-client.js")).createPromptPreset(input);
       await loadPromptPresets();
-      setActivePromptPresetId(created.id);
+      await handleSetActivePromptPresetId(created.id);
       return { id: created.id };
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : "Failed to create preset.");
@@ -347,11 +364,30 @@ export function useRpPlatformApp() {
 
   async function handleSend(): Promise<void> {
     const trimmed = draft.trim();
+    void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.enter", {
+      activeChatId,
+      draftLength: draft.length,
+      trimmedLength: trimmed.length,
+      isSending,
+      canSendViaActiveProfile: provider.canSendViaActiveProfile,
+      connectionStatus: connection.status,
+      connectionModel: connection.model,
+    }));
     if (!trimmed || isSending || !activeChatId) {
+      void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.blocked.basic", {
+        activeChatId,
+        trimmedLength: trimmed.length,
+        isSending,
+      }));
       return;
     }
 
     if (!provider.canSendViaActiveProfile) {
+      void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.blocked.provider", {
+        activeChatId,
+        connectionStatus: connection.status,
+        connectionModel: connection.model,
+      }));
       setChatNotice(
         "Message sending is unavailable until a provider profile is activated and its default model is set. Open Provider settings, pick a model, press Save profile, then Set as active.",
       );
@@ -364,10 +400,16 @@ export function useRpPlatformApp() {
     setIsSending(true);
 
     try {
+      void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.request", { activeChatId }));
       refresh(activeChatId, await sendChatMessage(activeChatId, {
         content: trimmed,
       }));
+      void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.success", { activeChatId }));
     } catch (error) {
+      void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.error", {
+        activeChatId,
+        message: error instanceof Error ? error.message : String(error),
+      }));
       refresh(activeChatId, await fetchChat(activeChatId));
       setChatNotice(error instanceof Error && error.message ? error.message : "Message sending failed.");
     } finally {
@@ -608,6 +650,7 @@ export function useRpPlatformApp() {
     try {
       const imported = await importFile(firstFile, { chatId: activeChatId ?? undefined });
 
+      setIsFirstRun(false);
       refresh(imported.activeChatId, imported.snapshot);
 
       if (imported.imported.kind === "character") {
@@ -865,7 +908,7 @@ export function useRpPlatformApp() {
     handleSetPersonalLorebook,
     promptPresets,
     activePromptPresetId,
-    setActivePromptPresetId,
+    setActivePromptPresetId: handleSetActivePromptPresetId,
     handleCreatePromptPreset,
     handleUpdatePromptPreset,
     handleDeletePromptPreset,

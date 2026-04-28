@@ -7,8 +7,6 @@ import type {
   Character,
   CharacterId,
   CharacterVersion,
-  GenerationPresetId,
-  GenerationPreset,
   LoreEntry,
   Lorebook,
   LorebookId,
@@ -34,7 +32,7 @@ export interface CreateChatSessionInput {
   characterId: CharacterId;
   personaId: PersonaId;
   title: string;
-  generationPresetId: GenerationPresetId;
+  promptPresetId: PromptPresetId;
   toolProfileId: ToolProfileId;
   createdAt?: string;
 }
@@ -125,8 +123,7 @@ export interface ChatSessionStore {
   enablePersonalLorebookForPersona(personaId: PersonaId, name: string): { lorebookId: LorebookId };
   disablePersonalLorebookForPersona(personaId: PersonaId): void;
   updateChatPersona(chatId: ChatId, personaId: PersonaId): void;
-  upsertGenerationPreset(input: GenerationPreset): void;
-  getGenerationPreset(id: GenerationPresetId): GenerationPreset | null;
+  updateChatPromptPreset(chatId: ChatId, promptPresetId: PromptPresetId): void;
   upsertToolProfile(input: ToolProfile): void;
   getToolProfile(id: ToolProfileId): ToolProfile | null;
   upsertLorebook(input: Lorebook): void;
@@ -193,7 +190,6 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
   private readonly characters = new Map<CharacterId, Character>();
   private readonly characterVersions = new Map<string, CharacterVersion>();
   private readonly personas = new Map<PersonaId, Persona>();
-  private readonly generationPresets = new Map<GenerationPresetId, GenerationPreset>();
   private readonly toolProfiles = new Map<ToolProfileId, ToolProfile>();
   private readonly lorebooks = new Map<string, Lorebook>();
   private readonly loreEntries = new Map<string, LoreEntry>();
@@ -285,6 +281,15 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     this.touchChat(chat);
   }
 
+  updateChatPromptPreset(chatId: ChatId, promptPresetId: PromptPresetId): void {
+    const chat = this.requireChat(chatId);
+    if (!this.promptPresets.has(promptPresetId)) {
+      throw new Error(`Prompt preset '${promptPresetId}' was not found.`);
+    }
+    chat.promptPresetId = promptPresetId;
+    this.touchChat(chat);
+  }
+
   getPersonalLorebookForPersona(personaId: PersonaId): { lorebookId: LorebookId } | null {
     const links = this.personaLorebooks.get(personaId);
     if (!links) return null;
@@ -325,18 +330,6 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     if (!existing) return;
     this.personaLorebooks.get(personaId)?.delete(existing.lorebookId);
     this.lorebooks.delete(existing.lorebookId);
-  }
-
-  upsertGenerationPreset(input: GenerationPreset): void {
-    this.generationPresets.set(input.id, {
-      ...input,
-      metadata: cloneLooseRecord(input.metadata),
-    });
-  }
-
-  getGenerationPreset(id: GenerationPresetId): GenerationPreset | null {
-    const preset = this.generationPresets.get(id);
-    return preset ? { ...preset, metadata: JSON.parse(JSON.stringify(preset.metadata)) } : null;
   }
 
   upsertToolProfile(input: ToolProfile): void {
@@ -470,8 +463,8 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     if (!this.personas.has(input.personaId)) {
       throw new Error(`Persona '${input.personaId}' is missing.`);
     }
-    if (!this.generationPresets.has(input.generationPresetId)) {
-      throw new Error(`Generation preset '${input.generationPresetId}' is missing.`);
+    if (!this.promptPresets.has(input.promptPresetId)) {
+      throw new Error(`Prompt preset '${input.promptPresetId}' is missing.`);
     }
     if (!this.toolProfiles.has(input.toolProfileId)) {
       throw new Error(`Tool profile '${input.toolProfileId}' is missing.`);
@@ -488,7 +481,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
       title: input.title,
       status: "active",
       activeBranchId: rootBranchId,
-      generationPresetId: input.generationPresetId,
+      promptPresetId: input.promptPresetId,
       toolProfileId: input.toolProfileId,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -1045,7 +1038,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
       title: title ?? `${sourceChat.title} (copy)`,
       status: "active",
       activeBranchId: newRootBranchId,
-      generationPresetId: sourceChat.generationPresetId,
+      promptPresetId: sourceChat.promptPresetId,
       toolProfileId: sourceChat.toolProfileId,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -1169,6 +1162,9 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
   deletePromptPreset(presetId: PromptPresetId): void {
     if (!this.promptPresets.has(presetId)) {
       throw new Error(`Prompt preset '${presetId}' was not found.`);
+    }
+    if ([...this.chats.values()].some((chat) => chat.promptPresetId === presetId)) {
+      throw new Error(`Prompt preset '${presetId}' is used by a chat.`);
     }
     this.promptPresets.delete(presetId);
   }

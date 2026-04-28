@@ -6,6 +6,7 @@ import { SessionRuntime } from "./session-runtime.js";
 import { ProviderOrchestrator } from "./provider-orchestrator.js";
 import { listProviderModels, normalizeOpenAiCompatibleBaseUrl, probeProviderConnection, testProviderChat } from "./provider-gateway.js";
 import { ProviderManager } from "./providers/manager.js";
+import { logSendDebug } from "./send-debug-log.js";
 
 const host = process.env.RP_PLATFORM_API_HOST ?? "127.0.0.1";
 const port = Number(process.env.RP_PLATFORM_API_PORT ?? "8787");
@@ -51,18 +52,35 @@ const runtime = {
     sessionRuntime.editMessage(chatId, messageId, content),
   deleteMessage: (chatId: string, messageId: string) => sessionRuntime.deleteMessage(chatId, messageId),
   sendMessage: async (chatId: string, body: { content: string }) => {
+    logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
     const profile = sessionRuntime.resolveActiveProviderProfile();
     if (!profile) {
+      logSendDebug("api.runtime.send.no_active_profile", { chatId });
       throw new Error("No active provider profile. Activate one in Provider settings.");
     }
     if (!profile.defaultModel) {
+      logSendDebug("api.runtime.send.no_default_model", { chatId, profileId: profile.id });
       throw new Error("Active provider profile has no default model. Pick a model and save the profile.");
     }
+    logSendDebug("api.runtime.send.profile", {
+      chatId,
+      profileId: profile.id,
+      providerType: profile.type,
+      endpoint: profile.endpoint,
+      model: profile.defaultModel,
+      contextBudget: profile.contextBudget,
+    });
     const result = await liveChatOrchestrator.sendMessage({
       chatId,
       content: body.content,
       profile,
       model: profile.defaultModel,
+    });
+    logSendDebug("api.runtime.send.success", {
+      chatId,
+      replyLength: result.reply.length,
+      preparedMessageCount: result.preparedMessageCount,
+      promptMessageCount: result.promptMessageCount,
     });
     return result.snapshot;
   },
@@ -72,6 +90,7 @@ const runtime = {
     sessionRuntime.updatePersona(personaId, body),
   listPersonas: () => sessionRuntime.listPersonas(),
   setChatPersona: (chatId: string, personaId: string) => sessionRuntime.setChatPersona(chatId, personaId),
+  setChatPromptPreset: (chatId: string, promptPresetId: string) => sessionRuntime.setChatPromptPreset(chatId, promptPresetId),
   createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) =>
     sessionRuntime.createPersona(body),
   deletePersona: (personaId: string) => sessionRuntime.deletePersona(personaId),
@@ -137,6 +156,15 @@ const server = createServer(async (request, response) => {
   try {
     await routeRequest(request, response);
   } catch (error) {
+    const url = request.url ?? "/";
+    if (url.includes("/messages") || url.includes("/debug/send-log")) {
+      logSendDebug("api.route.error", {
+        method: request.method ?? "GET",
+        url,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : null,
+      });
+    }
     writeJson(response, 500, {
       error: error instanceof Error ? error.message : "Unknown server error",
     });
@@ -162,6 +190,13 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
       service: "rp-platform-api",
       time: new Date().toISOString(),
     });
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/debug/send-log") {
+    const body = await readJsonBody(request);
+    logSendDebug("web.debug", typeof body === "object" && body ? body as Record<string, unknown> : { body });
+    writeJson(response, 200, { ok: true });
     return;
   }
 
@@ -295,6 +330,10 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
   const messagesCreateMatch = /^\/api\/chats\/([^/]+)\/messages$/.exec(url.pathname);
   if (method === "POST" && messagesCreateMatch) {
     const body = await readJsonBody(request);
+    logSendDebug("api.route.messages.post", {
+      chatId: messagesCreateMatch[1],
+      contentLength: body.content?.length ?? 0,
+    });
     writeJson(
       response,
       200,
@@ -310,6 +349,13 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
   if (method === "POST" && setPersonaMatch) {
     const body = await readJsonBody(request);
     writeJson(response, 200, runtime.setChatPersona(setPersonaMatch[1], body.personaId));
+    return;
+  }
+
+  const setPromptPresetMatch = /^\/api\/chats\/([^/]+)\/set-prompt-preset$/.exec(url.pathname);
+  if (method === "POST" && setPromptPresetMatch) {
+    const body = await readJsonBody(request);
+    writeJson(response, 200, runtime.setChatPromptPreset(setPromptPresetMatch[1], body.promptPresetId));
     return;
   }
 

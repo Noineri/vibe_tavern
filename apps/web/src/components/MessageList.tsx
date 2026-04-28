@@ -48,6 +48,7 @@ export function MessageList(input: MessageListProps) {
               characterName={input.characterName}
               isEditing={input.editingMessageId === message.id}
               isGenerating={
+                message.id !== firstCharMsgId &&
                 message.role === "assistant" &&
                 input.isSending &&
                 isLastAssistantMessage(input.messages, message.id)
@@ -55,7 +56,7 @@ export function MessageList(input: MessageListProps) {
               editingDraft={input.editingDraft}
               isBusy={input.isSending || input.messageActionId === message.id}
               canBranch={isLastMessage(input.messages, message.id)}
-              canRegenerate={isLastAssistantMessage(input.messages, message.id)}
+              canRegenerate={message.id !== firstCharMsgId && isLastAssistantMessage(input.messages, message.id)}
               greetingOptions={message.id === firstCharMsgId ? greetingOptions : undefined}
               onBranch={input.onFork}
               onStartEdit={() => input.onStartEdit(message)}

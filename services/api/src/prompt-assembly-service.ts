@@ -2,7 +2,6 @@ import type { AssemblePromptResponse, PromptLayerDto } from "@rp-platform/api-co
 import type {
   ChatBranchId,
   ChatId,
-  GenerationRule,
   LoreEntry,
   MessageId,
   PromptTrace,
@@ -36,15 +35,18 @@ export interface PromptAssemblyResolver {
         description: string;
       }
     | null;
-  getGenerationPreset(
+  getPromptPreset(
     presetId: string,
   ):
     | {
         id: string;
+        name: string;
         text: string;
+        jailbreak: string;
+        summary: string;
+        tools: string;
       }
     | null;
-  listGenerationRules(chatId: ChatId): GenerationRule[];
   listActiveLoreEntries(input: {
     chatId: ChatId;
     branchId: ChatBranchId;
@@ -62,7 +64,6 @@ export interface AssemblePromptForChatInput {
   chatId: ChatId;
   branchId?: ChatBranchId;
   model: string;
-  outputConstraints?: string | null;
   recentMessageLimit?: number;
   excludeMessageIds?: MessageId[];
   contextBudget?: number | null;
@@ -94,8 +95,7 @@ export class PromptAssemblyService {
 
     const character = this.resolver.getCharacter(chat.characterId);
     const persona = this.resolver.getPersona(chat.personaId);
-    const systemPreset = this.resolver.getGenerationPreset(chat.generationPresetId);
-    const generationRules = this.resolver.listGenerationRules(chat.id);
+    const promptPreset = this.resolver.getPromptPreset(chat.promptPresetId);
     const excludedMessageIds = new Set(input.excludeMessageIds ?? []);
     const recentMessages = branchState.messages
       .filter((message) => !excludedMessageIds.has(message.id))
@@ -128,19 +128,22 @@ export class PromptAssemblyService {
         personality: character.personality,
       },
       persona,
-      systemPreset,
+      promptPreset: promptPreset
+        ? {
+            id: promptPreset.id,
+            name: promptPreset.name,
+            text: promptPreset.text,
+            jailbreak: promptPreset.jailbreak,
+            summary: promptPreset.summary,
+            tools: promptPreset.tools,
+          }
+        : null,
       activeLoreEntries: activeLoreEntries.map((entry) => ({
         id: entry.id,
         title: entry.title,
         content: entry.content,
         priority: entry.priority,
         position: entry.position,
-      })),
-      generationRules: generationRules.map((rule) => ({
-        id: rule.id,
-        title: rule.title,
-        content: rule.content,
-        priority: rule.priority,
       })),
       summaryMemory: branchState.summaries.map((snapshot) => ({
         id: snapshot.id,
@@ -156,8 +159,7 @@ export class PromptAssemblyService {
       recentMessages,
       mesExample: character.mesExample,
       postHistoryInstructions: character.postHistoryInstructions,
-      toolInstructions: this.resolver.getToolInstructions(chat.toolProfileId),
-      outputConstraints: input.outputConstraints ?? null,
+      toolInstructions: [promptPreset?.tools, this.resolver.getToolInstructions(chat.toolProfileId)].filter(Boolean).join("\n") || null,
       contextBudget: input.contextBudget ?? null,
     });
 
@@ -182,7 +184,7 @@ export class PromptAssemblyService {
         chatId: chat.id,
         branchId,
         model: input.model,
-        presetName: systemPreset?.id ?? chat.generationPresetId,
+        presetName: promptPreset?.name ?? chat.promptPresetId,
         assembledLayers: result.layers.map((layer) => mapPromptLayerDto(layer)),
         tokenAccounting: {
           total: result.totalTokenEstimate,

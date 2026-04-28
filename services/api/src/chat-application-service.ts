@@ -25,7 +25,7 @@ export class ChatApplicationService {
       characterId: input.characterId,
       personaId: input.personaId,
       title: input.title,
-      generationPresetId: input.generationPresetId,
+      promptPresetId: input.promptPresetId,
       toolProfileId: input.toolProfileId,
     });
 

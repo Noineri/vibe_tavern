@@ -241,12 +241,20 @@ export async function setChatPersona(chatId: import("@rp-platform/domain").ChatI
   }));
 }
 
+export async function setChatPromptPreset(chatId: import("@rp-platform/domain").ChatId, promptPresetId: string): Promise<AppSnapshot> {
+  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/set-prompt-preset`, {
+    method: "POST",
+    body: { promptPresetId }
+  }));
+}
+
 export async function sendChatMessage(
   chatId: ChatId,
   input: {
     content: string;
   },
 ): Promise<AppSnapshot> {
+  postSendDebug("web.client.sendChatMessage.start", { chatId, contentLength: input.content.length });
   return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/messages`, {
     method: "POST",
     body: input,
@@ -595,6 +603,15 @@ async function requestJson<T>(
     body?: unknown;
   },
 ): Promise<T> {
+  const startedAt = Date.now();
+  const shouldDebug = path.includes("/messages") || path.includes("/set-persona") || path.includes("/set-prompt-preset");
+  if (shouldDebug) {
+    postSendDebug("web.client.request.start", {
+      path,
+      method: options?.method ?? "GET",
+      bodyKeys: options?.body && typeof options.body === "object" ? Object.keys(options.body as Record<string, unknown>) : [],
+    });
+  }
   const response = await fetch(`${getGatewayBaseUrl()}${path}`, {
     method: options?.method ?? "GET",
     headers: {
@@ -606,11 +623,35 @@ async function requestJson<T>(
   const text = await response.text();
   const data = text ? (JSON.parse(text) as { error?: string }) : {};
 
+  if (shouldDebug) {
+    postSendDebug("web.client.request.done", {
+      path,
+      method: options?.method ?? "GET",
+      status: response.status,
+      ok: response.ok,
+      latencyMs: Date.now() - startedAt,
+      responseBytes: text.length,
+      error: !response.ok ? data.error ?? null : null,
+    });
+  }
+
   if (!response.ok) {
     throw new Error(data.error || `Request failed: ${response.status}`);
   }
 
   return data as T;
+}
+
+export function logClientSendDebug(event: string, data: Record<string, unknown> = {}): void {
+  postSendDebug(event, data);
+}
+
+function postSendDebug(event: string, data: Record<string, unknown>): void {
+  void fetch(`${getGatewayBaseUrl()}/api/debug/send-log`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event, ...data, clientTs: new Date().toISOString() }),
+  }).catch(() => undefined);
 }
 
 function normalizeSnapshot(snapshot: AppSnapshot): AppSnapshot {

@@ -3,8 +3,6 @@ import type {
   CharacterVersionId,
   ChatBranchId,
   ChatId,
-  GenerationPresetId,
-  GenerationRuleId,
   LoreEntryId,
   LorebookId,
   MessageId,
@@ -124,7 +122,7 @@ export interface Chat {
   title: string;
   status: ChatStatus;
   activeBranchId: ChatBranchId;
-  generationPresetId: GenerationPresetId;
+  promptPresetId: PromptPresetId;
   toolProfileId: ToolProfileId;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -160,29 +158,6 @@ export interface MessageVariant {
   isSelected: boolean;
   finishReason: string | null;
   createdAt: Timestamp;
-}
-
-export interface GenerationPreset {
-  id: GenerationPresetId;
-  name: string;
-  temperature: number;
-  topP: number | null;
-  topK: number | null;
-  presencePenalty: number | null;
-  frequencyPenalty: number | null;
-  maxOutputTokens: number | null;
-  systemStyleNote: string | null;
-  metadata: Record<string, unknown>;
-}
-
-export interface GenerationRule {
-  id: GenerationRuleId;
-  scopeType: LoreScopeType | "character" | "chat";
-  scopeId: string;
-  title: string;
-  content: string;
-  enabled: boolean;
-  priority: number;
 }
 
 export interface SummaryMemorySnapshot {

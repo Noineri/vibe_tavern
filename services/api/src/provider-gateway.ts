@@ -1,4 +1,7 @@
 import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
+import * as https from "node:https";
+import * as http from "node:http";
+import { logSendDebug } from "./send-debug-log.js";
 
 export interface ProviderConnectionInput {
   apiKey: string;
@@ -13,7 +16,7 @@ export interface ProviderModelOption {
 
 const PROBE_TIMEOUT_MS = 5_000;
 const MODEL_LIST_TIMEOUT_MS = 10_000;
-const CHAT_COMPLETION_TIMEOUT_MS = 45_000;
+const CHAT_COMPLETION_TIMEOUT_MS = 90_000;
 const TEST_CHAT_TIMEOUT_MS = 15_000;
 
 export interface ProviderProbeResult {
@@ -129,7 +132,7 @@ export async function testProviderChat(
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
-      headers: buildHeaders(input.apiKey),
+      headers: buildHeaders(input.apiKey, true),
       body: JSON.stringify({
         model: input.model,
         messages: [{ role: "user", content: "Hi" }],
@@ -212,35 +215,34 @@ export async function generateProviderReply(
   prompt: AssemblePromptResponse,
 ): Promise<string> {
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
-  let response: Response;
+  const messages = extractChatCompletionMessages(prompt);
+  const body = JSON.stringify({
+    model: input.model,
+    messages,
+    max_tokens: 4096,
+    temperature: 0.9,
+    stream: false,
+  });
 
-  try {
-    response = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: buildHeaders(input.apiKey),
-      body: JSON.stringify({
-        model: input.model,
-        messages: extractChatCompletionMessages(prompt),
-        temperature: 0.9,
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(CHAT_COMPLETION_TIMEOUT_MS),
-    });
-  } catch (error) {
-    throw wrapProviderNetworkError(error, {
-      operation: "Chat completion request",
-      timeoutMs: CHAT_COMPLETION_TIMEOUT_MS,
-    });
-  }
+  logSendDebug("provider.generate.rawRequest", {
+    url: `${baseUrl}/chat/completions`,
+    bodyLength: body.length,
+    messageCount: messages.length,
+  });
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
+  const response = await httpRequest("POST", `${baseUrl}/chat/completions`, {
+    Authorization: `Bearer ${input.apiKey}`,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  }, body, CHAT_COMPLETION_TIMEOUT_MS);
+
+  if (response.status >= 300) {
     throw new Error(
-      `Chat completion failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+      `Chat completion failed: ${response.status} ${response.statusText ?? ""}${response.body ? ` - ${response.body.slice(0, 500)}` : ""}`,
     );
   }
 
-  const payload = (await response.json()) as OpenAiChatCompletionResponse;
+  const payload = JSON.parse(response.body) as OpenAiChatCompletionResponse;
   const choice = payload.choices?.[0];
   const content = extractChoiceContent(choice);
 
@@ -251,10 +253,13 @@ export async function generateProviderReply(
   return content;
 }
 
-function buildHeaders(apiKey: string): HeadersInit {
+function buildHeaders(apiKey: string, withBody = false): HeadersInit {
   const headers: Record<string, string> = {
     Accept: "application/json",
   };
+  if (withBody) {
+    headers["Content-Type"] = "application/json";
+  }
   if (apiKey) {
     headers.Authorization = `Bearer ${apiKey}`;
   }
@@ -352,4 +357,65 @@ function wrapProviderNetworkError(
   }
 
   return new Error(`${input.operation} failed.`);
+}
+
+interface HttpResult {
+  status: number;
+  statusText: string;
+  body: string;
+}
+
+function httpRequest(
+  method: string,
+  url: string,
+  headers: Record<string, string>,
+  body: string | null,
+  timeoutMs: number,
+): Promise<HttpResult> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const transport = parsed.protocol === "https:" ? https : http;
+    const requestOptions: https.RequestOptions = {
+      method,
+      hostname: parsed.hostname,
+      port: parsed.port || (parsed.protocol === "https:" ? 443 : 80),
+      path: parsed.pathname + parsed.search,
+      headers: {
+        ...headers,
+        ...(body ? { "Content-Length": Buffer.byteLength(body).toString() } : {}),
+      },
+    };
+
+    const req = transport.request(requestOptions, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => {
+        const responseBody = Buffer.concat(chunks).toString("utf-8");
+        resolve({
+          status: res.statusCode ?? 0,
+          statusText: res.statusMessage ?? "",
+          body: responseBody,
+        });
+      });
+      res.on("error", reject);
+    });
+
+    req.on("error", (err) => {
+      logSendDebug("provider.generate.httpError", {
+        message: err.message,
+        code: (err as NodeJS.ErrnoException).code,
+        syscall: (err as NodeJS.ErrnoException).syscall,
+      });
+      reject(err);
+    });
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`Request timed out after ${Math.floor(timeoutMs / 1000)}s.`));
+    });
+
+    if (body) {
+      req.write(body);
+    }
+    req.end();
+  });
 }
