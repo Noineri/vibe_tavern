@@ -8,12 +8,12 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
-    "build:api-stack": "npm run build --workspace @rp-platform/api-contracts && npm run build --workspace @rp-platform/domain && npm run build --workspace @rp-platform/prompt-pipeline && npm run build --workspace @rp-platform/db && npm run build --workspace @rp-platform/import-export && npm run build --workspace @rp-platform/api",
-    "dev": "node ./scripts/dev-supervisor.cjs",
-    "typecheck": "npm run typecheck --workspaces",
-    "dev:api": "npm run build:api-stack && npm run dev --workspace @rp-platform/api",
-    "dev:web": "npm run dev --workspace @rp-platform/web"
+    "build": "bun run --filter '*' build",
+    "build:api-stack": "bun run --filter @rp-platform/api-contracts build && bun run --filter @rp-platform/domain build && bun run --filter @rp-platform/prompt-pipeline build && bun run --filter @rp-platform/db build && bun run --filter @rp-platform/import-export build && bun run --filter @rp-platform/api build",
+    "dev": "bun ./scripts/dev-supervisor.cjs",
+    "typecheck": "bun run --filter '*' typecheck",
+    "dev:api": "bun run build:api-stack && bun run --filter @rp-platform/api dev",
+    "dev:web": "bun run --filter @rp-platform/web dev"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
