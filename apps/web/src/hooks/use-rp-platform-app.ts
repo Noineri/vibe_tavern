@@ -879,6 +879,7 @@ export function useRpPlatformApp() {
         chatId: activeChatId,
         name: draftInput.name,
         description: draftInput.description,
+        firstMessage: draftInput.firstMessage,
         scenario: draftInput.scenario,
         systemPrompt: draftInput.systemPrompt,
         mesExample: draftInput.mesExample,

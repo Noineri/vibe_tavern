@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef } from "react";
 import type { AppMessage } from "../app-client.js";
 import { Markdown } from "../lib/markdown.js";
 import { MessageBlock } from "./MessageBlock.js";
@@ -6,6 +6,20 @@ import type { MessageListProps } from "./play-mode-types.js";
 
 export function MessageList(input: MessageListProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
+  const firstCharMsgId = useMemo(() => {
+    for (const msg of input.messages) {
+      if (msg.role === "assistant") return msg.id;
+    }
+    return null;
+  }, [input.messages]);
+  const firstCharMsg = useMemo(
+    () => input.messages.find((message) => message.id === firstCharMsgId) ?? null,
+    [firstCharMsgId, input.messages],
+  );
+  const alternateGreetings = input.alternateGreetings ?? [];
+  const greetingOptions = firstCharMsg && alternateGreetings.length > 0
+    ? [firstCharMsg.content, ...alternateGreetings]
+    : undefined;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -42,6 +56,7 @@ export function MessageList(input: MessageListProps) {
               isBusy={input.isSending || input.messageActionId === message.id}
               canBranch={isLastMessage(input.messages, message.id)}
               canRegenerate={isLastAssistantMessage(input.messages, message.id)}
+              greetingOptions={message.id === firstCharMsgId ? greetingOptions : undefined}
               onBranch={input.onFork}
               onStartEdit={() => input.onStartEdit(message)}
               onEditingDraftChange={input.onEditingDraftChange}
