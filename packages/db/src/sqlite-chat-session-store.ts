@@ -140,6 +140,13 @@ type CharacterRow = SqliteRow & {
   alternate_greetings_json: string;
   post_history_instructions: string | null;
   creator_notes: string | null;
+  character_book_json: string | null;
+  depth_prompt: string | null;
+  depth_prompt_depth: number | null;
+  depth_prompt_role: string | null;
+  extensions_json: string;
+  system_prompt: string | null;
+  tags_json: string;
   avatar_asset_id: string | null;
   status: string;
   created_at: string;
@@ -204,8 +211,9 @@ export class SqliteChatSessionStore implements ChatSessionStore {
     this.db.execute(
       `INSERT INTO characters (
         id, slug, name, description, personality_summary, default_scenario, first_message, mes_example, alternate_greetings_json,
-        post_history_instructions, creator_notes, avatar_asset_id, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        post_history_instructions, creator_notes, character_book_json, depth_prompt, depth_prompt_depth, depth_prompt_role,
+        extensions_json, system_prompt, tags_json, avatar_asset_id, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         slug = excluded.slug,
         name = excluded.name,
@@ -217,6 +225,13 @@ export class SqliteChatSessionStore implements ChatSessionStore {
         alternate_greetings_json = excluded.alternate_greetings_json,
         post_history_instructions = excluded.post_history_instructions,
         creator_notes = excluded.creator_notes,
+        character_book_json = excluded.character_book_json,
+        depth_prompt = excluded.depth_prompt,
+        depth_prompt_depth = excluded.depth_prompt_depth,
+        depth_prompt_role = excluded.depth_prompt_role,
+        extensions_json = excluded.extensions_json,
+        system_prompt = excluded.system_prompt,
+        tags_json = excluded.tags_json,
         avatar_asset_id = excluded.avatar_asset_id,
         status = excluded.status,
         updated_at = excluded.updated_at`,
@@ -232,6 +247,13 @@ export class SqliteChatSessionStore implements ChatSessionStore {
         JSON.stringify(input.alternateGreetings),
         input.postHistoryInstructions,
         input.creatorNotes,
+        input.characterBook ? JSON.stringify(input.characterBook) : null,
+        input.depthPrompt,
+        input.depthPromptDepth,
+        input.depthPromptRole,
+        JSON.stringify(input.extensions),
+        input.systemPrompt,
+        JSON.stringify(input.tags),
         input.avatarAssetId,
         input.status,
         input.createdAt,
@@ -699,7 +721,8 @@ export class SqliteChatSessionStore implements ChatSessionStore {
     return this.db
       .queryAll<CharacterRow>(
         `SELECT id, slug, name, description, personality_summary, default_scenario, first_message, mes_example, alternate_greetings_json,
-                post_history_instructions, creator_notes, avatar_asset_id, status, created_at, updated_at
+                post_history_instructions, creator_notes, character_book_json, depth_prompt, depth_prompt_depth, depth_prompt_role,
+                extensions_json, system_prompt, tags_json, avatar_asset_id, status, created_at, updated_at
          FROM characters
          ORDER BY created_at ASC, id ASC`,
       )
@@ -709,7 +732,8 @@ export class SqliteChatSessionStore implements ChatSessionStore {
   getCharacter(characterId: CharacterId): Character | null {
     const row = this.db.queryOne<CharacterRow>(
       `SELECT id, slug, name, description, personality_summary, default_scenario, first_message, mes_example, alternate_greetings_json,
-              post_history_instructions, creator_notes, avatar_asset_id, status, created_at, updated_at
+              post_history_instructions, creator_notes, character_book_json, depth_prompt, depth_prompt_depth, depth_prompt_role,
+              extensions_json, system_prompt, tags_json, avatar_asset_id, status, created_at, updated_at
        FROM characters
        WHERE id = ?`,
       [characterId],
@@ -1908,6 +1932,13 @@ function mapCharacter(row: CharacterRow): Character {
     alternateGreetings: parseJson<string[]>(row.alternate_greetings_json),
     postHistoryInstructions: row.post_history_instructions,
     creatorNotes: row.creator_notes,
+    characterBook: row.character_book_json ? parseJson<Record<string, unknown>>(row.character_book_json) : null,
+    depthPrompt: row.depth_prompt,
+    depthPromptDepth: row.depth_prompt_depth,
+    depthPromptRole: row.depth_prompt_role,
+    extensions: parseJson<Record<string, unknown>>(row.extensions_json),
+    systemPrompt: row.system_prompt,
+    tags: parseJson<string[]>(row.tags_json),
     avatarAssetId: row.avatar_asset_id,
     status: row.status as Character["status"],
     createdAt: row.created_at,

@@ -55,6 +55,13 @@ export interface Character {
   alternateGreetings: string[];
   postHistoryInstructions: string | null;
   creatorNotes: string | null;
+  characterBook: Record<string, unknown> | null;
+  depthPrompt: string | null;
+  depthPromptDepth: number | null;
+  depthPromptRole: string | null;
+  extensions: Record<string, unknown>;
+  systemPrompt: string | null;
+  tags: string[];
   avatarAssetId: string | null;
   status: "active" | "draft" | "archived";
   createdAt: Timestamp;

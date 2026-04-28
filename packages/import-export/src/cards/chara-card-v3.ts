@@ -24,6 +24,10 @@ export interface CharacterCardV3Normalized {
   creatorNotes: string;
   systemPrompt: string;
   postHistoryInstructions: string;
+  characterBook: Record<string, unknown> | null;
+  depthPrompt: string;
+  depthPromptDepth: number | null;
+  depthPromptRole: string | null;
   tags: string[];
   creator: string | null;
   characterVersion: string | null;
@@ -88,6 +92,10 @@ export function importCharacterCardV3Json(
     creatorNotes: asString(data.creator_notes) || asString(root.creatorcomment),
     systemPrompt: asString(data.system_prompt),
     postHistoryInstructions: asString(data.post_history_instructions),
+    characterBook: isRecord(data.character_book) ? data.character_book : null,
+    depthPrompt: asString(data.depth_prompt),
+    depthPromptDepth: typeof data.depth_prompt_depth === "number" ? data.depth_prompt_depth : null,
+    depthPromptRole: asOptionalString(data.depth_prompt_role),
     tags: asStringArray(data.tags),
     creator: asOptionalString(data.creator),
     characterVersion: asOptionalString(data.character_version),
@@ -127,6 +135,13 @@ export function importCharacterCardV3Json(
     alternateGreetings: normalized.alternateGreetings,
     postHistoryInstructions: normalized.postHistoryInstructions || null,
     creatorNotes: normalized.creatorNotes || null,
+    characterBook: normalized.characterBook,
+    depthPrompt: normalized.depthPrompt || null,
+    depthPromptDepth: normalized.depthPromptDepth,
+    depthPromptRole: normalized.depthPromptRole,
+    extensions: normalized.extensions,
+    systemPrompt: normalized.systemPrompt || null,
+    tags: normalized.tags,
     avatarAssetId: null,
     status: options.characterStatus ?? "active",
     createdAt: importedAt,
