@@ -121,6 +121,7 @@ export function importCharacterCardV3Json(
     name: normalized.name,
     description: normalized.description,
     defaultScenario: normalized.scenario || null,
+    firstMessage: normalized.firstMessage || null,
     mesExample: normalized.exampleMessages || null,
     alternateGreetings: normalized.alternateGreetings,
     postHistoryInstructions: normalized.postHistoryInstructions || null,

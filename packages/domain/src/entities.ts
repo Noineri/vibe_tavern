@@ -49,6 +49,7 @@ export interface Character {
   name: string;
   description: string;
   defaultScenario: string | null;
+  firstMessage: string | null;
   mesExample: string | null;
   alternateGreetings: string[];
   postHistoryInstructions: string | null;

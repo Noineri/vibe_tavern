@@ -91,6 +91,12 @@ ALTER TABLE provider_profiles ADD COLUMN reasoning_effort TEXT NOT NULL DEFAULT 
 ALTER TABLE provider_profiles ADD COLUMN stream_response INTEGER NOT NULL DEFAULT 1;
 `,
   },
+  {
+    version: "0008_character_first_message",
+    sql: `
+ALTER TABLE characters ADD COLUMN first_message TEXT;
+`,
+  },
 ];
 
 export function getLatestMigrationVersion(): string {
