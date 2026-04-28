@@ -45,6 +45,7 @@ type CharacterRecord = {
   scenario: string;
   systemPrompt: string;
   personality: string | null;
+  personalitySummary: string | null;
   firstMessage: string | null;
   mesExample: string | null;
   alternateGreetings: string[];
@@ -601,7 +602,11 @@ export class SessionRuntime {
   createCharacterFromScratch(input: {
     name: string;
     description?: string;
+    personalitySummary?: string | null;
+    scenario?: string | null;
     firstMessage?: string;
+    mesExample?: string | null;
+    alternateGreetings?: string[];
   }): ImportResult {
     const timestamp = new Date().toISOString();
     const characterId = `char_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterId;
@@ -612,10 +617,11 @@ export class SessionRuntime {
       slug: input.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-zа-яё0-9-]/gi, ''),
       name: input.name,
       description: input.description ?? '',
-      defaultScenario: null,
+      personalitySummary: input.personalitySummary?.trim() || null,
+      defaultScenario: input.scenario?.trim() || null,
       firstMessage: input.firstMessage?.trim() || null,
-      mesExample: null,
-      alternateGreetings: [],
+      mesExample: input.mesExample?.trim() || null,
+      alternateGreetings: input.alternateGreetings ?? [],
       postHistoryInstructions: null,
       creatorNotes: null,
       avatarAssetId: null,
@@ -630,7 +636,19 @@ export class SessionRuntime {
       versionNumber: 1,
       title: 'Initial',
       cardFormat: 'st_v3',
-      definition: {},
+      definition: {
+        spec: "chara_card_v3",
+        spec_version: "3.0",
+        data: {
+          name: input.name,
+          description: input.description ?? "",
+          personality: input.personalitySummary ?? "",
+          scenario: input.scenario ?? "",
+          first_mes: input.firstMessage ?? "",
+          mes_example: input.mesExample ?? "",
+          alternate_greetings: input.alternateGreetings ?? [],
+        },
+      },
       isActive: true,
       createdAt: timestamp,
     };
@@ -675,6 +693,7 @@ export class SessionRuntime {
       slug: 'free-chat',
       name: 'Free chat',
       description: '',
+      personalitySummary: null,
       defaultScenario: null,
       firstMessage: null,
       mesExample: null,
@@ -738,6 +757,7 @@ export class SessionRuntime {
     const data: Record<string, unknown> = {
       name: character.name,
       description: character.description,
+      personality: character.personalitySummary ?? "",
       scenario: character.defaultScenario ?? "",
       first_mes: character.firstMessage ?? "",
       mes_example: character.mesExample ?? "",
@@ -954,6 +974,7 @@ export class SessionRuntime {
       chatId?: ChatId;
       name?: string;
       description?: string;
+      personalitySummary?: string | null;
       scenario?: string;
       systemPrompt?: string;
       firstMessage?: string | null;
@@ -975,6 +996,7 @@ export class SessionRuntime {
 
     const now = new Date().toISOString();
     const nextDescription = input.description ?? currentCharacter.description;
+    const nextPersonalitySummary = input.personalitySummary !== undefined ? input.personalitySummary : currentCharacter.personalitySummary;
     const nextScenario = input.scenario ?? currentCharacter.defaultScenario ?? "";
     const currentVersion = this.store.getLatestCharacterVersion(characterId);
     const currentRecord = toCharacterRecord(currentCharacter, currentVersion);
@@ -983,6 +1005,7 @@ export class SessionRuntime {
       ...currentCharacter,
       name: nextName,
       description: nextDescription,
+      personalitySummary: nextPersonalitySummary,
       defaultScenario: nextScenario || null,
       firstMessage: input.firstMessage !== undefined ? input.firstMessage : currentCharacter.firstMessage,
       mesExample: input.mesExample !== undefined ? input.mesExample : currentCharacter.mesExample,
@@ -998,6 +1021,7 @@ export class SessionRuntime {
           definition: applyCharacterEditsToDefinition(currentVersion.definition, {
             name: nextName,
             description: nextDescription,
+            personalitySummary: nextPersonalitySummary,
             scenario: nextScenario,
             systemPrompt: nextSystemPrompt,
             firstMessage: input.firstMessage !== undefined ? input.firstMessage : currentCharacter.firstMessage,
@@ -1498,7 +1522,8 @@ function toCharacterRecord(
     description: character.description,
     scenario: character.defaultScenario ?? "",
     systemPrompt: (data.system_prompt as string) || "",
-    personality: (data.personality as string) || null,
+    personality: character.personalitySummary ?? ((data.personality as string) || null),
+    personalitySummary: character.personalitySummary ?? ((data.personality as string) || null),
     firstMessage: character.firstMessage,
     mesExample: character.mesExample,
     alternateGreetings: character.alternateGreetings,
@@ -1513,6 +1538,7 @@ function applyCharacterEditsToDefinition(
   input: {
     name: string;
     description: string;
+    personalitySummary: string | null;
     scenario: string;
     systemPrompt: string;
     firstMessage: string | null;
@@ -1531,6 +1557,7 @@ function applyCharacterEditsToDefinition(
 
   cloned.name = input.name;
   cloned.description = input.description;
+  cloned.personality = input.personalitySummary;
   cloned.scenario = input.scenario;
   cloned.system_prompt = input.systemPrompt;
   cloned.first_mes = input.firstMessage;
@@ -1540,6 +1567,7 @@ function applyCharacterEditsToDefinition(
   cloned.creator_notes = input.creatorNotes;
   target.name = input.name;
   target.description = input.description;
+  target.personality = input.personalitySummary;
   target.scenario = input.scenario;
   target.system_prompt = input.systemPrompt;
   target.first_mes = input.firstMessage;

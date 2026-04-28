@@ -48,6 +48,7 @@ export interface Character {
   slug: string;
   name: string;
   description: string;
+  personalitySummary: string | null;
   defaultScenario: string | null;
   firstMessage: string | null;
   mesExample: string | null;

@@ -133,6 +133,7 @@ type CharacterRow = SqliteRow & {
   slug: string;
   name: string;
   description: string;
+  personality_summary: string | null;
   default_scenario: string | null;
   first_message: string | null;
   mes_example: string | null;
@@ -202,13 +203,14 @@ export class SqliteChatSessionStore implements ChatSessionStore {
   upsertCharacter(input: Character): void {
     this.db.execute(
       `INSERT INTO characters (
-        id, slug, name, description, default_scenario, first_message, mes_example, alternate_greetings_json,
+        id, slug, name, description, personality_summary, default_scenario, first_message, mes_example, alternate_greetings_json,
         post_history_instructions, creator_notes, avatar_asset_id, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         slug = excluded.slug,
         name = excluded.name,
         description = excluded.description,
+        personality_summary = excluded.personality_summary,
         default_scenario = excluded.default_scenario,
         first_message = excluded.first_message,
         mes_example = excluded.mes_example,
@@ -223,6 +225,7 @@ export class SqliteChatSessionStore implements ChatSessionStore {
         input.slug,
         input.name,
         input.description,
+        input.personalitySummary,
         input.defaultScenario,
         input.firstMessage,
         input.mesExample,
@@ -695,7 +698,7 @@ export class SqliteChatSessionStore implements ChatSessionStore {
   listCharacters(): Character[] {
     return this.db
       .queryAll<CharacterRow>(
-        `SELECT id, slug, name, description, default_scenario, first_message, mes_example, alternate_greetings_json,
+        `SELECT id, slug, name, description, personality_summary, default_scenario, first_message, mes_example, alternate_greetings_json,
                 post_history_instructions, creator_notes, avatar_asset_id, status, created_at, updated_at
          FROM characters
          ORDER BY created_at ASC, id ASC`,
@@ -705,7 +708,7 @@ export class SqliteChatSessionStore implements ChatSessionStore {
 
   getCharacter(characterId: CharacterId): Character | null {
     const row = this.db.queryOne<CharacterRow>(
-      `SELECT id, slug, name, description, default_scenario, first_message, mes_example, alternate_greetings_json,
+      `SELECT id, slug, name, description, personality_summary, default_scenario, first_message, mes_example, alternate_greetings_json,
               post_history_instructions, creator_notes, avatar_asset_id, status, created_at, updated_at
        FROM characters
        WHERE id = ?`,
@@ -1898,6 +1901,7 @@ function mapCharacter(row: CharacterRow): Character {
     slug: row.slug,
     name: row.name,
     description: row.description,
+    personalitySummary: row.personality_summary,
     defaultScenario: row.default_scenario,
     firstMessage: row.first_message,
     mesExample: row.mes_example,

@@ -127,6 +127,29 @@ export interface CreatePersonaRequest {
   defaultForNewChats?: boolean;
 }
 
+export interface CreateCharacterRequest {
+  name: string;
+  description?: string;
+  personalitySummary?: string | null;
+  scenario?: string | null;
+  firstMessage?: string | null;
+  mesExample?: string | null;
+  alternateGreetings?: string[];
+}
+
+export interface UpdateCharacterRequest {
+  name?: string;
+  description?: string;
+  personalitySummary?: string | null;
+  scenario?: string | null;
+  systemPrompt?: string;
+  firstMessage?: string | null;
+  mesExample?: string | null;
+  alternateGreetings?: string[];
+  postHistoryInstructions?: string | null;
+  creatorNotes?: string | null;
+}
+
 export interface PersonalLorebookStatus {
   enabled: boolean;
   lorebookId: string | null;
@@ -175,6 +198,7 @@ export interface CharacterDto {
   id: CharacterId;
   name: string;
   description: string;
+  personalitySummary: string | null;
   scenario: string;
   firstMessage: string | null;
   mesExample: string | null;
