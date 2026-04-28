@@ -97,6 +97,12 @@ ALTER TABLE provider_profiles ADD COLUMN stream_response INTEGER NOT NULL DEFAUL
 ALTER TABLE characters ADD COLUMN first_message TEXT;
 `,
   },
+  {
+    version: "0009_character_personality_summary",
+    sql: `
+ALTER TABLE characters ADD COLUMN personality_summary TEXT;
+`,
+  },
 ];
 
 export function getLatestMigrationVersion(): string {

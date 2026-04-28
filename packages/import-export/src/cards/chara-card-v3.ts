@@ -120,6 +120,7 @@ export function importCharacterCardV3Json(
     slug,
     name: normalized.name,
     description: normalized.description,
+    personalitySummary: normalized.personality || null,
     defaultScenario: normalized.scenario || null,
     firstMessage: normalized.firstMessage || null,
     mesExample: normalized.exampleMessages || null,
