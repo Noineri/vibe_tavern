@@ -1,19 +1,18 @@
 # Claw Tavern
 
-Локальный developer-prototype chat-first платформы для AI roleplay. Репозиторий собран как TypeScript npm-workspaces monorepo: web-клиент на React/Vite в `apps/web`, API на Node.js в `services/api`, общие доменные модели, контракты, prompt pipeline, импорт и хранение вынесены в `packages/*`. Текущий frontend entrypoint — [apps/web/src/app.tsx](../rp_platform/apps/web/src/app.tsx), собранный вокруг [useRpPlatformApp()](../rp_platform/apps/web/src/hooks/use-rp-platform-app.ts:63). В текущем состоянии репо уже умеет импортировать карточки персонажей из PNG/JSON, подключать lorebook JSON, собирать prompt, хранить чаты и профили провайдеров локально и отправлять генерацию в OpenAI-compatible API.
+Локальный developer-prototype chat-first платформы для AI roleplay. Репозиторий собран как TypeScript workspace monorepo (Bun): web-клиент на React/Vite в `apps/web`, API на Bun в `services/api`, общие доменные модели, контракты, prompt pipeline, импорт и хранение вынесены в `packages/*`. Текущий frontend entrypoint — [apps/web/src/app.tsx](../rp_platform/apps/web/src/app.tsx), собранный вокруг [useRpPlatformApp()](../rp_platform/apps/web/src/hooks/use-rp-platform-app.ts:63). В текущем состоянии репо уже умеет импортировать карточки персонажей из PNG/JSON, подключать lorebook JSON, собирать prompt, хранить чаты и профили провайдеров локально и отправлять генерацию в OpenAI-compatible API.
 
 ## Быстрый старт
 
 ### Что нужно
 
-- Node.js современной версии с поддержкой встроенного `node:sqlite` для персистентного режима
-- npm
+- [Bun](https://bun.sh)
 
 ### Установка и запуск
 
 ```bash
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
 После запуска доступны:
@@ -25,13 +24,13 @@ npm run dev
 Альтернативы:
 
 ```bash
-npm run dev:web
-npm run dev:api
-npm run build
-npm run typecheck
+bun run dev:web
+bun run dev:api
+bun run build
+bun run typecheck
 ```
 
-Для Windows есть `Start RP Platform.bat`: батник переходит в корень репо, при отсутствии `node_modules` запускает `npm install`, выставляет `VITE_RP_API_URL=http://127.0.0.1:8787`, пишет логи в `logs/` и поднимает общий launcher.
+Для Windows есть `Start RP Platform.bat`: батник переходит в корень репо, при отсутствии `node_modules` запускает `bun install`, выставляет `VITE_RP_API_URL=http://127.0.0.1:8787`, пишет логи в `logs/` и поднимает общий launcher.
 
 ### Быстрый сценарий проверки
 
@@ -55,11 +54,11 @@ npm run typecheck
 
 ### Как устроен запуск в dev
 
-`npm run dev` запускает `scripts/dev-supervisor.cjs`. Launcher:
+`bun run dev` запускает `scripts/dev-supervisor.cjs`. Launcher:
 
 1. Проверяет, что порты API и web свободны.
 2. Поднимает Vite для `apps/web`.
-3. Собирает API-стек через `npm run build:api-stack`.
+3. Собирает API-стек через `bun run build:api-stack`.
 4. Запускает собранный `services/api`.
 5. Ждёт готовность `http://127.0.0.1:8787/health` и `http://localhost:4173`.
 6. Пишет отдельные логи launcher, API и web в `logs/`.
@@ -77,7 +76,7 @@ Frontend сосредоточен вокруг [apps/web/src/app.tsx](../rp_plat
 
 ### API и runtime
 
-API реализован в [services/api/src/dev-server.ts](../rp_platform/services/api/src/dev-server.ts) как один Node HTTP server.
+API реализован в [services/api/src/dev-server.ts](../rp_platform/services/api/src/dev-server.ts) как HTTP server на Bun
 
 Что уже есть в API:
 
@@ -116,8 +115,7 @@ API реализован в [services/api/src/dev-server.ts](../rp_platform/serv
 
 ### Хранение данных
 
-По умолчанию runtime использует SQLite.
-
+- По умолчанию runtime использует SQLite через встроенный `bun:sqlite`.
 - Файл БД по умолчанию: `data/app.sqlite`.
 - Если выставить `RP_PLATFORM_CHAT_STORE=memory`, runtime перейдёт на in-memory store.
 - Если инициализация SQLite падает, runtime автоматически откатывается на in-memory режим.
@@ -159,7 +157,7 @@ API реализован в [services/api/src/dev-server.ts](../rp_platform/serv
 Репозиторий уже пригоден для локальной разработки прототипа, но это не production-ready система.
 
 - Нет аутентификации, ролей, multi-user сценариев и server-side secret management.
-- API реализован как один локальный Node HTTP server, без production-инфраструктуры.
+- API реализован как один локальный HTTP server (Bun runtime), без production-инфраструктуры.
 - Главная внешняя интеграция сейчас — только OpenAI-compatible provider flow.
 - Часть логики явно помечена как prototype: локальный runtime, упрощённая compaction/token estimation и некоторые fallback-поведения.
 - Основной сценарий репо сейчас — локальная разработка и проверка импортов, prompt assembly, trace и provider integration, а не готовый SaaS.
