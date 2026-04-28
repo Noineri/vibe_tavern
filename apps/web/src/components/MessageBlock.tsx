@@ -15,6 +15,10 @@ export function MessageBlock(input: MessageBlockProps) {
   const branchLabel = "branch";
   const regenLabel = "regen";
   const deleteLabel = "delete";
+  const createdLabel = formatMessageTime(input.message.createdAt);
+  const updatedLabel = input.message.updatedAt !== input.message.createdAt ? "edited" : null;
+  const stateLabel = input.message.state !== "complete" ? input.message.state : null;
+  const variantLabel = !isUser && variantCount > 1 ? `swipe ${selectedVariantIndex + 1}/${variantCount}` : null;
 
   return (
     <div className="msg-wrap">
@@ -89,6 +93,18 @@ export function MessageBlock(input: MessageBlockProps) {
         )}
 
         {!input.isEditing && !isGenerating && (
+          <div
+            className="msg-meta message-meta"
+            style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 6, fontSize: 10.5, color: "var(--t3)", fontFamily: "var(--font-ui)" }}
+          >
+            {createdLabel && <span style={metaChipStyle}>{createdLabel}</span>}
+            {updatedLabel && <span style={metaChipStyle}>{updatedLabel}</span>}
+            {stateLabel && <span style={metaChipStyle}>{stateLabel}</span>}
+            {variantLabel && <span style={metaChipStyle}>{variantLabel}</span>}
+          </div>
+        )}
+
+        {!input.isEditing && !isGenerating && (
           <div className="msg-acts">
             <button
               className="act-btn"
@@ -150,4 +166,19 @@ export function MessageBlock(input: MessageBlockProps) {
       </div>
     </div>
   );
+}
+
+const metaChipStyle = {
+  background: "var(--s2)",
+  border: "1px solid var(--border)",
+  borderRadius: 4,
+  padding: "2px 6px",
+};
+
+function formatMessageTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
