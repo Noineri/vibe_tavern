@@ -9,6 +9,7 @@ import type {
 } from "@rp-platform/domain";
 import type { ChatSessionStore } from "@rp-platform/db";
 import { assemblePrompt } from "@rp-platform/prompt-pipeline";
+import { logSendDebug } from "./send-debug-log.js";
 
 export interface PromptAssemblyResolver {
   getCharacter(
@@ -96,6 +97,14 @@ export class PromptAssemblyService {
     const character = this.resolver.getCharacter(chat.characterId);
     const persona = this.resolver.getPersona(chat.personaId);
     const promptPreset = this.resolver.getPromptPreset(chat.promptPresetId);
+
+    logSendDebug("prompt.assemble.context", {
+      chatId: chat.id,
+      personaId: chat.personaId,
+      personaResolved: persona ? { id: persona.id, name: persona.name, descLength: persona.description.length } : null,
+      promptPresetId: chat.promptPresetId,
+      promptPresetResolved: promptPreset ? { id: promptPreset.id, name: promptPreset.name, systemLength: promptPreset.text.length } : null,
+    });
     const excludedMessageIds = new Set(input.excludeMessageIds ?? []);
     const recentMessages = branchState.messages
       .filter((message) => !excludedMessageIds.has(message.id))

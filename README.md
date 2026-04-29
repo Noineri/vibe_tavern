@@ -71,7 +71,7 @@ Frontend сосредоточен вокруг [apps/web/src/app.tsx](../rp_plat
 - Есть режимы play и build.
 - Импорт PNG делается на клиенте: из PNG вытаскивается embedded metadata, затем нормализованный JSON отправляется в backend.
 - Импорт JSON идёт в backend через `/api/import/json`.
-- Настройки подключения к провайдеру хранятся как provider profiles; UI умеет их создавать, загружать, удалять, подключать и обновлять список моделей.
+- Настройки подключения к провайдеру хранятся как provider profiles; UI умеет их создавать, загружать, удалять, подключать и обновлять список моделей. Public modal shell remains `apps/web/src/components/ProviderModal.tsx`; section-level edits for profile list/status controls, sampler controls, and future provider UI should target `apps/web/src/components/provider-modal-sections.tsx` where possible.
 - Для live-generation нужен сохранённый и успешно подключённый provider profile с выбранной model; без этого отправка сообщений отключена.
 
 ### API и runtime
