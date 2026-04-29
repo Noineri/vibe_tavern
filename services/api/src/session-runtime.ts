@@ -2,6 +2,7 @@ import type { AssemblePromptResponse, PromptTraceRecordDto, PromptPresetDto } fr
 import {
   type ChatSessionStore,
 } from "@rp-platform/db";
+import { ENTITY_ID_NAMESPACE, SYSTEM_RESOURCE_ID } from "@rp-platform/domain";
 import { logSendDebug } from "./send-debug-log.js";
 import type {
   Chat,
@@ -170,7 +171,7 @@ class StaticPromptResolver implements PromptAssemblyResolver {
 export class SessionRuntime {
   private readonly store: ChatSessionStore;
   private readonly defaultToolProfile: ToolProfile = {
-    id: "tools_disabled",
+    id: SYSTEM_RESOURCE_ID.toolsDisabled,
     name: "Tools Disabled",
     mode: "disabled",
     instructions: null,
@@ -527,8 +528,8 @@ export class SessionRuntime {
     alternateGreetings?: string[];
   }): ImportResult {
     const timestamp = new Date().toISOString();
-    const characterId = `char_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterId;
-    const versionId = `ver_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterVersionId;
+    const characterId = `${ENTITY_ID_NAMESPACE.scratchCharacter}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterId;
+    const versionId = `${ENTITY_ID_NAMESPACE.scratchCharacterVersion}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterVersionId;
 
     const character: Character = {
       id: characterId,
@@ -610,8 +611,8 @@ export class SessionRuntime {
 
   createFreeChat(): SessionSnapshot {
     const timestamp = new Date().toISOString();
-    const characterId = `free_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterId;
-    const versionId = `fver_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterVersionId;
+    const characterId = `${ENTITY_ID_NAMESPACE.freeCharacter}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterId;
+    const versionId = `${ENTITY_ID_NAMESPACE.freeCharacterVersion}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterVersionId;
 
     const character: Character = {
       id: characterId,
@@ -774,7 +775,7 @@ export class SessionRuntime {
     const resolvedId =
       profile.id ||
       existing?.id ||
-      `provider_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      `${ENTITY_ID_NAMESPACE.providerProfile}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const hasApiKeyInput = Object.prototype.hasOwnProperty.call(profile, "apiKey");
     const apiKey = hasApiKeyInput
       ? resolveStoredApiKey(profile.apiKey, existing?.apiKey ?? null)
@@ -858,7 +859,7 @@ export class SessionRuntime {
       resolvedLorebookId = existing[0].lorebookId;
     } else {
       const lorebook: Lorebook = {
-        id: `lorebook_${Date.now()}`,
+        id: `${ENTITY_ID_NAMESPACE.lorebook}_${Date.now()}`,
         name: `${lorebookId} lorebook`,
         scopeType: "character",
         description: "",
@@ -1115,7 +1116,7 @@ export class SessionRuntime {
         personaId: this.resolveDefaultPersonaId(),
         title: imported.character.name,
         promptPresetId: this.resolveDefaultPromptPresetId(),
-        toolProfileId: "tools_disabled",
+        toolProfileId: SYSTEM_RESOURCE_ID.toolsDisabled,
       });
 
       this.chatOrder.unshift(created.id);
@@ -1309,7 +1310,7 @@ export class SessionRuntime {
   }
 
   private ensureDefaultReferences(): void {
-    const defaultPersonaId = "persona_explorer" as import("@rp-platform/domain").PersonaId;
+    const defaultPersonaId = SYSTEM_RESOURCE_ID.defaultPersonaExplorer as import("@rp-platform/domain").PersonaId;
     if (!this.store.getPersona(defaultPersonaId)) {
       this.store.upsertPersona({
         id: defaultPersonaId,
@@ -1348,7 +1349,7 @@ export class SessionRuntime {
     return this.promptService.assembleForChat({
       chatId,
       branchId,
-      model: options?.model ?? "unresolved_model",
+      model: options?.model ?? SYSTEM_RESOURCE_ID.unresolvedModel,
       excludeMessageIds: options?.excludeMessageIds,
       contextBudget: activeProfileForAssembly?.contextBudget ?? null,
     });

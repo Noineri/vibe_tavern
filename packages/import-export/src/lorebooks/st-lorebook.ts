@@ -5,6 +5,7 @@ import type {
   Lorebook,
   PromptLayerPosition,
 } from "@rp-platform/domain";
+import { ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
 
 import {
   asBoolean,
@@ -132,7 +133,7 @@ export function importStLorebookJson(
   };
 
   const lorebookId = makeDeterministicId(
-    "lorebook",
+    ENTITY_ID_NAMESPACE.lorebook,
     `${normalized.name}:${stableJson(root)}`,
   );
 
@@ -165,7 +166,7 @@ export function importStLorebookJson(
     }
 
     return {
-      id: makeDeterministicId("loreentry", `${lorebookId}:${externalId}:${content}`),
+      id: makeDeterministicId(ENTITY_ID_NAMESPACE.loreEntryDeterministic, `${lorebookId}:${externalId}:${content}`),
       lorebookId,
       title,
       content,
