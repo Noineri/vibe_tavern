@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "smoke:fixtures": "npm run build && node ./dist/import-export/src/fixture-smoke.js"
+    "smoke:fixtures": "bun run build && bun ./dist/import-export/src/fixture-smoke.js"
   },
   "dependencies": {
     "@rp-platform/domain": "0.1.0"

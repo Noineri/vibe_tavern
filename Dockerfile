@@ -1,14 +1,14 @@
-FROM node:22-bookworm-slim
+FROM oven/bun:1 AS base
 
 WORKDIR /app
 
 COPY . .
 
-RUN npm install
-RUN npm run build:api-stack
-RUN npm run build --workspace @rp-platform/web
+RUN bun install --frozen-lockfile
+RUN bun run build:api-stack
+RUN bun run --filter @rp-platform/web build
 
-RUN npm install -g serve@latest
+RUN bun install -g serve@latest
 
 RUN mkdir -p /app/data
 

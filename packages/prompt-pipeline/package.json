@@ -8,6 +8,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test \"test/*.test.js\""
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@rp-platform/domain": "0.1.0"
   }
 }

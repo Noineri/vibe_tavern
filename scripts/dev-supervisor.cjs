@@ -8,7 +8,7 @@ const { URL } = require("node:url");
 
 const workspaceDir = process.cwd();
 const webWorkspaceDir = path.join(workspaceDir, "apps", "web");
-const nodeExecutable = process.execPath;
+const bunExecutable = process.env.BUN_EXE || process.env.BUN_EXECUTABLE || "bun";
 const apiHost = process.env.RP_PLATFORM_API_HOST ?? "127.0.0.1";
 const apiPort = Number(process.env.RP_PLATFORM_API_PORT ?? "8787");
 const webUrl = process.env.RP_PLATFORM_WEB_URL ?? "http://localhost:4173";
@@ -23,7 +23,6 @@ const processLogPaths = {
   api: path.join(logsDir, "dev-api.log"),
   web: path.join(logsDir, "dev-web.log"),
 };
-const npmCliPath = resolveNpmCliPath();
 const viteCliPath = path.join(workspaceDir, "node_modules", "vite", "bin", "vite.js");
 const apiServerEntryPath = path.join(workspaceDir, "services", "api", "dist", "services", "api", "src", "dev-server.js");
 
@@ -65,7 +64,7 @@ async function main() {
 
   const webProcess = spawnManagedProcess({
     label: "web",
-    command: nodeExecutable,
+    command: bunExecutable,
     args: [viteCliPath],
     cwd: webWorkspaceDir,
   });
@@ -73,14 +72,14 @@ async function main() {
 
   await runFiniteProcess({
     label: "api-build",
-    command: nodeExecutable,
-    args: [npmCliPath, "run", "build:api-stack"],
+    command: bunExecutable,
+    args: ["run", "build:api-stack"],
     cwd: workspaceDir,
   });
 
   const apiProcess = spawnManagedProcess({
     label: "api",
-    command: nodeExecutable,
+    command: bunExecutable,
     args: [apiServerEntryPath],
     cwd: workspaceDir,
   });
@@ -420,58 +419,6 @@ function getProcessLogPath(label) {
   }
 
   return null;
-}
-
-function resolveNpmCliPath() {
-  // Candidate 1: Windows / nvm-style — npm lives next to node.exe
-  // (e.g. C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js)
-  const nodeDir = path.dirname(nodeExecutable);
-  const candidateNextToNode = path.join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js");
-  if (fs.existsSync(candidateNextToNode)) {
-    return candidateNextToNode;
-  }
-
-  // Candidate 2: Linux system packages (Debian/Ubuntu/Fedora) — npm is under
-  // /usr/lib/node_modules even though node lives in /usr/bin.
-  const parentDir = path.dirname(nodeDir);
-  const candidateLibNodeModules = path.join(parentDir, "lib", "node_modules", "npm", "bin", "npm-cli.js");
-  if (fs.existsSync(candidateLibNodeModules)) {
-    return candidateLibNodeModules;
-  }
-
-  // Candidate 3: macOS Homebrew — node at /opt/homebrew/bin/node or
-  // /usr/local/bin/node, npm modules in ../lib/node_modules.
-  // (Already covered by candidate 2 on most setups, but be explicit.)
-  const homebrewLibCandidates = ["/opt/homebrew", "/usr/local"].map((prefix) =>
-    path.join(prefix, "lib", "node_modules", "npm", "bin", "npm-cli.js"),
-  );
-  for (const candidate of homebrewLibCandidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  // Candidate 4: Fallback — resolve dynamically via "npm root -g".
-  try {
-    const npmRoot = require("node:child_process")
-      .execSync("npm root -g", { encoding: "utf-8" })
-      .trim();
-    const candidateFromNpmRoot = path.join(npmRoot, "npm", "bin", "npm-cli.js");
-    if (fs.existsSync(candidateFromNpmRoot)) {
-      return candidateFromNpmRoot;
-    }
-  } catch {
-    // npm root -g failed, fall through to the error below.
-  }
-
-  throw new Error(
-    `npm CLI was not found.\n` +
-      `  Tried:\n` +
-      `    - ${candidateNextToNode}\n` +
-      `    - ${candidateLibNodeModules}\n` +
-      `    - ${homebrewLibCandidates.join("\n    - ")}\n` +
-      `  Please ensure npm is installed and accessible.`,
-  );
 }
 
 function logInfo(message) {
