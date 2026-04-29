@@ -6,7 +6,8 @@ import type {
   RecentMessage,
 } from "./types.js";
 import { findSafeCompactionBoundary } from "./compaction.js";
-import { replaceMacros, type MacroContext } from "./macros.js";
+import { createPhaseOneMacroEngine } from "./macro-registry.js";
+import { buildPromptVariableContext, type PromptVariableContext } from "./prompt-variable-context.js";
 import {
   DEFAULT_PROMPT_LAYER_PRIORITY,
   PROMPT_LAYER_ID,
@@ -68,60 +69,87 @@ function sortLayers(layers: PromptLayer[]): PromptLayer[] {
   });
 }
 
-function buildMacroContext(context: PromptAssemblyContext): MacroContext {
-  return {
-    charName: context.character.name,
-    userName: context.persona?.name ?? "User",
-    personaDescription: context.persona?.description,
-  };
+const phaseOneMacroEngine = createPhaseOneMacroEngine();
+
+function buildAssemblyVariableContext(context: PromptAssemblyContext): PromptVariableContext {
+  return buildPromptVariableContext({
+    character: {
+      name: context.character.name,
+      description: context.character.description,
+      personality: context.character.personality ?? null,
+      scenario: context.character.scenario ?? null,
+      systemPrompt: context.character.systemPrompt ?? null,
+      mesExample: context.mesExample ?? null,
+      postHistoryInstructions: context.postHistoryInstructions ?? null,
+    },
+    persona: {
+      name: context.persona?.name ?? "User",
+      description: context.persona?.description ?? "",
+    },
+    prompt: {
+      system: context.promptPreset?.text ?? "",
+      jailbreak: context.promptPreset?.jailbreak ?? "",
+      summary: context.promptPreset?.summary ?? "",
+      tools: context.promptPreset?.tools ?? context.toolInstructions ?? "",
+      contextBudget: context.contextBudget ?? null,
+    },
+    chat: {
+      messages: context.recentMessages,
+      messageIds: context.recentMessages.map((message) => message.id),
+    },
+    runtime: {
+      contextBudget: context.contextBudget ?? null,
+      maxPromptTokens: context.contextBudget ?? null,
+    },
+  });
 }
 
-function applyMacros(text: string | null | undefined, mc: MacroContext): string {
-  return text ? replaceMacros(text, mc) : "";
+function applyMacros(text: string | null | undefined, variableContext: PromptVariableContext): string {
+  return text ? phaseOneMacroEngine.resolve(text, variableContext) : "";
 }
 
 function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyContext {
-  const mc = buildMacroContext(context);
+  const variableContext = buildAssemblyVariableContext(context);
   return {
     ...context,
     character: {
       ...context.character,
-      description: applyMacros(context.character.description, mc),
-      scenario: context.character.scenario != null ? applyMacros(context.character.scenario, mc) : context.character.scenario,
-      systemPrompt: context.character.systemPrompt != null ? applyMacros(context.character.systemPrompt, mc) : context.character.systemPrompt,
-      personality: context.character.personality != null ? applyMacros(context.character.personality, mc) : context.character.personality,
+      description: applyMacros(context.character.description, variableContext),
+      scenario: context.character.scenario != null ? applyMacros(context.character.scenario, variableContext) : context.character.scenario,
+      systemPrompt: context.character.systemPrompt != null ? applyMacros(context.character.systemPrompt, variableContext) : context.character.systemPrompt,
+      personality: context.character.personality != null ? applyMacros(context.character.personality, variableContext) : context.character.personality,
     },
     persona: context.persona ? {
       ...context.persona,
-      description: applyMacros(context.persona.description, mc),
+      description: applyMacros(context.persona.description, variableContext),
     } : context.persona,
     promptPreset: context.promptPreset ? {
       ...context.promptPreset,
-      text: applyMacros(context.promptPreset.text, mc),
-      jailbreak: context.promptPreset.jailbreak != null ? applyMacros(context.promptPreset.jailbreak, mc) : context.promptPreset.jailbreak,
-      summary: context.promptPreset.summary != null ? applyMacros(context.promptPreset.summary, mc) : context.promptPreset.summary,
-      tools: context.promptPreset.tools != null ? applyMacros(context.promptPreset.tools, mc) : context.promptPreset.tools,
+      text: applyMacros(context.promptPreset.text, variableContext),
+      jailbreak: context.promptPreset.jailbreak != null ? applyMacros(context.promptPreset.jailbreak, variableContext) : context.promptPreset.jailbreak,
+      summary: context.promptPreset.summary != null ? applyMacros(context.promptPreset.summary, variableContext) : context.promptPreset.summary,
+      tools: context.promptPreset.tools != null ? applyMacros(context.promptPreset.tools, variableContext) : context.promptPreset.tools,
     } : context.promptPreset,
     activeLoreEntries: context.activeLoreEntries?.map((entry) => ({
       ...entry,
-      title: applyMacros(entry.title, mc),
-      content: applyMacros(entry.content, mc),
+      title: applyMacros(entry.title, variableContext),
+      content: applyMacros(entry.content, variableContext),
     })),
     summaryMemory: context.summaryMemory?.map((s) => ({
       ...s,
-      summary: applyMacros(s.summary, mc),
+      summary: applyMacros(s.summary, variableContext),
     })),
     retrievalMemory: context.retrievalMemory?.map((m) => ({
       ...m,
-      content: applyMacros(m.content, mc),
+      content: applyMacros(m.content, variableContext),
     })),
     recentMessages: context.recentMessages.map((msg) => ({
       ...msg,
-      content: applyMacros(msg.content, mc),
+      content: applyMacros(msg.content, variableContext),
     })),
-    mesExample: context.mesExample != null ? applyMacros(context.mesExample, mc) : context.mesExample,
-    postHistoryInstructions: context.postHistoryInstructions != null ? applyMacros(context.postHistoryInstructions, mc) : context.postHistoryInstructions,
-    toolInstructions: context.toolInstructions != null ? applyMacros(context.toolInstructions, mc) : context.toolInstructions,
+    mesExample: context.mesExample != null ? applyMacros(context.mesExample, variableContext) : context.mesExample,
+    postHistoryInstructions: context.postHistoryInstructions != null ? applyMacros(context.postHistoryInstructions, variableContext) : context.postHistoryInstructions,
+    toolInstructions: context.toolInstructions != null ? applyMacros(context.toolInstructions, variableContext) : context.toolInstructions,
   };
 }
 
