@@ -9,6 +9,7 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
+set "BUN_EXECUTABLE=%BUN_EXE%"
 
 set "LOG_DIR=%~dp0logs"
 set "RP_PLATFORM_LOG_FILE=%LOG_DIR%\dev-launcher.log"
