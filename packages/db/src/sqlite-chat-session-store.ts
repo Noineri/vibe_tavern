@@ -3,7 +3,7 @@ import type { Chat, ChatBranch, ChatBranchId, ChatId, LorebookId, Message, Messa
 import type { AppendChatMessageInput, ChatBranchState, ChatSessionStore, CreateMessageVariantInput, CreatePromptTraceInput, CreateChatSessionInput, CreateChatSessionResult, ForkChatBranchInput, ForkChatBranchResult, ListPromptTracesInput, RecordSummarySnapshotInput } from "./chat-session-store.js";
 import { resolveStoreRuntime, type StoreRuntimeOptions } from "./persistence.js";
 import { SqliteChatStore } from "./sqlite-chat-store.js";
-import { SqliteCharacterStore } from "./sqlite-character-store.js";
+import { SqliteCharacterStore, type CharacterSyncReport } from "./sqlite-character-store.js";
 import { SqlitePersonaStore } from "./sqlite-persona-store.js";
 import { SqliteProviderStore } from "./sqlite-provider-store.js";
 import type { SqliteDatabaseAdapter } from "./sqlite-adapter.js";
@@ -179,5 +179,9 @@ export class SqliteChatSessionStore implements ChatSessionStore {
   updatePromptPreset(presetId: PromptPresetId, patch: Partial<Omit<PromptPreset, "id" | "createdAt" | "updatedAt">>): PromptPreset { return this.providers.updatePromptPreset(presetId, patch); }
 
   deletePromptPreset(presetId: PromptPresetId): void { this.providers.deletePromptPreset(presetId); }
+
+  syncCharactersOnStartup(): CharacterSyncReport {
+    return this.characters.syncCharactersOnStartup();
+  }
 
 }
