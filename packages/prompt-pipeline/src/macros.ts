@@ -1,9 +1,14 @@
+import { createPhaseOneMacroEngine } from "./macro-registry.js";
+import { buildPromptVariableContext } from "./prompt-variable-context.js";
+
 export interface MacroContext {
   charName: string;
   userName: string;
   personaDescription?: string;
   originalText?: string;
 }
+
+const phaseOneMacroEngine = createPhaseOneMacroEngine();
 
 /**
  * Replaces SillyTavern-style macros in text. Single-pass, no recursion.
@@ -27,43 +32,20 @@ export interface MacroContext {
 export function replaceMacros(text: string, context: MacroContext): string {
   if (!text) return text;
 
-  const now = new Date();
-  const pad = (n: number): string => n.toString().padStart(2, "0");
-  const hh = pad(now.getHours());
-  const mm = pad(now.getMinutes());
-  const yyyy = now.getFullYear().toString();
-  const mo = pad(now.getMonth() + 1);
-  const dd = pad(now.getDate());
-  const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
-  const isodate = `${yyyy}-${mo}-${dd}`;
-  const isotime = `${hh}:${mm}`;
-
-  let result = text;
-
-  // Curly-brace macros (whitespace-tolerant, case-insensitive)
-  result = result.replace(/\{\{\s*char\s*\}\}/gi, context.charName);
-  result = result.replace(/\{\{\s*user\s*\}\}/gi, context.userName);
-  result = result.replace(/\{\{\s*persona\s*\}\}/gi, context.personaDescription ?? "");
-  if (context.originalText !== undefined) {
-    let didUseOriginal = false;
-    result = result.replace(/\{\{\s*original\s*\}\}/gi, () => {
-      if (didUseOriginal) return "";
-      didUseOriginal = true;
-      return context.originalText ?? "";
-    });
-  }
-  result = result.replace(/\{\{\s*time\s*\}\}/gi, isotime);
-  result = result.replace(/\{\{\s*date\s*\}\}/gi, isodate);
-  result = result.replace(/\{\{\s*weekday\s*\}\}/gi, weekday);
-  result = result.replace(/\{\{\s*isotime\s*\}\}/gi, isotime);
-  result = result.replace(/\{\{\s*isodate\s*\}\}/gi, isodate);
-  result = result.replace(/\{\{\s*newline\s*\}\}/gi, "\n");
-  result = result.replace(/\{\{\s*noop\s*\}\}/gi, "");
-
-  // Legacy non-curly macros (must come AFTER curly to avoid double-substituting names that contain "USER" etc.)
-  result = result.replace(/<USER>/gi, context.userName);
-  result = result.replace(/<BOT>/gi, context.charName);
-  result = result.replace(/<CHAR>/gi, context.charName);
-
-  return result;
+  return phaseOneMacroEngine.resolve(text, buildPromptVariableContext({
+    names: {
+      charName: context.charName,
+      userName: context.userName,
+    },
+    character: {
+      name: context.charName,
+    },
+    persona: {
+      name: context.userName,
+      description: context.personaDescription ?? "",
+    },
+    prompt: {
+      original: context.originalText ?? null,
+    },
+  }));
 }
