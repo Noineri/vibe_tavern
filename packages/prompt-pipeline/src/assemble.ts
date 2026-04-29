@@ -7,6 +7,11 @@ import type {
 } from "./types.js";
 import { findSafeCompactionBoundary } from "./compaction.js";
 import { replaceMacros, type MacroContext } from "./macros.js";
+import {
+  DEFAULT_PROMPT_LAYER_PRIORITY,
+  PROMPT_LAYER_POSITION_RANK,
+  PROMPT_LAYER_PRIORITY,
+} from "./prompt-layer-constants.js";
 
 function estimateTokens(text: string): number {
   const normalized = text.trim();
@@ -41,7 +46,7 @@ function makeLayer(input: {
     sourceType: input.sourceType,
     sourceId: input.sourceId,
     position: input.position ?? "in_prompt",
-    priority: input.priority ?? 0,
+    priority: input.priority ?? DEFAULT_PROMPT_LAYER_PRIORITY,
     enabled: input.enabled ?? true,
     reason: input.reason ?? "included",
     tokenCount: estimateTokens(input.text),
@@ -49,16 +54,9 @@ function makeLayer(input: {
   };
 }
 
-const POSITION_RANK: Record<PromptLayerPosition, number> = {
-  before_prompt: 0,
-  in_prompt: 1,
-  in_chat: 2,
-  hidden_system: 3,
-};
-
 function sortLayers(layers: PromptLayer[]): PromptLayer[] {
   return [...layers].sort((a, b) => {
-    const posDiff = POSITION_RANK[a.position] - POSITION_RANK[b.position];
+    const posDiff = PROMPT_LAYER_POSITION_RANK[a.position] - PROMPT_LAYER_POSITION_RANK[b.position];
     if (posDiff !== 0) return posDiff;
     return b.priority - a.priority;
   });
@@ -132,7 +130,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         id: "prompt_preset_system",
         sourceType: "prompt_preset",
         sourceId: context.promptPreset.id,
-        priority: 1000,
+        priority: PROMPT_LAYER_PRIORITY.promptPresetSystem,
         text: context.promptPreset.text,
       }),
     );
@@ -144,7 +142,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         id: "prompt_preset_jailbreak",
         sourceType: "prompt_preset",
         sourceId: context.promptPreset.id,
-        priority: 990,
+        priority: PROMPT_LAYER_PRIORITY.promptPresetJailbreak,
         text: context.promptPreset.jailbreak,
       }),
     );
@@ -156,7 +154,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         id: "prompt_preset_summary",
         sourceType: "prompt_preset",
         sourceId: context.promptPreset.id,
-        priority: 350,
+        priority: PROMPT_LAYER_PRIORITY.promptPresetSummary,
         text: context.promptPreset.summary,
       }),
     );
@@ -168,7 +166,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         id: "character_system_prompt",
         sourceType: "character_system_prompt",
         sourceId: context.character.id,
-        priority: 950,
+        priority: PROMPT_LAYER_PRIORITY.characterSystemPrompt,
         text: context.character.systemPrompt,
       }),
     );
@@ -185,7 +183,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         id: "character_base",
         sourceType: "character",
         sourceId: context.character.id,
-        priority: 900,
+        priority: PROMPT_LAYER_PRIORITY.characterBase,
         text: characterBase,
       }),
     );
@@ -197,7 +195,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         id: "character_personality",
         sourceType: "character",
         sourceId: context.character.id,
-        priority: 890,
+        priority: PROMPT_LAYER_PRIORITY.characterPersonality,
         text: context.character.personality,
       }),
     );
@@ -209,7 +207,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         id: "persona",
         sourceType: "persona",
         sourceId: context.persona.id,
-        priority: 850,
+        priority: PROMPT_LAYER_PRIORITY.persona,
         text: `User persona (${context.persona.name}): ${context.persona.description}`,
       }),
     );
@@ -243,7 +241,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         id: `summary_${memory.id}`,
         sourceType: "summary_memory",
         sourceId: memory.id,
-        priority: 500,
+        priority: PROMPT_LAYER_PRIORITY.summaryMemory,
         text: `[${memory.kind}] ${memory.summary}`,
       }),
     );
@@ -259,7 +257,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         id: `retrieval_${memory.id}`,
         sourceType: "retrieval_memory",
         sourceId: memory.id,
-        priority: 400,
+        priority: PROMPT_LAYER_PRIORITY.retrievalMemory,
         text: `[Retrieved ${memory.sourceType}] ${memory.content}`,
       }),
     );
@@ -271,7 +269,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         id: "tool_instructions",
         sourceType: "tool_profile",
         sourceId: "active_tool_profile",
-        priority: 300,
+        priority: PROMPT_LAYER_PRIORITY.toolInstructions,
         text: context.toolInstructions,
       }),
     );
@@ -303,7 +301,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
             id: "preflight_compaction",
             sourceType: "compaction",
             sourceId: "preflight",
-            priority: 50,
+            priority: PROMPT_LAYER_PRIORITY.preflightCompaction,
             reason: `preflight_compaction_dropped_${droppedCount}`,
             text:
               `[Preflight compaction] Kept ${recentMessagesForHistory.length} of ` +
@@ -323,7 +321,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         id: "recent_history",
         sourceType: "chat_history",
         sourceId: context.chatId,
-        priority: 100,
+        priority: PROMPT_LAYER_PRIORITY.recentHistory,
         text: historyText,
       }),
     );
@@ -335,7 +333,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         id: "mes_example",
         sourceType: "character",
         sourceId: context.character.id,
-        priority: 150,
+        priority: PROMPT_LAYER_PRIORITY.mesExample,
         text: `[Example messages]\n${context.mesExample}`,
       }),
     );
@@ -347,7 +345,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         id: "post_history_instructions",
         sourceType: "character",
         sourceId: context.character.id,
-        priority: 160,
+        priority: PROMPT_LAYER_PRIORITY.postHistoryInstructions,
         text: context.postHistoryInstructions,
       }),
     );
