@@ -25,3 +25,48 @@ export const PROMPT_LAYER_PRIORITY = {
   preflightCompaction: 50,
   promptPresetSummary: 350,
 } as const;
+
+export const PROMPT_LAYER_ID = {
+  promptPresetSystem: "prompt_preset_system",
+  promptPresetJailbreak: "prompt_preset_jailbreak",
+  promptPresetSummary: "prompt_preset_summary",
+  characterSystemPrompt: "character_system_prompt",
+  characterBase: "character_base",
+  characterPersonality: "character_personality",
+  persona: "persona",
+  toolInstructions: "tool_instructions",
+  preflightCompaction: "preflight_compaction",
+  recentHistory: "recent_history",
+  mesExample: "mes_example",
+  postHistoryInstructions: "post_history_instructions",
+} as const;
+
+export const PROMPT_LAYER_SOURCE_TYPE = {
+  promptPreset: "prompt_preset",
+  characterSystemPrompt: "character_system_prompt",
+  character: "character",
+  persona: "persona",
+  loreEntry: "lore_entry",
+  summaryMemory: "summary_memory",
+  retrievalMemory: "retrieval_memory",
+  toolProfile: "tool_profile",
+  compaction: "compaction",
+  chatHistory: "chat_history",
+} as const;
+
+export const PROMPT_LAYER_SOURCE_ID = {
+  activeToolProfile: "active_tool_profile",
+  preflight: "preflight",
+} as const;
+
+export function createLoreLayerId(id: string): string {
+  return `lore_${id}`;
+}
+
+export function createSummaryMemoryLayerId(id: string): string {
+  return `summary_${id}`;
+}
+
+export function createRetrievalMemoryLayerId(id: string): string {
+  return `retrieval_${id}`;
+}

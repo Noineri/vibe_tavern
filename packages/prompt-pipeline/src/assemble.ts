@@ -9,8 +9,14 @@ import { findSafeCompactionBoundary } from "./compaction.js";
 import { replaceMacros, type MacroContext } from "./macros.js";
 import {
   DEFAULT_PROMPT_LAYER_PRIORITY,
+  PROMPT_LAYER_ID,
   PROMPT_LAYER_POSITION_RANK,
   PROMPT_LAYER_PRIORITY,
+  PROMPT_LAYER_SOURCE_ID,
+  PROMPT_LAYER_SOURCE_TYPE,
+  createLoreLayerId,
+  createRetrievalMemoryLayerId,
+  createSummaryMemoryLayerId,
 } from "./prompt-layer-constants.js";
 
 function estimateTokens(text: string): number {
@@ -127,8 +133,8 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   if (context.promptPreset?.text?.trim()) {
     layers.push(
       makeLayer({
-        id: "prompt_preset_system",
-        sourceType: "prompt_preset",
+        id: PROMPT_LAYER_ID.promptPresetSystem,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
         sourceId: context.promptPreset.id,
         priority: PROMPT_LAYER_PRIORITY.promptPresetSystem,
         text: context.promptPreset.text,
@@ -139,8 +145,8 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   if (context.promptPreset?.jailbreak?.trim()) {
     layers.push(
       makeLayer({
-        id: "prompt_preset_jailbreak",
-        sourceType: "prompt_preset",
+        id: PROMPT_LAYER_ID.promptPresetJailbreak,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
         sourceId: context.promptPreset.id,
         priority: PROMPT_LAYER_PRIORITY.promptPresetJailbreak,
         text: context.promptPreset.jailbreak,
@@ -151,8 +157,8 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   if (context.promptPreset?.summary?.trim()) {
     layers.push(
       makeLayer({
-        id: "prompt_preset_summary",
-        sourceType: "prompt_preset",
+        id: PROMPT_LAYER_ID.promptPresetSummary,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
         sourceId: context.promptPreset.id,
         priority: PROMPT_LAYER_PRIORITY.promptPresetSummary,
         text: context.promptPreset.summary,
@@ -163,8 +169,8 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   if (context.character.systemPrompt?.trim()) {
     layers.push(
       makeLayer({
-        id: "character_system_prompt",
-        sourceType: "character_system_prompt",
+        id: PROMPT_LAYER_ID.characterSystemPrompt,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.characterSystemPrompt,
         sourceId: context.character.id,
         priority: PROMPT_LAYER_PRIORITY.characterSystemPrompt,
         text: context.character.systemPrompt,
@@ -180,8 +186,8 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   if (characterBase) {
     layers.push(
       makeLayer({
-        id: "character_base",
-        sourceType: "character",
+        id: PROMPT_LAYER_ID.characterBase,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
         sourceId: context.character.id,
         priority: PROMPT_LAYER_PRIORITY.characterBase,
         text: characterBase,
@@ -192,8 +198,8 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   if (context.character.personality?.trim()) {
     layers.push(
       makeLayer({
-        id: "character_personality",
-        sourceType: "character",
+        id: PROMPT_LAYER_ID.characterPersonality,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
         sourceId: context.character.id,
         priority: PROMPT_LAYER_PRIORITY.characterPersonality,
         text: context.character.personality,
@@ -204,8 +210,8 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   if (context.persona?.description?.trim()) {
     layers.push(
       makeLayer({
-        id: "persona",
-        sourceType: "persona",
+        id: PROMPT_LAYER_ID.persona,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.persona,
         sourceId: context.persona.id,
         priority: PROMPT_LAYER_PRIORITY.persona,
         text: `User persona (${context.persona.name}): ${context.persona.description}`,
@@ -220,8 +226,8 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     }
     layers.push(
       makeLayer({
-        id: `lore_${loreEntry.id}`,
-        sourceType: "lore_entry",
+        id: createLoreLayerId(loreEntry.id),
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.loreEntry,
         sourceId: loreEntry.id,
         position: loreEntry.position ?? "in_prompt",
         priority: loreEntry.priority,
@@ -238,8 +244,8 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     }
     layers.push(
       makeLayer({
-        id: `summary_${memory.id}`,
-        sourceType: "summary_memory",
+        id: createSummaryMemoryLayerId(memory.id),
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.summaryMemory,
         sourceId: memory.id,
         priority: PROMPT_LAYER_PRIORITY.summaryMemory,
         text: `[${memory.kind}] ${memory.summary}`,
@@ -254,8 +260,8 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     }
     layers.push(
       makeLayer({
-        id: `retrieval_${memory.id}`,
-        sourceType: "retrieval_memory",
+        id: createRetrievalMemoryLayerId(memory.id),
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.retrievalMemory,
         sourceId: memory.id,
         priority: PROMPT_LAYER_PRIORITY.retrievalMemory,
         text: `[Retrieved ${memory.sourceType}] ${memory.content}`,
@@ -266,9 +272,9 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   if (context.toolInstructions?.trim()) {
     layers.push(
       makeLayer({
-        id: "tool_instructions",
-        sourceType: "tool_profile",
-        sourceId: "active_tool_profile",
+        id: PROMPT_LAYER_ID.toolInstructions,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.toolProfile,
+        sourceId: PROMPT_LAYER_SOURCE_ID.activeToolProfile,
         priority: PROMPT_LAYER_PRIORITY.toolInstructions,
         text: context.toolInstructions,
       }),
@@ -298,9 +304,9 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         const droppedCount = context.recentMessages.length - recentMessagesForHistory.length;
         layers.push(
           makeLayer({
-            id: "preflight_compaction",
-            sourceType: "compaction",
-            sourceId: "preflight",
+            id: PROMPT_LAYER_ID.preflightCompaction,
+            sourceType: PROMPT_LAYER_SOURCE_TYPE.compaction,
+            sourceId: PROMPT_LAYER_SOURCE_ID.preflight,
             priority: PROMPT_LAYER_PRIORITY.preflightCompaction,
             reason: `preflight_compaction_dropped_${droppedCount}`,
             text:
@@ -318,8 +324,8 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   if (historyText) {
     layers.push(
       makeLayer({
-        id: "recent_history",
-        sourceType: "chat_history",
+        id: PROMPT_LAYER_ID.recentHistory,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.chatHistory,
         sourceId: context.chatId,
         priority: PROMPT_LAYER_PRIORITY.recentHistory,
         text: historyText,
@@ -330,8 +336,8 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   if (context.mesExample?.trim()) {
     layers.push(
       makeLayer({
-        id: "mes_example",
-        sourceType: "character",
+        id: PROMPT_LAYER_ID.mesExample,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
         sourceId: context.character.id,
         priority: PROMPT_LAYER_PRIORITY.mesExample,
         text: `[Example messages]\n${context.mesExample}`,
@@ -342,8 +348,8 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   if (context.postHistoryInstructions?.trim()) {
     layers.push(
       makeLayer({
-        id: "post_history_instructions",
-        sourceType: "character",
+        id: PROMPT_LAYER_ID.postHistoryInstructions,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
         sourceId: context.character.id,
         priority: PROMPT_LAYER_PRIORITY.postHistoryInstructions,
         text: context.postHistoryInstructions,
@@ -355,7 +361,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   const totalTokenEstimate = orderedLayers.reduce((sum, layer) => sum + layer.tokenCount, 0);
 
   const nonHiddenLayers = orderedLayers.filter(
-    (layer) => layer.position !== "hidden_system" && layer.sourceType !== "chat_history",
+    (layer) => layer.position !== "hidden_system" && layer.sourceType !== PROMPT_LAYER_SOURCE_TYPE.chatHistory,
   );
   const beforePrompt = nonHiddenLayers.filter((l) => l.position === "before_prompt");
   const inPrompt = nonHiddenLayers.filter((l) => l.position === "in_prompt");
