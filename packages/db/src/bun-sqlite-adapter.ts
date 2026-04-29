@@ -2,15 +2,15 @@
 import { Database } from "bun:sqlite";
 import type { SqliteDatabaseAdapter, SqliteRow, SqliteValue } from "./sqlite-adapter.js";
 
-export interface NodeSqliteDatabaseAdapterOptions {
+export interface BunSqliteDatabaseAdapterOptions {
   timeoutMs?: number;
 }
 
-export class NodeSqliteDatabaseAdapter implements SqliteDatabaseAdapter {
+export class BunSqliteDatabaseAdapter implements SqliteDatabaseAdapter {
   private readonly db: Database;
   private inTransaction = false;
 
-  constructor(path: string, options: NodeSqliteDatabaseAdapterOptions = {}) {
+  constructor(path: string, options: BunSqliteDatabaseAdapterOptions = {}) {
     this.db = new Database(path);
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.db.exec(`PRAGMA busy_timeout = ${options.timeoutMs ?? 5000};`);
@@ -60,3 +60,4 @@ export class NodeSqliteDatabaseAdapter implements SqliteDatabaseAdapter {
     this.db.close();
   }
 }
+
