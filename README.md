@@ -14,14 +14,19 @@ The project already supports the basic local RP workflow: character import and c
 
 Requirements:
 
-- Node.js with `node:sqlite` support
-- npm
+- [Bun](https://bun.sh)
 
 Install dependencies and start the local dev environment:
 
 ```bash
-npm install
-npm run dev
+bun install
+bun run dev
+```
+
+Or run it with Docker Compose
+
+```bash
+docker compose up --build -d
 ```
 
 After startup:
@@ -35,11 +40,10 @@ On Windows, `Start RP Platform.bat` starts the same local environment, installs 
 Useful commands:
 
 ```bash
-npm run dev
-npm run dev:web
-npm run dev:api
-npm run build
-npm run typecheck
+bun run dev:web
+bun run dev:api
+bun run build
+bun run typecheck
 ```
 
 Basic smoke test:
