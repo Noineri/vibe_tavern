@@ -1,5 +1,4 @@
-import { describe, it } from "node:test";
-import assert from "node:assert/strict";
+import { describe, it, expect } from "bun:test";
 import { replaceMacros } from "../dist/macros.js";
 
 describe("replaceMacros", () => {
@@ -9,59 +8,51 @@ describe("replaceMacros", () => {
   };
 
   it("resolves {{char}}", () => {
-    assert.strictEqual(
+    expect(
       replaceMacros("I am {{char}}.", ctx),
-      "I am Aria.",
-    );
+    ).toBe("I am Aria.");
   });
 
   it("resolves {{user}}", () => {
-    assert.strictEqual(
+    expect(
       replaceMacros("Hello {{user}}.", ctx),
-      "Hello Olya.",
-    );
+    ).toBe("Hello Olya.");
   });
 
   it("does NOT resolve {{persona}} (not in MacroContext)", () => {
-    assert.strictEqual(
+    expect(
       replaceMacros("You are {{persona}}", ctx),
-      "You are {{persona}}",
-    );
+    ).toBe("You are {{persona}}");
   });
 
   it("resolves <BOT> and <USER>", () => {
-    assert.strictEqual(
+    expect(
       replaceMacros("<BOT> speaks to <USER>.", ctx),
-      "Aria speaks to Olya.",
-    );
+    ).toBe("Aria speaks to Olya.");
   });
 
   it("resolves {{original}} when provided", () => {
-    assert.strictEqual(
+    expect(
       replaceMacros("{{original}} was renamed.", { ...ctx, originalName: "OldName" }),
-      "OldName was renamed.",
-    );
+    ).toBe("OldName was renamed.");
   });
 
   it("leaves {{original}} unresolved when originalName not provided", () => {
-    assert.strictEqual(
+    expect(
       replaceMacros("{{original}} was renamed.", ctx),
-      "{{original}} was renamed.",
-    );
+    ).toBe("{{original}} was renamed.");
   });
 
   it("handles whitespace inside braces", () => {
-    assert.strictEqual(
+    expect(
       replaceMacros("{{ char }} meets {{ user }}", ctx),
-      "Aria meets Olya",
-    );
+    ).toBe("Aria meets Olya");
   });
 
   it("is case-insensitive for macro names", () => {
-    assert.strictEqual(
+    expect(
       replaceMacros("{{CHAR}} and {{User}}", ctx),
-      "Aria and Olya",
-    );
+    ).toBe("Aria and Olya");
   });
 
   it("resolves multiple macros in one string", () => {
@@ -69,20 +60,19 @@ describe("replaceMacros", () => {
       "{{char}} greets {{user}}.",
       ctx,
     );
-    assert.strictEqual(result, "Aria greets Olya.");
-    assert.ok(!result.includes("{{"));
+    expect(result).toBe("Aria greets Olya.");
+    expect(result).not.toContain("{{");
   });
 
   it("returns input unchanged when no macros present", () => {
-    assert.strictEqual(
+    expect(
       replaceMacros("Just plain text.", ctx),
-      "Just plain text.",
-    );
+    ).toBe("Just plain text.");
   });
 
   it("returns input for empty/falsy values", () => {
-    assert.strictEqual(replaceMacros("", ctx), "");
+    expect(replaceMacros("", ctx)).toBe("");
     // @ts-expect-error testing null input
-    assert.strictEqual(replaceMacros(null, ctx), null);
+    expect(replaceMacros(null, ctx)).toBe(null);
   });
 });

@@ -6,7 +6,7 @@
   "main": "./dist/services/api/src/index.js",
   "types": "./dist/services/api/src/index.d.ts",
   "scripts": {
-    "dev": "node dist/services/api/src/dev-server.js",
+    "dev": "bun dist/services/api/src/dev-server.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

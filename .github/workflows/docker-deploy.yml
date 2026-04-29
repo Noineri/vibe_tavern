@@ -8,7 +8,7 @@ on:
     paths:
       - 'Dockerfile'
       - 'package.json'
-      - 'package-lock.json'
+      - 'bun.lock'
       - 'scripts/**'
       - 'services/**'
       - 'apps/**'
