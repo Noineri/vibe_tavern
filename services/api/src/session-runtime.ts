@@ -27,7 +27,12 @@ import {
   importStLorebookJson,
 } from "../../../packages/import-export/src/index.js";
 import { serializeSillyTavernChat } from "../../../packages/import-export/src/chats/st-chat.js";
-import { activateLoreEntries, replaceMacros, type ActivatableLoreEntry } from "@rp-platform/prompt-pipeline";
+import {
+  activateLoreEntries,
+  buildPromptVariableContext,
+  createPhaseOneMacroEngine,
+  type ActivatableLoreEntry,
+} from "@rp-platform/prompt-pipeline";
 import { ChatApplicationService } from "./chat-application-service.js";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "./prompt-assembly-service.js";
 import {
@@ -50,6 +55,8 @@ import {
 import { createDefaultSessionStore } from "./session-runtime-store.js";
 
 import type { MessageDto } from "./session-runtime-dto.js";
+
+const phaseOneMacroEngine = createPhaseOneMacroEngine();
 
 export interface ChatListItem {
   id: ChatId;
@@ -1239,22 +1246,48 @@ export class SessionRuntime {
     this.persistPromptTrace(message.id, assembled.promptTraceDraft);
   }
 
-  private resolveMacroContext(chatId: ChatId): { charName: string; userName: string; personaDescription?: string } {
+  private resolvePromptVariableContext(chatId: ChatId) {
     const chat = this.store.getChat(chatId);
     if (!chat) {
       throw new Error(`Chat '${chatId}' was not found.`);
     }
     const character = this.resolver.getCharacter(chat.characterId);
     const persona = this.resolver.getPersona(chat.personaId);
-    return {
-      charName: character.name,
-      userName: persona?.name ?? "User",
-      personaDescription: persona?.description,
-    };
+    const latestVersion = this.store.getLatestCharacterVersion(chat.characterId);
+    return buildPromptVariableContext({
+      character: {
+        name: character.name,
+        description: character.description,
+        personality: character.personalitySummary,
+        scenario: character.scenario,
+        firstMessage: character.firstMessage,
+        alternateGreetings: character.alternateGreetings,
+        mesExample: character.mesExample,
+        postHistoryInstructions: character.postHistoryInstructions,
+        creatorNotes: character.creatorNotes,
+        depthPrompt: character.depthPrompt,
+        depthPromptDepth: character.depthPromptDepth,
+        depthPromptRole: character.depthPromptRole,
+        systemPrompt: character.systemPrompt,
+        version: latestVersion ? {
+          versionNumber: latestVersion.versionNumber,
+          title: latestVersion.title,
+          cardFormat: latestVersion.cardFormat,
+          definition: latestVersion.definition,
+        } : null,
+        tags: character.tags,
+        characterBook: character.characterBook,
+        extensions: character.extensions,
+      },
+      persona: {
+        name: persona?.name ?? "User",
+        description: persona?.description ?? "",
+      },
+    });
   }
 
   private expandChatMacros(chatId: ChatId, text: string): string {
-    return replaceMacros(text, this.resolveMacroContext(chatId));
+    return phaseOneMacroEngine.resolve(text, this.resolvePromptVariableContext(chatId));
   }
 
   private resolveDefaultPersonaId(): import("@rp-platform/domain").PersonaId {
