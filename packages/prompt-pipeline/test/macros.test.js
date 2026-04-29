@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { replaceMacros } from "../dist/macros.js";
+import { replaceMacros } from "../src/macros.ts";
 
 describe("replaceMacros", () => {
   const ctx = {
@@ -19,10 +19,13 @@ describe("replaceMacros", () => {
     ).toBe("Hello Olya.");
   });
 
-  it("does NOT resolve {{persona}} (not in MacroContext)", () => {
+  it("resolves {{persona}} to active persona description", () => {
     expect(
-      replaceMacros("You are {{persona}}", ctx),
-    ).toBe("You are {{persona}}");
+      replaceMacros("You are {{persona}}", {
+        ...ctx,
+        personaDescription: "A careful archivist.",
+      }),
+    ).toBe("You are A careful archivist.");
   });
 
   it("resolves <BOT> and <USER>", () => {
@@ -31,16 +34,28 @@ describe("replaceMacros", () => {
     ).toBe("Aria speaks to Olya.");
   });
 
-  it("resolves {{original}} when provided", () => {
+  it("resolves first {{original}} to supplied original prompt text", () => {
     expect(
-      replaceMacros("{{original}} was renamed.", { ...ctx, originalName: "OldName" }),
-    ).toBe("OldName was renamed.");
+      replaceMacros("{{original}} Override.", { ...ctx, originalText: "Default prompt." }),
+    ).toBe("Default prompt. Override.");
   });
 
-  it("leaves {{original}} unresolved when originalName not provided", () => {
+  it("resolves second {{original}} in the same substitution to empty string", () => {
+    expect(
+      replaceMacros("{{original}} Then {{original}}", { ...ctx, originalText: "Default prompt." }),
+    ).toBe("Default prompt. Then ");
+  });
+
+  it("leaves {{original}} unresolved when original prompt text is not provided", () => {
     expect(
       replaceMacros("{{original}} was renamed.", ctx),
     ).toBe("{{original}} was renamed.");
+  });
+
+  it("leaves unsupported macros unresolved", () => {
+    expect(
+      replaceMacros("{{unknown}} stays.", ctx),
+    ).toBe("{{unknown}} stays.");
   });
 
   it("handles whitespace inside braces", () => {

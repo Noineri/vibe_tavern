@@ -318,17 +318,7 @@ export class SessionRuntime {
       };
     }
 
-    const chat = this.store.getChat(chatId);
-    if (!chat) {
-      throw new Error(`Chat '${chatId}' was not found.`);
-    }
-    const character = this.resolver.getCharacter(chat.characterId);
-    const persona = this.resolver.getPersona(chat.personaId);
-    const expandedContent = replaceMacros(trimmed, {
-      charName: character.name,
-      userName: persona?.name ?? "User",
-      personaDescription: persona?.description,
-    });
+    const expandedContent = this.expandChatMacros(chatId, trimmed);
 
     this.chatApp.appendUserMessage(chatId, {
       content: expandedContent,
@@ -512,7 +502,7 @@ export class SessionRuntime {
           branchId: chat.activeBranchId,
           role: "assistant",
           authorType: "assistant",
-          content: greeting,
+          content: this.expandChatMacros(created.id as ChatId, greeting),
         });
       }
     }
@@ -1244,9 +1234,27 @@ export class SessionRuntime {
       branchId: chat.activeBranchId,
       role: "assistant",
       authorType: "assistant",
-      content: trimmed,
+      content: this.expandChatMacros(chatId, trimmed),
     });
     this.persistPromptTrace(message.id, assembled.promptTraceDraft);
+  }
+
+  private resolveMacroContext(chatId: ChatId): { charName: string; userName: string; personaDescription?: string } {
+    const chat = this.store.getChat(chatId);
+    if (!chat) {
+      throw new Error(`Chat '${chatId}' was not found.`);
+    }
+    const character = this.resolver.getCharacter(chat.characterId);
+    const persona = this.resolver.getPersona(chat.personaId);
+    return {
+      charName: character.name,
+      userName: persona?.name ?? "User",
+      personaDescription: persona?.description,
+    };
+  }
+
+  private expandChatMacros(chatId: ChatId, text: string): string {
+    return replaceMacros(text, this.resolveMacroContext(chatId));
   }
 
   private resolveDefaultPersonaId(): import("@rp-platform/domain").PersonaId {
