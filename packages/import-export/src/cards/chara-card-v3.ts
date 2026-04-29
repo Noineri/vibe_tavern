@@ -1,4 +1,5 @@
 import type { Character, CharacterVersion } from "@rp-platform/domain";
+import { ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
 
 import {
   asOptionalString,
@@ -115,11 +116,11 @@ export function importCharacterCardV3Json(
 
   const slug = slugify(normalized.name);
   const characterId = makeDeterministicId(
-    "char",
+    ENTITY_ID_NAMESPACE.character,
     `${slug}:${stableJson(root)}`,
   );
   const versionId = makeDeterministicId(
-    "charver",
+    ENTITY_ID_NAMESPACE.characterVersion,
     `${characterId}:${stableJson(root)}`,
   );
 
