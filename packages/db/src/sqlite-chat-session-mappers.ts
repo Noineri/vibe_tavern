@@ -122,6 +122,10 @@ export type CharacterRow = SqliteRow & {
   status: string;
   created_at: string;
   updated_at: string;
+  file_path?: string | null;
+  file_hash?: string | null;
+  sync_status?: string | null;
+  last_synced_at?: string | null;
 };
 
 export type CharacterVersionRow = SqliteRow & {
