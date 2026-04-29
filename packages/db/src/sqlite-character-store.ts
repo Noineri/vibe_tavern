@@ -19,7 +19,8 @@ import {
 } from "./sqlite-chat-session-mappers.js";
 import type { SqliteDatabaseAdapter, SqliteRow } from "./sqlite-adapter.js";
 import type { StoreClock, StoreIdGenerator } from "./persistence.js";
-import { unlinkSync } from "node:fs";
+import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   type FileStore,
   createFileStore,
@@ -118,6 +119,16 @@ type CharacterRowWithMeta = CharacterRow & {
 };
 
 const CHARACTERS_PATH_SEGMENT = "characters/";
+
+export interface CharacterSyncReport {
+  synced: number;
+  imported: number;
+  renamed: number;
+  missing: number;
+  malformed: number;
+  duplicate: number;
+  conflict: number;
+}
 
 export class SqliteCharacterStore {
   private readonly fileStore: FileStore;
@@ -527,6 +538,94 @@ export class SqliteCharacterStore {
     }
   }
 
+  syncCharactersOnStartup(): CharacterSyncReport {
+    const report: CharacterSyncReport = {
+      synced: 0, imported: 0, renamed: 0,
+      missing: 0, malformed: 0, duplicate: 0, conflict: 0,
+    };
+
+    const charactersDir = join(this.fileStore.dataRoot, STORAGE_FOLDERS.characters);
+    let dirEntries: string[];
+    try {
+      dirEntries = readdirSync(charactersDir);
+    } catch {
+      this.markMissingFiles(new Set(), report);
+      return report;
+    }
+
+    const jsonFiles = dirEntries.filter(
+      e => e.endsWith(".json") && !e.startsWith("_") && !e.startsWith("."),
+    );
+
+    type MetaRow = { id: string; file_path: string | null; sync_status: string | null };
+    const existingRows = this.db.queryAll<MetaRow>(
+      `SELECT id, file_path, sync_status FROM characters`,
+      [],
+    );
+    const existingById = new Map(existingRows.map(r => [r.id, r]));
+    const seenIds = new Map<string, string>();
+    const allEntries = new Set(dirEntries);
+
+    for (const fileName of jsonFiles) {
+      const relativePath = `${CHARACTERS_PATH_SEGMENT}${fileName}`;
+      let file: CanonicalCharacterFile;
+      try {
+        const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.characters, fileName);
+        file = this.fileStore.readJson<CanonicalCharacterFile>(absolutePath);
+      } catch {
+        report.malformed++;
+        continue;
+      }
+
+      if (
+        !file || typeof file !== "object" ||
+        typeof file.schemaVersion !== "number" ||
+        file.schemaVersion !== CHARACTER_FILE_SCHEMA_VERSION ||
+        typeof file.id !== "string" || !file.id ||
+        typeof file.slug !== "string" || !file.slug ||
+        typeof file.name !== "string" || !file.name
+      ) {
+        report.malformed++;
+        continue;
+      }
+
+      const firstFileName = seenIds.get(file.id);
+      if (firstFileName) {
+        report.duplicate++;
+        this.writeConflictCopy(file, `duplicate-with-${firstFileName}`);
+        continue;
+      }
+      seenIds.set(file.id, fileName);
+
+      const existing = existingById.get(file.id);
+      if (existing) {
+        const pathChanged = existing.file_path !== null && existing.file_path !== relativePath;
+        if (pathChanged) {
+          const oldFileName = existing.file_path!.slice(CHARACTERS_PATH_SEGMENT.length);
+          if (!allEntries.has(oldFileName)) {
+            this.applyFileSync(existing.id, relativePath, file);
+            report.renamed++;
+          } else {
+            report.conflict++;
+            this.writeConflictCopy(file, `id-conflict`);
+          }
+        } else if (existing.sync_status === "db_dirty") {
+          report.conflict++;
+          this.writeConflictCopy(file, `db-dirty`);
+        } else {
+          this.applyFileSync(existing.id, relativePath, file);
+          report.synced++;
+        }
+      } else {
+        this.applyFileImport(relativePath, file);
+        report.imported++;
+      }
+    }
+
+    this.markMissingFiles(new Set(jsonFiles), report);
+    return report;
+  }
+
   private resolveCharacter(row: CharacterRowWithMeta): Character {
     if (row.file_path) {
       const fromFile = this.readCharacterFromFile(row.id, row.file_path);
@@ -604,6 +703,96 @@ export class SqliteCharacterStore {
         [fileHash, now, characterId],
       );
     } catch {}
+  }
+
+  private writeConflictCopy(file: CanonicalCharacterFile, reason: string): void {
+    try {
+      const conflictsDir = join(this.fileStore.dataRoot, "_conflicts");
+      mkdirSync(conflictsDir, { recursive: true });
+      const ts = new Date().toISOString().replace(/[:.]/g, "-");
+      const conflictName = `${ts}-character-${file.id}-${reason}.json`;
+      writeFileSync(join(conflictsDir, conflictName), JSON.stringify(file, null, 2), "utf-8");
+    } catch {}
+  }
+
+  private applyFileSync(characterId: string, relativePath: string, file: CanonicalCharacterFile): void {
+    const now = new Date().toISOString();
+    const fileHash = hashCanonicalJson(file);
+    try {
+      this.db.execute(
+        `UPDATE characters SET
+          slug = ?, name = ?, description = ?, personality_summary = ?, default_scenario = ?,
+          first_message = ?, mes_example = ?, alternate_greetings_json = ?,
+          post_history_instructions = ?, creator_notes = ?, character_book_json = ?,
+          depth_prompt = ?, depth_prompt_depth = ?, depth_prompt_role = ?,
+          extensions_json = ?, system_prompt = ?, tags_json = ?,
+          avatar_asset_id = ?, status = ?,
+          file_path = ?, file_hash = ?, file_mtime = ?, sync_status = 'synced',
+          sync_error = NULL, last_synced_at = ?, updated_at = ?
+        WHERE id = ?`,
+        [
+          file.slug, file.name, file.description, file.personalitySummary, file.defaultScenario,
+          file.firstMessage, file.mesExample, JSON.stringify(file.alternateGreetings),
+          file.postHistoryInstructions, file.creatorNotes,
+          file.characterBook ? JSON.stringify(file.characterBook) : null,
+          file.depthPrompt, file.depthPromptDepth, file.depthPromptRole,
+          JSON.stringify(file.extensions), file.systemPrompt, JSON.stringify(file.tags),
+          file.avatarAssetId, file.status,
+          relativePath, fileHash, now, now, now,
+          characterId,
+        ],
+      );
+    } catch {
+      this.writeConflictCopy(file, `sync-failed`);
+    }
+  }
+
+  private applyFileImport(relativePath: string, file: CanonicalCharacterFile): void {
+    const now = new Date().toISOString();
+    const fileHash = hashCanonicalJson(file);
+    try {
+      this.db.execute(
+        `INSERT INTO characters (
+          id, slug, name, description, personality_summary, default_scenario, first_message, mes_example, alternate_greetings_json,
+          post_history_instructions, creator_notes, character_book_json, depth_prompt, depth_prompt_depth, depth_prompt_role,
+          extensions_json, system_prompt, tags_json, avatar_asset_id, status, created_at, updated_at,
+          file_path, file_hash, file_mtime, sync_status, sync_error, last_synced_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                  ?, ?, ?, ?, ?, ?)`,
+        [
+          file.id, file.slug, file.name, file.description, file.personalitySummary, file.defaultScenario,
+          file.firstMessage, file.mesExample, JSON.stringify(file.alternateGreetings),
+          file.postHistoryInstructions, file.creatorNotes,
+          file.characterBook ? JSON.stringify(file.characterBook) : null,
+          file.depthPrompt, file.depthPromptDepth, file.depthPromptRole,
+          JSON.stringify(file.extensions), file.systemPrompt, JSON.stringify(file.tags),
+          file.avatarAssetId, file.status || "active",
+          file.createdAt || now, file.updatedAt || now,
+          relativePath, fileHash, now, "synced", null, now,
+        ],
+      );
+    } catch {
+      this.writeConflictCopy(file, `import-failed`);
+    }
+  }
+
+  private markMissingFiles(jsonFileSet: Set<string>, report: CharacterSyncReport): void {
+    type PathRow = { id: string; file_path: string; sync_status: string | null };
+    const rowsWithPaths = this.db.queryAll<PathRow>(
+      `SELECT id, file_path, sync_status FROM characters WHERE file_path IS NOT NULL`,
+      [],
+    );
+    for (const row of rowsWithPaths) {
+      if (row.sync_status === "missing_file") continue;
+      const fileName = row.file_path.slice(CHARACTERS_PATH_SEGMENT.length);
+      if (!jsonFileSet.has(fileName)) {
+        this.db.execute(
+          `UPDATE characters SET sync_status = 'missing_file', sync_error = 'File not found during startup sync' WHERE id = ?`,
+          [row.id],
+        );
+        report.missing++;
+      }
+    }
   }
 
   private requireLoreEntry(entryId: string): LoreEntry {

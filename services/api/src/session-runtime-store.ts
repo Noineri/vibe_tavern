@@ -21,5 +21,13 @@ export function createDefaultSessionStore(): ChatSessionStore {
 
   const adapter = new BunSqliteDatabaseAdapter(dbPath);
   applySqliteMigrations(adapter);
-  return new SqliteChatSessionStore(adapter);
+  const store = new SqliteChatSessionStore(adapter);
+  const report = store.syncCharactersOnStartup();
+  const total =
+    report.synced + report.imported + report.renamed +
+    report.missing + report.malformed + report.duplicate + report.conflict;
+  if (total > 0) {
+    console.log("[character-sync]", JSON.stringify(report));
+  }
+  return store;
 }
