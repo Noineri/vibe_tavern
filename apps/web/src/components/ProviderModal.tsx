@@ -34,6 +34,7 @@ export interface FormState {
   freqPen: number;
   presPen: number;
   maxTokens: number;
+  contextBudget: number;
   stopSeq: string;
   seed: string | null;
   reasoningEffort: string;
@@ -81,6 +82,7 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     freqPen: p.freqPen ?? 0.0,
     presPen: p.presPen ?? 0.0,
     maxTokens: p.maxTokens ?? 8192,
+    contextBudget: p.contextBudget ?? 128000,
     stopSeq: p.stopSeq ?? "",
     seed: p.seed ?? null,
     reasoningEffort: p.reasoningEffort ?? "medium",

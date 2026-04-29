@@ -10,6 +10,18 @@ interface StoredProviderProfileRecord {
   apiKey: string | null;
   defaultModel?: string | null;
   contextBudget?: number | null;
+  maxTokens?: number | null;
+  temperature?: number | null;
+  topP?: number | null;
+  minP?: number | null;
+  topK?: number | null;
+  typicalP?: number | null;
+  repPen?: number | null;
+  freqPen?: number | null;
+  presPen?: number | null;
+  stopSeq?: string | null;
+  seed?: number | string | null;
+  reasoningEffort?: string | null;
 }
 
 export class LiveChatOrchestrator {
@@ -65,20 +77,29 @@ export class LiveChatOrchestrator {
     reply: string;
     snapshot: SessionSnapshot;
   }> {
+    logSendDebug("live.regenerate.start", { chatId: input.chatId, messageId: input.messageId, model: input.model });
     const prompt = this.runtime.assemblePromptPreview(input.chatId, {
       excludeMessageId: input.messageId,
       model: input.model,
     });
+    logSendDebug("live.regenerate.prompt.ready", {
+      chatId: input.chatId,
+      messageId: input.messageId,
+      promptMessageCount: countPromptMessages(prompt),
+    });
     const startedAt = Date.now();
+    logSendDebug("live.regenerate.provider.start", { chatId: input.chatId, providerId: input.profile.id, model: input.model });
     const reply = await this.providers.generateProfileReply(input.profile, {
       model: input.model,
       prompt,
     });
     const latencyMs = Date.now() - startedAt;
+    logSendDebug("live.regenerate.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
     const snapshot = this.runtime.appendMessageVariant(input.chatId, input.messageId, {
       content: reply,
       latencyMs,
     });
+    logSendDebug("live.regenerate.append.done", { chatId: input.chatId, messageId: input.messageId, messageCount: snapshot.messages.length });
 
     return {
       promptMessageCount: countPromptMessages(prompt),
