@@ -2,7 +2,7 @@ export interface MacroContext {
   charName: string;
   userName: string;
   personaDescription?: string;
-  originalName?: string;
+  originalText?: string;
 }
 
 /**
@@ -11,7 +11,7 @@ export interface MacroContext {
  *   {{char}}  / <CHAR> / <BOT>            -> charName
  *   {{user}}  / <USER>                    -> userName
  *   {{persona}}                           -> personaDescription (or empty)
- *   {{original}}                          -> originalName (if provided)
+ *   {{original}}                          -> original prompt text (one-shot, if provided)
  *   {{time}}                              -> HH:MM (24h, local)
  *   {{date}}                              -> YYYY-MM-DD (local)
  *   {{weekday}}                           -> Monday/Tuesday/... (English, local)
@@ -44,7 +44,14 @@ export function replaceMacros(text: string, context: MacroContext): string {
   result = result.replace(/\{\{\s*char\s*\}\}/gi, context.charName);
   result = result.replace(/\{\{\s*user\s*\}\}/gi, context.userName);
   result = result.replace(/\{\{\s*persona\s*\}\}/gi, context.personaDescription ?? "");
-  result = result.replace(/\{\{\s*original\s*\}\}/gi, context.originalName ?? "");
+  if (context.originalText !== undefined) {
+    let didUseOriginal = false;
+    result = result.replace(/\{\{\s*original\s*\}\}/gi, () => {
+      if (didUseOriginal) return "";
+      didUseOriginal = true;
+      return context.originalText ?? "";
+    });
+  }
   result = result.replace(/\{\{\s*time\s*\}\}/gi, isotime);
   result = result.replace(/\{\{\s*date\s*\}\}/gi, isodate);
   result = result.replace(/\{\{\s*weekday\s*\}\}/gi, weekday);
