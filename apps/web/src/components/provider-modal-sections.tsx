@@ -133,10 +133,10 @@ export function ProviderSamplerFields({ form, updateForm }: ProviderSamplerField
                         min="1024"
                         max="2000000"
                         step="1024"
-                        value={form.maxTokens || ""}
+                        value={form.contextBudget || ""}
                         onChange={(e) => {
                           const v = e.target.value;
-                          updateForm("maxTokens", v === "" ? 0 : parseInt(v) || 0);
+                          updateForm("contextBudget", v === "" ? 0 : parseInt(v) || 0);
                         }}
                       />
                     </div>

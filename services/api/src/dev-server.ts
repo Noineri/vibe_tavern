@@ -297,15 +297,32 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
   const messageRegenerateMatch = /^\/api\/chats\/([^/]+)\/messages\/([^/]+)\/regenerate$/.exec(url.pathname);
   if (method === "POST" && messageRegenerateMatch) {
     const body = await readJsonBody(request);
-    writeJson(
-      response,
-      200,
-      await runtime.regenerateMessage(
+    const regenStartMs = Date.now();
+    logSendDebug("api.route.regenerate.start", {
+      chatId: messageRegenerateMatch[1],
+      messageId: messageRegenerateMatch[2],
+    });
+    try {
+      const result = await runtime.regenerateMessage(
         messageRegenerateMatch[1],
         messageRegenerateMatch[2],
         body,
-      ),
-    );
+      );
+      logSendDebug("api.route.regenerate.done", {
+        chatId: messageRegenerateMatch[1],
+        messageId: messageRegenerateMatch[2],
+        elapsedMs: Date.now() - regenStartMs,
+      });
+      writeJson(response, 200, result);
+    } catch (err) {
+      logSendDebug("api.route.regenerate.error", {
+        chatId: messageRegenerateMatch[1],
+        messageId: messageRegenerateMatch[2],
+        elapsedMs: Date.now() - regenStartMs,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
     return;
   }
 
