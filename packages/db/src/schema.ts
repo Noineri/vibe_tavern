@@ -26,7 +26,14 @@ CREATE TABLE IF NOT EXISTS characters (
   avatar_asset_id TEXT,
   status TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  file_path TEXT,
+  file_hash TEXT,
+  file_mtime TEXT,
+  sync_status TEXT,
+  sync_error TEXT,
+  deleted_at TEXT,
+  last_synced_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS character_versions (
@@ -38,6 +45,13 @@ CREATE TABLE IF NOT EXISTS character_versions (
   definition_json TEXT NOT NULL,
   is_active INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
+  file_path TEXT,
+  file_hash TEXT,
+  file_mtime TEXT,
+  sync_status TEXT,
+  sync_error TEXT,
+  deleted_at TEXT,
+  last_synced_at TEXT,
   FOREIGN KEY(character_id) REFERENCES characters(id) ON DELETE CASCADE
 );
 
@@ -52,7 +66,14 @@ CREATE TABLE IF NOT EXISTS personas (
   avatar_asset_id TEXT,
   default_for_new_chats INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  file_path TEXT,
+  file_hash TEXT,
+  file_mtime TEXT,
+  sync_status TEXT,
+  sync_error TEXT,
+  deleted_at TEXT,
+  last_synced_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS lorebooks (
@@ -61,7 +82,14 @@ CREATE TABLE IF NOT EXISTS lorebooks (
   scope_type TEXT NOT NULL,
   description TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  file_path TEXT,
+  file_hash TEXT,
+  file_mtime TEXT,
+  sync_status TEXT,
+  sync_error TEXT,
+  deleted_at TEXT,
+  last_synced_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS lore_entries (
@@ -126,7 +154,14 @@ CREATE TABLE IF NOT EXISTS prompt_presets (
   summary TEXT NOT NULL DEFAULT '',
   tools TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  file_path TEXT,
+  file_hash TEXT,
+  file_mtime TEXT,
+  sync_status TEXT,
+  sync_error TEXT,
+  deleted_at TEXT,
+  last_synced_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS chats (
