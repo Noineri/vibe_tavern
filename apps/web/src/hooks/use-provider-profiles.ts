@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProviderProbeResponse } from "@rp-platform/api-contracts";
+import { PROVIDER_TYPE } from "@rp-platform/domain";
 import {
   activateProviderProfile,
   deleteProviderProfile,
@@ -84,7 +85,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
       const saved = await saveProviderProfile({
         id: selectedProviderProfileId || connection.activeProviderProfileId || undefined,
         name: connection.providerLabel.trim(),
-        type: connection.providerType || "openai_compat",
+        type: connection.providerType || PROVIDER_TYPE.openaiCompat,
         endpoint: normalizedBaseUrl,
         apiKey: connection.apiKey.trim() || undefined,
         defaultModel: connection.model.trim() || null,
@@ -142,7 +143,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
         models: [],
         status: "idle",
         error: "",
-        providerType: profile.type || "openai_compat",
+        providerType: profile.type || PROVIDER_TYPE.openaiCompat,
         providerPreset: "",
         temperature: profile.temperature ?? 0.9,
         topP: profile.topP ?? 1.0,
@@ -187,28 +188,28 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
       const saved = existingId
         ? await updateProviderProfile(existingId, {
             name,
-            type: connection.providerType || "openai_compat",
-            endpoint,
-            apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
-            defaultModel: connection.model.trim() || null,
-            contextBudget: connection.maxTokens || 128000,
-            temperature: connection.temperature,
-            topP: connection.topP,
-            minP: connection.minP,
-            topK: connection.topK,
-            typicalP: connection.typicalP,
-            repPen: connection.repPen,
-            freqPen: connection.freqPen,
-            presPen: connection.presPen,
-            maxTokens: connection.maxTokens,
-            stopSeq: connection.stopSeq,
-            seed: connection.seed,
-            reasoningEffort: connection.reasoningEffort,
-            streamResponse: connection.streamResponse,
-          })
-        : await saveProviderProfile({
-            name,
-            type: connection.providerType || "openai_compat",
+             type: connection.providerType || PROVIDER_TYPE.openaiCompat,
+             endpoint,
+             apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
+             defaultModel: connection.model.trim() || null,
+             contextBudget: connection.maxTokens || 128000,
+             temperature: connection.temperature,
+             topP: connection.topP,
+             minP: connection.minP,
+             topK: connection.topK,
+             typicalP: connection.typicalP,
+             repPen: connection.repPen,
+             freqPen: connection.freqPen,
+             presPen: connection.presPen,
+             maxTokens: connection.maxTokens,
+             stopSeq: connection.stopSeq,
+             seed: connection.seed,
+             reasoningEffort: connection.reasoningEffort,
+             streamResponse: connection.streamResponse,
+           })
+         : await saveProviderProfile({
+             name,
+             type: connection.providerType || PROVIDER_TYPE.openaiCompat,
             endpoint,
             apiKey: apiKeyInput || undefined,
             defaultModel: connection.model.trim() || null,
@@ -303,7 +304,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     try {
       const saved = await saveProviderProfile({
         name: "Новый профиль",
-        type: "openai_compat",
+        type: PROVIDER_TYPE.openaiCompat,
         endpoint: "",
         temperature: 0.9,
         topP: 1.0,
@@ -409,7 +410,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     const apiKeyInput = form.apiKey.trim();
     const patch = {
       name,
-      type: form.type || "openai_compat",
+      type: form.type || PROVIDER_TYPE.openaiCompat,
       endpoint,
       apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
       defaultModel: form.model.trim() || null,

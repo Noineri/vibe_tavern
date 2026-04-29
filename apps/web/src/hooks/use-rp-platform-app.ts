@@ -1,6 +1,7 @@
 import type { ChangeEvent, DragEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
+import { PROVIDER_TYPE } from "@rp-platform/domain";
 import {
   activateBranch,
   archiveCharacter,
@@ -77,7 +78,7 @@ function createInitialConnectionState(): ConnectionState {
     status: "idle",
     error: "",
     models: [],
-    providerType: "openai_compat",
+    providerType: PROVIDER_TYPE.openaiCompat,
     providerPreset: "",
     temperature: 0.9,
     topP: 1.0,
