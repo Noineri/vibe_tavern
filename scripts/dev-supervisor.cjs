@@ -8,6 +8,21 @@ const { URL } = require("node:url");
 
 const workspaceDir = process.cwd();
 const webWorkspaceDir = path.join(workspaceDir, "apps", "web");
+const bunExecutable = process.env.BUN_EXE || process.env.BUN_EXECUTABLE || "bun";
+const apiHost = process.env.RP_PLATFORM_API_HOST ?? "127.0.0.1";
+const apiPort = Number(process.env.RP_PLATFORM_API_PORT ?? "8787");
+const webUrl = process.env.RP_PLATFORM_WEB_URL ?? "http://localhost:4173";
+const apiUrl = process.env.RP_PLATFORM_API_URL ?? `http://${apiHost}:${apiPort}`;
+const readyTimeoutMs = Number(process.env.RP_PLATFORM_LAUNCH_TIMEOUT_MS ?? "90000");
+const openBrowserAutomatically = process.env.RP_PLATFORM_OPEN_BROWSER !== "0";
+const logsDir = path.resolve(process.env.RP_PLATFORM_LOG_DIR || path.join(workspaceDir, "logs"));
+const logFilePath = path.resolve(
+  process.env.RP_PLATFORM_LOG_FILE || path.join(logsDir, "dev-launcher.log"),
+);
+const processLogPaths = {
+  api: path.join(logsDir, "dev-api.log"),
+  web: path.join(logsDir, "dev-web.log"),
+};
 const viteCliPath = path.join(workspaceDir, "node_modules", "vite", "bin", "vite.js");
 const apiServerEntryPath = path.join(workspaceDir, "services", "api", "dist", "services", "api", "src", "dev-server.js");
 
