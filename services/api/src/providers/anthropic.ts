@@ -1,5 +1,6 @@
 import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
 import { ProviderAdapter, ProviderProfile, ModelInfo } from "./types.js";
+import { PROVIDER_TYPE } from "@rp-platform/domain";
 
 const TIMEOUT_MS = 45_000;
 
@@ -75,7 +76,7 @@ function convertAnthropicMessages(
 }
 
 export class AnthropicAdapter implements ProviderAdapter {
-  type = "anthropic" as const;
+  type = PROVIDER_TYPE.anthropic;
 
   async listModels(profile: Omit<ProviderProfile, "type">): Promise<ModelInfo[]> {
     const baseUrl = (profile.endpoint ?? "").replace(/\/+$/, "");

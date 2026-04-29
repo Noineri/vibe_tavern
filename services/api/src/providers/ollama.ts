@@ -1,5 +1,6 @@
 import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
 import { ProviderAdapter, ProviderProfile, ModelInfo } from "./types.js";
+import { PROVIDER_TYPE } from "@rp-platform/domain";
 
 const TIMEOUT_MS = 45_000;
 
@@ -22,7 +23,7 @@ function messagesToPrompt(prompt: AssemblePromptResponse): string {
 }
 
 export class OllamaAdapter implements ProviderAdapter {
-  type = "ollama" as const;
+  type = PROVIDER_TYPE.ollama;
 
   async listModels(profile: Omit<ProviderProfile, "type">): Promise<ModelInfo[]> {
     const baseUrl = (profile.endpoint ?? "").replace(/\/+$/, "");

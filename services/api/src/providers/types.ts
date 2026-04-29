@@ -1,6 +1,6 @@
 import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
-
-export type ProviderType = 'openai_compat' | 'anthropic' | 'google' | 'ollama' | 'llamacpp' | 'koboldcpp';
+import type { ProviderType } from "@rp-platform/domain";
+export type { ProviderType };
 
 export interface ProviderProfile {
   id: string;
