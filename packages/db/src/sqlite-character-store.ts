@@ -19,21 +19,150 @@ import {
 } from "./sqlite-chat-session-mappers.js";
 import type { SqliteDatabaseAdapter, SqliteRow } from "./sqlite-adapter.js";
 import type { StoreClock, StoreIdGenerator } from "./persistence.js";
+import { unlinkSync } from "node:fs";
+import {
+  type FileStore,
+  createFileStore,
+  STORAGE_FOLDERS,
+  hashCanonicalJson,
+} from "./file-store.js";
+
+const CHARACTER_FILE_SCHEMA_VERSION = 1;
+
+type CanonicalCharacterFile = {
+  schemaVersion: typeof CHARACTER_FILE_SCHEMA_VERSION;
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  personalitySummary: string | null;
+  defaultScenario: string | null;
+  firstMessage: string | null;
+  mesExample: string | null;
+  alternateGreetings: string[];
+  postHistoryInstructions: string | null;
+  creatorNotes: string | null;
+  characterBook: Record<string, unknown> | null;
+  depthPrompt: string | null;
+  depthPromptDepth: number | null;
+  depthPromptRole: string | null;
+  extensions: Record<string, unknown>;
+  systemPrompt: string | null;
+  tags: string[];
+  avatarAssetId: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  source: Record<string, unknown> | null;
+};
+
+function characterToCanonicalFile(character: Character): CanonicalCharacterFile {
+  return {
+    schemaVersion: CHARACTER_FILE_SCHEMA_VERSION,
+    id: character.id,
+    slug: character.slug,
+    name: character.name,
+    description: character.description,
+    personalitySummary: character.personalitySummary,
+    defaultScenario: character.defaultScenario,
+    firstMessage: character.firstMessage,
+    mesExample: character.mesExample,
+    alternateGreetings: character.alternateGreetings,
+    postHistoryInstructions: character.postHistoryInstructions,
+    creatorNotes: character.creatorNotes,
+    characterBook: character.characterBook,
+    depthPrompt: character.depthPrompt,
+    depthPromptDepth: character.depthPromptDepth,
+    depthPromptRole: character.depthPromptRole,
+    extensions: character.extensions,
+    systemPrompt: character.systemPrompt,
+    tags: character.tags,
+    avatarAssetId: character.avatarAssetId,
+    status: character.status,
+    createdAt: character.createdAt,
+    updatedAt: character.updatedAt,
+    source: null,
+  };
+}
+
+function canonicalFileToCharacter(file: CanonicalCharacterFile): Character {
+  return {
+    id: file.id as CharacterId,
+    slug: file.slug,
+    name: file.name,
+    description: file.description,
+    personalitySummary: file.personalitySummary,
+    defaultScenario: file.defaultScenario,
+    firstMessage: file.firstMessage,
+    mesExample: file.mesExample,
+    alternateGreetings: file.alternateGreetings,
+    postHistoryInstructions: file.postHistoryInstructions,
+    creatorNotes: file.creatorNotes,
+    characterBook: file.characterBook,
+    depthPrompt: file.depthPrompt,
+    depthPromptDepth: file.depthPromptDepth,
+    depthPromptRole: file.depthPromptRole,
+    extensions: file.extensions,
+    systemPrompt: file.systemPrompt,
+    tags: file.tags,
+    avatarAssetId: file.avatarAssetId,
+    status: file.status as Character["status"],
+    createdAt: file.createdAt,
+    updatedAt: file.updatedAt,
+  };
+}
+
+type CharacterRowWithMeta = CharacterRow & {
+  file_path: string | null;
+  sync_status: string | null;
+};
+
+const CHARACTERS_PATH_SEGMENT = "characters/";
 
 export class SqliteCharacterStore {
+  private readonly fileStore: FileStore;
+
   constructor(
     private readonly db: SqliteDatabaseAdapter,
     private readonly clock: StoreClock,
     private readonly idGenerator: StoreIdGenerator,
-  ) {}
+    fileStore?: FileStore,
+  ) {
+    this.fileStore = fileStore ?? createFileStore();
+  }
 
   upsertCharacter(input: Character): void {
+    const canonicalFile = characterToCanonicalFile(input);
+    const relativeFileName = `${input.slug}.json`;
+    const now = new Date().toISOString();
+
+    let filePath: string | null = null;
+    let fileHash: string | null = null;
+    let fileMtime: string | null = null;
+    let syncStatus = "db_dirty";
+    let syncError: string | null = null;
+    let lastSyncedAt: string | null = null;
+
+    try {
+      const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.characters, relativeFileName);
+      fileHash = hashCanonicalJson(canonicalFile);
+      this.fileStore.writeJson(absolutePath, canonicalFile);
+      filePath = `${CHARACTERS_PATH_SEGMENT}${input.slug}.json`;
+      fileMtime = now;
+      syncStatus = "synced";
+      lastSyncedAt = now;
+    } catch (err) {
+      syncError = err instanceof Error ? err.message : String(err);
+    }
+
     this.db.execute(
       `INSERT INTO characters (
         id, slug, name, description, personality_summary, default_scenario, first_message, mes_example, alternate_greetings_json,
         post_history_instructions, creator_notes, character_book_json, depth_prompt, depth_prompt_depth, depth_prompt_role,
-        extensions_json, system_prompt, tags_json, avatar_asset_id, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        extensions_json, system_prompt, tags_json, avatar_asset_id, status, created_at, updated_at,
+        file_path, file_hash, file_mtime, sync_status, sync_error, last_synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         slug = excluded.slug,
         name = excluded.name,
@@ -54,7 +183,13 @@ export class SqliteCharacterStore {
         tags_json = excluded.tags_json,
         avatar_asset_id = excluded.avatar_asset_id,
         status = excluded.status,
-        updated_at = excluded.updated_at`,
+        updated_at = excluded.updated_at,
+        file_path = excluded.file_path,
+        file_hash = excluded.file_hash,
+        file_mtime = excluded.file_mtime,
+        sync_status = excluded.sync_status,
+        sync_error = excluded.sync_error,
+        last_synced_at = excluded.last_synced_at`,
       [
         input.id,
         input.slug,
@@ -78,6 +213,12 @@ export class SqliteCharacterStore {
         input.status,
         input.createdAt,
         input.updatedAt,
+        filePath,
+        fileHash,
+        fileMtime,
+        syncStatus,
+        syncError,
+        lastSyncedAt,
       ],
     );
   }
@@ -106,6 +247,10 @@ export class SqliteCharacterStore {
         input.createdAt,
       ],
     );
+
+    if (input.isActive) {
+      this.updateCharacterFileSource(input.characterId, input.definition);
+    }
   }
 
   upsertLorebook(input: Lorebook): void {
@@ -250,26 +395,28 @@ export class SqliteCharacterStore {
 
   listCharacters(): Character[] {
     return this.db
-      .queryAll<CharacterRow>(
+      .queryAll<CharacterRowWithMeta>(
         `SELECT id, slug, name, description, personality_summary, default_scenario, first_message, mes_example, alternate_greetings_json,
                 post_history_instructions, creator_notes, character_book_json, depth_prompt, depth_prompt_depth, depth_prompt_role,
-                extensions_json, system_prompt, tags_json, avatar_asset_id, status, created_at, updated_at
+                extensions_json, system_prompt, tags_json, avatar_asset_id, status, created_at, updated_at,
+                file_path, sync_status
          FROM characters
          ORDER BY created_at ASC, id ASC`,
       )
-      .map(mapCharacter);
+      .map((row) => this.resolveCharacter(row));
   }
 
   getCharacter(characterId: CharacterId): Character | null {
-    const row = this.db.queryOne<CharacterRow>(
+    const row = this.db.queryOne<CharacterRowWithMeta>(
       `SELECT id, slug, name, description, personality_summary, default_scenario, first_message, mes_example, alternate_greetings_json,
               post_history_instructions, creator_notes, character_book_json, depth_prompt, depth_prompt_depth, depth_prompt_role,
-              extensions_json, system_prompt, tags_json, avatar_asset_id, status, created_at, updated_at
+              extensions_json, system_prompt, tags_json, avatar_asset_id, status, created_at, updated_at,
+              file_path, sync_status
        FROM characters
        WHERE id = ?`,
       [characterId],
     );
-    return row ? mapCharacter(row) : null;
+    return row ? this.resolveCharacter(row) : null;
   }
 
   getLatestCharacterVersion(characterId: string): CharacterVersion | null {
@@ -306,9 +453,18 @@ export class SqliteCharacterStore {
       `UPDATE characters SET status = ?, updated_at = ? WHERE id = ?`,
       [status, timestamp, characterId],
     );
+    this.updateCharacterFileProperty(characterId, (file) => {
+      file.status = status;
+      file.updatedAt = timestamp;
+    });
   }
 
   deleteCharacter(characterId: CharacterId): void {
+    const metaRow = this.db.queryOne<{ file_path: string | null }>(
+      `SELECT file_path FROM characters WHERE id = ?`,
+      [characterId],
+    );
+
     this.db.transaction(() => {
       this.db.execute(
         `DELETE FROM prompt_traces WHERE chat_id IN (SELECT id FROM chats WHERE character_id = ?)`,
@@ -359,6 +515,95 @@ export class SqliteCharacterStore {
         [characterId],
       );
     });
+
+    if (metaRow?.file_path) {
+      try {
+        const absolutePath = this.fileStore.resolvePath(
+          STORAGE_FOLDERS.characters,
+          metaRow.file_path.slice(CHARACTERS_PATH_SEGMENT.length),
+        );
+        unlinkSync(absolutePath);
+      } catch {}
+    }
+  }
+
+  private resolveCharacter(row: CharacterRowWithMeta): Character {
+    if (row.file_path) {
+      const fromFile = this.readCharacterFromFile(row.id, row.file_path);
+      if (fromFile) return fromFile;
+    }
+    return mapCharacter(row);
+  }
+
+  private readCharacterFromFile(characterId: string, filePath: string): Character | null {
+    try {
+      const fileName = filePath.slice(CHARACTERS_PATH_SEGMENT.length);
+      const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.characters, fileName);
+      const file = this.fileStore.readJson<CanonicalCharacterFile>(absolutePath);
+      if (
+        file &&
+        typeof file.schemaVersion === "number" &&
+        file.schemaVersion === CHARACTER_FILE_SCHEMA_VERSION &&
+        file.id === characterId
+      ) {
+        return canonicalFileToCharacter(file);
+      }
+      this.tryMarkSyncStatus(characterId, "malformed");
+    } catch {
+      this.tryMarkSyncStatus(characterId, "missing_file");
+    }
+    return null;
+  }
+
+  private tryMarkSyncStatus(characterId: string, syncStatus: string): void {
+    try {
+      this.db.execute(
+        `UPDATE characters SET sync_status = ? WHERE id = ?`,
+        [syncStatus, characterId],
+      );
+    } catch {}
+  }
+
+  private updateCharacterFileProperty(
+    characterId: string,
+    mutate: (file: CanonicalCharacterFile) => void,
+  ): void {
+    const row = this.db.queryOne<{ file_path: string | null }>(
+      `SELECT file_path FROM characters WHERE id = ?`,
+      [characterId],
+    );
+    if (!row?.file_path) return;
+    try {
+      const fileName = row.file_path.slice(CHARACTERS_PATH_SEGMENT.length);
+      const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.characters, fileName);
+      const file = this.fileStore.readJson<CanonicalCharacterFile>(absolutePath);
+      mutate(file);
+      this.fileStore.writeJson(absolutePath, file);
+    } catch {}
+  }
+
+  private updateCharacterFileSource(
+    characterId: string,
+    definition: Record<string, unknown>,
+  ): void {
+    const row = this.db.queryOne<{ file_path: string | null }>(
+      `SELECT file_path FROM characters WHERE id = ?`,
+      [characterId],
+    );
+    if (!row?.file_path) return;
+    try {
+      const fileName = row.file_path.slice(CHARACTERS_PATH_SEGMENT.length);
+      const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.characters, fileName);
+      const file = this.fileStore.readJson<CanonicalCharacterFile>(absolutePath);
+      file.source = definition;
+      this.fileStore.writeJson(absolutePath, file);
+      const fileHash = hashCanonicalJson(file);
+      const now = new Date().toISOString();
+      this.db.execute(
+        `UPDATE characters SET file_hash = ?, sync_status = 'synced', last_synced_at = ? WHERE id = ?`,
+        [fileHash, now, characterId],
+      );
+    } catch {}
   }
 
   private requireLoreEntry(entryId: string): LoreEntry {
