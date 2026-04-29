@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProviderProfileRecord } from "../app-client.js";
 import type { ProviderProbeResponse } from "@rp-platform/api-contracts";
+import { PROVIDER_TYPE } from "@rp-platform/domain";
 import {
   PRESET_GROUPS,
   PROVIDER_PRESETS,
@@ -473,7 +474,7 @@ export function ProviderModal({
                           const g = e.target.value;
                           if (!g) {
                             updateForm("providerPreset", "");
-                            updateForm("type", "openai_compat");
+                            updateForm("type", PROVIDER_TYPE.openaiCompat);
                           } else {
                             const first = PROVIDER_PRESETS.find((f) => f.group === g);
                             if (first) applyPreset(first.id);
