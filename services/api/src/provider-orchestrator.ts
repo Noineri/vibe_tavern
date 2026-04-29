@@ -12,6 +12,18 @@ interface StoredProviderProfileRecord {
   apiKey: string | null;
   defaultModel?: string | null;
   contextBudget?: number | null;
+  maxTokens?: number | null;
+  temperature?: number | null;
+  topP?: number | null;
+  minP?: number | null;
+  topK?: number | null;
+  typicalP?: number | null;
+  repPen?: number | null;
+  freqPen?: number | null;
+  presPen?: number | null;
+  stopSeq?: string | null;
+  seed?: number | string | null;
+  reasoningEffort?: string | null;
 }
 
 export class ProviderOrchestrator {
@@ -87,6 +99,18 @@ export class ProviderOrchestrator {
       api_key: profile.apiKey ?? "",
       default_model: profile.defaultModel ?? null,
       context_budget: profile.contextBudget ?? 8192,
+      maxTokens: profile.maxTokens ?? null,
+      temperature: profile.temperature ?? null,
+      topP: profile.topP ?? null,
+      minP: profile.minP ?? null,
+      topK: profile.topK ?? null,
+      typicalP: profile.typicalP ?? null,
+      repPen: profile.repPen ?? null,
+      freqPen: profile.freqPen ?? null,
+      presPen: profile.presPen ?? null,
+      stopSeq: profile.stopSeq ?? null,
+      seed: profile.seed ?? null,
+      reasoningEffort: profile.reasoningEffort ?? null,
     };
   }
 }

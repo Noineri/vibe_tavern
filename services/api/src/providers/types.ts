@@ -10,6 +10,18 @@ export interface ProviderProfile {
   api_key: string;
   default_model: string | null;
   context_budget: number;
+  maxTokens?: number | null;
+  temperature?: number | null;
+  topP?: number | null;
+  minP?: number | null;
+  topK?: number | null;
+  typicalP?: number | null;
+  repPen?: number | null;
+  freqPen?: number | null;
+  presPen?: number | null;
+  stopSeq?: string | null;
+  seed?: number | string | null;
+  reasoningEffort?: string | null;
 }
 
 export interface ModelInfo {
