@@ -1,6 +1,6 @@
 export * from "./chat-session-store.js";
 export * from "./migrations.js";
-export * from "./node-sqlite-adapter.js";
+export * from "./bun-sqlite-adapter.js";
 export * from "./persistence.js";
 export * from "./schema.js";
 export * from "./sqlite-adapter.js";

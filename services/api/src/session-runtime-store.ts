@@ -1,8 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
+  BunSqliteDatabaseAdapter,
   InMemoryChatSessionStore,
-  NodeSqliteDatabaseAdapter,
   SqliteChatSessionStore,
   applySqliteMigrations,
   type ChatSessionStore,
@@ -19,7 +19,7 @@ export function createDefaultSessionStore(): ChatSessionStore {
     recursive: true,
   });
 
-  const adapter = new NodeSqliteDatabaseAdapter(dbPath);
+  const adapter = new BunSqliteDatabaseAdapter(dbPath);
   applySqliteMigrations(adapter);
   return new SqliteChatSessionStore(adapter);
 }
