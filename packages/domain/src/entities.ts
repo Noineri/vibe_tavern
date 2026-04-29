@@ -15,31 +15,33 @@ import type {
   ToolProfileId,
 } from "./ids.js";
 
+import type {
+  CardFormat,
+  LoreScopeType,
+  ChatStatus,
+  MessageRole,
+  AuthorType,
+  MessageState,
+  SummaryKind,
+  ToolProfileMode,
+  LoreLogic,
+  PromptLayerPosition,
+} from "./platform-constants.js";
+
 export type Timestamp = string;
 
-export type CardFormat = "st_v2" | "st_v3" | "janitor_md" | "internal_json";
-export type LoreScopeType = "global" | "character" | "persona" | "chat";
-export type ChatStatus = "active" | "archived";
-export type MessageRole = "system" | "user" | "assistant" | "tool";
-export type AuthorType = "system" | "user" | "assistant" | "tool";
-export type MessageState = "pending" | "complete" | "edited" | "deleted";
-export type SummaryKind =
-  | "scene"
-  | "relationship"
-  | "world_state"
-  | "open_threads"
-  | "general";
-export type ToolProfileMode =
-  | "disabled"
-  | "available_on_request"
-  | "active"
-  | "hidden_system_use_only";
-export type LoreLogic = "and_any" | "and_all" | "not_any" | "not_all";
-export type PromptLayerPosition =
-  | "before_prompt"
-  | "in_prompt"
-  | "in_chat"
-  | "hidden_system";
+export {
+  CardFormat,
+  LoreScopeType,
+  ChatStatus,
+  MessageRole,
+  AuthorType,
+  MessageState,
+  SummaryKind,
+  ToolProfileMode,
+  LoreLogic,
+  PromptLayerPosition,
+};
 
 export interface Character {
   id: CharacterId;
