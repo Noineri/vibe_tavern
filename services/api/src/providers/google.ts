@@ -1,5 +1,6 @@
 import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
 import { ProviderAdapter, ProviderProfile, ModelInfo } from "./types.js";
+import { PROVIDER_TYPE } from "@rp-platform/domain";
 
 const TIMEOUT_MS = 45_000;
 
@@ -87,7 +88,7 @@ function convertGoogleMessages(
 }
 
 export class GoogleAdapter implements ProviderAdapter {
-  type = "google" as const;
+  type = PROVIDER_TYPE.google;
 
   async listModels(_profile: Omit<ProviderProfile, "type">): Promise<ModelInfo[]> {
     return STATIC_MODELS;

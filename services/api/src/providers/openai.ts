@@ -1,5 +1,6 @@
 import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
 import { ProviderAdapter, ProviderProfile, ModelInfo } from "./types.js";
+import { PROVIDER_TYPE } from "@rp-platform/domain";
 import {
   generateProviderReply,
   listProviderModels,
@@ -7,7 +8,7 @@ import {
 } from "../provider-gateway.js";
 
 export class OpenAICompatAdapter implements ProviderAdapter {
-  type = "openai_compat" as const;
+  type = PROVIDER_TYPE.openaiCompat;
 
   async listModels(profile: Omit<ProviderProfile, "type">): Promise<ModelInfo[]> {
     const normalizedEndpoint = normalizeOpenAiCompatibleBaseUrl(profile.endpoint ?? "");
