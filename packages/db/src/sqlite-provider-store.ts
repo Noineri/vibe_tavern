@@ -4,6 +4,7 @@ import type {
   ToolProfile,
   ToolProfileId,
 } from "@rp-platform/domain";
+import { ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
 
 import type { PromptPresetRow } from "./sqlite-chat-session-mappers.js";
 import { mapPromptPreset } from "./sqlite-chat-session-mappers.js";
@@ -104,7 +105,7 @@ export class SqliteProviderStore {
 
   upsertProviderProfile(profile: any): void {
     const timestamp = this.clock.now();
-    const id = profile.id || (this.idGenerator.next("provider") as string);
+    const id = profile.id || (this.idGenerator.next(ENTITY_ID_NAMESPACE.providerProfile) as string);
     const isActive = profile.isActive === true ? 1 : 0;
     this.db.execute(
       `INSERT INTO provider_profiles (
@@ -253,7 +254,7 @@ export class SqliteProviderStore {
   createPromptPreset(input: { name: string; bindModel: string; system: string; jailbreak: string; summary: string; tools: string }): PromptPreset {
     return this.db.transaction(() => {
       const timestamp = this.clock.now();
-      const id = this.idGenerator.next("prompt_preset") as PromptPresetId;
+      const id = this.idGenerator.next(ENTITY_ID_NAMESPACE.promptPreset) as PromptPresetId;
       this.db.execute(
         `INSERT INTO prompt_presets (id, name, bind_model, system, jailbreak, summary, tools, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,

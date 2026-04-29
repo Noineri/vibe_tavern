@@ -6,6 +6,7 @@ import type {
   Lorebook,
   LorebookId,
 } from "@rp-platform/domain";
+import { ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
 import type {
   CharacterRow,
   CharacterVersionRow,
@@ -161,7 +162,7 @@ export class SqliteCharacterStore {
   }
 
   createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
-    const entryId = this.idGenerator.next("lore_entry");
+    const entryId = this.idGenerator.next(ENTITY_ID_NAMESPACE.loreEntry);
     this.db.execute(
       `INSERT INTO lore_entries (
         id, lorebook_id, title, content, keys_json, secondary_keys_json, logic,

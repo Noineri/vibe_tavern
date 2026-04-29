@@ -1,4 +1,5 @@
 import type { Chat, ChatBranch, ChatBranchId, ChatId, Message, MessageId, MessageVariant, MessageVariantId, PersonaId, PromptTrace, PromptTraceId, SummaryMemorySnapshot } from "@rp-platform/domain";
+import { ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
 
 import type { AppendChatMessageInput, ChatBranchState, CreateChatSessionInput, CreateChatSessionResult, CreateMessageVariantInput, CreatePromptTraceInput, ForkChatBranchInput, ForkChatBranchResult, ListPromptTracesInput, RecordSummarySnapshotInput } from "./chat-session-store.js";
 import type { StoreClock, StoreIdGenerator } from "./persistence.js";
@@ -32,8 +33,8 @@ export class SqliteChatStore {
   createChat(input: CreateChatSessionInput): CreateChatSessionResult {
     return this.db.transaction(() => {
       const timestamp = input.createdAt ?? this.clock.now();
-      const chatId = this.idGenerator.next("chat") as ChatId;
-      const rootBranchId = this.idGenerator.next("branch") as ChatBranchId;
+      const chatId = this.idGenerator.next(ENTITY_ID_NAMESPACE.chat) as ChatId;
+      const rootBranchId = this.idGenerator.next(ENTITY_ID_NAMESPACE.chatBranch) as ChatBranchId;
 
       this.db.execute(
         `INSERT INTO chats (
@@ -125,7 +126,7 @@ export class SqliteChatStore {
       this.requireBranch(input.chatId, input.branchId);
 
       const timestamp = input.createdAt ?? this.clock.now();
-      const messageId = this.idGenerator.next("msg") as MessageId;
+      const messageId = this.idGenerator.next(ENTITY_ID_NAMESPACE.message) as MessageId;
       const position = this.nextMessagePosition(input.branchId);
 
       this.db.execute(
@@ -152,7 +153,7 @@ export class SqliteChatStore {
             id, message_id, variant_index, content, is_selected, finish_reason, created_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [
-            this.idGenerator.next("variant") as MessageVariantId,
+            this.idGenerator.next(ENTITY_ID_NAMESPACE.messageVariant) as MessageVariantId,
             messageId,
             0,
             input.content,
@@ -201,7 +202,7 @@ export class SqliteChatStore {
         `SELECT MAX(variant_index) AS max_index FROM message_variants WHERE message_id = ?`,
         [input.messageId],
       );
-      const variantId = this.idGenerator.next("variant") as MessageVariantId;
+      const variantId = this.idGenerator.next(ENTITY_ID_NAMESPACE.messageVariant) as MessageVariantId;
       const variantIndex = (indexRow?.max_index ?? -1) + 1;
       const isSelected = input.isSelected ?? true;
 
@@ -301,7 +302,7 @@ export class SqliteChatStore {
       const chat = this.requireChat(input.chatId);
       const sourceState = this.requireBranchState(input.chatId, input.sourceBranchId);
       const timestamp = input.createdAt ?? this.clock.now();
-      const branchId = this.idGenerator.next("branch") as ChatBranchId;
+      const branchId = this.idGenerator.next(ENTITY_ID_NAMESPACE.chatBranch) as ChatBranchId;
 
       const forkIndex = resolveForkIndex(
         sourceState.messages,
@@ -327,7 +328,7 @@ export class SqliteChatStore {
       );
 
       copiedSourceMessages.forEach((message, index) => {
-        const nextId = this.idGenerator.next("msg") as MessageId;
+        const nextId = this.idGenerator.next(ENTITY_ID_NAMESPACE.message) as MessageId;
         copiedMessageIds.set(message.id, nextId);
         this.db.execute(
           `INSERT INTO messages (
@@ -353,7 +354,7 @@ export class SqliteChatStore {
               id, message_id, variant_index, content, is_selected, finish_reason, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [
-              this.idGenerator.next("variant") as MessageVariantId,
+              this.idGenerator.next(ENTITY_ID_NAMESPACE.messageVariant) as MessageVariantId,
               nextId,
               variant.variantIndex,
               variant.content,
@@ -384,7 +385,7 @@ export class SqliteChatStore {
               id, chat_id, branch_id, kind, summary, covers_through_message_id, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [
-              this.idGenerator.next("summary"),
+              this.idGenerator.next(ENTITY_ID_NAMESPACE.summaryMemory),
               input.chatId,
               branchId,
               summary.kind,
@@ -437,7 +438,7 @@ export class SqliteChatStore {
         );
       }
 
-      const summaryId = this.idGenerator.next("summary");
+      const summaryId = this.idGenerator.next(ENTITY_ID_NAMESPACE.summaryMemory);
       this.db.execute(
         `INSERT INTO summary_memory_snapshots (
           id, chat_id, branch_id, kind, summary, covers_through_message_id, created_at
@@ -474,7 +475,7 @@ export class SqliteChatStore {
         );
       }
 
-      const traceId = this.idGenerator.next("trace");
+      const traceId = this.idGenerator.next(ENTITY_ID_NAMESPACE.promptTrace);
       this.db.execute(
         `INSERT INTO prompt_traces (
           id, chat_id, branch_id, message_id, model, preset_name,
@@ -639,8 +640,8 @@ export class SqliteChatStore {
       const sourceChat = this.requireChat(chatId);
       const sourceBranchState = this.requireBranchState(chatId, sourceChat.activeBranchId);
       const timestamp = this.clock.now();
-      const newChatId = this.idGenerator.next("chat") as ChatId;
-      const newRootBranchId = this.idGenerator.next("branch") as ChatBranchId;
+      const newChatId = this.idGenerator.next(ENTITY_ID_NAMESPACE.chat) as ChatId;
+      const newRootBranchId = this.idGenerator.next(ENTITY_ID_NAMESPACE.chatBranch) as ChatBranchId;
 
       this.db.execute(
         `INSERT INTO chats (
@@ -670,7 +671,7 @@ export class SqliteChatStore {
 
       const copiedMessageIds = new Map<MessageId, MessageId>();
       sourceBranchState.messages.forEach((message, index) => {
-        const nextId = this.idGenerator.next("msg") as MessageId;
+        const nextId = this.idGenerator.next(ENTITY_ID_NAMESPACE.message) as MessageId;
         copiedMessageIds.set(message.id, nextId);
         this.db.execute(
           `INSERT INTO messages (
@@ -696,7 +697,7 @@ export class SqliteChatStore {
               id, message_id, variant_index, content, is_selected, finish_reason, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [
-              this.idGenerator.next("variant") as MessageVariantId,
+              this.idGenerator.next(ENTITY_ID_NAMESPACE.messageVariant) as MessageVariantId,
               nextId,
               variant.variantIndex,
               variant.content,
@@ -870,7 +871,7 @@ export class SqliteChatStore {
         id, message_id, variant_index, content, is_selected, finish_reason, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
-        this.idGenerator.next("variant") as MessageVariantId,
+        this.idGenerator.next(ENTITY_ID_NAMESPACE.messageVariant) as MessageVariantId,
         message.id,
         0,
         message.content,

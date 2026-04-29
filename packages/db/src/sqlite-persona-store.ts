@@ -3,6 +3,7 @@ import type {
   Persona,
   PersonaId,
 } from "@rp-platform/domain";
+import { ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
 import type { PersonaRow } from "./sqlite-chat-session-mappers.js";
 import type { SqliteDatabaseAdapter } from "./sqlite-adapter.js";
 import type { StoreClock, StoreIdGenerator } from "./persistence.js";
@@ -86,7 +87,7 @@ export class SqlitePersonaStore {
   createPersona(input: { name: string; description: string; pronouns: string | null; defaultForNewChats: boolean }): Persona {
     return this.db.transaction(() => {
       const timestamp = this.clock.now();
-      const id = this.idGenerator.next("persona") as PersonaId;
+      const id = this.idGenerator.next(ENTITY_ID_NAMESPACE.persona) as PersonaId;
       this.db.execute(
         `INSERT INTO personas (
           id, name, description, pronouns, avatar_asset_id, default_for_new_chats, created_at, updated_at
@@ -163,7 +164,7 @@ export class SqlitePersonaStore {
       const existing = this.getPersonalLorebookForPersona(personaId);
       if (existing) return existing;
       const timestamp = this.clock.now();
-      const lorebookId = this.idGenerator.next("lorebook") as LorebookId;
+      const lorebookId = this.idGenerator.next(ENTITY_ID_NAMESPACE.lorebook) as LorebookId;
       this.db.execute(
         `INSERT INTO lorebooks (id, name, scope_type, description, created_at, updated_at)
          VALUES (?, ?, 'persona', ?, ?, ?)`,

@@ -26,6 +26,7 @@ import type {
   ToolProfile,
   ToolProfileId,
 } from "@rp-platform/domain";
+import { ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
 import { resolveStoreRuntime, type StoreRuntimeOptions } from "./persistence.js";
 
 export interface CreateChatSessionInput {
@@ -239,7 +240,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
 
   createPersona(input: { name: string; description: string; pronouns: string | null; defaultForNewChats: boolean }): Persona {
     const timestamp = new Date().toISOString();
-    const id = `persona_${Math.random().toString(36).slice(2, 10)}` as PersonaId;
+    const id = `${ENTITY_ID_NAMESPACE.persona}_${Math.random().toString(36).slice(2, 10)}` as PersonaId;
     const persona: Persona = {
       id,
       name: input.name,
@@ -309,7 +310,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     const existing = this.getPersonalLorebookForPersona(personaId);
     if (existing) return existing;
     const timestamp = new Date().toISOString();
-    const lorebookId = `lorebook_${Math.random().toString(36).slice(2, 10)}` as LorebookId;
+    const lorebookId = `${ENTITY_ID_NAMESPACE.lorebook}_${Math.random().toString(36).slice(2, 10)}` as LorebookId;
     this.lorebooks.set(lorebookId, {
       id: lorebookId,
       name,
@@ -368,7 +369,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
   createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
     const entry: LoreEntry = {
       ...input,
-      id: this.nextId("lore_entry"),
+      id: this.nextId(ENTITY_ID_NAMESPACE.loreEntry),
       lorebookId,
       keys: [...input.keys],
       secondaryKeys: [...input.secondaryKeys],
@@ -471,8 +472,8 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     }
 
     const timestamp = input.createdAt ?? this.nowTimestamp();
-    const rootBranchId = this.nextId("branch") as ChatBranchId;
-    const chatId = this.nextId("chat") as ChatId;
+    const rootBranchId = this.nextId(ENTITY_ID_NAMESPACE.chatBranch) as ChatBranchId;
+    const chatId = this.nextId(ENTITY_ID_NAMESPACE.chat) as ChatId;
 
     const chat: Chat = {
       id: chatId,
@@ -545,7 +546,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     const timestamp = input.createdAt ?? this.nowTimestamp();
 
     const message: Message = {
-      id: this.nextId("msg") as MessageId,
+      id: this.nextId(ENTITY_ID_NAMESPACE.message) as MessageId,
       chatId: input.chatId,
       branchId: input.branchId,
       role: input.role,
@@ -559,8 +560,8 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
 
     state.messages.push(message);
     if (message.role === "assistant") {
-      this.messageVariants.set(this.nextId("variant") as MessageVariantId, {
-        id: this.nextId("variant") as MessageVariantId,
+      this.messageVariants.set(this.nextId(ENTITY_ID_NAMESPACE.messageVariant) as MessageVariantId, {
+        id: this.nextId(ENTITY_ID_NAMESPACE.messageVariant) as MessageVariantId,
         messageId: message.id,
         variantIndex: 0,
         content: message.content,
@@ -608,7 +609,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     const timestamp = input.createdAt ?? this.nowTimestamp();
     const existingVariants = this.listMessageVariants(message.id);
     const variant: MessageVariant = {
-      id: this.nextId("variant") as MessageVariantId,
+      id: this.nextId(ENTITY_ID_NAMESPACE.messageVariant) as MessageVariantId,
       messageId: message.id,
       variantIndex: existingVariants.length,
       content: input.content,
@@ -693,7 +694,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     const chat = this.requireChat(input.chatId);
     const sourceState = this.requireBranch(input.chatId, input.sourceBranchId);
     const timestamp = input.createdAt ?? this.nowTimestamp();
-    const branchId = this.nextId("branch") as ChatBranchId;
+    const branchId = this.nextId(ENTITY_ID_NAMESPACE.chatBranch) as ChatBranchId;
 
     const forkIndex = resolveForkIndex(
       sourceState.messages,
@@ -704,7 +705,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     const copiedMessages = copiedSourceMessages.map((message, index) => ({
       ...message,
       id: (() => {
-        const nextId = this.nextId("msg") as MessageId;
+        const nextId = this.nextId(ENTITY_ID_NAMESPACE.message) as MessageId;
         copiedMessageIds.set(message.id, nextId);
         return nextId;
       })(),
@@ -726,7 +727,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
       }
       const copiedVariants = this.listMessageVariants(message.id);
       for (const variant of copiedVariants) {
-        const variantId = this.nextId("variant") as MessageVariantId;
+        const variantId = this.nextId(ENTITY_ID_NAMESPACE.messageVariant) as MessageVariantId;
         this.messageVariants.set(variantId, {
           ...variant,
           id: variantId,
@@ -761,7 +762,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
 
         return {
           ...summary,
-          id: this.nextId("summary") as SummaryMemorySnapshot["id"],
+          id: this.nextId(ENTITY_ID_NAMESPACE.summaryMemory) as SummaryMemorySnapshot["id"],
           branchId,
           coversThroughMessageId: remappedMessageId,
           createdAt: timestamp,
@@ -806,7 +807,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     }
 
     const snapshot: SummaryMemorySnapshot = {
-      id: this.nextId("summary") as SummaryMemorySnapshot["id"],
+      id: this.nextId(ENTITY_ID_NAMESPACE.summaryMemory) as SummaryMemorySnapshot["id"],
       chatId: input.chatId,
       branchId: input.branchId,
       kind: input.kind,
@@ -836,7 +837,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     }
 
     const trace: PromptTrace = {
-      id: this.nextId("trace"),
+      id: this.nextId(ENTITY_ID_NAMESPACE.promptTrace),
       chatId: input.chatId,
       branchId: input.branchId,
       messageId: input.messageId,
@@ -882,7 +883,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
   }
 
   upsertProviderProfile(profile: any): void {
-    const id = profile.id || (this.nextId("provider") as string);
+    const id = profile.id || (this.nextId(ENTITY_ID_NAMESPACE.providerProfile) as string);
     const existing = this.providerProfiles.get(id);
     const isActive = profile.isActive !== undefined ? profile.isActive : existing?.isActive ?? false;
     this.providerProfiles.set(id, { ...existing, ...profile, id, isActive });
@@ -1028,8 +1029,8 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     }
 
     const timestamp = this.nowTimestamp();
-    const newChatId = this.nextId("chat") as ChatId;
-    const newRootBranchId = this.nextId("branch") as ChatBranchId;
+    const newChatId = this.nextId(ENTITY_ID_NAMESPACE.chat) as ChatId;
+    const newRootBranchId = this.nextId(ENTITY_ID_NAMESPACE.chatBranch) as ChatBranchId;
 
     const newChat: Chat = {
       id: newChatId,
@@ -1055,7 +1056,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
 
     const copiedMessageIds = new Map<MessageId, MessageId>();
     const copiedMessages = sourceState.messages.map((message, index) => {
-      const nextId = this.nextId("msg") as MessageId;
+      const nextId = this.nextId(ENTITY_ID_NAMESPACE.message) as MessageId;
       copiedMessageIds.set(message.id, nextId);
       return {
         ...message,
@@ -1073,7 +1074,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
       if (!nextMessageId) continue;
       const variants = this.listMessageVariants(message.id);
       for (const variant of variants) {
-        const variantId = this.nextId("variant") as MessageVariantId;
+        const variantId = this.nextId(ENTITY_ID_NAMESPACE.messageVariant) as MessageVariantId;
         this.messageVariants.set(variantId, {
           ...variant,
           id: variantId,
@@ -1143,7 +1144,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
 
   createPromptPreset(input: { name: string; bindModel: string; system: string; jailbreak: string; summary: string; tools: string }): PromptPreset {
     const timestamp = this.nowTimestamp();
-    const id = this.nextId("prompt_preset") as PromptPresetId;
+    const id = this.nextId(ENTITY_ID_NAMESPACE.promptPreset) as PromptPresetId;
     const preset: PromptPreset = { id, ...input, createdAt: timestamp, updatedAt: timestamp };
     this.promptPresets.set(id, preset);
     return preset;
@@ -1230,7 +1231,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     if (exists) {
       return;
     }
-    const variantId = this.nextId("variant") as MessageVariantId;
+    const variantId = this.nextId(ENTITY_ID_NAMESPACE.messageVariant) as MessageVariantId;
     this.messageVariants.set(variantId, {
       id: variantId,
       messageId: message.id,
