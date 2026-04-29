@@ -1,4 +1,5 @@
 export * from "./chat-session-store.js";
+export * from "./file-store.js";
 export * from "./migrations.js";
 export * from "./bun-sqlite-adapter.js";
 export * from "./persistence.js";
