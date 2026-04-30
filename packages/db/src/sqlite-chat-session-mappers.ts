@@ -168,6 +168,9 @@ export type PromptPresetRow = SqliteRow & {
   tools: string;
   created_at: string;
   updated_at: string;
+  file_path?: string | null;
+  file_hash?: string | null;
+  sync_status?: string | null;
 };
 
 export function parseJson<T>(value: string): T {
