@@ -95,12 +95,13 @@ export class PromptAssemblyService {
     }
 
     const character = this.resolver.getCharacter(chat.characterId);
-    const persona = this.resolver.getPersona(chat.personaId);
+    const effectivePersonaId = chat.personaId ?? this.store.listPersonas().find(p => p.defaultForNewChats)?.id ?? this.store.listPersonas()[0]?.id ?? "";
+    const persona = this.resolver.getPersona(effectivePersonaId);
     const promptPreset = this.resolver.getPromptPreset(chat.promptPresetId);
 
     logSendDebug("prompt.assemble.context", {
       chatId: chat.id,
-      personaId: chat.personaId,
+      personaId: chat.personaId ?? "(default)",
       personaResolved: persona ? { id: persona.id, name: persona.name, descLength: persona.description.length } : null,
       promptPresetId: chat.promptPresetId,
       promptPresetResolved: promptPreset ? { id: promptPreset.id, name: promptPreset.name, systemLength: promptPreset.text.length } : null,

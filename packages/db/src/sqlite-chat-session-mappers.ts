@@ -6,6 +6,7 @@ import type {
   LoreEntry,
   Message,
   MessageVariant,
+  PersonaId,
   PromptPreset,
   PromptPresetId,
   PromptTrace,
@@ -16,7 +17,7 @@ import type { SqliteRow } from "./sqlite-adapter.js";
 export type ChatRow = SqliteRow & {
   id: string;
   character_id: string;
-  persona_id: string;
+  persona_id: string | null;
   title: string;
   status: string;
   active_branch_id: string;
@@ -177,7 +178,7 @@ export function mapChat(row: ChatRow): Chat {
   return {
     id: row.id,
     characterId: row.character_id,
-    personaId: row.persona_id,
+    personaId: row.persona_id as PersonaId | null,
     title: row.title,
     status: row.status as Chat["status"],
     activeBranchId: row.active_branch_id,
