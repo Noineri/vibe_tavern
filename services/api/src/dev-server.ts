@@ -233,6 +233,8 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse) 
       name: name.trim(),
       description: (body as any).description ?? undefined,
       firstMessage: (body as any).firstMessage ?? undefined,
+      scenario: (body as any).scenario ?? undefined,
+      personalitySummary: (body as any).personalitySummary ?? undefined,
     }));
     return;
   }
