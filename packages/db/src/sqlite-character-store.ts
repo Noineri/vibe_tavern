@@ -130,6 +130,65 @@ export interface CharacterSyncReport {
   conflict: number;
 }
 
+const LOREBOOK_FILE_SCHEMA_VERSION = 1;
+
+type CanonicalLorebookEntryFile = {
+  id: string;
+  title: string;
+  content: string;
+  keys: string[];
+  secondaryKeys: string[];
+  logic: string;
+  position: string;
+  depth: number;
+  priority: number;
+  stickyWindow: number;
+  cooldownWindow: number;
+  delayWindow: number;
+  enabled: boolean;
+  metadata: Record<string, unknown>;
+};
+
+type CanonicalLorebookFile = {
+  schemaVersion: typeof LOREBOOK_FILE_SCHEMA_VERSION;
+  id: string;
+  name: string;
+  scopeType: string;
+  description: string;
+  scanDepth: number | null;
+  tokenBudget: number | null;
+  recursiveScanning: boolean | null;
+  extensions: Record<string, unknown>;
+  entries: CanonicalLorebookEntryFile[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+function lorebookSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-zа-яё0-9]+/gi, "-").replace(/^-|-$/g, "") || "lorebook";
+}
+
+function loreEntryToCanonicalFileEntry(entry: LoreEntry): CanonicalLorebookEntryFile {
+  return {
+    id: entry.id,
+    title: entry.title,
+    content: entry.content,
+    keys: entry.keys,
+    secondaryKeys: entry.secondaryKeys,
+    logic: entry.logic,
+    position: entry.position,
+    depth: entry.depth,
+    priority: entry.priority,
+    stickyWindow: entry.stickyWindow,
+    cooldownWindow: entry.cooldownWindow,
+    delayWindow: entry.delayWindow,
+    enabled: entry.enabled,
+    metadata: entry.metadata,
+  };
+}
+
+const LOREBOOKS_PATH_SEGMENT = "lorebooks/";
+
 export class SqliteCharacterStore {
   private readonly fileStore: FileStore;
 
@@ -265,15 +324,78 @@ export class SqliteCharacterStore {
   }
 
   upsertLorebook(input: Lorebook): void {
+    const slug = lorebookSlug(input.name);
+    const relativeFileName = `${input.scopeType}-${slug}.json`;
+    const now = new Date().toISOString();
+
+    let existingEntries: CanonicalLorebookEntryFile[] = [];
+    let existingSettings: Pick<CanonicalLorebookFile, "scanDepth" | "tokenBudget" | "recursiveScanning" | "extensions"> = {
+      scanDepth: null, tokenBudget: null, recursiveScanning: null, extensions: {},
+    };
+    const existingRow = this.db.queryOne<{ file_path: string | null }>(
+      `SELECT file_path FROM lorebooks WHERE id = ?`,
+      [input.id],
+    );
+    if (existingRow?.file_path) {
+      const oldFile = this.readLorebookFileFromPath(existingRow.file_path);
+      if (oldFile) {
+        existingEntries = oldFile.entries;
+        existingSettings = {
+          scanDepth: oldFile.scanDepth,
+          tokenBudget: oldFile.tokenBudget,
+          recursiveScanning: oldFile.recursiveScanning,
+          extensions: oldFile.extensions,
+        };
+      }
+    }
+
+    const canonicalFile: CanonicalLorebookFile = {
+      schemaVersion: LOREBOOK_FILE_SCHEMA_VERSION,
+      id: input.id,
+      name: input.name,
+      scopeType: input.scopeType,
+      description: input.description,
+      ...existingSettings,
+      entries: existingEntries,
+      createdAt: input.createdAt,
+      updatedAt: input.updatedAt,
+    };
+
+    let filePath: string | null = null;
+    let fileHash: string | null = null;
+    let fileMtime: string | null = null;
+    let syncStatus = "db_dirty";
+    let syncError: string | null = null;
+    let lastSyncedAt: string | null = null;
+
+    try {
+      const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.lorebooks, relativeFileName);
+      fileHash = hashCanonicalJson(canonicalFile);
+      this.fileStore.writeJson(absolutePath, canonicalFile);
+      filePath = `${LOREBOOKS_PATH_SEGMENT}${relativeFileName}`;
+      fileMtime = now;
+      syncStatus = "synced";
+      lastSyncedAt = now;
+    } catch (err) {
+      syncError = err instanceof Error ? err.message : String(err);
+    }
+
     this.db.execute(
       `INSERT INTO lorebooks (
-        id, name, scope_type, description, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?)
+        id, name, scope_type, description, created_at, updated_at,
+        file_path, file_hash, file_mtime, sync_status, sync_error, last_synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         scope_type = excluded.scope_type,
         description = excluded.description,
-        updated_at = excluded.updated_at`,
+        updated_at = excluded.updated_at,
+        file_path = excluded.file_path,
+        file_hash = excluded.file_hash,
+        file_mtime = excluded.file_mtime,
+        sync_status = excluded.sync_status,
+        sync_error = excluded.sync_error,
+        last_synced_at = excluded.last_synced_at`,
       [
         input.id,
         input.name,
@@ -281,6 +403,12 @@ export class SqliteCharacterStore {
         input.description,
         input.createdAt,
         input.updatedAt,
+        filePath,
+        fileHash,
+        fileMtime,
+        syncStatus,
+        syncError,
+        lastSyncedAt,
       ],
     );
   }
@@ -315,6 +443,7 @@ export class SqliteCharacterStore {
         );
       }
     });
+    this.syncLorebookFile(lorebookId);
   }
 
   createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
@@ -343,6 +472,7 @@ export class SqliteCharacterStore {
       ],
     );
 
+    this.syncLorebookFile(lorebookId);
     return this.requireLoreEntry(entryId);
   }
 
@@ -390,11 +520,15 @@ export class SqliteCharacterStore {
       ],
     );
 
+    this.syncLorebookFile(current.lorebookId);
     return this.requireLoreEntry(entryId);
   }
 
   deleteLoreEntry(entryId: string): void {
+    const entry = this.requireLoreEntry(entryId);
+    const lorebookId = entry.lorebookId;
     this.db.execute(`DELETE FROM lore_entries WHERE id = ?`, [entryId]);
+    this.syncLorebookFile(lorebookId);
   }
 
   linkCharacterLorebook(characterId: string, lorebookId: string): void {
@@ -807,5 +941,107 @@ export class SqliteCharacterStore {
       throw new Error(`Lore entry '${entryId}' was not found.`);
     }
     return mapLoreEntry(row);
+  }
+
+  private syncLorebookFile(lorebookId: string): void {
+    const row = this.db.queryOne<{
+      id: string;
+      name: string;
+      scope_type: string;
+      description: string;
+      created_at: string;
+      updated_at: string;
+      file_path: string | null;
+    }>(
+      `SELECT id, name, scope_type, description, created_at, updated_at, file_path FROM lorebooks WHERE id = ?`,
+      [lorebookId],
+    );
+    if (!row) return;
+
+    const entries = this.listLoreEntriesForLorebook(lorebookId);
+
+    let scanDepth: number | null = null;
+    let tokenBudget: number | null = null;
+    let recursiveScanning: boolean | null = null;
+    let extensions: Record<string, unknown> = {};
+
+    if (row.file_path) {
+      const existingFile = this.readLorebookFileFromPath(row.file_path);
+      if (existingFile) {
+        scanDepth = existingFile.scanDepth;
+        tokenBudget = existingFile.tokenBudget;
+        recursiveScanning = existingFile.recursiveScanning;
+        extensions = existingFile.extensions;
+      }
+    }
+
+    const canonicalFile: CanonicalLorebookFile = {
+      schemaVersion: LOREBOOK_FILE_SCHEMA_VERSION,
+      id: row.id,
+      name: row.name,
+      scopeType: row.scope_type,
+      description: row.description,
+      scanDepth,
+      tokenBudget,
+      recursiveScanning,
+      extensions,
+      entries: entries.map(loreEntryToCanonicalFileEntry),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+
+    const slug = lorebookSlug(row.name);
+    const relativeFileName = `${row.scope_type}-${slug}.json`;
+    const now = new Date().toISOString();
+
+    let filePath: string | null = null;
+    let fileHash: string | null = null;
+    let syncStatus = "db_dirty";
+    let syncError: string | null = null;
+
+    try {
+      const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.lorebooks, relativeFileName);
+      fileHash = hashCanonicalJson(canonicalFile);
+      this.fileStore.writeJson(absolutePath, canonicalFile);
+      filePath = `${LOREBOOKS_PATH_SEGMENT}${relativeFileName}`;
+      syncStatus = "synced";
+    } catch (err) {
+      syncError = err instanceof Error ? err.message : String(err);
+    }
+
+    this.db.execute(
+      `UPDATE lorebooks SET file_path = ?, file_hash = ?, file_mtime = ?, sync_status = ?, sync_error = ?, last_synced_at = ? WHERE id = ?`,
+      [filePath, fileHash, now, syncStatus, syncError, now, lorebookId],
+    );
+  }
+
+  private readLorebookFileFromPath(filePath: string): CanonicalLorebookFile | null {
+    try {
+      const fileName = filePath.slice(LOREBOOKS_PATH_SEGMENT.length);
+      const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.lorebooks, fileName);
+      const file = this.fileStore.readJson<CanonicalLorebookFile>(absolutePath);
+      if (
+        file &&
+        typeof file.schemaVersion === "number" &&
+        file.schemaVersion === LOREBOOK_FILE_SCHEMA_VERSION
+      ) {
+        return file;
+      }
+    } catch {}
+    return null;
+  }
+
+  private listLoreEntriesForLorebook(lorebookId: string): LoreEntry[] {
+    return this.db
+      .queryAll<LoreEntryRow>(
+        `SELECT id, lorebook_id, title, content, keys_json, secondary_keys_json,
+                logic, position, depth, priority, sticky_window, cooldown_window,
+                delay_window, enabled, metadata_json
+         FROM lore_entries
+         WHERE lorebook_id = ?
+         ORDER BY priority DESC, id ASC`,
+        [lorebookId],
+      )
+      .map(mapLoreEntry);
   }
 }
