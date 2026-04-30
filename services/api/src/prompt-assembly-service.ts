@@ -130,7 +130,9 @@ export class PromptAssemblyService {
     });
 
     const result = assemblePrompt({
-      chatId: chat.id,
+      identity: {
+        chatId: chat.id,
+      },
       character: {
         id: character.id,
         name: character.name,
@@ -138,9 +140,11 @@ export class PromptAssemblyService {
         scenario: character.scenario,
         systemPrompt: character.systemPrompt,
         personality: character.personality,
+        mesExample: character.mesExample,
+        postHistoryInstructions: character.postHistoryInstructions,
       },
       persona,
-      promptPreset: promptPreset
+      preset: promptPreset
         ? {
             id: promptPreset.id,
             name: promptPreset.name,
@@ -150,29 +154,35 @@ export class PromptAssemblyService {
             tools: promptPreset.tools,
           }
         : null,
-      activeLoreEntries: activeLoreEntries.map((entry) => ({
+      lore: activeLoreEntries.map((entry) => ({
         id: entry.id,
         title: entry.title,
         content: entry.content,
         priority: entry.priority,
         position: entry.position,
       })),
-      summaryMemory: branchState.summaries.map((snapshot) => ({
-        id: snapshot.id,
-        kind: snapshot.kind,
-        summary: snapshot.summary,
-      })),
-      retrievalMemory: retrievedMemories.map((memory) => ({
-        id: memory.id,
-        sourceType: memory.sourceType,
-        content: memory.content,
-        score: memory.score,
-      })),
-      recentMessages,
-      mesExample: character.mesExample,
-      postHistoryInstructions: character.postHistoryInstructions,
-      toolInstructions: [promptPreset?.tools, this.resolver.getToolInstructions(chat.toolProfileId)].filter(Boolean).join("\n") || null,
-      contextBudget: input.contextBudget ?? null,
+      memory: {
+        summary: branchState.summaries.map((snapshot) => ({
+          id: snapshot.id,
+          kind: snapshot.kind,
+          summary: snapshot.summary,
+        })),
+        retrieval: retrievedMemories.map((memory) => ({
+          id: memory.id,
+          sourceType: memory.sourceType,
+          content: memory.content,
+          score: memory.score,
+        })),
+      },
+      chat: {
+        recentMessages,
+      },
+      instructions: {
+        toolInstructions: [promptPreset?.tools, this.resolver.getToolInstructions(chat.toolProfileId)].filter(Boolean).join("\n") || null,
+      },
+      config: {
+        contextBudget: input.contextBudget ?? null,
+      },
     });
 
     return {
