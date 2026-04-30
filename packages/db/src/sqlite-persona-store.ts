@@ -7,6 +7,7 @@ import { ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
 import type { PersonaRow } from "./sqlite-chat-session-mappers.js";
 import type { SqliteDatabaseAdapter } from "./sqlite-adapter.js";
 import type { StoreClock, StoreIdGenerator } from "./persistence.js";
+import { unlinkSync } from "node:fs";
 import {
   type FileStore,
   createFileStore,
@@ -55,6 +56,10 @@ function canonicalFileToPersona(file: CanonicalPersonaFile): Persona {
 
 function personaSlug(name: string): string {
   return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-zа-яё0-9\-]/gi, "") || "persona";
+}
+
+function lorebookSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-zа-яё0-9]+/gi, "-").replace(/^-|-$/g, "") || "lorebook";
 }
 
 const PERSONAS_PATH_SEGMENT = "personas/";
@@ -274,10 +279,46 @@ export class SqlitePersonaStore {
       if (existing) return existing;
       const timestamp = this.clock.now();
       const lorebookId = this.idGenerator.next(ENTITY_ID_NAMESPACE.lorebook) as LorebookId;
+
+      const lorebookFile = {
+        schemaVersion: 1,
+        id: lorebookId,
+        name,
+        scopeType: "persona",
+        description: "Personal lorebook auto-created for persona.",
+        scanDepth: null as number | null,
+        tokenBudget: null as number | null,
+        recursiveScanning: null as boolean | null,
+        extensions: {} as Record<string, unknown>,
+        entries: [] as Array<unknown>,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+
+      const slug = lorebookSlug(name);
+      const relativeFileName = `persona-${slug}.json`;
+      let filePath: string | null = null;
+      let fileHash: string | null = null;
+      let syncStatus = "db_dirty";
+      let syncError: string | null = null;
+      const now = new Date().toISOString();
+
+      try {
+        const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.lorebooks, relativeFileName);
+        fileHash = hashCanonicalJson(lorebookFile);
+        this.fileStore.writeJson(absolutePath, lorebookFile);
+        filePath = `lorebooks/${relativeFileName}`;
+        syncStatus = "synced";
+      } catch (err) {
+        syncError = err instanceof Error ? err.message : String(err);
+      }
+
       this.db.execute(
-        `INSERT INTO lorebooks (id, name, scope_type, description, created_at, updated_at)
-         VALUES (?, ?, 'persona', ?, ?, ?)`,
-        [lorebookId, name, "Personal lorebook auto-created for persona.", timestamp, timestamp],
+        `INSERT INTO lorebooks (id, name, scope_type, description, created_at, updated_at,
+          file_path, file_hash, file_mtime, sync_status, sync_error, last_synced_at)
+         VALUES (?, ?, 'persona', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [lorebookId, name, "Personal lorebook auto-created for persona.", timestamp, timestamp,
+         filePath, fileHash, now, syncStatus, syncError, now],
       );
       this.db.execute(
         `INSERT INTO persona_lorebooks (persona_id, lorebook_id) VALUES (?, ?)`,
@@ -291,11 +332,25 @@ export class SqlitePersonaStore {
     this.db.transaction(() => {
       const existing = this.getPersonalLorebookForPersona(personaId);
       if (!existing) return;
+
+      const row = this.db.queryOne<{ file_path: string | null }>(
+        `SELECT file_path FROM lorebooks WHERE id = ?`,
+        [existing.lorebookId],
+      );
+
       this.db.execute(
         `DELETE FROM persona_lorebooks WHERE persona_id = ? AND lorebook_id = ?`,
         [personaId, existing.lorebookId],
       );
       this.db.execute(`DELETE FROM lorebooks WHERE id = ?`, [existing.lorebookId]);
+
+      if (row?.file_path) {
+        try {
+          const fileName = row.file_path.slice("lorebooks/".length);
+          const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.lorebooks, fileName);
+          unlinkSync(absolutePath);
+        } catch {}
+      }
     });
   }
 
