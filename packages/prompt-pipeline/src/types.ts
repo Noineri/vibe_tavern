@@ -1,8 +1,6 @@
-export type PromptLayerPosition =
-  | "before_prompt"
-  | "in_prompt"
-  | "in_chat"
-  | "hidden_system";
+import type { PromptLayerPosition } from "@rp-platform/domain";
+
+export type { PromptLayerPosition };
 
 export interface PromptLayer {
   id: string;

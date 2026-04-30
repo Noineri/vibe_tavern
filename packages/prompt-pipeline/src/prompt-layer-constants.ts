@@ -70,3 +70,22 @@ export function createSummaryMemoryLayerId(id: string): string {
 export function createRetrievalMemoryLayerId(id: string): string {
   return `retrieval_${id}`;
 }
+
+export const PROMPT_FORMAT = {
+  characterHeader: (name: string) => `Character: ${name}`,
+  scenarioHeader: (text: string) => `Scenario: ${text}`,
+  personaBlock: (name: string, desc: string) => `User persona (${name}): ${desc}`,
+  loreHeader: (title: string) => `Lore: ${title}`,
+  summaryMemory: (kind: string, text: string) => `[${kind}] ${text}`,
+  retrievalMemory: (sourceType: string, content: string) => `[Retrieved ${sourceType}] ${content}`,
+  exampleMessages: (text: string) => `[Example messages]\n${text}`,
+} as const;
+
+export const PROMPT_LAYER_REASON = {
+  included: "included",
+  emptyLoreContent: "empty lore content",
+  activatedLoreEntry: "activated lore entry",
+  emptySummaryMemory: "empty summary memory",
+  emptyRetrievalMemory: "empty retrieval memory",
+  preflightCompaction: (droppedCount: number) => `preflight_compaction_dropped_${droppedCount}`,
+} as const;

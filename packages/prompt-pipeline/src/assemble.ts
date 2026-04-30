@@ -5,28 +5,22 @@ import type {
   PromptLayerPosition,
   RecentMessage,
 } from "./types.js";
-import { findSafeCompactionBoundary } from "./compaction.js";
+import { estimateTokens, findSafeCompactionBoundary } from "./compaction.js";
 import { createPhaseOneMacroEngine } from "./macro-registry.js";
 import { buildPromptVariableContext, type PromptVariableContext } from "./prompt-variable-context.js";
 import {
   DEFAULT_PROMPT_LAYER_PRIORITY,
+  PROMPT_FORMAT,
   PROMPT_LAYER_ID,
   PROMPT_LAYER_POSITION_RANK,
   PROMPT_LAYER_PRIORITY,
+  PROMPT_LAYER_REASON,
   PROMPT_LAYER_SOURCE_ID,
   PROMPT_LAYER_SOURCE_TYPE,
   createLoreLayerId,
   createRetrievalMemoryLayerId,
   createSummaryMemoryLayerId,
 } from "./prompt-layer-constants.js";
-
-function estimateTokens(text: string): number {
-  const normalized = text.trim();
-  if (!normalized) {
-    return 0;
-  }
-  return Math.ceil(normalized.length / 4);
-}
 
 function joinNonEmpty(parts: Array<string | null | undefined>, separator = "\n"): string {
   return parts.map((part) => part?.trim() ?? "").filter(Boolean).join(separator);
@@ -55,7 +49,7 @@ function makeLayer(input: {
     position: input.position ?? "in_prompt",
     priority: input.priority ?? DEFAULT_PROMPT_LAYER_PRIORITY,
     enabled: input.enabled ?? true,
-    reason: input.reason ?? "included",
+    reason: input.reason ?? PROMPT_LAYER_REASON.included,
     tokenCount: estimateTokens(input.text),
     text: input.text.trim(),
   };
@@ -207,9 +201,9 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   }
 
   const characterBase = joinNonEmpty([
-    `Character: ${context.character.name}`,
+    PROMPT_FORMAT.characterHeader(context.character.name),
     context.character.description,
-    context.character.scenario ? `Scenario: ${context.character.scenario}` : null,
+    context.character.scenario ? PROMPT_FORMAT.scenarioHeader(context.character.scenario) : null,
   ]);
   if (characterBase) {
     layers.push(
@@ -242,14 +236,14 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceType: PROMPT_LAYER_SOURCE_TYPE.persona,
         sourceId: context.persona.id,
         priority: PROMPT_LAYER_PRIORITY.persona,
-        text: `User persona (${context.persona.name}): ${context.persona.description}`,
+        text: PROMPT_FORMAT.personaBlock(context.persona.name, context.persona.description),
       }),
     );
   }
 
   for (const loreEntry of [...(context.activeLoreEntries ?? [])].sort((a, b) => b.priority - a.priority)) {
     if (!loreEntry.content.trim()) {
-      droppedLayers.push({ id: loreEntry.id, reason: "empty lore content" });
+      droppedLayers.push({ id: loreEntry.id, reason: PROMPT_LAYER_REASON.emptyLoreContent });
       continue;
     }
     layers.push(
@@ -259,15 +253,15 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceId: loreEntry.id,
         position: loreEntry.position ?? "in_prompt",
         priority: loreEntry.priority,
-        reason: "activated lore entry",
-        text: joinNonEmpty([loreEntry.title ? `Lore: ${loreEntry.title}` : null, loreEntry.content]),
+        reason: PROMPT_LAYER_REASON.activatedLoreEntry,
+        text: joinNonEmpty([loreEntry.title ? PROMPT_FORMAT.loreHeader(loreEntry.title) : null, loreEntry.content]),
       }),
     );
   }
 
   for (const memory of context.summaryMemory ?? []) {
     if (!memory.summary.trim()) {
-      droppedLayers.push({ id: memory.id, reason: "empty summary memory" });
+      droppedLayers.push({ id: memory.id, reason: PROMPT_LAYER_REASON.emptySummaryMemory });
       continue;
     }
     layers.push(
@@ -276,14 +270,14 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceType: PROMPT_LAYER_SOURCE_TYPE.summaryMemory,
         sourceId: memory.id,
         priority: PROMPT_LAYER_PRIORITY.summaryMemory,
-        text: `[${memory.kind}] ${memory.summary}`,
+        text: PROMPT_FORMAT.summaryMemory(memory.kind, memory.summary),
       }),
     );
   }
 
   for (const memory of [...(context.retrievalMemory ?? [])].sort((a, b) => b.score - a.score)) {
     if (!memory.content.trim()) {
-      droppedLayers.push({ id: memory.id, reason: "empty retrieval memory" });
+      droppedLayers.push({ id: memory.id, reason: PROMPT_LAYER_REASON.emptyRetrievalMemory });
       continue;
     }
     layers.push(
@@ -292,7 +286,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceType: PROMPT_LAYER_SOURCE_TYPE.retrievalMemory,
         sourceId: memory.id,
         priority: PROMPT_LAYER_PRIORITY.retrievalMemory,
-        text: `[Retrieved ${memory.sourceType}] ${memory.content}`,
+        text: PROMPT_FORMAT.retrievalMemory(memory.sourceType, memory.content),
       }),
     );
   }
@@ -336,7 +330,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
             sourceType: PROMPT_LAYER_SOURCE_TYPE.compaction,
             sourceId: PROMPT_LAYER_SOURCE_ID.preflight,
             priority: PROMPT_LAYER_PRIORITY.preflightCompaction,
-            reason: `preflight_compaction_dropped_${droppedCount}`,
+            reason: PROMPT_LAYER_REASON.preflightCompaction(droppedCount),
             text:
               `[Preflight compaction] Kept ${recentMessagesForHistory.length} of ` +
               `${context.recentMessages.length} recent messages ` +
@@ -368,7 +362,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
         sourceId: context.character.id,
         priority: PROMPT_LAYER_PRIORITY.mesExample,
-        text: `[Example messages]\n${context.mesExample}`,
+        text: PROMPT_FORMAT.exampleMessages(context.mesExample),
       }),
     );
   }
