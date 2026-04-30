@@ -73,27 +73,27 @@ function buildAssemblyVariableContext(context: PromptAssemblyContext): PromptVar
       personality: context.character.personality ?? null,
       scenario: context.character.scenario ?? null,
       systemPrompt: context.character.systemPrompt ?? null,
-      mesExample: context.mesExample ?? null,
-      postHistoryInstructions: context.postHistoryInstructions ?? null,
+      mesExample: context.character.mesExample ?? null,
+      postHistoryInstructions: context.character.postHistoryInstructions ?? null,
     },
     persona: {
       name: context.persona?.name ?? "User",
       description: context.persona?.description ?? "",
     },
     prompt: {
-      system: context.promptPreset?.text ?? "",
-      jailbreak: context.promptPreset?.jailbreak ?? "",
-      summary: context.promptPreset?.summary ?? "",
-      tools: context.promptPreset?.tools ?? context.toolInstructions ?? "",
-      contextBudget: context.contextBudget ?? null,
+      system: context.preset?.text ?? "",
+      jailbreak: context.preset?.jailbreak ?? "",
+      summary: context.preset?.summary ?? "",
+      tools: context.preset?.tools ?? context.instructions?.toolInstructions ?? "",
+      contextBudget: context.config?.contextBudget ?? null,
     },
     chat: {
-      messages: context.recentMessages,
-      messageIds: context.recentMessages.map((message) => message.id),
+      messages: context.chat.recentMessages,
+      messageIds: context.chat.recentMessages.map((message) => message.id),
     },
     runtime: {
-      contextBudget: context.contextBudget ?? null,
-      maxPromptTokens: context.contextBudget ?? null,
+      contextBudget: context.config?.contextBudget ?? null,
+      maxPromptTokens: context.config?.contextBudget ?? null,
     },
   });
 }
@@ -112,38 +112,44 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
       scenario: context.character.scenario != null ? applyMacros(context.character.scenario, variableContext) : context.character.scenario,
       systemPrompt: context.character.systemPrompt != null ? applyMacros(context.character.systemPrompt, variableContext) : context.character.systemPrompt,
       personality: context.character.personality != null ? applyMacros(context.character.personality, variableContext) : context.character.personality,
+      mesExample: context.character.mesExample != null ? applyMacros(context.character.mesExample, variableContext) : context.character.mesExample,
+      postHistoryInstructions: context.character.postHistoryInstructions != null ? applyMacros(context.character.postHistoryInstructions, variableContext) : context.character.postHistoryInstructions,
     },
     persona: context.persona ? {
       ...context.persona,
       description: applyMacros(context.persona.description, variableContext),
     } : context.persona,
-    promptPreset: context.promptPreset ? {
-      ...context.promptPreset,
-      text: applyMacros(context.promptPreset.text, variableContext),
-      jailbreak: context.promptPreset.jailbreak != null ? applyMacros(context.promptPreset.jailbreak, variableContext) : context.promptPreset.jailbreak,
-      summary: context.promptPreset.summary != null ? applyMacros(context.promptPreset.summary, variableContext) : context.promptPreset.summary,
-      tools: context.promptPreset.tools != null ? applyMacros(context.promptPreset.tools, variableContext) : context.promptPreset.tools,
-    } : context.promptPreset,
-    activeLoreEntries: context.activeLoreEntries?.map((entry) => ({
+    preset: context.preset ? {
+      ...context.preset,
+      text: applyMacros(context.preset.text, variableContext),
+      jailbreak: context.preset.jailbreak != null ? applyMacros(context.preset.jailbreak, variableContext) : context.preset.jailbreak,
+      summary: context.preset.summary != null ? applyMacros(context.preset.summary, variableContext) : context.preset.summary,
+      tools: context.preset.tools != null ? applyMacros(context.preset.tools, variableContext) : context.preset.tools,
+    } : context.preset,
+    lore: context.lore?.map((entry) => ({
       ...entry,
       title: applyMacros(entry.title, variableContext),
       content: applyMacros(entry.content, variableContext),
     })),
-    summaryMemory: context.summaryMemory?.map((s) => ({
-      ...s,
-      summary: applyMacros(s.summary, variableContext),
-    })),
-    retrievalMemory: context.retrievalMemory?.map((m) => ({
-      ...m,
-      content: applyMacros(m.content, variableContext),
-    })),
-    recentMessages: context.recentMessages.map((msg) => ({
-      ...msg,
-      content: applyMacros(msg.content, variableContext),
-    })),
-    mesExample: context.mesExample != null ? applyMacros(context.mesExample, variableContext) : context.mesExample,
-    postHistoryInstructions: context.postHistoryInstructions != null ? applyMacros(context.postHistoryInstructions, variableContext) : context.postHistoryInstructions,
-    toolInstructions: context.toolInstructions != null ? applyMacros(context.toolInstructions, variableContext) : context.toolInstructions,
+    memory: {
+      summary: context.memory?.summary?.map((s) => ({
+        ...s,
+        summary: applyMacros(s.summary, variableContext),
+      })),
+      retrieval: context.memory?.retrieval?.map((m) => ({
+        ...m,
+        content: applyMacros(m.content, variableContext),
+      })),
+    },
+    chat: {
+      recentMessages: context.chat.recentMessages.map((msg) => ({
+        ...msg,
+        content: applyMacros(msg.content, variableContext),
+      })),
+    },
+    instructions: context.instructions ? {
+      toolInstructions: context.instructions.toolInstructions != null ? applyMacros(context.instructions.toolInstructions, variableContext) : context.instructions.toolInstructions,
+    } : context.instructions,
   };
 }
 
@@ -152,38 +158,38 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   const layers: PromptLayer[] = [];
   const droppedLayers: Array<{ id: string; reason: string }> = [];
 
-  if (context.promptPreset?.text?.trim()) {
+  if (context.preset?.text?.trim()) {
     layers.push(
       makeLayer({
         id: PROMPT_LAYER_ID.promptPresetSystem,
         sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-        sourceId: context.promptPreset.id,
+        sourceId: context.preset.id,
         priority: PROMPT_LAYER_PRIORITY.promptPresetSystem,
-        text: context.promptPreset.text,
+        text: context.preset.text,
       }),
     );
   }
 
-  if (context.promptPreset?.jailbreak?.trim()) {
+  if (context.preset?.jailbreak?.trim()) {
     layers.push(
       makeLayer({
         id: PROMPT_LAYER_ID.promptPresetJailbreak,
         sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-        sourceId: context.promptPreset.id,
+        sourceId: context.preset.id,
         priority: PROMPT_LAYER_PRIORITY.promptPresetJailbreak,
-        text: context.promptPreset.jailbreak,
+        text: context.preset.jailbreak,
       }),
     );
   }
 
-  if (context.promptPreset?.summary?.trim()) {
+  if (context.preset?.summary?.trim()) {
     layers.push(
       makeLayer({
         id: PROMPT_LAYER_ID.promptPresetSummary,
         sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-        sourceId: context.promptPreset.id,
+        sourceId: context.preset.id,
         priority: PROMPT_LAYER_PRIORITY.promptPresetSummary,
-        text: context.promptPreset.summary,
+        text: context.preset.summary,
       }),
     );
   }
@@ -241,7 +247,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     );
   }
 
-  for (const loreEntry of [...(context.activeLoreEntries ?? [])].sort((a, b) => b.priority - a.priority)) {
+  for (const loreEntry of [...(context.lore ?? [])].sort((a, b) => b.priority - a.priority)) {
     if (!loreEntry.content.trim()) {
       droppedLayers.push({ id: loreEntry.id, reason: PROMPT_LAYER_REASON.emptyLoreContent });
       continue;
@@ -259,7 +265,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     );
   }
 
-  for (const memory of context.summaryMemory ?? []) {
+  for (const memory of context.memory?.summary ?? []) {
     if (!memory.summary.trim()) {
       droppedLayers.push({ id: memory.id, reason: PROMPT_LAYER_REASON.emptySummaryMemory });
       continue;
@@ -275,7 +281,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     );
   }
 
-  for (const memory of [...(context.retrievalMemory ?? [])].sort((a, b) => b.score - a.score)) {
+  for (const memory of [...(context.memory?.retrieval ?? [])].sort((a, b) => b.score - a.score)) {
     if (!memory.content.trim()) {
       droppedLayers.push({ id: memory.id, reason: PROMPT_LAYER_REASON.emptyRetrievalMemory });
       continue;
@@ -291,39 +297,39 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     );
   }
 
-  if (context.toolInstructions?.trim()) {
+  if (context.instructions?.toolInstructions?.trim()) {
     layers.push(
       makeLayer({
         id: PROMPT_LAYER_ID.toolInstructions,
         sourceType: PROMPT_LAYER_SOURCE_TYPE.toolProfile,
         sourceId: PROMPT_LAYER_SOURCE_ID.activeToolProfile,
         priority: PROMPT_LAYER_PRIORITY.toolInstructions,
-        text: context.toolInstructions,
+        text: context.instructions.toolInstructions,
       }),
     );
   }
 
-  let recentMessagesForHistory = context.recentMessages;
+  let recentMessagesForHistory = context.chat.recentMessages;
 
   if (
-    typeof context.contextBudget === "number" &&
-    context.contextBudget > 0 &&
-    context.recentMessages.length > 3
+    typeof context.config?.contextBudget === "number" &&
+    context.config.contextBudget > 0 &&
+    context.chat.recentMessages.length > 3
   ) {
     const nonHistoryTokens = layers.reduce((sum, layer) => sum + layer.tokenCount, 0);
-    const fullHistoryTokens = estimateTokens(formatRecentMessages(context.recentMessages));
+    const fullHistoryTokens = estimateTokens(formatRecentMessages(context.chat.recentMessages));
     const totalBeforeCompaction = nonHistoryTokens + fullHistoryTokens;
 
-    if (totalBeforeCompaction > context.contextBudget) {
-      const preserveCount = Math.max(2, Math.ceil(context.recentMessages.length / 2));
+    if (totalBeforeCompaction > context.config.contextBudget) {
+      const preserveCount = Math.max(2, Math.ceil(context.chat.recentMessages.length / 2));
       const keepFrom = findSafeCompactionBoundary(
-        context.recentMessages as unknown as Parameters<typeof findSafeCompactionBoundary>[0],
+        context.chat.recentMessages as unknown as Parameters<typeof findSafeCompactionBoundary>[0],
         preserveCount,
       );
       if (keepFrom > 0) {
-        recentMessagesForHistory = context.recentMessages.slice(keepFrom);
+        recentMessagesForHistory = context.chat.recentMessages.slice(keepFrom);
         const preservedTokens = estimateTokens(formatRecentMessages(recentMessagesForHistory));
-        const droppedCount = context.recentMessages.length - recentMessagesForHistory.length;
+        const droppedCount = context.chat.recentMessages.length - recentMessagesForHistory.length;
         layers.push(
           makeLayer({
             id: PROMPT_LAYER_ID.preflightCompaction,
@@ -333,9 +339,9 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
             reason: PROMPT_LAYER_REASON.preflightCompaction(droppedCount),
             text:
               `[Preflight compaction] Kept ${recentMessagesForHistory.length} of ` +
-              `${context.recentMessages.length} recent messages ` +
+              `${context.chat.recentMessages.length} recent messages ` +
               `(~${preservedTokens} tokens after compaction, ` +
-              `${totalBeforeCompaction} tokens before, budget ${context.contextBudget}).`,
+              `${totalBeforeCompaction} tokens before, budget ${context.config.contextBudget}).`,
           }),
         );
       }
@@ -348,33 +354,33 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       makeLayer({
         id: PROMPT_LAYER_ID.recentHistory,
         sourceType: PROMPT_LAYER_SOURCE_TYPE.chatHistory,
-        sourceId: context.chatId,
+        sourceId: context.identity.chatId,
         priority: PROMPT_LAYER_PRIORITY.recentHistory,
         text: historyText,
       }),
     );
   }
 
-  if (context.mesExample?.trim()) {
+  if (context.character.mesExample?.trim()) {
     layers.push(
       makeLayer({
         id: PROMPT_LAYER_ID.mesExample,
         sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
         sourceId: context.character.id,
         priority: PROMPT_LAYER_PRIORITY.mesExample,
-        text: PROMPT_FORMAT.exampleMessages(context.mesExample),
+        text: PROMPT_FORMAT.exampleMessages(context.character.mesExample),
       }),
     );
   }
 
-  if (context.postHistoryInstructions?.trim()) {
+  if (context.character.postHistoryInstructions?.trim()) {
     layers.push(
       makeLayer({
         id: PROMPT_LAYER_ID.postHistoryInstructions,
         sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
         sourceId: context.character.id,
         priority: PROMPT_LAYER_PRIORITY.postHistoryInstructions,
-        text: context.postHistoryInstructions,
+        text: context.character.postHistoryInstructions,
       }),
     );
   }
@@ -392,10 +398,10 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   return {
     layers: orderedLayers,
     totalTokenEstimate,
-    activatedLoreEntries: (context.activeLoreEntries ?? []).map((entry) => entry.id),
+    activatedLoreEntries: (context.lore ?? []).map((entry) => entry.id),
     usedMemoryBlocks: [
-      ...(context.summaryMemory ?? []).map((entry) => entry.id),
-      ...(context.retrievalMemory ?? []).map((entry) => entry.id),
+      ...(context.memory?.summary ?? []).map((entry) => entry.id),
+      ...(context.memory?.retrieval ?? []).map((entry) => entry.id),
     ],
     droppedLayers,
     finalPayload: {

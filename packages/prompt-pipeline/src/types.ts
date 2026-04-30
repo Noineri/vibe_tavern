@@ -21,7 +21,9 @@ export interface RecentMessage {
 }
 
 export interface PromptAssemblyContext {
-  chatId: string;
+  identity: {
+    chatId: string;
+  };
   character: {
     id: string;
     name: string;
@@ -29,13 +31,15 @@ export interface PromptAssemblyContext {
     scenario?: string | null;
     systemPrompt?: string | null;
     personality?: string | null;
+    mesExample?: string | null;
+    postHistoryInstructions?: string | null;
   };
   persona?: {
     id: string;
     name: string;
     description: string;
   } | null;
-  promptPreset?: {
+  preset?: {
     id: string;
     name?: string;
     text: string;
@@ -43,29 +47,35 @@ export interface PromptAssemblyContext {
     summary?: string | null;
     tools?: string | null;
   } | null;
-  activeLoreEntries?: Array<{
+  lore?: Array<{
     id: string;
     title: string;
     content: string;
     priority: number;
     position?: PromptLayerPosition;
   }>;
-  summaryMemory?: Array<{
-    id: string;
-    kind: string;
-    summary: string;
-  }>;
-  retrievalMemory?: Array<{
-    id: string;
-    sourceType: string;
-    content: string;
-    score: number;
-  }>;
-  recentMessages: RecentMessage[];
-  mesExample?: string | null;
-  postHistoryInstructions?: string | null;
-  toolInstructions?: string | null;
-  contextBudget?: number | null;
+  memory?: {
+    summary?: Array<{
+      id: string;
+      kind: string;
+      summary: string;
+    }>;
+    retrieval?: Array<{
+      id: string;
+      sourceType: string;
+      content: string;
+      score: number;
+    }>;
+  };
+  chat: {
+    recentMessages: RecentMessage[];
+  };
+  instructions?: {
+    toolInstructions?: string | null;
+  };
+  config?: {
+    contextBudget?: number | null;
+  };
 }
 
 export interface PromptAssemblyResult {
