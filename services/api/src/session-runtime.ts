@@ -43,8 +43,6 @@ import {
   mapPromptTraceRecord,
   mapMessageDto,
   entryMatchesRecentText,
-  toClientProviderProfile,
-  resolveStoredApiKey,
   type StoredProviderProfileRecord,
   type ClientProviderProfileRecord,
   type CachedProviderModelsRecord,
@@ -57,6 +55,7 @@ import {
   type PersonaRecord,
 } from "./session-runtime-character.js";
 import { createDefaultSessionStore } from "./session-runtime-store.js";
+import * as providerModule from "./session-runtime-provider.js";
 
 import type { MessageDto } from "./session-runtime-dto.js";
 
@@ -187,6 +186,10 @@ export class SessionRuntime {
   private readonly pendingPromptTraceByChat = new Map<ChatId, PendingPromptTraceTurn>();
   private readonly providerModelsCache = new Map<string, CachedProviderModelsRecord>();
   private readonly fileStore = createFileStore();
+
+  private get providerDeps(): providerModule.ProviderModuleDeps {
+    return { store: this.store, providerModelsCache: this.providerModelsCache };
+  }
 
   constructor(store: ChatSessionStore = createDefaultSessionStore()) {
     this.store = store;
@@ -837,50 +840,23 @@ export class SessionRuntime {
   }
 
   listProviderProfiles(): ClientProviderProfileRecord[] {
-    return this.store
-      .listProviderProfiles()
-      .map((profile) => toClientProviderProfile(profile as StoredProviderProfileRecord));
+    return providerModule.listProviderProfiles(this.providerDeps);
   }
 
   async saveProviderProfile(profile: any): Promise<ClientProviderProfileRecord> {
-    const existing = profile.id
-      ? (this.store.getProviderProfile(profile.id) as StoredProviderProfileRecord | null)
-      : null;
-    const resolvedId =
-      profile.id ||
-      existing?.id ||
-      `${ENTITY_ID_NAMESPACE.providerProfile}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const hasApiKeyInput = Object.prototype.hasOwnProperty.call(profile, "apiKey");
-    const apiKey = hasApiKeyInput
-      ? resolveStoredApiKey(profile.apiKey, existing?.apiKey ?? null)
-      : (existing?.apiKey ?? null);
-
-    const toSave = {
-      ...existing,
-      ...profile,
-      id: resolvedId,
-      apiKey,
-    };
-
-    this.store.upsertProviderProfile(toSave);
-    return toClientProviderProfile(toSave as StoredProviderProfileRecord);
+    return providerModule.saveProviderProfile(this.providerDeps, profile);
   }
 
   deleteProviderProfile(id: string): void {
-    this.store.deleteProviderProfile(id);
+    providerModule.deleteProviderProfile(this.providerDeps, id);
   }
 
   activateProviderProfile(id: string): ClientProviderProfileRecord {
-    this.store.setActiveProviderProfile(id);
-    const profile = this.store.getProviderProfile(id) as StoredProviderProfileRecord | null;
-    if (!profile) {
-      throw new Error(`Provider profile '${id}' was not found after activation.`);
-    }
-    return toClientProviderProfile(profile);
+    return providerModule.activateProviderProfile(this.providerDeps, id);
   }
 
   resolveActiveProviderProfile(): StoredProviderProfileRecord | null {
-    return this.store.getActiveProviderProfile() as StoredProviderProfileRecord | null;
+    return providerModule.resolveActiveProviderProfile(this.providerDeps);
   }
 
   updateProviderProfile(
@@ -907,23 +883,7 @@ export class SessionRuntime {
       streamResponse?: boolean;
     },
   ): ClientProviderProfileRecord {
-    const existing = this.store.getProviderProfile(id) as StoredProviderProfileRecord | null;
-    if (!existing) {
-      throw new Error(`Provider profile '${id}' was not found.`);
-    }
-    const hasApiKeyInput = Object.prototype.hasOwnProperty.call(patch, "apiKey");
-    const apiKey = hasApiKeyInput
-      ? resolveStoredApiKey(patch.apiKey, existing.apiKey ?? null)
-      : (existing.apiKey ?? null);
-    const merged: StoredProviderProfileRecord = {
-      ...existing,
-      ...patch,
-      apiKey,
-      id,
-      isActive: existing.isActive,
-    };
-    this.store.upsertProviderProfile(merged);
-    return toClientProviderProfile(merged);
+    return providerModule.updateProviderProfile(this.providerDeps, id, patch);
   }
 
   createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
@@ -956,28 +916,22 @@ export class SessionRuntime {
   }
 
   getProviderProfile(id: string): StoredProviderProfileRecord | null {
-    return this.store.getProviderProfile(id) as StoredProviderProfileRecord | null;
+    return providerModule.getProviderProfile(this.providerDeps, id);
   }
 
   getProviderProfileForClient(id: string): ClientProviderProfileRecord | null {
-    const profile = this.getProviderProfile(id);
-    return profile ? toClientProviderProfile(profile) : null;
+    return providerModule.getProviderProfileForClient(this.providerDeps, id);
   }
 
   getCachedProviderModels(providerProfileId: string): CachedProviderModelsRecord | null {
-    return this.providerModelsCache.get(providerProfileId) ?? null;
+    return providerModule.getCachedProviderModels(this.providerDeps, providerProfileId);
   }
 
   setCachedProviderModels(
     providerProfileId: string,
     models: Array<{ id: string; label: string }>,
   ): CachedProviderModelsRecord {
-    const cached = {
-      models,
-      cachedAt: new Date().toISOString(),
-    };
-    this.providerModelsCache.set(providerProfileId, cached);
-    return cached;
+    return providerModule.setCachedProviderModels(this.providerDeps, providerProfileId, models);
   }
 
   updateCharacter(
