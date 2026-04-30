@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Claw Tavern visual language.
  * Извлечено из rp_platform_plan/Maket.html.
  * Изменения: расширен селектор .api-field (добавлен textarea) — MAKET_GAPS §0.1.
@@ -30,11 +30,11 @@ button{border:0;background:transparent;font:inherit;color:inherit}
 html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(--t1);overflow:hidden}
 ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 
-/* в”Ђв”Ђ Layout в”Ђв”Ђ */
+/* ── Layout ── */
 .app{display:flex;height:100vh;overflow:hidden}
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 
-/* в”Ђв”Ђ Sidebar в”Ђв”Ђ */
+/* ── Sidebar ── */
 .sidebar{
   width:var(--sw);min-width:var(--sw);
   background:var(--surface);border-right:1px solid var(--border);
@@ -64,7 +64,7 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .sb-chat.act .sb-ct{color:var(--accent-t)}
 .sb-foot{padding:6px 4px;border-top:1px solid var(--border);margin-top:auto;flex-shrink:0}
 
-/* в”Ђв”Ђ Header в”Ђв”Ђ */
+/* ── Header ── */
 .chat-header{height:52px;display:flex;align-items:center;padding:0 20px;border-bottom:1px solid var(--border);gap:12px;flex-shrink:0;background:var(--surface)}
 .char-info{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
 .char-ava{
@@ -79,7 +79,7 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .char-sub{font-size:11px;color:var(--t3);margin-top:1px}
 .hdr-right{display:flex;align-items:center;gap:7px}
 
-/* в”Ђв”Ђ Memory Badge в”Ђв”Ђ */
+/* ── Memory Badge ── */
 .mem-badge{display:flex;align-items:center;gap:5px;background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--t2);cursor:pointer;position:relative;transition:border-color .15s,color .15s;flex-shrink:0}
 .mem-badge:hover{border-color:var(--accent);color:var(--accent-t)}
 .mem-dot{width:6px;height:6px;border-radius:50%;background:oklch(0.68 0.16 145);flex-shrink:0}
@@ -92,7 +92,7 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .mode-pill{font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;background:var(--accent-dim);color:var(--accent-t);cursor:pointer;letter-spacing:.02em;transition:background .15s;white-space:nowrap}
 .mode-pill:hover{background:var(--accent-hover)}
 
-/* в”Ђв”Ђ Avatar Float в”Ђв”Ђ */
+/* ── Avatar Float ── */
 .ava-float{position:fixed;z-index:100;user-select:none;}
 .ava-float-img{display:block;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.45);cursor:grab;-webkit-user-drag:none;max-width:320px;width:320px;}
 .ava-float-img:active{cursor:grabbing}
@@ -104,7 +104,7 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .msg-mini-ava{width:20px;height:20px;border-radius:50%;background:var(--s3);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--t3);font-family:var(--font-body);font-style:italic}
 .msg-mini-ava img{width:100%;height:100%;object-fit:cover;object-position:top center}
 
-/* в”Ђв”Ђ Messages в”Ђв”Ђ */
+/* ── Messages ── */
 .msgs{flex:1;overflow-y:auto;padding:28px 0 12px}
 .scene-note{text-align:center;font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--t3);padding:4px 24px 26px;max-width:var(--mw);margin:0 auto}
 .msg-wrap{max-width:min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px));margin:0 auto;padding:0 28px;position:relative}
@@ -165,7 +165,7 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .msg-sep{max-width:var(--mw);margin:8px auto 6px;padding:0 28px}
 .msg-sep-l{height:1px;background:var(--border);opacity:.4}
 
-/* в”Ђв”Ђ Input в”Ђв”Ђ */
+/* ── Input ── */
 .input-area{padding:10px 16px 14px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0}
 .input-box{background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:visible;transition:border-color .15s}
 .input-box:focus-within{border-color:var(--border2)}
@@ -181,7 +181,7 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .send-btn:hover{filter:brightness(1.1)}
 .send-btn:disabled{opacity:.45;cursor:default;filter:none}
 
-/* в”Ђв”Ђ Build Mode в”Ђв”Ђ */
+/* ── Build Mode ── */
 .build-wrap{flex:1;display:flex;overflow:hidden}
 .build-nav{width:200px;min-width:200px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:8px 0}
 .build-nav-title{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);padding:8px 14px 6px;font-weight:500}
@@ -209,7 +209,7 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .build-tag:hover{background:var(--border2);color:var(--t1)}
 .build-tag.on{background:var(--accent-dim);color:var(--accent-t)}
 
-/* в”Ђв”Ђ Tweaks в”Ђв”Ђ */
+/* ── Tweaks ── */
 .tweaks-panel{position:fixed;top:60px;right:20px;width:210px;background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:13px 15px;z-index:300;box-shadow:0 8px 28px rgba(0,0,0,.35)}
 .tw-title{font-size:11px;font-weight:600;color:var(--t1);margin-bottom:11px;letter-spacing:.05em;text-transform:uppercase}
 .tw-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
@@ -222,7 +222,7 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .toggle input:checked+.tgl-sl{background:var(--accent)}
 .toggle input:checked+.tgl-sl::before{transform:translateX(13px);background:#fff}
 
-/* в”Ђв”Ђ Personas в”Ђв”Ђ */
+/* ── Personas ── */
 .persona-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
 .persona-card{display:flex;align-items:flex-start;gap:12px;padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:background .15s,border-color .15s}
 .persona-card:hover{background:var(--s2);border-color:var(--border2)}
@@ -241,7 +241,7 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .add-btn-row{display:flex;align-items:center;justify-content:center;padding:10px;border:1px dashed var(--border2);border-radius:8px;cursor:pointer;color:var(--t2);font-size:12px;transition:background .15s,color .15s,border-color .15s}
 .add-btn-row:hover{background:var(--s2);color:var(--t1);border-color:var(--border)}
 
-/* в”Ђв”Ђ Provider Badge в”Ђв”Ђ */
+/* ── Provider Badge ── */
 .provider-badge{display:flex;align-items:center;gap:5px;background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--t2);cursor:pointer;transition:border-color .15s,color .15s;flex-shrink:0;font-family:var(--font-ui)}
 .provider-badge:hover{border-color:var(--border2);color:var(--t1)}
 .provider-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;transition:background .3s}
@@ -250,7 +250,7 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .provider-dot.err{background:oklch(0.62 0.2 25)}
 .provider-name{font-weight:500;color:var(--t1)}
 
-/* в”Ђв”Ђ API Modal в”Ђв”Ђ */
+/* ── API Modal ── */
 .api-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
 .api-modal{background:var(--surface);border:1px solid var(--border2);border-radius:12px;width:500px;max-width:calc(100vw - 32px);max-height:calc(100vh - 60px);display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.5);overflow:hidden}
 .api-head{padding:18px 20px 0;flex-shrink:0}
@@ -280,7 +280,7 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .api-cancel-btn{height:32px;padding:0 14px;background:transparent;color:var(--t3);border-radius:6px;font-size:12.5px;font-family:var(--font-ui);cursor:pointer;transition:color .15s}
 .api-cancel-btn:hover{color:var(--t1)}
 
-/* в”Ђв”Ђ Prompt Manager в”Ђв”Ђ */
+/* ── Prompt Manager ── */
 .pm-layout{display:flex;height:100%;margin:-20px;}
 .pm-nav{width:180px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:10px 0;}
 .pm-main{flex:1;padding:20px;overflow-y:auto;}
