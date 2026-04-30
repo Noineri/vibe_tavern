@@ -78,6 +78,9 @@ export type PersonaRow = SqliteRow & {
   default_for_new_chats: number;
   created_at: string;
   updated_at: string;
+  file_path?: string | null;
+  file_hash?: string | null;
+  sync_status?: string | null;
 };
 
 export type PromptTraceRow = SqliteRow & {
