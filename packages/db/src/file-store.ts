@@ -19,6 +19,7 @@ export interface FileStore {
   resolvePath(folder: StorageFolder, relativePath: string): string;
   readJson<T = unknown>(absolutePath: string): T;
   writeJson(absolutePath: string, data: unknown): void;
+  asyncWriteJson(absolutePath: string, data: unknown): Promise<void>;
 }
 
 function sortObjectKeys(_key: string, value: unknown): unknown {
@@ -62,6 +63,7 @@ function safeResolve(root: string, folder: StorageFolder, relativePath: string):
 
 export function createFileStore(dataRoot?: string): FileStore {
   const root = resolve(dataRoot ?? join(process.cwd(), "data"));
+  const writeLocks = new Map<string, Promise<void>>();
   return {
     dataRoot: root,
     resolvePath(folder, relativePath) {
@@ -76,6 +78,20 @@ export function createFileStore(dataRoot?: string): FileStore {
       const tmpPath = join(dir, `.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`);
       writeFileSync(tmpPath, canonicalJsonBytes(data));
       renameSync(tmpPath, absolutePath);
+    },
+    async asyncWriteJson(absolutePath: string, data: unknown): Promise<void> {
+      const previous = writeLocks.get(absolutePath) ?? Promise.resolve();
+      const next = previous.then(async () => {
+        const dir = resolve(absolutePath, "..");
+        mkdirSync(dir, { recursive: true });
+        const tmpPath = join(dir, `.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        writeFileSync(tmpPath, canonicalJsonBytes(data));
+        renameSync(tmpPath, absolutePath);
+      }).finally(() => {
+        writeLocks.delete(absolutePath);
+      });
+      writeLocks.set(absolutePath, next);
+      await next;
     },
   };
 }

@@ -142,7 +142,7 @@ export class SqliteCharacterStore {
     this.fileStore = fileStore ?? createFileStore();
   }
 
-  upsertCharacter(input: Character): void {
+  async upsertCharacter(input: Character): Promise<void> {
     const canonicalFile = characterToCanonicalFile(input);
     const relativeFileName = `${input.slug}.json`;
     const now = new Date().toISOString();
@@ -157,7 +157,7 @@ export class SqliteCharacterStore {
     try {
       const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.characters, relativeFileName);
       fileHash = hashCanonicalJson(canonicalFile);
-      this.fileStore.writeJson(absolutePath, canonicalFile);
+      await this.fileStore.asyncWriteJson(absolutePath, canonicalFile);
       filePath = `${CHARACTERS_PATH_SEGMENT}${input.slug}.json`;
       fileMtime = now;
       syncStatus = "synced";
@@ -234,7 +234,7 @@ export class SqliteCharacterStore {
     );
   }
 
-  upsertCharacterVersion(input: CharacterVersion): void {
+  async upsertCharacterVersion(input: CharacterVersion): Promise<void> {
     this.db.execute(
       `INSERT INTO character_versions (
         id, character_id, version_number, title, card_format, definition_json, is_active, created_at
@@ -260,7 +260,7 @@ export class SqliteCharacterStore {
     );
 
     if (input.isActive) {
-      this.updateCharacterFileSource(input.characterId, input.definition);
+      await this.updateCharacterFileSource(input.characterId, input.definition);
     }
   }
 
@@ -458,13 +458,13 @@ export class SqliteCharacterStore {
       .map(mapLoreEntry);
   }
 
-  setCharacterStatus(characterId: CharacterId, status: "active" | "archived"): void {
+  async setCharacterStatus(characterId: CharacterId, status: "active" | "archived"): Promise<void> {
     const timestamp = this.clock.now();
     this.db.execute(
       `UPDATE characters SET status = ?, updated_at = ? WHERE id = ?`,
       [status, timestamp, characterId],
     );
-    this.updateCharacterFileProperty(characterId, (file) => {
+    await this.updateCharacterFileProperty(characterId, (file) => {
       file.status = status;
       file.updatedAt = timestamp;
     });
@@ -663,10 +663,10 @@ export class SqliteCharacterStore {
     } catch {}
   }
 
-  private updateCharacterFileProperty(
+  private async updateCharacterFileProperty(
     characterId: string,
     mutate: (file: CanonicalCharacterFile) => void,
-  ): void {
+  ): Promise<void> {
     const row = this.db.queryOne<{ file_path: string | null }>(
       `SELECT file_path FROM characters WHERE id = ?`,
       [characterId],
@@ -677,14 +677,14 @@ export class SqliteCharacterStore {
       const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.characters, fileName);
       const file = this.fileStore.readJson<CanonicalCharacterFile>(absolutePath);
       mutate(file);
-      this.fileStore.writeJson(absolutePath, file);
+      await this.fileStore.asyncWriteJson(absolutePath, file);
     } catch {}
   }
 
-  private updateCharacterFileSource(
+  private async updateCharacterFileSource(
     characterId: string,
     definition: Record<string, unknown>,
-  ): void {
+  ): Promise<void> {
     const row = this.db.queryOne<{ file_path: string | null }>(
       `SELECT file_path FROM characters WHERE id = ?`,
       [characterId],
@@ -695,7 +695,7 @@ export class SqliteCharacterStore {
       const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.characters, fileName);
       const file = this.fileStore.readJson<CanonicalCharacterFile>(absolutePath);
       file.source = definition;
-      this.fileStore.writeJson(absolutePath, file);
+      await this.fileStore.asyncWriteJson(absolutePath, file);
       const fileHash = hashCanonicalJson(file);
       const now = new Date().toISOString();
       this.db.execute(
