@@ -369,7 +369,7 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 @media(max-width:768px){.provider-badge{display:none}}
 
 /* ── D23: WelcomeScreen ── */
-.ws-modal{width:540px!important;max-width:calc(100vw - 32px)}
+.ws-modal{width:540px!important;max-width:calc(100vw - 32px);max-height:calc(100vh - 40px)}
 .ws-head{padding:28px 28px 0;text-align:center}
 .ws-title{font-size:1.35rem;font-weight:700;color:var(--t1);margin-bottom:6px}
 .ws-sub{font-size:.88rem;color:var(--t2);margin-bottom:24px}
@@ -381,7 +381,7 @@ html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(
 .ws-card-icon{font-size:1.4rem;color:var(--accent)}
 .ws-card-title{font-size:.95rem;font-weight:600}
 .ws-card-sub{font-size:.8rem;color:var(--t2)}
-.ws-form{padding:0 28px 28px;display:flex;flex-direction:column;gap:14px}
+.ws-form{padding:0 28px 28px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;flex:1}
 .ws-field{display:flex;flex-direction:column;gap:4px}
 .ws-field-label{font-size:.8rem;font-weight:600;color:var(--t2)}
 .ws-input,.ws-textarea{background:var(--s2);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;color:var(--t1);font-size:.9rem;font-family:inherit;resize:vertical;outline:none;transition:border-color .15s}

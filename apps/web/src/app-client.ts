@@ -547,6 +547,8 @@ export async function createCharacter(input: {
   name: string;
   description?: string;
   firstMessage?: string;
+  scenario?: string;
+  personalitySummary?: string;
 }): Promise<ImportJsonResponse> {
   const response = await requestJson<ImportJsonResponse>("/api/characters", {
     method: "POST",

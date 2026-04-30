@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 
 interface WelcomeScreenProps {
-  onCreateCharacter: (input: { name: string; description?: string; firstMessage?: string }) => Promise<void>;
+  onCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }) => Promise<void>;
   onImportFiles: (files: FileList | File[]) => void;
   onFreeChat: () => Promise<void>;
 }
@@ -11,6 +11,8 @@ export function WelcomeScreen({ onCreateCharacter, onImportFiles, onFreeChat }: 
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [firstMsg, setFirstMsg] = useState('');
+  const [scenario, setScenario] = useState('');
+  const [personalitySummary, setPersonalitySummary] = useState('');
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -24,6 +26,8 @@ export function WelcomeScreen({ onCreateCharacter, onImportFiles, onFreeChat }: 
         name: name.trim(),
         description: desc.trim() || undefined,
         firstMessage: firstMsg.trim() || undefined,
+        scenario: scenario.trim() || undefined,
+        personalitySummary: personalitySummary.trim() || undefined,
       });
     } finally {
       setBusy(false);
@@ -53,7 +57,7 @@ export function WelcomeScreen({ onCreateCharacter, onImportFiles, onFreeChat }: 
             <button className="ws-card" onClick={() => setCreating(true)}>
               <div className="ws-card-icon">✦</div>
               <div className="ws-card-title">Создать персонажа</div>
-              <div className="ws-card-sub">Заполните имя, описание и первое сообщение</div>
+              <div className="ws-card-sub">Заполните имя, описание, первое сообщение и другие поля</div>
             </button>
 
             <button className="ws-card" onClick={() => fileRef.current?.click()}>
@@ -97,6 +101,24 @@ export function WelcomeScreen({ onCreateCharacter, onImportFiles, onFreeChat }: 
                 value={firstMsg}
                 onChange={(e) => setFirstMsg(e.target.value)}
                 rows={3}
+              />
+            </label>
+            <label className="ws-field">
+              <span className="ws-field-label">Сценарий</span>
+              <textarea
+                className="ws-textarea"
+                value={scenario}
+                onChange={(e) => setScenario(e.target.value)}
+                rows={3}
+              />
+            </label>
+            <label className="ws-field">
+              <span className="ws-field-label">Личность</span>
+              <textarea
+                className="ws-textarea"
+                value={personalitySummary}
+                onChange={(e) => setPersonalitySummary(e.target.value)}
+                rows={2}
               />
             </label>
             <div className="ws-form-actions">

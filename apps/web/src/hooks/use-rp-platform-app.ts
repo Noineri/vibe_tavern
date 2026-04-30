@@ -731,7 +731,7 @@ export function useRpPlatformApp() {
     }
   }
 
-  async function handleCreateCharacter(input: { name: string; description?: string; firstMessage?: string }): Promise<void> {
+  async function handleCreateCharacter(input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }): Promise<void> {
     try {
       const result = await createCharacter(input);
       setIsFirstRun(false);
