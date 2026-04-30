@@ -5,11 +5,13 @@ import type {
   LoreEntry,
   MessageId,
   PromptTrace,
+  PromptTraceId,
   RetrievedMemoryHit,
 } from "@rp-platform/domain";
 import type { ChatSessionStore } from "@rp-platform/db";
 import { assemblePrompt } from "@rp-platform/prompt-pipeline";
 import { logSendDebug } from "./send-debug-log.js";
+import { createFileStore, STORAGE_FOLDERS } from "../../../packages/db/src/file-store.js";
 
 export interface PromptAssemblyResolver {
   getCharacter(
@@ -211,6 +213,22 @@ export class PromptAssemblyService {
         latencyMs: 0,
       },
     };
+  }
+
+  exportTraceToFile(traceId: string): string {
+    const trace = this.store.getPromptTrace(traceId as PromptTraceId);
+    if (!trace) {
+      throw new Error(`Prompt trace '${traceId}' was not found.`);
+    }
+    // data/traces/{yyyy-mm-dd}/{promptTraceId}.json
+    const date = trace.createdAt.split("T")[0];
+    const fileStore = createFileStore();
+    const filePath = fileStore.resolvePath(
+      STORAGE_FOLDERS.traces,
+      `${date}/${traceId}.json`,
+    );
+    fileStore.writeJson(filePath, trace);
+    return filePath;
   }
 }
 

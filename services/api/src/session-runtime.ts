@@ -1,4 +1,6 @@
 import type { AssemblePromptResponse, PromptTraceRecordDto, PromptPresetDto } from "@rp-platform/api-contracts";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   type ChatSessionStore,
 } from "@rp-platform/db";
@@ -28,6 +30,7 @@ import {
   importStLorebookJson,
 } from "../../../packages/import-export/src/index.js";
 import { serializeSillyTavernChat } from "../../../packages/import-export/src/chats/st-chat.js";
+import { createFileStore, STORAGE_FOLDERS } from "../../../packages/db/src/file-store.js";
 import {
   activateLoreEntries,
   buildPromptVariableContext,
@@ -183,6 +186,7 @@ export class SessionRuntime {
   private readonly chatOrder: ChatId[] = [];
   private readonly pendingPromptTraceByChat = new Map<ChatId, PendingPromptTraceTurn>();
   private readonly providerModelsCache = new Map<string, CachedProviderModelsRecord>();
+  private readonly fileStore = createFileStore();
 
   constructor(store: ChatSessionStore = createDefaultSessionStore()) {
     this.store = store;
@@ -760,6 +764,76 @@ export class SessionRuntime {
       throw new Error(`Prompt trace '${traceId}' was not found.`);
     }
     return mapPromptTraceRecord(trace);
+  }
+
+  mirrorChatTranscript(chatId: string): string[] {
+    const chat = this.store.getChat(chatId as ChatId);
+    if (!chat) {
+      throw new Error(`Chat '${chatId}' was not found.`);
+    }
+
+    const branches = this.store.listBranches(chat.id);
+    let characterName = "Assistant";
+    try {
+      characterName = this.resolver.getCharacter(chat.characterId).name;
+    } catch {}
+    const persona = this.resolver.getPersona(chat.personaId ?? this.resolveDefaultPersonaId());
+    const userName = persona?.name ?? "User";
+
+    const writtenPaths: string[] = [];
+    for (const branch of branches) {
+      const branchState = this.store.getBranchState(chat.id, branch.id);
+      if (!branchState) continue;
+
+      const jsonl = serializeSillyTavernChat({
+        userName,
+        characterName,
+        messages: branchState.messages.map((message) => {
+          const variants = this.store.listMessageVariants(message.id);
+          const swipes = variants.length > 1
+            ? variants.map((v) => v.content)
+            : undefined;
+          const selectedVariant = variants.find((v) => v.isSelected);
+          const swipeId = selectedVariant?.variantIndex ?? 0;
+          return {
+            name: message.role === "user" ? userName : characterName,
+            isUser: message.role === "user",
+            isSystem: message.role === "system",
+            content: selectedVariant?.content ?? message.content,
+            sendDate: message.createdAt,
+            swipes,
+            swipeId: swipes ? swipeId : undefined,
+          };
+        }),
+      });
+
+      // data/chats/{chatId}/branches/{branchId}.jsonl
+      const filePath = this.fileStore.resolvePath(
+        STORAGE_FOLDERS.chatMirrors,
+        `${chatId}/branches/${branch.id}.jsonl`,
+      );
+      const dir = resolve(filePath, "..");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(filePath, jsonl, "utf-8");
+      writtenPaths.push(filePath);
+    }
+
+    return writtenPaths;
+  }
+
+  mirrorPromptTrace(traceId: string): string {
+    const trace = this.store.getPromptTrace(traceId as import("@rp-platform/domain").PromptTraceId);
+    if (!trace) {
+      throw new Error(`Prompt trace '${traceId}' was not found.`);
+    }
+    // data/traces/{yyyy-mm-dd}/{promptTraceId}.json
+    const date = trace.createdAt.split("T")[0];
+    const filePath = this.fileStore.resolvePath(
+      STORAGE_FOLDERS.traces,
+      `${date}/${traceId}.json`,
+    );
+    this.fileStore.writeJson(filePath, trace);
+    return filePath;
   }
 
   listProviderProfiles(): ClientProviderProfileRecord[] {
