@@ -20,15 +20,12 @@ import type {
   PromptPresetId,
   PromptTrace,
   RetrievedMemoryHit,
-  Lorebook,
   ToolProfile,
 } from "@rp-platform/domain";
 import { createFileStore } from "../../../packages/db/src/file-store.js";
 import {
-  activateLoreEntries,
   buildPromptVariableContext,
   createPhaseOneMacroEngine,
-  type ActivatableLoreEntry,
 } from "@rp-platform/prompt-pipeline";
 import { ChatApplicationService } from "./chat-application-service.js";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "./prompt-assembly-service.js";
@@ -50,6 +47,8 @@ import {
 import { createDefaultSessionStore } from "./session-runtime-store.js";
 import * as providerModule from "./session-runtime-provider.js";
 import * as importExportModule from "./session-runtime-import-export.js";
+import * as lorebookModule from "./session-runtime-lorebook.js";
+import * as presetModule from "./session-runtime-presets.js";
 
 import type { MessageDto } from "./session-runtime-dto.js";
 
@@ -197,6 +196,14 @@ export class SessionRuntime {
       getSnapshot: (chatId) => this.getSnapshot(chatId),
       seedImportedOpening: (chatId, firstMessage) => this.seedImportedOpening(chatId, firstMessage),
     };
+  }
+
+  private get lorebookDeps(): lorebookModule.LorebookModuleDeps {
+    return { store: this.store };
+  }
+
+  private get presetDeps(): presetModule.PresetModuleDeps {
+    return { store: this.store };
   }
 
   constructor(store: ChatSessionStore = createDefaultSessionStore()) {
@@ -754,32 +761,15 @@ export class SessionRuntime {
   }
 
   createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
-    let resolvedLorebookId = lorebookId;
-    const existing = this.store.listLoreEntriesForCharacter(lorebookId);
-    if (existing.length > 0 && existing[0].lorebookId) {
-      resolvedLorebookId = existing[0].lorebookId;
-    } else {
-      const lorebook: Lorebook = {
-        id: `${ENTITY_ID_NAMESPACE.lorebook}_${Date.now()}`,
-        name: `${lorebookId} lorebook`,
-        scopeType: "character",
-        description: "",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      this.store.upsertLorebook(lorebook);
-      this.store.linkCharacterLorebook(lorebookId, lorebook.id);
-      resolvedLorebookId = lorebook.id;
-    }
-    return this.store.createLoreEntry(resolvedLorebookId, input);
+    return lorebookModule.createLoreEntry(this.lorebookDeps, lorebookId, input);
   }
 
   updateLoreEntry(lorebookId: string, entryId: string, input: Partial<Omit<LoreEntry, "id" | "lorebookId">>): LoreEntry {
-    return this.store.updateLoreEntry(entryId, input);
+    return lorebookModule.updateLoreEntry(this.lorebookDeps, lorebookId, entryId, input);
   }
 
   deleteLoreEntry(lorebookId: string, entryId: string): void {
-    this.store.deleteLoreEntry(entryId);
+    lorebookModule.deleteLoreEntry(this.lorebookDeps, lorebookId, entryId);
   }
 
   getProviderProfile(id: string): StoredProviderProfileRecord | null {
@@ -961,32 +951,14 @@ export class SessionRuntime {
   }
 
   listLoreEntries(lorebookId: string): LoreEntry[] {
-    return this.store.listLoreEntriesForCharacter(lorebookId);
+    return lorebookModule.listLoreEntries(this.lorebookDeps, lorebookId);
   }
 
   testLoreActivation(
     lorebookId: string,
     text: string,
   ): { activatedIds: string[]; totalEntries: number } {
-    const entries = this.listLoreEntries(lorebookId);
-    const activatable: ActivatableLoreEntry[] = entries.map((entry) => ({
-      id: entry.id,
-      title: entry.title,
-      content: entry.content,
-      keys: entry.keys,
-      secondaryKeys: entry.secondaryKeys,
-      logic: entry.logic,
-      position: entry.position,
-      priority: entry.priority,
-      enabled: entry.enabled,
-    }));
-    const activated = activateLoreEntries(activatable, {
-      recentMessagesText: text,
-    });
-    return {
-      activatedIds: activated.map((entry) => entry.id),
-      totalEntries: entries.length,
-    };
+    return lorebookModule.testLoreActivation(this.lorebookDeps, lorebookId, text);
   }
 
   importJson(input: {
@@ -998,17 +970,7 @@ export class SessionRuntime {
   }
 
   listPromptPresets(): PromptPresetDto[] {
-    return this.store.listPromptPresets().map((p) => ({
-      id: p.id,
-      name: p.name,
-      bindModel: p.bindModel,
-      system: p.system,
-      jailbreak: p.jailbreak,
-      summary: p.summary,
-      tools: p.tools,
-      createdAt: p.createdAt,
-      updatedAt: p.updatedAt,
-    }));
+    return presetModule.listPromptPresets(this.presetDeps) as PromptPresetDto[];
   }
 
   createPromptPreset(input: {
@@ -1019,19 +981,7 @@ export class SessionRuntime {
     summary?: string;
     tools?: string;
   }): PromptPresetDto {
-    const trimmed = (input.name ?? "").trim();
-    if (!trimmed) {
-      throw new Error("Preset name is required.");
-    }
-    const created = this.store.createPromptPreset({
-      name: trimmed,
-      bindModel: input.bindModel ?? "",
-      system: input.system ?? "",
-      jailbreak: input.jailbreak ?? "",
-      summary: input.summary ?? "",
-      tools: input.tools ?? "",
-    });
-    return { ...created };
+    return presetModule.createPromptPreset(this.presetDeps, input) as PromptPresetDto;
   }
 
   updatePromptPreset(presetId: string, patch: {
@@ -1042,15 +992,11 @@ export class SessionRuntime {
     summary?: string;
     tools?: string;
   }): PromptPresetDto {
-    const next = this.store.updatePromptPreset(
-      presetId as import("@rp-platform/domain").PromptPresetId,
-      patch,
-    );
-    return { ...next };
+    return presetModule.updatePromptPreset(this.presetDeps, presetId, patch) as PromptPresetDto;
   }
 
   deletePromptPreset(presetId: string): void {
-    this.store.deletePromptPreset(presetId as import("@rp-platform/domain").PromptPresetId);
+    presetModule.deletePromptPreset(this.presetDeps, presetId);
   }
 
   private seed(): void {
