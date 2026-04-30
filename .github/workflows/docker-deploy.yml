@@ -22,7 +22,7 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    
+
     permissions:
       contents: read
       packages: write
@@ -30,6 +30,22 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check if version changed (new release)
+        id: version-check
+        run: |
+          CURRENT_VERSION=$(jq -r '.version' package.json)
+          PREVIOUS_VERSION=$(git show HEAD~1:package.json 2>/dev/null | jq -r '.version' || echo "")
+
+          echo "version=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
+
+          if [ -n "${PREVIOUS_VERSION}" ] && [ "${CURRENT_VERSION}" != "${PREVIOUS_VERSION}" ]; then
+            echo "is_new_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_new_release=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -47,8 +63,12 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
+            # Regular push (no version change): dev + dev-<short-sha>
+            type=sha,prefix=dev-,format=short,enable=${{ steps.version-check.outputs.is_new_release == 'false' }}
+            type=raw,value=dev,enable=${{ steps.version-check.outputs.is_new_release == 'false' }}
+            # New version detected: latest + version tag (e.g. 0.2.0)
+            type=semver,pattern={{version}},value=${{ steps.version-check.outputs.version }},enable=${{ steps.version-check.outputs.is_new_release == 'true' }}
+            type=raw,value=latest,enable=${{ steps.version-check.outputs.is_new_release == 'true' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
