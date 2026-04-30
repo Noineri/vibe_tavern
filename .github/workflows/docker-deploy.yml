@@ -31,19 +31,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 2
 
       - name: Check if version changed (new release)
         id: version-check
         run: |
-          VERSION=$(jq -r '.version' package.json)
-          TAG="v${VERSION}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          CURRENT_VERSION=$(jq -r '.version' package.json)
+          PREVIOUS_VERSION=$(git show HEAD~1:package.json 2>/dev/null | jq -r '.version' || echo "")
 
-          if git rev-parse "${TAG}" >/dev/null 2>&1; then
-            echo "is_new_release=false" >> "$GITHUB_OUTPUT"
-          else
+          echo "version=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
+
+          if [ -n "${PREVIOUS_VERSION}" ] && [ "${CURRENT_VERSION}" != "${PREVIOUS_VERSION}" ]; then
             echo "is_new_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_new_release=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up Docker Buildx
