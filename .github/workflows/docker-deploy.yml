@@ -63,9 +63,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # Every push: dev + dev-<short-sha>
-            type=sha,prefix=dev-,format=short
-            type=raw,value=dev
+            # Regular push (no version change): dev + dev-<short-sha>
+            type=sha,prefix=dev-,format=short,enable=${{ steps.version-check.outputs.is_new_release == 'false' }}
+            type=raw,value=dev,enable=${{ steps.version-check.outputs.is_new_release == 'false' }}
             # New version detected: latest + version tag (e.g. 0.2.0)
             type=semver,pattern={{version}},value=${{ steps.version-check.outputs.version }},enable=${{ steps.version-check.outputs.is_new_release == 'true' }}
             type=raw,value=latest,enable=${{ steps.version-check.outputs.is_new_release == 'true' }}
