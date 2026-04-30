@@ -16,7 +16,6 @@ import type {
   LoreEntry,
   Message,
   MessageId,
-  Persona,
   PromptPresetId,
   PromptTrace,
   RetrievedMemoryHit,
