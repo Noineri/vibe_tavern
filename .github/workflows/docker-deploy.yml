@@ -14,9 +14,6 @@ on:
       - 'apps/**'
       - 'packages/**'
       - '.github/workflows/docker-deploy.yml'
-  release:
-    types:
-      - published
 
 env:
   REGISTRY: ghcr.io
@@ -33,6 +30,21 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if version changed (new release)
+        id: version-check
+        run: |
+          VERSION=$(jq -r '.version' package.json)
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "is_new_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_new_release=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -50,12 +62,12 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # Push to main: dev + dev-<short-sha>
-            type=sha,prefix=dev-,format=short,enable=${{ github.event_name == 'push' }}
-            type=raw,value=dev,enable=${{ github.event_name == 'push' }}
-            # Release published: latest + version tag (e.g. 0.2.0)
-            type=semver,pattern={{version}},value=${{ github.event.release.tag_name }},enable=${{ github.event_name == 'release' }}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            # Every push: dev + dev-<short-sha>
+            type=sha,prefix=dev-,format=short
+            type=raw,value=dev
+            # New version detected: latest + version tag (e.g. 0.2.0)
+            type=semver,pattern={{version}},value=${{ steps.version-check.outputs.version }},enable=${{ steps.version-check.outputs.is_new_release == 'true' }}
+            type=raw,value=latest,enable=${{ steps.version-check.outputs.is_new_release == 'true' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
