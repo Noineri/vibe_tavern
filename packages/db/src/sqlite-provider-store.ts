@@ -10,6 +10,62 @@ import type { PromptPresetRow } from "./sqlite-chat-session-mappers.js";
 import { mapPromptPreset } from "./sqlite-chat-session-mappers.js";
 import type { SqliteDatabaseAdapter, SqliteRow } from "./sqlite-adapter.js";
 import type { StoreClock, StoreIdGenerator } from "./persistence.js";
+import {
+  type FileStore,
+  createFileStore,
+  STORAGE_FOLDERS,
+  hashCanonicalJson,
+} from "./file-store.js";
+
+const PROMPT_PRESET_FILE_SCHEMA_VERSION = 1;
+
+type CanonicalPromptPresetFile = {
+  schemaVersion: typeof PROMPT_PRESET_FILE_SCHEMA_VERSION;
+  id: string;
+  name: string;
+  bindModel: string;
+  system: string;
+  jailbreak: string;
+  summary: string;
+  tools: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function presetToCanonicalFile(preset: PromptPreset): CanonicalPromptPresetFile {
+  return {
+    schemaVersion: PROMPT_PRESET_FILE_SCHEMA_VERSION,
+    id: preset.id,
+    name: preset.name,
+    bindModel: preset.bindModel,
+    system: preset.system,
+    jailbreak: preset.jailbreak,
+    summary: preset.summary,
+    tools: preset.tools,
+    createdAt: preset.createdAt,
+    updatedAt: preset.updatedAt,
+  };
+}
+
+function canonicalFileToPreset(file: CanonicalPromptPresetFile): PromptPreset {
+  return {
+    id: file.id as PromptPresetId,
+    name: file.name,
+    bindModel: file.bindModel,
+    system: file.system,
+    jailbreak: file.jailbreak,
+    summary: file.summary,
+    tools: file.tools,
+    createdAt: file.createdAt,
+    updatedAt: file.updatedAt,
+  };
+}
+
+function presetSlug(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-zа-яё0-9\-]/gi, "") || "preset";
+}
+
+const PRESETS_PATH_SEGMENT = "promptPresets/";
 
 type GenerationPresetId = string;
 type GenerationPreset = {
@@ -20,11 +76,16 @@ type GenerationPreset = {
 };
 
 export class SqliteProviderStore {
+  private readonly fileStore: FileStore;
+
   constructor(
     private readonly db: SqliteDatabaseAdapter,
     private readonly clock: StoreClock,
     private readonly idGenerator: StoreIdGenerator,
-  ) {}
+    fileStore?: FileStore,
+  ) {
+    this.fileStore = fileStore ?? createFileStore();
+  }
 
   upsertGenerationPreset(input: GenerationPreset): void {
     this.db.execute(
@@ -235,32 +296,55 @@ export class SqliteProviderStore {
   listPromptPresets(): PromptPreset[] {
     return this.db
       .queryAll<PromptPresetRow>(
-        `SELECT id, name, bind_model, system, jailbreak, summary, tools, created_at, updated_at
+        `SELECT id, name, bind_model, system, jailbreak, summary, tools, created_at, updated_at,
+                file_path, file_hash, sync_status
          FROM prompt_presets
          ORDER BY name ASC`,
       )
-      .map(mapPromptPreset);
+      .map((row) => this.resolvePromptPreset(row));
   }
 
   getPromptPreset(presetId: PromptPresetId): PromptPreset | null {
     const row = this.db.queryOne<PromptPresetRow>(
-      `SELECT id, name, bind_model, system, jailbreak, summary, tools, created_at, updated_at
+      `SELECT id, name, bind_model, system, jailbreak, summary, tools, created_at, updated_at,
+              file_path, file_hash, sync_status
        FROM prompt_presets WHERE id = ?`,
       [presetId],
     );
-    return row ? mapPromptPreset(row) : null;
+    return row ? this.resolvePromptPreset(row) : null;
   }
 
   createPromptPreset(input: { name: string; bindModel: string; system: string; jailbreak: string; summary: string; tools: string }): PromptPreset {
     return this.db.transaction(() => {
       const timestamp = this.clock.now();
       const id = this.idGenerator.next(ENTITY_ID_NAMESPACE.promptPreset) as PromptPresetId;
+      const preset: PromptPreset = { id, ...input, createdAt: timestamp, updatedAt: timestamp };
+
+      const canonicalFile = presetToCanonicalFile(preset);
+      const slug = presetSlug(input.name);
+      const relativeFileName = `${slug}.json`;
+      const now = new Date().toISOString();
+
+      let filePath: string | null = null;
+      let fileHash: string | null = null;
+      let syncStatus = "db_dirty";
+
+      try {
+        const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.promptPresets, relativeFileName);
+        fileHash = hashCanonicalJson(canonicalFile);
+        this.fileStore.writeJson(absolutePath, canonicalFile);
+        filePath = `${PRESETS_PATH_SEGMENT}${relativeFileName}`;
+        syncStatus = "synced";
+      } catch {}
+
       this.db.execute(
-        `INSERT INTO prompt_presets (id, name, bind_model, system, jailbreak, summary, tools, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, input.name, input.bindModel, input.system, input.jailbreak, input.summary, input.tools, timestamp, timestamp],
+        `INSERT INTO prompt_presets (id, name, bind_model, system, jailbreak, summary, tools, created_at, updated_at,
+          file_path, file_hash, file_mtime, sync_status, last_synced_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, input.name, input.bindModel, input.system, input.jailbreak, input.summary, input.tools, timestamp, timestamp,
+         filePath, fileHash, now, syncStatus, now],
       );
-      return { id, ...input, createdAt: timestamp, updatedAt: timestamp };
+      return preset;
     });
   }
 
@@ -272,9 +356,29 @@ export class SqliteProviderStore {
       }
       const next = { ...current, ...patch };
       const timestamp = this.clock.now();
+
+      const canonicalFile = presetToCanonicalFile(next);
+      const slug = presetSlug(next.name);
+      const relativeFileName = `${slug}.json`;
+      const now = new Date().toISOString();
+
+      let filePath: string | null = null;
+      let fileHash: string | null = null;
+      let syncStatus = "db_dirty";
+
+      try {
+        const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.promptPresets, relativeFileName);
+        fileHash = hashCanonicalJson(canonicalFile);
+        this.fileStore.writeJson(absolutePath, canonicalFile);
+        filePath = `${PRESETS_PATH_SEGMENT}${relativeFileName}`;
+        syncStatus = "synced";
+      } catch {}
+
       this.db.execute(
-        `UPDATE prompt_presets SET name = ?, bind_model = ?, system = ?, jailbreak = ?, summary = ?, tools = ?, updated_at = ? WHERE id = ?`,
-        [next.name, next.bindModel, next.system, next.jailbreak, next.summary, next.tools, timestamp, presetId],
+        `UPDATE prompt_presets SET name = ?, bind_model = ?, system = ?, jailbreak = ?, summary = ?, tools = ?, updated_at = ?,
+          file_path = ?, file_hash = ?, file_mtime = ?, sync_status = ?, last_synced_at = ? WHERE id = ?`,
+        [next.name, next.bindModel, next.system, next.jailbreak, next.summary, next.tools, timestamp,
+         filePath, fileHash, now, syncStatus, now, presetId],
       );
       return { ...next, updatedAt: timestamp };
     });
@@ -295,5 +399,42 @@ export class SqliteProviderStore {
       }
       this.db.execute(`DELETE FROM prompt_presets WHERE id = ?`, [presetId]);
     });
+  }
+
+  private resolvePromptPreset(row: PromptPresetRow): PromptPreset {
+    if (row.file_path) {
+      const fromFile = this.readPresetFromFile(row.id, row.file_path);
+      if (fromFile) return fromFile;
+    }
+    return mapPromptPreset(row);
+  }
+
+  private readPresetFromFile(presetId: string, filePath: string): PromptPreset | null {
+    try {
+      const fileName = filePath.slice(PRESETS_PATH_SEGMENT.length);
+      const absolutePath = this.fileStore.resolvePath(STORAGE_FOLDERS.promptPresets, fileName);
+      const file = this.fileStore.readJson<CanonicalPromptPresetFile>(absolutePath);
+      if (
+        file &&
+        typeof file.schemaVersion === "number" &&
+        file.schemaVersion === PROMPT_PRESET_FILE_SCHEMA_VERSION &&
+        file.id === presetId
+      ) {
+        return canonicalFileToPreset(file);
+      }
+      this.tryMarkSyncStatus(presetId, "malformed");
+    } catch {
+      this.tryMarkSyncStatus(presetId, "missing_file");
+    }
+    return null;
+  }
+
+  private tryMarkSyncStatus(presetId: string, syncStatus: string): void {
+    try {
+      this.db.execute(
+        `UPDATE prompt_presets SET sync_status = ? WHERE id = ?`,
+        [syncStatus, presetId],
+      );
+    } catch {}
   }
 }
