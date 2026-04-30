@@ -1,0 +1,60 @@
+name: Create Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'package.json'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from package.json
+        id: pkg-version
+        run: |
+          VERSION=$(jq -r '.version' package.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag already exists
+        id: check-tag
+        run: |
+          if git rev-parse "${{ steps.pkg-version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create source archive
+        if: steps.check-tag.outputs.exists == 'false'
+        run: |
+          REPO_NAME=$(basename "${{ github.repository }}")
+          ARCHIVE_NAME="${REPO_NAME}-${{ steps.pkg-version.outputs.version }}.zip"
+          git archive --format=zip --prefix="${REPO_NAME}/" HEAD -o "${ARCHIVE_NAME}"
+          echo "archive_name=${ARCHIVE_NAME}" >> "$GITHUB_OUTPUT"
+        id: archive
+
+      - name: Create GitHub Release
+        if: steps.check-tag.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.pkg-version.outputs.tag }}
+          name: ${{ steps.pkg-version.outputs.tag }}
+          body: ''
+          draft: false
+          prerelease: false
+          files: ${{ steps.archive.outputs.archive_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
