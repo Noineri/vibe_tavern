@@ -42,7 +42,14 @@ jobs:
         run: |
           REPO_NAME=$(basename "${{ github.repository }}")
           ARCHIVE_NAME="${REPO_NAME}-${{ steps.pkg-version.outputs.version }}.zip"
+
           git archive --format=zip --prefix="${REPO_NAME}/" HEAD -o "${ARCHIVE_NAME}"
+
+          zip -d "${ARCHIVE_NAME}" \
+            "${REPO_NAME}/.gitignore" \
+            "${REPO_NAME}/.github/*" \
+            "${REPO_NAME}/.github/"
+
           echo "archive_name=${ARCHIVE_NAME}" >> "$GITHUB_OUTPUT"
         id: archive
 
