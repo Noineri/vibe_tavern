@@ -11,7 +11,7 @@ import type {
 import type { ChatSessionStore } from "@rp-platform/db";
 import { assemblePrompt } from "@rp-platform/prompt-pipeline";
 import { logSendDebug } from "./send-debug-log.js";
-import { createFileStore, STORAGE_FOLDERS } from "../../../packages/db/src/file-store.js";
+import { createFileStore, STORAGE_FOLDERS } from "@rp-platform/db";
 
 export interface PromptAssemblyResolver {
   getCharacter(
