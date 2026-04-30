@@ -167,7 +167,7 @@ CREATE TABLE IF NOT EXISTS prompt_presets (
 CREATE TABLE IF NOT EXISTS chats (
   id TEXT PRIMARY KEY,
   character_id TEXT NOT NULL,
-  persona_id TEXT NOT NULL,
+  persona_id TEXT,
   title TEXT NOT NULL,
   status TEXT NOT NULL,
   active_branch_id TEXT NOT NULL,
@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS chats (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY(character_id) REFERENCES characters(id) ON DELETE CASCADE,
-  FOREIGN KEY(persona_id) REFERENCES personas(id) ON DELETE CASCADE,
+  FOREIGN KEY(persona_id) REFERENCES personas(id) ON DELETE SET NULL,
   FOREIGN KEY(prompt_preset_id) REFERENCES prompt_presets(id),
   FOREIGN KEY(tool_profile_id) REFERENCES tool_profiles(id)
 );

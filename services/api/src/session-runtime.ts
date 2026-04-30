@@ -206,7 +206,7 @@ export class SessionRuntime {
     const { chat, branchState } = this.chatApp.getChatState(chatId);
     const branches = this.store.listBranches(chat.id);
     const character = this.resolver.getCharacter(chat.characterId);
-    const persona = this.resolver.getPersona(chat.personaId);
+    const persona = this.resolver.getPersona(chat.personaId ?? this.resolveDefaultPersonaId());
     const promptTraceHistory = this.getPromptTraceHistory(chat.id, branchState.branch.id);
 
     return {
@@ -727,7 +727,7 @@ export class SessionRuntime {
     try {
       characterName = this.resolver.getCharacter(chat.characterId).name;
     } catch {}
-    const persona = this.resolver.getPersona(chat.personaId);
+    const persona = this.resolver.getPersona(chat.personaId ?? this.resolveDefaultPersonaId());
     const userName = persona?.name ?? "User";
 
     return serializeSillyTavernChat({
@@ -1253,7 +1253,7 @@ export class SessionRuntime {
       throw new Error(`Chat '${chatId}' was not found.`);
     }
     const character = this.resolver.getCharacter(chat.characterId);
-    const persona = this.resolver.getPersona(chat.personaId);
+    const persona = this.resolver.getPersona(chat.personaId ?? this.resolveDefaultPersonaId());
     const latestVersion = this.store.getLatestCharacterVersion(chat.characterId);
     return buildPromptVariableContext({
       character: {

@@ -120,7 +120,7 @@ export interface LoreEntry {
 export interface Chat {
   id: ChatId;
   characterId: CharacterId;
-  personaId: PersonaId;
+  personaId: PersonaId | null;
   title: string;
   status: ChatStatus;
   activeBranchId: ChatBranchId;
