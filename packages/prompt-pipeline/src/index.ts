@@ -1,7 +1,4 @@
-export * from "./assemble.js";
-export * from "./lore-activation.js";
-export * from "./types.js";
-export * from "./macro-registry.js";
-export * from "./prompt-variable-context.js";
-export * from "./compaction.js";
-export * from "./prompt-layer-constants.js";
+export { assemblePrompt } from "./assemble.js";
+export { activateLoreEntries, type ActivatableLoreEntry } from "./lore-activation.js";
+export { createPhaseOneMacroEngine } from "./macro-registry.js";
+export { buildPromptVariableContext } from "./prompt-variable-context.js";
