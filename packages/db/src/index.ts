@@ -1,9 +1,10 @@
-export * from "./chat-session-store.js";
-export * from "./file-store.js";
-export * from "./migrations.js";
-export * from "./bun-sqlite-adapter.js";
-export * from "./persistence.js";
-export * from "./schema.js";
-export * from "./sqlite-adapter.js";
-export * from "./sqlite-chat-session-store.js";
-export * from "./sqlite-migrator.js";
+export {
+  type ChatSessionStore,
+  type ChatBranchState,
+  InMemoryChatSessionStore,
+} from "./chat-session-store.js";
+export { BunSqliteDatabaseAdapter } from "./bun-sqlite-adapter.js";
+export { SqliteChatSessionStore } from "./sqlite-chat-session-store.js";
+export { applySqliteMigrations } from "./sqlite-migrator.js";
+export { getLatestMigrationVersion } from "./migrations.js";
+export { createFileStore, STORAGE_FOLDERS } from "./file-store.js";
