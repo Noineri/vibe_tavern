@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS lore_entries (
   cooldown_window INTEGER NOT NULL DEFAULT 0,
   delay_window INTEGER NOT NULL DEFAULT 0,
   enabled INTEGER NOT NULL DEFAULT 1,
-  metadata_json TEXT NOT NULL,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
   FOREIGN KEY(lorebook_id) REFERENCES lorebooks(id) ON DELETE CASCADE
 );
 
@@ -194,38 +194,9 @@ CREATE TABLE IF NOT EXISTS chat_branches (
   forked_from_message_id TEXT,
   label TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
+  FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE,
+  FOREIGN KEY(parent_branch_id) REFERENCES chat_branches(id)
 );
-
-CREATE TABLE IF NOT EXISTS provider_profiles (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  type TEXT NOT NULL,
-  endpoint TEXT NOT NULL,
-  api_key TEXT,
-  default_model TEXT,
-  context_budget INTEGER NOT NULL DEFAULT 8192,
-  is_active INTEGER NOT NULL DEFAULT 0,
-  temperature REAL NOT NULL DEFAULT 0.9,
-  top_p REAL NOT NULL DEFAULT 1.0,
-  min_p REAL NOT NULL DEFAULT 0.05,
-  top_k INTEGER NOT NULL DEFAULT 40,
-  typical_p REAL NOT NULL DEFAULT 1.0,
-  rep_pen REAL NOT NULL DEFAULT 1.1,
-  freq_pen REAL NOT NULL DEFAULT 0.0,
-  pres_pen REAL NOT NULL DEFAULT 0.0,
-  max_tokens INTEGER NOT NULL DEFAULT 8192,
-  stop_seq TEXT NOT NULL DEFAULT '',
-  seed TEXT DEFAULT NULL,
-  reasoning_effort TEXT NOT NULL DEFAULT 'medium',
-  stream_response INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_profiles_active
-  ON provider_profiles(is_active)
-  WHERE is_active = 1;
 
 CREATE INDEX IF NOT EXISTS idx_chat_branches_chat_id
 ON chat_branches(chat_id);

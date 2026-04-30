@@ -16,12 +16,13 @@ import type {
   LoreEntry,
   Message,
   MessageId,
+  PersonaId,
   PromptPresetId,
   PromptTrace,
   RetrievedMemoryHit,
   ToolProfile,
 } from "@rp-platform/domain";
-import { createFileStore } from "../../../packages/db/src/file-store.js";
+import { createFileStore } from "@rp-platform/db";
 import {
   buildPromptVariableContext,
   createPhaseOneMacroEngine,
@@ -1068,8 +1069,18 @@ export class SessionRuntime {
     return phaseOneMacroEngine.resolve(text, this.resolvePromptVariableContext(chatId));
   }
 
-  private resolveDefaultPersonaId(): import("@rp-platform/domain").PersonaId {
-    const personas = this.store.listPersonas();
+  private resolveDefaultPersonaId(): PersonaId {
+    let personas = this.store.listPersonas();
+    if (personas.length === 0) {
+      const created = this.store.createPersona({
+        name: "User",
+        description: "",
+        pronouns: null,
+        defaultForNewChats: true,
+      });
+      return created.id;
+    }
+
     const defaultPersona = personas.find((persona) => persona.defaultForNewChats) ?? personas[0];
     if (!defaultPersona) {
       throw new Error("No persona is available for new chats.");
@@ -1087,19 +1098,7 @@ export class SessionRuntime {
   }
 
   private ensureDefaultReferences(): void {
-    const defaultPersonaId = SYSTEM_RESOURCE_ID.defaultPersonaExplorer as import("@rp-platform/domain").PersonaId;
-    if (!this.store.getPersona(defaultPersonaId)) {
-      this.store.upsertPersona({
-        id: defaultPersonaId,
-        name: "Explorer",
-        description: "Curious, observant, and willing to follow the scene deeper instead of trying to dominate it.",
-        pronouns: null,
-        avatarAssetId: null,
-        defaultForNewChats: true,
-        createdAt: "2026-04-22T00:00:00.000Z",
-        updatedAt: "2026-04-22T00:00:00.000Z",
-      });
-    }
+    this.resolveDefaultPersonaId();
 
     if (!this.store.getToolProfile(this.defaultToolProfile.id)) {
       this.store.upsertToolProfile(this.defaultToolProfile);

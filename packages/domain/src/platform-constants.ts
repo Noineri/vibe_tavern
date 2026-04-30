@@ -23,7 +23,6 @@ export type EntityIdNamespace = typeof ENTITY_ID_NAMESPACE[keyof typeof ENTITY_I
 
 export const SYSTEM_RESOURCE_ID = {
   toolsDisabled: "tools_disabled",
-  defaultPersonaExplorer: "persona_explorer",
   unresolvedModel: "unresolved_model",
   activeToolProfile: "active_tool_profile",
   preflight: "preflight",

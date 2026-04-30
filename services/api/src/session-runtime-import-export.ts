@@ -13,7 +13,7 @@ import {
   importStLorebookJson,
 } from "../../../packages/import-export/src/index.js";
 import { serializeSillyTavernChat } from "../../../packages/import-export/src/chats/st-chat.js";
-import { createFileStore, STORAGE_FOLDERS } from "../../../packages/db/src/file-store.js";
+import { createFileStore, STORAGE_FOLDERS } from "@rp-platform/db";
 import {
   mapPromptTraceRecord,
 } from "./session-runtime-dto.js";
