@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ChatId, ChatBranchId, ChatBranch } from "@rp-platform/domain";
-import type { AppSnapshot, ChatListItem } from "../app-client.js";
+import type { ChatListItem } from "../app-client.js";
 import type { CharacterTab } from "./app-shell-types.js";
 import { initials } from "./app-shell-helpers.js";
 import { Icons } from "./shared/icons.js";
