@@ -1,9 +1,10 @@
 import { useState, useCallback } from "react";
+import type { ChatId } from "@rp-platform/domain";
 import { importJson } from "../app-client.js";
 import { extractPngMetadata, parseCharacterMetadata } from "../lib/png-reader.js";
 
 export interface CharacterImportOptions {
-  chatId?: string;
+  chatId?: ChatId;
 }
 
 export function useCharacterImport() {
