@@ -26,6 +26,7 @@ import { useCharacterImport } from "./use-character-import.js";
 import { useProviderProfiles } from "./use-provider-profiles.js";
 import { useChatController } from "./use-chat-controller.js";
 import { useCharacterController } from "./use-character-controller.js";
+import { useChatStore } from "../stores/index.js";
 
 function replaceUiMacros(
   text: string,
@@ -83,28 +84,31 @@ function createInitialConnectionState(): ConnectionState {
 }
 
 export function useRpPlatformApp() {
-  const [activeChatId, setActiveChatId] = useState<ChatId | null>(null);
-  const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
-  const [draft, setDraft] = useState("");
+  const activeChatId = useChatStore((s) => s.activeChatId);
+  const snapshot = useChatStore((s) => s.snapshot);
+  const draft = useChatStore((s) => s.draft);
+  const isSending = useChatStore((s) => s.isSending);
+  const selectedTraceId = useChatStore((s) => s.selectedTraceId);
+  const editingMessageId = useChatStore((s) => s.editingMessageId);
+  const editingDraft = useChatStore((s) => s.editingDraft);
+  const messageActionId = useChatStore((s) => s.messageActionId);
+  const pendingUserMessageContent = useChatStore((s) => s.pendingUserMessageContent);
+  const chatNotice = useChatStore((s) => s.chatNotice);
+  const setDraft = useChatStore((s) => s.setDraft);
+  const setEditingDraft = useChatStore((s) => s.setEditingDraft);
+  const setSelectedTraceId = useChatStore((s) => s.setSelectedTraceId);
   const [mode, setMode] = useState<AppMode>("play");
   const [theme, setTheme] = useState<ThemeMode>(() => readSavedTheme());
   const [buildTab, setBuildTab] = useState<BuildTab>("character");
-  const [isSending, setIsSending] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [isProviderModalOpen, setIsProviderModalOpen] = useState(false);
   const [isPromptManagerOpen, setPromptManagerOpen] = useState(false);
   const [isPersonaModalOpen, setPersonaModalOpen] = useState(false);
   const [connection, setConnection] = useState<ConnectionState>(() => createInitialConnectionState());
   const [isImportDragActive, setIsImportDragActive] = useState(false);
   const [importNotice, setImportNotice] = useState("");
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const [editingDraft, setEditingDraft] = useState("");
-  const [messageActionId, setMessageActionId] = useState<string | null>(null);
-  const [pendingUserMessageContent, setPendingUserMessageContent] = useState<string | null>(null);
-  const [chatNotice, setChatNotice] = useState("");
   const [isFirstRun, setIsFirstRun] = useState(false);
   const [confirmDestroy, setConfirmDestroy] = useState<{
     title: string;
@@ -149,7 +153,7 @@ export function useRpPlatformApp() {
     connection,
     patchConnection,
     setConnection,
-    setChatNotice,
+    setChatNotice: useChatStore.getState().setChatNotice,
   });
 
   // --- Character/chat tabs ---
@@ -211,7 +215,7 @@ export function useRpPlatformApp() {
 
     const stillExists = snapshot.messages.some((message) => message.id === editingMessageId);
     if (!stillExists) {
-      setEditingMessageId(null);
+      useChatStore.getState().setEditingMessageId(null);
       setEditingDraft("");
     }
   }, [editingMessageId, snapshot]);
@@ -221,7 +225,7 @@ export function useRpPlatformApp() {
   }, [snapshot?.character.id]);
 
   useEffect(() => {
-    setChatNotice("");
+    useChatStore.getState().setChatNotice("");
   }, [activeChatId]);
 
   useEffect(() => {
@@ -237,34 +241,33 @@ export function useRpPlatformApp() {
   // --- Controllers ---
 
   function snapshotRefresh(chatId: ChatId, next: AppSnapshot): void {
-    setActiveChatId(chatId);
-    setSnapshot(next);
+    useChatStore.getState().setSnapshotForChat(chatId, next);
   }
 
   const chat = useChatController({
-    getActiveChatId: () => activeChatId,
-    getSnapshot: () => snapshot,
-    getDraft: () => draft,
-    getIsSending: () => isSending,
+    getActiveChatId: () => useChatStore.getState().activeChatId,
+    getSnapshot: () => useChatStore.getState().snapshot,
+    getDraft: () => useChatStore.getState().draft,
+    getIsSending: () => useChatStore.getState().isSending,
     getCanSendViaActiveProfile: () => provider.canSendViaActiveProfile,
-    getEditingDraft: () => editingDraft,
-    getEditingMessageId: () => editingMessageId,
-    setSnapshot: snapshotRefresh,
-    setDraft,
-    setIsSending,
-    setChatNotice,
-    setPendingUserMessageContent,
-    setMessageActionId,
-    setEditingMessageId,
-    setEditingDraft,
-    setSelectedTraceId,
+    getEditingDraft: () => useChatStore.getState().editingDraft,
+    getEditingMessageId: () => useChatStore.getState().editingMessageId,
+    setSnapshot: (chatId, next) => useChatStore.getState().setSnapshotForChat(chatId, next),
+    setDraft: useChatStore.getState().setDraft,
+    setIsSending: useChatStore.getState().setIsSending,
+    setChatNotice: useChatStore.getState().setChatNotice,
+    setPendingUserMessageContent: useChatStore.getState().setPendingUserMessageContent,
+    setMessageActionId: useChatStore.getState().setMessageActionId,
+    setEditingMessageId: useChatStore.getState().setEditingMessageId,
+    setEditingDraft: useChatStore.getState().setEditingDraft,
+    setSelectedTraceId: useChatStore.getState().setSelectedTraceId,
   });
 
   const character = useCharacterController({
-    getActiveChatId: () => activeChatId,
-    getSnapshot: () => snapshot,
+    getActiveChatId: () => useChatStore.getState().activeChatId,
+    getSnapshot: () => useChatStore.getState().snapshot,
     setSnapshot: snapshotRefresh,
-    setChatNotice,
+    setChatNotice: useChatStore.getState().setChatNotice,
     setIsFirstRun,
     setMode,
     setIsImportDragActive,
@@ -302,12 +305,13 @@ export function useRpPlatformApp() {
 
   async function handleSetActivePromptPresetId(presetId: string | null): Promise<void> {
     setActivePromptPresetId(presetId);
-    if (!activeChatId || !presetId) return;
+    const chatId = useChatStore.getState().activeChatId;
+    if (!chatId || !presetId) return;
     try {
-      const nextSnapshot = await setChatPromptPreset(activeChatId, presetId);
-      snapshotRefresh(activeChatId, nextSnapshot);
+      const nextSnapshot = await setChatPromptPreset(chatId, presetId);
+      snapshotRefresh(chatId, nextSnapshot);
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to set prompt preset.");
+      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : "Failed to set prompt preset.");
     }
   }
 
@@ -318,7 +322,7 @@ export function useRpPlatformApp() {
       await handleSetActivePromptPresetId(created.id);
       return { id: created.id };
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to create preset.");
+      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : "Failed to create preset.");
       return null;
     }
   }
@@ -329,7 +333,7 @@ export function useRpPlatformApp() {
       setPromptPresets((current) => current.map((p) => p.id === presetId ? updated : p));
       return true;
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to save preset.");
+      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : "Failed to save preset.");
       return false;
     }
   }
@@ -340,7 +344,7 @@ export function useRpPlatformApp() {
       await loadPromptPresets();
       return true;
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to delete preset.");
+      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : "Failed to delete preset.");
       return false;
     }
   }
@@ -351,8 +355,8 @@ export function useRpPlatformApp() {
 
     try {
       const boot = await bootstrapApp();
-      setActiveChatId(boot.initialChatId);
-      setSnapshot(boot.snapshot);
+      useChatStore.getState().setActiveChatId(boot.initialChatId);
+      useChatStore.getState().setSnapshot(boot.snapshot);
       setIsFirstRun(boot.isFirstRun || import.meta.env.VITE_FORCE_FIRST_RUN === 'true');
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Could not load application state.");
