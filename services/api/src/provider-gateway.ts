@@ -1,7 +1,7 @@
 import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
 import * as https from "node:https";
 import * as http from "node:http";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFile, mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { logSendDebug } from "./send-debug-log.js";
 
@@ -299,11 +299,11 @@ export async function generateProviderReply(
   // Dump raw response body to file for inspection (robust — no JSON.stringify)
   try {
     const dumpPath = resolve(process.cwd(), "logs/provider-response-dump.txt");
-    mkdirSync(dirname(dumpPath), { recursive: true });
+    await mkdir(dirname(dumpPath), { recursive: true });
     const pos = response.body.indexOf("\n") >= 0 || response.body.indexOf("\r") >= 0
       ? `CONTAINS_RAW_NEWLINES=true`
       : `CONTAINS_RAW_NEWLINES=false`;
-    writeFileSync(dumpPath, [
+    await writeFile(dumpPath, [
       `=== Provider Response Dump ${new Date().toISOString()} ===`,
       `Body length: ${response.body.length} bytes`,
       `First parse attempt...`,
@@ -345,7 +345,7 @@ export async function generateProviderReply(
           hexDump += `  [${i}] 0x${code.toString(16).padStart(2, "0")} (${code}) '${code < 32 ? "?" : ch}'${marker}\n`;
         }
 
-        writeFileSync(errDumpPath, [
+        await writeFile(errDumpPath, [
           `=== JSON Parse Error ${new Date().toISOString()} ===`,
           `Error: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
           `Body length: ${response.body.length}`,
