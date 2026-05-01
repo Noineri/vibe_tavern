@@ -973,11 +973,11 @@ export class SessionRuntime {
     return lorebookModule.testLoreActivation(this.lorebookDeps, lorebookId, text);
   }
 
-  importJson(input: {
+  async importJson(input: {
     fileName: string;
     jsonText: string;
     chatId?: string;
-  }): ImportResult {
+  }): Promise<ImportResult> {
     return importExportModule.importJson(this.importExportDeps, input);
   }
 

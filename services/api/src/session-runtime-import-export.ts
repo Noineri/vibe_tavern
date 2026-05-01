@@ -209,14 +209,14 @@ export function mirrorPromptTrace(deps: ImportExportModuleDeps, traceId: string)
   return filePath;
 }
 
-export function importJson(
+export async function importJson(
   deps: ImportExportModuleDeps,
   input: {
     fileName: string;
     jsonText: string;
     chatId?: string;
   },
-): ImportResult {
+): Promise<ImportResult> {
   const trimmed = input.jsonText.trim();
   if (!trimmed) {
     throw new Error("Import payload is empty.");
@@ -226,8 +226,8 @@ export function importJson(
 
   if (parsed.spec === "chara_card_v3") {
     const imported = importCharacterCardV3Json(parsed);
-    deps.store.upsertCharacter(imported.character);
-    deps.store.upsertCharacterVersion(imported.version);
+    await deps.store.upsertCharacter(imported.character);
+    await deps.store.upsertCharacterVersion(imported.version);
 
     const created = deps.chatApp.createChat({
       characterId: imported.character.id,
