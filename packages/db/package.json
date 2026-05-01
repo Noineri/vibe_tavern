@@ -10,6 +10,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@rp-platform/domain": "0.1.0"
+    "@rp-platform/domain": "0.1.0",
+    "drizzle-orm": "^0.36.0"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.28.0"
   }
 }
