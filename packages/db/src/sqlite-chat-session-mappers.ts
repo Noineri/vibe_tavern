@@ -1,16 +1,27 @@
 import type {
   Chat,
   ChatBranch,
+  ChatBranchId,
+  ChatId,
   Character,
+  CharacterId,
   CharacterVersion,
+  CharacterVersionId,
   LoreEntry,
+  LoreEntryId,
+  LorebookId,
   Message,
+  MessageId,
   MessageVariant,
+  MessageVariantId,
   PersonaId,
   PromptPreset,
   PromptPresetId,
   PromptTrace,
+  PromptTraceId,
   SummaryMemorySnapshot,
+  SummaryMemorySnapshotId,
+  ToolProfileId,
 } from "@rp-platform/domain";
 import type { SqliteRow } from "./sqlite-adapter.js";
 
@@ -182,14 +193,14 @@ export function parseJson<T>(value: string): T {
 
 export function mapChat(row: ChatRow): Chat {
   return {
-    id: row.id,
-    characterId: row.character_id,
+    id: row.id as ChatId,
+    characterId: row.character_id as CharacterId,
     personaId: row.persona_id as PersonaId | null,
     title: row.title,
     status: row.status as Chat["status"],
-    activeBranchId: row.active_branch_id,
-    promptPresetId: row.prompt_preset_id,
-    toolProfileId: row.tool_profile_id,
+    activeBranchId: row.active_branch_id as ChatBranchId,
+    promptPresetId: row.prompt_preset_id as PromptPresetId,
+    toolProfileId: row.tool_profile_id as ToolProfileId,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -197,7 +208,7 @@ export function mapChat(row: ChatRow): Chat {
 
 export function mapCharacter(row: CharacterRow): Character {
   return {
-    id: row.id,
+    id: row.id as CharacterId,
     slug: row.slug,
     name: row.name,
     description: row.description,
@@ -224,8 +235,8 @@ export function mapCharacter(row: CharacterRow): Character {
 
 export function mapCharacterVersion(row: CharacterVersionRow): CharacterVersion {
   return {
-    id: row.id,
-    characterId: row.character_id,
+    id: row.id as CharacterVersionId,
+    characterId: row.character_id as CharacterId,
     versionNumber: row.version_number,
     title: row.title,
     cardFormat: row.card_format as CharacterVersion["cardFormat"],
@@ -237,8 +248,8 @@ export function mapCharacterVersion(row: CharacterVersionRow): CharacterVersion 
 
 export function mapLoreEntry(row: LoreEntryRow): LoreEntry {
   return {
-    id: row.id,
-    lorebookId: row.lorebook_id,
+    id: row.id as LoreEntryId,
+    lorebookId: row.lorebook_id as LorebookId,
     title: row.title,
     content: row.content,
     keys: parseJson<string[]>(row.keys_json),
@@ -257,10 +268,10 @@ export function mapLoreEntry(row: LoreEntryRow): LoreEntry {
 
 export function mapBranch(row: ChatBranchRow): ChatBranch {
   return {
-    id: row.id,
-    chatId: row.chat_id,
-    parentBranchId: row.parent_branch_id,
-    forkedFromMessageId: row.forked_from_message_id,
+    id: row.id as ChatBranchId,
+    chatId: row.chat_id as ChatId,
+    parentBranchId: row.parent_branch_id as ChatBranchId | null,
+    forkedFromMessageId: row.forked_from_message_id as MessageId | null,
     label: row.label,
     createdAt: row.created_at,
   };
@@ -268,9 +279,9 @@ export function mapBranch(row: ChatBranchRow): ChatBranch {
 
 export function mapMessage(row: MessageRow): Message {
   return {
-    id: row.id,
-    chatId: row.chat_id,
-    branchId: row.branch_id,
+    id: row.id as MessageId,
+    chatId: row.chat_id as ChatId,
+    branchId: row.branch_id as ChatBranchId,
     role: row.role as Message["role"],
     authorType: row.author_type as Message["authorType"],
     position: row.position,
@@ -283,8 +294,8 @@ export function mapMessage(row: MessageRow): Message {
 
 export function mapMessageVariant(row: MessageVariantRow): MessageVariant {
   return {
-    id: row.id,
-    messageId: row.message_id,
+    id: row.id as MessageVariantId,
+    messageId: row.message_id as MessageId,
     variantIndex: row.variant_index,
     content: row.content,
     isSelected: row.is_selected === 1,
@@ -295,27 +306,27 @@ export function mapMessageVariant(row: MessageVariantRow): MessageVariant {
 
 export function mapSummary(row: SummaryRow): SummaryMemorySnapshot {
   return {
-    id: row.id,
-    chatId: row.chat_id,
-    branchId: row.branch_id,
+    id: row.id as SummaryMemorySnapshotId,
+    chatId: row.chat_id as ChatId,
+    branchId: row.branch_id as ChatBranchId,
     kind: row.kind as SummaryMemorySnapshot["kind"],
     summary: row.summary,
-    coversThroughMessageId: row.covers_through_message_id,
+    coversThroughMessageId: row.covers_through_message_id as MessageId,
     createdAt: row.created_at,
   };
 }
 
 export function mapPromptTrace(row: PromptTraceRow): PromptTrace {
   return {
-    id: row.id,
-    chatId: row.chat_id,
-    branchId: row.branch_id,
-    messageId: row.message_id,
+    id: row.id as PromptTraceId,
+    chatId: row.chat_id as ChatId,
+    branchId: row.branch_id as ChatBranchId,
+    messageId: row.message_id as MessageId,
     model: row.model,
     presetName: row.preset_name,
     assembledLayers: parseJson<PromptTrace["assembledLayers"]>(row.assembled_layers_json),
     tokenAccounting: parseJson<Record<string, number>>(row.token_accounting_json),
-    activatedLoreEntries: parseJson<string[]>(row.activated_lore_entries_json),
+    activatedLoreEntries: parseJson<LoreEntryId[]>(row.activated_lore_entries_json),
     retrievedMemories: parseJson<Array<Record<string, unknown>>>(row.retrieved_memories_json),
     finalPayload: parseJson<Record<string, unknown>>(row.final_payload_json),
     latencyMs: row.latency_ms,

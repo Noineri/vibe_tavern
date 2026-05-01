@@ -3,6 +3,7 @@ import type {
   CharacterId,
   CharacterVersion,
   LoreEntry,
+  LoreEntryId,
   Lorebook,
   LorebookId,
 } from "@rp-platform/domain";
@@ -447,7 +448,7 @@ export class SqliteCharacterStore {
   }
 
   createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
-    const entryId = this.idGenerator.next(ENTITY_ID_NAMESPACE.loreEntry);
+    const entryId = this.idGenerator.next(ENTITY_ID_NAMESPACE.loreEntry) as LoreEntryId;
     this.db.execute(
       `INSERT INTO lore_entries (
         id, lorebook_id, title, content, keys_json, secondary_keys_json, logic,
