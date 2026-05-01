@@ -359,6 +359,10 @@ export function useRpPlatformApp() {
     setPersonaModalOpen(false);
   }
 
+  function handleCancelGeneration(): void {
+    setChatNotice("Generation cancellation is not yet supported by the runtime. Wait for the response to complete.");
+  }
+
   async function handleSend(): Promise<void> {
     const trimmed = draft.trim();
     void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.enter", {
@@ -894,6 +898,7 @@ export function useRpPlatformApp() {
     personas,
     renderSendLabel,
     handleSend,
+    handleCancelGeneration,
     handleConnect: provider.handleConnect,
     handleLoadProviderProfile: provider.handleLoadProviderProfile,
     handleSaveProviderProfile: provider.handleSaveProviderProfile,
