@@ -1,6 +1,7 @@
 import type {
   PromptPreset,
   PromptPresetId,
+  StoredProviderProfileRecord,
   ToolProfile,
   ToolProfileId,
 } from "@rp-platform/domain";
@@ -164,7 +165,7 @@ export class SqliteProviderStore {
     };
   }
 
-  upsertProviderProfile(profile: any): void {
+  upsertProviderProfile(profile: StoredProviderProfileRecord): StoredProviderProfileRecord {
     const timestamp = this.clock.now();
     const id = profile.id || (this.idGenerator.next(ENTITY_ID_NAMESPACE.providerProfile) as string);
     const isActive = profile.isActive === true ? 1 : 0;
@@ -222,10 +223,25 @@ export class SqliteProviderStore {
         timestamp,
       ],
     );
+    const row = this.db.queryOne<SqliteRow & StoredProviderProfileRecord & { isActiveInt: number; streamResponseInt: number }>(
+      `SELECT id, name, type, endpoint, api_key as apiKey, default_model as defaultModel,
+              context_budget as contextBudget, is_active as isActiveInt,
+              temperature, top_p as topP, min_p as minP, top_k as topK, typical_p as typicalP,
+              rep_pen as repPen, freq_pen as freqPen, pres_pen as presPen,
+              max_tokens as maxTokens, stop_seq as stopSeq, seed,
+              reasoning_effort as reasoningEffort, stream_response as streamResponseInt,
+              created_at as createdAt, updated_at as updatedAt
+       FROM provider_profiles
+       WHERE id = ?`,
+      [id],
+    );
+    return row
+      ? { ...row, isActive: row.isActiveInt === 1, streamResponse: row.streamResponseInt === 1 }
+      : { ...profile, id, isActive: profile.isActive };
   }
 
-  listProviderProfiles(): any[] {
-    return this.db.queryAll<any>(
+  listProviderProfiles(): StoredProviderProfileRecord[] {
+    return this.db.queryAll<SqliteRow & StoredProviderProfileRecord & { isActiveInt: number; streamResponseInt: number }>(
       `SELECT id, name, type, endpoint, api_key as apiKey, default_model as defaultModel,
               context_budget as contextBudget, is_active as isActiveInt,
               temperature, top_p as topP, min_p as minP, top_k as topK, typical_p as typicalP,
@@ -242,8 +258,8 @@ export class SqliteProviderStore {
     }));
   }
 
-  getProviderProfile(id: string): any | null {
-    const row = this.db.queryOne<any>(
+  getProviderProfile(id: string): StoredProviderProfileRecord | null {
+    const row = this.db.queryOne<SqliteRow & StoredProviderProfileRecord & { isActiveInt: number; streamResponseInt: number }>(
       `SELECT id, name, type, endpoint, api_key as apiKey, default_model as defaultModel,
               context_budget as contextBudget, is_active as isActiveInt,
               temperature, top_p as topP, min_p as minP, top_k as topK, typical_p as typicalP,
@@ -275,8 +291,8 @@ export class SqliteProviderStore {
     });
   }
 
-  getActiveProviderProfile(): any | null {
-    const row = this.db.queryOne<any>(
+  getActiveProviderProfile(): StoredProviderProfileRecord | null {
+    const row = this.db.queryOne<SqliteRow & StoredProviderProfileRecord & { isActiveInt: number; streamResponseInt: number }>(
       `SELECT id, name, type, endpoint, api_key as apiKey, default_model as defaultModel,
               context_budget as contextBudget, is_active as isActiveInt,
               temperature, top_p as topP, min_p as minP, top_k as topK, typical_p as typicalP,

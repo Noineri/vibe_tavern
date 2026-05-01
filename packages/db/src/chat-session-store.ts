@@ -21,6 +21,7 @@ import type {
   PromptPresetId,
   PromptTrace,
   PromptTraceId,
+  StoredProviderProfileRecord,
   SummaryKind,
   SummaryMemorySnapshot,
   ToolProfile,
@@ -167,12 +168,12 @@ export interface ChatSessionStore {
   getPromptTrace(promptTraceId: PromptTraceId): PromptTrace | null;
 
   // Provider Profiles
-  upsertProviderProfile(profile: any): void;
-  listProviderProfiles(): any[];
-  getProviderProfile(id: string): any | null;
+  upsertProviderProfile(profile: StoredProviderProfileRecord): StoredProviderProfileRecord;
+  listProviderProfiles(): StoredProviderProfileRecord[];
+  getProviderProfile(id: string): StoredProviderProfileRecord | null;
   deleteProviderProfile(id: string): void;
   setActiveProviderProfile(id: string): void;
-  getActiveProviderProfile(): any | null;
+  getActiveProviderProfile(): StoredProviderProfileRecord | null;
 
   listPromptPresets(): PromptPreset[];
   getPromptPreset(presetId: PromptPresetId): PromptPreset | null;
@@ -201,7 +202,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
   private readonly branchIdsByChat = new Map<ChatId, ChatBranchId[]>();
   private readonly messageVariants = new Map<MessageVariantId, MessageVariant>();
   private readonly promptTraces = new Map<string, PromptTrace>();
-  private readonly providerProfiles = new Map<string, any>();
+  private readonly providerProfiles = new Map<string, StoredProviderProfileRecord>();
   private readonly promptPresets = new Map<PromptPresetId, PromptPreset>();
   private readonly clock;
   private readonly idGenerator;
@@ -882,11 +883,13 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     return traces.slice(0, input.limit ?? traces.length).map(clonePromptTrace);
   }
 
-  upsertProviderProfile(profile: any): void {
+  upsertProviderProfile(profile: StoredProviderProfileRecord): StoredProviderProfileRecord {
     const id = profile.id || (this.nextId(ENTITY_ID_NAMESPACE.providerProfile) as string);
     const existing = this.providerProfiles.get(id);
     const isActive = profile.isActive !== undefined ? profile.isActive : existing?.isActive ?? false;
-    this.providerProfiles.set(id, { ...existing, ...profile, id, isActive });
+    const stored: StoredProviderProfileRecord = { ...existing, ...profile, id, isActive };
+    this.providerProfiles.set(id, stored);
+    return { ...stored };
   }
 
   setCharacterStatus(characterId: CharacterId, status: "active" | "archived"): void {
@@ -1103,11 +1106,11 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     return trace ? clonePromptTrace(trace) : null;
   }
 
-  listProviderProfiles(): any[] {
-    return Array.from(this.providerProfiles.values());
+  listProviderProfiles(): StoredProviderProfileRecord[] {
+    return Array.from(this.providerProfiles.values()).map((p) => ({ ...p }));
   }
 
-  getProviderProfile(id: string): any | null {
+  getProviderProfile(id: string): StoredProviderProfileRecord | null {
     const profile = this.providerProfiles.get(id);
     return profile ? { ...profile } : null;
   }
@@ -1125,7 +1128,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     }
   }
 
-  getActiveProviderProfile(): any | null {
+  getActiveProviderProfile(): StoredProviderProfileRecord | null {
     for (const profile of this.providerProfiles.values()) {
       if (profile.isActive) {
         return { ...profile };
