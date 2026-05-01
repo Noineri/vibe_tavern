@@ -552,7 +552,7 @@ export class SessionRuntime {
     return this.getSnapshot(created.id as ChatId);
   }
 
-  createCharacterFromScratch(input: {
+  async createCharacterFromScratch(input: {
     name: string;
     description?: string;
     personalitySummary?: string | null;
@@ -560,7 +560,7 @@ export class SessionRuntime {
     firstMessage?: string;
     mesExample?: string | null;
     alternateGreetings?: string[];
-  }): ImportResult {
+  }): Promise<ImportResult> {
     const timestamp = new Date().toISOString();
     const characterId = `${ENTITY_ID_NAMESPACE.scratchCharacter}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterId;
     const versionId = `${ENTITY_ID_NAMESPACE.scratchCharacterVersion}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterVersionId;
@@ -613,8 +613,8 @@ export class SessionRuntime {
       createdAt: timestamp,
     };
 
-    this.store.upsertCharacter(character);
-    this.store.upsertCharacterVersion(version);
+    await this.store.upsertCharacter(character);
+    await this.store.upsertCharacterVersion(version);
 
     const created = this.chatApp.createChat({
       characterId,
@@ -643,7 +643,7 @@ export class SessionRuntime {
     };
   }
 
-  createFreeChat(): SessionSnapshot {
+  async createFreeChat(): Promise<SessionSnapshot> {
     const timestamp = new Date().toISOString();
     const characterId = `${ENTITY_ID_NAMESPACE.freeCharacter}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterId;
     const versionId = `${ENTITY_ID_NAMESPACE.freeCharacterVersion}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterVersionId;
@@ -684,8 +684,8 @@ export class SessionRuntime {
       createdAt: timestamp,
     };
 
-    this.store.upsertCharacter(character);
-    this.store.upsertCharacterVersion(version);
+    await this.store.upsertCharacter(character);
+    await this.store.upsertCharacterVersion(version);
 
     const created = this.chatApp.createChat({
       characterId,
@@ -803,7 +803,7 @@ export class SessionRuntime {
     return providerModule.setCachedProviderModels(this.providerDeps, providerProfileId, models);
   }
 
-  updateCharacter(
+  async updateCharacter(
     characterId: CharacterId,
     input: {
       chatId?: ChatId;
@@ -824,7 +824,7 @@ export class SessionRuntime {
       extensions?: Record<string, unknown>;
       tags?: string[];
     },
-  ): SessionSnapshot {
+  ): Promise<SessionSnapshot> {
     const currentCharacter = this.store.listCharacters().find((character) => character.id === characterId);
     if (!currentCharacter) {
       throw new Error(`Character '${characterId}' was not found.`);
@@ -887,9 +887,9 @@ export class SessionRuntime {
         }
       : null;
 
-    this.store.upsertCharacter(updatedCharacter);
+    await this.store.upsertCharacter(updatedCharacter);
     if (updatedVersion) {
-      this.store.upsertCharacterVersion(updatedVersion);
+      await this.store.upsertCharacterVersion(updatedVersion);
     }
 
     const preferredChat = input.chatId ? this.store.getChat(input.chatId) : null;

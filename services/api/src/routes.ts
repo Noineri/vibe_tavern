@@ -18,7 +18,7 @@ export interface RuntimeApi {
   editMessage: (chatId: string, messageId: string, content: string) => unknown;
   deleteMessage: (chatId: string, messageId: string) => unknown;
   sendMessage: (chatId: string, body: { content: string }) => Promise<unknown>;
-  updateCharacter: (characterId: string, body: Record<string, unknown>) => unknown;
+  updateCharacter: (characterId: string, body: Record<string, unknown>) => Promise<unknown>;
   updatePersona: (personaId: string, body: Record<string, unknown>) => unknown;
   listPersonas: () => unknown;
   setChatPersona: (chatId: string, personaId: string) => unknown;
@@ -63,8 +63,8 @@ export function createApiRouter(
   deps: {
     getRequiredProviderProfile: (id: string) => { endpoint: string; apiKey?: string | null };
     sessionRuntime: {
-      createCharacterFromScratch: (body: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }) => unknown;
-      createFreeChat: () => unknown;
+      createCharacterFromScratch: (body: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }) => Promise<unknown>;
+      createFreeChat: () => Promise<unknown>;
       getProviderProfile: (id: string) => { endpoint: string; apiKey?: string | null } | null;
     };
     providerOrchestrator: { refreshProfileModels: (profile: any) => Promise<unknown> };
@@ -93,13 +93,13 @@ export function createApiRouter(
     .get("/api/chats/:chatId", (c) => {
       return c.json(runtime.getChatSnapshot(c.req.param("chatId")));
     })
-    .post("/api/characters", zValidator("json", schemas.createCharacterSchema), (c) => {
+    .post("/api/characters", zValidator("json", schemas.createCharacterSchema), async (c) => {
       const body = c.req.valid("json");
       const name = body.name;
       if (!name || !name.trim()) {
         return c.json({ error: "name is required" }, 400);
       }
-      return c.json(deps.sessionRuntime.createCharacterFromScratch({
+      return c.json(await deps.sessionRuntime.createCharacterFromScratch({
         name: name.trim(),
         description: body.description ?? undefined,
         firstMessage: body.firstMessage ?? undefined,
@@ -107,11 +107,11 @@ export function createApiRouter(
         personalitySummary: body.personalitySummary ?? undefined,
       }), 201);
     })
-    .post("/api/chats", zValidator("json", schemas.createChatSchema), (c) => {
+    .post("/api/chats", zValidator("json", schemas.createChatSchema), async (c) => {
       const body = c.req.valid("json");
       const characterId = body.characterId;
       if (!characterId) {
-        return c.json(deps.sessionRuntime.createFreeChat());
+        return c.json(await deps.sessionRuntime.createFreeChat());
       }
       return c.json(runtime.createChatForCharacter(characterId));
     })
@@ -213,10 +213,10 @@ export function createApiRouter(
     .patch("/api/characters/:characterId/unarchive", (c) => {
       return c.json(runtime.unarchiveCharacter(c.req.param("characterId")));
     })
-    .patch("/api/characters/:characterId", zValidator("json", schemas.updateCharacterSchema), (c) => {
+    .patch("/api/characters/:characterId", zValidator("json", schemas.updateCharacterSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(
-        runtime.updateCharacter(c.req.param("characterId"), body),
+        await runtime.updateCharacter(c.req.param("characterId"), body),
       );
     })
     .delete("/api/characters/:characterId", (c) => {
