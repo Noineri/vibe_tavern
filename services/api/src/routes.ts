@@ -14,11 +14,11 @@ export interface RuntimeApi {
   exportPromptTrace: (traceId: string) => unknown;
   updateChatSettings: (chatId: string, body: { title: string; subtitle: string; scenario: string; systemPrompt: string }) => unknown;
   branchChat: (chatId: string, messageId: string) => unknown;
-  regenerateMessage: (chatId: string, messageId: string, body: unknown) => Promise<unknown>;
+  regenerateMessage: (chatId: string, messageId: string, body: unknown, signal?: AbortSignal) => Promise<unknown>;
   selectVariant: (chatId: string, messageId: string, variantIndex: number) => unknown;
   editMessage: (chatId: string, messageId: string, content: string) => unknown;
   deleteMessage: (chatId: string, messageId: string) => unknown;
-  sendMessage: (chatId: string, body: { content: string }) => Promise<unknown>;
+  sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<unknown>;
   updateCharacter: (characterId: string, body: Record<string, unknown>) => Promise<unknown>;
   updatePersona: (personaId: string, body: Record<string, unknown>) => unknown;
   listPersonas: () => unknown;
@@ -148,7 +148,7 @@ export function createApiRouter(
       const regenStartMs = Date.now();
       logSendDebug("api.route.regenerate.start", { chatId, messageId });
       try {
-        const result = await runtime.regenerateMessage(chatId, messageId, body);
+        const result = await runtime.regenerateMessage(chatId, messageId, body, c.req.raw.signal);
         logSendDebug("api.route.regenerate.done", { chatId, messageId, elapsedMs: Date.now() - regenStartMs });
         return c.json(result);
       } catch (err) {
@@ -181,7 +181,7 @@ export function createApiRouter(
       const chatId = c.req.param("chatId");
       const body = c.req.valid("json");
       logSendDebug("api.route.messages.post", { chatId, contentLength: body.content?.length ?? 0 });
-      return c.json(await runtime.sendMessage(chatId, body));
+      return c.json(await runtime.sendMessage(chatId, body, c.req.raw.signal));
     })
     .post("/api/chats/:chatId/set-persona", zValidator("json", schemas.setPersonaSchema), (c) => {
       const body = c.req.valid("json");

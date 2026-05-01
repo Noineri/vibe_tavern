@@ -27,44 +27,44 @@ export type ProviderCapabilityMap = Record<ProviderType, ProviderCapabilityFlags
  *
  * - nonStreamGeneration: all current providers already support this.
  * - abortSignal: all providers use fetch-based HTTP which supports AbortSignal.
- * - streaming: false — planned for FW-AI5.
+ * - streaming: true — streaming executor (FW-AI2) uses streamText(); route collects in this brief, SSE forwarding in FW-AI5.
  * - prefill: null (unknown) — not yet investigated for most providers.
  */
 export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
   openai_compat: {
     nonStreamGeneration: true,
     abortSignal: true,
-    streaming: false,
+    streaming: true,
     prefill: null,
   },
   anthropic: {
     nonStreamGeneration: true,
     abortSignal: true,
-    streaming: false,
+    streaming: true,
     prefill: null,
   },
   google: {
     nonStreamGeneration: true,
     abortSignal: true,
-    streaming: false,
+    streaming: true,
     prefill: null,
   },
   ollama: {
     nonStreamGeneration: true,
     abortSignal: true,
-    streaming: false,
+    streaming: true,
     prefill: null,
   },
   llamacpp: {
     nonStreamGeneration: true,
     abortSignal: true,
-    streaming: false,
+    streaming: true,
     prefill: null,
   },
   koboldcpp: {
     nonStreamGeneration: true,
     abortSignal: true,
-    streaming: false,
+    streaming: true,
     prefill: null,
   },
 };

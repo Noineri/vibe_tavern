@@ -5,6 +5,11 @@ export type {
   GenerationResult,
   GenerationUsage,
   ProviderErrorCategory,
+  ProviderStreamChunk,
+  ProviderStreamFinish,
+  ProviderStreamResult,
+  ProviderExecutionInput,
+  ProviderExecutor,
 } from "./provider-execution-types.js";
 
 export { ProviderExecutionError } from "./provider-execution-types.js";

@@ -4,6 +4,7 @@ import type { ChatRuntime } from "./session-runtime-chat.js";
 import type { SessionSnapshot } from "./session-runtime.js";
 import type { ProviderOrchestrator } from "./provider-orchestrator.js";
 import type { StoredProviderProfileRecord } from "./session-runtime-dto.js";
+import { streamProviderExecutor } from "./ai/stream-provider-executor.js";
 import { logSendDebug } from "./send-debug-log.js";
 
 export class LiveChatOrchestrator {
@@ -17,6 +18,7 @@ export class LiveChatOrchestrator {
     content: string;
     profile: StoredProviderProfileRecord;
     model: string;
+    signal?: AbortSignal;
   }): Promise<{
     preparedMessageCount: number;
     promptMessageCount: number;
@@ -34,10 +36,14 @@ export class LiveChatOrchestrator {
     logSendDebug("live.send.provider.start", { chatId: input.chatId, providerId: input.profile.id, model: input.model });
     let reply: string;
     try {
-      reply = await this.providers.generateProfileReply(input.profile, {
+      // TODO FW-AI5: when stream preference is true, forward the stream as SSE instead of collecting
+      const result = await streamProviderExecutor({
+        profile: input.profile,
         model: input.model,
         prompt: prepared.prompt,
+        signal: input.signal,
       });
+      reply = await result.text;
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
@@ -60,6 +66,7 @@ export class LiveChatOrchestrator {
     messageId: string;
     profile: StoredProviderProfileRecord;
     model: string;
+    signal?: AbortSignal;
   }): Promise<{
     promptMessageCount: number;
     reply: string;
@@ -79,10 +86,14 @@ export class LiveChatOrchestrator {
     logSendDebug("live.regenerate.provider.start", { chatId: input.chatId, providerId: input.profile.id, model: input.model });
     let reply: string;
     try {
-      reply = await this.providers.generateProfileReply(input.profile, {
+      // TODO FW-AI5: when stream preference is true, forward the stream as SSE instead of collecting
+      const result = await streamProviderExecutor({
+        profile: input.profile,
         model: input.model,
         prompt,
+        signal: input.signal,
       });
+      reply = await result.text;
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
