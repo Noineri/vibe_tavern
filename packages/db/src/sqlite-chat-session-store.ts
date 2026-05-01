@@ -1,4 +1,4 @@
-import type { Chat, ChatBranch, ChatBranchId, ChatId, LorebookId, Message, MessageId, MessageVariant, Persona, PersonaId, PromptPreset, PromptPresetId, PromptTrace, PromptTraceId, SummaryMemorySnapshot, ToolProfile, ToolProfileId } from "@rp-platform/domain";
+import type { Chat, ChatBranch, ChatBranchId, ChatId, LorebookId, Message, MessageId, MessageVariant, Persona, PersonaId, PromptPreset, PromptPresetId, PromptTrace, PromptTraceId, StoredProviderProfileRecord, SummaryMemorySnapshot, ToolProfile, ToolProfileId } from "@rp-platform/domain";
 
 import type { AppendChatMessageInput, ChatBranchState, ChatSessionStore, CreateMessageVariantInput, CreatePromptTraceInput, CreateChatSessionInput, CreateChatSessionResult, ForkChatBranchInput, ForkChatBranchResult, ListPromptTracesInput, RecordSummarySnapshotInput } from "./chat-session-store.js";
 import { resolveStoreRuntime, type StoreRuntimeOptions } from "./persistence.js";
@@ -158,17 +158,17 @@ export class SqliteChatSessionStore implements ChatSessionStore {
   getPromptTrace(promptTraceId: PromptTraceId): PromptTrace | null { return this.chat.getPromptTrace(promptTraceId); }
 
   // Provider Profiles
-  upsertProviderProfile(profile: any): void { this.providers.upsertProviderProfile(profile); }
+  upsertProviderProfile(profile: StoredProviderProfileRecord): StoredProviderProfileRecord { return this.providers.upsertProviderProfile(profile); }
 
-  listProviderProfiles(): any[] { return this.providers.listProviderProfiles(); }
+  listProviderProfiles(): StoredProviderProfileRecord[] { return this.providers.listProviderProfiles(); }
 
-  getProviderProfile(id: string): any | null { return this.providers.getProviderProfile(id); }
+  getProviderProfile(id: string): StoredProviderProfileRecord | null { return this.providers.getProviderProfile(id); }
 
   deleteProviderProfile(id: string): void { this.providers.deleteProviderProfile(id); }
 
   setActiveProviderProfile(id: string): void { this.providers.setActiveProviderProfile(id); }
 
-  getActiveProviderProfile(): any | null { return this.providers.getActiveProviderProfile(); }
+  getActiveProviderProfile(): StoredProviderProfileRecord | null { return this.providers.getActiveProviderProfile(); }
 
   listPromptPresets(): PromptPreset[] { return this.providers.listPromptPresets(); }
 

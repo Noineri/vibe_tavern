@@ -16,7 +16,7 @@ export interface ProviderModuleDeps {
 export function listProviderProfiles(deps: ProviderModuleDeps): ClientProviderProfileRecord[] {
   return deps.store
     .listProviderProfiles()
-    .map((profile) => toClientProviderProfile(profile as StoredProviderProfileRecord));
+    .map((profile) => toClientProviderProfile(profile));
 }
 
 export async function saveProviderProfile(deps: ProviderModuleDeps, profile: Partial<StoredProviderProfileRecord>): Promise<ClientProviderProfileRecord> {
@@ -39,7 +39,7 @@ export async function saveProviderProfile(deps: ProviderModuleDeps, profile: Par
     apiKey,
   };
 
-  deps.store.upsertProviderProfile(toSave);
+  deps.store.upsertProviderProfile(toSave as StoredProviderProfileRecord);
   return toClientProviderProfile(toSave as StoredProviderProfileRecord);
 }
 
@@ -57,7 +57,7 @@ export function activateProviderProfile(deps: ProviderModuleDeps, id: string): C
 }
 
 export function resolveActiveProviderProfile(deps: ProviderModuleDeps): StoredProviderProfileRecord | null {
-  return deps.store.getActiveProviderProfile() as StoredProviderProfileRecord | null;
+  return deps.store.getActiveProviderProfile();
 }
 
 export function updateProviderProfile(
@@ -85,7 +85,7 @@ export function updateProviderProfile(
     streamResponse?: boolean;
   },
 ): ClientProviderProfileRecord {
-  const existing = deps.store.getProviderProfile(id) as StoredProviderProfileRecord | null;
+  const existing = deps.store.getProviderProfile(id);
   if (!existing) {
     throw new Error(`Provider profile '${id}' was not found.`);
   }
@@ -105,7 +105,7 @@ export function updateProviderProfile(
 }
 
 export function getProviderProfile(deps: ProviderModuleDeps, id: string): StoredProviderProfileRecord | null {
-  return deps.store.getProviderProfile(id) as StoredProviderProfileRecord | null;
+  return deps.store.getProviderProfile(id);
 }
 
 export function getProviderProfileForClient(deps: ProviderModuleDeps, id: string): ClientProviderProfileRecord | null {
