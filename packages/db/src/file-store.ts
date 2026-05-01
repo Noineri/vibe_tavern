@@ -1,5 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
 
 export const STORAGE_FOLDERS = {
@@ -75,7 +76,7 @@ export function createFileStore(dataRoot?: string): FileStore {
     writeJson(absolutePath: string, data: unknown): void {
       const dir = resolve(absolutePath, "..");
       mkdirSync(dir, { recursive: true });
-      const tmpPath = join(dir, `.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      const tmpPath = join(dir, `.tmp-${Date.now()}-${randomUUID().slice(0, 8)}`);
       writeFileSync(tmpPath, canonicalJsonBytes(data));
       renameSync(tmpPath, absolutePath);
     },
@@ -83,10 +84,10 @@ export function createFileStore(dataRoot?: string): FileStore {
       const previous = writeLocks.get(absolutePath) ?? Promise.resolve();
       const next = previous.then(async () => {
         const dir = resolve(absolutePath, "..");
-        mkdirSync(dir, { recursive: true });
-        const tmpPath = join(dir, `.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-        writeFileSync(tmpPath, canonicalJsonBytes(data));
-        renameSync(tmpPath, absolutePath);
+        await mkdir(dir, { recursive: true });
+        const tmpPath = join(dir, `.tmp-${Date.now()}-${randomUUID().slice(0, 8)}`);
+        await writeFile(tmpPath, canonicalJsonBytes(data));
+        await rename(tmpPath, absolutePath);
       }).finally(() => {
         writeLocks.delete(absolutePath);
       });
