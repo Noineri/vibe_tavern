@@ -15,7 +15,8 @@
     "@rp-platform/prompt-pipeline": "0.1.0",
     "hono": "^4.7.10",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "zustand": "^5.0.5"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.0.1",
