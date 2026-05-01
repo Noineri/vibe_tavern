@@ -16,13 +16,14 @@ const port = Number(process.env.RP_PLATFORM_API_PORT ?? "8787");
 const sessionRuntime = new SessionRuntime();
 const providerManager = new ProviderManager();
 const providerOrchestrator = new ProviderOrchestrator(sessionRuntime, providerManager);
-const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime, providerOrchestrator);
+const chatRuntime = sessionRuntime.chatRuntime;
+const liveChatOrchestrator = new LiveChatOrchestrator(chatRuntime, providerOrchestrator);
 
 const runtime = {
   bootstrap: () => sessionRuntime.getBootstrapState(),
   getChatSnapshot: (chatId: string) => sessionRuntime.getSnapshot(brandId<ChatId>(chatId)),
   createChatForCharacter: (characterId: string) => sessionRuntime.createChatForCharacter(characterId),
-  cloneChat: (chatId: string) => sessionRuntime.cloneChat(chatId),
+  cloneChat: (chatId: string) => chatRuntime.cloneChat(chatId),
   exportCharacter: (characterId: string) => sessionRuntime.exportCharacter(characterId),
   exportChatJsonl: (chatId: string) => sessionRuntime.exportChatJsonl(chatId),
   exportPromptTrace: (traceId: string) => sessionRuntime.exportPromptTrace(traceId),
@@ -32,7 +33,7 @@ const runtime = {
   ) => {
     throw internal("Chat settings route is not wired in this baseline.");
   },
-  branchChat: (chatId: string, _messageId: string) => sessionRuntime.forkBranch(brandId<ChatId>(chatId)),
+  branchChat: (chatId: string, _messageId: string) => chatRuntime.forkBranch(brandId<ChatId>(chatId)),
   regenerateMessage: async (chatId: string, messageId: string, _body: unknown) => {
     const profile = sessionRuntime.resolveActiveProviderProfile();
     if (!profile) {
@@ -50,10 +51,10 @@ const runtime = {
     return result.snapshot;
   },
   selectVariant: (chatId: string, messageId: string, variantIndex: number) =>
-    sessionRuntime.selectMessageVariant(brandId<ChatId>(chatId), brandId<MessageId>(messageId), variantIndex),
+    chatRuntime.selectMessageVariant(brandId<ChatId>(chatId), brandId<MessageId>(messageId), variantIndex),
   editMessage: (chatId: string, messageId: string, content: string) =>
-    sessionRuntime.editMessage(brandId<ChatId>(chatId), messageId, content),
-  deleteMessage: (chatId: string, messageId: string) => sessionRuntime.deleteMessage(brandId<ChatId>(chatId), messageId),
+    chatRuntime.editMessage(brandId<ChatId>(chatId), messageId, content),
+  deleteMessage: (chatId: string, messageId: string) => chatRuntime.deleteMessage(brandId<ChatId>(chatId), messageId),
   sendMessage: async (chatId: string, body: { content: string }) => {
     logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
     const profile = sessionRuntime.resolveActiveProviderProfile();
@@ -141,14 +142,14 @@ const runtime = {
     return listProviderModels({ baseUrl: normalized, apiKey: apiKey ?? "" });
   },
   importJson: (body: { fileName: string; jsonText: string; chatId?: string }) => sessionRuntime.importJson(body),
-  forkBranch: (chatId: string) => sessionRuntime.forkBranch(brandId<ChatId>(chatId)),
-  activateBranch: (chatId: string, branchId: string) => sessionRuntime.activateBranch(brandId<ChatId>(chatId), brandId<ChatBranchId>(branchId)),
-  deleteBranch: (chatId: string, branchId: string) => sessionRuntime.deleteBranch(chatId, branchId),
+  forkBranch: (chatId: string) => chatRuntime.forkBranch(brandId<ChatId>(chatId)),
+  activateBranch: (chatId: string, branchId: string) => chatRuntime.activateBranch(brandId<ChatId>(chatId), brandId<ChatBranchId>(branchId)),
+  deleteBranch: (chatId: string, branchId: string) => chatRuntime.deleteBranch(chatId, branchId),
   archiveCharacter: (characterId: string) => sessionRuntime.archiveCharacter(characterId),
   unarchiveCharacter: (characterId: string) => sessionRuntime.unarchiveCharacter(characterId),
   deleteCharacter: (characterId: string) => sessionRuntime.deleteCharacter(characterId),
-  deleteChat: (chatId: string) => sessionRuntime.deleteChat(chatId),
-  renameChat: (chatId: string, title: string) => sessionRuntime.renameChat(chatId, title),
+  deleteChat: (chatId: string) => chatRuntime.deleteChat(chatId),
+  renameChat: (chatId: string, title: string) => chatRuntime.renameChat(chatId, title),
   listPromptPresets: () => sessionRuntime.listPromptPresets(),
   createPromptPreset: (body: any) => sessionRuntime.createPromptPreset(body),
   updatePromptPreset: (presetId: string, body: any) => sessionRuntime.updatePromptPreset(presetId, body),

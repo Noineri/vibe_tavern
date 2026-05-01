@@ -1,28 +1,8 @@
-import type { AssemblePromptResponse, PromptTraceRecordDto, PromptPresetDto } from "@rp-platform/domain";
+import type { PromptTraceRecordDto, PromptPresetDto } from "@rp-platform/domain";
 import {
   type ChatSessionStore,
 } from "@rp-platform/db";
-import { brandId, ENTITY_ID_NAMESPACE, SYSTEM_RESOURCE_ID } from "@rp-platform/domain";
-import { logSendDebug } from "./send-debug-log.js";
-import type {
-  Chat,
-  ChatBranch,
-  ChatBranchId,
-  ChatId,
-  Character,
-  CharacterId,
-  CharacterVersion,
-  CharacterVersionId,
-  ToolProfileId,
-  LoreEntry,
-  Message,
-  MessageId,
-  PersonaId,
-  PromptPresetId,
-  PromptTrace,
-  RetrievedMemoryHit,
-  ToolProfile,
-} from "@rp-platform/domain";
+import { brandId, ENTITY_ID_NAMESPACE, SYSTEM_RESOURCE_ID, type Chat, type ChatBranch, type ChatBranchId, type ChatId, type Character, type CharacterId, type CharacterVersion, type CharacterVersionId, type ToolProfileId, type LoreEntry, type Message, type MessageId, type PersonaId, type PromptPresetId, type PromptTrace, type RetrievedMemoryHit, type ToolProfile } from "@rp-platform/domain";
 import { createFileStore } from "@rp-platform/db";
 import {
   buildPromptVariableContext,
@@ -40,6 +20,7 @@ import {
   type CachedProviderModelsRecord,
 } from "./session-runtime-dto.js";
 export type { MessageDto } from "./session-runtime-dto.js";
+export type { PreparedLiveTurn } from "./session-runtime-chat.js";
 import {
   toCharacterRecord,
   applyCharacterEditsToDefinition,
@@ -51,6 +32,7 @@ import * as providerModule from "./session-runtime-provider.js";
 import * as importExportModule from "./session-runtime-import-export.js";
 import * as lorebookModule from "./session-runtime-lorebook.js";
 import * as presetModule from "./session-runtime-presets.js";
+import { ChatRuntime } from "./session-runtime-chat.js";
 
 import type { MessageDto } from "./session-runtime-dto.js";
 
@@ -83,20 +65,10 @@ export interface SessionSnapshot {
   persona: PersonaRecord | null;
 }
 
-export interface PreparedLiveTurn {
-  prompt: AssemblePromptResponse;
-  snapshot: SessionSnapshot;
-}
-
 export interface BootstrapState {
   initialChatId: ChatId | null;
   snapshot: SessionSnapshot | null;
   isFirstRun: boolean;
-}
-
-interface PendingPromptTraceTurn {
-  branchId: ChatBranchId;
-  draft: Omit<PromptTrace, "id" | "messageId" | "createdAt">;
 }
 
 export interface ImportResult {
@@ -178,9 +150,10 @@ export class SessionRuntime {
   private readonly chatApp: ChatApplicationService;
   private readonly promptService: PromptAssemblyService;
   private readonly chatOrder: ChatId[] = [];
-  private readonly pendingPromptTraceByChat = new Map<ChatId, PendingPromptTraceTurn>();
   private readonly providerModelsCache = new Map<string, CachedProviderModelsRecord>();
   private readonly fileStore = createFileStore();
+  readonly chatRuntime: ChatRuntime;
+  private defaultsEnsured = false;
 
   private get providerDeps(): providerModule.ProviderModuleDeps {
     return { store: this.store, providerModelsCache: this.providerModelsCache };
@@ -210,10 +183,23 @@ export class SessionRuntime {
 
   constructor(store: ChatSessionStore = createDefaultSessionStore()) {
     this.store = store;
-    this.ensureDefaultReferences();
     this.resolver = new StaticPromptResolver(this.store);
     this.chatApp = new ChatApplicationService(this.store);
     this.promptService = new PromptAssemblyService(this.store, this.resolver);
+    this.chatRuntime = new ChatRuntime({
+      store: this.store,
+      chatApp: this.chatApp,
+      expandChatMacros: (chatId, text) => this.expandChatMacros(chatId, text),
+      assemblePrompt: (chatId, branchId, options) => this.assemblePrompt(chatId, branchId, options),
+      getSnapshot: (chatId) => this.getSnapshot(chatId),
+      chatOrder: {
+        add: (chatId) => this.chatOrder.unshift(chatId),
+        remove: (chatId) => {
+          const idx = this.chatOrder.indexOf(chatId);
+          if (idx !== -1) this.chatOrder.splice(idx, 1);
+        },
+      },
+    });
     this.seed();
   }
 
@@ -352,145 +338,6 @@ export class SessionRuntime {
     return { enabled: false, lorebookId: null };
   }
 
-  prepareLiveTurn(chatId: ChatId, content: string, model: string): PreparedLiveTurn {
-    const trimmed = content.trim();
-    if (!trimmed) {
-      const assembled = this.assemblePrompt(chatId, undefined, { model });
-      return {
-        prompt: assembled.prompt,
-        snapshot: this.getSnapshot(chatId),
-      };
-    }
-
-    const expandedContent = this.expandChatMacros(chatId, trimmed);
-
-    const userMessage = this.chatApp.appendUserMessage(chatId, {
-      content: expandedContent,
-      mode: "reply",
-    });
-
-    let assembled;
-    try {
-      assembled = this.assemblePrompt(chatId, undefined, { model });
-    } catch (err) {
-      try {
-        this.store.deleteMessage(userMessage.id);
-      } catch {}
-      throw err;
-    }
-    this.pendingPromptTraceByChat.set(chatId, {
-      branchId: assembled.branchId,
-      draft: assembled.promptTraceDraft,
-    });
-
-    return {
-      prompt: assembled.prompt,
-      snapshot: this.getSnapshot(chatId),
-    };
-  }
-
-  discardPendingPromptTrace(chatId: ChatId): void {
-    this.pendingPromptTraceByChat.delete(chatId);
-  }
-
-  appendAssistantReply(chatId: ChatId, content: string, latencyMs: number): SessionSnapshot {
-    const chat = this.store.getChat(chatId)!;
-    const fallbackDraft = this.assemblePrompt(chatId, chat.activeBranchId).promptTraceDraft;
-
-    const assistantMessage = this.store.appendMessage({
-      chatId,
-      branchId: chat.activeBranchId,
-      role: "assistant",
-      authorType: "assistant",
-      content,
-    });
-
-    const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId);
-    const baseDraft = pending?.draft ?? fallbackDraft;
-    this.persistPromptTrace(assistantMessage.id, { ...baseDraft, latencyMs });
-    const snapshot = this.getSnapshot(chatId);
-    logSendDebug("prompt.trace.afterAppend", {
-      chatId,
-      messageId: assistantMessage.id,
-      traceCount: snapshot.promptTraceHistory.length,
-      latestTraceId: snapshot.promptTraceHistory[0]?.id ?? null,
-      latestTraceCreatedAt: snapshot.promptTraceHistory[0]?.createdAt ?? null,
-      latestTraceLayers: snapshot.promptTraceHistory[0]?.layers?.length ?? 0,
-      personaLayerSourceId: snapshot.promptTraceHistory[0]?.layers?.find((l: { sourceType: string }) => l.sourceType === "persona")?.sourceId ?? null,
-    });
-    return snapshot;
-  }
-
-  appendMessageVariant(
-    chatId: ChatId,
-    messageId: MessageId,
-    input: { content: string; finishReason?: string | null; latencyMs: number },
-  ): SessionSnapshot {
-    const trimmed = input.content.trim();
-    if (!trimmed) {
-      return this.getSnapshot(chatId);
-    }
-
-    const chat = this.store.getChat(chatId)!;
-    const fallbackDraft = this.assemblePrompt(chatId, chat.activeBranchId, {
-      excludeMessageIds: [messageId],
-    }).promptTraceDraft;
-    this.store.createMessageVariant({
-      messageId,
-      content: trimmed,
-      finishReason: input.finishReason ?? null,
-      isSelected: true,
-    });
-    const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId);
-    const baseDraft = pending?.draft ?? fallbackDraft;
-    this.persistPromptTrace(messageId, { ...baseDraft, latencyMs: input.latencyMs });
-    return this.getSnapshot(chatId);
-  }
-
-  selectMessageVariant(chatId: ChatId, messageId: MessageId, variantIndex: number): SessionSnapshot {
-    this.store.selectMessageVariant(messageId, variantIndex);
-    return this.getSnapshot(chatId);
-  }
-
-  editMessage(chatId: ChatId, messageId: string, content: string): SessionSnapshot {
-    this.chatApp.editMessage(messageId, content);
-    return this.getSnapshot(chatId);
-  }
-
-  deleteMessage(chatId: ChatId, messageId: string): SessionSnapshot {
-    this.chatApp.deleteMessage(messageId);
-    return this.getSnapshot(chatId);
-  }
-
-  forkBranch(chatId: ChatId): SessionSnapshot {
-    const { branchState } = this.chatApp.getChatState(chatId);
-    const lastMessage = branchState.messages[branchState.messages.length - 1];
-
-    this.chatApp.createBranch(chatId, {
-      sourceBranchId: branchState.branch.id,
-      forkedFromMessageId: lastMessage?.id ?? null,
-      label: `branch ${this.store.listBranches(chatId).length + 1}`,
-      activateFork: true,
-    });
-
-    this.pendingPromptTraceByChat.delete(chatId);
-    return this.getSnapshot(chatId);
-  }
-
-  activateBranch(chatId: ChatId, branchId: ChatBranchId): SessionSnapshot {
-    this.chatApp.activateBranch(chatId, branchId);
-    this.pendingPromptTraceByChat.delete(chatId);
-    return this.getSnapshot(chatId);
-  }
-
-  deleteBranch(chatId: string, branchId: string): SessionSnapshot {
-    const typedChatId = brandId<ChatId>(chatId);
-    const typedBranchId = brandId<ChatBranchId>(branchId);
-    this.chatApp.deleteBranch(typedChatId, typedBranchId);
-    this.pendingPromptTraceByChat.delete(typedChatId);
-    return this.getSnapshot(typedChatId);
-  }
-
   archiveCharacter(characterId: string): { characterId: string; status: "archived" } {
     const typedCharacterId = brandId<CharacterId>(characterId);
     this.store.setCharacterStatus(typedCharacterId, "archived");
@@ -520,22 +367,9 @@ export class SessionRuntime {
     for (const chatId of chatIds) {
       const idx = this.chatOrder.indexOf(chatId);
       if (idx !== -1) this.chatOrder.splice(idx, 1);
-      this.pendingPromptTraceByChat.delete(chatId);
+      this.chatRuntime.discardPendingPromptTrace(chatId);
     }
     this.store.deleteCharacter(typedCharacterId);
-  }
-
-  deleteChat(chatId: string): void {
-    const typedChatId = brandId<ChatId>(chatId);
-    const idx = this.chatOrder.indexOf(typedChatId);
-    if (idx !== -1) this.chatOrder.splice(idx, 1);
-    this.pendingPromptTraceByChat.delete(typedChatId);
-    this.store.deleteChat(typedChatId);
-  }
-
-  renameChat(chatId: string, title: string): { chatId: string; title: string } {
-    this.store.renameChat(brandId<ChatId>(chatId), title);
-    return { chatId, title };
   }
 
   createChatForCharacter(characterId: string): SessionSnapshot {
@@ -720,12 +554,6 @@ export class SessionRuntime {
     const freeChatId = created.id;
     this.chatOrder.unshift(freeChatId);
     return this.getSnapshot(freeChatId);
-  }
-
-  cloneChat(chatId: string): SessionSnapshot {
-    const result = this.store.cloneChat(brandId<ChatId>(chatId));
-    this.chatOrder.unshift(result.chat.id);
-    return this.getSnapshot(result.chat.id);
   }
 
   exportCharacter(characterId: string): Record<string, unknown> {
@@ -968,23 +796,6 @@ export class SessionRuntime {
     return this.getSnapshot(targetChatId);
   }
 
-  assemblePromptPreview(
-    chatId: ChatId,
-    options: { excludeMessageId?: MessageId; model: string },
-  ): AssemblePromptResponse {
-    const assembled = this.assemblePrompt(chatId, undefined, {
-      excludeMessageIds: options.excludeMessageId ? [options.excludeMessageId] : [],
-      model: options.model,
-    });
-    if (options.excludeMessageId) {
-      this.pendingPromptTraceByChat.set(chatId, {
-        branchId: assembled.branchId,
-        draft: assembled.promptTraceDraft,
-      });
-    }
-    return assembled.prompt;
-  }
-
   listLoreEntries(lorebookId: string): LoreEntry[] {
     return lorebookModule.listLoreEntries(this.lorebookDeps, lorebookId);
   }
@@ -1057,7 +868,10 @@ export class SessionRuntime {
       authorType: "assistant",
       content: this.expandChatMacros(chatId, trimmed),
     });
-    this.persistPromptTrace(message.id, assembled.promptTraceDraft);
+    this.store.createPromptTrace({
+      ...assembled.promptTraceDraft,
+      messageId: message.id,
+    });
   }
 
   private resolvePromptVariableContext(chatId: ChatId) {
@@ -1105,6 +919,8 @@ export class SessionRuntime {
   }
 
   private resolveDefaultPersonaId(): PersonaId {
+    this.ensureDefaultsOnce();
+
     let personas = this.store.listPersonas();
     if (personas.length === 0) {
       const created = this.store.createPersona({
@@ -1124,6 +940,8 @@ export class SessionRuntime {
   }
 
   private resolveDefaultPromptPresetId(): PromptPresetId {
+    this.ensureDefaultsOnce();
+
     const presets = this.store.listPromptPresets();
     const globalPreset = presets.find((preset) => preset.bindModel.trim() === "") ?? presets[0];
     if (!globalPreset) {
@@ -1132,8 +950,9 @@ export class SessionRuntime {
     return globalPreset.id;
   }
 
-  private ensureDefaultReferences(): void {
-    this.resolveDefaultPersonaId();
+  private ensureDefaultsOnce(): void {
+    if (this.defaultsEnsured) return;
+    this.defaultsEnsured = true;
 
     if (!this.store.getToolProfile(this.defaultToolProfile.id)) {
       this.store.upsertToolProfile(this.defaultToolProfile);
@@ -1164,29 +983,6 @@ export class SessionRuntime {
       excludeMessageIds: options?.excludeMessageIds,
       contextBudget: activeProfileForAssembly?.contextBudget ?? null,
     });
-  }
-
-  private persistPromptTrace(
-    messageId: Message["id"],
-    draft: Omit<PromptTrace, "id" | "messageId" | "createdAt">,
-  ): void {
-    this.store.createPromptTrace({
-      ...draft,
-      messageId,
-    });
-  }
-
-  private consumePendingPromptTrace(
-    chatId: ChatId,
-    branchId: ChatBranchId,
-  ): PendingPromptTraceTurn | null {
-    const pending = this.pendingPromptTraceByChat.get(chatId);
-    if (!pending || pending.branchId !== branchId) {
-      return null;
-    }
-
-    this.pendingPromptTraceByChat.delete(chatId);
-    return pending;
   }
 
   private toChatListItem(chatId: ChatId): ChatListItem {
