@@ -7,16 +7,21 @@
  */
 
 import type { ProviderType } from "@rp-platform/domain";
+import type { SdkSupportKind } from "./provider-profile-mapper.js";
+
+export type { SdkSupportKind };
 
 export interface ProviderCapabilityFlags {
   /** Provider can produce a complete non-streamed reply. */
   nonStreamGeneration: boolean;
   /** Provider execution respects an AbortSignal for cancellation. */
   abortSignal: boolean;
-  /** Provider supports SSE/streaming responses (planned, not yet implemented). */
+  /** Provider supports SSE/streaming responses. */
   streaming: boolean;
   /** Provider supports prefill (prefixing assistant content). */
   prefill: boolean | null;
+  /** How this provider kind maps to the AI SDK. */
+  sdkSupport: SdkSupportKind;
 }
 
 /** Capability map keyed by provider type. */
@@ -36,36 +41,42 @@ export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
     abortSignal: true,
     streaming: true,
     prefill: null,
+    sdkSupport: "native",
   },
   anthropic: {
     nonStreamGeneration: true,
     abortSignal: true,
     streaming: true,
     prefill: null,
+    sdkSupport: "native",
   },
   google: {
     nonStreamGeneration: true,
     abortSignal: true,
     streaming: true,
     prefill: null,
+    sdkSupport: "native",
   },
   ollama: {
     nonStreamGeneration: true,
     abortSignal: true,
     streaming: true,
     prefill: null,
+    sdkSupport: "openai_fallback",
   },
   llamacpp: {
     nonStreamGeneration: true,
     abortSignal: true,
     streaming: true,
     prefill: null,
+    sdkSupport: "openai_fallback",
   },
   koboldcpp: {
-    nonStreamGeneration: true,
-    abortSignal: true,
-    streaming: true,
+    nonStreamGeneration: false,
+    abortSignal: false,
+    streaming: false,
     prefill: null,
+    sdkSupport: "unsupported",
   },
 };
 

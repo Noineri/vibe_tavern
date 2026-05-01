@@ -1,0 +1,167 @@
+/**
+ * Provider profile mapper — maps stored provider profiles to AI SDK configuration.
+ *
+ * Each provider kind has exactly one outcome:
+ * - **supported native**: has a dedicated AI SDK provider package (openai_compat, anthropic, google).
+ * - **supported fallback**: uses OpenAI-compatible adapter via createOpenAI (ollama, llamacpp).
+ * - **unsupported**: throws a deterministic ProviderExecutionError (koboldcpp — lacks OpenAI-compat /v1/chat/completions).
+ *
+ * Limitations of fallback providers:
+ * - Ollama: sampling parameters (top_k, typical_p, min_p, rep_pen, freq_pen, pres_pen)
+ *   are not forwarded through the OpenAI-compatible adapter. They are silently dropped.
+ * - LlamaCpp: same parameter limitations as Ollama. Also, model selection is limited
+ *   to the single loaded model (no multi-model switching).
+ * - KoboldCpp: unsupported — the /api/v1/generate endpoint is not OpenAI-compatible.
+ *   Users must switch to a supported provider kind.
+ */
+
+import { createOpenAI } from "@ai-sdk/openai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import type { LanguageModelV1 } from "ai";
+import type { ProviderType } from "@rp-platform/domain";
+import { PROVIDER_TYPE } from "@rp-platform/domain";
+import { providerError } from "../errors.js";
+import {
+  getProviderCapabilities,
+  type ProviderCapabilityFlags,
+} from "./provider-capabilities.js";
+
+// ---------------------------------------------------------------------------
+// SDK support classification
+// ---------------------------------------------------------------------------
+
+export type SdkSupportKind = "native" | "openai_fallback" | "unsupported";
+
+export interface ProviderMappingResult {
+  /** The resolved AI SDK language model. */
+  model: LanguageModelV1;
+  /** How this provider kind is supported by the SDK. */
+  sdkSupport: SdkSupportKind;
+  /** Capability flags for this provider kind. */
+  capabilities: ProviderCapabilityFlags;
+  /** Human-readable description of any limitations. */
+  limitations: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Mapper implementation
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a stored provider profile + model name into an AI SDK LanguageModelV1.
+ *
+ * This is the single canonical mapping point. Every provider kind has an explicit
+ * outcome — see SdkSupportKind documentation above.
+ */
+export function mapProfileToSdkModel(
+  profile: { type: string; endpoint: string; apiKey: string | null },
+  model: string,
+): ProviderMappingResult {
+  const providerType = profile.type as ProviderType;
+  const capabilities = getProviderCapabilities(providerType);
+
+  switch (profile.type) {
+    // -- Native SDK support --------------------------------------------------
+    case PROVIDER_TYPE.openaiCompat: {
+      const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
+      const apiKey = profile.apiKey ?? "";
+      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
+      return {
+        model: provider(model),
+        sdkSupport: "native",
+        capabilities,
+        limitations: [],
+      };
+    }
+
+    case PROVIDER_TYPE.anthropic: {
+      const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
+      const apiKey = profile.apiKey ?? "";
+      const provider = createAnthropic({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
+      return {
+        model: provider(model),
+        sdkSupport: "native",
+        capabilities,
+        limitations: [],
+      };
+    }
+
+    case PROVIDER_TYPE.google: {
+      const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
+      const apiKey = profile.apiKey ?? "";
+      const provider = createGoogleGenerativeAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
+      return {
+        model: provider(model),
+        sdkSupport: "native",
+        capabilities,
+        limitations: [],
+      };
+    }
+
+    // -- OpenAI-compatible fallback ------------------------------------------
+    case PROVIDER_TYPE.ollama: {
+      const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
+      const apiKey = profile.apiKey ?? "";
+      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
+      return {
+        model: provider(model),
+        sdkSupport: "openai_fallback",
+        capabilities,
+        limitations: [
+          "Sampling parameters top_k, typical_p, min_p, rep_pen, freq_pen, pres_pen are not forwarded via OpenAI-compatible adapter.",
+          "Model list/probe uses Ollama's /api/tags endpoint, not the OpenAI /v1/models endpoint.",
+        ],
+      };
+    }
+
+    case PROVIDER_TYPE.llamaCpp: {
+      const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
+      const apiKey = profile.apiKey ?? "";
+      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
+      return {
+        model: provider(model),
+        sdkSupport: "openai_fallback",
+        capabilities,
+        limitations: [
+          "Sampling parameters top_k, typical_p, min_p, rep_pen, freq_pen, pres_pen are not forwarded via OpenAI-compatible adapter.",
+          "Model selection is limited to the single loaded model on the llama.cpp server.",
+        ],
+      };
+    }
+
+    // -- Explicitly unsupported ----------------------------------------------
+    case PROVIDER_TYPE.koboldCpp: {
+      throw providerError(
+        `Provider type '${PROVIDER_TYPE.koboldCpp}' is not supported by the Vercel AI SDK. ` +
+        `KoboldCPP's /api/v1/generate endpoint is not OpenAI-compatible. ` +
+        `Please switch to a supported provider (OpenAI-compatible, Anthropic, Google, Ollama, or llama.cpp).`,
+        { providerType: profile.type },
+      );
+    }
+
+    default: {
+      throw providerError(
+        `Unknown provider type '${profile.type}'. ` +
+        `Supported types: ${Object.values(PROVIDER_TYPE).join(", ")}.`,
+        { providerType: profile.type },
+      );
+    }
+  }
+}
+
+/**
+ * Check whether a provider type has full native SDK support (not fallback).
+ */
+export function isNativeSdkProvider(type: ProviderType): boolean {
+  const caps = getProviderCapabilities(type);
+  return caps.sdkSupport === "native";
+}
+
+/**
+ * Check whether a provider type is explicitly unsupported.
+ */
+export function isUnsupportedProvider(type: ProviderType): boolean {
+  const caps = getProviderCapabilities(type);
+  return caps.sdkSupport === "unsupported";
+}

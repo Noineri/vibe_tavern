@@ -5,42 +5,18 @@
  * the full response (this brief) or forward as SSE (FW-AI5).
  */
 
-import { streamText, type LanguageModelV1 } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { streamText } from "ai";
 import type { ProviderExecutor, ProviderStreamResult, ProviderStreamChunk, ProviderStreamFinish } from "./provider-execution-types.js";
+import { mapProfileToSdkModel } from "./provider-profile-mapper.js";
 import { cancelled, providerError } from "../errors.js";
 
 /**
  * Resolve a Vercel AI SDK language model from a stored provider profile.
- *
- * Currently supports: openai_compat, anthropic, google.
- * Other provider types (ollama, llamacpp, koboldcpp) fall back to openai_compat
- * since they expose OpenAI-compatible endpoints.
+ * Delegates to the canonical provider-profile-mapper.
  */
-function resolveModel(profile: { type: string; endpoint: string; apiKey: string | null }, model: string): LanguageModelV1 {
-  const endpoint = profile.endpoint.replace(/\/+$/, "");
-  const apiKey = profile.apiKey ?? "";
-
-  switch (profile.type) {
-    case "anthropic": {
-      const provider = createAnthropic({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
-      return provider(model);
-    }
-    case "google": {
-      const provider = createGoogleGenerativeAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
-      return provider(model);
-    }
-    case "openai_compat":
-    case "ollama":
-    case "llamacpp":
-    case "koboldcpp":
-    default: {
-      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
-      return provider(model);
-    }
-  }
+function resolveModel(profile: { type: string; endpoint: string; apiKey: string | null }, model: string) {
+  const mapping = mapProfileToSdkModel(profile, model);
+  return mapping.model;
 }
 
 /**
