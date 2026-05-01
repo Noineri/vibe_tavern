@@ -332,9 +332,9 @@ export function createApiRouter(
       const body = c.req.valid("json");
       return c.json(await runtime.testProviderDraft(body as any));
     })
-    .post("/api/import/json", zValidator("json", schemas.importJsonSchema), (c) => {
+    .post("/api/import/json", zValidator("json", schemas.importJsonSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(runtime.importJson(body));
+      return c.json(await runtime.importJson(body));
     })
     .post("/api/providers", zValidator("json", schemas.saveProviderDraftSchema), async (c) => {
       const body = c.req.valid("json");
