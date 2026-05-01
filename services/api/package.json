@@ -11,12 +11,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@hono/zod-validator": "^0.4.2",
     "@rp-platform/api-contracts": "0.1.0",
     "@rp-platform/db": "0.1.0",
     "@rp-platform/domain": "0.1.0",
     "@rp-platform/import-export": "0.1.0",
     "@rp-platform/prompt-pipeline": "0.1.0",
-    "hono": "^4.7.10"
+    "hono": "^4.7.10",
+    "zod": "^3.24.4"
   },
   "devDependencies": {
     "@types/bun": "^1.2.10"
