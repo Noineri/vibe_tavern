@@ -14,6 +14,7 @@
     "@rp-platform/db": "0.1.0",
     "@rp-platform/domain": "0.1.0",
     "@rp-platform/prompt-pipeline": "0.1.0",
+    "hono": "^4.7.10",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
