@@ -57,6 +57,8 @@ export interface InputAreaProps {
   personas: Array<{ id: string; name: string; description: string }>;
   activePersonaId: string | null;
   onSetPersona: (personaId: string) => void;
+  tokenAccounting: Record<string, number>;
+  onCancel: () => void;
   onDraftChange: (value: string) => void;
   onSend: () => void;
 }
