@@ -45,3 +45,6 @@ desktop.ini
 *.tmp
 *.temp
 rp_platform_plan/
+
+# Drizzle generated output
+drizzle-generated/
