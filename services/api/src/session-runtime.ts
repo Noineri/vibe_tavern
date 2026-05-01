@@ -1,8 +1,8 @@
-import type { PromptTraceRecordDto, PromptPresetDto } from "@rp-platform/domain";
+import type { PromptTraceRecordDto } from "@rp-platform/domain";
 import {
   type ChatSessionStore,
 } from "@rp-platform/db";
-import { brandId, ENTITY_ID_NAMESPACE, SYSTEM_RESOURCE_ID, type Chat, type ChatBranch, type ChatBranchId, type ChatId, type Character, type CharacterId, type CharacterVersion, type CharacterVersionId, type ToolProfileId, type LoreEntry, type Message, type MessageId, type PersonaId, type PromptPresetId, type PromptTrace, type RetrievedMemoryHit, type ToolProfile } from "@rp-platform/domain";
+import { brandId, ENTITY_ID_NAMESPACE, SYSTEM_RESOURCE_ID, type Chat, type ChatBranch, type ChatBranchId, type ChatId, type Character, type CharacterId, type CharacterVersion, type CharacterVersionId, type ToolProfileId, type LoreEntry, type Message, type MessageId, type PersonaId, type PromptPresetId, type PromptTrace, type RetrievedMemoryHit, type ToolProfile, type StoredProviderProfileRecord } from "@rp-platform/domain";
 import { createFileStore } from "@rp-platform/db";
 import {
   buildPromptVariableContext,
@@ -15,9 +15,6 @@ import {
   mapPromptTraceRecord,
   mapMessageDto,
   entryMatchesRecentText,
-  type StoredProviderProfileRecord,
-  type ClientProviderProfileRecord,
-  type CachedProviderModelsRecord,
 } from "./session-runtime-dto.js";
 export type { MessageDto } from "./session-runtime-dto.js";
 export type { PreparedLiveTurn } from "./session-runtime-chat.js";
@@ -28,10 +25,8 @@ import {
   type PersonaRecord,
 } from "./session-runtime-character.js";
 import { createDefaultSessionStore } from "./session-runtime-store.js";
-import * as providerModule from "./session-runtime-provider.js";
 import * as importExportModule from "./session-runtime-import-export.js";
 import * as lorebookModule from "./session-runtime-lorebook.js";
-import * as presetModule from "./session-runtime-presets.js";
 import { ChatRuntime } from "./session-runtime-chat.js";
 
 import type { MessageDto } from "./session-runtime-dto.js";
@@ -138,7 +133,7 @@ class StaticPromptResolver implements PromptAssemblyResolver {
 }
 
 export class SessionRuntime {
-  private readonly store: ChatSessionStore;
+  readonly store: ChatSessionStore;
   private readonly defaultToolProfile: ToolProfile = {
     id: brandId<ToolProfileId>(SYSTEM_RESOURCE_ID.toolsDisabled),
     name: "Tools Disabled",
@@ -150,14 +145,10 @@ export class SessionRuntime {
   private readonly chatApp: ChatApplicationService;
   private readonly promptService: PromptAssemblyService;
   private readonly chatOrder: ChatId[] = [];
-  private readonly providerModelsCache = new Map<string, CachedProviderModelsRecord>();
   private readonly fileStore = createFileStore();
   readonly chatRuntime: ChatRuntime;
   private defaultsEnsured = false;
-
-  private get providerDeps(): providerModule.ProviderModuleDeps {
-    return { store: this.store, providerModelsCache: this.providerModelsCache };
-  }
+  private readonly getActiveProviderProfile: () => StoredProviderProfileRecord | null;
 
   private get importExportDeps(): importExportModule.ImportExportModuleDeps {
     return {
@@ -177,15 +168,17 @@ export class SessionRuntime {
     return { store: this.store };
   }
 
-  private get presetDeps(): presetModule.PresetModuleDeps {
-    return { store: this.store };
-  }
-
-  constructor(store: ChatSessionStore = createDefaultSessionStore()) {
+  constructor(
+    store: ChatSessionStore = createDefaultSessionStore(),
+    options?: {
+      getActiveProviderProfile?: () => StoredProviderProfileRecord | null;
+    },
+  ) {
     this.store = store;
     this.resolver = new StaticPromptResolver(this.store);
     this.chatApp = new ChatApplicationService(this.store);
     this.promptService = new PromptAssemblyService(this.store, this.resolver);
+    this.getActiveProviderProfile = options?.getActiveProviderProfile ?? (() => null);
     this.chatRuntime = new ChatRuntime({
       store: this.store,
       chatApp: this.chatApp,
@@ -576,53 +569,6 @@ export class SessionRuntime {
     return importExportModule.mirrorPromptTrace(this.importExportDeps, traceId);
   }
 
-  listProviderProfiles(): ClientProviderProfileRecord[] {
-    return providerModule.listProviderProfiles(this.providerDeps);
-  }
-
-  async saveProviderProfile(profile: any): Promise<ClientProviderProfileRecord> {
-    return providerModule.saveProviderProfile(this.providerDeps, profile);
-  }
-
-  deleteProviderProfile(id: string): void {
-    providerModule.deleteProviderProfile(this.providerDeps, id);
-  }
-
-  activateProviderProfile(id: string): ClientProviderProfileRecord {
-    return providerModule.activateProviderProfile(this.providerDeps, id);
-  }
-
-  resolveActiveProviderProfile(): StoredProviderProfileRecord | null {
-    return providerModule.resolveActiveProviderProfile(this.providerDeps);
-  }
-
-  updateProviderProfile(
-    id: string,
-    patch: {
-      name?: string;
-      type?: string;
-      endpoint?: string;
-      apiKey?: unknown;
-      defaultModel?: string | null;
-      contextBudget?: number | null;
-      temperature?: number;
-      topP?: number;
-      minP?: number;
-      topK?: number;
-      typicalP?: number;
-      repPen?: number;
-      freqPen?: number;
-      presPen?: number;
-      maxTokens?: number;
-      stopSeq?: string;
-      seed?: string | null;
-      reasoningEffort?: string;
-      streamResponse?: boolean;
-    },
-  ): ClientProviderProfileRecord {
-    return providerModule.updateProviderProfile(this.providerDeps, id, patch);
-  }
-
   createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
     return lorebookModule.createLoreEntry(this.lorebookDeps, lorebookId, input);
   }
@@ -633,25 +579,6 @@ export class SessionRuntime {
 
   deleteLoreEntry(lorebookId: string, entryId: string): void {
     lorebookModule.deleteLoreEntry(this.lorebookDeps, lorebookId, entryId);
-  }
-
-  getProviderProfile(id: string): StoredProviderProfileRecord | null {
-    return providerModule.getProviderProfile(this.providerDeps, id);
-  }
-
-  getProviderProfileForClient(id: string): ClientProviderProfileRecord | null {
-    return providerModule.getProviderProfileForClient(this.providerDeps, id);
-  }
-
-  getCachedProviderModels(providerProfileId: string): CachedProviderModelsRecord | null {
-    return providerModule.getCachedProviderModels(this.providerDeps, providerProfileId);
-  }
-
-  setCachedProviderModels(
-    providerProfileId: string,
-    models: Array<{ id: string; label: string }>,
-  ): CachedProviderModelsRecord {
-    return providerModule.setCachedProviderModels(this.providerDeps, providerProfileId, models);
   }
 
   async updateCharacter(
@@ -815,36 +742,6 @@ export class SessionRuntime {
     return importExportModule.importJson(this.importExportDeps, input);
   }
 
-  listPromptPresets(): PromptPresetDto[] {
-    return presetModule.listPromptPresets(this.presetDeps);
-  }
-
-  createPromptPreset(input: {
-    name: string;
-    bindModel?: string;
-    system?: string;
-    jailbreak?: string;
-    summary?: string;
-    tools?: string;
-  }): PromptPresetDto {
-    return presetModule.createPromptPreset(this.presetDeps, input);
-  }
-
-  updatePromptPreset(presetId: string, patch: {
-    name?: string;
-    bindModel?: string;
-    system?: string;
-    jailbreak?: string;
-    summary?: string;
-    tools?: string;
-  }): PromptPresetDto {
-    return presetModule.updatePromptPreset(this.presetDeps, presetId, patch);
-  }
-
-  deletePromptPreset(presetId: string): void {
-    presetModule.deletePromptPreset(this.presetDeps, presetId);
-  }
-
   private seed(): void {
     const existingChats = this.store.listChats();
     if (existingChats.length > 0) {
@@ -975,7 +872,7 @@ export class SessionRuntime {
     branchId?: ChatBranchId,
     options?: { excludeMessageIds?: MessageId[]; model?: string },
   ) {
-    const activeProfileForAssembly = this.resolveActiveProviderProfile();
+    const activeProfileForAssembly = this.getActiveProviderProfile();
     return this.promptService.assembleForChat({
       chatId,
       branchId,
