@@ -8,6 +8,7 @@ import type {
   CharacterId,
   CharacterVersion,
   LoreEntry,
+  LoreEntryId,
   Lorebook,
   LorebookId,
   Message,
@@ -24,6 +25,7 @@ import type {
   StoredProviderProfileRecord,
   SummaryKind,
   SummaryMemorySnapshot,
+  SummaryMemorySnapshotId,
   ToolProfile,
   ToolProfileId,
 } from "@rp-platform/domain";
@@ -370,8 +372,8 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
   createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
     const entry: LoreEntry = {
       ...input,
-      id: this.nextId(ENTITY_ID_NAMESPACE.loreEntry),
-      lorebookId,
+      id: this.nextId(ENTITY_ID_NAMESPACE.loreEntry) as LoreEntryId,
+      lorebookId: lorebookId as LorebookId,
       keys: [...input.keys],
       secondaryKeys: [...input.secondaryKeys],
       metadata: cloneLooseRecord(input.metadata),
@@ -838,7 +840,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     }
 
     const trace: PromptTrace = {
-      id: this.nextId(ENTITY_ID_NAMESPACE.promptTrace),
+      id: this.nextId(ENTITY_ID_NAMESPACE.promptTrace) as PromptTraceId,
       chatId: input.chatId,
       branchId: input.branchId,
       messageId: input.messageId,
@@ -846,7 +848,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
       presetName: input.presetName,
       assembledLayers: input.assembledLayers.map(clonePromptLayer),
       tokenAccounting: { ...input.tokenAccounting },
-      activatedLoreEntries: [...input.activatedLoreEntries],
+      activatedLoreEntries: [...input.activatedLoreEntries] as LoreEntryId[],
       retrievedMemories: input.retrievedMemories.map(cloneLooseRecord),
       finalPayload: cloneLooseRecord(input.finalPayload),
       latencyMs: input.latencyMs,
@@ -926,7 +928,7 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
       this.chats.delete(chatId);
     }
     for (const [traceId, trace] of this.promptTraces.entries()) {
-      if (trace.chatId === characterId || chatIdsToDelete.includes(trace.chatId)) {
+      if (chatIdsToDelete.includes(trace.chatId)) {
         this.promptTraces.delete(traceId);
       }
     }

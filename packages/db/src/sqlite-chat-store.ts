@@ -1,4 +1,4 @@
-import type { Chat, ChatBranch, ChatBranchId, ChatId, Message, MessageId, MessageVariant, MessageVariantId, PersonaId, PromptTrace, PromptTraceId, SummaryMemorySnapshot } from "@rp-platform/domain";
+import type { Chat, ChatBranch, ChatBranchId, ChatId, Message, MessageId, MessageVariant, MessageVariantId, PersonaId, PromptTrace, PromptTraceId, SummaryMemorySnapshot, SummaryMemorySnapshotId } from "@rp-platform/domain";
 import { ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
 
 import type { AppendChatMessageInput, ChatBranchState, CreateChatSessionInput, CreateChatSessionResult, CreateMessageVariantInput, CreatePromptTraceInput, ForkChatBranchInput, ForkChatBranchResult, ListPromptTracesInput, RecordSummarySnapshotInput } from "./chat-session-store.js";
@@ -385,7 +385,7 @@ export class SqliteChatStore {
               id, chat_id, branch_id, kind, summary, covers_through_message_id, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [
-              this.idGenerator.next(ENTITY_ID_NAMESPACE.summaryMemory),
+              this.idGenerator.next(ENTITY_ID_NAMESPACE.summaryMemory) as SummaryMemorySnapshotId,
               input.chatId,
               branchId,
               summary.kind,
@@ -438,7 +438,7 @@ export class SqliteChatStore {
         );
       }
 
-      const summaryId = this.idGenerator.next(ENTITY_ID_NAMESPACE.summaryMemory);
+      const summaryId = this.idGenerator.next(ENTITY_ID_NAMESPACE.summaryMemory) as SummaryMemorySnapshotId;
       this.db.execute(
         `INSERT INTO summary_memory_snapshots (
           id, chat_id, branch_id, kind, summary, covers_through_message_id, created_at
@@ -475,7 +475,7 @@ export class SqliteChatStore {
         );
       }
 
-      const traceId = this.idGenerator.next(ENTITY_ID_NAMESPACE.promptTrace);
+      const traceId = this.idGenerator.next(ENTITY_ID_NAMESPACE.promptTrace) as PromptTraceId;
       this.db.execute(
         `INSERT INTO prompt_traces (
           id, chat_id, branch_id, message_id, model, preset_name,

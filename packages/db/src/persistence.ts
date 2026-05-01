@@ -19,7 +19,7 @@ export class SystemStoreClock implements StoreClock {
 
 export class IncrementingStoreIdGenerator implements StoreIdGenerator {
   private readonly counters = new Map<string, number>();
-  private readonly sessionSeed = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  private readonly sessionSeed = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
 
   next(prefix: string): string {
     const nextValue = (this.counters.get(prefix) ?? 0) + 1;
