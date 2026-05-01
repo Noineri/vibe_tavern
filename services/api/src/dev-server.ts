@@ -217,7 +217,7 @@ app.onError((err, c) => {
     });
   }
   if (isDomainError(err)) {
-    return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 401 | 404 | 409 | 499 | 500 | 502);
+    return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 401 | 404 | 409 | 500 | 502);
   }
   console.error("[unhandled]", err);
   return c.json(
