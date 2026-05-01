@@ -19,3 +19,4 @@ export function buildBootstrapStatus(): { latestMigrationVersion: string } {
 
 export * from "./chat-application-service.js";
 export * from "./prompt-assembly-service.js";
+export type { AppType } from "./routes.js";
