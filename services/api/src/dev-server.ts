@@ -1,6 +1,5 @@
-import { createServer } from "node:http";
-import type { IncomingMessage, ServerResponse } from "node:http";
-import { URL } from "node:url";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { LiveChatOrchestrator } from "./live-chat-orchestrator.js";
 import { SessionRuntime } from "./session-runtime.js";
 import { ProviderOrchestrator } from "./provider-orchestrator.js";
@@ -152,588 +151,6 @@ const runtime = {
   deletePromptPreset: (presetId: string) => sessionRuntime.deletePromptPreset(presetId),
 };
 
-const server = createServer(async (request, response) => {
-  try {
-    await routeRequest(request, response);
-  } catch (error) {
-    const url = request.url ?? "/";
-    if (url.includes("/messages") || url.includes("/debug/send-log")) {
-      logSendDebug("api.route.error", {
-        method: request.method ?? "GET",
-        url,
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : null,
-      });
-    }
-    writeJson(response, 500, {
-      error: error instanceof Error ? error.message : "Unknown server error",
-    });
-  }
-});
-
-server.listen(port, host, () => {
-  console.log(`RP Platform API listening on http://${host}:${port}`);
-});
-
-async function routeRequest(request: IncomingMessage, response: ServerResponse) {
-  const method = request.method ?? "GET";
-  const url = new URL(request.url ?? "/", `http://${host}:${port}`);
-
-  if (method === "OPTIONS") {
-    writeEmpty(response, 204);
-    return;
-  }
-
-  if (method === "GET" && url.pathname === "/health") {
-    writeJson(response, 200, {
-      ok: true,
-      service: "rp-platform-api",
-      time: new Date().toISOString(),
-    });
-    return;
-  }
-
-  if (method === "POST" && url.pathname === "/api/debug/send-log") {
-    const body = await readJsonBody(request);
-    logSendDebug("web.debug", typeof body === "object" && body ? body as Record<string, unknown> : { body });
-    writeJson(response, 200, { ok: true });
-    return;
-  }
-
-  if (method === "GET" && url.pathname === "/api/bootstrap") {
-    writeJson(response, 200, runtime.bootstrap());
-    return;
-  }
-
-  if (method === "GET" && url.pathname === "/api/personas") {
-    writeJson(response, 200, runtime.listPersonas());
-    return;
-  }
-
-  if (method === "POST" && url.pathname === "/api/personas") {
-    const body = await readJsonBody(request);
-    writeJson(response, 201, runtime.createPersona(body as { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }));
-    return;
-  }
-
-  if (method === "GET" && /^\/api\/chats\/[^/]+$/.test(url.pathname)) {
-    const chatId = url.pathname.split("/").pop()!;
-    writeJson(response, 200, runtime.getChatSnapshot(chatId));
-    return;
-  }
-
-  if (method === "POST" && url.pathname === "/api/characters") {
-    const body = await readJsonBody(request);
-    const name = (body as any).name;
-    if (!name || typeof name !== "string" || !name.trim()) {
-      writeJson(response, 400, { error: "name is required" });
-      return;
-    }
-    writeJson(response, 201, sessionRuntime.createCharacterFromScratch({
-      name: name.trim(),
-      description: (body as any).description ?? undefined,
-      firstMessage: (body as any).firstMessage ?? undefined,
-      scenario: (body as any).scenario ?? undefined,
-      personalitySummary: (body as any).personalitySummary ?? undefined,
-    }));
-    return;
-  }
-
-  if (method === "POST" && url.pathname === "/api/chats") {
-    const body = await readJsonBody(request);
-    const characterId = (body as any).characterId;
-    if (!characterId) {
-      writeJson(response, 200, sessionRuntime.createFreeChat());
-      return;
-    }
-    writeJson(response, 200, runtime.createChatForCharacter(characterId as string));
-    return;
-  }
-
-  const chatCloneMatch = /^\/api\/chats\/([^/]+)\/clone$/.exec(url.pathname);
-  if (method === "POST" && chatCloneMatch) {
-    writeJson(response, 200, runtime.cloneChat(chatCloneMatch[1]));
-    return;
-  }
-
-  const characterExportMatch = /^\/api\/characters\/([^/]+)\/export$/.exec(url.pathname);
-  if (method === "GET" && characterExportMatch) {
-    writeJson(response, 200, runtime.exportCharacter(characterExportMatch[1]));
-    return;
-  }
-
-  const chatExportJsonlMatch = /^\/api\/chats\/([^/]+)\/export\.jsonl$/.exec(url.pathname);
-  if (method === "GET" && chatExportJsonlMatch) {
-    writeText(response, 200, "application/x-ndjson; charset=utf-8", runtime.exportChatJsonl(chatExportJsonlMatch[1]));
-    return;
-  }
-
-  const promptTraceExportMatch = /^\/api\/prompt-traces\/([^/]+)\/export$/.exec(url.pathname);
-  if (method === "GET" && promptTraceExportMatch) {
-    writeJson(response, 200, runtime.exportPromptTrace(promptTraceExportMatch[1]));
-    return;
-  }
-
-  const chatSettingsMatch = /^\/api\/chats\/([^/]+)\/settings$/.exec(url.pathname);
-  if (method === "PATCH" && chatSettingsMatch) {
-    const body = await readJsonBody(request);
-    writeJson(
-      response,
-      200,
-      runtime.updateChatSettings(chatSettingsMatch[1], body as {
-        title: string;
-        subtitle: string;
-        scenario: string;
-        systemPrompt: string;
-      }),
-    );
-    return;
-  }
-
-  const messageBranchMatch = /^\/api\/chats\/([^/]+)\/messages\/([^/]+)\/branch$/.exec(url.pathname);
-  if (method === "POST" && messageBranchMatch) {
-    writeJson(response, 200, runtime.branchChat(messageBranchMatch[1], messageBranchMatch[2]));
-    return;
-  }
-
-  const messageRegenerateMatch = /^\/api\/chats\/([^/]+)\/messages\/([^/]+)\/regenerate$/.exec(url.pathname);
-  if (method === "POST" && messageRegenerateMatch) {
-    const body = await readJsonBody(request);
-    const regenStartMs = Date.now();
-    logSendDebug("api.route.regenerate.start", {
-      chatId: messageRegenerateMatch[1],
-      messageId: messageRegenerateMatch[2],
-    });
-    try {
-      const result = await runtime.regenerateMessage(
-        messageRegenerateMatch[1],
-        messageRegenerateMatch[2],
-        body,
-      );
-      logSendDebug("api.route.regenerate.done", {
-        chatId: messageRegenerateMatch[1],
-        messageId: messageRegenerateMatch[2],
-        elapsedMs: Date.now() - regenStartMs,
-      });
-      writeJson(response, 200, result);
-    } catch (err) {
-      logSendDebug("api.route.regenerate.error", {
-        chatId: messageRegenerateMatch[1],
-        messageId: messageRegenerateMatch[2],
-        elapsedMs: Date.now() - regenStartMs,
-        message: err instanceof Error ? err.message : String(err),
-      });
-      throw err;
-    }
-    return;
-  }
-
-  const messageVariantMatch = /^\/api\/chats\/([^/]+)\/messages\/([^/]+)\/variants\/(\d+)\/select$/.exec(url.pathname);
-  if (method === "POST" && messageVariantMatch) {
-    writeJson(response, 200, runtime.selectVariant(messageVariantMatch[1], messageVariantMatch[2], Number(messageVariantMatch[3])));
-    return;
-  }
-
-  const messageMatch = /^\/api\/chats\/([^/]+)\/messages\/([^/]+)$/.exec(url.pathname);
-  if (method === "PATCH" && messageMatch) {
-    const body = await readJsonBody(request);
-    writeJson(response, 200, runtime.editMessage(messageMatch[1], messageMatch[2], body.content ?? ""));
-    return;
-  }
-
-  if (method === "DELETE" && messageMatch) {
-    writeJson(response, 200, runtime.deleteMessage(messageMatch[1], messageMatch[2]));
-    return;
-  }
-
-  const messagesCreateMatch = /^\/api\/chats\/([^/]+)\/messages$/.exec(url.pathname);
-  if (method === "POST" && messagesCreateMatch) {
-    const body = await readJsonBody(request);
-    logSendDebug("api.route.messages.post", {
-      chatId: messagesCreateMatch[1],
-      contentLength: body.content?.length ?? 0,
-    });
-    writeJson(
-      response,
-      200,
-      await runtime.sendMessage(
-        messagesCreateMatch[1],
-        body as { content: string },
-      ),
-    );
-    return;
-  }
-
-  const setPersonaMatch = /^\/api\/chats\/([^/]+)\/set-persona$/.exec(url.pathname);
-  if (method === "POST" && setPersonaMatch) {
-    const body = await readJsonBody(request);
-    writeJson(response, 200, runtime.setChatPersona(setPersonaMatch[1], body.personaId));
-    return;
-  }
-
-  const setPromptPresetMatch = /^\/api\/chats\/([^/]+)\/set-prompt-preset$/.exec(url.pathname);
-  if (method === "POST" && setPromptPresetMatch) {
-    const body = await readJsonBody(request);
-    writeJson(response, 200, runtime.setChatPromptPreset(setPromptPresetMatch[1], body.promptPresetId));
-    return;
-  }
-
-  const forkChatMatch = /^\/api\/chats\/([^/]+)\/fork$/.exec(url.pathname);
-  if (method === "POST" && forkChatMatch) {
-    writeJson(response, 200, runtime.forkBranch(forkChatMatch[1]));
-    return;
-  }
-
-  const activateBranchMatch = /^\/api\/chats\/([^/]+)\/branches\/([^/]+)\/activate$/.exec(url.pathname);
-  if (method === "POST" && activateBranchMatch) {
-    writeJson(response, 200, runtime.activateBranch(activateBranchMatch[1], activateBranchMatch[2]));
-    return;
-  }
-
-  const branchDeleteMatch = /^\/api\/chats\/([^/]+)\/branches\/([^/]+)$/.exec(url.pathname);
-  if (method === "DELETE" && branchDeleteMatch) {
-    writeJson(response, 200, runtime.deleteBranch(branchDeleteMatch[1], branchDeleteMatch[2]));
-    return;
-  }
-
-  const chatRootMatch = /^\/api\/chats\/([^/]+)$/.exec(url.pathname);
-  if (method === "DELETE" && chatRootMatch) {
-    runtime.deleteChat(chatRootMatch[1]);
-    writeEmpty(response, 204);
-    return;
-  }
-
-  const renameChatMatch = /^\/api\/chats\/([^/]+)\/title$/.exec(url.pathname);
-  if (method === "PATCH" && renameChatMatch) {
-    const body = await readJsonBody(request);
-    writeJson(response, 200, runtime.renameChat(renameChatMatch[1], body.title as string));
-    return;
-  }
-
-  const archiveCharMatch = /^\/api\/characters\/([^/]+)\/archive$/.exec(url.pathname);
-  if (method === "PATCH" && archiveCharMatch) {
-    writeJson(response, 200, runtime.archiveCharacter(archiveCharMatch[1]));
-    return;
-  }
-
-  const unarchiveCharMatch = /^\/api\/characters\/([^/]+)\/unarchive$/.exec(url.pathname);
-  if (method === "PATCH" && unarchiveCharMatch) {
-    writeJson(response, 200, runtime.unarchiveCharacter(unarchiveCharMatch[1]));
-    return;
-  }
-
-  const characterMatch = /^\/api\/characters\/([^/]+)$/.exec(url.pathname);
-  if (method === "PATCH" && characterMatch) {
-    const body = await readJsonBody(request);
-    writeJson(
-      response,
-      200,
-      runtime.updateCharacter(characterMatch[1], body as {
-        chatId: string;
-        name: string;
-        description: string;
-        scenario: string;
-        systemPrompt: string;
-        mesExample?: string | null;
-        alternateGreetings?: string[];
-        postHistoryInstructions?: string | null;
-        creatorNotes?: string | null;
-      }),
-    );
-    return;
-  }
-
-  if (method === "DELETE" && characterMatch) {
-    runtime.deleteCharacter(characterMatch[1]);
-    writeEmpty(response, 204);
-    return;
-  }
-
-  const personaMatch = /^\/api\/personas\/([^/]+)$/.exec(url.pathname);
-  if (method === "PATCH" && personaMatch) {
-    const body = await readJsonBody(request);
-    writeJson(
-      response,
-      200,
-      runtime.updatePersona(personaMatch[1], body as {
-        chatId: string;
-        name: string;
-        description: string;
-        systemPrompt: string;
-      }),
-    );
-    return;
-  }
-
-  if (method === "DELETE" && personaMatch) {
-    try {
-      runtime.deletePersona(personaMatch[1]);
-      writeEmpty(response, 204);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      const status = /referenced by one or more chats/i.test(message) ? 409 : /not found/i.test(message) ? 404 : 500;
-      writeJson(response, status, { error: message });
-    }
-    return;
-  }
-
-  const personaPersonalLorebookMatch = /^\/api\/personas\/([^/]+)\/personal-lorebook$/.exec(url.pathname);
-  if (method === "GET" && personaPersonalLorebookMatch) {
-    try {
-      writeJson(response, 200, runtime.getPersonalLorebookStatus(personaPersonalLorebookMatch[1]));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      writeJson(response, /not found/i.test(message) ? 404 : 500, { error: message });
-    }
-    return;
-  }
-  if (method === "PUT" && personaPersonalLorebookMatch) {
-    const body = await readJsonBody(request);
-    const enabled = body.enabled === true;
-    try {
-      writeJson(response, 200, runtime.setPersonalLorebookEnabled(personaPersonalLorebookMatch[1], enabled));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      writeJson(response, /not found/i.test(message) ? 404 : 500, { error: message });
-    }
-    return;
-  }
-
-  const lorebookMatch = /^\/api\/lorebooks\/([^/]+)$/.exec(url.pathname);
-  if (method === "PATCH" && lorebookMatch) {
-    const body = await readJsonBody(request);
-    writeJson(
-      response,
-      200,
-      runtime.updateLorebook(lorebookMatch[1], body as { chatId: string; lorebookRaw: string }),
-      );
-    return;
-  }
-
-  const testActivationMatch = /^\/api\/lorebooks\/([^/]+)\/test-activation$/.exec(url.pathname);
-  if (method === "POST" && testActivationMatch) {
-    const body = await readJsonBody(request);
-    writeJson(
-      response,
-      200,
-      runtime.testLoreActivation(testActivationMatch[1], body as { text: string }),
-    );
-    return;
-  }
-
-  const createLoreEntryMatch = /^\/api\/lorebooks\/([^/]+)\/entries$/.exec(url.pathname);
-  if (method === "GET" && createLoreEntryMatch) {
-    writeJson(response, 200, runtime.listLoreEntries(createLoreEntryMatch[1]));
-    return;
-  }
-  if (method === "POST" && createLoreEntryMatch) {
-    const body = await readJsonBody(request);
-    writeJson(response, 200, runtime.createLoreEntry(createLoreEntryMatch[1], body));
-    return;
-  }
-
-  const updateLoreEntryMatch = /^\/api\/lorebooks\/([^/]+)\/entries\/([^/]+)$/.exec(url.pathname);
-  if (method === "PATCH" && updateLoreEntryMatch) {
-    const body = await readJsonBody(request);
-    writeJson(response, 200, runtime.updateLoreEntry(updateLoreEntryMatch[1], updateLoreEntryMatch[2], body));
-    return;
-  }
-  if (method === "DELETE" && updateLoreEntryMatch) {
-    runtime.deleteLoreEntry(updateLoreEntryMatch[1], updateLoreEntryMatch[2]);
-    writeJson(response, 200, { ok: true });
-    return;
-  }
-
-  if (method === "GET" && url.pathname === "/api/prompt-presets") {
-    writeJson(response, 200, runtime.listPromptPresets());
-    return;
-  }
-  if (method === "POST" && url.pathname === "/api/prompt-presets") {
-    const body = await readJsonBody(request);
-    try {
-      writeJson(response, 201, runtime.createPromptPreset(body as any));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      writeJson(response, /required/i.test(message) ? 400 : 500, { error: message });
-    }
-    return;
-  }
-  const promptPresetMatch = /^\/api\/prompt-presets\/([^/]+)$/.exec(url.pathname);
-  if (method === "PATCH" && promptPresetMatch) {
-    const body = await readJsonBody(request);
-    try {
-      writeJson(response, 200, runtime.updatePromptPreset(promptPresetMatch[1], body as any));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      writeJson(response, /not found/i.test(message) ? 404 : 500, { error: message });
-    }
-    return;
-  }
-  if (method === "DELETE" && promptPresetMatch) {
-    try {
-      runtime.deletePromptPreset(promptPresetMatch[1]);
-      writeEmpty(response, 204);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      writeJson(response, /not found/i.test(message) ? 404 : 500, { error: message });
-    }
-    return;
-  }
-
-  if (method === "GET" && url.pathname === "/api/providers") {
-    writeJson(response, 200, runtime.listProviderProfiles());
-    return;
-  }
-
-  const providerMatch = /^\/api\/providers\/([^/]+)$/.exec(url.pathname);
-  if (method === "GET" && providerMatch) {
-    writeJson(response, 200, runtime.fetchProviderProfile(providerMatch[1]));
-    return;
-  }
-
-  if (method === "DELETE" && providerMatch) {
-    runtime.deleteProviderProfile(providerMatch[1]);
-    writeJson(response, 200, { ok: true });
-    return;
-  }
-
-  if (method === "PATCH" && providerMatch) {
-    const body = await readJsonBody(request);
-    writeJson(response, 200, await runtime.updateProviderProfile(providerMatch[1], body));
-    return;
-  }
-
-  if (method === "POST" && url.pathname === "/api/providers/test") {
-    const body = await readJsonBody(request);
-    writeJson(response, 200, await runtime.testProviderDraft(body as any));
-    return;
-  }
-
-  if (method === "POST" && url.pathname === "/api/import/json") {
-    const body = await readJsonBody(request);
-    writeJson(
-      response,
-      200,
-      runtime.importJson(body as { fileName: string; jsonText: string; chatId?: string }),
-    );
-    return;
-  }
-
-  if (method === "POST" && url.pathname === "/api/providers") {
-    const body = await readJsonBody(request);
-    writeJson(response, 200, await runtime.saveProviderDraft(body as any));
-    return;
-  }
-
-  const providerActivateMatch = /^\/api\/providers\/([^/]+)\/activate$/.exec(url.pathname);
-  if (method === "POST" && providerActivateMatch) {
-    writeJson(response, 200, runtime.activateProviderProfile(providerActivateMatch[1]));
-    return;
-  }
-
-  if (method === "POST" && url.pathname === "/api/providers/fetch-models") {
-    const body = await readJsonBody(request);
-    const baseUrl = typeof body?.baseUrl === "string" ? body.baseUrl : "";
-    const apiKey = typeof body?.apiKey === "string" ? body.apiKey : "";
-    if (!baseUrl.trim()) {
-      writeJson(response, 400, { error: "baseUrl is required." });
-      return;
-    }
-    try {
-      const models = await runtime.fetchModelsByEndpoint(baseUrl, apiKey);
-      writeJson(response, 200, { models });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to fetch models.";
-      writeJson(response, 502, { error: message });
-    }
-    return;
-  }
-
-  if (method === "POST" && url.pathname === "/api/providers/test-chat") {
-    const body = await readJsonBody(request);
-    const baseUrl = typeof body?.baseUrl === "string" ? body.baseUrl : "";
-    const apiKey = typeof body?.apiKey === "string" ? body.apiKey : "";
-    const model = typeof body?.model === "string" ? body.model : "";
-    if (!baseUrl || !model) {
-      writeJson(response, 400, { error: "baseUrl and model are required." });
-      return;
-    }
-    writeJson(response, 200, await testProviderChat({ baseUrl, apiKey, model }));
-    return;
-  }
-
-  const providerModelsMatch = /^\/api\/providers\/([^/]+)\/models$/.exec(url.pathname);
-  if (method === "POST" && providerModelsMatch) {
-    writeJson(response, 200, await runtime.fetchProviderModels(providerModelsMatch[1]));
-    return;
-  }
-
-  const providerTestSavedMatch = /^\/api\/providers\/([^/]+)\/test$/.exec(url.pathname);
-  if (method === "POST" && providerTestSavedMatch) {
-    writeJson(response, 200, await runtime.testProviderProfile(providerTestSavedMatch[1]));
-    return;
-  }
-
-  const profileTestChatMatch = /^\/api\/providers\/([^/]+)\/test-chat$/.exec(url.pathname);
-  if (method === "POST" && profileTestChatMatch) {
-    const body = await readJsonBody(request);
-    const model = typeof body?.model === "string" ? body.model : "";
-    if (!model) {
-      writeJson(response, 400, { error: "model is required." });
-      return;
-    }
-    const profile = getRequiredProviderProfile(profileTestChatMatch[1]);
-    writeJson(response, 200, await testProviderChat({
-      baseUrl: profile.endpoint,
-      apiKey: profile.apiKey ?? "",
-      model,
-    }));
-    return;
-  }
-
-  writeJson(response, 404, { error: `Route not found: ${method} ${url.pathname}` });
-}
-
-async function readJsonBody(request: IncomingMessage): Promise<Record<string, any>> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-
-  const raw = Buffer.concat(chunks).toString("utf8").trim();
-  if (!raw) {
-    return {};
-  }
-
-  return JSON.parse(raw) as Record<string, any>;
-}
-
-function writeJson(response: ServerResponse, statusCode: number, payload: unknown) {
-  response.statusCode = statusCode;
-  response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  response.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
-  response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.end(JSON.stringify(payload));
-}
-
-function writeEmpty(response: ServerResponse, statusCode: number) {
-  response.statusCode = statusCode;
-  response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  response.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
-  response.end();
-}
-
-function writeText(response: ServerResponse, statusCode: number, contentType: string, payload: string) {
-  response.statusCode = statusCode;
-  response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  response.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
-  response.setHeader("Content-Type", contentType);
-  response.end(payload);
-}
-
 function getRequiredProviderProfile(providerProfileId: string) {
   const profile = sessionRuntime.getProviderProfile(providerProfileId);
   if (!profile) {
@@ -741,3 +158,445 @@ function getRequiredProviderProfile(providerProfileId: string) {
   }
   return profile;
 }
+
+const app = new Hono();
+
+app.use("*", cors({
+  origin: "*",
+  allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  allowHeaders: ["Content-Type"],
+}));
+
+app.use("*", async (c, next) => {
+  const contentLength = c.req.header("content-length");
+  if (contentLength && parseInt(contentLength) > 1024 * 1024) {
+    return c.json({ error: "Request body too large" }, 413);
+  }
+  await next();
+});
+
+app.onError((err, c) => {
+  const url = c.req.url;
+  const method = c.req.method;
+  if (url.includes("/messages") || url.includes("/debug/send-log")) {
+    logSendDebug("api.route.error", {
+      method,
+      url,
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : null,
+    });
+  }
+  return c.json(
+    { error: err instanceof Error ? err.message : "Unknown server error" },
+    500,
+  );
+});
+
+app.get("/health", (c) => {
+  return c.json({
+    ok: true,
+    service: "rp-platform-api",
+    time: new Date().toISOString(),
+  });
+});
+
+app.post("/api/debug/send-log", async (c) => {
+  const body = await c.req.json();
+  logSendDebug("web.debug", typeof body === "object" && body ? body as Record<string, unknown> : { body });
+  return c.json({ ok: true });
+});
+
+app.get("/api/bootstrap", (c) => {
+  return c.json(runtime.bootstrap());
+});
+
+app.get("/api/personas", (c) => {
+  return c.json(runtime.listPersonas());
+});
+
+app.post("/api/personas", async (c) => {
+  const body = await c.req.json();
+  return c.json(runtime.createPersona(body as { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }), 201);
+});
+
+app.get("/api/chats/:chatId", (c) => {
+  return c.json(runtime.getChatSnapshot(c.req.param("chatId")));
+});
+
+app.post("/api/characters", async (c) => {
+  const body = await c.req.json() as Record<string, unknown>;
+  const name = body.name;
+  if (!name || typeof name !== "string" || !name.trim()) {
+    return c.json({ error: "name is required" }, 400);
+  }
+  return c.json(sessionRuntime.createCharacterFromScratch({
+    name: name.trim(),
+    description: (body as any).description ?? undefined,
+    firstMessage: (body as any).firstMessage ?? undefined,
+    scenario: (body as any).scenario ?? undefined,
+    personalitySummary: (body as any).personalitySummary ?? undefined,
+  }), 201);
+});
+
+app.post("/api/chats", async (c) => {
+  const body = await c.req.json() as Record<string, unknown>;
+  const characterId = body.characterId;
+  if (!characterId) {
+    return c.json(sessionRuntime.createFreeChat());
+  }
+  return c.json(runtime.createChatForCharacter(characterId as string));
+});
+
+app.post("/api/chats/:chatId/clone", (c) => {
+  return c.json(runtime.cloneChat(c.req.param("chatId")));
+});
+
+app.get("/api/characters/:characterId/export", (c) => {
+  return c.json(runtime.exportCharacter(c.req.param("characterId")));
+});
+
+app.get("/api/chats/:chatId/export.jsonl", (c) => {
+  return c.text(
+    runtime.exportChatJsonl(c.req.param("chatId")),
+    200,
+    { "Content-Type": "application/x-ndjson; charset=utf-8" },
+  );
+});
+
+app.get("/api/prompt-traces/:traceId/export", (c) => {
+  return c.json(runtime.exportPromptTrace(c.req.param("traceId")));
+});
+
+app.patch("/api/chats/:chatId/settings", async (c) => {
+  const body = await c.req.json();
+  return c.json(
+    runtime.updateChatSettings(c.req.param("chatId"), body as {
+      title: string;
+      subtitle: string;
+      scenario: string;
+      systemPrompt: string;
+    }),
+  );
+});
+
+app.post("/api/chats/:chatId/messages/:messageId/branch", (c) => {
+  return c.json(runtime.branchChat(c.req.param("chatId"), c.req.param("messageId")));
+});
+
+app.post("/api/chats/:chatId/messages/:messageId/regenerate", async (c) => {
+  const chatId = c.req.param("chatId");
+  const messageId = c.req.param("messageId");
+  const body = await c.req.json();
+  const regenStartMs = Date.now();
+  logSendDebug("api.route.regenerate.start", { chatId, messageId });
+  try {
+    const result = await runtime.regenerateMessage(chatId, messageId, body);
+    logSendDebug("api.route.regenerate.done", { chatId, messageId, elapsedMs: Date.now() - regenStartMs });
+    return c.json(result);
+  } catch (err) {
+    logSendDebug("api.route.regenerate.error", {
+      chatId,
+      messageId,
+      elapsedMs: Date.now() - regenStartMs,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+});
+
+app.post("/api/chats/:chatId/messages/:messageId/variants/:variantIndex/select", (c) => {
+  return c.json(
+    runtime.selectVariant(
+      c.req.param("chatId"),
+      c.req.param("messageId"),
+      Number(c.req.param("variantIndex")),
+    ),
+  );
+});
+
+app.patch("/api/chats/:chatId/messages/:messageId", async (c) => {
+  const body = await c.req.json();
+  return c.json(runtime.editMessage(c.req.param("chatId"), c.req.param("messageId"), body.content ?? ""));
+});
+
+app.delete("/api/chats/:chatId/messages/:messageId", (c) => {
+  return c.json(runtime.deleteMessage(c.req.param("chatId"), c.req.param("messageId")));
+});
+
+app.post("/api/chats/:chatId/messages", async (c) => {
+  const chatId = c.req.param("chatId");
+  const body = await c.req.json();
+  logSendDebug("api.route.messages.post", { chatId, contentLength: body.content?.length ?? 0 });
+  return c.json(await runtime.sendMessage(chatId, body as { content: string }));
+});
+
+app.post("/api/chats/:chatId/set-persona", async (c) => {
+  const body = await c.req.json();
+  return c.json(runtime.setChatPersona(c.req.param("chatId"), body.personaId));
+});
+
+app.post("/api/chats/:chatId/set-prompt-preset", async (c) => {
+  const body = await c.req.json();
+  return c.json(runtime.setChatPromptPreset(c.req.param("chatId"), body.promptPresetId));
+});
+
+app.post("/api/chats/:chatId/fork", (c) => {
+  return c.json(runtime.forkBranch(c.req.param("chatId")));
+});
+
+app.post("/api/chats/:chatId/branches/:branchId/activate", (c) => {
+  return c.json(runtime.activateBranch(c.req.param("chatId"), c.req.param("branchId")));
+});
+
+app.delete("/api/chats/:chatId/branches/:branchId", (c) => {
+  return c.json(runtime.deleteBranch(c.req.param("chatId"), c.req.param("branchId")));
+});
+
+app.delete("/api/chats/:chatId", (c) => {
+  runtime.deleteChat(c.req.param("chatId"));
+  return c.body(null, 204);
+});
+
+app.patch("/api/chats/:chatId/title", async (c) => {
+  const body = await c.req.json();
+  return c.json(runtime.renameChat(c.req.param("chatId"), body.title as string));
+});
+
+app.patch("/api/characters/:characterId/archive", (c) => {
+  return c.json(runtime.archiveCharacter(c.req.param("characterId")));
+});
+
+app.patch("/api/characters/:characterId/unarchive", (c) => {
+  return c.json(runtime.unarchiveCharacter(c.req.param("characterId")));
+});
+
+app.patch("/api/characters/:characterId", async (c) => {
+  const body = await c.req.json();
+  return c.json(
+    runtime.updateCharacter(c.req.param("characterId"), body as {
+      chatId: string;
+      name: string;
+      description: string;
+      scenario: string;
+      systemPrompt: string;
+      mesExample?: string | null;
+      alternateGreetings?: string[];
+      postHistoryInstructions?: string | null;
+      creatorNotes?: string | null;
+    }),
+  );
+});
+
+app.delete("/api/characters/:characterId", (c) => {
+  runtime.deleteCharacter(c.req.param("characterId"));
+  return c.body(null, 204);
+});
+
+app.patch("/api/personas/:personaId", async (c) => {
+  const body = await c.req.json();
+  return c.json(
+    runtime.updatePersona(c.req.param("personaId"), body as {
+      chatId: string;
+      name: string;
+      description: string;
+      systemPrompt: string;
+    }),
+  );
+});
+
+app.delete("/api/personas/:personaId", (c) => {
+  try {
+    runtime.deletePersona(c.req.param("personaId"));
+    return c.body(null, 204);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const status = /referenced by one or more chats/i.test(message) ? 409 : /not found/i.test(message) ? 404 : 500;
+    return c.json({ error: message }, status as 409 | 404 | 500);
+  }
+});
+
+app.get("/api/personas/:personaId/personal-lorebook", (c) => {
+  try {
+    return c.json(runtime.getPersonalLorebookStatus(c.req.param("personaId")));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, /not found/i.test(message) ? 404 : 500);
+  }
+});
+
+app.put("/api/personas/:personaId/personal-lorebook", async (c) => {
+  const body = await c.req.json();
+  const enabled = body.enabled === true;
+  try {
+    return c.json(runtime.setPersonalLorebookEnabled(c.req.param("personaId"), enabled));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, /not found/i.test(message) ? 404 : 500);
+  }
+});
+
+app.patch("/api/lorebooks/:lorebookId", async (c) => {
+  const body = await c.req.json();
+  return c.json(
+    runtime.updateLorebook(c.req.param("lorebookId"), body as { chatId: string; lorebookRaw: string }),
+  );
+});
+
+app.post("/api/lorebooks/:lorebookId/test-activation", async (c) => {
+  const body = await c.req.json();
+  return c.json(
+    runtime.testLoreActivation(c.req.param("lorebookId"), body as { text: string }),
+  );
+});
+
+app.get("/api/lorebooks/:lorebookId/entries", (c) => {
+  return c.json(runtime.listLoreEntries(c.req.param("lorebookId")));
+});
+
+app.post("/api/lorebooks/:lorebookId/entries", async (c) => {
+  const body = await c.req.json();
+  return c.json(runtime.createLoreEntry(c.req.param("lorebookId"), body));
+});
+
+app.patch("/api/lorebooks/:lorebookId/entries/:entryId", async (c) => {
+  const body = await c.req.json();
+  return c.json(runtime.updateLoreEntry(c.req.param("lorebookId"), c.req.param("entryId"), body));
+});
+
+app.delete("/api/lorebooks/:lorebookId/entries/:entryId", (c) => {
+  runtime.deleteLoreEntry(c.req.param("lorebookId"), c.req.param("entryId"));
+  return c.json({ ok: true });
+});
+
+app.get("/api/prompt-presets", (c) => {
+  return c.json(runtime.listPromptPresets());
+});
+
+app.post("/api/prompt-presets", async (c) => {
+  const body = await c.req.json();
+  try {
+    return c.json(runtime.createPromptPreset(body as any), 201);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, /required/i.test(message) ? 400 : 500);
+  }
+});
+
+app.patch("/api/prompt-presets/:presetId", async (c) => {
+  const body = await c.req.json();
+  try {
+    return c.json(runtime.updatePromptPreset(c.req.param("presetId"), body as any));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, /not found/i.test(message) ? 404 : 500);
+  }
+});
+
+app.delete("/api/prompt-presets/:presetId", (c) => {
+  try {
+    runtime.deletePromptPreset(c.req.param("presetId"));
+    return c.body(null, 204);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ error: message }, /not found/i.test(message) ? 404 : 500);
+  }
+});
+
+app.get("/api/providers", (c) => {
+  return c.json(runtime.listProviderProfiles());
+});
+
+app.get("/api/providers/:providerId", (c) => {
+  return c.json(runtime.fetchProviderProfile(c.req.param("providerId")));
+});
+
+app.delete("/api/providers/:providerId", (c) => {
+  runtime.deleteProviderProfile(c.req.param("providerId"));
+  return c.json({ ok: true });
+});
+
+app.patch("/api/providers/:providerId", async (c) => {
+  const body = await c.req.json();
+  return c.json(await runtime.updateProviderProfile(c.req.param("providerId"), body));
+});
+
+app.post("/api/providers/test", async (c) => {
+  const body = await c.req.json();
+  return c.json(await runtime.testProviderDraft(body as any));
+});
+
+app.post("/api/import/json", async (c) => {
+  const body = await c.req.json();
+  return c.json(runtime.importJson(body as { fileName: string; jsonText: string; chatId?: string }));
+});
+
+app.post("/api/providers", async (c) => {
+  const body = await c.req.json();
+  return c.json(await runtime.saveProviderDraft(body as any));
+});
+
+app.post("/api/providers/:providerId/activate", (c) => {
+  return c.json(runtime.activateProviderProfile(c.req.param("providerId")));
+});
+
+app.post("/api/providers/fetch-models", async (c) => {
+  const body = await c.req.json();
+  const baseUrl = typeof body?.baseUrl === "string" ? body.baseUrl : "";
+  const apiKey = typeof body?.apiKey === "string" ? body.apiKey : "";
+  if (!baseUrl.trim()) {
+    return c.json({ error: "baseUrl is required." }, 400);
+  }
+  try {
+    const models = await runtime.fetchModelsByEndpoint(baseUrl, apiKey);
+    return c.json({ models });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to fetch models.";
+    return c.json({ error: message }, 502);
+  }
+});
+
+app.post("/api/providers/test-chat", async (c) => {
+  const body = await c.req.json();
+  const baseUrl = typeof body?.baseUrl === "string" ? body.baseUrl : "";
+  const apiKey = typeof body?.apiKey === "string" ? body.apiKey : "";
+  const model = typeof body?.model === "string" ? body.model : "";
+  if (!baseUrl || !model) {
+    return c.json({ error: "baseUrl and model are required." }, 400);
+  }
+  return c.json(await testProviderChat({ baseUrl, apiKey, model }));
+});
+
+app.post("/api/providers/:providerId/models", (c) => {
+  return c.json(runtime.fetchProviderModels(c.req.param("providerId")));
+});
+
+app.post("/api/providers/:providerId/test", (c) => {
+  return c.json(runtime.testProviderProfile(c.req.param("providerId")));
+});
+
+app.post("/api/providers/:providerId/test-chat", async (c) => {
+  const body = await c.req.json();
+  const model = typeof body?.model === "string" ? body.model : "";
+  if (!model) {
+    return c.json({ error: "model is required." }, 400);
+  }
+  const profile = getRequiredProviderProfile(c.req.param("providerId"));
+  return c.json(await testProviderChat({
+    baseUrl: profile.endpoint,
+    apiKey: profile.apiKey ?? "",
+    model,
+  }));
+});
+
+app.all("*", (c) => {
+  const url = new URL(c.req.url);
+  return c.json({ error: `Route not found: ${c.req.method} ${url.pathname}` }, 404);
+});
+
+Bun.serve({
+  fetch: app.fetch,
+  port,
+  hostname: host,
+});
+
+console.log(`RP Platform API listening on http://${host}:${port}`);
