@@ -65,7 +65,7 @@ const runtime = {
   editMessage: (chatId: string, messageId: string, content: string) =>
     chatRuntime.editMessage(brandId<ChatId>(chatId), messageId, content),
   deleteMessage: (chatId: string, messageId: string) => chatRuntime.deleteMessage(brandId<ChatId>(chatId), messageId),
-  sendMessage: async (chatId: string, body: { content: string }) => {
+  sendMessage: async (chatId: string, body: { content: string }, signal?: AbortSignal) => {
     logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
     const profile = providerProfileService.resolveActiveProviderProfile();
     if (!profile) {
@@ -89,7 +89,7 @@ const runtime = {
       content: body.content,
       profile,
       model: profile.defaultModel,
-      signal: undefined,
+      signal,
     });
     logSendDebug("api.runtime.send.success", {
       chatId,
