@@ -113,8 +113,8 @@ export interface ForkChatBranchResult {
 }
 
 export interface ChatSessionStore {
-  upsertCharacter(input: Character): void;
-  upsertCharacterVersion(input: CharacterVersion): void;
+  upsertCharacter(input: Character): Promise<void>;
+  upsertCharacterVersion(input: CharacterVersion): Promise<void>;
   upsertPersona(input: Persona): void;
   getPersona(personaId: PersonaId): Persona | null;
   listPersonas(): Persona[];
@@ -213,11 +213,11 @@ export class InMemoryChatSessionStore implements ChatSessionStore {
     this.idGenerator = runtime.idGenerator;
   }
 
-  upsertCharacter(input: Character): void {
+  async upsertCharacter(input: Character): Promise<void> {
     this.characters.set(input.id, { ...input });
   }
 
-  upsertCharacterVersion(input: CharacterVersion): void {
+  async upsertCharacterVersion(input: CharacterVersion): Promise<void> {
     this.characterVersions.set(input.id, {
       ...input,
       definition: cloneLooseRecord(input.definition),

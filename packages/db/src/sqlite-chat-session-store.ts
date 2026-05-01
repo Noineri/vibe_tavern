@@ -37,9 +37,9 @@ export class SqliteChatSessionStore implements ChatSessionStore {
     this.providers = new SqliteProviderStore(db, this.clock, this.idGenerator);
   }
 
-  upsertCharacter(input: Parameters<ChatSessionStore["upsertCharacter"]>[0]): void { this.characters.upsertCharacter(input); }
+  async upsertCharacter(input: Parameters<ChatSessionStore["upsertCharacter"]>[0]): Promise<void> { await this.characters.upsertCharacter(input); }
 
-  upsertCharacterVersion(input: Parameters<ChatSessionStore["upsertCharacterVersion"]>[0]): void { this.characters.upsertCharacterVersion(input); }
+  async upsertCharacterVersion(input: Parameters<ChatSessionStore["upsertCharacterVersion"]>[0]): Promise<void> { await this.characters.upsertCharacterVersion(input); }
 
   upsertPersona(input: Persona): void { this.personas.upsertPersona(input); }
 
