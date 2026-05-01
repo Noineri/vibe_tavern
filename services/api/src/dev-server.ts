@@ -1,5 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { brandId } from "@rp-platform/domain";
+import type { ChatId, CharacterId, ChatBranchId, MessageId } from "@rp-platform/domain";
 import { LiveChatOrchestrator } from "./live-chat-orchestrator.js";
 import { SessionRuntime } from "./session-runtime.js";
 import { ProviderOrchestrator } from "./provider-orchestrator.js";
@@ -17,7 +19,7 @@ const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime, providerOr
 
 const runtime = {
   bootstrap: () => sessionRuntime.getBootstrapState(),
-  getChatSnapshot: (chatId: string) => sessionRuntime.getSnapshot(chatId),
+  getChatSnapshot: (chatId: string) => sessionRuntime.getSnapshot(brandId<ChatId>(chatId)),
   createChatForCharacter: (characterId: string) => sessionRuntime.createChatForCharacter(characterId),
   cloneChat: (chatId: string) => sessionRuntime.cloneChat(chatId),
   exportCharacter: (characterId: string) => sessionRuntime.exportCharacter(characterId),
@@ -29,7 +31,7 @@ const runtime = {
   ) => {
     throw new Error("Chat settings route is not wired in this baseline.");
   },
-  branchChat: (chatId: string, _messageId: string) => sessionRuntime.forkBranch(chatId),
+  branchChat: (chatId: string, _messageId: string) => sessionRuntime.forkBranch(brandId<ChatId>(chatId)),
   regenerateMessage: async (chatId: string, messageId: string, _body: unknown) => {
     const profile = sessionRuntime.resolveActiveProviderProfile();
     if (!profile) {
@@ -47,10 +49,10 @@ const runtime = {
     return result.snapshot;
   },
   selectVariant: (chatId: string, messageId: string, variantIndex: number) =>
-    sessionRuntime.selectMessageVariant(chatId, messageId, variantIndex),
+    sessionRuntime.selectMessageVariant(brandId<ChatId>(chatId), brandId<MessageId>(messageId), variantIndex),
   editMessage: (chatId: string, messageId: string, content: string) =>
-    sessionRuntime.editMessage(chatId, messageId, content),
-  deleteMessage: (chatId: string, messageId: string) => sessionRuntime.deleteMessage(chatId, messageId),
+    sessionRuntime.editMessage(brandId<ChatId>(chatId), messageId, content),
+  deleteMessage: (chatId: string, messageId: string) => sessionRuntime.deleteMessage(brandId<ChatId>(chatId), messageId),
   sendMessage: async (chatId: string, body: { content: string }) => {
     logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
     const profile = sessionRuntime.resolveActiveProviderProfile();
@@ -85,12 +87,12 @@ const runtime = {
     return result.snapshot;
   },
   updateCharacter: (characterId: string, body: { chatId?: string; name?: string; description?: string; scenario?: string; systemPrompt?: string; mesExample?: string | null; alternateGreetings?: string[]; postHistoryInstructions?: string | null; creatorNotes?: string | null }) =>
-    sessionRuntime.updateCharacter(characterId, body),
+    sessionRuntime.updateCharacter(brandId<CharacterId>(characterId), { ...body, chatId: body.chatId != null ? brandId<ChatId>(body.chatId) : undefined }),
   updatePersona: (personaId: string, body: { chatId?: string; name?: string; description?: string }) =>
-    sessionRuntime.updatePersona(personaId, body),
+    sessionRuntime.updatePersona(personaId, { ...body, chatId: body.chatId != null ? brandId<ChatId>(body.chatId) : undefined }),
   listPersonas: () => sessionRuntime.listPersonas(),
-  setChatPersona: (chatId: string, personaId: string) => sessionRuntime.setChatPersona(chatId, personaId),
-  setChatPromptPreset: (chatId: string, promptPresetId: string) => sessionRuntime.setChatPromptPreset(chatId, promptPresetId),
+  setChatPersona: (chatId: string, personaId: string) => sessionRuntime.setChatPersona(brandId<ChatId>(chatId), personaId),
+  setChatPromptPreset: (chatId: string, promptPresetId: string) => sessionRuntime.setChatPromptPreset(brandId<ChatId>(chatId), promptPresetId),
   createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) =>
     sessionRuntime.createPersona(body),
   deletePersona: (personaId: string) => sessionRuntime.deletePersona(personaId),
@@ -138,8 +140,8 @@ const runtime = {
     return listProviderModels({ baseUrl: normalized, apiKey: apiKey ?? "" });
   },
   importJson: (body: { fileName: string; jsonText: string; chatId?: string }) => sessionRuntime.importJson(body),
-  forkBranch: (chatId: string) => sessionRuntime.forkBranch(chatId),
-  activateBranch: (chatId: string, branchId: string) => sessionRuntime.activateBranch(chatId, branchId),
+  forkBranch: (chatId: string) => sessionRuntime.forkBranch(brandId<ChatId>(chatId)),
+  activateBranch: (chatId: string, branchId: string) => sessionRuntime.activateBranch(brandId<ChatId>(chatId), brandId<ChatBranchId>(branchId)),
   deleteBranch: (chatId: string, branchId: string) => sessionRuntime.deleteBranch(chatId, branchId),
   archiveCharacter: (characterId: string) => sessionRuntime.archiveCharacter(characterId),
   unarchiveCharacter: (characterId: string) => sessionRuntime.unarchiveCharacter(characterId),

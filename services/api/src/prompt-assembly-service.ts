@@ -1,8 +1,13 @@
-import type { AssemblePromptResponse, PromptLayerDto } from "@rp-platform/domain";
+import { brandId } from "@rp-platform/domain";
+import type {
+  AssemblePromptResponse,
+  PromptLayerDto,
+} from "@rp-platform/domain";
 import type {
   ChatBranchId,
   ChatId,
   LoreEntry,
+  LoreEntryId,
   MessageId,
   PromptTrace,
   PromptTraceId,
@@ -211,7 +216,7 @@ export class PromptAssemblyService {
         tokenAccounting: {
           total: result.totalTokenEstimate,
         },
-        activatedLoreEntries: result.activatedLoreEntries,
+        activatedLoreEntries: result.activatedLoreEntries.map((id) => brandId<LoreEntryId>(id)),
         retrievedMemories: retrievedMemories.map((memory) => ({
           id: memory.id,
           sourceType: memory.sourceType,
@@ -226,7 +231,7 @@ export class PromptAssemblyService {
   }
 
   exportTraceToFile(traceId: string): string {
-    const trace = this.store.getPromptTrace(traceId as PromptTraceId);
+    const trace = this.store.getPromptTrace(brandId<PromptTraceId>(traceId));
     if (!trace) {
       throw new Error(`Prompt trace '${traceId}' was not found.`);
     }
