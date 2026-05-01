@@ -1,28 +1,7 @@
 import type { SessionRuntime, SessionSnapshot } from "./session-runtime.js";
 import type { ProviderOrchestrator } from "./provider-orchestrator.js";
+import type { StoredProviderProfileRecord } from "./session-runtime-dto.js";
 import { logSendDebug } from "./send-debug-log.js";
-
-interface StoredProviderProfileRecord {
-  id: string;
-  name: string;
-  type: string;
-  endpoint: string;
-  apiKey: string | null;
-  defaultModel?: string | null;
-  contextBudget?: number | null;
-  maxTokens?: number | null;
-  temperature?: number | null;
-  topP?: number | null;
-  minP?: number | null;
-  topK?: number | null;
-  typicalP?: number | null;
-  repPen?: number | null;
-  freqPen?: number | null;
-  presPen?: number | null;
-  stopSeq?: string | null;
-  seed?: number | string | null;
-  reasoningEffort?: string | null;
-}
 
 export class LiveChatOrchestrator {
   constructor(

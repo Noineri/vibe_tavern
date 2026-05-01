@@ -2,29 +2,8 @@ import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
 import type { ProviderManager } from "./providers/manager.js";
 import type { ProviderType } from "./providers/types.js";
 import type { SessionRuntime } from "./session-runtime.js";
+import type { StoredProviderProfileRecord } from "./session-runtime-dto.js";
 import { logSendDebug } from "./send-debug-log.js";
-
-interface StoredProviderProfileRecord {
-  id: string;
-  name: string;
-  type: string;
-  endpoint: string;
-  apiKey: string | null;
-  defaultModel?: string | null;
-  contextBudget?: number | null;
-  maxTokens?: number | null;
-  temperature?: number | null;
-  topP?: number | null;
-  minP?: number | null;
-  topK?: number | null;
-  typicalP?: number | null;
-  repPen?: number | null;
-  freqPen?: number | null;
-  presPen?: number | null;
-  stopSeq?: string | null;
-  seed?: number | string | null;
-  reasoningEffort?: string | null;
-}
 
 export class ProviderOrchestrator {
   constructor(

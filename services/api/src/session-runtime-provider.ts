@@ -19,7 +19,7 @@ export function listProviderProfiles(deps: ProviderModuleDeps): ClientProviderPr
     .map((profile) => toClientProviderProfile(profile as StoredProviderProfileRecord));
 }
 
-export async function saveProviderProfile(deps: ProviderModuleDeps, profile: any): Promise<ClientProviderProfileRecord> {
+export async function saveProviderProfile(deps: ProviderModuleDeps, profile: Partial<StoredProviderProfileRecord>): Promise<ClientProviderProfileRecord> {
   const existing = profile.id
     ? (deps.store.getProviderProfile(profile.id) as StoredProviderProfileRecord | null)
     : null;
