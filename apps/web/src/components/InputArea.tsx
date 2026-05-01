@@ -138,9 +138,8 @@ export function InputArea(input: InputAreaProps) {
             {input.isSending ? (
               <button
                 className="cancel-btn"
-                disabled
-                title="Cancellation is not yet supported by the runtime. Wait for the response to complete."
                 onClick={input.onCancel}
+                title="Stop generation"
               >
                 Cancel
               </button>

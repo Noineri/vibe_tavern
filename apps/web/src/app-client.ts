@@ -284,9 +284,13 @@ export async function sendChatMessage(
   input: {
     content: string;
   },
+  options?: { signal?: AbortSignal },
 ): Promise<AppSnapshot> {
   postSendDebug("web.client.sendChatMessage.start", { chatId, contentLength: input.content.length });
-  const response = await client.api.chats[":chatId"].messages.$post({ param: { chatId }, json: input });
+  const response = await client.api.chats[":chatId"].messages.$post(
+    { param: { chatId }, json: input },
+    { init: { signal: options?.signal } },
+  );
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);
 }
@@ -328,10 +332,14 @@ export async function deleteChatMessage(
 export async function regenerateChatMessage(
   chatId: ChatId,
   messageId: string,
+  options?: { signal?: AbortSignal },
 ): Promise<AppSnapshot> {
-  const response = await client.api.chats[":chatId"].messages[":messageId"].regenerate.$post({
-    param: { chatId, messageId },
-  });
+  const response = await client.api.chats[":chatId"].messages[":messageId"].regenerate.$post(
+    {
+      param: { chatId, messageId },
+    },
+    { init: { signal: options?.signal } },
+  );
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);
 }

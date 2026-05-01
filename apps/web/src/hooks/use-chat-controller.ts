@@ -1,3 +1,4 @@
+import { useCallback, useRef } from "react";
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
 import {
   activateBranch,
@@ -70,7 +71,9 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     setSelectedTraceId,
   } = deps;
 
-  async function handleSend(): Promise<void> {
+  const abortRef = useRef<AbortController | null>(null);
+
+  const handleSend = useCallback(async (): Promise<void> => {
     const activeChatId = getActiveChatId();
     const draft = getDraft();
     const trimmed = draft.trim();
@@ -102,6 +105,9 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       return;
     }
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setDraft("");
     setPendingUserMessageContent(trimmed);
     setChatNotice("");
@@ -109,11 +115,17 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
 
     try {
       void logClientSendDebug("web.hook.handleSend.request", { activeChatId });
-      const nextSnapshot = await sendChatMessage(activeChatId, { content: trimmed });
+      const nextSnapshot = await sendChatMessage(activeChatId, { content: trimmed }, { signal: controller.signal });
       setSnapshot(activeChatId, nextSnapshot);
       setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
       void logClientSendDebug("web.hook.handleSend.success", { activeChatId });
     } catch (error) {
+      if (controller.signal.aborted) {
+        void logClientSendDebug("web.hook.handleSend.cancelled", { activeChatId });
+        setSnapshot(activeChatId, await fetchChat(activeChatId));
+        setChatNotice("Generation cancelled.");
+        return;
+      }
       void logClientSendDebug("web.hook.handleSend.error", {
         activeChatId,
         message: error instanceof Error ? error.message : String(error),
@@ -123,12 +135,15 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     } finally {
       setPendingUserMessageContent(null);
       setIsSending(false);
+      abortRef.current = null;
     }
-  }
+  }, []);
 
-  function handleCancelGeneration(): void {
-    setChatNotice("Generation cancellation is not yet supported by the runtime. Wait for the response to complete.");
-  }
+  const handleCancelGeneration = useCallback((): void => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setChatNotice("Cancelling generation…");
+  }, []);
 
   async function handleSwitchChat(chatId: ChatId): Promise<void> {
     setSnapshot(chatId, await fetchChat(chatId));
@@ -190,19 +205,29 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       return;
     }
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setIsSending(true);
     setMessageActionId(messageId);
     setChatNotice("");
     try {
-      const nextSnapshot = await regenerateChatMessage(activeChatId, messageId);
+      const nextSnapshot = await regenerateChatMessage(activeChatId, messageId, { signal: controller.signal });
       setSnapshot(activeChatId, nextSnapshot);
       setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
     } catch (error) {
+      if (controller.signal.aborted) {
+        void logClientSendDebug("web.hook.handleRegenerate.cancelled", { activeChatId, messageId });
+        setSnapshot(activeChatId, await fetchChat(activeChatId));
+        setChatNotice("Generation cancelled.");
+        return;
+      }
       setSnapshot(activeChatId, await fetchChat(activeChatId));
       setChatNotice(error instanceof Error ? error.message : "Regeneration failed.");
     } finally {
       setIsSending(false);
       setMessageActionId(null);
+      abortRef.current = null;
     }
   }
 
