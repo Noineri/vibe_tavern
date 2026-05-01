@@ -350,12 +350,20 @@ export class SessionRuntime {
 
     const expandedContent = this.expandChatMacros(chatId, trimmed);
 
-    this.chatApp.appendUserMessage(chatId, {
+    const userMessage = this.chatApp.appendUserMessage(chatId, {
       content: expandedContent,
       mode: "reply",
     });
 
-    const assembled = this.assemblePrompt(chatId, undefined, { model });
+    let assembled;
+    try {
+      assembled = this.assemblePrompt(chatId, undefined, { model });
+    } catch (err) {
+      try {
+        this.store.deleteMessage(userMessage.id);
+      } catch {}
+      throw err;
+    }
     this.pendingPromptTraceByChat.set(chatId, {
       branchId: assembled.branchId,
       draft: assembled.promptTraceDraft,
@@ -365,6 +373,10 @@ export class SessionRuntime {
       prompt: assembled.prompt,
       snapshot: this.getSnapshot(chatId),
     };
+  }
+
+  discardPendingPromptTrace(chatId: ChatId): void {
+    this.pendingPromptTraceByChat.delete(chatId);
   }
 
   appendAssistantReply(chatId: ChatId, content: string, latencyMs: number): SessionSnapshot {

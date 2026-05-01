@@ -50,10 +50,16 @@ export class LiveChatOrchestrator {
     });
     const startedAt = Date.now();
     logSendDebug("live.send.provider.start", { chatId: input.chatId, providerId: input.profile.id, model: input.model });
-    const reply = await this.providers.generateProfileReply(input.profile, {
-      model: input.model,
-      prompt: prepared.prompt,
-    });
+    let reply: string;
+    try {
+      reply = await this.providers.generateProfileReply(input.profile, {
+        model: input.model,
+        prompt: prepared.prompt,
+      });
+    } catch (err) {
+      this.runtime.discardPendingPromptTrace(input.chatId);
+      throw err;
+    }
     const latencyMs = Date.now() - startedAt;
     logSendDebug("live.send.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
     const snapshot = this.runtime.appendAssistantReply(input.chatId, reply, latencyMs);
@@ -89,10 +95,16 @@ export class LiveChatOrchestrator {
     });
     const startedAt = Date.now();
     logSendDebug("live.regenerate.provider.start", { chatId: input.chatId, providerId: input.profile.id, model: input.model });
-    const reply = await this.providers.generateProfileReply(input.profile, {
-      model: input.model,
-      prompt,
-    });
+    let reply: string;
+    try {
+      reply = await this.providers.generateProfileReply(input.profile, {
+        model: input.model,
+        prompt,
+      });
+    } catch (err) {
+      this.runtime.discardPendingPromptTrace(input.chatId);
+      throw err;
+    }
     const latencyMs = Date.now() - startedAt;
     logSendDebug("live.regenerate.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
     const snapshot = this.runtime.appendMessageVariant(input.chatId, input.messageId, {
