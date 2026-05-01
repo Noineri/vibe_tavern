@@ -9,9 +9,6 @@ export default defineConfig({
       "@rp-platform/api": fileURLToPath(
         new URL("../../services/api/src/index.ts", import.meta.url),
       ),
-      "@rp-platform/api-contracts": fileURLToPath(
-        new URL("../../packages/api-contracts/src/index.ts", import.meta.url),
-      ),
       "@rp-platform/db": fileURLToPath(
         new URL("../../packages/db/src/index.ts", import.meta.url),
       ),

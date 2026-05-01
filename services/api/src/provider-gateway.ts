@@ -1,4 +1,4 @@
-import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
+import type { AssemblePromptResponse } from "@rp-platform/domain";
 import * as https from "node:https";
 import * as http from "node:http";
 import { writeFile, mkdir } from "node:fs/promises";

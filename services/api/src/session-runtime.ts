@@ -1,4 +1,4 @@
-import type { AssemblePromptResponse, PromptTraceRecordDto, PromptPresetDto } from "@rp-platform/api-contracts";
+import type { AssemblePromptResponse, PromptTraceRecordDto, PromptPresetDto } from "@rp-platform/domain";
 import {
   type ChatSessionStore,
 } from "@rp-platform/db";
@@ -982,7 +982,7 @@ export class SessionRuntime {
   }
 
   listPromptPresets(): PromptPresetDto[] {
-    return presetModule.listPromptPresets(this.presetDeps) as PromptPresetDto[];
+    return presetModule.listPromptPresets(this.presetDeps);
   }
 
   createPromptPreset(input: {
@@ -993,7 +993,7 @@ export class SessionRuntime {
     summary?: string;
     tools?: string;
   }): PromptPresetDto {
-    return presetModule.createPromptPreset(this.presetDeps, input) as PromptPresetDto;
+    return presetModule.createPromptPreset(this.presetDeps, input);
   }
 
   updatePromptPreset(presetId: string, patch: {
@@ -1004,7 +1004,7 @@ export class SessionRuntime {
     summary?: string;
     tools?: string;
   }): PromptPresetDto {
-    return presetModule.updatePromptPreset(this.presetDeps, presetId, patch) as PromptPresetDto;
+    return presetModule.updatePromptPreset(this.presetDeps, presetId, patch);
   }
 
   deletePromptPreset(presetId: string): void {

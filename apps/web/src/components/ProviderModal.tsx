@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ProviderProfileRecord } from "../app-client.js";
-import type { ProviderProbeResponse } from "@rp-platform/api-contracts";
+import type { ProviderProbeResponse } from "@rp-platform/domain";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
 import {
   PRESET_GROUPS,

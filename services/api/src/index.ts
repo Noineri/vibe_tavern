@@ -1,4 +1,4 @@
-import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
+import type { AssemblePromptResponse } from "@rp-platform/domain";
 import { getLatestMigrationVersion } from "@rp-platform/db";
 
 export function buildEmptyPromptTrace(): AssemblePromptResponse {

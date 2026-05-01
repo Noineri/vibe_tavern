@@ -1,6 +1,6 @@
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import type { PromptTraceRecordDto } from "@rp-platform/api-contracts";
+import type { PromptTraceRecordDto } from "@rp-platform/domain";
 import { LorebookEditor } from "./LorebookEditor.js";
 
 export interface BuildCharacterDraft {

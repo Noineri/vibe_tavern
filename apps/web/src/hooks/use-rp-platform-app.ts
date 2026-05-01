@@ -133,7 +133,7 @@ export function useRpPlatformApp() {
   const { importFile, isImporting } = useCharacterImport();
 
   const [personas, setPersonas] = useState<import("../app-client.js").PersonaRecord[]>([]);
-  const [promptPresets, setPromptPresets] = useState<import("@rp-platform/api-contracts").PromptPresetDto[]>([]);
+  const [promptPresets, setPromptPresets] = useState<import("@rp-platform/domain").PromptPresetDto[]>([]);
   const [activePromptPresetId, setActivePromptPresetId] = useState<string | null>(null);
 
   async function loadPersonas(): Promise<void> {
@@ -191,7 +191,7 @@ export function useRpPlatformApp() {
     }
   }
 
-  async function handleUpdatePromptPreset(presetId: string, patch: Partial<Omit<import("@rp-platform/api-contracts").PromptPresetDto, "id" | "createdAt" | "updatedAt">>): Promise<boolean> {
+  async function handleUpdatePromptPreset(presetId: string, patch: Partial<Omit<import("@rp-platform/domain").PromptPresetDto, "id" | "createdAt" | "updatedAt">>): Promise<boolean> {
     try {
       const updated = await (await import("../app-client.js")).updatePromptPreset(presetId, patch);
       setPromptPresets((current) => current.map((p) => p.id === presetId ? updated : p));

@@ -1,20 +1,8 @@
 import type { ChatSessionStore } from "@rp-platform/db";
-import type { PromptPresetId } from "@rp-platform/domain";
+import type { PromptPresetId, PromptPresetDto } from "@rp-platform/domain";
 
 export interface PresetModuleDeps {
   store: ChatSessionStore;
-}
-
-export interface PromptPresetDto {
-  id: string;
-  name: string;
-  bindModel: string;
-  system: string;
-  jailbreak: string;
-  summary: string;
-  tools: string;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export function listPromptPresets(deps: PresetModuleDeps): PromptPresetDto[] {

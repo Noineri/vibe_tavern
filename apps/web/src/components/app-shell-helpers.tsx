@@ -1,4 +1,4 @@
-import type { PromptTraceRecordDto } from "@rp-platform/api-contracts";
+import type { PromptTraceRecordDto } from "@rp-platform/domain";
 
 export function initials(name: string): string {
   return name

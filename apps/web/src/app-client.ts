@@ -1,6 +1,6 @@
 import { hc } from "hono/client";
 import type { Chat, ChatBranch, ChatBranchId, ChatId, Message, MessageVariant } from "@rp-platform/domain";
-import type { PromptPresetDto, PromptTraceRecordDto, ProviderProbeResponse } from "@rp-platform/api-contracts";
+import type { PromptPresetDto, PromptTraceRecordDto, ProviderProbeResponse } from "@rp-platform/domain";
 import type { AppType } from "@rp-platform/api";
 import { getGatewayBaseUrl } from "./gateway-client.js";
 

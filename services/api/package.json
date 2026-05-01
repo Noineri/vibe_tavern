@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@hono/zod-validator": "^0.4.2",
-    "@rp-platform/api-contracts": "0.1.0",
     "@rp-platform/db": "0.1.0",
     "@rp-platform/domain": "0.1.0",
     "@rp-platform/import-export": "0.1.0",
