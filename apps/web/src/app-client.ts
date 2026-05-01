@@ -1,6 +1,10 @@
-import type { PromptPresetDto, PromptTraceRecordDto, ProviderProbeResponse } from "@rp-platform/api-contracts";
+import { hc } from "hono/client";
 import type { Chat, ChatBranch, ChatBranchId, ChatId, Message, MessageVariant } from "@rp-platform/domain";
+import type { PromptPresetDto, PromptTraceRecordDto, ProviderProbeResponse } from "@rp-platform/api-contracts";
+import type { AppType } from "@rp-platform/api";
 import { getGatewayBaseUrl } from "./gateway-client.js";
+
+const client = hc<AppType>(getGatewayBaseUrl());
 
 export interface ChatListItem {
   id: ChatId;
@@ -116,26 +120,45 @@ export interface LoreEntryRecord {
   enabled: boolean;
 }
 
+export interface TestChatResponse {
+  success: boolean;
+  reply?: string;
+  error?: string;
+}
+
+type RpcResponse = { ok: boolean; status: number; json(): Promise<unknown>; text(): Promise<string> };
+
+async function unwrapRpc<T>(response: RpcResponse): Promise<T> {
+  if (!response.ok) {
+    const errorBody = await response.json() as { error?: string };
+    throw new Error(errorBody?.error || `Request failed: ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}
+
 export async function bootstrapApp(): Promise<{
   initialChatId: ChatId | null;
   snapshot: AppSnapshot | null;
   isFirstRun: boolean;
 }> {
-  const response = await requestJson<{
+  const response = await client.api.bootstrap.$get();
+  const data = await unwrapRpc<{
     initialChatId: ChatId | null;
     snapshot: AppSnapshot | null;
     isFirstRun?: boolean;
-  }>("/api/bootstrap");
+  }>(response);
 
   return {
-    initialChatId: response.initialChatId,
-    snapshot: response.snapshot ? normalizeSnapshot(response.snapshot) : null,
-    isFirstRun: response.isFirstRun ?? false,
+    initialChatId: data.initialChatId,
+    snapshot: data.snapshot ? normalizeSnapshot(data.snapshot) : null,
+    isFirstRun: data.isFirstRun ?? false,
   };
 }
 
 export async function fetchChat(chatId: ChatId): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}`));
+  const response = await client.api.chats[":chatId"].$get({ param: { chatId } });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function updateCharacter(
@@ -160,10 +183,9 @@ export async function updateCharacter(
     tags: string[];
   },
 ): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/characters/${characterId}`, {
-    method: "PATCH",
-    body: input,
-  }));
+  const response = await client.api.characters[":characterId"].$patch({ param: { characterId }, json: input });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function updatePersona(
@@ -174,14 +196,14 @@ export async function updatePersona(
     description: string;
   },
 ): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/personas/${personaId}`, {
-    method: "PATCH",
-    body: input,
-  }));
+  const response = await client.api.personas[":personaId"].$patch({ param: { personaId }, json: input });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function listPersonas(): Promise<PersonaRecord[]> {
-  return requestJson("/api/personas");
+  const response = await client.api.personas.$get();
+  return unwrapRpc<PersonaRecord[]>(response);
 }
 
 export async function createPersona(input: {
@@ -190,15 +212,21 @@ export async function createPersona(input: {
   pronouns?: string | null;
   defaultForNewChats?: boolean;
 }): Promise<PersonaRecord> {
-  return requestJson("/api/personas", { method: "POST", body: input });
+  const response = await client.api.personas.$post({ json: input });
+  return unwrapRpc<PersonaRecord>(response);
 }
 
 export async function deletePersona(personaId: string): Promise<void> {
-  await requestJson(`/api/personas/${personaId}`, { method: "DELETE" });
+  const response = await client.api.personas[":personaId"].$delete({ param: { personaId } });
+  if (!response.ok) {
+    const errorBody = await response.json() as { error?: string };
+    throw new Error(errorBody?.error || `Request failed: ${response.status}`);
+  }
 }
 
 export async function listPromptPresets(): Promise<PromptPresetDto[]> {
-  return requestJson("/api/prompt-presets");
+  const response = await client.api["prompt-presets"].$get();
+  return unwrapRpc<PromptPresetDto[]>(response);
 }
 
 export async function createPromptPreset(input: {
@@ -209,43 +237,46 @@ export async function createPromptPreset(input: {
   summary?: string;
   tools?: string;
 }): Promise<PromptPresetDto> {
-  return requestJson("/api/prompt-presets", { method: "POST", body: input });
+  const response = await client.api["prompt-presets"].$post({ json: input });
+  return unwrapRpc<PromptPresetDto>(response);
 }
 
 export async function updatePromptPreset(
   presetId: string,
   patch: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">>,
 ): Promise<PromptPresetDto> {
-  return requestJson(`/api/prompt-presets/${presetId}`, { method: "PATCH", body: patch });
+  const response = await client.api["prompt-presets"][":presetId"].$patch({ param: { presetId }, json: patch });
+  return unwrapRpc<PromptPresetDto>(response);
 }
 
 export async function deletePromptPreset(presetId: string): Promise<void> {
-  await requestJson(`/api/prompt-presets/${presetId}`, { method: "DELETE" });
+  const response = await client.api["prompt-presets"][":presetId"].$delete({ param: { presetId } });
+  if (!response.ok) {
+    const errorBody = await response.json() as { error?: string };
+    throw new Error(errorBody?.error || `Request failed: ${response.status}`);
+  }
 }
 
 export async function getPersonalLorebookStatus(personaId: string): Promise<{ enabled: boolean; lorebookId: string | null }> {
-  return requestJson(`/api/personas/${personaId}/personal-lorebook`);
+  const response = await client.api.personas[":personaId"]["personal-lorebook"].$get({ param: { personaId } });
+  return unwrapRpc<{ enabled: boolean; lorebookId: string | null }>(response);
 }
 
 export async function setPersonalLorebookEnabled(personaId: string, enabled: boolean): Promise<{ enabled: boolean; lorebookId: string | null }> {
-  return requestJson(`/api/personas/${personaId}/personal-lorebook`, {
-    method: "PUT",
-    body: { enabled },
-  });
+  const response = await client.api.personas[":personaId"]["personal-lorebook"].$put({ param: { personaId }, json: { enabled } });
+  return unwrapRpc<{ enabled: boolean; lorebookId: string | null }>(response);
 }
 
 export async function setChatPersona(chatId: import("@rp-platform/domain").ChatId, personaId: string): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/set-persona`, {
-    method: "POST",
-    body: { personaId }
-  }));
+  const response = await client.api.chats[":chatId"]["set-persona"].$post({ param: { chatId }, json: { personaId } });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function setChatPromptPreset(chatId: import("@rp-platform/domain").ChatId, promptPresetId: string): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/set-prompt-preset`, {
-    method: "POST",
-    body: { promptPresetId }
-  }));
+  const response = await client.api.chats[":chatId"]["set-prompt-preset"].$post({ param: { chatId }, json: { promptPresetId } });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function sendChatMessage(
@@ -255,10 +286,9 @@ export async function sendChatMessage(
   },
 ): Promise<AppSnapshot> {
   postSendDebug("web.client.sendChatMessage.start", { chatId, contentLength: input.content.length });
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/messages`, {
-    method: "POST",
-    body: input,
-  }));
+  const response = await client.api.chats[":chatId"].messages.$post({ param: { chatId }, json: input });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function selectMessageVariant(
@@ -266,9 +296,11 @@ export async function selectMessageVariant(
   messageId: string,
   variantIndex: number,
 ): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/messages/${messageId}/variants/${variantIndex}/select`, {
-    method: "POST",
-  }));
+  const response = await client.api.chats[":chatId"].messages[":messageId"].variants[":variantIndex"].select.$post({
+    param: { chatId, messageId, variantIndex: String(variantIndex) },
+  });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function editChatMessage(
@@ -276,55 +308,56 @@ export async function editChatMessage(
   messageId: string,
   content: string,
 ): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/messages/${messageId}`, {
-    method: "PATCH",
-    body: {
-      content,
-    },
-  }));
+  const response = await client.api.chats[":chatId"].messages[":messageId"].$patch({
+    param: { chatId, messageId },
+    json: { content },
+  });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function deleteChatMessage(
   chatId: ChatId,
   messageId: string,
 ): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/messages/${messageId}`, {
-    method: "DELETE",
-  }));
+  const response = await client.api.chats[":chatId"].messages[":messageId"].$delete({ param: { chatId, messageId } });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function regenerateChatMessage(
   chatId: ChatId,
   messageId: string,
 ): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/messages/${messageId}/regenerate`, {
-    method: "POST",
-    body: {},
-  }));
+  const response = await client.api.chats[":chatId"].messages[":messageId"].regenerate.$post({
+    param: { chatId, messageId },
+  });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function forkBranch(chatId: ChatId): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/fork`, {
-    method: "POST",
-  }));
+  const response = await client.api.chats[":chatId"].fork.$post({ param: { chatId } });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function activateBranch(
   chatId: ChatId,
   branchId: ChatBranchId,
 ): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/branches/${branchId}/activate`, {
-    method: "POST",
-  }));
+  const response = await client.api.chats[":chatId"].branches[":branchId"].activate.$post({ param: { chatId, branchId } });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function deleteBranch(
   chatId: ChatId,
   branchId: ChatBranchId,
 ): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/branches/${branchId}`, {
-    method: "DELETE",
-  }));
+  const response = await client.api.chats[":chatId"].branches[":branchId"].$delete({ param: { chatId, branchId } });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function importJson(input: {
@@ -332,25 +365,24 @@ export async function importJson(input: {
   jsonText: string;
   chatId?: ChatId;
 }): Promise<ImportJsonResponse> {
-  const response = await requestJson<ImportJsonResponse>("/api/import/json", {
-    method: "POST",
-    body: input,
-  });
-
+  const response = await client.api.import.json.$post({ json: input });
+  const data = await unwrapRpc<ImportJsonResponse>(response);
   return {
-    ...response,
-    snapshot: normalizeSnapshot(response.snapshot),
+    ...data,
+    snapshot: normalizeSnapshot(data.snapshot),
   };
 }
 
 export async function listProviderProfiles(): Promise<ProviderProfileRecord[]> {
-  return requestJson("/api/providers");
+  const response = await client.api.providers.$get();
+  return unwrapRpc<ProviderProfileRecord[]>(response);
 }
 
 export async function fetchProviderProfile(
   providerProfileId: string,
 ): Promise<ProviderProfileRecord> {
-  return requestJson(`/api/providers/${providerProfileId}`);
+  const response = await client.api.providers[":providerId"].$get({ param: { providerId: providerProfileId } });
+  return unwrapRpc<ProviderProfileRecord>(response);
 }
 
 export async function saveProviderProfile(input: {
@@ -375,58 +407,42 @@ export async function saveProviderProfile(input: {
   reasoningEffort?: string;
   streamResponse?: boolean;
 }): Promise<ProviderProfileRecord> {
-  return requestJson("/api/providers", {
-    method: "POST",
-    body: input,
-  });
+  const response = await client.api.providers.$post({ json: input });
+  return unwrapRpc<ProviderProfileRecord>(response);
 }
 
 export async function deleteProviderProfile(providerProfileId: string): Promise<{ ok: true }> {
-  return requestJson(`/api/providers/${providerProfileId}`, {
-    method: "DELETE",
-  });
+  const response = await client.api.providers[":providerId"].$delete({ param: { providerId: providerProfileId } });
+  return unwrapRpc<{ ok: true }>(response);
 }
 
 export async function testProviderDraft(
   input: { endpoint: string; apiKey: string },
 ): Promise<ProviderProbeResponse> {
-  return requestJson<ProviderProbeResponse>("/api/providers/test", {
-    method: "POST",
-    body: input,
-  });
+  const response = await client.api.providers.test.$post({ json: input });
+  return unwrapRpc<ProviderProbeResponse>(response);
 }
 
 export async function testProviderProfile(
   providerProfileId: string,
 ): Promise<ProviderProbeResponse> {
-  return requestJson<ProviderProbeResponse>(`/api/providers/${providerProfileId}/test`, {
-    method: "POST",
-    body: {},
-  });
+  const response = await client.api.providers[":providerId"].test.$post({ param: { providerId: providerProfileId } });
+  return unwrapRpc<ProviderProbeResponse>(response);
 }
 
 export async function fetchProviderProfileModels(
   providerProfileId: string,
 ): Promise<{ models: Array<{ id: string; label: string }> }> {
-  return requestJson(`/api/providers/${providerProfileId}/models`, {
-    method: "POST",
-  });
+  const response = await client.api.providers[":providerId"].models.$post({ param: { providerId: providerProfileId } });
+  return unwrapRpc<{ models: Array<{ id: string; label: string }> }>(response);
 }
 
 export async function fetchModelsByEndpoint(
   baseUrl: string,
   apiKey?: string,
 ): Promise<{ models: Array<{ id: string; label: string }> }> {
-  return requestJson("/api/providers/fetch-models", {
-    method: "POST",
-    body: { baseUrl, apiKey: apiKey ?? "" },
-  });
-}
-
-export interface TestChatResponse {
-  success: boolean;
-  reply?: string;
-  error?: string;
+  const response = await client.api.providers["fetch-models"].$post({ json: { baseUrl, apiKey: apiKey ?? "" } });
+  return unwrapRpc<{ models: Array<{ id: string; label: string }> }>(response);
 }
 
 export async function testProviderChat(
@@ -434,28 +450,23 @@ export async function testProviderChat(
   apiKey: string,
   model: string,
 ): Promise<TestChatResponse> {
-  return requestJson("/api/providers/test-chat", {
-    method: "POST",
-    body: { baseUrl, apiKey, model },
-  });
+  const response = await client.api.providers["test-chat"].$post({ json: { baseUrl, apiKey, model } });
+  return unwrapRpc<TestChatResponse>(response);
 }
 
 export async function testProfileChat(
   providerProfileId: string,
   model: string,
 ): Promise<TestChatResponse> {
-  return requestJson(`/api/providers/${providerProfileId}/test-chat`, {
-    method: "POST",
-    body: { model },
-  });
+  const response = await client.api.providers[":providerId"]["test-chat"].$post({ param: { providerId: providerProfileId }, json: { model } });
+  return unwrapRpc<TestChatResponse>(response);
 }
 
 export async function activateProviderProfile(
   providerProfileId: string,
 ): Promise<ProviderProfileRecord> {
-  return requestJson(`/api/providers/${providerProfileId}/activate`, {
-    method: "POST",
-  });
+  const response = await client.api.providers[":providerId"].activate.$post({ param: { providerId: providerProfileId } });
+  return unwrapRpc<ProviderProfileRecord>(response);
 }
 
 export async function updateProviderProfile(
@@ -482,65 +493,76 @@ export async function updateProviderProfile(
     streamResponse?: boolean;
   },
 ): Promise<ProviderProfileRecord> {
-  return requestJson(`/api/providers/${providerProfileId}`, {
-    method: "PATCH",
-    body: patch,
-  });
+  const response = await client.api.providers[":providerId"].$patch({ param: { providerId: providerProfileId }, json: patch });
+  return unwrapRpc<ProviderProfileRecord>(response);
 }
 
 export async function listLoreEntries(lorebookId: string): Promise<LoreEntryRecord[]> {
-  return requestJson(`/api/lorebooks/${lorebookId}/entries`);
+  const response = await client.api.lorebooks[":lorebookId"].entries.$get({ param: { lorebookId } });
+  return unwrapRpc<LoreEntryRecord[]>(response);
 }
 
 export async function testLoreActivation(
   lorebookId: string,
   text: string,
 ): Promise<{ activatedIds: string[]; totalEntries: number }> {
-  return requestJson(`/api/lorebooks/${lorebookId}/test-activation`, {
-    method: "POST",
-    body: { text },
-  });
+  const response = await client.api.lorebooks[":lorebookId"]["test-activation"].$post({ param: { lorebookId }, json: { text } });
+  return unwrapRpc<{ activatedIds: string[]; totalEntries: number }>(response);
 }
 
 export async function createLoreEntry(lorebookId: string, entry: Partial<LoreEntryRecord>): Promise<LoreEntryRecord> {
-  return requestJson(`/api/lorebooks/${lorebookId}/entries`, { method: "POST", body: entry });
+  const response = await client.api.lorebooks[":lorebookId"].entries.$post({ param: { lorebookId }, json: entry });
+  return unwrapRpc<LoreEntryRecord>(response);
 }
 
 export async function updateLoreEntry(lorebookId: string, entryId: string, entry: Partial<LoreEntryRecord>): Promise<LoreEntryRecord> {
-  return requestJson(`/api/lorebooks/${lorebookId}/entries/${entryId}`, { method: "PATCH", body: entry });
+  const response = await client.api.lorebooks[":lorebookId"].entries[":entryId"].$patch({ param: { lorebookId, entryId }, json: entry });
+  return unwrapRpc<LoreEntryRecord>(response);
 }
 
 export async function deleteLoreEntry(lorebookId: string, entryId: string): Promise<void> {
-  await requestJson(`/api/lorebooks/${lorebookId}/entries/${entryId}`, { method: "DELETE" });
+  const response = await client.api.lorebooks[":lorebookId"].entries[":entryId"].$delete({ param: { lorebookId, entryId } });
+  if (!response.ok) {
+    const errorBody = await response.json() as { error?: string };
+    throw new Error(errorBody?.error || `Request failed: ${response.status}`);
+  }
 }
 
 export async function archiveCharacter(characterId: string): Promise<{ characterId: string; status: "archived" }> {
-  return requestJson(`/api/characters/${characterId}/archive`, { method: "PATCH" });
+  const response = await client.api.characters[":characterId"].archive.$patch({ param: { characterId } });
+  return unwrapRpc<{ characterId: string; status: "archived" }>(response);
 }
 
 export async function unarchiveCharacter(characterId: string): Promise<{ characterId: string; status: "active" }> {
-  return requestJson(`/api/characters/${characterId}/unarchive`, { method: "PATCH" });
+  const response = await client.api.characters[":characterId"].unarchive.$patch({ param: { characterId } });
+  return unwrapRpc<{ characterId: string; status: "active" }>(response);
 }
 
 export async function deleteCharacter(characterId: string): Promise<void> {
-  await requestJson(`/api/characters/${characterId}`, { method: "DELETE" });
+  const response = await client.api.characters[":characterId"].$delete({ param: { characterId } });
+  if (!response.ok) {
+    const errorBody = await response.json() as { error?: string };
+    throw new Error(errorBody?.error || `Request failed: ${response.status}`);
+  }
 }
 
 export async function deleteChat(chatId: ChatId): Promise<void> {
-  await requestJson(`/api/chats/${chatId}`, { method: "DELETE" });
+  const response = await client.api.chats[":chatId"].$delete({ param: { chatId } });
+  if (!response.ok) {
+    const errorBody = await response.json() as { error?: string };
+    throw new Error(errorBody?.error || `Request failed: ${response.status}`);
+  }
 }
 
 export async function renameChat(chatId: ChatId, title: string): Promise<{ chatId: string; title: string }> {
-  return requestJson(`/api/chats/${chatId}/title`, { method: "PATCH", body: { title } });
+  const response = await client.api.chats[":chatId"].title.$patch({ param: { chatId }, json: { title } });
+  return unwrapRpc<{ chatId: string; title: string }>(response);
 }
 
 export async function createChat(characterId?: string): Promise<AppSnapshot> {
-  const body: Record<string, string> = {};
-  if (characterId) body.characterId = characterId;
-  return normalizeSnapshot(await requestJson("/api/chats", {
-    method: "POST",
-    body,
-  }));
+  const response = await client.api.chats.$post({ json: { characterId } });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function createCharacter(input: {
@@ -550,98 +572,36 @@ export async function createCharacter(input: {
   scenario?: string;
   personalitySummary?: string;
 }): Promise<ImportJsonResponse> {
-  const response = await requestJson<ImportJsonResponse>("/api/characters", {
-    method: "POST",
-    body: input,
-  });
-
+  const response = await client.api.characters.$post({ json: input });
+  const data = await unwrapRpc<ImportJsonResponse>(response);
   return {
-    ...response,
-    snapshot: normalizeSnapshot(response.snapshot),
+    ...data,
+    snapshot: normalizeSnapshot(data.snapshot),
   };
 }
 
 export async function cloneChat(chatId: ChatId): Promise<AppSnapshot> {
-  return normalizeSnapshot(await requestJson(`/api/chats/${chatId}/clone`, {
-    method: "POST",
-  }));
+  const response = await client.api.chats[":chatId"].clone.$post({ param: { chatId } });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function exportCharacter(characterId: string): Promise<Record<string, unknown>> {
-  return requestJson(`/api/characters/${characterId}/export`);
+  const response = await client.api.characters[":characterId"].export.$get({ param: { characterId } });
+  return unwrapRpc<Record<string, unknown>>(response);
 }
 
 export async function exportChatJsonl(chatId: ChatId): Promise<string> {
-  return requestText(`/api/chats/${chatId}/export.jsonl`);
+  const response = await client.api.chats[":chatId"]["export.jsonl"].$get({ param: { chatId } });
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+  return response.text();
 }
 
 export async function exportPromptTrace(traceId: string): Promise<Record<string, unknown>> {
-  return requestJson(`/api/prompt-traces/${traceId}/export`);
-}
-
-async function requestText(path: string): Promise<string> {
-  const response = await fetch(`${getGatewayBaseUrl()}${path}`, {
-    method: "GET",
-  });
-
-  const text = await response.text();
-
-  if (!response.ok) {
-    let errorMsg = `Request failed: ${response.status}`;
-    try {
-      const parsed = JSON.parse(text) as { error?: string };
-      if (parsed.error) errorMsg = parsed.error;
-    } catch { /* use default */ }
-    throw new Error(errorMsg);
-  }
-
-  return text;
-}
-
-async function requestJson<T>(
-  path: string,
-  options?: {
-    method?: "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
-    body?: unknown;
-  },
-): Promise<T> {
-  const startedAt = Date.now();
-  const shouldDebug = path.includes("/messages") || path.includes("/set-persona") || path.includes("/set-prompt-preset");
-  if (shouldDebug) {
-    postSendDebug("web.client.request.start", {
-      path,
-      method: options?.method ?? "GET",
-      bodyKeys: options?.body && typeof options.body === "object" ? Object.keys(options.body as Record<string, unknown>) : [],
-    });
-  }
-  const response = await fetch(`${getGatewayBaseUrl()}${path}`, {
-    method: options?.method ?? "GET",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: options?.body ? JSON.stringify(options.body) : undefined,
-  });
-
-  const text = await response.text();
-  const data = text ? (JSON.parse(text) as { error?: string }) : {};
-
-  if (shouldDebug) {
-    postSendDebug("web.client.request.done", {
-      path,
-      method: options?.method ?? "GET",
-      status: response.status,
-      ok: response.ok,
-      latencyMs: Date.now() - startedAt,
-      responseBytes: text.length,
-      error: !response.ok ? data.error ?? null : null,
-    });
-  }
-
-  if (!response.ok) {
-    throw new Error(data.error || `Request failed: ${response.status}`);
-  }
-
-  return data as T;
+  const response = await client.api["prompt-traces"][":traceId"].export.$get({ param: { traceId } });
+  return unwrapRpc<Record<string, unknown>>(response);
 }
 
 export function logClientSendDebug(event: string, data: Record<string, unknown> = {}): void {
