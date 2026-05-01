@@ -18,6 +18,7 @@ import type {
   SummaryMemorySnapshot,
 } from "@rp-platform/domain";
 import type { ChatBranchState, ChatSessionStore } from "@rp-platform/db";
+import { notFound } from "./errors.js";
 
 export class ChatApplicationService {
   constructor(private readonly store: ChatSessionStore) {}
@@ -46,9 +47,7 @@ export class ChatApplicationService {
     const branchState = this.store.getBranchState(chat.id, resolvedBranchId);
 
     if (!branchState) {
-      throw new Error(
-        `Branch '${resolvedBranchId}' was not found for chat '${chat.id}'.`,
-      );
+      throw notFound("Branch", `Branch '${resolvedBranchId}' was not found for chat '${chat.id}'.`);
     }
 
     return {
@@ -126,7 +125,7 @@ export class ChatApplicationService {
   private requireChat(chatId: ChatId): Chat {
     const chat = this.store.getChat(chatId);
     if (!chat) {
-      throw new Error(`Chat '${chatId}' was not found.`);
+      throw notFound("Chat", `Chat '${chatId}' was not found.`);
     }
     return chat;
   }

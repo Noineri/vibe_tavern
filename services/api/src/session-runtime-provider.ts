@@ -7,6 +7,7 @@ import {
   type CachedProviderModelsRecord,
 } from "./session-runtime-dto.js";
 import type { ChatSessionStore } from "@rp-platform/db";
+import { notFound, isDomainError } from "./errors.js";
 
 export interface ProviderModuleDeps {
   store: ChatSessionStore;
@@ -44,14 +45,23 @@ export async function saveProviderProfile(deps: ProviderModuleDeps, profile: Par
 }
 
 export function deleteProviderProfile(deps: ProviderModuleDeps, id: string): void {
-  deps.store.deleteProviderProfile(id);
+  try {
+    deps.store.deleteProviderProfile(id);
+  } catch (error) {
+    if (isDomainError(error)) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (/not found/i.test(message)) {
+      throw notFound("ProviderProfile", message);
+    }
+    throw error;
+  }
 }
 
 export function activateProviderProfile(deps: ProviderModuleDeps, id: string): ClientProviderProfileRecord {
   deps.store.setActiveProviderProfile(id);
   const profile = deps.store.getProviderProfile(id) as StoredProviderProfileRecord | null;
   if (!profile) {
-    throw new Error(`Provider profile '${id}' was not found after activation.`);
+    throw notFound("ProviderProfile", `Provider profile '${id}' was not found after activation.`);
   }
   return toClientProviderProfile(profile);
 }
@@ -87,7 +97,7 @@ export function updateProviderProfile(
 ): ClientProviderProfileRecord {
   const existing = deps.store.getProviderProfile(id);
   if (!existing) {
-    throw new Error(`Provider profile '${id}' was not found.`);
+    throw notFound("ProviderProfile", `Provider profile '${id}' was not found.`);
   }
   const hasApiKeyInput = Object.prototype.hasOwnProperty.call(patch, "apiKey");
   const apiKey = hasApiKeyInput
