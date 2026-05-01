@@ -15,6 +15,10 @@
     "@rp-platform/db": "0.1.0",
     "@rp-platform/domain": "0.1.0",
     "@rp-platform/import-export": "0.1.0",
-    "@rp-platform/prompt-pipeline": "0.1.0"
+    "@rp-platform/prompt-pipeline": "0.1.0",
+    "hono": "^4.7.10"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.10"
   }
 }
