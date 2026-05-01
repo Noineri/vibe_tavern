@@ -9,12 +9,17 @@
 
 import type { AssemblePromptResponse } from "@rp-platform/domain";
 import type { ProviderType } from "@rp-platform/domain";
+import type { StoredProviderProfileRecord } from "@rp-platform/domain";
 
 // ---------------------------------------------------------------------------
 // Provider profile reference (subset needed for generation)
 // ---------------------------------------------------------------------------
 
 /** Lightweight profile reference passed into the execution boundary. */
+/**
+ * @deprecated Use StoredProviderProfileRecord from @rp-platform/domain instead.
+ * Kept for backward compatibility with existing non-streaming path.
+ */
 export interface ProviderProfileRef {
   id: string;
   type: ProviderType;
@@ -68,6 +73,44 @@ export interface GenerationUsage {
   completionTokens?: number;
   totalTokens?: number;
 }
+
+// ---------------------------------------------------------------------------
+// Streaming execution types (FW-AI2)
+// ---------------------------------------------------------------------------
+
+/** Single chunk emitted by the streaming executor. */
+export interface ProviderStreamChunk {
+  type: "text-delta";
+  delta: string;
+}
+
+/** Final metadata resolved when the stream completes. */
+export interface ProviderStreamFinish {
+  finishReason: "stop" | "length" | "content-filter" | "tool-calls" | "error" | "cancelled";
+  usage?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+  };
+}
+
+/** Result returned by the streaming executor. */
+export interface ProviderStreamResult {
+  stream: AsyncIterable<ProviderStreamChunk>;
+  finished: Promise<ProviderStreamFinish>;
+  text: Promise<string>;
+}
+
+/** Input to the streaming executor. */
+export interface ProviderExecutionInput {
+  profile: StoredProviderProfileRecord;
+  model: string;
+  prompt: AssemblePromptResponse;
+  signal?: AbortSignal;
+}
+
+/** Streaming executor function signature. */
+export type ProviderExecutor = (input: ProviderExecutionInput) => Promise<ProviderStreamResult>;
 
 // ---------------------------------------------------------------------------
 // Provider error categories

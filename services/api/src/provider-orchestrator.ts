@@ -38,6 +38,8 @@ export class ProviderOrchestrator {
     }
   }
 
+  // TODO FW-AI3: this legacy path is no longer called for send/regenerate.
+  // Kept for backward compatibility. Remove after FW-AI3 hardens provider-kind support.
   async generateProfileReply(
     profile: StoredProviderProfileRecord,
     input: {

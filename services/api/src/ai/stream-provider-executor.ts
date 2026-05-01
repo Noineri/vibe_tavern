@@ -1,0 +1,138 @@
+/**
+ * Streaming-native provider executor using Vercel AI SDK.
+ *
+ * Uses streamText() exclusively — the route layer decides whether to collect
+ * the full response (this brief) or forward as SSE (FW-AI5).
+ */
+
+import { streamText, type LanguageModelV1 } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import type { ProviderExecutor, ProviderStreamResult, ProviderStreamChunk, ProviderStreamFinish } from "./provider-execution-types.js";
+import { cancelled, providerError } from "../errors.js";
+
+/**
+ * Resolve a Vercel AI SDK language model from a stored provider profile.
+ *
+ * Currently supports: openai_compat, anthropic, google.
+ * Other provider types (ollama, llamacpp, koboldcpp) fall back to openai_compat
+ * since they expose OpenAI-compatible endpoints.
+ */
+function resolveModel(profile: { type: string; endpoint: string; apiKey: string | null }, model: string): LanguageModelV1 {
+  const endpoint = profile.endpoint.replace(/\/+$/, "");
+  const apiKey = profile.apiKey ?? "";
+
+  switch (profile.type) {
+    case "anthropic": {
+      const provider = createAnthropic({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
+      return provider(model);
+    }
+    case "google": {
+      const provider = createGoogleGenerativeAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
+      return provider(model);
+    }
+    case "openai_compat":
+    case "ollama":
+    case "llamacpp":
+    case "koboldcpp":
+    default: {
+      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
+      return provider(model);
+    }
+  }
+}
+
+/**
+ * Convert an AssemblePromptResponse into Vercel AI SDK message format.
+ */
+function toSdkMessages(prompt: { finalPayload?: unknown }): Array<{ role: "system" | "user" | "assistant"; content: string }> {
+  const payload = prompt.finalPayload as { messages?: unknown } | undefined;
+  const records = Array.isArray(payload?.messages) ? payload.messages : [];
+
+  return records
+    .map((record: unknown) => {
+      if (!record || typeof record !== "object") return null;
+      const r = record as { role?: unknown; content?: unknown };
+      if (typeof r.role !== "string" || typeof r.content !== "string") return null;
+      if (r.role !== "system" && r.role !== "user" && r.role !== "assistant") return null;
+      return { role: r.role as "system" | "user" | "assistant", content: r.content };
+    })
+    .filter((m): m is { role: "system" | "user" | "assistant"; content: string } => m !== null);
+}
+
+/**
+ * Map the Vercel AI SDK text stream into our ProviderStreamChunk iterable.
+ */
+async function* mapTextStream(
+  textStream: AsyncIterable<string>,
+): AsyncGenerator<ProviderStreamChunk> {
+  for await (const delta of textStream) {
+    if (delta) {
+      yield { type: "text-delta", delta };
+    }
+  }
+}
+
+/**
+ * Map the Vercel AI SDK result into our ProviderStreamFinish promise.
+ */
+function mapFinish(result: { finishReason: Promise<unknown>; usage: Promise<unknown> }): Promise<ProviderStreamFinish> {
+  return Promise.all([result.finishReason, result.usage]).then(([reason, usage]) => {
+    const usageRecord = usage as { promptTokens?: number; completionTokens?: number; totalTokens?: number } | undefined;
+    let finishReason: ProviderStreamFinish["finishReason"] = "stop";
+    if (reason === "length") finishReason = "length";
+    else if (reason === "content-filter") finishReason = "content-filter";
+    else if (reason === "tool-calls") finishReason = "tool-calls";
+    else if (reason === "error" || reason === "unknown") finishReason = "error";
+
+    return {
+      finishReason,
+      usage: usageRecord ? {
+        promptTokens: usageRecord.promptTokens,
+        completionTokens: usageRecord.completionTokens,
+        totalTokens: usageRecord.totalTokens,
+      } : undefined,
+    };
+  });
+}
+
+/**
+ * Streaming-native provider executor.
+ *
+ * Returns a ProviderStreamResult with an async iterable stream of text chunks,
+ * a collected text promise, and a finish metadata promise.
+ */
+export const streamProviderExecutor: ProviderExecutor = async (input) => {
+  try {
+    const model = resolveModel(input.profile, input.model);
+    const messages = toSdkMessages(input.prompt);
+
+    // Separate system message from conversation messages
+    const systemMessages = messages.filter(m => m.role === "system");
+    const conversationMessages = messages.filter(m => m.role !== "system");
+    const systemPrompt = systemMessages.map(m => m.content).join("\n\n") || undefined;
+
+    const result = streamText({
+      model,
+      messages: conversationMessages,
+      ...(systemPrompt ? { system: systemPrompt } : {}),
+      abortSignal: input.signal,
+      temperature: input.profile.temperature ?? undefined,
+      topP: input.profile.topP ?? undefined,
+      maxTokens: input.profile.maxTokens ?? undefined,
+    });
+
+    const stream = mapTextStream(result.textStream);
+    const finished = mapFinish(result);
+
+    return {
+      stream,
+      finished,
+      text: result.text,
+    };
+  } catch (error) {
+    if (input.signal?.aborted) throw cancelled();
+    throw providerError(error instanceof Error ? error.message : String(error));
+  }
+};

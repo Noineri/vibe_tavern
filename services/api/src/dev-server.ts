@@ -43,7 +43,7 @@ const runtime = {
     throw internal("Chat settings route is not wired in this baseline.");
   },
   branchChat: (chatId: string, _messageId: string) => chatRuntime.forkBranch(brandId<ChatId>(chatId)),
-  regenerateMessage: async (chatId: string, messageId: string, _body: unknown) => {
+  regenerateMessage: async (chatId: string, messageId: string, _body: unknown, signal?: AbortSignal) => {
     const profile = providerProfileService.resolveActiveProviderProfile();
     if (!profile) {
       throw validation("No active provider profile. Activate one in Provider settings.");
@@ -56,6 +56,7 @@ const runtime = {
       messageId,
       profile,
       model: profile.defaultModel,
+      signal,
     });
     return result.snapshot;
   },
@@ -88,6 +89,7 @@ const runtime = {
       content: body.content,
       profile,
       model: profile.defaultModel,
+      signal: undefined,
     });
     logSendDebug("api.runtime.send.success", {
       chatId,
