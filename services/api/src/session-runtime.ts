@@ -2,7 +2,7 @@ import type { AssemblePromptResponse, PromptTraceRecordDto, PromptPresetDto } fr
 import {
   type ChatSessionStore,
 } from "@rp-platform/db";
-import { ENTITY_ID_NAMESPACE, SYSTEM_RESOURCE_ID } from "@rp-platform/domain";
+import { brandId, ENTITY_ID_NAMESPACE, SYSTEM_RESOURCE_ID } from "@rp-platform/domain";
 import { logSendDebug } from "./send-debug-log.js";
 import type {
   Chat,
@@ -13,6 +13,7 @@ import type {
   CharacterId,
   CharacterVersion,
   CharacterVersionId,
+  ToolProfileId,
   LoreEntry,
   Message,
   MessageId,
@@ -116,7 +117,7 @@ class StaticPromptResolver implements PromptAssemblyResolver {
   ) {}
 
   getCharacter(characterId: string) {
-    const character = this.store.getCharacter(characterId as CharacterId);
+    const character = this.store.getCharacter(brandId<CharacterId>(characterId));
     if (!character) {
       throw new Error(`Character '${characterId}' was not found.`);
     }
@@ -125,13 +126,13 @@ class StaticPromptResolver implements PromptAssemblyResolver {
   }
 
   getPersona(personaId: string) {
-    const p = this.store.getPersona(personaId as import("@rp-platform/domain").PersonaId);
+    const p = this.store.getPersona(brandId<PersonaId>(personaId));
     if (!p) return null;
     return { id: p.id, name: p.name, description: p.description };
   }
 
   getPromptPreset(presetId: string) {
-    const preset = this.store.getPromptPreset(presetId as PromptPresetId);
+    const preset = this.store.getPromptPreset(brandId<PromptPresetId>(presetId));
     if (!preset) return null;
     return {
       id: preset.id,
@@ -147,7 +148,7 @@ class StaticPromptResolver implements PromptAssemblyResolver {
     const lower = input.recentText.toLowerCase();
     const chat = this.store.getChat(input.chatId);
     const importedEntries = chat
-      ? this.store.listLoreEntriesForCharacter(chat.characterId as CharacterId)
+      ? this.store.listLoreEntriesForCharacter(brandId<CharacterId>(chat.characterId))
       : [];
 
     return importedEntries.filter((entry) => entryMatchesRecentText(entry, lower));
@@ -166,7 +167,7 @@ class StaticPromptResolver implements PromptAssemblyResolver {
 export class SessionRuntime {
   private readonly store: ChatSessionStore;
   private readonly defaultToolProfile: ToolProfile = {
-    id: SYSTEM_RESOURCE_ID.toolsDisabled,
+    id: brandId<ToolProfileId>(SYSTEM_RESOURCE_ID.toolsDisabled),
     name: "Tools Disabled",
     mode: "disabled",
     instructions: null,
@@ -279,7 +280,7 @@ export class SessionRuntime {
 
   setChatPersona(chatId: ChatId, personaId: string): SessionSnapshot {
     const before = this.store.getChat(chatId);
-    this.store.updateChatPersona(chatId, personaId as import("@rp-platform/domain").PersonaId);
+    this.store.updateChatPersona(chatId, brandId<PersonaId>(personaId));
     const after = this.store.getChat(chatId);
     console.info("[persona-switch]", {
       chatId,
@@ -291,7 +292,7 @@ export class SessionRuntime {
   }
 
   setChatPromptPreset(chatId: ChatId, promptPresetId: string): SessionSnapshot {
-    this.store.updateChatPromptPreset(chatId, promptPresetId as PromptPresetId);
+    this.store.updateChatPromptPreset(chatId, brandId<PromptPresetId>(promptPresetId));
     return this.getSnapshot(chatId);
   }
 
@@ -316,18 +317,18 @@ export class SessionRuntime {
   }
 
   deletePersona(personaId: string): void {
-    this.store.deletePersona(personaId as import("@rp-platform/domain").PersonaId);
+    this.store.deletePersona(brandId<PersonaId>(personaId));
   }
 
   getPersonalLorebookStatus(personaId: string): { enabled: boolean; lorebookId: string | null } {
-    const result = this.store.getPersonalLorebookForPersona(personaId as import("@rp-platform/domain").PersonaId);
+    const result = this.store.getPersonalLorebookForPersona(brandId<PersonaId>(personaId));
     return result ? { enabled: true, lorebookId: result.lorebookId } : { enabled: false, lorebookId: null };
   }
 
   setPersonalLorebookEnabled(personaId: string, enabled: boolean): { enabled: boolean; lorebookId: string | null } {
-    const typedPersonaId = personaId as import("@rp-platform/domain").PersonaId;
+    const typedPersonaId = brandId<PersonaId>(personaId);
     if (enabled) {
-      const persona = this.store.getPersona(personaId as import("@rp-platform/domain").PersonaId);
+      const persona = this.store.getPersona(typedPersonaId);
       if (!persona) {
         throw new Error(`Persona '${personaId}' was not found.`);
       }
@@ -470,16 +471,19 @@ export class SessionRuntime {
   }
 
   deleteBranch(chatId: string, branchId: string): SessionSnapshot {
-    this.chatApp.deleteBranch(chatId as ChatId, branchId as ChatBranchId);
-    this.pendingPromptTraceByChat.delete(chatId as ChatId);
-    return this.getSnapshot(chatId as ChatId);
+    const typedChatId = brandId<ChatId>(chatId);
+    const typedBranchId = brandId<ChatBranchId>(branchId);
+    this.chatApp.deleteBranch(typedChatId, typedBranchId);
+    this.pendingPromptTraceByChat.delete(typedChatId);
+    return this.getSnapshot(typedChatId);
   }
 
   archiveCharacter(characterId: string): { characterId: string; status: "archived" } {
-    this.store.setCharacterStatus(characterId as CharacterId, "archived");
-    const character = this.store.getCharacter(characterId as CharacterId);
+    const typedCharacterId = brandId<CharacterId>(characterId);
+    this.store.setCharacterStatus(typedCharacterId, "archived");
+    const character = this.store.getCharacter(typedCharacterId);
     if (character) {
-      const chatId = this.store.listChats().find((c) => c.characterId === characterId)?.id;
+      const chatId = this.store.listChats().find((c) => c.characterId === typedCharacterId)?.id;
       if (chatId) {
         const chatIndex = this.chatOrder.indexOf(chatId);
         if (chatIndex !== -1) {
@@ -491,65 +495,69 @@ export class SessionRuntime {
   }
 
   unarchiveCharacter(characterId: string): { characterId: string; status: "active" } {
-    this.store.setCharacterStatus(characterId as CharacterId, "active");
+    this.store.setCharacterStatus(brandId<CharacterId>(characterId), "active");
     return { characterId, status: "active" };
   }
 
   deleteCharacter(characterId: string): void {
+    const typedCharacterId = brandId<CharacterId>(characterId);
     const chatIds = this.store.listChats()
-      .filter((c) => c.characterId === characterId)
+      .filter((c) => c.characterId === typedCharacterId)
       .map((c) => c.id);
     for (const chatId of chatIds) {
       const idx = this.chatOrder.indexOf(chatId);
       if (idx !== -1) this.chatOrder.splice(idx, 1);
       this.pendingPromptTraceByChat.delete(chatId);
     }
-    this.store.deleteCharacter(characterId as CharacterId);
+    this.store.deleteCharacter(typedCharacterId);
   }
 
   deleteChat(chatId: string): void {
-    const idx = this.chatOrder.indexOf(chatId as ChatId);
+    const typedChatId = brandId<ChatId>(chatId);
+    const idx = this.chatOrder.indexOf(typedChatId);
     if (idx !== -1) this.chatOrder.splice(idx, 1);
-    this.pendingPromptTraceByChat.delete(chatId as ChatId);
-    this.store.deleteChat(chatId as ChatId);
+    this.pendingPromptTraceByChat.delete(typedChatId);
+    this.store.deleteChat(typedChatId);
   }
 
   renameChat(chatId: string, title: string): { chatId: string; title: string } {
-    this.store.renameChat(chatId as ChatId, title);
+    this.store.renameChat(brandId<ChatId>(chatId), title);
     return { chatId, title };
   }
 
   createChatForCharacter(characterId: string): SessionSnapshot {
-    const character = this.store.getCharacter(characterId as CharacterId);
+    const typedCharacterId = brandId<CharacterId>(characterId);
+    const character = this.store.getCharacter(typedCharacterId);
     if (!character) {
       throw new Error(`Character '${characterId}' was not found.`);
     }
 
     const created = this.chatApp.createChat({
-      characterId: characterId as CharacterId,
+      characterId: typedCharacterId,
       personaId: this.resolveDefaultPersonaId(),
       title: `${character.name} chat`,
       promptPresetId: this.resolveDefaultPromptPresetId(),
       toolProfileId: this.defaultToolProfile.id,
     });
 
-    this.chatOrder.unshift(created.id as ChatId);
+    const createdChatId = created.id;
+    this.chatOrder.unshift(createdChatId);
 
     const greeting = character.firstMessage;
     if (greeting) {
-      const chat = this.store.getChat(created.id as ChatId);
+      const chat = this.store.getChat(createdChatId);
       if (chat) {
         this.store.appendMessage({
-          chatId: created.id as ChatId,
+          chatId: createdChatId,
           branchId: chat.activeBranchId,
           role: "assistant",
           authorType: "assistant",
-          content: this.expandChatMacros(created.id as ChatId, greeting),
+          content: this.expandChatMacros(createdChatId, greeting),
         });
       }
     }
 
-    return this.getSnapshot(created.id as ChatId);
+    return this.getSnapshot(createdChatId);
   }
 
   async createCharacterFromScratch(input: {
@@ -562,8 +570,8 @@ export class SessionRuntime {
     alternateGreetings?: string[];
   }): Promise<ImportResult> {
     const timestamp = new Date().toISOString();
-    const characterId = `${ENTITY_ID_NAMESPACE.scratchCharacter}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterId;
-    const versionId = `${ENTITY_ID_NAMESPACE.scratchCharacterVersion}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterVersionId;
+    const characterId = brandId<CharacterId>(`${ENTITY_ID_NAMESPACE.scratchCharacter}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+    const versionId = brandId<CharacterVersionId>(`${ENTITY_ID_NAMESPACE.scratchCharacterVersion}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
 
     const character: Character = {
       id: characterId,
@@ -624,15 +632,16 @@ export class SessionRuntime {
       toolProfileId: this.defaultToolProfile.id,
     });
 
-    this.chatOrder.unshift(created.id as ChatId);
+    const createdChatId = created.id;
+    this.chatOrder.unshift(createdChatId);
 
     if (input.firstMessage?.trim()) {
-      this.seedImportedOpening(created.id as ChatId, input.firstMessage);
+      this.seedImportedOpening(createdChatId, input.firstMessage);
     }
 
     return {
-      activeChatId: created.id as ChatId,
-      snapshot: this.getSnapshot(created.id as ChatId),
+      activeChatId: createdChatId,
+      snapshot: this.getSnapshot(createdChatId),
       imported: {
         kind: 'character',
         name: input.name,
@@ -645,8 +654,8 @@ export class SessionRuntime {
 
   async createFreeChat(): Promise<SessionSnapshot> {
     const timestamp = new Date().toISOString();
-    const characterId = `${ENTITY_ID_NAMESPACE.freeCharacter}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterId;
-    const versionId = `${ENTITY_ID_NAMESPACE.freeCharacterVersion}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` as CharacterVersionId;
+    const characterId = brandId<CharacterId>(`${ENTITY_ID_NAMESPACE.freeCharacter}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+    const versionId = brandId<CharacterVersionId>(`${ENTITY_ID_NAMESPACE.freeCharacterVersion}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
 
     const character: Character = {
       id: characterId,
@@ -695,12 +704,13 @@ export class SessionRuntime {
       toolProfileId: this.defaultToolProfile.id,
     });
 
-    this.chatOrder.unshift(created.id as ChatId);
-    return this.getSnapshot(created.id as ChatId);
+    const freeChatId = created.id;
+    this.chatOrder.unshift(freeChatId);
+    return this.getSnapshot(freeChatId);
   }
 
   cloneChat(chatId: string): SessionSnapshot {
-    const result = this.store.cloneChat(chatId as ChatId);
+    const result = this.store.cloneChat(brandId<ChatId>(chatId));
     this.chatOrder.unshift(result.chat.id);
     return this.getSnapshot(result.chat.id);
   }
@@ -913,7 +923,7 @@ export class SessionRuntime {
       description?: string;
     },
   ): SessionSnapshot {
-    const currentPersona = this.store.getPersona(personaId as import("@rp-platform/domain").PersonaId);
+    const currentPersona = this.store.getPersona(brandId<PersonaId>(personaId));
     if (!currentPersona) {
       throw new Error(`Persona '${personaId}' was not found.`);
     }

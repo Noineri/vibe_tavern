@@ -1,3 +1,5 @@
+import { brandId } from "@rp-platform/domain";
+import type { ChatId, MessageId } from "@rp-platform/domain";
 import type { SessionRuntime, SessionSnapshot } from "./session-runtime.js";
 import type { ProviderOrchestrator } from "./provider-orchestrator.js";
 import type { StoredProviderProfileRecord } from "./session-runtime-dto.js";
@@ -21,7 +23,7 @@ export class LiveChatOrchestrator {
     snapshot: SessionSnapshot;
   }> {
     logSendDebug("live.send.prepare.start", { chatId: input.chatId, model: input.model });
-    const prepared = this.runtime.prepareLiveTurn(input.chatId, input.content, input.model);
+    const prepared = this.runtime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, input.model);
     logSendDebug("live.send.prepare.done", {
       chatId: input.chatId,
       snapshotMessageCount: prepared.snapshot.messages.length,
@@ -36,12 +38,12 @@ export class LiveChatOrchestrator {
         prompt: prepared.prompt,
       });
     } catch (err) {
-      this.runtime.discardPendingPromptTrace(input.chatId);
+      this.runtime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
     }
     const latencyMs = Date.now() - startedAt;
     logSendDebug("live.send.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
-    const snapshot = this.runtime.appendAssistantReply(input.chatId, reply, latencyMs);
+    const snapshot = this.runtime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs);
     logSendDebug("live.send.append.done", { chatId: input.chatId, messageCount: snapshot.messages.length });
 
     return {
@@ -63,8 +65,8 @@ export class LiveChatOrchestrator {
     snapshot: SessionSnapshot;
   }> {
     logSendDebug("live.regenerate.start", { chatId: input.chatId, messageId: input.messageId, model: input.model });
-    const prompt = this.runtime.assemblePromptPreview(input.chatId, {
-      excludeMessageId: input.messageId,
+    const prompt = this.runtime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+      excludeMessageId: brandId<MessageId>(input.messageId),
       model: input.model,
     });
     logSendDebug("live.regenerate.prompt.ready", {
@@ -81,12 +83,12 @@ export class LiveChatOrchestrator {
         prompt,
       });
     } catch (err) {
-      this.runtime.discardPendingPromptTrace(input.chatId);
+      this.runtime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
     }
     const latencyMs = Date.now() - startedAt;
     logSendDebug("live.regenerate.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
-    const snapshot = this.runtime.appendMessageVariant(input.chatId, input.messageId, {
+    const snapshot = this.runtime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
       content: reply,
       latencyMs,
     });

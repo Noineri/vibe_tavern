@@ -8,11 +8,13 @@ import type {
   SleepBranchRequest,
   SleepBranchResponse,
 } from "./chat-application-types.js";
+import { brandId } from "@rp-platform/domain";
 import type {
   Chat,
   ChatBranchId,
   ChatId,
   Message,
+  MessageId,
   SummaryMemorySnapshot,
 } from "@rp-platform/domain";
 import type { ChatBranchState, ChatSessionStore } from "@rp-platform/db";
@@ -73,11 +75,11 @@ export class ChatApplicationService {
   }
 
   editMessage(messageId: string, content: string): Message {
-    return this.store.updateMessage(messageId, content);
+    return this.store.updateMessage(brandId<MessageId>(messageId), content);
   }
 
   deleteMessage(messageId: string): void {
-    this.store.deleteMessage(messageId);
+    this.store.deleteMessage(brandId<MessageId>(messageId));
   }
 
   createBranch(chatId: ChatId, input: CreateBranchRequest): CreateBranchResponse {

@@ -1,6 +1,6 @@
 import type { ChatSessionStore } from "@rp-platform/db";
-import { ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
-import type { LoreEntry, Lorebook } from "@rp-platform/domain";
+import { brandId, ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
+import type { CharacterId, LorebookId, LoreEntry, Lorebook } from "@rp-platform/domain";
 import {
   activateLoreEntries,
   type ActivatableLoreEntry,
@@ -11,13 +11,14 @@ export interface LorebookModuleDeps {
 }
 
 export function createLoreEntry(deps: LorebookModuleDeps, lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
-  let resolvedLorebookId = lorebookId;
-  const existing = deps.store.listLoreEntriesForCharacter(lorebookId);
+  const typedCharacterId = brandId<CharacterId>(lorebookId);
+  let resolvedLorebookId: string = lorebookId;
+  const existing = deps.store.listLoreEntriesForCharacter(typedCharacterId);
   if (existing.length > 0 && existing[0].lorebookId) {
     resolvedLorebookId = existing[0].lorebookId;
   } else {
     const lorebook: Lorebook = {
-      id: `${ENTITY_ID_NAMESPACE.lorebook}_${Date.now()}`,
+      id: brandId<LorebookId>(`${ENTITY_ID_NAMESPACE.lorebook}_${Date.now()}`),
       name: `${lorebookId} lorebook`,
       scopeType: "character",
       description: "",
@@ -25,7 +26,7 @@ export function createLoreEntry(deps: LorebookModuleDeps, lorebookId: string, in
       updatedAt: new Date().toISOString(),
     };
     deps.store.upsertLorebook(lorebook);
-    deps.store.linkCharacterLorebook(lorebookId, lorebook.id);
+    deps.store.linkCharacterLorebook(typedCharacterId, lorebook.id);
     resolvedLorebookId = lorebook.id;
   }
   return deps.store.createLoreEntry(resolvedLorebookId, input);
@@ -40,7 +41,7 @@ export function deleteLoreEntry(deps: LorebookModuleDeps, _lorebookId: string, e
 }
 
 export function listLoreEntries(deps: LorebookModuleDeps, lorebookId: string): LoreEntry[] {
-  return deps.store.listLoreEntriesForCharacter(lorebookId);
+  return deps.store.listLoreEntriesForCharacter(brandId<CharacterId>(lorebookId));
 }
 
 export function testLoreActivation(

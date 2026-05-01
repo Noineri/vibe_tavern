@@ -1,12 +1,15 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ChatSessionStore } from "@rp-platform/db";
-import { SYSTEM_RESOURCE_ID } from "@rp-platform/domain";
+import { brandId, SYSTEM_RESOURCE_ID } from "@rp-platform/domain";
 import type {
   CharacterId,
   ChatId,
   Lorebook,
+  PersonaId,
+  PromptPresetId,
   PromptTraceId,
+  ToolProfileId,
 } from "@rp-platform/domain";
 import {
   importCharacterCardV3Json,
@@ -31,8 +34,8 @@ export interface ImportExportModuleDeps {
   chatApp: ChatApplicationService;
   chatOrder: ChatId[];
   fileStore: ReturnType<typeof createFileStore>;
-  resolveDefaultPersonaId(): string;
-  resolveDefaultPromptPresetId(): string;
+  resolveDefaultPersonaId(): PersonaId;
+  resolveDefaultPromptPresetId(): PromptPresetId;
   getSnapshot(chatId: ChatId): import("./session-runtime.js").SessionSnapshot;
   seedImportedOpening(chatId: ChatId, firstMessage: string): void;
 }
@@ -234,7 +237,7 @@ export async function importJson(
       personaId: deps.resolveDefaultPersonaId(),
       title: imported.character.name,
       promptPresetId: deps.resolveDefaultPromptPresetId(),
-      toolProfileId: SYSTEM_RESOURCE_ID.toolsDisabled,
+      toolProfileId: brandId<ToolProfileId>(SYSTEM_RESOURCE_ID.toolsDisabled),
     });
 
     deps.chatOrder.unshift(created.id);
@@ -253,10 +256,11 @@ export async function importJson(
     };
   }
 
-  const activeChatId = input.chatId ?? deps.chatOrder[0];
-  if (!activeChatId) {
+  const rawActiveChatId = input.chatId ?? deps.chatOrder[0];
+  if (!rawActiveChatId) {
     throw new Error("Import a character card first, then attach a lorebook to its chat.");
   }
+  const activeChatId = brandId<ChatId>(rawActiveChatId);
 
   const imported = importStLorebookJson(parsed);
   const chat = deps.store.getChat(activeChatId);
