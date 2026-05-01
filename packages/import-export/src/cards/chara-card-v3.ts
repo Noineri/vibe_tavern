@@ -1,5 +1,5 @@
-import type { Character, CharacterVersion } from "@rp-platform/domain";
-import { ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
+import type { Character, CharacterId, CharacterVersion, CharacterVersionId } from "@rp-platform/domain";
+import { brandId, ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
 
 import {
   asOptionalString,
@@ -115,14 +115,14 @@ export function importCharacterCardV3Json(
   }
 
   const slug = slugify(normalized.name);
-  const characterId = makeDeterministicId(
+  const characterId: CharacterId = brandId<CharacterId>(makeDeterministicId(
     ENTITY_ID_NAMESPACE.character,
     `${slug}:${stableJson(root)}`,
-  );
-  const versionId = makeDeterministicId(
+  ));
+  const versionId: CharacterVersionId = brandId<CharacterVersionId>(makeDeterministicId(
     ENTITY_ID_NAMESPACE.characterVersion,
     `${characterId}:${stableJson(root)}`,
-  );
+  ));
 
   const character: Character = {
     id: characterId,

@@ -1,11 +1,13 @@
 import type {
   LoreEntry,
+  LoreEntryId,
   LoreLogic,
   LoreScopeType,
   Lorebook,
+  LorebookId,
   PromptLayerPosition,
 } from "@rp-platform/domain";
-import { ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
+import { brandId, ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
 
 import {
   asBoolean,
@@ -132,10 +134,10 @@ export function importStLorebookJson(
     extensions: isRecord(root.extensions) ? root.extensions : {},
   };
 
-  const lorebookId = makeDeterministicId(
+  const lorebookId: LorebookId = brandId<LorebookId>(makeDeterministicId(
     ENTITY_ID_NAMESPACE.lorebook,
     `${normalized.name}:${stableJson(root)}`,
-  );
+  ));
 
   const lorebook: Lorebook = {
     id: lorebookId,
@@ -166,8 +168,8 @@ export function importStLorebookJson(
     }
 
     return {
-      id: makeDeterministicId(ENTITY_ID_NAMESPACE.loreEntryDeterministic, `${lorebookId}:${externalId}:${content}`),
-      lorebookId,
+      id: brandId<LoreEntryId>(makeDeterministicId(ENTITY_ID_NAMESPACE.loreEntryDeterministic, `${lorebookId}:${externalId}:${content}`)),
+      lorebookId: lorebookId as LorebookId,
       title,
       content,
       keys,
