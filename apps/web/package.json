@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@rp-platform/api": "0.1.0",
-    "@rp-platform/api-contracts": "0.1.0",
     "@rp-platform/db": "0.1.0",
     "@rp-platform/domain": "0.1.0",
     "@rp-platform/prompt-pipeline": "0.1.0",

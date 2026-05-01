@@ -18,9 +18,6 @@
       "@rp-platform/api": [
         "../../services/api/src/index.ts"
       ],
-      "@rp-platform/api-contracts": [
-        "../../packages/api-contracts/src/index.ts"
-      ],
       "@rp-platform/db": [
         "../../packages/db/src/index.ts"
       ],

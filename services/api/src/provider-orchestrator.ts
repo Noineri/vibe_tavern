@@ -1,4 +1,4 @@
-import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
+import type { AssemblePromptResponse } from "@rp-platform/domain";
 import type { ProviderManager } from "./providers/manager.js";
 import type { ProviderType } from "./providers/types.js";
 import type { SessionRuntime } from "./session-runtime.js";

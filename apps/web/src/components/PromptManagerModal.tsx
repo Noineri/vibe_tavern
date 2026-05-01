@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { PromptPresetDto } from "@rp-platform/api-contracts";
+import type { PromptPresetDto } from "@rp-platform/domain";
 import { ConfirmCloseModal } from "./shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { EmptyState } from "./shared/empty-state.js";

@@ -1,4 +1,4 @@
-import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
+import type { AssemblePromptResponse } from "@rp-platform/domain";
 import { ProviderAdapter, ProviderProfile, ModelInfo } from "./types.js";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
 import {

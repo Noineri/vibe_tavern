@@ -1,4 +1,4 @@
-import type { AssemblePromptResponse } from "@rp-platform/api-contracts";
+import type { AssemblePromptResponse } from "@rp-platform/domain";
 import { ProviderProfile, ProviderAdapter, ProviderType, ModelInfo } from './types.js';
 import { OpenAICompatAdapter } from './openai.js';
 import { AnthropicAdapter } from './anthropic.js';

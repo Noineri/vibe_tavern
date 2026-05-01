@@ -1,4 +1,4 @@
-import type { AssemblePromptResponse, PromptLayerDto } from "@rp-platform/api-contracts";
+import type { AssemblePromptResponse, PromptLayerDto } from "@rp-platform/domain";
 import type {
   ChatBranchId,
   ChatId,

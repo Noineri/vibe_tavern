@@ -1,4 +1,4 @@
-import type { PromptTraceRecordDto } from "@rp-platform/api-contracts";
+import type { PromptTraceRecordDto } from "@rp-platform/domain";
 import type { LoreEntry, Message, MessageVariant, PromptTrace } from "@rp-platform/domain";
 
 export interface StoredProviderProfileRecord {

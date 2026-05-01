@@ -133,7 +133,7 @@ export function exportChatJsonl(deps: ImportExportModuleDeps, chatId: string): s
   });
 }
 
-export function exportPromptTrace(deps: ImportExportModuleDeps, traceId: string): import("@rp-platform/api-contracts").PromptTraceRecordDto {
+export function exportPromptTrace(deps: ImportExportModuleDeps, traceId: string): import("@rp-platform/domain").PromptTraceRecordDto {
   const trace = deps.store.getPromptTrace(traceId as PromptTraceId);
   if (!trace) {
     throw new Error(`Prompt trace '${traceId}' was not found.`);

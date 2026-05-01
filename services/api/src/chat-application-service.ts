@@ -7,7 +7,7 @@ import type {
   SendMessageRequest,
   SleepBranchRequest,
   SleepBranchResponse,
-} from "@rp-platform/api-contracts";
+} from "./chat-application-types.js";
 import type {
   Chat,
   ChatBranchId,
