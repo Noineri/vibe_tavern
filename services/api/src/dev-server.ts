@@ -9,6 +9,7 @@ import { listProviderModels, normalizeOpenAiCompatibleBaseUrl, probeProviderConn
 import { ProviderManager } from "./providers/manager.js";
 import { logSendDebug } from "./send-debug-log.js";
 import { createApiRouter } from "./routes.js";
+import { isDomainError, httpStatusForDomainError, domainErrorToJson, notFound, validation, internal } from "./errors.js";
 
 const host = process.env.RP_PLATFORM_API_HOST ?? "127.0.0.1";
 const port = Number(process.env.RP_PLATFORM_API_PORT ?? "8787");
@@ -29,16 +30,16 @@ const runtime = {
     _chatId: string,
     _body: { title: string; subtitle: string; scenario: string; systemPrompt: string },
   ) => {
-    throw new Error("Chat settings route is not wired in this baseline.");
+    throw internal("Chat settings route is not wired in this baseline.");
   },
   branchChat: (chatId: string, _messageId: string) => sessionRuntime.forkBranch(brandId<ChatId>(chatId)),
   regenerateMessage: async (chatId: string, messageId: string, _body: unknown) => {
     const profile = sessionRuntime.resolveActiveProviderProfile();
     if (!profile) {
-      throw new Error("No active provider profile. Activate one in Provider settings.");
+      throw validation("No active provider profile. Activate one in Provider settings.");
     }
     if (!profile.defaultModel) {
-      throw new Error("Active provider profile has no default model. Pick a model and save the profile.");
+      throw validation("Active provider profile has no default model. Pick a model and save the profile.");
     }
     const result = await liveChatOrchestrator.regenerateMessage({
       chatId,
@@ -58,11 +59,11 @@ const runtime = {
     const profile = sessionRuntime.resolveActiveProviderProfile();
     if (!profile) {
       logSendDebug("api.runtime.send.no_active_profile", { chatId });
-      throw new Error("No active provider profile. Activate one in Provider settings.");
+      throw validation("No active provider profile. Activate one in Provider settings.");
     }
     if (!profile.defaultModel) {
       logSendDebug("api.runtime.send.no_default_model", { chatId, profileId: profile.id });
-      throw new Error("Active provider profile has no default model. Pick a model and save the profile.");
+      throw validation("Active provider profile has no default model. Pick a model and save the profile.");
     }
     logSendDebug("api.runtime.send.profile", {
       chatId,
@@ -99,7 +100,7 @@ const runtime = {
   getPersonalLorebookStatus: (personaId: string) => sessionRuntime.getPersonalLorebookStatus(personaId),
   setPersonalLorebookEnabled: (personaId: string, enabled: boolean) => sessionRuntime.setPersonalLorebookEnabled(personaId, enabled),
   updateLorebook: (_lorebookId: string, _body: { chatId: string; lorebookRaw: string }) => {
-    throw new Error("Lorebook patch route is not wired in this baseline.");
+    throw internal("Lorebook patch route is not wired in this baseline.");
   },
   createLoreEntry: (lorebookId: string, body: any) => sessionRuntime.createLoreEntry(lorebookId, body),
   updateLoreEntry: (lorebookId: string, entryId: string, body: any) => sessionRuntime.updateLoreEntry(lorebookId, entryId, body),
@@ -111,7 +112,7 @@ const runtime = {
   fetchProviderProfile: (providerProfileId: string) => {
     const profile = sessionRuntime.getProviderProfileForClient(providerProfileId);
     if (!profile) {
-      throw new Error(`Provider profile '${providerProfileId}' was not found.`);
+      throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
     }
     return profile;
   },
@@ -157,7 +158,7 @@ const runtime = {
 function getRequiredProviderProfile(providerProfileId: string) {
   const profile = sessionRuntime.getProviderProfile(providerProfileId);
   if (!profile) {
-    throw new Error(`Provider profile '${providerProfileId}' was not found.`);
+    throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
   }
   return profile;
 }
@@ -203,8 +204,12 @@ app.onError((err, c) => {
       stack: err instanceof Error ? err.stack : null,
     });
   }
+  if (isDomainError(err)) {
+    return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 401 | 404 | 409 | 499 | 500 | 502);
+  }
+  console.error("[unhandled]", err);
   return c.json(
-    { error: err instanceof Error ? err.message : "Unknown server error" },
+    { error: { kind: "Internal" as const, message: err instanceof Error ? err.message : "Unknown server error" } },
     500,
   );
 });

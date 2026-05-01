@@ -22,6 +22,7 @@ import {
 } from "./session-runtime-dto.js";
 import { ChatApplicationService } from "./chat-application-service.js";
 import type { CharacterRecord } from "./session-runtime-character.js";
+import { notFound, validation } from "./errors.js";
 
 export interface ImportExportResolver {
   getCharacter(characterId: string): CharacterRecord;
@@ -56,7 +57,7 @@ export interface ImportResult {
 export function exportCharacter(deps: ImportExportModuleDeps, characterId: string): Record<string, unknown> {
   const character = deps.store.listCharacters().find((c) => c.id === characterId);
   if (!character) {
-    throw new Error(`Character '${characterId}' was not found.`);
+    throw notFound("Character", `Character '${characterId}' was not found.`);
   }
   const version = deps.store.getLatestCharacterVersion(characterId as CharacterId);
   const definition = version?.definition;
@@ -98,11 +99,11 @@ export function exportCharacter(deps: ImportExportModuleDeps, characterId: strin
 export function exportChatJsonl(deps: ImportExportModuleDeps, chatId: string): string {
   const chat = deps.store.getChat(chatId as ChatId);
   if (!chat) {
-    throw new Error(`Chat '${chatId}' was not found.`);
+    throw notFound("Chat", `Chat '${chatId}' was not found.`);
   }
   const branchState = deps.store.getBranchState(chat.id, chat.activeBranchId);
   if (!branchState) {
-    throw new Error(`Branch '${chat.activeBranchId}' was not found for chat '${chatId}'.`);
+    throw notFound("Branch", `Branch '${chat.activeBranchId}' was not found for chat '${chatId}'.`);
   }
 
   let characterName = "Assistant";
@@ -139,7 +140,7 @@ export function exportChatJsonl(deps: ImportExportModuleDeps, chatId: string): s
 export function exportPromptTrace(deps: ImportExportModuleDeps, traceId: string): import("@rp-platform/domain").PromptTraceRecordDto {
   const trace = deps.store.getPromptTrace(traceId as PromptTraceId);
   if (!trace) {
-    throw new Error(`Prompt trace '${traceId}' was not found.`);
+    throw notFound("PromptTrace", `Prompt trace '${traceId}' was not found.`);
   }
   return mapPromptTraceRecord(trace);
 }
@@ -147,7 +148,7 @@ export function exportPromptTrace(deps: ImportExportModuleDeps, traceId: string)
 export function mirrorChatTranscript(deps: ImportExportModuleDeps, chatId: string): string[] {
   const chat = deps.store.getChat(chatId as ChatId);
   if (!chat) {
-    throw new Error(`Chat '${chatId}' was not found.`);
+    throw notFound("Chat", `Chat '${chatId}' was not found.`);
   }
 
   const branches = deps.store.listBranches(chat.id);
@@ -201,7 +202,7 @@ export function mirrorChatTranscript(deps: ImportExportModuleDeps, chatId: strin
 export function mirrorPromptTrace(deps: ImportExportModuleDeps, traceId: string): string {
   const trace = deps.store.getPromptTrace(traceId as PromptTraceId);
   if (!trace) {
-    throw new Error(`Prompt trace '${traceId}' was not found.`);
+    throw notFound("PromptTrace", `Prompt trace '${traceId}' was not found.`);
   }
   const date = trace.createdAt.split("T")[0];
   const filePath = deps.fileStore.resolvePath(
@@ -222,7 +223,7 @@ export async function importJson(
 ): Promise<ImportResult> {
   const trimmed = input.jsonText.trim();
   if (!trimmed) {
-    throw new Error("Import payload is empty.");
+    throw validation("Import payload is empty.");
   }
 
   const parsed = JSON.parse(trimmed) as Record<string, unknown>;
@@ -258,14 +259,14 @@ export async function importJson(
 
   const rawActiveChatId = input.chatId ?? deps.chatOrder[0];
   if (!rawActiveChatId) {
-    throw new Error("Import a character card first, then attach a lorebook to its chat.");
+    throw validation("Import a character card first, then attach a lorebook to its chat.");
   }
   const activeChatId = brandId<ChatId>(rawActiveChatId);
 
   const imported = importStLorebookJson(parsed);
   const chat = deps.store.getChat(activeChatId);
   if (!chat) {
-    throw new Error(`Chat '${activeChatId}' was not found for lorebook import.`);
+    throw notFound("Chat", `Chat '${activeChatId}' was not found for lorebook import.`);
   }
 
   const lorebook: Lorebook = imported.lorebook;

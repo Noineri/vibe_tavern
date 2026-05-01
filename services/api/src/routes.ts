@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { logSendDebug } from "./send-debug-log.js";
 import * as schemas from "./api-schemas.js";
+import { isDomainError, providerError } from "./errors.js";
 
 export interface RuntimeApi {
   bootstrap: () => unknown;
@@ -230,32 +231,16 @@ export function createApiRouter(
       );
     })
     .delete("/api/personas/:personaId", (c) => {
-      try {
-        runtime.deletePersona(c.req.param("personaId"));
-        return c.body(null, 204);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown error";
-        const status = /referenced by one or more chats/i.test(message) ? 409 : /not found/i.test(message) ? 404 : 500;
-        return c.json({ error: message }, status as 409 | 404 | 500);
-      }
+      runtime.deletePersona(c.req.param("personaId"));
+      return c.body(null, 204);
     })
     .get("/api/personas/:personaId/personal-lorebook", (c) => {
-      try {
-        return c.json(runtime.getPersonalLorebookStatus(c.req.param("personaId")));
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown error";
-        return c.json({ error: message }, /not found/i.test(message) ? 404 : 500);
-      }
+      return c.json(runtime.getPersonalLorebookStatus(c.req.param("personaId")));
     })
     .put("/api/personas/:personaId/personal-lorebook", zValidator("json", schemas.setPersonalLorebookSchema), (c) => {
       const body = c.req.valid("json");
       const enabled = body.enabled === true;
-      try {
-        return c.json(runtime.setPersonalLorebookEnabled(c.req.param("personaId"), enabled));
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown error";
-        return c.json({ error: message }, /not found/i.test(message) ? 404 : 500);
-      }
+      return c.json(runtime.setPersonalLorebookEnabled(c.req.param("personaId"), enabled));
     })
     .patch("/api/lorebooks/:lorebookId", zValidator("json", schemas.updateLorebookSchema), (c) => {
       const body = c.req.valid("json");
@@ -289,30 +274,15 @@ export function createApiRouter(
     })
     .post("/api/prompt-presets", zValidator("json", schemas.createPromptPresetSchema), (c) => {
       const body = c.req.valid("json");
-      try {
-        return c.json(runtime.createPromptPreset(body), 201);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown error";
-        return c.json({ error: message }, /required/i.test(message) ? 400 : 500);
-      }
+      return c.json(runtime.createPromptPreset(body), 201);
     })
     .patch("/api/prompt-presets/:presetId", zValidator("json", schemas.updatePromptPresetSchema), (c) => {
       const body = c.req.valid("json");
-      try {
-        return c.json(runtime.updatePromptPreset(c.req.param("presetId"), body));
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown error";
-        return c.json({ error: message }, /not found/i.test(message) ? 404 : 500);
-      }
+      return c.json(runtime.updatePromptPreset(c.req.param("presetId"), body));
     })
     .delete("/api/prompt-presets/:presetId", (c) => {
-      try {
-        runtime.deletePromptPreset(c.req.param("presetId"));
-        return c.body(null, 204);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown error";
-        return c.json({ error: message }, /not found/i.test(message) ? 404 : 500);
-      }
+      runtime.deletePromptPreset(c.req.param("presetId"));
+      return c.body(null, 204);
     })
     .get("/api/providers", (c) => {
       return c.json(runtime.listProviderProfiles());
@@ -355,8 +325,8 @@ export function createApiRouter(
         const models = await deps.listProviderModels({ baseUrl: normalized, apiKey: apiKey ?? "" });
         return c.json({ models });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to fetch models.";
-        return c.json({ error: message }, 502);
+        if (isDomainError(err)) throw err;
+        throw providerError(err instanceof Error ? err.message : "Failed to fetch models.");
       }
     })
     .post("/api/providers/test-chat", zValidator("json", schemas.testChatSchema), async (c) => {

@@ -30,6 +30,7 @@ import {
 } from "@rp-platform/prompt-pipeline";
 import { ChatApplicationService } from "./chat-application-service.js";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "./prompt-assembly-service.js";
+import { notFound, validation, internal, isDomainError, conflict } from "./errors.js";
 import {
   mapPromptTraceRecord,
   mapMessageDto,
@@ -119,7 +120,7 @@ class StaticPromptResolver implements PromptAssemblyResolver {
   getCharacter(characterId: string) {
     const character = this.store.getCharacter(brandId<CharacterId>(characterId));
     if (!character) {
-      throw new Error(`Character '${characterId}' was not found.`);
+      throw notFound("Character", `Character '${characterId}' was not found.`);
     }
     const version = this.store.getLatestCharacterVersion(character.id);
     return toCharacterRecord(character, version);
@@ -305,7 +306,7 @@ export class SessionRuntime {
     const trimmedName = (input.name ?? "").trim();
     const trimmedDescription = (input.description ?? "").trim();
     if (!trimmedName) {
-      throw new Error("Persona name is required.");
+      throw validation("Persona name is required.");
     }
     const persona = this.store.createPersona({
       name: trimmedName,
@@ -317,7 +318,19 @@ export class SessionRuntime {
   }
 
   deletePersona(personaId: string): void {
-    this.store.deletePersona(brandId<PersonaId>(personaId));
+    try {
+      this.store.deletePersona(brandId<PersonaId>(personaId));
+    } catch (error) {
+      if (isDomainError(error)) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (/referenced by one or more chats/i.test(message)) {
+        throw conflict(message);
+      }
+      if (/not found/i.test(message)) {
+        throw notFound("Persona", message);
+      }
+      throw error;
+    }
   }
 
   getPersonalLorebookStatus(personaId: string): { enabled: boolean; lorebookId: string | null } {
@@ -330,7 +343,7 @@ export class SessionRuntime {
     if (enabled) {
       const persona = this.store.getPersona(typedPersonaId);
       if (!persona) {
-        throw new Error(`Persona '${personaId}' was not found.`);
+        throw notFound("Persona", `Persona '${personaId}' was not found.`);
       }
       const result = this.store.enablePersonalLorebookForPersona(typedPersonaId, `__personal__:${personaId}`);
       return { enabled: true, lorebookId: result.lorebookId };
@@ -529,7 +542,7 @@ export class SessionRuntime {
     const typedCharacterId = brandId<CharacterId>(characterId);
     const character = this.store.getCharacter(typedCharacterId);
     if (!character) {
-      throw new Error(`Character '${characterId}' was not found.`);
+      throw notFound("Character", `Character '${characterId}' was not found.`);
     }
 
     const created = this.chatApp.createChat({
@@ -837,12 +850,12 @@ export class SessionRuntime {
   ): Promise<SessionSnapshot> {
     const currentCharacter = this.store.listCharacters().find((character) => character.id === characterId);
     if (!currentCharacter) {
-      throw new Error(`Character '${characterId}' was not found.`);
+      throw notFound("Character", `Character '${characterId}' was not found.`);
     }
 
     const nextName = (input.name ?? currentCharacter.name).trim();
     if (!nextName) {
-      throw new Error("Character name is required.");
+      throw validation("Character name is required.");
     }
 
     const now = new Date().toISOString();
@@ -909,7 +922,7 @@ export class SessionRuntime {
       this.chatOrder[0];
 
     if (!targetChatId) {
-      throw new Error("No chat is available for the updated character.");
+      throw notFound("Chat", "No chat is available for the updated character.");
     }
 
     return this.getSnapshot(targetChatId);
@@ -925,12 +938,12 @@ export class SessionRuntime {
   ): SessionSnapshot {
     const currentPersona = this.store.getPersona(brandId<PersonaId>(personaId));
     if (!currentPersona) {
-      throw new Error(`Persona '${personaId}' was not found.`);
+      throw notFound("Persona", `Persona '${personaId}' was not found.`);
     }
 
     const nextName = (input.name ?? currentPersona.name).trim();
     if (!nextName) {
-      throw new Error("Persona name is required.");
+      throw validation("Persona name is required.");
     }
 
     const nextDescription = input.description ?? currentPersona.description;
@@ -949,7 +962,7 @@ export class SessionRuntime {
       this.chatOrder[0];
 
     if (!targetChatId) {
-      throw new Error("No chat is available for the updated persona.");
+      throw notFound("Chat", "No chat is available for the updated persona.");
     }
 
     return this.getSnapshot(targetChatId);
@@ -1050,7 +1063,7 @@ export class SessionRuntime {
   private resolvePromptVariableContext(chatId: ChatId) {
     const chat = this.store.getChat(chatId);
     if (!chat) {
-      throw new Error(`Chat '${chatId}' was not found.`);
+      throw notFound("Chat", `Chat '${chatId}' was not found.`);
     }
     const character = this.resolver.getCharacter(chat.characterId);
     const persona = this.resolver.getPersona(chat.personaId ?? this.resolveDefaultPersonaId());
@@ -1105,7 +1118,7 @@ export class SessionRuntime {
 
     const defaultPersona = personas.find((persona) => persona.defaultForNewChats) ?? personas[0];
     if (!defaultPersona) {
-      throw new Error("No persona is available for new chats.");
+      throw internal("No persona is available for new chats.");
     }
     return defaultPersona.id;
   }
@@ -1114,7 +1127,7 @@ export class SessionRuntime {
     const presets = this.store.listPromptPresets();
     const globalPreset = presets.find((preset) => preset.bindModel.trim() === "") ?? presets[0];
     if (!globalPreset) {
-      throw new Error("No prompt preset is available for new chats.");
+      throw internal("No prompt preset is available for new chats.");
     }
     return globalPreset.id;
   }
