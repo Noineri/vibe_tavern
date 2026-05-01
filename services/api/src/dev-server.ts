@@ -4,6 +4,8 @@ import { brandId } from "@rp-platform/domain";
 import type { ChatId, CharacterId, ChatBranchId, MessageId } from "@rp-platform/domain";
 import { LiveChatOrchestrator } from "./live-chat-orchestrator.js";
 import { SessionRuntime } from "./session-runtime.js";
+import { ProviderProfileService } from "./provider-profile-service.js";
+import { PromptPresetService } from "./prompt-preset-service.js";
 import { ProviderOrchestrator } from "./provider-orchestrator.js";
 import { listProviderModels, normalizeOpenAiCompatibleBaseUrl, probeProviderConnection, testProviderChat } from "./provider-gateway.js";
 import { ProviderManager } from "./providers/manager.js";
@@ -11,11 +13,18 @@ import { logSendDebug } from "./send-debug-log.js";
 import { createApiRouter } from "./routes.js";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson, notFound, validation, internal } from "./errors.js";
 
+import { createDefaultSessionStore } from "./session-runtime-store.js";
+
 const host = process.env.RP_PLATFORM_API_HOST ?? "127.0.0.1";
 const port = Number(process.env.RP_PLATFORM_API_PORT ?? "8787");
-const sessionRuntime = new SessionRuntime();
+const store = createDefaultSessionStore();
+const providerProfileService = new ProviderProfileService(store);
+const promptPresetService = new PromptPresetService(store);
+const sessionRuntime = new SessionRuntime(store, {
+  getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
+});
 const providerManager = new ProviderManager();
-const providerOrchestrator = new ProviderOrchestrator(sessionRuntime, providerManager);
+const providerOrchestrator = new ProviderOrchestrator(providerProfileService, providerManager);
 const chatRuntime = sessionRuntime.chatRuntime;
 const liveChatOrchestrator = new LiveChatOrchestrator(chatRuntime, providerOrchestrator);
 
@@ -35,7 +44,7 @@ const runtime = {
   },
   branchChat: (chatId: string, _messageId: string) => chatRuntime.forkBranch(brandId<ChatId>(chatId)),
   regenerateMessage: async (chatId: string, messageId: string, _body: unknown) => {
-    const profile = sessionRuntime.resolveActiveProviderProfile();
+    const profile = providerProfileService.resolveActiveProviderProfile();
     if (!profile) {
       throw validation("No active provider profile. Activate one in Provider settings.");
     }
@@ -57,7 +66,7 @@ const runtime = {
   deleteMessage: (chatId: string, messageId: string) => chatRuntime.deleteMessage(brandId<ChatId>(chatId), messageId),
   sendMessage: async (chatId: string, body: { content: string }) => {
     logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
-    const profile = sessionRuntime.resolveActiveProviderProfile();
+    const profile = providerProfileService.resolveActiveProviderProfile();
     if (!profile) {
       logSendDebug("api.runtime.send.no_active_profile", { chatId });
       throw validation("No active provider profile. Activate one in Provider settings.");
@@ -109,18 +118,18 @@ const runtime = {
   listLoreEntries: (lorebookId: string) => sessionRuntime.listLoreEntries(lorebookId),
   testLoreActivation: (lorebookId: string, body: { text: string }) =>
     sessionRuntime.testLoreActivation(lorebookId, body.text),
-  listProviderProfiles: () => sessionRuntime.listProviderProfiles(),
+  listProviderProfiles: () => providerProfileService.listProviderProfiles(),
   fetchProviderProfile: (providerProfileId: string) => {
-    const profile = sessionRuntime.getProviderProfileForClient(providerProfileId);
+    const profile = providerProfileService.getProviderProfileForClient(providerProfileId);
     if (!profile) {
       throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
     }
     return profile;
   },
-  activateProviderProfile: (providerProfileId: string) => sessionRuntime.activateProviderProfile(providerProfileId),
+  activateProviderProfile: (providerProfileId: string) => providerProfileService.activateProviderProfile(providerProfileId),
   updateProviderProfile: (providerProfileId: string, body: unknown) =>
-    sessionRuntime.updateProviderProfile(providerProfileId, body as any),
-  saveProviderDraft: async (body: unknown) => sessionRuntime.saveProviderProfile(body),
+    providerProfileService.updateProviderProfile(providerProfileId, body as any),
+  saveProviderDraft: async (body: unknown) => providerProfileService.saveProviderProfile(body as any),
   testProviderDraft: async (body: { endpoint?: string; apiKey?: string } | null) => {
     const endpoint = (body?.endpoint ?? "").trim();
     const apiKey = (body?.apiKey ?? "").trim();
@@ -133,7 +142,7 @@ const runtime = {
       apiKey: profile.apiKey ?? "",
     });
   },
-  deleteProviderProfile: (providerProfileId: string) => sessionRuntime.deleteProviderProfile(providerProfileId),
+  deleteProviderProfile: (providerProfileId: string) => providerProfileService.deleteProviderProfile(providerProfileId),
   fetchProviderModels: async (providerProfileId: string) => ({
     models: await providerOrchestrator.refreshProfileModels(getRequiredProviderProfile(providerProfileId)),
   }),
@@ -150,14 +159,14 @@ const runtime = {
   deleteCharacter: (characterId: string) => sessionRuntime.deleteCharacter(characterId),
   deleteChat: (chatId: string) => chatRuntime.deleteChat(chatId),
   renameChat: (chatId: string, title: string) => chatRuntime.renameChat(chatId, title),
-  listPromptPresets: () => sessionRuntime.listPromptPresets(),
-  createPromptPreset: (body: any) => sessionRuntime.createPromptPreset(body),
-  updatePromptPreset: (presetId: string, body: any) => sessionRuntime.updatePromptPreset(presetId, body),
-  deletePromptPreset: (presetId: string) => sessionRuntime.deletePromptPreset(presetId),
+  listPromptPresets: () => promptPresetService.listPromptPresets(),
+  createPromptPreset: (body: any) => promptPresetService.createPromptPreset(body),
+  updatePromptPreset: (presetId: string, body: any) => promptPresetService.updatePromptPreset(presetId, body),
+  deletePromptPreset: (presetId: string) => promptPresetService.deletePromptPreset(presetId),
 };
 
 function getRequiredProviderProfile(providerProfileId: string) {
-  const profile = sessionRuntime.getProviderProfile(providerProfileId);
+  const profile = providerProfileService.getProviderProfile(providerProfileId);
   if (!profile) {
     throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
   }
@@ -169,7 +178,7 @@ const apiRouter = createApiRouter(runtime, {
   sessionRuntime: {
     createCharacterFromScratch: (body) => sessionRuntime.createCharacterFromScratch(body),
     createFreeChat: () => sessionRuntime.createFreeChat(),
-    getProviderProfile: (id) => sessionRuntime.getProviderProfile(id),
+    getProviderProfile: (id) => providerProfileService.getProviderProfile(id),
   },
   providerOrchestrator,
   listProviderModels,

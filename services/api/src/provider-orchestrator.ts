@@ -1,13 +1,13 @@
 import type { AssemblePromptResponse } from "@rp-platform/domain";
 import type { ProviderManager } from "./providers/manager.js";
 import type { ProviderType } from "./providers/types.js";
-import type { SessionRuntime } from "./session-runtime.js";
+import type { ProviderProfileService } from "./provider-profile-service.js";
 import type { StoredProviderProfileRecord } from "./session-runtime-dto.js";
 import { logSendDebug } from "./send-debug-log.js";
 
 export class ProviderOrchestrator {
   constructor(
-    private readonly runtime: SessionRuntime,
+    private readonly providerProfileService: ProviderProfileService,
     private readonly providerManager: ProviderManager,
   ) {}
 
@@ -19,10 +19,10 @@ export class ProviderOrchestrator {
         label: model.name ?? model.id,
       }));
 
-      this.runtime.setCachedProviderModels(profile.id, normalized);
+      this.providerProfileService.setCachedProviderModels(profile.id, normalized);
       return normalized;
     } catch (error) {
-      const cached = this.runtime.getCachedProviderModels(profile.id);
+      const cached = this.providerProfileService.getCachedProviderModels(profile.id);
       if (cached?.models.length) {
         return cached.models;
       }
@@ -30,7 +30,7 @@ export class ProviderOrchestrator {
       const fallbackModel = profile.defaultModel?.trim();
       if (fallbackModel) {
         const fallback = [{ id: fallbackModel, label: fallbackModel }];
-        this.runtime.setCachedProviderModels(profile.id, fallback);
+        this.providerProfileService.setCachedProviderModels(profile.id, fallback);
         return fallback;
       }
 
