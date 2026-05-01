@@ -1,6 +1,6 @@
 import type { ChangeEvent, DragEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import type { ChatBranchId, ChatId } from "@rp-platform/domain";
+import type { ChatBranchId, ChatId, PromptPresetDto } from "@rp-platform/domain";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
 import {
   activateBranch,
@@ -9,25 +9,37 @@ import {
   cloneChat,
   createCharacter,
   createChat,
+  createPersona,
+  createPromptPreset,
   deleteBranch,
+  deleteChat,
   deleteChatMessage,
   deleteCharacter,
-  deleteChat,
+  deletePersona,
+  deletePromptPreset,
   editChatMessage,
   exportCharacter,
   exportChatJsonl,
   exportPromptTrace,
   fetchChat,
   forkBranch,
+  listPersonas,
+  listPromptPresets,
+  logClientSendDebug,
   regenerateChatMessage,
   renameChat,
   selectMessageVariant,
   sendChatMessage,
+  setChatPersona,
+  setChatPromptPreset,
+  setPersonalLorebookEnabled,
   unarchiveCharacter,
   updateCharacter,
   updatePersona,
+  updatePromptPreset,
   type AppMessage,
   type AppSnapshot,
+  type PersonaRecord,
 } from "../app-client.js";
 import type {
   AppMode,
@@ -132,13 +144,13 @@ export function useRpPlatformApp() {
   const [characterSaveNotice, setCharacterSaveNotice] = useState("");
   const { importFile, isImporting } = useCharacterImport();
 
-  const [personas, setPersonas] = useState<import("../app-client.js").PersonaRecord[]>([]);
-  const [promptPresets, setPromptPresets] = useState<import("@rp-platform/domain").PromptPresetDto[]>([]);
+  const [personas, setPersonas] = useState<PersonaRecord[]>([]);
+  const [promptPresets, setPromptPresets] = useState<PromptPresetDto[]>([]);
   const [activePromptPresetId, setActivePromptPresetId] = useState<string | null>(null);
 
   async function loadPersonas(): Promise<void> {
     try {
-      setPersonas(await (await import("../app-client.js")).listPersonas());
+      setPersonas(await listPersonas());
     } catch {
       // ignore
     }
@@ -150,7 +162,7 @@ export function useRpPlatformApp() {
 
   async function loadPromptPresets(): Promise<void> {
     try {
-      const list = await (await import("../app-client.js")).listPromptPresets();
+      const list = await listPromptPresets();
       setPromptPresets(list);
       if (list.length > 0 && !list.find((p) => p.id === activePromptPresetId)) {
         setActivePromptPresetId(list[0].id);
@@ -172,7 +184,7 @@ export function useRpPlatformApp() {
     setActivePromptPresetId(presetId);
     if (!activeChatId || !presetId) return;
     try {
-      const nextSnapshot = await (await import("../app-client.js")).setChatPromptPreset(activeChatId, presetId);
+      const nextSnapshot = await setChatPromptPreset(activeChatId, presetId);
       refresh(activeChatId, nextSnapshot);
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : "Failed to set prompt preset.");
@@ -181,7 +193,7 @@ export function useRpPlatformApp() {
 
   async function handleCreatePromptPreset(input: { name: string; bindModel?: string; system?: string; jailbreak?: string; summary?: string; tools?: string }): Promise<{ id: string } | null> {
     try {
-      const created = await (await import("../app-client.js")).createPromptPreset(input);
+      const created = await createPromptPreset(input);
       await loadPromptPresets();
       await handleSetActivePromptPresetId(created.id);
       return { id: created.id };
@@ -191,9 +203,9 @@ export function useRpPlatformApp() {
     }
   }
 
-  async function handleUpdatePromptPreset(presetId: string, patch: Partial<Omit<import("@rp-platform/domain").PromptPresetDto, "id" | "createdAt" | "updatedAt">>): Promise<boolean> {
+  async function handleUpdatePromptPreset(presetId: string, patch: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">>): Promise<boolean> {
     try {
-      const updated = await (await import("../app-client.js")).updatePromptPreset(presetId, patch);
+      const updated = await updatePromptPreset(presetId, patch);
       setPromptPresets((current) => current.map((p) => p.id === presetId ? updated : p));
       return true;
     } catch (error) {
@@ -204,7 +216,7 @@ export function useRpPlatformApp() {
 
   async function handleDeletePromptPreset(presetId: string): Promise<boolean> {
     try {
-      await (await import("../app-client.js")).deletePromptPreset(presetId);
+      await deletePromptPreset(presetId);
       await loadPromptPresets();
       return true;
     } catch (error) {
@@ -365,7 +377,7 @@ export function useRpPlatformApp() {
 
   async function handleSend(): Promise<void> {
     const trimmed = draft.trim();
-    void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.enter", {
+    void logClientSendDebug("web.hook.handleSend.enter", {
       activeChatId,
       draftLength: draft.length,
       trimmedLength: trimmed.length,
@@ -373,22 +385,22 @@ export function useRpPlatformApp() {
       canSendViaActiveProfile: provider.canSendViaActiveProfile,
       connectionStatus: connection.status,
       connectionModel: connection.model,
-    }));
+    });
     if (!trimmed || isSending || !activeChatId) {
-      void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.blocked.basic", {
+      void logClientSendDebug("web.hook.handleSend.blocked.basic", {
         activeChatId,
         trimmedLength: trimmed.length,
         isSending,
-      }));
+      });
       return;
     }
 
     if (!provider.canSendViaActiveProfile) {
-      void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.blocked.provider", {
+      void logClientSendDebug("web.hook.handleSend.blocked.provider", {
         activeChatId,
         connectionStatus: connection.status,
         connectionModel: connection.model,
-      }));
+      });
       setChatNotice(
         "Message sending is unavailable until a provider profile is activated and its default model is set. Open Provider settings, pick a model, press Save profile, then Set as active.",
       );
@@ -401,18 +413,18 @@ export function useRpPlatformApp() {
     setIsSending(true);
 
     try {
-      void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.request", { activeChatId }));
+      void logClientSendDebug("web.hook.handleSend.request", { activeChatId });
       const nextSnapshot = await sendChatMessage(activeChatId, {
         content: trimmed,
       });
       refresh(activeChatId, nextSnapshot);
       setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
-      void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.success", { activeChatId }));
+      void logClientSendDebug("web.hook.handleSend.success", { activeChatId });
     } catch (error) {
-      void import("../app-client.js").then((m) => m.logClientSendDebug("web.hook.handleSend.error", {
+      void logClientSendDebug("web.hook.handleSend.error", {
         activeChatId,
         message: error instanceof Error ? error.message : String(error),
-      }));
+      });
       refresh(activeChatId, await fetchChat(activeChatId));
       setChatNotice(error instanceof Error && error.message ? error.message : "Message sending failed.");
     } finally {
@@ -489,7 +501,7 @@ export function useRpPlatformApp() {
   async function handleSetChatPersona(personaId: string): Promise<void> {
     if (!activeChatId) return;
     try {
-      refresh(activeChatId, await (await import("../app-client.js")).setChatPersona(activeChatId, personaId));
+      refresh(activeChatId, await setChatPersona(activeChatId, personaId));
     } catch (err) {
       setChatNotice(err instanceof Error ? err.message : "Failed to switch persona.");
     }
@@ -497,7 +509,7 @@ export function useRpPlatformApp() {
 
   async function handleCreatePersona(input: { name: string; description: string }): Promise<{ id: string } | null> {
     try {
-      const created = await (await import("../app-client.js")).createPersona({
+      const created = await createPersona({
         name: input.name.trim(),
         description: input.description.trim(),
       });
@@ -511,7 +523,7 @@ export function useRpPlatformApp() {
 
   async function handleDeletePersona(personaId: string): Promise<{ ok: boolean; error?: string }> {
     try {
-      await (await import("../app-client.js")).deletePersona(personaId);
+      await deletePersona(personaId);
       await loadPersonas();
       return { ok: true };
     } catch (error) {
@@ -521,7 +533,7 @@ export function useRpPlatformApp() {
 
   async function handleSetPersonalLorebook(personaId: string, enabled: boolean): Promise<{ enabled: boolean; lorebookId: string | null } | null> {
     try {
-      return await (await import("../app-client.js")).setPersonalLorebookEnabled(personaId, enabled);
+      return await setPersonalLorebookEnabled(personaId, enabled);
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : "Failed to update personal lorebook.");
       return null;
