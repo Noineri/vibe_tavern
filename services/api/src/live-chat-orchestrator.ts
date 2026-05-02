@@ -4,7 +4,7 @@ import type { ChatRuntime } from "./session-runtime-chat.js";
 import type { SessionSnapshot } from "./session-runtime.js";
 import type { ProviderOrchestrator } from "./provider-orchestrator.js";
 import type { StoredProviderProfileRecord } from "./session-runtime-dto.js";
-import { streamProviderExecutor } from "./ai/stream-provider-executor.js";
+import { nonstreamingProviderExecute } from "./ai/nonstreaming-provider-executor.js";
 import { logSendDebug } from "./send-debug-log.js";
 
 export class LiveChatOrchestrator {
@@ -37,13 +37,13 @@ export class LiveChatOrchestrator {
     let reply: string;
     try {
       // TODO FW-AI5: when stream preference is true, forward the stream as SSE instead of collecting
-      const result = await streamProviderExecutor({
+      const result = await nonstreamingProviderExecute({
         profile: input.profile,
         model: input.model,
         prompt: prepared.prompt,
         signal: input.signal,
       });
-      reply = await result.text;
+      reply = result.text;
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
@@ -86,14 +86,13 @@ export class LiveChatOrchestrator {
     logSendDebug("live.regenerate.provider.start", { chatId: input.chatId, providerId: input.profile.id, model: input.model });
     let reply: string;
     try {
-      // TODO FW-AI5: when stream preference is true, forward the stream as SSE instead of collecting
-      const result = await streamProviderExecutor({
+      const result = await nonstreamingProviderExecute({
         profile: input.profile,
         model: input.model,
         prompt,
         signal: input.signal,
       });
-      reply = await result.text;
+      reply = result.text;
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
