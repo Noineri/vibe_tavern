@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChatId, PromptPresetDto } from "@rp-platform/domain";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
 import {
@@ -240,6 +240,9 @@ export function useRpPlatformApp() {
 
   // --- Controllers ---
 
+  const canSendViaActiveProfileRef = useRef(provider.canSendViaActiveProfile);
+  canSendViaActiveProfileRef.current = provider.canSendViaActiveProfile;
+
   function snapshotRefresh(chatId: ChatId, next: AppSnapshot): void {
     useChatStore.getState().setSnapshotForChat(chatId, next);
   }
@@ -249,7 +252,7 @@ export function useRpPlatformApp() {
     getSnapshot: () => useChatStore.getState().snapshot,
     getDraft: () => useChatStore.getState().draft,
     getIsSending: () => useChatStore.getState().isSending,
-    getCanSendViaActiveProfile: () => provider.canSendViaActiveProfile,
+    getCanSendViaActiveProfile: () => canSendViaActiveProfileRef.current,
     getEditingDraft: () => useChatStore.getState().editingDraft,
     getEditingMessageId: () => useChatStore.getState().editingMessageId,
     setSnapshot: (chatId, next) => useChatStore.getState().setSnapshotForChat(chatId, next),
