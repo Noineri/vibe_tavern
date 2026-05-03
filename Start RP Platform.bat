@@ -39,12 +39,38 @@ echo API log: "%LOG_DIR%\dev-api.log"
 echo Web log: "%LOG_DIR%\dev-web.log"
 >> "%RP_PLATFORM_LOG_FILE%" echo VITE_RP_API_URL=%VITE_RP_API_URL%
 
- if not exist "node_modules" (
-   >> "%RP_PLATFORM_LOG_FILE%" echo node_modules missing, running bun install
-   echo Installing dependencies...
-   call bun install
-   if errorlevel 1 goto :fail
- )
+echo Checking dependencies...
+set "NEEDS_INSTALL=0"
+if not exist "node_modules" (
+  >> "%RP_PLATFORM_LOG_FILE%" echo node_modules missing
+  set "NEEDS_INSTALL=1"
+) else (
+  if not exist "node_modules\@types\bun" (
+    >> "%RP_PLATFORM_LOG_FILE%" echo @types/bun missing
+    set "NEEDS_INSTALL=1"
+  )
+  if not exist "node_modules\hono" (
+    >> "%RP_PLATFORM_LOG_FILE%" echo hono missing
+    set "NEEDS_INSTALL=1"
+  )
+  if not exist "node_modules\drizzle-orm" (
+    >> "%RP_PLATFORM_LOG_FILE%" echo drizzle-orm missing
+    set "NEEDS_INSTALL=1"
+  )
+  if not exist "node_modules\vite" (
+    >> "%RP_PLATFORM_LOG_FILE%" echo vite missing
+    set "NEEDS_INSTALL=1"
+  )
+)
+if "%NEEDS_INSTALL%"=="1" (
+  echo Installing or repairing dependencies...
+  >> "%RP_PLATFORM_LOG_FILE%" echo Running bun install
+  call bun install
+  if errorlevel 1 goto :fail
+  echo Dependencies installed.
+) else (
+  echo Dependencies OK.
+)
 
  >> "%RP_PLATFORM_LOG_FILE%" echo Launching %BUN_EXE% .\scripts\dev-supervisor.ts
  start "" /wait /b "%BUN_EXE%" ".\scripts\dev-supervisor.ts"
