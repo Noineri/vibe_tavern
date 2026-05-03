@@ -8,5 +8,8 @@ export { SqliteChatSessionStore } from "./sqlite-chat-session-store.js";
 export { applySqliteMigrations } from "./sqlite-migrator.js";
 export { getLatestMigrationVersion } from "./migrations.js";
 export { createFileStore, STORAGE_FOLDERS } from "./file-store.js";
-export * as drizzleSchema from "./drizzle-schema.js";
-export { createDrizzleDb, type DrizzleDb } from "./drizzle.js";
+export * as drizzleSchema from "./_drizzle-schema-legacy.js";
+export { createDrizzleDb, type DrizzleDb } from "./_drizzle-legacy.js";
+
+export * from './db-schema.js';
+export { createDb, type AppDb } from './db-connection.js';
