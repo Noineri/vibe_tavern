@@ -14,7 +14,7 @@ The project already supports the basic local RP workflow: character import and c
 
 Requirements:
 
-- [Bun](https://bun.sh)
+- [Bun](https://bun.sh) >= 1.0
 
 Install dependencies and start the local dev environment:
 
@@ -85,7 +85,7 @@ Current status: **future**.
 ## Project Layout
 
 - `apps/web` - React/Vite frontend.
-- `services/api` - local Node.js HTTP API and runtime orchestration.
+- `services/api` - local Bun HTTP API and runtime orchestration.
 - `packages/domain` - shared domain models.
 - `packages/api-contracts` - frontend/backend DTO contracts.
 - `packages/prompt-pipeline` - prompt assembly and prompt trace logic.

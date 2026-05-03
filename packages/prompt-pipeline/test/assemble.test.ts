@@ -1,9 +1,17 @@
 import { describe, it, expect } from "bun:test";
-import { assemblePrompt } from "../dist/assemble.js";
+import { assemblePrompt } from "../src/assemble.ts";
 
 function baseContext(overrides = {}) {
   return {
-    chatId: "chat_1",
+    identity: {
+      chatId: "chat_1",
+    },
+    chat: {
+      recentMessages: [
+        { id: "msg_1", role: "user", content: "Hello." },
+        { id: "msg_2", role: "assistant", content: "Hi there." },
+      ],
+    },
     character: {
       id: "char_1",
       name: "Aria",
@@ -11,10 +19,6 @@ function baseContext(overrides = {}) {
       scenario: "The tower burns.",
       systemPrompt: null,
     },
-    recentMessages: [
-      { id: "msg_1", role: "user", content: "Hello." },
-      { id: "msg_2", role: "assistant", content: "Hi there." },
-    ],
     ...overrides,
   };
 }
@@ -63,7 +67,7 @@ describe("assemblePrompt", () => {
   describe("prompt preset", () => {
     it("includes prompt_preset layer when provided", () => {
       const result = assemblePrompt(baseContext({
-        promptPreset: { id: "preset_1", text: "Global system instructions." },
+        preset: { id: "preset_1", text: "Global system instructions." },
       }));
       const preset = result.layers.find((l) => l.id === "prompt_preset_system");
       expect(preset).toBeTruthy();
@@ -93,7 +97,7 @@ describe("assemblePrompt", () => {
   describe("lore entries", () => {
     it("includes activated lore entries as layers", () => {
       const result = assemblePrompt(baseContext({
-        activeLoreEntries: [
+        lore: [
           { id: "lore_1", title: "Dragons", content: "Fire-breathing creatures.", priority: 10 },
         ],
       }));
@@ -105,7 +109,7 @@ describe("assemblePrompt", () => {
 
     it("drops lore entries with empty content", () => {
       const result = assemblePrompt(baseContext({
-        activeLoreEntries: [
+        lore: [
           { id: "lore_empty", title: "Empty", content: "   ", priority: 10 },
         ],
       }));
@@ -117,7 +121,7 @@ describe("assemblePrompt", () => {
 
     it("sorts lore entries by priority descending", () => {
       const result = assemblePrompt(baseContext({
-        activeLoreEntries: [
+        lore: [
           { id: "low", title: "Low", content: "Low priority.", priority: 5 },
           { id: "high", title: "High", content: "High priority.", priority: 50 },
         ],
@@ -129,7 +133,7 @@ describe("assemblePrompt", () => {
 
     it("passes lore position through to layer", () => {
       const result = assemblePrompt(baseContext({
-        activeLoreEntries: [
+        lore: [
           { id: "lore_pos", title: "T", content: "C.", priority: 10, position: "before_prompt" },
         ],
       }));
@@ -142,9 +146,11 @@ describe("assemblePrompt", () => {
   describe("memory", () => {
     it("includes summary memory layers", () => {
       const result = assemblePrompt(baseContext({
-        summaryMemory: [
-          { id: "sum_1", kind: "chapter", summary: "They met at the inn." },
-        ],
+        memory: {
+          summary: [
+            { id: "sum_1", kind: "chapter", summary: "They met at the inn." },
+          ],
+        },
       }));
       const mem = result.layers.find((l) => l.id === "summary_sum_1");
       expect(mem).toBeTruthy();
@@ -154,10 +160,12 @@ describe("assemblePrompt", () => {
 
     it("includes retrieval memory layers sorted by score", () => {
       const result = assemblePrompt(baseContext({
-        retrievalMemory: [
-          { id: "ret_low", sourceType: "dialogue", content: "Low score.", score: 0.3 },
-          { id: "ret_high", sourceType: "event", content: "High score.", score: 0.9 },
-        ],
+        memory: {
+          retrieval: [
+            { id: "ret_low", sourceType: "dialogue", content: "Low score.", score: 0.3 },
+            { id: "ret_high", sourceType: "event", content: "High score.", score: 0.9 },
+          ],
+        },
       }));
       const retLayers = result.layers.filter((l) => l.sourceType === "retrieval_memory");
       expect(retLayers[0].id).toBe("retrieval_ret_high");
@@ -168,7 +176,7 @@ describe("assemblePrompt", () => {
   describe("tool instructions", () => {
     it("includes tool_instructions layer when provided", () => {
       const result = assemblePrompt(baseContext({
-        toolInstructions: "Use the search tool when needed.",
+        instructions: { toolInstructions: "Use the search tool when needed." },
       }));
       const tool = result.layers.find((l) => l.id === "tool_instructions");
       expect(tool).toBeTruthy();
@@ -186,7 +194,7 @@ describe("assemblePrompt", () => {
     });
 
     it("omits recent_history when no messages", () => {
-      const result = assemblePrompt(baseContext({ recentMessages: [] }));
+      const result = assemblePrompt(baseContext({ chat: { recentMessages: [] } }));
       const hist = result.layers.find((l) => l.id === "recent_history");
       expect(hist).toBeUndefined();
     });
@@ -195,8 +203,8 @@ describe("assemblePrompt", () => {
   describe("layer ordering", () => {
     it("layers are sorted by position then priority descending", () => {
       const result = assemblePrompt(baseContext({
-        systemPreset: { id: "p1", text: "Preset." },
-        activeLoreEntries: [
+        preset: { id: "p1", text: "Preset." },
+        lore: [
           { id: "l1", title: "Lore", content: "Lore text.", priority: 10 },
         ],
       }));
@@ -247,7 +255,7 @@ describe("assemblePrompt", () => {
 
     it("activatedLoreEntries lists lore IDs", () => {
       const result = assemblePrompt(baseContext({
-        activeLoreEntries: [
+        lore: [
           { id: "l1", title: "T", content: "C.", priority: 5 },
           { id: "l2", title: "T", content: "C.", priority: 5 },
         ],
@@ -257,8 +265,10 @@ describe("assemblePrompt", () => {
 
     it("usedMemoryBlocks combines summary and retrieval IDs", () => {
       const result = assemblePrompt(baseContext({
-        summaryMemory: [{ id: "s1", kind: "chapter", summary: "text." }],
-        retrievalMemory: [{ id: "r1", sourceType: "event", content: "text.", score: 0.5 }],
+        memory: {
+          summary: [{ id: "s1", kind: "chapter", summary: "text." }],
+          retrieval: [{ id: "r1", sourceType: "event", content: "text.", score: 0.5 }],
+        },
       }));
       expect(result.usedMemoryBlocks).toEqual(["s1", "r1"]);
     });

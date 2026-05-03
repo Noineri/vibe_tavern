@@ -10,13 +10,16 @@
   "scripts": {
     "build": "bun run --filter '*' build",
     "build:api-stack": "bun run --filter @rp-platform/domain build && bun run --filter @rp-platform/prompt-pipeline build && bun run --filter @rp-platform/db build && bun run --filter @rp-platform/import-export build && bun run --filter @rp-platform/api build",
-    "dev": "bun ./scripts/dev-supervisor.cjs",
+    "build:prod": "bun scripts/build.ts api-stack",
+    "dev": "bun ./scripts/dev-supervisor.ts",
     "typecheck": "bun run --filter '*' typecheck",
-    "dev:api": "bun run build:api-stack && bun run --filter @rp-platform/api dev",
+    "test": "bun run --filter '*' test",
+    "check": "bun run typecheck && bun run test",
+    "dev:api": "bun run --filter @rp-platform/api dev",
     "dev:web": "bun run --filter @rp-platform/web dev"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
+    "@types/bun": "latest",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",

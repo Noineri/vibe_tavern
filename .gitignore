@@ -21,6 +21,12 @@ services/api/data/
 
 # Lock files (migrated to bun.lock)
 package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Node.js version files (migrated to Bun)
+.nvmrc
+.node-version
 
 # Logs
 logs/
@@ -48,3 +54,4 @@ rp_platform_plan/
 
 # Drizzle generated output
 drizzle-generated/
+.tokensave
