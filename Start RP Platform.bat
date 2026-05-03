@@ -46,8 +46,8 @@ echo Web log: "%LOG_DIR%\dev-web.log"
    if errorlevel 1 goto :fail
  )
 
- >> "%RP_PLATFORM_LOG_FILE%" echo Launching %BUN_EXE% .\scripts\dev-supervisor.cjs
- start "" /wait /b "%BUN_EXE%" ".\scripts\dev-supervisor.cjs"
+ >> "%RP_PLATFORM_LOG_FILE%" echo Launching %BUN_EXE% .\scripts\dev-supervisor.ts
+ start "" /wait /b "%BUN_EXE%" ".\scripts\dev-supervisor.ts"
  set "RP_EXIT_CODE=%ERRORLEVEL%"
  >> "%RP_PLATFORM_LOG_FILE%" echo Launcher exited with code %RP_EXIT_CODE%
  if "%RP_EXIT_CODE%"=="0" goto :eof

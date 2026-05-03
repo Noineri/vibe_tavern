@@ -4,7 +4,6 @@
     "rootDir": "../..",
     "outDir": "dist",
     "types": [
-      "node",
       "bun"
     ],
     "baseUrl": ".",

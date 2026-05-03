@@ -5,12 +5,12 @@
     "outDir": "dist",
     "jsx": "react-jsx",
     "lib": [
-      "ES2022",
+      "ESNext",
       "DOM",
       "DOM.Iterable"
     ],
     "types": [
-      "node",
+      "bun",
       "vite/client"
     ],
     "baseUrl": ".",
