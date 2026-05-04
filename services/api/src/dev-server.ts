@@ -15,8 +15,9 @@ import { isDomainError, httpStatusForDomainError, domainErrorToJson, notFound, v
 
 import { createRuntimeStore } from "./session-runtime-store.js";
 import { mkdirSync } from "node:fs";
-import { execSync } from "child_process";
 import { resolve } from "node:path";
+
+const rootDir = resolve(import.meta.dir, '..', '..', '..');
 
 const host = process.env.RP_PLATFORM_API_HOST ?? "127.0.0.1";
 const port = Number(process.env.RP_PLATFORM_API_PORT ?? "8787");
@@ -26,16 +27,23 @@ const port = Number(process.env.RP_PLATFORM_API_PORT ?? "8787");
 console.log("[bootstrap] Starting RP Platform API...");
 
 // 1. Ensure data/ directory exists
-mkdirSync(resolve(process.cwd(), "data"), { recursive: true });
+mkdirSync(resolve(rootDir, "data"), { recursive: true });
 
 // 2. Run DB schema push (creates/updates all tables)
 console.log("[bootstrap] Running DB schema push...");
 try {
-  execSync("bunx drizzle-kit push", {
-    cwd: resolve(process.cwd(), "packages/db"),
-    stdio: "inherit",
+  const pushProc = Bun.spawn(["bunx", "drizzle-kit", "push"], {
+    cwd: resolve(rootDir, "packages/db"),
+    stdout: "inherit",
+    stderr: "inherit",
+    stdin: "inherit",
   });
-  console.log("[bootstrap] DB schema push complete.");
+  const exitCode = await pushProc.exited;
+  if (exitCode === 0) {
+    console.log("[bootstrap] DB schema push complete.");
+  } else {
+    console.warn(`[bootstrap] DB schema push exited with code ${exitCode} (tables may already exist).`);
+  }
 } catch (err) {
   console.warn("[bootstrap] DB schema push failed (tables may already exist):", err instanceof Error ? err.message : err);
 }

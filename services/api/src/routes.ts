@@ -81,8 +81,8 @@ export function createApiRouter(
       logSendDebug("web.debug", typeof body === "object" && body ? body as Record<string, unknown> : { body });
       return c.json({ ok: true });
     })
-    .get("/api/bootstrap", (c) => {
-      return c.json(runtime.bootstrap());
+    .get("/api/bootstrap", async (c) => {
+      return c.json(await runtime.bootstrap());
     })
     .get("/api/personas", (c) => {
       return c.json(runtime.listPersonas());
