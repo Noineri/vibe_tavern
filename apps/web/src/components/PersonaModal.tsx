@@ -55,6 +55,7 @@ export function PersonaModal(input: PersonaModalProps) {
 
   const selectedPersona = input.personas.find((p) => p.id === selectedId) || input.personas[0] || null;
   const isEditing = editingId !== null;
+  const isLastPersona = input.personas.length <= 1;
 
   function startEdit(persona: PersonaListItem): void {
     setEditingId(persona.id);
@@ -65,6 +66,7 @@ export function PersonaModal(input: PersonaModalProps) {
   function commitEdit(): void {
     if (!editingId || !editName.trim()) return;
     input.onSaveEdit(editingId, { name: editName.trim(), description: editDescription });
+    setSelectedId(editingId);
     setEditingId(null);
   }
 
@@ -212,9 +214,14 @@ export function PersonaModal(input: PersonaModalProps) {
                             className="persona-edit-btn"
                             role="button"
                             tabIndex={0}
-                            style={{ color: "oklch(0.6 0.15 25)", cursor: "pointer" }}
+                            style={{ color: "oklch(0.6 0.15 25)", cursor: isLastPersona ? "not-allowed" : "pointer", opacity: isLastPersona ? 0.6 : 1 }}
+                            title={isLastPersona ? "You cannot delete the last persona." : "Delete persona"}
                             onClick={(event) => {
                               event.stopPropagation();
+                              if (isLastPersona) {
+                                setDeleteError("You cannot delete the last persona.");
+                                return;
+                              }
                               setConfirmDeleteId(persona.id);
                               setDeleteError("");
                             }}
@@ -243,6 +250,9 @@ export function PersonaModal(input: PersonaModalProps) {
             >
               <Icons.Plus /> <span style={{ marginLeft: 6 }}>Create new persona</span>
             </button>
+            {deleteError && !confirmDeleteId && (
+              <div className="api-hint" style={{ marginTop: 8, color: "oklch(0.6 0.15 25)" }}>{deleteError}</div>
+            )}
           </div>
 
           <div className="api-section-title" style={{ marginTop: 24 }}>Persona settings</div>

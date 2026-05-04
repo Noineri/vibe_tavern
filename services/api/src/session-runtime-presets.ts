@@ -35,7 +35,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
   }
   const created = await deps.presets.create({
     name: trimmed,
-    bindProviderPresetId: input.bindModel ?? "",
+    bindProviderPresetId: normalizeBindModel(input.bindModel),
     systemPrompt: input.system ?? "",
     postHistoryInstructions: input.jailbreak ?? "",
     summaryPrompt: input.summary ?? "",
@@ -65,7 +65,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
   try {
     const updated = await deps.presets.update(presetId as PromptPresetId, {
       name: patch.name,
-      bindProviderPresetId: patch.bindModel,
+      bindProviderPresetId: patch.bindModel === undefined ? undefined : normalizeBindModel(patch.bindModel),
       systemPrompt: patch.system,
       postHistoryInstructions: patch.jailbreak,
       summaryPrompt: patch.summary,
@@ -90,6 +90,11 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
     }
     throw error;
   }
+}
+
+function normalizeBindModel(value: string | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed ? trimmed : null;
 }
 
 export async function deletePromptPreset(deps: PresetModuleDeps, presetId: string): Promise<void> {

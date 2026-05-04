@@ -80,6 +80,7 @@ export interface SessionSnapshot {
 export interface BootstrapState {
 	initialChatId: ChatId | null;
 	snapshot: SessionSnapshot | null;
+	characters: CharacterRecord[];
 	isFirstRun: boolean;
 }
 
@@ -220,6 +221,7 @@ export class SessionRuntime {
 		return {
 			initialChatId,
 			snapshot: initialChatId ? await this.getSnapshot(initialChatId) : null,
+			characters: await Promise.all(userChars.map((character) => this.resolver.getCharacter(character.id))),
 			isFirstRun: allChats.length === 0,
 		};
 	}
@@ -284,22 +286,33 @@ export class SessionRuntime {
 	}
 
 	async setChatPersona(chatId: ChatId, personaId: string): Promise<SessionSnapshot> {
-		const before = await this.stores.chats.getById(chatId);
-		// Update persona via direct DB update - need to add method or use existing
-		// For now, we'll need a chat update method. ChatStore doesn't have updatePersona,
-		// but we can work around it. The simplest is to add an updateChat method to ChatStore.
-		// Since we can't modify ChatStore per the task rules ("only acceptable addition" is getMessageById),
-		// let's handle this at the chat level.
-		void before;
-		// TODO: Implement setChatPersona with new stores - need chat update method
-		throw internal("setChatPersona not yet wired to new stores.");
+		const [chat, persona] = await Promise.all([
+			this.stores.chats.getById(chatId),
+			this.stores.personas.getById(brandId<PersonaId>(personaId)),
+		]);
+		if (!chat) {
+			throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		}
+		if (!persona) {
+			throw notFound("Persona", `Persona '${personaId}' was not found.`);
+		}
+		await this.stores.chats.setPersona(chatId, personaId);
+		return this.getSnapshot(chatId);
 	}
 
 	async setChatPromptPreset(chatId: ChatId, promptPresetId: string): Promise<SessionSnapshot> {
-		void chatId;
-		void promptPresetId;
-		// TODO: Implement setChatPromptPreset with new stores - need chat update method
-		throw internal("setChatPromptPreset not yet wired to new stores.");
+		const [chat, preset] = await Promise.all([
+			this.stores.chats.getById(chatId),
+			this.stores.presets.getById(promptPresetId),
+		]);
+		if (!chat) {
+			throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		}
+		if (!preset) {
+			throw notFound("PromptPreset", `Prompt preset '${promptPresetId}' was not found.`);
+		}
+		await this.stores.chats.setPromptPreset(chatId, promptPresetId);
+		return this.getSnapshot(chatId);
 	}
 
 	async createPersona(input: {

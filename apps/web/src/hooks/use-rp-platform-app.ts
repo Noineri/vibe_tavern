@@ -11,6 +11,7 @@ import {
   deletePromptPreset,
   setChatPromptPreset,
   type AppSnapshot,
+  type CharacterTabRecord,
   type PersonaRecord,
 } from "../app-client.js";
 import type {
@@ -123,6 +124,7 @@ export function useRpPlatformApp() {
   const { importFile, isImporting } = useCharacterImport();
 
   const [personas, setPersonas] = useState<PersonaRecord[]>([]);
+  const [characters, setCharacters] = useState<CharacterTabRecord[]>([]);
   const [promptPresets, setPromptPresets] = useState<PromptPresetDto[]>([]);
   const [activePromptPresetId, setActivePromptPresetId] = useState<string | null>(null);
 
@@ -158,7 +160,7 @@ export function useRpPlatformApp() {
 
   // --- Character/chat tabs ---
 
-  const characterTabs = useMemo(() => (snapshot ? buildCharacterTabs(snapshot) : []), [snapshot]);
+  const characterTabs = useMemo(() => buildCharacterTabs(snapshot, characters), [snapshot, characters]);
   const macroContext = useMemo(
     () => snapshot ? {
       characterName: snapshot.character.name,
@@ -277,6 +279,7 @@ export function useRpPlatformApp() {
     setImportNotice,
     setIsSavingCharacter,
     setCharacterSaveNotice,
+    setPersonas: (updater) => setPersonas((current) => updater(current)),
     loadBootstrap,
     loadPersonas,
     importFile,
@@ -360,6 +363,7 @@ export function useRpPlatformApp() {
       const boot = await bootstrapApp();
       useChatStore.getState().setActiveChatId(boot.initialChatId);
       useChatStore.getState().setSnapshot(boot.snapshot);
+      setCharacters(boot.characters);
       setIsFirstRun(boot.isFirstRun || import.meta.env.VITE_FORCE_FIRST_RUN === 'true');
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Could not load application state.");
@@ -561,9 +565,28 @@ export function useRpPlatformApp() {
   };
 }
 
-function buildCharacterTabs(snapshot: AppSnapshot): CharacterTab[] {
+function buildCharacterTabs(snapshot: AppSnapshot | null, characters: CharacterTabRecord[] = []): CharacterTab[] {
   const seen = new Set<string>();
   const result: CharacterTab[] = [];
+
+  for (const character of characters) {
+    const chat = snapshot?.chats.find((item) => item.characterId === character.id) ?? null;
+    if (seen.has(character.id)) {
+      continue;
+    }
+
+    seen.add(character.id);
+    result.push({
+      id: character.id,
+      name: character.name,
+      subtitle: character.subtitle,
+      chatId: chat?.id ?? null,
+    });
+  }
+
+  if (!snapshot) {
+    return result;
+  }
 
   for (const chat of snapshot.chats) {
     if (seen.has(chat.characterId)) {
