@@ -20,7 +20,6 @@ export interface CreateChatRequest {
   personaId: PersonaId;
   title: string;
   promptPresetId: PromptPresetId;
-  toolProfileId: ToolProfileId;
 }
 
 export interface CreateChatResponse {

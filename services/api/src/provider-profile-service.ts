@@ -1,4 +1,4 @@
-import type { ChatSessionStore } from "@rp-platform/db";
+import type { ProviderStore } from "@rp-platform/db";
 import {
   listProviderProfiles,
   saveProviderProfile,
@@ -35,15 +35,13 @@ const DEFAULT_CAPABILITIES: ProviderCapabilityFlags = {
 };
 
 export class ProviderProfileService {
-  private readonly providerModelsCache = new Map<string, CachedProviderModelsRecord>();
-
-  constructor(private readonly store: ChatSessionStore) {}
+  constructor(private readonly providers: ProviderStore) {}
 
   private get deps(): ProviderModuleDeps {
-    return { store: this.store, providerModelsCache: this.providerModelsCache };
+    return { providers: this.providers };
   }
 
-  listProviderProfiles(): ClientProviderProfileRecord[] {
+  async listProviderProfiles(): Promise<ClientProviderProfileRecord[]> {
     return listProviderProfiles(this.deps);
   }
 
@@ -51,19 +49,19 @@ export class ProviderProfileService {
     return saveProviderProfile(this.deps, profile);
   }
 
-  deleteProviderProfile(id: string): void {
-    deleteProviderProfile(this.deps, id);
+  async deleteProviderProfile(id: string): Promise<void> {
+    return deleteProviderProfile(this.deps, id);
   }
 
-  activateProviderProfile(id: string): ClientProviderProfileRecord {
+  async activateProviderProfile(id: string): Promise<ClientProviderProfileRecord> {
     return activateProviderProfile(this.deps, id);
   }
 
-  resolveActiveProviderProfile(): StoredProviderProfileRecord | null {
+  async resolveActiveProviderProfile(): Promise<StoredProviderProfileRecord | null> {
     return resolveActiveProviderProfile(this.deps);
   }
 
-  updateProviderProfile(
+  async updateProviderProfile(
     id: string,
     patch: {
       name?: string;
@@ -86,26 +84,26 @@ export class ProviderProfileService {
       reasoningEffort?: string;
       streamResponse?: boolean;
     },
-  ): ClientProviderProfileRecord {
+  ): Promise<ClientProviderProfileRecord> {
     return updateProviderProfile(this.deps, id, patch);
   }
 
-  getProviderProfile(id: string): StoredProviderProfileRecord | null {
+  async getProviderProfile(id: string): Promise<StoredProviderProfileRecord | null> {
     return getProviderProfile(this.deps, id);
   }
 
-  getProviderProfileForClient(id: string): ClientProviderProfileRecord | null {
+  async getProviderProfileForClient(id: string): Promise<ClientProviderProfileRecord | null> {
     return getProviderProfileForClient(this.deps, id);
   }
 
-  getCachedProviderModels(providerProfileId: string): CachedProviderModelsRecord | null {
+  async getCachedProviderModels(providerProfileId: string): Promise<CachedProviderModelsRecord | null> {
     return getCachedProviderModels(this.deps, providerProfileId);
   }
 
-  setCachedProviderModels(
+  async setCachedProviderModels(
     providerProfileId: string,
     models: Array<{ id: string; label: string }>,
-  ): CachedProviderModelsRecord {
+  ): Promise<CachedProviderModelsRecord> {
     return setCachedProviderModels(this.deps, providerProfileId, models);
   }
 
