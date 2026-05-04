@@ -1,62 +1,87 @@
-import type { ChatSessionStore } from "@rp-platform/db";
+import type { PresetStore } from "@rp-platform/db";
 import type { PromptPresetId, PromptPresetDto } from "@rp-platform/domain";
 import { validation, notFound, conflict, isDomainError } from "./errors.js";
 
 export interface PresetModuleDeps {
-  store: ChatSessionStore;
+  presets: PresetStore;
 }
 
-export function listPromptPresets(deps: PresetModuleDeps): PromptPresetDto[] {
-  return deps.store.listPromptPresets().map((p) => ({
+export async function listPromptPresets(deps: PresetModuleDeps): Promise<PromptPresetDto[]> {
+  const presets = await deps.presets.listAll();
+  return presets.map((p) => ({
     id: p.id,
     name: p.name,
-    bindModel: p.bindModel,
-    system: p.system,
-    jailbreak: p.jailbreak,
-    summary: p.summary,
-    tools: p.tools,
+    bindModel: p.bindProviderPresetId ?? "",
+    system: p.systemPrompt,
+    jailbreak: p.postHistoryInstructions,
+    summary: p.summaryPrompt,
+    tools: p.toolsPrompt,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   }));
 }
 
-export function createPromptPreset(deps: PresetModuleDeps, input: {
+export async function createPromptPreset(deps: PresetModuleDeps, input: {
   name: string;
   bindModel?: string;
   system?: string;
   jailbreak?: string;
   summary?: string;
   tools?: string;
-}): PromptPresetDto {
+}): Promise<PromptPresetDto> {
   const trimmed = (input.name ?? "").trim();
   if (!trimmed) {
     throw validation("Preset name is required.");
   }
-  const created = deps.store.createPromptPreset({
+  const created = await deps.presets.create({
     name: trimmed,
-    bindModel: input.bindModel ?? "",
-    system: input.system ?? "",
-    jailbreak: input.jailbreak ?? "",
-    summary: input.summary ?? "",
-    tools: input.tools ?? "",
+    bindProviderPresetId: input.bindModel ?? "",
+    systemPrompt: input.system ?? "",
+    postHistoryInstructions: input.jailbreak ?? "",
+    summaryPrompt: input.summary ?? "",
+    toolsPrompt: input.tools ?? "",
   });
-  return { ...created };
+  return {
+    id: created.id,
+    name: created.name,
+    bindModel: created.bindProviderPresetId ?? "",
+    system: created.systemPrompt,
+    jailbreak: created.postHistoryInstructions,
+    summary: created.summaryPrompt,
+    tools: created.toolsPrompt,
+    createdAt: created.createdAt,
+    updatedAt: created.updatedAt,
+  };
 }
 
-export function updatePromptPreset(deps: PresetModuleDeps, presetId: string, patch: {
+export async function updatePromptPreset(deps: PresetModuleDeps, presetId: string, patch: {
   name?: string;
   bindModel?: string;
   system?: string;
   jailbreak?: string;
   summary?: string;
   tools?: string;
-}): PromptPresetDto {
+}): Promise<PromptPresetDto> {
   try {
-    const next = deps.store.updatePromptPreset(
-      presetId as PromptPresetId,
-      patch,
-    );
-    return { ...next };
+    const updated = await deps.presets.update(presetId as PromptPresetId, {
+      name: patch.name,
+      bindProviderPresetId: patch.bindModel,
+      systemPrompt: patch.system,
+      postHistoryInstructions: patch.jailbreak,
+      summaryPrompt: patch.summary,
+      toolsPrompt: patch.tools,
+    });
+    return {
+      id: updated.id,
+      name: updated.name,
+      bindModel: updated.bindProviderPresetId ?? "",
+      system: updated.systemPrompt,
+      jailbreak: updated.postHistoryInstructions,
+      summary: updated.summaryPrompt,
+      tools: updated.toolsPrompt,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+    };
   } catch (error) {
     if (isDomainError(error)) throw error;
     const message = error instanceof Error ? error.message : String(error);
@@ -67,9 +92,9 @@ export function updatePromptPreset(deps: PresetModuleDeps, presetId: string, pat
   }
 }
 
-export function deletePromptPreset(deps: PresetModuleDeps, presetId: string): void {
+export async function deletePromptPreset(deps: PresetModuleDeps, presetId: string): Promise<void> {
   try {
-    deps.store.deletePromptPreset(presetId as PromptPresetId);
+    await deps.presets.delete(presetId as PromptPresetId);
   } catch (error) {
     if (isDomainError(error)) throw error;
     const message = error instanceof Error ? error.message : String(error);

@@ -1,26 +1,20 @@
 import { resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
-import type { ChatSessionStore } from "@rp-platform/db";
+import type { CharacterStore, ChatStore } from "@rp-platform/db";
 import { type createFileStore, STORAGE_FOLDERS } from "@rp-platform/db";
 import type {
-	CharacterId,
 	ChatId,
-	Lorebook,
 	PersonaId,
 	PromptPresetId,
-	PromptTraceId,
-	ToolProfileId,
 } from "@rp-platform/domain";
-import { brandId, SYSTEM_RESOURCE_ID } from "@rp-platform/domain";
+import { brandId } from "@rp-platform/domain";
 import { serializeSillyTavernChat } from "../../../packages/import-export/src/chats/st-chat.js";
 import {
 	importCharacterCardV3Json,
-	importStLorebookJson,
 } from "../../../packages/import-export/src/index.js";
 import type { ChatApplicationService } from "./chat-application-service.js";
 import { notFound, validation } from "./errors.js";
 import type { CharacterRecord } from "./session-runtime-character.js";
-import { mapPromptTraceRecord } from "./session-runtime-dto.js";
 
 export interface ImportExportResolver {
 	getCharacter(characterId: string): CharacterRecord;
@@ -30,7 +24,8 @@ export interface ImportExportResolver {
 }
 
 export interface ImportExportModuleDeps {
-	store: ChatSessionStore;
+	characters: CharacterStore;
+	chats: ChatStore;
 	resolver: ImportExportResolver;
 	chatApp: ChatApplicationService;
 	chatOrder: ChatId[];
@@ -54,31 +49,20 @@ export interface ImportResult {
 	};
 }
 
-export function exportCharacter(
+export async function exportCharacter(
 	deps: ImportExportModuleDeps,
 	characterId: string,
-): Record<string, unknown> {
-	const character = deps.store
-		.listCharacters()
-		.find((c) => c.id === characterId);
+): Promise<Record<string, unknown>> {
+	const character = await deps.characters.getById(characterId);
 	if (!character) {
 		throw notFound("Character", `Character '${characterId}' was not found.`);
 	}
-	const version = deps.store.getLatestCharacterVersion(
-		characterId as CharacterId,
-	);
-	const definition = version?.definition;
+
+	// Phase 1: no character versions. Export from store fields directly.
 	let characterRecord: CharacterRecord | null = null;
 	try {
 		characterRecord = deps.resolver.getCharacter(characterId);
 	} catch {}
-
-	if (
-		definition &&
-		(definition as Record<string, unknown>).spec === "chara_card_v3"
-	) {
-		return definition as Record<string, unknown>;
-	}
 
 	const data: Record<string, unknown> = {
 		name: character.name,
@@ -107,21 +91,15 @@ export function exportCharacter(
 	};
 }
 
-export function exportChatJsonl(
+export async function exportChatJsonl(
 	deps: ImportExportModuleDeps,
 	chatId: string,
-): string {
-	const chat = deps.store.getChat(chatId as ChatId);
+): Promise<string> {
+	const chat = await deps.chats.getById(chatId as ChatId);
 	if (!chat) {
 		throw notFound("Chat", `Chat '${chatId}' was not found.`);
 	}
-	const branchState = deps.store.getBranchState(chat.id, chat.activeBranchId);
-	if (!branchState) {
-		throw notFound(
-			"Branch",
-			`Branch '${chat.activeBranchId}' was not found for chat '${chatId}'.`,
-		);
-	}
+	const messages = await deps.chats.getMessages(chat.activeBranchId);
 
 	let characterName = "Assistant";
 	try {
@@ -135,8 +113,8 @@ export function exportChatJsonl(
 	return serializeSillyTavernChat({
 		userName,
 		characterName,
-		messages: branchState.messages.map((message) => {
-			const variants = deps.store.listMessageVariants(message.id);
+		messages: await Promise.all(messages.map(async (message) => {
+			const variants = await deps.chats.getVariants(message.id);
 			const swipes =
 				variants.length > 1 ? variants.map((v) => v.content) : undefined;
 			const selectedVariant = variants.find((v) => v.isSelected);
@@ -151,31 +129,45 @@ export function exportChatJsonl(
 				swipes,
 				swipeId: swipes ? swipeId : undefined,
 			};
-		}),
+		})),
 	});
 }
 
-export function exportPromptTrace(
+export async function exportPromptTrace(
 	deps: ImportExportModuleDeps,
 	traceId: string,
-): import("@rp-platform/domain").PromptTraceRecordDto {
-	const trace = deps.store.getPromptTrace(traceId as PromptTraceId);
+): Promise<import("@rp-platform/domain").PromptTraceRecordDto> {
+	const trace = await deps.chats.getTrace(traceId);
 	if (!trace) {
 		throw notFound("PromptTrace", `Prompt trace '${traceId}' was not found.`);
 	}
-	return mapPromptTraceRecord(trace);
+	return {
+		id: trace.id,
+		chatId: trace.chatId,
+		branchId: trace.branchId,
+		messageId: trace.messageId,
+		model: trace.model,
+		presetName: trace.presetName,
+		latencyMs: trace.latencyMs,
+		createdAt: trace.createdAt,
+		layers: trace.assembledLayers as import("@rp-platform/domain").PromptTraceRecordDto["layers"],
+		tokenAccounting: trace.tokenAccounting,
+		activatedLoreEntries: [],
+		retrievedMemories: [],
+		finalPayload: trace.finalPayload,
+	};
 }
 
 export async function mirrorChatTranscript(
 	deps: ImportExportModuleDeps,
 	chatId: string,
 ): Promise<string[]> {
-	const chat = deps.store.getChat(chatId as ChatId);
+	const chat = await deps.chats.getById(chatId as ChatId);
 	if (!chat) {
 		throw notFound("Chat", `Chat '${chatId}' was not found.`);
 	}
 
-	const branches = deps.store.listBranches(chat.id);
+	const branches = await deps.chats.getBranches(chat.id);
 	let characterName = "Assistant";
 	try {
 		characterName = deps.resolver.getCharacter(chat.characterId).name;
@@ -187,14 +179,13 @@ export async function mirrorChatTranscript(
 
 	const writtenPaths: string[] = [];
 	for (const branch of branches) {
-		const branchState = deps.store.getBranchState(chat.id, branch.id);
-		if (!branchState) continue;
+		const messages = await deps.chats.getMessages(branch.id);
 
 		const jsonl = serializeSillyTavernChat({
 			userName,
 			characterName,
-			messages: branchState.messages.map((message) => {
-				const variants = deps.store.listMessageVariants(message.id);
+			messages: await Promise.all(messages.map(async (message) => {
+				const variants = await deps.chats.getVariants(message.id);
 				const swipes =
 					variants.length > 1 ? variants.map((v) => v.content) : undefined;
 				const selectedVariant = variants.find((v) => v.isSelected);
@@ -208,7 +199,7 @@ export async function mirrorChatTranscript(
 					swipes,
 					swipeId: swipes ? swipeId : undefined,
 				};
-			}),
+			})),
 		});
 
 		const filePath = deps.fileStore.resolvePath(
@@ -224,11 +215,11 @@ export async function mirrorChatTranscript(
 	return writtenPaths;
 }
 
-export function mirrorPromptTrace(
+export async function mirrorPromptTrace(
 	deps: ImportExportModuleDeps,
 	traceId: string,
-): string {
-	const trace = deps.store.getPromptTrace(traceId as PromptTraceId);
+): Promise<string> {
+	const trace = await deps.chats.getTrace(traceId);
 	if (!trace) {
 		throw notFound("PromptTrace", `Prompt trace '${traceId}' was not found.`);
 	}
@@ -258,15 +249,54 @@ export async function importJson(
 
 	if (parsed.spec === "chara_card_v3") {
 		const imported = importCharacterCardV3Json(parsed);
-		await deps.store.upsertCharacter(imported.character);
-		await deps.store.upsertCharacterVersion(imported.version);
+
+		// Upsert character via new CharacterStore
+		const existing = await deps.characters.getById(imported.character.id);
+		if (existing) {
+			await deps.characters.update(imported.character.id, {
+				name: imported.character.name,
+				description: imported.character.description,
+				personalitySummary: imported.character.personalitySummary,
+				defaultScenario: imported.character.defaultScenario,
+				firstMessage: imported.character.firstMessage,
+				mesExample: imported.character.mesExample,
+				alternateGreetings: imported.character.alternateGreetings,
+				postHistoryInstructions: imported.character.postHistoryInstructions,
+				creatorNotes: imported.character.creatorNotes,
+				characterBook: imported.character.characterBook,
+				depthPrompt: imported.character.depthPrompt,
+				depthPromptDepth: imported.character.depthPromptDepth,
+				depthPromptRole: imported.character.depthPromptRole,
+				extensions: imported.character.extensions,
+				systemPrompt: imported.character.systemPrompt,
+				tags: imported.character.tags,
+			});
+		} else {
+			await deps.characters.create({
+				name: imported.character.name,
+				description: imported.character.description,
+				personalitySummary: imported.character.personalitySummary,
+				defaultScenario: imported.character.defaultScenario,
+				firstMessage: imported.character.firstMessage,
+				mesExample: imported.character.mesExample,
+				alternateGreetings: imported.character.alternateGreetings,
+				postHistoryInstructions: imported.character.postHistoryInstructions,
+				creatorNotes: imported.character.creatorNotes,
+				characterBook: imported.character.characterBook,
+				depthPrompt: imported.character.depthPrompt,
+				depthPromptDepth: imported.character.depthPromptDepth,
+				depthPromptRole: imported.character.depthPromptRole,
+				extensions: imported.character.extensions,
+				systemPrompt: imported.character.systemPrompt,
+				tags: imported.character.tags,
+			});
+		}
 
 		const created = deps.chatApp.createChat({
 			characterId: imported.character.id,
 			personaId: deps.resolveDefaultPersonaId(),
 			title: imported.character.name,
 			promptPresetId: deps.resolveDefaultPromptPresetId(),
-			toolProfileId: brandId<ToolProfileId>(SYSTEM_RESOURCE_ID.toolsDisabled),
 		});
 
 		deps.chatOrder.unshift(created.id);
@@ -285,39 +315,6 @@ export async function importJson(
 		};
 	}
 
-	const rawActiveChatId = input.chatId ?? deps.chatOrder[0];
-	if (!rawActiveChatId) {
-		throw validation(
-			"Import a character card first, then attach a lorebook to its chat.",
-		);
-	}
-	const activeChatId = brandId<ChatId>(rawActiveChatId);
-
-	const imported = importStLorebookJson(parsed);
-	const chat = deps.store.getChat(activeChatId);
-	if (!chat) {
-		throw notFound(
-			"Chat",
-			`Chat '${activeChatId}' was not found for lorebook import.`,
-		);
-	}
-
-	const lorebook: Lorebook = imported.lorebook;
-	deps.store.upsertLorebook(lorebook);
-	deps.store.replaceLoreEntries(lorebook.id, imported.entries);
-	deps.store.linkCharacterLorebook(chat.characterId, lorebook.id);
-
-	return {
-		activeChatId,
-		snapshot: deps.getSnapshot(activeChatId),
-		imported: {
-			kind: "lorebook",
-			name: imported.lorebook.name,
-			fileName: input.fileName,
-			warningCount: imported.warnings.length,
-			warnings: imported.warnings,
-			attachedToCharacterName: deps.resolver.getCharacter(chat.characterId)
-				.name,
-		},
-	};
+	// Lorebook import — phase 2
+	throw validation("Lorebook import is not supported in phase 1.");
 }
