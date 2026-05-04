@@ -213,10 +213,14 @@ export class SessionRuntime {
 
 	async getBootstrapState(): Promise<BootstrapState> {
 		const initialChatId = this.chatOrder[0] ?? null;
+		const [userChars, allChats] = await Promise.all([
+			this.stores.characters.listAll(),
+			this.stores.chats.listAll(),
+		]);
 		return {
 			initialChatId,
 			snapshot: initialChatId ? await this.getSnapshot(initialChatId) : null,
-			isFirstRun: (await this.stores.characters.listAll()).length === 0,
+			isFirstRun: allChats.length === 0,
 		};
 	}
 

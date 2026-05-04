@@ -231,7 +231,9 @@ export async function importJson(
 
 		// Upsert character via new CharacterStore
 		const existing = await deps.stores.characters.getById(imported.character.id);
+		let characterId: string;
 		if (existing) {
+			characterId = imported.character.id;
 			await deps.stores.characters.update(imported.character.id, {
 				name: imported.character.name,
 				description: imported.character.description,
@@ -250,8 +252,8 @@ export async function importJson(
 				systemPrompt: imported.character.systemPrompt,
 				tags: imported.character.tags,
 			});
-		} else {
-			await deps.stores.characters.create({
+			} else {
+			const created = await deps.stores.characters.create({
 				name: imported.character.name,
 				description: imported.character.description,
 				personalitySummary: imported.character.personalitySummary,
@@ -269,16 +271,17 @@ export async function importJson(
 				systemPrompt: imported.character.systemPrompt,
 				tags: imported.character.tags,
 			});
-		}
+			characterId = created.id;
+			}
 
-		const created = await deps.chatApp.createChat({
-			characterId: imported.character.id as CharacterId,
+		const chat = await deps.chatApp.createChat({
+			characterId: characterId as CharacterId,
 			personaId: await deps.resolveDefaultPersonaId(),
 			title: imported.character.name,
 			promptPresetId: await deps.resolveDefaultPromptPresetId(),
 		});
 
-		const createdId = created.id as ChatId;
+		const createdId = chat.id as ChatId;
 		deps.chatOrder.unshift(createdId);
 		await deps.seedImportedOpening(createdId, imported.normalized.firstMessage);
 
