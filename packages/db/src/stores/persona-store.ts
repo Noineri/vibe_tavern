@@ -69,7 +69,7 @@ export class PersonaStore {
     const id = this.idGen.next('persona');
     const now = this.clock.now();
 
-    await this.db
+    const [row] = await this.db
       .insert(personas)
       .values({
         id,
@@ -81,9 +81,8 @@ export class PersonaStore {
         createdAt: now,
         updatedAt: now,
       })
-      .run();
+      .returning();
 
-    const row = await this.db.select().from(personas).where(eq(personas.id, id)).get();
     return this.mapRow(row!);
   }
 
@@ -99,13 +98,12 @@ export class PersonaStore {
     if (data.avatarAssetId !== undefined) values.avatarAssetId = data.avatarAssetId;
     if (data.defaultForNewChats !== undefined) values.defaultForNewChats = data.defaultForNewChats ? 1 : 0;
 
-    await this.db
+    const [row] = await this.db
       .update(personas)
       .set(values)
       .where(eq(personas.id, id))
-      .run();
+      .returning();
 
-    const row = await this.db.select().from(personas).where(eq(personas.id, id)).get();
     if (!row) {
       throw new Error(`Persona '${id}' not found after update`);
     }

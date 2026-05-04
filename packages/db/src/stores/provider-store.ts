@@ -111,7 +111,7 @@ export class ProviderStore {
     const id = this.idGen.next('prov');
     const now = this.clock.now();
 
-    await this.db
+    const [row] = await this.db
       .insert(providerProfiles)
       .values({
         id,
@@ -138,9 +138,8 @@ export class ProviderStore {
         createdAt: now,
         updatedAt: now,
       })
-      .run();
+      .returning();
 
-    const row = await this.db.select().from(providerProfiles).where(eq(providerProfiles.id, id)).get();
     return this.mapRow(row!);
   }
 
@@ -170,13 +169,12 @@ export class ProviderStore {
     if (data.reasoningEffort !== undefined) values.reasoningEffort = data.reasoningEffort;
     if (data.streamResponse !== undefined) values.streamResponse = data.streamResponse ? 1 : 0;
 
-    await this.db
+    const [row] = await this.db
       .update(providerProfiles)
       .set(values)
       .where(eq(providerProfiles.id, id))
-      .run();
+      .returning();
 
-    const row = await this.db.select().from(providerProfiles).where(eq(providerProfiles.id, id)).get();
     if (!row) {
       throw new Error(`ProviderProfile '${id}' not found after update`);
     }
@@ -203,7 +201,7 @@ export class ProviderStore {
     const newId = this.idGen.next('prov');
     const now = this.clock.now();
 
-    await this.db
+    const [row] = await this.db
       .insert(providerProfiles)
       .values({
         id: newId,
@@ -230,9 +228,8 @@ export class ProviderStore {
         createdAt: now,
         updatedAt: now,
       })
-      .run();
+      .returning();
 
-    const row = await this.db.select().from(providerProfiles).where(eq(providerProfiles.id, newId)).get();
     return this.mapRow(row!);
   }
 
@@ -241,17 +238,17 @@ export class ProviderStore {
   async saveCachedModels(providerId: string, models: CachedModelData[]): Promise<void> {
     await this.db.transaction(async (tx) => {
       await tx.delete(cachedModels).where(eq(cachedModels.providerProfileId, providerId)).run();
-      for (const model of models) {
-        const id = this.idGen.next('cmod');
-        await tx.insert(cachedModels).values({
-          id,
+      if (models.length > 0) {
+        const values = models.map((model) => ({
+          id: this.idGen.next('cmod'),
           providerProfileId: providerId,
           modelSlug: model.modelSlug,
           modelName: model.modelName,
           contextLength: model.contextLength ?? null,
           capabilitiesJson: JSON.stringify(model.capabilities ?? {}),
           fetchedAt: this.clock.now(),
-        }).run();
+        }));
+        await tx.insert(cachedModels).values(values).run();
       }
     });
   }

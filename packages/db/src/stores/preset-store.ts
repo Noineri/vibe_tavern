@@ -68,7 +68,7 @@ export class PresetStore {
     const id = this.idGen.next('preset');
     const now = this.clock.now();
 
-    await this.db
+    const [row] = await this.db
       .insert(promptPresets)
       .values({
         id,
@@ -84,9 +84,8 @@ export class PresetStore {
         createdAt: now,
         updatedAt: now,
       })
-      .run();
+      .returning();
 
-    const row = await this.db.select().from(promptPresets).where(eq(promptPresets.id, id)).get();
     return this.mapRow(row!);
   }
 
@@ -106,13 +105,12 @@ export class PresetStore {
     if (data.summaryPrompt !== undefined) values.summaryPrompt = data.summaryPrompt;
     if (data.toolsPrompt !== undefined) values.toolsPrompt = data.toolsPrompt;
 
-    await this.db
+    const [row] = await this.db
       .update(promptPresets)
       .set(values)
       .where(eq(promptPresets.id, id))
-      .run();
+      .returning();
 
-    const row = await this.db.select().from(promptPresets).where(eq(promptPresets.id, id)).get();
     if (!row) {
       throw new Error(`Preset '${id}' not found after update`);
     }
@@ -132,7 +130,7 @@ export class PresetStore {
     const newId = this.idGen.next('preset');
     const now = this.clock.now();
 
-    await this.db
+    const [row] = await this.db
       .insert(promptPresets)
       .values({
         id: newId,
@@ -148,9 +146,8 @@ export class PresetStore {
         createdAt: now,
         updatedAt: now,
       })
-      .run();
+      .returning();
 
-    const row = await this.db.select().from(promptPresets).where(eq(promptPresets.id, newId)).get();
     return this.mapRow(row!);
   }
 
