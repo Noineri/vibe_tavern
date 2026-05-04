@@ -13,7 +13,7 @@ import type {
   PromptTraceId,
   RetrievedMemoryHit,
 } from "@rp-platform/domain";
-import type { ChatSessionStore } from "@rp-platform/db";
+import type { StoreContainer } from "@rp-platform/db";
 import { assemblePrompt } from "@rp-platform/prompt-pipeline";
 import { logSendDebug } from "./send-debug-log.js";
 import { createFileStore, STORAGE_FOLDERS } from "@rp-platform/db";
@@ -21,7 +21,7 @@ import { createFileStore, STORAGE_FOLDERS } from "@rp-platform/db";
 export interface PromptAssemblyResolver {
   getCharacter(
     characterId: string,
-  ): {
+  ): Promise<{
     id: string;
     name: string;
     description: string;
@@ -33,39 +33,35 @@ export interface PromptAssemblyResolver {
     postHistoryInstructions?: string | null;
     creatorNotes?: string | null;
     subtitle?: string;
-  };
+  }>;
   getPersona(
     personaId: string,
-  ):
-    | {
-        id: string;
-        name: string;
-        description: string;
-      }
-    | null;
+  ): Promise<{
+      id: string;
+      name: string;
+      description: string;
+    } | null>;
   getPromptPreset(
     presetId: string,
-  ):
-    | {
-        id: string;
-        name: string;
-        text: string;
-        jailbreak: string;
-        summary: string;
-        tools: string;
-      }
-    | null;
+  ): Promise<{
+      id: string;
+      name: string;
+      text: string;
+      jailbreak: string;
+      summary: string;
+      tools: string;
+    } | null>;
   listActiveLoreEntries(input: {
     chatId: ChatId;
     branchId: ChatBranchId;
     recentText: string;
-  }): LoreEntry[];
+  }): Promise<LoreEntry[]>;
   listRetrievedMemories(input: {
     chatId: ChatId;
     branchId: ChatBranchId;
     recentText: string;
-  }): RetrievedMemoryHit[];
-  getToolInstructions(toolProfileId: string): string | null;
+  }): Promise<RetrievedMemoryHit[]>;
+  getToolInstructions(): string | null;
 }
 
 export interface AssemblePromptForChatInput {
@@ -85,58 +81,61 @@ export interface AssemblePromptForChatResult {
 
 export class PromptAssemblyService {
   constructor(
-    private readonly store: ChatSessionStore,
+    private readonly stores: StoreContainer,
     private readonly resolver: PromptAssemblyResolver,
   ) {}
 
-  assembleForChat(input: AssemblePromptForChatInput): AssemblePromptForChatResult {
-    const chat = this.store.getChat(input.chatId);
+  async assembleForChat(input: AssemblePromptForChatInput): Promise<AssemblePromptForChatResult> {
+    const chat = await this.stores.chats.getById(input.chatId);
     if (!chat) {
       throw new Error(`Chat '${input.chatId}' was not found.`);
     }
 
-    const branchId = input.branchId ?? chat.activeBranchId;
-    const branchState = this.store.getBranchState(chat.id, branchId);
-    if (!branchState) {
+    const branchId = input.branchId ?? (chat.activeBranchId as ChatBranchId);
+    const branches = await this.stores.chats.getBranches(chat.id);
+    const branch = branches.find((b) => b.id === branchId);
+    if (!branch) {
       throw new Error(`Branch '${branchId}' was not found for chat '${chat.id}'.`);
     }
+    const branchMessages = await this.stores.chats.getMessages(branchId);
 
-    const character = this.resolver.getCharacter(chat.characterId);
-    const effectivePersonaId = chat.personaId ?? this.store.listPersonas().find(p => p.defaultForNewChats)?.id ?? this.store.listPersonas()[0]?.id ?? "";
-    const persona = this.resolver.getPersona(effectivePersonaId);
-    const promptPreset = this.resolver.getPromptPreset(chat.promptPresetId);
+    const character = await this.resolver.getCharacter(chat.characterId);
+    const allPersonas = await this.stores.personas.listAll();
+    const effectivePersonaId = chat.personaId ?? allPersonas.find(p => p.defaultForNewChats)?.id ?? allPersonas[0]?.id ?? "";
+    const persona = await this.resolver.getPersona(effectivePersonaId);
+    const promptPreset = await this.resolver.getPromptPreset(chat.promptPresetId);
 
     logSendDebug("prompt.assemble.context", {
-      chatId: chat.id,
+      chatId: chat.id as ChatId,
       personaId: chat.personaId ?? "(default)",
       personaResolved: persona ? { id: persona.id, name: persona.name, descLength: persona.description.length } : null,
       promptPresetId: chat.promptPresetId,
       promptPresetResolved: promptPreset ? { id: promptPreset.id, name: promptPreset.name, systemLength: promptPreset.text.length } : null,
     });
     const excludedMessageIds = new Set(input.excludeMessageIds ?? []);
-    const recentMessages = branchState.messages
-      .filter((message) => !excludedMessageIds.has(message.id))
+    const recentMessages = branchMessages
+      .filter((message) => !excludedMessageIds.has(message.id as MessageId))
       .slice(-(input.recentMessageLimit ?? 12))
       .map((message) => ({
-        id: message.id,
-        role: message.role,
+        id: message.id as MessageId,
+        role: message.role as 'system' | 'user' | 'assistant' | 'tool',
         content: message.content,
       }));
     const recentText = recentMessages.map((message) => message.content).join("\n");
-    const activeLoreEntries = this.resolver.listActiveLoreEntries({
-      chatId: chat.id,
+    const activeLoreEntries = await this.resolver.listActiveLoreEntries({
+      chatId: chat.id as ChatId,
       branchId,
       recentText,
     });
-    const retrievedMemories = this.resolver.listRetrievedMemories({
-      chatId: chat.id,
+    const retrievedMemories = await this.resolver.listRetrievedMemories({
+      chatId: chat.id as ChatId,
       branchId,
       recentText,
     });
 
     const result = assemblePrompt({
       identity: {
-        chatId: chat.id,
+        chatId: chat.id as ChatId,
       },
       character: {
         id: character.id,
@@ -167,11 +166,7 @@ export class PromptAssemblyService {
         position: entry.position,
       })),
       memory: {
-        summary: branchState.summaries.map((snapshot) => ({
-          id: snapshot.id,
-          kind: snapshot.kind,
-          summary: snapshot.summary,
-        })),
+        summary: [],
         retrieval: retrievedMemories.map((memory) => ({
           id: memory.id,
           sourceType: memory.sourceType,
@@ -183,7 +178,7 @@ export class PromptAssemblyService {
         recentMessages,
       },
       instructions: {
-        toolInstructions: [promptPreset?.tools, this.resolver.getToolInstructions(chat.toolProfileId)].filter(Boolean).join("\n") || null,
+        toolInstructions: [promptPreset?.tools, this.resolver.getToolInstructions()].filter(Boolean).join("\n") || null,
       },
       config: {
         contextBudget: input.contextBudget ?? null,
@@ -208,8 +203,8 @@ export class PromptAssemblyService {
         finalPayload: result.finalPayload,
       },
       promptTraceDraft: {
-        chatId: chat.id,
-        branchId,
+        chatId: chat.id as ChatId,
+        branchId: branchId as ChatBranchId,
         model: input.model,
         presetName: promptPreset?.name ?? chat.promptPresetId,
         assembledLayers: result.layers.map((layer) => mapPromptLayerDto(layer)),
@@ -230,8 +225,8 @@ export class PromptAssemblyService {
     };
   }
 
-  exportTraceToFile(traceId: string): string {
-    const trace = this.store.getPromptTrace(brandId<PromptTraceId>(traceId));
+  async exportTraceToFile(traceId: string): Promise<string> {
+    const trace = await this.stores.chats.getTrace(traceId);
     if (!trace) {
       throw new Error(`Prompt trace '${traceId}' was not found.`);
     }

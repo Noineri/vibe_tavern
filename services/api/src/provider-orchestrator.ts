@@ -18,7 +18,7 @@ export class ProviderOrchestrator {
       });
       const normalized = models.map((model) => ({
         id: model.id,
-        label: model.name ?? model.id,
+        label: model.label ?? model.id,
       }));
 
       await this.providerProfileService.setCachedProviderModels(profile.id, normalized);

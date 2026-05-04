@@ -5,13 +5,13 @@ import * as schemas from "./api-schemas.js";
 import { isDomainError, providerError } from "./errors.js";
 
 export interface RuntimeApi {
-  bootstrap: () => unknown;
-  getChatSnapshot: (chatId: string) => unknown;
-  createChatForCharacter: (characterId: string) => unknown;
-  cloneChat: (chatId: string) => unknown;
-  exportCharacter: (characterId: string) => unknown;
-  exportChatJsonl: (chatId: string) => string;
-  exportPromptTrace: (traceId: string) => unknown;
+  bootstrap: () => Promise<unknown>;
+  getChatSnapshot: (chatId: string) => Promise<unknown>;
+  createChatForCharacter: (characterId: string) => Promise<unknown>;
+  cloneChat: (chatId: string) => Promise<unknown>;
+  exportCharacter: (characterId: string) => Promise<unknown>;
+  exportChatJsonl: (chatId: string) => Promise<string>;
+  exportPromptTrace: (traceId: string) => Promise<unknown>;
   updateChatSettings: (chatId: string, body: { title: string; subtitle: string; scenario: string; systemPrompt: string }) => unknown;
   branchChat: (chatId: string, messageId: string) => unknown;
   regenerateMessage: (chatId: string, messageId: string, body: unknown, signal?: AbortSignal) => Promise<unknown>;
@@ -21,11 +21,11 @@ export interface RuntimeApi {
   sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<unknown>;
   updateCharacter: (characterId: string, body: Record<string, unknown>) => Promise<unknown>;
   updatePersona: (personaId: string, body: Record<string, unknown>) => unknown;
-  listPersonas: () => unknown;
-  setChatPersona: (chatId: string, personaId: string) => unknown;
-  setChatPromptPreset: (chatId: string, promptPresetId: string) => unknown;
-  createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) => unknown;
-  deletePersona: (personaId: string) => void;
+  listPersonas: () => Promise<unknown>;
+  setChatPersona: (chatId: string, personaId: string) => Promise<unknown>;
+  setChatPromptPreset: (chatId: string, promptPresetId: string) => Promise<unknown>;
+  createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) => Promise<unknown>;
+  deletePersona: (personaId: string) => Promise<void>;
   getPersonalLorebookStatus: (personaId: string) => unknown;
   setPersonalLorebookEnabled: (personaId: string, enabled: boolean) => unknown;
   updateLorebook: (lorebookId: string, body: { chatId: string; lorebookRaw: string }) => unknown;
@@ -48,9 +48,9 @@ export interface RuntimeApi {
   forkBranch: (chatId: string) => unknown;
   activateBranch: (chatId: string, branchId: string) => unknown;
   deleteBranch: (chatId: string, branchId: string) => unknown;
-  archiveCharacter: (characterId: string) => unknown;
-  unarchiveCharacter: (characterId: string) => unknown;
-  deleteCharacter: (characterId: string) => void;
+  archiveCharacter: (characterId: string) => Promise<unknown>;
+  unarchiveCharacter: (characterId: string) => Promise<unknown>;
+  deleteCharacter: (characterId: string) => Promise<void>;
   deleteChat: (chatId: string) => void;
   renameChat: (chatId: string, title: string) => unknown;
   listPromptPresets: () => unknown;
@@ -62,11 +62,11 @@ export interface RuntimeApi {
 export function createApiRouter(
   runtime: RuntimeApi,
   deps: {
-    getRequiredProviderProfile: (id: string) => { endpoint: string; apiKey?: string | null };
+    getRequiredProviderProfile: (id: string) => Promise<{ endpoint: string; apiKey?: string | null }>;
     sessionRuntime: {
       createCharacterFromScratch: (body: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }) => Promise<unknown>;
       createFreeChat: () => Promise<unknown>;
-      getProviderProfile: (id: string) => { endpoint: string; apiKey?: string | null } | null;
+      getProviderProfile: (id: string) => Promise<{ endpoint: string; apiKey?: string | null } | null>;
     };
     providerOrchestrator: { refreshProfileModels: (profile: any) => Promise<unknown> };
     listProviderModels: (opts: { baseUrl: string; apiKey: string }) => Promise<unknown>;
@@ -122,9 +122,9 @@ export function createApiRouter(
     .get("/api/characters/:characterId/export", (c) => {
       return c.json(runtime.exportCharacter(c.req.param("characterId")));
     })
-    .get("/api/chats/:chatId/export.jsonl", (c) => {
+    .get("/api/chats/:chatId/export.jsonl", async (c) => {
       return c.text(
-        runtime.exportChatJsonl(c.req.param("chatId")),
+        await runtime.exportChatJsonl(c.req.param("chatId")),
         200,
         { "Content-Type": "application/x-ndjson; charset=utf-8" },
       );
@@ -351,7 +351,7 @@ export function createApiRouter(
       if (!model) {
         return c.json({ error: "model is required." }, 400);
       }
-      const profile = deps.getRequiredProviderProfile(c.req.param("providerId"));
+      const profile = await deps.getRequiredProviderProfile(c.req.param("providerId"));
       return c.json(await deps.testProviderChat({
         baseUrl: profile.endpoint,
         apiKey: profile.apiKey ?? "",

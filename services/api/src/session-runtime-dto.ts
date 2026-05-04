@@ -1,6 +1,6 @@
 import type { PromptTraceRecordDto } from "@rp-platform/domain";
-import type { LoreEntry, Message, MessageVariant, PromptTrace } from "@rp-platform/domain";
-import type { ProviderProfile } from "@rp-platform/db";
+import type { LoreEntry, Message, MessageVariant } from "@rp-platform/domain";
+import type { ProviderProfile, PromptTrace as DbPromptTrace } from "@rp-platform/db";
 
 // Re-export for backward compat — services that import this type will migrate
 // their field access in the service layer, not here.
@@ -141,25 +141,27 @@ export function providerPatchToUpdateData(patch: {
   return data;
 }
 
-export function mapPromptTraceRecord(trace: PromptTrace): PromptTraceRecordDto {
+export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto {
   return {
     id: trace.id,
-    chatId: trace.chatId,
-    branchId: trace.branchId,
-    messageId: trace.messageId,
+    chatId: trace.chatId as any,
+    branchId: trace.branchId as any,
+    messageId: trace.messageId as any,
     model: trace.model,
     presetName: trace.presetName,
     latencyMs: trace.latencyMs,
     createdAt: trace.createdAt,
     layers: trace.assembledLayers as PromptTraceRecordDto["layers"],
     tokenAccounting: trace.tokenAccounting,
-    activatedLoreEntries: trace.activatedLoreEntries,
-    retrievedMemories: trace.retrievedMemories,
+    activatedLoreEntries: [],
+    retrievedMemories: [],
     finalPayload: trace.finalPayload,
   };
 }
 
-export function mapMessageDto(message: Message, variants: MessageVariant[]): MessageDto {
+export function mapMessageDto(message: Message, variants: MessageVariant[]): MessageDto;
+export function mapMessageDto(message: Record<string, unknown>, variants: Array<Record<string, unknown>>): MessageDto;
+export function mapMessageDto(message: any, variants: any[]): MessageDto {
   const selectedVariant = variants.find((variant) => variant.isSelected) ?? null;
   return {
     ...message,

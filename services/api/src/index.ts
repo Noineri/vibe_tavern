@@ -1,5 +1,4 @@
 import type { AssemblePromptResponse } from "@rp-platform/domain";
-import { getLatestMigrationVersion } from "@rp-platform/db";
 
 export function buildEmptyPromptTrace(): AssemblePromptResponse {
   return {
@@ -8,12 +7,6 @@ export function buildEmptyPromptTrace(): AssemblePromptResponse {
     activatedLoreEntries: [],
     retrievedMemories: [],
     finalPayload: {},
-  };
-}
-
-export function buildBootstrapStatus(): { latestMigrationVersion: string } {
-  return {
-    latestMigrationVersion: getLatestMigrationVersion(),
   };
 }
 
