@@ -12,3 +12,13 @@ export type { CreateProviderData, UpdateProviderData, ProviderProfile, CachedMod
 
 export { UiSettingsStore } from './ui-settings-store.js';
 export type { UiSettings, UiSettingsUpdate } from './ui-settings-store.js';
+
+export { ChatStore } from './chat-store.js';
+export type {
+  Chat,
+  ChatBranch,
+  Message,
+  MessageVariant,
+  PromptTrace,
+  SaveTraceData,
+} from './chat-store.js';
