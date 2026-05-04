@@ -8,7 +8,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "db:push": "drizzle-kit push"
   },
   "dependencies": {
     "@rp-platform/domain": "0.1.0",

@@ -1,13 +1,12 @@
 import { resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
-import type { CharacterStore, ChatStore } from "@rp-platform/db";
-import { type createFileStore, STORAGE_FOLDERS } from "@rp-platform/db";
+import { type StoreContainer, type createFileStore, STORAGE_FOLDERS } from "@rp-platform/db";
 import type {
 	ChatId,
 	PersonaId,
 	PromptPresetId,
 } from "@rp-platform/domain";
-import { brandId } from "@rp-platform/domain";
+import { brandId, type CharacterId } from "@rp-platform/domain";
 import { serializeSillyTavernChat } from "../../../packages/import-export/src/chats/st-chat.js";
 import {
 	importCharacterCardV3Json,
@@ -17,23 +16,22 @@ import { notFound, validation } from "./errors.js";
 import type { CharacterRecord } from "./session-runtime-character.js";
 
 export interface ImportExportResolver {
-	getCharacter(characterId: string): CharacterRecord;
+	getCharacter(characterId: string): Promise<CharacterRecord>;
 	getPersona(
 		personaId: string,
-	): { id: string; name: string; description: string } | null;
+	): Promise<{ id: string; name: string; description: string } | null>;
 }
 
 export interface ImportExportModuleDeps {
-	characters: CharacterStore;
-	chats: ChatStore;
+	stores: StoreContainer;
 	resolver: ImportExportResolver;
 	chatApp: ChatApplicationService;
 	chatOrder: ChatId[];
 	fileStore: ReturnType<typeof createFileStore>;
-	resolveDefaultPersonaId(): PersonaId;
-	resolveDefaultPromptPresetId(): PromptPresetId;
-	getSnapshot(chatId: ChatId): import("./session-runtime.js").SessionSnapshot;
-	seedImportedOpening(chatId: ChatId, firstMessage: string): void;
+	resolveDefaultPersonaId(): Promise<PersonaId>;
+	resolveDefaultPromptPresetId(): Promise<PromptPresetId>;
+	getSnapshot(chatId: ChatId): Promise<import("./session-runtime.js").SessionSnapshot>;
+	seedImportedOpening(chatId: ChatId, firstMessage: string): Promise<void>;
 }
 
 export interface ImportResult {
@@ -53,15 +51,14 @@ export async function exportCharacter(
 	deps: ImportExportModuleDeps,
 	characterId: string,
 ): Promise<Record<string, unknown>> {
-	const character = await deps.characters.getById(characterId);
+	const character = await deps.stores.characters.getById(characterId);
 	if (!character) {
 		throw notFound("Character", `Character '${characterId}' was not found.`);
 	}
 
-	// Phase 1: no character versions. Export from store fields directly.
 	let characterRecord: CharacterRecord | null = null;
 	try {
-		characterRecord = deps.resolver.getCharacter(characterId);
+		characterRecord = await deps.resolver.getCharacter(characterId);
 	} catch {}
 
 	const data: Record<string, unknown> = {
@@ -72,8 +69,7 @@ export async function exportCharacter(
 		first_mes: character.firstMessage ?? "",
 		mes_example: character.mesExample ?? "",
 		creator_notes: character.creatorNotes ?? "",
-		system_prompt:
-			character.systemPrompt ?? characterRecord?.systemPrompt ?? "",
+		system_prompt: character.systemPrompt ?? characterRecord?.systemPrompt ?? "",
 		post_history_instructions: character.postHistoryInstructions ?? "",
 		character_book: character.characterBook ?? undefined,
 		depth_prompt: character.depthPrompt ?? "",
@@ -95,31 +91,22 @@ export async function exportChatJsonl(
 	deps: ImportExportModuleDeps,
 	chatId: string,
 ): Promise<string> {
-	const chat = await deps.chats.getById(chatId as ChatId);
+	const chat = await deps.stores.chats.getById(chatId as ChatId);
 	if (!chat) {
 		throw notFound("Chat", `Chat '${chatId}' was not found.`);
 	}
-	const messages = await deps.chats.getMessages(chat.activeBranchId);
+	const messages = await deps.stores.chats.getMessages(chat.activeBranchId);
 
-	let characterName = "Assistant";
-	try {
-		characterName = deps.resolver.getCharacter(chat.characterId).name;
-	} catch {}
-	const persona = deps.resolver.getPersona(
-		chat.personaId ?? deps.resolveDefaultPersonaId(),
-	);
-	const userName = persona?.name ?? "User";
+	const { characterName, userName } = await resolveChatNames(deps, chat.characterId, chat.personaId);
 
 	return serializeSillyTavernChat({
 		userName,
 		characterName,
 		messages: await Promise.all(messages.map(async (message) => {
-			const variants = await deps.chats.getVariants(message.id);
-			const swipes =
-				variants.length > 1 ? variants.map((v) => v.content) : undefined;
+			const variants = await deps.stores.chats.getVariants(message.id);
+			const swipes = variants.length > 1 ? variants.map((v) => v.content) : undefined;
 			const selectedVariant = variants.find((v) => v.isSelected);
 			const swipeId = selectedVariant?.variantIndex ?? 0;
-
 			return {
 				name: message.role === "user" ? userName : characterName,
 				isUser: message.role === "user",
@@ -137,15 +124,15 @@ export async function exportPromptTrace(
 	deps: ImportExportModuleDeps,
 	traceId: string,
 ): Promise<import("@rp-platform/domain").PromptTraceRecordDto> {
-	const trace = await deps.chats.getTrace(traceId);
+	const trace = await deps.stores.chats.getTrace(traceId);
 	if (!trace) {
 		throw notFound("PromptTrace", `Prompt trace '${traceId}' was not found.`);
 	}
 	return {
 		id: trace.id,
-		chatId: trace.chatId,
-		branchId: trace.branchId,
-		messageId: trace.messageId,
+		chatId: trace.chatId as import("@rp-platform/domain").ChatId,
+		branchId: trace.branchId as import("@rp-platform/domain").ChatBranchId,
+		messageId: trace.messageId as import("@rp-platform/domain").MessageId,
 		model: trace.model,
 		presetName: trace.presetName,
 		latencyMs: trace.latencyMs,
@@ -162,32 +149,24 @@ export async function mirrorChatTranscript(
 	deps: ImportExportModuleDeps,
 	chatId: string,
 ): Promise<string[]> {
-	const chat = await deps.chats.getById(chatId as ChatId);
+	const chat = await deps.stores.chats.getById(chatId as ChatId);
 	if (!chat) {
 		throw notFound("Chat", `Chat '${chatId}' was not found.`);
 	}
 
-	const branches = await deps.chats.getBranches(chat.id);
-	let characterName = "Assistant";
-	try {
-		characterName = deps.resolver.getCharacter(chat.characterId).name;
-	} catch {}
-	const persona = deps.resolver.getPersona(
-		chat.personaId ?? deps.resolveDefaultPersonaId(),
-	);
-	const userName = persona?.name ?? "User";
+	const branches = await deps.stores.chats.getBranches(chat.id);
+	const { characterName, userName } = await resolveChatNames(deps, chat.characterId, chat.personaId);
 
 	const writtenPaths: string[] = [];
 	for (const branch of branches) {
-		const messages = await deps.chats.getMessages(branch.id);
+		const messages = await deps.stores.chats.getMessages(branch.id);
 
 		const jsonl = serializeSillyTavernChat({
 			userName,
 			characterName,
 			messages: await Promise.all(messages.map(async (message) => {
-				const variants = await deps.chats.getVariants(message.id);
-				const swipes =
-					variants.length > 1 ? variants.map((v) => v.content) : undefined;
+				const variants = await deps.stores.chats.getVariants(message.id);
+				const swipes = variants.length > 1 ? variants.map((v) => v.content) : undefined;
 				const selectedVariant = variants.find((v) => v.isSelected);
 				const swipeId = selectedVariant?.variantIndex ?? 0;
 				return {
@@ -219,7 +198,7 @@ export async function mirrorPromptTrace(
 	deps: ImportExportModuleDeps,
 	traceId: string,
 ): Promise<string> {
-	const trace = await deps.chats.getTrace(traceId);
+	const trace = await deps.stores.chats.getTrace(traceId);
 	if (!trace) {
 		throw notFound("PromptTrace", `Prompt trace '${traceId}' was not found.`);
 	}
@@ -251,9 +230,9 @@ export async function importJson(
 		const imported = importCharacterCardV3Json(parsed);
 
 		// Upsert character via new CharacterStore
-		const existing = await deps.characters.getById(imported.character.id);
+		const existing = await deps.stores.characters.getById(imported.character.id);
 		if (existing) {
-			await deps.characters.update(imported.character.id, {
+			await deps.stores.characters.update(imported.character.id, {
 				name: imported.character.name,
 				description: imported.character.description,
 				personalitySummary: imported.character.personalitySummary,
@@ -272,7 +251,7 @@ export async function importJson(
 				tags: imported.character.tags,
 			});
 		} else {
-			await deps.characters.create({
+			await deps.stores.characters.create({
 				name: imported.character.name,
 				description: imported.character.description,
 				personalitySummary: imported.character.personalitySummary,
@@ -292,19 +271,20 @@ export async function importJson(
 			});
 		}
 
-		const created = deps.chatApp.createChat({
-			characterId: imported.character.id,
-			personaId: deps.resolveDefaultPersonaId(),
+		const created = await deps.chatApp.createChat({
+			characterId: imported.character.id as CharacterId,
+			personaId: await deps.resolveDefaultPersonaId(),
 			title: imported.character.name,
-			promptPresetId: deps.resolveDefaultPromptPresetId(),
+			promptPresetId: await deps.resolveDefaultPromptPresetId(),
 		});
 
-		deps.chatOrder.unshift(created.id);
-		deps.seedImportedOpening(created.id, imported.normalized.firstMessage);
+		const createdId = created.id as ChatId;
+		deps.chatOrder.unshift(createdId);
+		await deps.seedImportedOpening(createdId, imported.normalized.firstMessage);
 
 		return {
-			activeChatId: created.id,
-			snapshot: deps.getSnapshot(created.id),
+			activeChatId: createdId,
+			snapshot: await deps.getSnapshot(createdId),
 			imported: {
 				kind: "character",
 				name: imported.character.name,
@@ -317,4 +297,20 @@ export async function importJson(
 
 	// Lorebook import — phase 2
 	throw validation("Lorebook import is not supported in phase 1.");
+}
+
+async function resolveChatNames(
+	deps: ImportExportModuleDeps,
+	characterId: string,
+	personaId: string | null,
+): Promise<{ characterName: string; userName: string }> {
+	let characterName = "Assistant";
+	try {
+		characterName = (await deps.resolver.getCharacter(characterId)).name;
+	} catch {}
+	const persona = await deps.resolver.getPersona(
+		personaId ?? (await deps.resolveDefaultPersonaId()) as string,
+	);
+	const userName = persona?.name ?? "User";
+	return { characterName, userName };
 }

@@ -73,7 +73,7 @@ export class LiveChatOrchestrator {
     snapshot: SessionSnapshot;
   }> {
     logSendDebug("live.regenerate.start", { chatId: input.chatId, messageId: input.messageId, model: input.model });
-    const prompt = this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+    const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
       excludeMessageId: brandId<MessageId>(input.messageId),
       model: input.model,
     });

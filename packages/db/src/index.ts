@@ -13,4 +13,5 @@ export { createDrizzleDb, type DrizzleDb } from "./_drizzle-legacy.js";
 
 export * from './db-schema.js';
 export { createDb, type AppDb } from './db-connection.js';
+export { createStoreContainer, type StoreContainer } from './persistence.js';
 export * from './stores/index.js';

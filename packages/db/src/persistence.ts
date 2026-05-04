@@ -1,3 +1,29 @@
+import { createDb, type AppDb } from './db-connection.js';
+import { CharacterStore, PersonaStore, ProviderStore, ChatStore, PresetStore, UiSettingsStore } from './stores/index.js';
+
+export interface StoreContainer {
+  db: AppDb;
+  characters: CharacterStore;
+  personas: PersonaStore;
+  providers: ProviderStore;
+  chats: ChatStore;
+  presets: PresetStore;
+  uiSettings: UiSettingsStore;
+}
+
+export function createStoreContainer(dbPath: string): StoreContainer {
+  const db = createDb(dbPath);
+  return {
+    db,
+    characters: new CharacterStore(db),
+    personas: new PersonaStore(db),
+    providers: new ProviderStore(db),
+    chats: new ChatStore(db),
+    presets: new PresetStore(db),
+    uiSettings: new UiSettingsStore(db),
+  };
+}
+
 export interface StoreClock {
   now(): string;
 }

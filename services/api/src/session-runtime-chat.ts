@@ -23,12 +23,12 @@ export interface ChatRuntimeDeps {
     chatId: ChatId,
     branchId?: ChatBranchId,
     options?: { excludeMessageIds?: MessageId[]; model?: string },
-  ) => {
+  ) => Promise<{
     branchId: ChatBranchId;
     prompt: AssemblePromptResponse;
     promptTraceDraft: Omit<PromptTrace, "id" | "messageId" | "createdAt">;
-  };
-  getSnapshot: (chatId: ChatId) => SessionSnapshot;
+  }>;
+  getSnapshot: (chatId: ChatId) => Promise<SessionSnapshot>;
   chatOrder: {
     add: (chatId: ChatId) => void;
     remove: (chatId: ChatId) => void;
@@ -47,10 +47,10 @@ export class ChatRuntime {
     const { chatApp, expandChatMacros, assemblePrompt, getSnapshot } = this.deps;
     const trimmed = content.trim();
     if (!trimmed) {
-      const assembled = assemblePrompt(chatId, undefined, { model });
+      const assembled = await assemblePrompt(chatId, undefined, { model });
       return {
         prompt: assembled.prompt,
-        snapshot: getSnapshot(chatId),
+        snapshot: await getSnapshot(chatId),
       };
     }
 
@@ -63,7 +63,7 @@ export class ChatRuntime {
 
     let assembled;
     try {
-      assembled = assemblePrompt(chatId, undefined, { model });
+      assembled = await assemblePrompt(chatId, undefined, { model });
     } catch (err) {
       try {
         await this.deps.chatApp.deleteMessage(userMessage.id);
@@ -77,7 +77,7 @@ export class ChatRuntime {
 
     return {
       prompt: assembled.prompt,
-      snapshot: getSnapshot(chatId),
+      snapshot: await getSnapshot(chatId),
     };
   }
 
@@ -112,7 +112,7 @@ export class ChatRuntime {
       });
     }
 
-    const snapshot = getSnapshot(chatId);
+    const snapshot = await getSnapshot(chatId);
     logSendDebug("prompt.trace.afterAppend", {
       chatId,
       messageId: assistantMessage.id,
@@ -133,7 +133,7 @@ export class ChatRuntime {
     const { chats, getSnapshot } = this.deps;
     const trimmed = input.content.trim();
     if (!trimmed) {
-      return getSnapshot(chatId);
+      return await getSnapshot(chatId);
     }
 
     await chats.addVariant(messageId, trimmed, input.finishReason ?? undefined);
@@ -153,22 +153,22 @@ export class ChatRuntime {
         latencyMs: input.latencyMs,
       });
     }
-    return getSnapshot(chatId);
+    return await getSnapshot(chatId);
   }
 
   async selectMessageVariant(chatId: ChatId, messageId: MessageId, variantIndex: number): Promise<SessionSnapshot> {
     await this.deps.chats.selectVariant(messageId, variantIndex);
-    return this.deps.getSnapshot(chatId);
+    return await this.deps.getSnapshot(chatId);
   }
 
   async editMessage(chatId: ChatId, messageId: string, content: string): Promise<SessionSnapshot> {
     await this.deps.chatApp.editMessage(messageId, content);
-    return this.deps.getSnapshot(chatId);
+    return await this.deps.getSnapshot(chatId);
   }
 
   async deleteMessage(chatId: ChatId, messageId: string): Promise<SessionSnapshot> {
     await this.deps.chatApp.deleteMessage(messageId);
-    return this.deps.getSnapshot(chatId);
+    return await this.deps.getSnapshot(chatId);
   }
 
   async forkBranch(chatId: ChatId): Promise<SessionSnapshot> {
@@ -179,19 +179,19 @@ export class ChatRuntime {
     const branches = await chats.getBranches(chatId);
     await chatApp.createBranch(chatId, {
       sourceBranchId: chatState.branch.id as ChatBranchId,
-      forkedFromMessageId: lastMessage?.id ?? null,
+      forkedFromMessageId: (lastMessage?.id ?? null) as MessageId | null,
       label: `branch ${branches.length + 1}`,
       activateFork: true,
     });
 
     this.pendingPromptTraceByChat.delete(chatId);
-    return getSnapshot(chatId);
+    return await getSnapshot(chatId);
   }
 
   async activateBranch(chatId: ChatId, branchId: ChatBranchId): Promise<SessionSnapshot> {
     await this.deps.chatApp.activateBranch(chatId, branchId);
     this.pendingPromptTraceByChat.delete(chatId);
-    return this.deps.getSnapshot(chatId);
+    return await this.deps.getSnapshot(chatId);
   }
 
   async deleteBranch(chatId: string, branchId: string): Promise<SessionSnapshot> {
@@ -199,7 +199,7 @@ export class ChatRuntime {
     const typedBranchId = brandId<ChatBranchId>(branchId);
     await this.deps.chatApp.deleteBranch(typedChatId, typedBranchId);
     this.pendingPromptTraceByChat.delete(typedChatId);
-    return this.deps.getSnapshot(typedChatId);
+    return await this.deps.getSnapshot(typedChatId);
   }
 
   async renameChat(chatId: string, title: string): Promise<{ chatId: string; title: string }> {
@@ -219,12 +219,12 @@ export class ChatRuntime {
     await this.deps.chats.delete(typedChatId);
   }
 
-  assemblePromptPreview(
+  async assemblePromptPreview(
     chatId: ChatId,
     options: { excludeMessageId?: MessageId; model: string },
-  ): AssemblePromptResponse {
+  ): Promise<AssemblePromptResponse> {
     const { assemblePrompt } = this.deps;
-    const assembled = assemblePrompt(chatId, undefined, {
+    const assembled = await assemblePrompt(chatId, undefined, {
       excludeMessageIds: options.excludeMessageId ? [options.excludeMessageId] : [],
       model: options.model,
     });
