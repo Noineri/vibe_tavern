@@ -1,5 +1,4 @@
 import type { ChangeEvent } from "react";
-import { useState } from "react";
 import { Markdown } from "../lib/markdown.js";
 import { initials } from "./app-shell-helpers.js";
 import type { MessageBlockProps } from "./play-mode-types.js";
@@ -11,9 +10,14 @@ export function MessageBlock(input: MessageBlockProps) {
   const variantCount = variants.length;
   const selectedVariantIndex = input.message.selectedVariantIndex ?? 0;
   const isGenerating = Boolean(input.isGenerating);
-  const [greetIdx, setGreetIdx] = useState(0);
   const greetingOptions = input.greetingOptions;
+  const greetIdx = input.greetingIndex;
   const greetingActive = !isUser && greetingOptions && greetingOptions.length > 1;
+  // Greetings and variant swipes are separate entities:
+  // - Greetings come from the character card (first message only)
+  // - Variants come from regeneration (any assistant message)
+  // Both lock when there are subsequent messages (canSwitchVariant).
+  const canSwitch = input.canSwitchVariant;
   const displayContent = greetingActive ? (greetingOptions[greetIdx] ?? input.message.content) : input.message.content;
   const copyLabel = "copy";
   const editLabel = "edit";
@@ -37,22 +41,22 @@ export function MessageBlock(input: MessageBlockProps) {
             <span className="greeting-swipe">
               <button
                 className="greeting-swipe-btn"
-                disabled={greetIdx <= 0}
-                onClick={() => setGreetIdx((i) => Math.max(0, i - 1))}
+                disabled={!canSwitch || greetIdx <= 0}
+                onClick={() => input.onGreetingIndexChange(Math.max(0, greetIdx - 1))}
               >
                 ◀
               </button>
               Greeting {greetIdx + 1}/{greetingOptions!.length}
               <button
                 className="greeting-swipe-btn"
-                disabled={greetIdx >= greetingOptions!.length - 1}
-                onClick={() => setGreetIdx((i) => Math.min(greetingOptions!.length - 1, i + 1))}
+                disabled={!canSwitch || greetIdx >= greetingOptions!.length - 1}
+                onClick={() => input.onGreetingIndexChange(Math.min(greetingOptions!.length - 1, greetIdx + 1))}
               >
                 ▶
               </button>
             </span>
           )}
-          {!isUser && variantCount > 1 && (
+          {!isUser && variantCount > 1 && canSwitch && (
             <span className="swipe-ctrl">
               <button
                 className="sw-btn"

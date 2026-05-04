@@ -171,6 +171,10 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
   async function handleSetChatPersona(personaId: string): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
+    // No-op when the persona is already active — avoids unnecessary snapshot refresh
+    // that could reset transient UI state like swipe position.
+    const currentPersonaId = getSnapshot()?.persona?.id ?? null;
+    if (currentPersonaId === personaId) return;
     try {
       setSnapshot(activeChatId, await setChatPersona(activeChatId, personaId));
     } catch (err) {

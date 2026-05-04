@@ -79,6 +79,8 @@ if "%NEEDS_INSTALL%"=="1" (
  if "%RP_EXIT_CODE%"=="0" goto :eof
  if "%RP_EXIT_CODE%"=="-1073741510" goto :eof
  if "%RP_EXIT_CODE%"=="3221225786" goto :eof
+ if "%RP_EXIT_CODE%"=="58" goto :eof
+ if "%RP_EXIT_CODE%"=="1" goto :eof
   if not "%RP_EXIT_CODE%"=="0" (
    echo.
    echo Launcher failed. Check "%RP_PLATFORM_LOG_FILE%"

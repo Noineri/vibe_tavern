@@ -10,7 +10,10 @@ export interface MessageBlockProps {
   isBusy: boolean;
   canBranch: boolean;
   canRegenerate: boolean;
+  canSwitchVariant: boolean;
   greetingOptions?: string[];
+  greetingIndex: number;
+  onGreetingIndexChange: (index: number) => void;
   onBranch: () => void;
   onStartEdit: () => void;
   onEditingDraftChange: (value: string) => void;
