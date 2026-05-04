@@ -160,13 +160,11 @@ export class ChatStore {
 
   async updateTitle(id: string, title: string): Promise<Chat> {
     const now = this.clock.now();
-    await this.db
+    const [row] = await this.db
       .update(chats)
       .set({ title, updatedAt: now })
       .where(eq(chats.id, id))
-      .run();
-
-    const row = await this.db.select().from(chats).where(eq(chats.id, id)).get();
+      .returning();
     if (!row) throw new Error(`Chat '${id}' not found after title update`);
     return this.mapRow(row);
   }
@@ -177,78 +175,66 @@ export class ChatStore {
 
   async archive(id: string): Promise<Chat> {
     const now = this.clock.now();
-    await this.db
+    const [row] = await this.db
       .update(chats)
       .set({ status: 'archived', updatedAt: now })
       .where(eq(chats.id, id))
-      .run();
-
-    const row = await this.db.select().from(chats).where(eq(chats.id, id)).get();
+      .returning();
     if (!row) throw new Error(`Chat '${id}' not found after archive`);
     return this.mapRow(row);
   }
 
   async unarchive(id: string): Promise<Chat> {
     const now = this.clock.now();
-    await this.db
+    const [row] = await this.db
       .update(chats)
       .set({ status: 'active', updatedAt: now })
       .where(eq(chats.id, id))
-      .run();
-
-    const row = await this.db.select().from(chats).where(eq(chats.id, id)).get();
+      .returning();
     if (!row) throw new Error(`Chat '${id}' not found after unarchive`);
     return this.mapRow(row);
   }
 
   async updateSummary(id: string, summary: string): Promise<Chat> {
     const now = this.clock.now();
-    await this.db
+    const [row] = await this.db
       .update(chats)
       .set({ summary, updatedAt: now })
       .where(eq(chats.id, id))
-      .run();
-
-    const row = await this.db.select().from(chats).where(eq(chats.id, id)).get();
+      .returning();
     if (!row) throw new Error(`Chat '${id}' not found after summary update`);
     return this.mapRow(row);
   }
 
   async setMessageHistoryLimit(id: string, limit: number): Promise<Chat> {
     const now = this.clock.now();
-    await this.db
+    const [row] = await this.db
       .update(chats)
       .set({ messageHistoryLimit: limit, updatedAt: now })
       .where(eq(chats.id, id))
-      .run();
-
-    const row = await this.db.select().from(chats).where(eq(chats.id, id)).get();
+      .returning();
     if (!row) throw new Error(`Chat '${id}' not found after limit update`);
     return this.mapRow(row);
   }
 
   async setPersona(id: string, personaId: string | null): Promise<Chat> {
     const now = this.clock.now();
-    await this.db
+    const [row] = await this.db
       .update(chats)
       .set({ personaId, updatedAt: now })
       .where(eq(chats.id, id))
-      .run();
-
-    const row = await this.db.select().from(chats).where(eq(chats.id, id)).get();
+      .returning();
     if (!row) throw new Error(`Chat '${id}' not found after persona update`);
     return this.mapRow(row);
   }
 
   async setPromptPreset(id: string, promptPresetId: string): Promise<Chat> {
     const now = this.clock.now();
-    await this.db
+    const [row] = await this.db
       .update(chats)
       .set({ promptPresetId, updatedAt: now })
       .where(eq(chats.id, id))
-      .run();
-
-    const row = await this.db.select().from(chats).where(eq(chats.id, id)).get();
+      .returning();
     if (!row) throw new Error(`Chat '${id}' not found after prompt preset update`);
     return this.mapRow(row);
   }
@@ -278,13 +264,11 @@ export class ChatStore {
 
   async activateBranch(chatId: string, branchId: string): Promise<Chat> {
     const now = this.clock.now();
-    await this.db
+    const [row] = await this.db
       .update(chats)
       .set({ activeBranchId: branchId, updatedAt: now })
       .where(eq(chats.id, chatId))
-      .run();
-
-    const row = await this.db.select().from(chats).where(eq(chats.id, chatId)).get();
+      .returning();
     if (!row) throw new Error(`Chat '${chatId}' not found after branch activation`);
     return this.mapRow(row);
   }
@@ -311,22 +295,32 @@ export class ChatStore {
         .where(and(eq(messages.branchId, sourceMsg.branchId), lte(messages.position, sourceMsg.position)))
         .orderBy(asc(messages.position)).all();
 
+      // Batch: collect all new messages and variants, then insert in two bulk queries
+      const newMessages: typeof messages.$inferInsert[] = [];
+      const newVariants: typeof messageVariants.$inferInsert[] = [];
+
       for (const msg of msgsToCopy) {
         const newMsgId = this.idGen.next('msg');
-        await tx.insert(messages).values({
+        newMessages.push({
           id: newMsgId, chatId, branchId, role: msg.role, authorType: msg.authorType,
           position: msg.position, content: msg.content, state: msg.state,
           createdAt: now, updatedAt: now,
-        }).run();
-        // Copy ALL messageVariants for this message
+        });
         const variants = await tx.select().from(messageVariants)
           .where(eq(messageVariants.messageId, msg.id)).all();
         for (const v of variants) {
-          await tx.insert(messageVariants).values({
+          newVariants.push({
             id: this.idGen.next('mvar'), messageId: newMsgId, variantIndex: v.variantIndex,
             content: v.content, isSelected: v.isSelected, finishReason: v.finishReason, createdAt: now,
-          }).run();
+          });
         }
+      }
+
+      if (newMessages.length > 0) {
+        await tx.insert(messages).values(newMessages).run();
+      }
+      if (newVariants.length > 0) {
+        await tx.insert(messageVariants).values(newVariants).run();
       }
     });
 
@@ -335,17 +329,11 @@ export class ChatStore {
   }
 
   async renameBranch(branchId: string, label: string): Promise<ChatBranch> {
-    await this.db
+    const [row] = await this.db
       .update(chatBranches)
       .set({ label })
       .where(eq(chatBranches.id, branchId))
-      .run();
-
-    const row = await this.db
-      .select()
-      .from(chatBranches)
-      .where(eq(chatBranches.id, branchId))
-      .get();
+      .returning();
     if (!row) throw new Error(`Branch '${branchId}' not found after rename`);
     return this.mapRowBranch(row);
   }
@@ -402,13 +390,13 @@ export class ChatStore {
         position: nextPosition, content: data.content,
         state: 'complete', createdAt: now, updatedAt: now,
       }).run();
-      // Create initial variant (index 0, selected) — addMessage always creates a first variant
       await tx.insert(messageVariants).values({
         id: this.idGen.next('mvar'), messageId: id, variantIndex: 0,
         content: data.content, isSelected: 1, finishReason: null, createdAt: now,
       }).run();
     });
 
+    // SELECT outside tx is fine — row is committed
     const row = await this.db.select().from(messages).where(eq(messages.id, id)).get();
     return this.mapRowMessage(row!);
   }
@@ -432,7 +420,7 @@ export class ChatStore {
       .get();
     const nextPosition = (lastMsg?.position ?? -1) + 1;
 
-    await this.db
+    const [row] = await this.db
       .insert(messages)
       .values({
         id,
@@ -446,10 +434,9 @@ export class ChatStore {
         createdAt: now,
         updatedAt: now,
       })
-      .run();
+      .returning();
 
     // Do NOT create a variant yet — variant is created when streaming completes
-    const row = await this.db.select().from(messages).where(eq(messages.id, id)).get();
     return this.mapRowMessage(row!);
   }
 
@@ -510,8 +497,8 @@ export class ChatStore {
         .run();
     });
 
-    const row = await this.db.select().from(messages).where(eq(messages.id, id)).get();
-    return this.mapRowMessage(row!);
+    const editRow = await this.db.select().from(messages).where(eq(messages.id, id)).get();
+    return this.mapRowMessage(editRow!);
   }
 
   async deleteMessage(id: string): Promise<void> {
@@ -549,18 +536,35 @@ export class ChatStore {
     const id = this.idGen.next('mvar');
     const now = this.clock.now();
 
-    await this.db
-      .insert(messageVariants)
-      .values({
-        id,
-        messageId,
-        variantIndex: nextIndex,
-        content,
-        isSelected: 0,
-        finishReason: finishReason ?? null,
-        createdAt: now,
-      })
-      .run();
+    // Transaction: deselect all existing variants, insert new as selected,
+    // and sync messages.content so reads are consistent.
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(messageVariants)
+        .set({ isSelected: 0 })
+        .where(eq(messageVariants.messageId, messageId))
+        .run();
+
+      await tx
+        .insert(messageVariants)
+        .values({
+          id,
+          messageId,
+          variantIndex: nextIndex,
+          content,
+          isSelected: 1,
+          finishReason: finishReason ?? null,
+          createdAt: now,
+        })
+        .run();
+
+      // Keep messages.content in sync with the active variant
+      await tx
+        .update(messages)
+        .set({ content, updatedAt: now })
+        .where(eq(messages.id, messageId))
+        .run();
+    });
 
     const row = await this.db
       .select()
@@ -575,10 +579,15 @@ export class ChatStore {
       // Clear all selections for this message
       await tx.update(messageVariants).set({ isSelected: 0 })
         .where(eq(messageVariants.messageId, messageId)).run();
-      // Select target variant and get its content
-      const target = await tx.update(messageVariants).set({ isSelected: 1 })
+      // Select target variant
+      await tx.update(messageVariants).set({ isSelected: 1 })
         .where(and(eq(messageVariants.messageId, messageId), eq(messageVariants.variantIndex, variantIndex)))
-        .returning().get();
+        .run();
+      // Read the selected variant's content
+      const target = await tx.select({ content: messageVariants.content })
+        .from(messageVariants)
+        .where(and(eq(messageVariants.messageId, messageId), eq(messageVariants.variantIndex, variantIndex)))
+        .get();
       // Sync messages.content with selected variant content (invariant)
       if (target) {
         await tx.update(messages).set({ content: target.content, updatedAt: this.clock.now() })

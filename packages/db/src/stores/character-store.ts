@@ -113,7 +113,7 @@ export class CharacterStore {
     const id = this.idGen.next('char');
     const now = this.clock.now();
 
-    await this.db
+    const [row] = await this.db
       .insert(characters)
       .values({
         id,
@@ -139,9 +139,8 @@ export class CharacterStore {
         createdAt: now,
         updatedAt: now,
       })
-      .run();
+      .returning();
 
-    const row = await this.db.select().from(characters).where(eq(characters.id, id)).get();
     return this.mapRow(row!);
   }
 
@@ -169,13 +168,12 @@ export class CharacterStore {
     if (data.tags !== undefined) values.tagsJson = JSON.stringify(data.tags);
     if (data.avatarAssetId !== undefined) values.avatarAssetId = data.avatarAssetId;
 
-    await this.db
+    const [row] = await this.db
       .update(characters)
       .set(values)
       .where(eq(characters.id, id))
-      .run();
+      .returning();
 
-    const row = await this.db.select().from(characters).where(eq(characters.id, id)).get();
     if (!row) {
       throw new Error(`Character '${id}' not found after update`);
     }
@@ -195,7 +193,7 @@ export class CharacterStore {
     const newId = this.idGen.next('char');
     const now = this.clock.now();
 
-    await this.db
+    const [row] = await this.db
       .insert(characters)
       .values({
         id: newId,
@@ -221,9 +219,8 @@ export class CharacterStore {
         createdAt: now,
         updatedAt: now,
       })
-      .run();
+      .returning();
 
-    const row = await this.db.select().from(characters).where(eq(characters.id, newId)).get();
     return this.mapRow(row!);
   }
 
@@ -231,13 +228,12 @@ export class CharacterStore {
 
   async archive(id: string): Promise<Character> {
     const now = this.clock.now();
-    await this.db
+    const [row] = await this.db
       .update(characters)
       .set({ status: 'archived', updatedAt: now })
       .where(eq(characters.id, id))
-      .run();
+      .returning();
 
-    const row = await this.db.select().from(characters).where(eq(characters.id, id)).get();
     if (!row) {
       throw new Error(`Character '${id}' not found after archive`);
     }
@@ -246,13 +242,12 @@ export class CharacterStore {
 
   async unarchive(id: string): Promise<Character> {
     const now = this.clock.now();
-    await this.db
+    const [row] = await this.db
       .update(characters)
       .set({ status: 'active', updatedAt: now })
       .where(eq(characters.id, id))
-      .run();
+      .returning();
 
-    const row = await this.db.select().from(characters).where(eq(characters.id, id)).get();
     if (!row) {
       throw new Error(`Character '${id}' not found after unarchive`);
     }

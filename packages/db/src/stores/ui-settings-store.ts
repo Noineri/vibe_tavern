@@ -70,21 +70,20 @@ export class UiSettingsStore {
     if (existing) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const values: Record<string, any> = { ...partial, updatedAt: this.clock.now() };
-      await this.db.update(uiSettings).set(values).where(eq(uiSettings.id, 'default')).run();
-    } else {
-      await this.db.insert(uiSettings).values({
-        id: 'default',
-        theme: partial.theme ?? UI_SETTINGS_DEFAULTS.theme,
-        chatFontSize: partial.chatFontSize ?? UI_SETTINGS_DEFAULTS.chatFontSize,
-        uiFontSize: partial.uiFontSize ?? UI_SETTINGS_DEFAULTS.uiFontSize,
-        messageWidth: partial.messageWidth ?? UI_SETTINGS_DEFAULTS.messageWidth,
-        language: partial.language ?? UI_SETTINGS_DEFAULTS.language,
-        activePromptPresetId: partial.activePromptPresetId ?? UI_SETTINGS_DEFAULTS.activePromptPresetId,
-        updatedAt: this.clock.now(),
-      }).run();
+      const [row] = await this.db.update(uiSettings).set(values).where(eq(uiSettings.id, 'default')).returning();
+      return this.mapRow(row!);
     }
-    const result = await this.db.select().from(uiSettings).where(eq(uiSettings.id, 'default')).get();
-    return this.mapRow(result!);
+    const [row] = await this.db.insert(uiSettings).values({
+      id: 'default',
+      theme: partial.theme ?? UI_SETTINGS_DEFAULTS.theme,
+      chatFontSize: partial.chatFontSize ?? UI_SETTINGS_DEFAULTS.chatFontSize,
+      uiFontSize: partial.uiFontSize ?? UI_SETTINGS_DEFAULTS.uiFontSize,
+      messageWidth: partial.messageWidth ?? UI_SETTINGS_DEFAULTS.messageWidth,
+      language: partial.language ?? UI_SETTINGS_DEFAULTS.language,
+      activePromptPresetId: partial.activePromptPresetId ?? UI_SETTINGS_DEFAULTS.activePromptPresetId,
+      updatedAt: this.clock.now(),
+    }).returning();
+    return this.mapRow(row!);
   }
 
   async ensureDefaults(): Promise<UiSettings> {
@@ -93,8 +92,7 @@ export class UiSettingsStore {
       return this.mapRow(existing);
     }
 
-    const now = this.clock.now();
-    await this.db.insert(uiSettings).values({
+    const [row] = await this.db.insert(uiSettings).values({
       id: 'default',
       theme: UI_SETTINGS_DEFAULTS.theme,
       chatFontSize: UI_SETTINGS_DEFAULTS.chatFontSize,
@@ -102,10 +100,9 @@ export class UiSettingsStore {
       messageWidth: UI_SETTINGS_DEFAULTS.messageWidth,
       language: UI_SETTINGS_DEFAULTS.language,
       activePromptPresetId: UI_SETTINGS_DEFAULTS.activePromptPresetId,
-      updatedAt: now,
-    }).run();
+      updatedAt: this.clock.now(),
+    }).returning();
 
-    const row = await this.db.select().from(uiSettings).where(eq(uiSettings.id, 'default')).get();
     return this.mapRow(row!);
   }
 
