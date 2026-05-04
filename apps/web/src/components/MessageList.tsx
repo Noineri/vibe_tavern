@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { AppMessage } from "../app-client.js";
 import { Markdown } from "../lib/markdown.js";
 import { MessageBlock } from "./MessageBlock.js";
@@ -6,6 +6,7 @@ import type { MessageListProps } from "./play-mode-types.js";
 
 export function MessageList(input: MessageListProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
+  const [greetingIndex, setGreetingIndex] = useState(0);
   const firstCharMsgId = useMemo(() => {
     for (const msg of input.messages) {
       if (msg.role === "assistant") return msg.id;
@@ -57,7 +58,10 @@ export function MessageList(input: MessageListProps) {
               isBusy={input.isSending || input.messageActionId === message.id}
               canBranch={isLastMessage(input.messages, message.id)}
               canRegenerate={message.id !== firstCharMsgId && isLastAssistantMessage(input.messages, message.id)}
+              canSwitchVariant={isLastMessage(input.messages, message.id)}
               greetingOptions={message.id === firstCharMsgId ? greetingOptions : undefined}
+              greetingIndex={message.id === firstCharMsgId ? greetingIndex : 0}
+              onGreetingIndexChange={setGreetingIndex}
               onBranch={input.onFork}
               onStartEdit={() => input.onStartEdit(message)}
               onEditingDraftChange={input.onEditingDraftChange}

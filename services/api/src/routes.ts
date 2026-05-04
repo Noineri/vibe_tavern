@@ -135,7 +135,7 @@ export function createApiRouter(
     .patch("/api/chats/:chatId/settings", zValidator("json", schemas.updateChatSettingsSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(
-        runtime.updateChatSettings(c.req.param("chatId"), body),
+        await runtime.updateChatSettings(c.req.param("chatId"), body),
       );
     })
     .post("/api/chats/:chatId/messages/:messageId/branch", async (c) => {
@@ -163,7 +163,7 @@ export function createApiRouter(
     })
     .post("/api/chats/:chatId/messages/:messageId/variants/:variantIndex/select", async (c) => {
       return c.json(
-        runtime.selectVariant(
+        await runtime.selectVariant(
           c.req.param("chatId"),
           c.req.param("messageId"),
           Number(c.req.param("variantIndex")),
@@ -227,7 +227,7 @@ export function createApiRouter(
     .patch("/api/personas/:personaId", zValidator("json", schemas.updatePersonaSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(
-        runtime.updatePersona(c.req.param("personaId"), body),
+        await runtime.updatePersona(c.req.param("personaId"), body),
       );
     })
     .delete("/api/personas/:personaId", async (c) => {
@@ -245,13 +245,13 @@ export function createApiRouter(
     .patch("/api/lorebooks/:lorebookId", zValidator("json", schemas.updateLorebookSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(
-        runtime.updateLorebook(c.req.param("lorebookId"), body),
+        await runtime.updateLorebook(c.req.param("lorebookId"), body),
       );
     })
     .post("/api/lorebooks/:lorebookId/test-activation", zValidator("json", schemas.testActivationSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(
-        runtime.testLoreActivation(c.req.param("lorebookId"), body),
+        await runtime.testLoreActivation(c.req.param("lorebookId"), body),
       );
     })
     .get("/api/lorebooks/:lorebookId/entries", async (c) => {

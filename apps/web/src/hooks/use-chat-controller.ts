@@ -146,6 +146,9 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
   }, []);
 
   async function handleSwitchChat(chatId: ChatId): Promise<void> {
+    // No-op when switching to the same active chat — avoids unnecessary re-fetch
+    // that would discard in-memory state like variant selection.
+    if (chatId === getActiveChatId()) return;
     setSnapshot(chatId, await fetchChat(chatId));
   }
 
