@@ -8,7 +8,6 @@ import { ProviderProfileService } from "./provider-profile-service.js";
 import { PromptPresetService } from "./prompt-preset-service.js";
 import { ProviderOrchestrator } from "./provider-orchestrator.js";
 import { listProviderModels, normalizeOpenAiCompatibleBaseUrl, probeProviderConnection, testProviderChat } from "./provider-gateway.js";
-import { ProviderManager } from "./providers/manager.js";
 import { logSendDebug } from "./send-debug-log.js";
 import { createApiRouter } from "./routes.js";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson, notFound, validation, internal } from "./errors.js";
@@ -74,7 +73,6 @@ async function ensureSeedData() {
     getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
   });
 
-  const providerManager = new ProviderManager();
   const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
   const chatRuntime = sessionRuntime.chatRuntime;
   const liveChatOrchestrator = new LiveChatOrchestrator(chatRuntime, providerOrchestrator);
