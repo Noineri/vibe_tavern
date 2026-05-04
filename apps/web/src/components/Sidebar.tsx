@@ -8,7 +8,7 @@ import { Icons } from "./shared/icons.js";
 
 interface SidebarProps {
   sidebarCollapsed: boolean;
-  activeChatId: ChatId;
+  activeChatId: ChatId | null;
   characterTabs: CharacterTab[];
   chats: ChatListItem[];
   branches: ChatBranch[];
@@ -138,7 +138,11 @@ export function Sidebar(input: SidebarProps) {
                     key={character.id}
                     className={`sb-item${isActive ? " act" : ""}`}
                     style={{ position: "relative", zIndex: menuOpen ? 100 : 1, cursor: "pointer" }}
-                    onClick={() => input.onSwitchChat(character.chatId)}
+                    onClick={() => {
+                      if (character.chatId) {
+                        input.onSwitchChat(character.chatId);
+                      }
+                    }}
                   >
                     <span className={`sb-ava${isActive ? " on" : ""}`}>{initials(character.name)}</span>
                     <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

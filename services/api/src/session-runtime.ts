@@ -62,6 +62,7 @@ export interface ChatListItem {
 
 export interface SessionSnapshot {
 	chats: ChatListItem[];
+	allCharacters: Array<{ id: string; name: string; subtitle: string }>;
 	activeChat: import("@rp-platform/db").Chat;
 	activeBranch: import("@rp-platform/db").ChatBranch;
 	branches: import("@rp-platform/db").ChatBranch[];
@@ -81,6 +82,7 @@ export interface BootstrapState {
 	initialChatId: ChatId | null;
 	snapshot: SessionSnapshot | null;
 	isFirstRun: boolean;
+	allCharacters: Array<{ id: string; name: string; subtitle: string }>;
 }
 
 export interface ImportResult {
@@ -220,7 +222,12 @@ export class SessionRuntime {
 		return {
 			initialChatId,
 			snapshot: initialChatId ? await this.getSnapshot(initialChatId) : null,
-			isFirstRun: allChats.length === 0,
+			isFirstRun: allChats.length === 0 && userChars.length === 0,
+			allCharacters: userChars.map((c) => ({
+				id: c.id,
+				name: c.name,
+				subtitle: c.tags.length > 0 ? c.tags[0] : '',
+			})),
 		};
 	}
 
@@ -245,6 +252,7 @@ export class SessionRuntime {
 
 		return {
 			chats: await Promise.all(this.chatOrder.map((id) => this.toChatListItem(id))),
+			allCharacters: await this.getAllCharacterEntries(),
 			activeChat: chat,
 			activeBranch: branch,
 			branches,
@@ -831,6 +839,15 @@ export class SessionRuntime {
 			excludeMessageIds: options?.excludeMessageIds,
 			contextBudget: null,
 		});
+	}
+
+	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string }>> {
+		const characters = await this.stores.characters.listAll();
+		return characters.map((c) => ({
+			id: c.id,
+			name: c.name,
+			subtitle: c.tags.length > 0 ? c.tags[0] : '',
+		}));
 	}
 
 	private async toChatListItem(chatId: ChatId): Promise<ChatListItem> {
