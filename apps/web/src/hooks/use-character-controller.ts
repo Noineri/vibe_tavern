@@ -20,6 +20,7 @@ import {
   updatePersona,
   type AppSnapshot,
   type ImportJsonResponse,
+  type PersonaRecord,
 } from "../app-client.js";
 import type { AppMode } from "../components/app-shell-types.js";
 import type { BuildCharacterDraft } from "../components/BuildMode.js";
@@ -38,6 +39,7 @@ export interface CharacterControllerDeps {
   setImportNotice: (notice: string) => void;
   setIsSavingCharacter: (saving: boolean) => void;
   setCharacterSaveNotice: (notice: string) => void;
+  setPersonas: (updater: (personas: PersonaRecord[]) => PersonaRecord[]) => void;
   // action callbacks
   loadBootstrap: () => Promise<void>;
   loadPersonas: () => Promise<void>;
@@ -98,6 +100,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     setImportNotice,
     setIsSavingCharacter,
     setCharacterSaveNotice,
+    setPersonas,
     loadBootstrap,
     loadPersonas,
     importFile,
@@ -151,6 +154,10 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
         name: draftInput.name,
         description: draftInput.description,
       });
+      const updatedPersona = nextSnapshot.persona?.id === personaId
+        ? nextSnapshot.persona
+        : { id: personaId, name: draftInput.name.trim(), description: draftInput.description };
+      setPersonas((current) => current.map((persona) => persona.id === personaId ? updatedPersona : persona));
       setSnapshot(activeChatId, nextSnapshot);
       await loadPersonas();
       setCharacterSaveNotice("Persona saved.");
@@ -164,6 +171,10 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
   async function handleSetChatPersona(personaId: string): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
+    // No-op when the persona is already active — avoids unnecessary snapshot refresh
+    // that could reset transient UI state like swipe position.
+    const currentPersonaId = getSnapshot()?.persona?.id ?? null;
+    if (currentPersonaId === personaId) return;
     try {
       setSnapshot(activeChatId, await setChatPersona(activeChatId, personaId));
     } catch (err) {
@@ -177,6 +188,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
         name: input.name.trim(),
         description: input.description.trim(),
       });
+      setPersonas((current) => current.some((persona) => persona.id === created.id) ? current : [...current, created]);
       await loadPersonas();
       return { id: created.id };
     } catch (error) {

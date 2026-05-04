@@ -16,7 +16,8 @@
     "test": "bun run --filter '*' test",
     "check": "bun run typecheck && bun run test",
     "dev:api": "bun run --filter @rp-platform/api dev",
-    "dev:web": "bun run --filter @rp-platform/web dev"
+    "dev:web": "bun run --filter @rp-platform/web dev",
+    "db:push": "bun run --filter @rp-platform/db db:push"
   },
   "devDependencies": {
     "@types/bun": "latest",
