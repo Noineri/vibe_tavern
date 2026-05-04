@@ -9,6 +9,7 @@ import { Icons } from "./shared/icons.js";
 interface SidebarProps {
   sidebarCollapsed: boolean;
   activeChatId: ChatId | null;
+  selectedCharacterId: string | null;
   characterTabs: CharacterTab[];
   chats: ChatListItem[];
   branches: ChatBranch[];
@@ -43,6 +44,7 @@ interface SidebarProps {
     onConfirm: () => void;
   }) => void;
   onDeleteActiveBranch: () => void;
+  onSelectCharacter: (characterId: string) => void;
 }
 
 const BACKEND_PENDING_TITLE = "Backend pending — see BACKEND_BACKLOG B8";
@@ -131,7 +133,8 @@ export function Sidebar(input: SidebarProps) {
               </div>
             ) : (
               input.characterTabs.map((character) => {
-                const isActive = character.chatId === input.activeChatId;
+                const isActive = character.chatId === input.activeChatId
+                  || (!character.chatId && character.id === input.selectedCharacterId);
                 const menuOpen = charMenuId === character.id;
                 return (
                   <div
@@ -141,6 +144,8 @@ export function Sidebar(input: SidebarProps) {
                     onClick={() => {
                       if (character.chatId) {
                         input.onSwitchChat(character.chatId);
+                      } else {
+                        input.onSelectCharacter(character.id);
                       }
                     }}
                   >
@@ -224,7 +229,11 @@ export function Sidebar(input: SidebarProps) {
               <button className="iBtn" style={{ width: 20, height: 20 }} onClick={triggerImport} title="Import chat (JSONL)">
                 <Icons.Import />
               </button>
-              <button className="iBtn" style={{ width: 20, height: 20 }} onClick={() => { const activeTab = input.characterTabs.find((tab) => tab.chatId === input.activeChatId); input.onCreateChat(activeTab?.id); }} title="New chat for active character">
+              <button className="iBtn" style={{ width: 20, height: 20 }} onClick={() => {
+                const activeTab = input.characterTabs.find((tab) => tab.chatId === input.activeChatId);
+                const charId = activeTab?.id ?? input.selectedCharacterId;
+                input.onCreateChat(charId ?? undefined);
+              }} title="New chat for active character">
                 <Icons.Plus />
               </button>
             </div>

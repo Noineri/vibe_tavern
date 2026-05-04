@@ -144,6 +144,7 @@ export function App() {
       <Sidebar
         sidebarCollapsed={app.sidebarCollapsed}
         activeChatId={activeChatId}
+        selectedCharacterId={app.selectedCharacterId}
         characterTabs={app.characterTabs}
         chats={snapshot?.chats ?? []}
         branches={snapshot?.branches ?? []}
@@ -173,6 +174,7 @@ export function App() {
         onRenameCancel={() => app.setRenamingChatId(null)}
         onRequestDestructiveConfirm={(config) => app.setConfirmDestroy(config)}
         onDeleteActiveBranch={() => void app.handleDeleteActiveBranch()}
+        onSelectCharacter={(id) => app.setSelectedCharacterId(id)}
       />
 
       <main className="main">
