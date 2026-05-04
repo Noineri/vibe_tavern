@@ -24,6 +24,7 @@ export interface PersonaRecord {
 
 export interface AppSnapshot {
   chats: ChatListItem[];
+  allCharacters: Array<{ id: string; name: string; subtitle: string }>;
   activeChat: Chat;
   activeBranch: ChatBranch;
   branches: ChatBranch[];
@@ -140,18 +141,21 @@ export async function bootstrapApp(): Promise<{
   initialChatId: ChatId | null;
   snapshot: AppSnapshot | null;
   isFirstRun: boolean;
+  allCharacters: Array<{ id: string; name: string; subtitle: string }>;
 }> {
   const response = await client.api.bootstrap.$get();
   const data = await unwrapRpc<{
     initialChatId: ChatId | null;
     snapshot: AppSnapshot | null;
     isFirstRun?: boolean;
+    allCharacters?: Array<{ id: string; name: string; subtitle: string }>;
   }>(response);
 
   return {
     initialChatId: data.initialChatId,
     snapshot: data.snapshot ? normalizeSnapshot(data.snapshot) : null,
     isFirstRun: data.isFirstRun ?? false,
+    allCharacters: data.allCharacters ?? [],
   };
 }
 

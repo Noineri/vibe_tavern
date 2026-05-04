@@ -51,27 +51,9 @@ export function App() {
     );
   }
 
-  if (!app.snapshot) {
-    return (
-      <div className="app">
-        {app.isFirstRun ? (
-          <WelcomeScreen
-            onCreateCharacter={(input) => app.handleCreateCharacter(input)}
-            onImportFiles={(files) => void app.handleImportFiles(files)}
-            onFreeChat={() => app.handleFreeChat()}
-          />
-        ) : (
-          <main className="main" style={{ alignItems: "center", display: "flex", justifyContent: "center" }}>
-            <div className="scene-note">No active chat.</div>
-          </main>
-        )}
-      </div>
-    );
-  }
-
   const snapshot = app.snapshot;
-  const activeChatId = app.activeChatId ?? snapshot.activeChat.id;
-  const personaName = snapshot.persona?.name ?? "No persona";
+  const activeChatId = app.activeChatId ?? snapshot?.activeChat.id ?? null;
+  const personaName = snapshot?.persona?.name ?? "No persona";
   const providerConnected = app.connection.status === "connected";
   const switchMode = () => app.setMode(isPlayMode ? "build" : "play");
   const openPromptTrace = () => {
@@ -79,7 +61,16 @@ export function App() {
     app.setBuildTab("trace");
   };
 
-  const shellSurface = isPlayMode ? (
+  let shellSurface: React.ReactNode;
+
+  if (!snapshot) {
+    shellSurface = (
+      <div style={{ alignItems: "center", display: "flex", flex: 1, justifyContent: "center" }}>
+        <div className="scene-note">{app.isFirstRun ? "" : "Select a character and start a new chat"}</div>
+      </div>
+    );
+  } else if (isPlayMode) {
+    shellSurface = (
     <PlayMode
       messageList={{
         characterName: snapshot.character.name,
@@ -122,7 +113,9 @@ export function App() {
         onSetPersona: app.handleSetChatPersona,
       }}
     />
-  ) : (
+  );
+  } else {
+    shellSurface = (
     <BuildMode
       activeTab={app.buildTab}
       characterId={snapshot.character.id}
@@ -144,6 +137,7 @@ export function App() {
       onSave={(draft) => void app.handleSaveCharacter(draft)}
     />
   );
+  }
 
   return (
     <div className="app">
@@ -151,9 +145,9 @@ export function App() {
         sidebarCollapsed={app.sidebarCollapsed}
         activeChatId={activeChatId}
         characterTabs={app.characterTabs}
-        chats={snapshot.chats}
-        branches={snapshot.branches}
-        activeBranchId={snapshot.activeBranch.id}
+        chats={snapshot?.chats ?? []}
+        branches={snapshot?.branches ?? []}
+        activeBranchId={snapshot?.activeBranch?.id ?? null}
         personaName={personaName}
         activePromptTraceId={app.activePromptTraceId}
         onToggleCollapsed={() => app.setSidebarCollapsed(!app.sidebarCollapsed)}
@@ -183,8 +177,8 @@ export function App() {
 
       <main className="main">
         <TopBar
-          characterName={snapshot.character.name}
-          characterSubtitle={snapshot.character.subtitle}
+          characterName={snapshot?.character.name ?? ""}
+          characterSubtitle={snapshot?.character.subtitle ?? ""}
           activatedLoreCount={app.activePromptTrace?.activatedLoreEntries.length ?? 0}
           retrievedMemoryCount={app.activePromptTrace?.retrievedMemories.length ?? 0}
           providerLabel={app.activeProviderProfile?.name || "No provider"}
