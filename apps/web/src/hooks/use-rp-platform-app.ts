@@ -85,6 +85,7 @@ function createInitialConnectionState(): ConnectionState {
 
 export function useRpPlatformApp() {
   const activeChatId = useChatStore((s) => s.activeChatId);
+  const selectedCharacterId = useChatStore((s) => s.selectedCharacterId);
   const snapshot = useChatStore((s) => s.snapshot);
   const draft = useChatStore((s) => s.draft);
   const isSending = useChatStore((s) => s.isSending);
@@ -449,6 +450,8 @@ export function useRpPlatformApp() {
 
   return {
     activeChatId,
+    selectedCharacterId,
+    setSelectedCharacterId: useChatStore.getState().setSelectedCharacterId,
     snapshot,
     draft,
     setDraft,

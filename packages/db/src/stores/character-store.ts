@@ -184,6 +184,14 @@ export class CharacterStore {
     await this.db.delete(characters).where(eq(characters.id, id)).run();
   }
 
+  async updateIsSystem(id: string, isSystem: boolean): Promise<void> {
+    await this.db
+      .update(characters)
+      .set({ isSystem: isSystem ? 1 : 0 })
+      .where(eq(characters.id, id))
+      .run();
+  }
+
   async duplicate(id: string): Promise<Character> {
     const original = await this.db.select().from(characters).where(eq(characters.id, id)).get();
     if (!original) {

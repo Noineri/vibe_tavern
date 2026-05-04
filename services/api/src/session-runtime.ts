@@ -630,6 +630,13 @@ export class SessionRuntime {
 			tags: input.tags ?? currentCharacter.tags,
 		});
 
+		// Promote system character to user character on first edit
+		if ((currentCharacter as any).isSystem === 1 || (currentCharacter as any).isSystem === true) {
+			await this.stores.characters.updateIsSystem(characterId, false);
+			// Re-bootstrap chat order so the character appears in sidebar
+			await this.rebuildChatOrder();
+		}
+
 		const preferredChat = input.chatId
 			? await this.stores.chats.getById(input.chatId)
 			: null;
@@ -704,6 +711,12 @@ export class SessionRuntime {
 		chatId?: string;
 	}): Promise<ImportResult> {
 		return importExportModule.importJson(this.importExportDeps, input);
+	}
+
+	private async rebuildChatOrder(): Promise<void> {
+		this.chatOrder.length = 0;
+		const allChats = await this.stores.chats.listAll();
+		this.chatOrder.push(...allChats.map((chat) => chat.id as ChatId));
 	}
 
 	private async seed(): Promise<void> {
@@ -842,7 +855,7 @@ export class SessionRuntime {
 	}
 
 	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string }>> {
-		const characters = await this.stores.characters.listAll();
+		const characters = await this.stores.characters.listIncludingSystem();
 		return characters.map((c) => ({
 			id: c.id,
 			name: c.name,

@@ -4,6 +4,7 @@ import type { AppSnapshot } from "../app-client.js";
 
 export interface ChatState {
   activeChatId: ChatId | null;
+  selectedCharacterId: string | null;
   snapshot: AppSnapshot | null;
   draft: string;
   isSending: boolean;
@@ -17,6 +18,7 @@ export interface ChatState {
 
 export interface ChatActions {
   setActiveChatId: (id: ChatId | null) => void;
+  setSelectedCharacterId: (id: string | null) => void;
   setSnapshot: (snapshot: AppSnapshot | null) => void;
   setSnapshotForChat: (chatId: ChatId, snapshot: AppSnapshot) => void;
   setDraft: (draft: string) => void;
@@ -33,6 +35,7 @@ export type ChatStore = ChatState & ChatActions;
 
 export const useChatStore = create<ChatStore>()((set) => ({
   activeChatId: null,
+  selectedCharacterId: null,
   snapshot: null,
   draft: "",
   isSending: false,
@@ -43,7 +46,8 @@ export const useChatStore = create<ChatStore>()((set) => ({
   pendingUserMessageContent: null,
   chatNotice: "",
 
-  setActiveChatId: (id) => set({ activeChatId: id }),
+  setActiveChatId: (id) => set({ activeChatId: id, selectedCharacterId: null }),
+  setSelectedCharacterId: (id) => set({ selectedCharacterId: id }),
   setSnapshot: (snapshot) => set({ snapshot }),
   setSnapshotForChat: (chatId, snapshot) => set({ activeChatId: chatId, snapshot }),
   setDraft: (draft) => set({ draft }),
