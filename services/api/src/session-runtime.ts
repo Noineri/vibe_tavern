@@ -80,7 +80,6 @@ export interface SessionSnapshot {
 export interface BootstrapState {
 	initialChatId: ChatId | null;
 	snapshot: SessionSnapshot | null;
-	characters: CharacterRecord[];
 	isFirstRun: boolean;
 }
 
@@ -221,7 +220,6 @@ export class SessionRuntime {
 		return {
 			initialChatId,
 			snapshot: initialChatId ? await this.getSnapshot(initialChatId) : null,
-			characters: await Promise.all(userChars.map((character) => this.resolver.getCharacter(character.id))),
 			isFirstRun: allChats.length === 0,
 		};
 	}
