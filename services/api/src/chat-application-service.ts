@@ -10,120 +10,123 @@ import type {
 } from "./chat-application-types.js";
 import { brandId } from "@rp-platform/domain";
 import type {
-  Chat,
   ChatBranchId,
   ChatId,
   Message,
   MessageId,
   SummaryMemorySnapshot,
 } from "@rp-platform/domain";
-import type { ChatBranchState, ChatSessionStore } from "@rp-platform/db";
+import type { ChatStore } from "@rp-platform/db";
 import { notFound } from "./errors.js";
 
 export class ChatApplicationService {
-  constructor(private readonly store: ChatSessionStore) {}
+  constructor(private readonly chats: ChatStore) {}
 
-  createChat(input: CreateChatRequest): CreateChatResponse {
-    const result = this.store.createChat({
+  async createChat(input: CreateChatRequest): Promise<CreateChatResponse> {
+    const chat = await this.chats.createChat({
       characterId: input.characterId,
       personaId: input.personaId,
       title: input.title,
       promptPresetId: input.promptPresetId,
-      toolProfileId: input.toolProfileId,
     });
 
     return {
-      id: result.chat.id,
-      activeBranchId: result.rootBranch.id,
+      id: chat.id as ChatId,
+      activeBranchId: chat.activeBranchId,
     };
   }
 
-  getChatState(chatId: ChatId, branchId?: ChatBranchId): {
-    chat: Chat;
-    branchState: ChatBranchState;
-  } {
-    const chat = this.requireChat(chatId);
+  async getChatState(chatId: ChatId, branchId?: ChatBranchId): Promise<{
+    chat: import("@rp-platform/db").Chat;
+    branch: import("@rp-platform/db").ChatBranch;
+    messages: import("@rp-platform/db").Message[];
+    summaries: SummaryMemorySnapshot[];
+  }> {
+    const chat = await this.requireChat(chatId);
     const resolvedBranchId = branchId ?? chat.activeBranchId;
-    const branchState = this.store.getBranchState(chat.id, resolvedBranchId);
-
-    if (!branchState) {
+    const branches = await this.chats.getBranches(chat.id);
+    const branch = branches.find((b) => b.id === resolvedBranchId);
+    if (!branch) {
       throw notFound("Branch", `Branch '${resolvedBranchId}' was not found for chat '${chat.id}'.`);
     }
+    const messages = await this.chats.getMessages(branch.id);
 
     return {
       chat,
-      branchState,
+      branch,
+      messages,
+      summaries: [], // Phase 2: summary snapshots
     };
   }
 
-  appendUserMessage(
+  async appendUserMessage(
     chatId: ChatId,
     input: SendMessageRequest,
     branchId?: ChatBranchId,
-  ): Message {
-    const chat = this.requireChat(chatId);
+  ): Promise<Message> {
+    const chat = await this.requireChat(chatId);
     const targetBranchId = branchId ?? chat.activeBranchId;
 
-    return this.store.appendMessage({
+    const message = await this.chats.addMessage({
       chatId,
       branchId: targetBranchId,
       role: "user",
       authorType: "user",
       content: input.content,
     });
+
+    return message as unknown as Message;
   }
 
-  editMessage(messageId: string, content: string): Message {
-    return this.store.updateMessage(brandId<MessageId>(messageId), content);
+  async editMessage(messageId: string, content: string): Promise<Message> {
+    const message = await this.chats.editMessage(messageId, content);
+    return message as unknown as Message;
   }
 
-  deleteMessage(messageId: string): void {
-    this.store.deleteMessage(brandId<MessageId>(messageId));
+  async deleteMessage(messageId: string): Promise<void> {
+    await this.chats.deleteMessage(messageId);
   }
 
-  createBranch(chatId: ChatId, input: CreateBranchRequest): CreateBranchResponse {
-    const result = this.store.forkBranch({
+  async createBranch(chatId: ChatId, input: CreateBranchRequest): Promise<CreateBranchResponse> {
+    const branch = await this.chats.forkBranch(
       chatId,
-      sourceBranchId: input.sourceBranchId,
-      forkedFromMessageId: input.forkedFromMessageId ?? null,
-      label: input.label,
-      activateFork: input.activateFork,
-    });
+      input.forkedFromMessageId ?? "",
+      input.label,
+    );
 
+    if (input.activateFork !== false) {
+      await this.chats.activateBranch(chatId, branch.id as ChatBranchId);
+    }
+
+    // Count messages in the new branch for the response
+    const messages = await this.chats.getMessages(branch.id);
     return {
-      branchId: result.branch.id,
-      copiedMessageCount: result.copiedMessageCount,
+      branchId: branch.id as ChatBranchId,
+      copiedMessageCount: messages.length,
     };
   }
 
-  activateBranch(chatId: ChatId, branchId: ChatBranchId): Chat {
-    return this.store.activateBranch(chatId, branchId);
+  async activateBranch(chatId: ChatId, branchId: ChatBranchId): Promise<import("@rp-platform/db").Chat> {
+    return this.chats.activateBranch(chatId, branchId);
   }
 
-  sleepBranch(chatId: ChatId, input: SleepBranchRequest): SleepBranchResponse {
-    const snapshot = this.store.sleepBranch({
-      chatId,
-      branchId: input.branchId,
-      kind: input.kind,
-      summary: input.summary,
-      coversThroughMessageId: input.coversThroughMessageId,
-    });
-
-    return mapSleepResponse(snapshot);
+  async sleepBranch(_chatId: ChatId, _input: SleepBranchRequest): Promise<SleepBranchResponse> {
+    // Phase 2: summary snapshots
+    throw new Error("Not implemented: summary snapshots are phase 2");
   }
 
-  deleteBranch(chatId: ChatId, branchId: ChatBranchId): DeleteBranchResponse {
-    const result = this.store.deleteBranch(chatId, branchId);
-
+  async deleteBranch(chatId: ChatId, branchId: ChatBranchId): Promise<DeleteBranchResponse> {
+    await this.chats.deleteBranch(branchId);
+    const chat = await this.requireChat(chatId);
     return {
       chatId,
-      activeBranchId: result.activeBranchId,
-      deletedBranchId: result.deletedBranchId,
+      activeBranchId: chat.activeBranchId as ChatBranchId,
+      deletedBranchId: branchId,
     };
   }
 
-  private requireChat(chatId: ChatId): Chat {
-    const chat = this.store.getChat(chatId);
+  private async requireChat(chatId: ChatId): Promise<import("@rp-platform/db").Chat> {
+    const chat = await this.chats.getById(chatId);
     if (!chat) {
       throw notFound("Chat", `Chat '${chatId}' was not found.`);
     }

@@ -1,4 +1,4 @@
-import type { ChatSessionStore } from "@rp-platform/db";
+import type { PresetStore } from "@rp-platform/db";
 import type { PromptPresetDto } from "@rp-platform/domain";
 import {
   listPromptPresets,
@@ -9,39 +9,39 @@ import {
 } from "./session-runtime-presets.js";
 
 export class PromptPresetService {
-  constructor(private readonly store: ChatSessionStore) {}
+  constructor(private readonly presets: PresetStore) {}
 
   private get deps(): PresetModuleDeps {
-    return { store: this.store };
+    return { presets: this.presets };
   }
 
-  listPromptPresets(): PromptPresetDto[] {
+  async listPromptPresets(): Promise<PromptPresetDto[]> {
     return listPromptPresets(this.deps);
   }
 
-  createPromptPreset(input: {
+  async createPromptPreset(input: {
     name: string;
     bindModel?: string;
     system?: string;
     jailbreak?: string;
     summary?: string;
     tools?: string;
-  }): PromptPresetDto {
+  }): Promise<PromptPresetDto> {
     return createPromptPreset(this.deps, input);
   }
 
-  updatePromptPreset(presetId: string, patch: {
+  async updatePromptPreset(presetId: string, patch: {
     name?: string;
     bindModel?: string;
     system?: string;
     jailbreak?: string;
     summary?: string;
     tools?: string;
-  }): PromptPresetDto {
+  }): Promise<PromptPresetDto> {
     return updatePromptPreset(this.deps, presetId, patch);
   }
 
-  deletePromptPreset(presetId: string): void {
-    deletePromptPreset(this.deps, presetId);
+  async deletePromptPreset(presetId: string): Promise<void> {
+    return deletePromptPreset(this.deps, presetId);
   }
 }

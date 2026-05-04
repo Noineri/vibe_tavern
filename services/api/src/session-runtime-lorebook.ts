@@ -1,71 +1,11 @@
-import type { ChatSessionStore } from "@rp-platform/db";
-import { brandId, ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
-import type { CharacterId, LorebookId, LoreEntry, Lorebook } from "@rp-platform/domain";
-import {
-  activateLoreEntries,
-  type ActivatableLoreEntry,
-} from "@rp-platform/prompt-pipeline";
+import type { LoreEntry } from "@rp-platform/domain";
 
-export interface LorebookModuleDeps {
-  store: ChatSessionStore;
-}
+const NOT_IMPLEMENTED = () => { throw new Error("Not implemented: lorebooks are phase 2"); };
 
-export function createLoreEntry(deps: LorebookModuleDeps, lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
-  const typedCharacterId = brandId<CharacterId>(lorebookId);
-  let resolvedLorebookId: string = lorebookId;
-  const existing = deps.store.listLoreEntriesForCharacter(typedCharacterId);
-  if (existing.length > 0 && existing[0].lorebookId) {
-    resolvedLorebookId = existing[0].lorebookId;
-  } else {
-    const lorebook: Lorebook = {
-      id: brandId<LorebookId>(`${ENTITY_ID_NAMESPACE.lorebook}_${Date.now()}`),
-      name: `${lorebookId} lorebook`,
-      scopeType: "character",
-      description: "",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    deps.store.upsertLorebook(lorebook);
-    deps.store.linkCharacterLorebook(typedCharacterId, lorebook.id);
-    resolvedLorebookId = lorebook.id;
-  }
-  return deps.store.createLoreEntry(resolvedLorebookId, input);
-}
+export interface LorebookModuleDeps {}
 
-export function updateLoreEntry(deps: LorebookModuleDeps, _lorebookId: string, entryId: string, input: Partial<Omit<LoreEntry, "id" | "lorebookId">>): LoreEntry {
-  return deps.store.updateLoreEntry(entryId, input);
-}
-
-export function deleteLoreEntry(deps: LorebookModuleDeps, _lorebookId: string, entryId: string): void {
-  deps.store.deleteLoreEntry(entryId);
-}
-
-export function listLoreEntries(deps: LorebookModuleDeps, lorebookId: string): LoreEntry[] {
-  return deps.store.listLoreEntriesForCharacter(brandId<CharacterId>(lorebookId));
-}
-
-export function testLoreActivation(
-  deps: LorebookModuleDeps,
-  lorebookId: string,
-  text: string,
-): { activatedIds: string[]; totalEntries: number } {
-  const entries = listLoreEntries(deps, lorebookId);
-  const activatable: ActivatableLoreEntry[] = entries.map((entry) => ({
-    id: entry.id,
-    title: entry.title,
-    content: entry.content,
-    keys: entry.keys,
-    secondaryKeys: entry.secondaryKeys,
-    logic: entry.logic,
-    position: entry.position,
-    priority: entry.priority,
-    enabled: entry.enabled,
-  }));
-  const activated = activateLoreEntries(activatable, {
-    recentMessagesText: text,
-  });
-  return {
-    activatedIds: activated.map((entry) => entry.id),
-    totalEntries: entries.length,
-  };
-}
+export function createLoreEntry(): LoreEntry { return NOT_IMPLEMENTED(); }
+export function updateLoreEntry(): LoreEntry { return NOT_IMPLEMENTED(); }
+export function deleteLoreEntry(): void { NOT_IMPLEMENTED(); }
+export function listLoreEntries(): LoreEntry[] { return NOT_IMPLEMENTED(); }
+export function testLoreActivation(): { activatedIds: string[]; totalEntries: number } { return NOT_IMPLEMENTED(); }

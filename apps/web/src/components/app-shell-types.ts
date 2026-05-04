@@ -42,5 +42,5 @@ export interface CharacterTab {
   id: string;
   name: string;
   subtitle: string;
-  chatId: ChatId;
+  chatId: ChatId | null;
 }

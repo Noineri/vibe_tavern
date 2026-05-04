@@ -140,6 +140,17 @@ function spawnManagedProcessInternal(
     if (shuttingDown) return;
     if (!shutdownOnExit) return;
 
+    // Windows: exit code 58 = SIGTERM through taskkill, 1 = SIGINT through Ctrl+C.
+    // Both are expected when the user closes the terminal or presses Ctrl+C.
+    const isGracefulWindowsExit =
+      process.platform === "win32" && (exitCode === 58 || exitCode === 1);
+
+    if (isGracefulWindowsExit) {
+      logInfo(`[launcher] ${label} exited with code ${exitCode} (graceful shutdown).`);
+      void shutdown(`${label} exited`, 0);
+      return;
+    }
+
     logError(`[launcher] ${label} stopped unexpectedly with exit code ${exitCode}.`);
     void shutdown(`${label} exited`, exitCode);
   })();

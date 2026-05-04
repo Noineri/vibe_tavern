@@ -125,6 +125,7 @@ export function useRpPlatformApp() {
   const [personas, setPersonas] = useState<PersonaRecord[]>([]);
   const [promptPresets, setPromptPresets] = useState<PromptPresetDto[]>([]);
   const [activePromptPresetId, setActivePromptPresetId] = useState<string | null>(null);
+  const [allCharacters, setAllCharacters] = useState<Array<{ id: string; name: string; subtitle: string }>>([]);
 
   // --- Derived state ---
 
@@ -158,7 +159,14 @@ export function useRpPlatformApp() {
 
   // --- Character/chat tabs ---
 
-  const characterTabs = useMemo(() => (snapshot ? buildCharacterTabs(snapshot) : []), [snapshot]);
+  // Keep allCharacters in sync with snapshot (updated on every chat switch, create, delete)
+  useEffect(() => {
+    if (snapshot?.allCharacters) {
+      setAllCharacters(snapshot.allCharacters);
+    }
+  }, [snapshot?.allCharacters]);
+
+  const characterTabs = useMemo(() => buildCharacterTabs(allCharacters, snapshot?.chats ?? []), [allCharacters, snapshot]);
   const macroContext = useMemo(
     () => snapshot ? {
       characterName: snapshot.character.name,
@@ -277,6 +285,7 @@ export function useRpPlatformApp() {
     setImportNotice,
     setIsSavingCharacter,
     setCharacterSaveNotice,
+    setPersonas: (updater) => setPersonas((current) => updater(current)),
     loadBootstrap,
     loadPersonas,
     importFile,
@@ -360,6 +369,7 @@ export function useRpPlatformApp() {
       const boot = await bootstrapApp();
       useChatStore.getState().setActiveChatId(boot.initialChatId);
       useChatStore.getState().setSnapshot(boot.snapshot);
+      setAllCharacters(boot.allCharacters);
       setIsFirstRun(boot.isFirstRun || import.meta.env.VITE_FORCE_FIRST_RUN === 'true');
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Could not load application state.");
@@ -558,28 +568,27 @@ export function useRpPlatformApp() {
     onExportCharacter: character.handleExportCharacter,
     onExportChatJsonl: character.handleExportChatJsonl,
     onExportPromptTrace: character.handleExportPromptTrace,
+    allCharacters,
   };
 }
 
-function buildCharacterTabs(snapshot: AppSnapshot): CharacterTab[] {
-  const seen = new Set<string>();
-  const result: CharacterTab[] = [];
-
-  for (const chat of snapshot.chats) {
-    if (seen.has(chat.characterId)) {
-      continue;
+function buildCharacterTabs(
+  allCharacters: Array<{ id: string; name: string; subtitle: string }>,
+  chats: Array<{ id: ChatId; characterId: string }>,
+): CharacterTab[] {
+  const chatByCharId = new Map<string, ChatId>();
+  for (const chat of chats) {
+    if (!chatByCharId.has(chat.characterId)) {
+      chatByCharId.set(chat.characterId, chat.id);
     }
-
-    seen.add(chat.characterId);
-    result.push({
-      id: chat.characterId,
-      name: chat.characterName,
-      subtitle: chat.subtitle,
-      chatId: chat.id,
-    });
   }
 
-  return result;
+  return allCharacters.map((char) => ({
+    id: char.id,
+    name: char.name,
+    subtitle: char.subtitle,
+    chatId: chatByCharId.get(char.id) ?? null,
+  }));
 }
 
 function readSavedConnectionState(): SavedConnectionState | null {

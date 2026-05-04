@@ -5,13 +5,13 @@ import * as schemas from "./api-schemas.js";
 import { isDomainError, providerError } from "./errors.js";
 
 export interface RuntimeApi {
-  bootstrap: () => unknown;
-  getChatSnapshot: (chatId: string) => unknown;
-  createChatForCharacter: (characterId: string) => unknown;
-  cloneChat: (chatId: string) => unknown;
-  exportCharacter: (characterId: string) => unknown;
-  exportChatJsonl: (chatId: string) => string;
-  exportPromptTrace: (traceId: string) => unknown;
+  bootstrap: () => Promise<unknown>;
+  getChatSnapshot: (chatId: string) => Promise<unknown>;
+  createChatForCharacter: (characterId: string) => Promise<unknown>;
+  cloneChat: (chatId: string) => Promise<unknown>;
+  exportCharacter: (characterId: string) => Promise<unknown>;
+  exportChatJsonl: (chatId: string) => Promise<string>;
+  exportPromptTrace: (traceId: string) => Promise<unknown>;
   updateChatSettings: (chatId: string, body: { title: string; subtitle: string; scenario: string; systemPrompt: string }) => unknown;
   branchChat: (chatId: string, messageId: string) => unknown;
   regenerateMessage: (chatId: string, messageId: string, body: unknown, signal?: AbortSignal) => Promise<unknown>;
@@ -21,11 +21,11 @@ export interface RuntimeApi {
   sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<unknown>;
   updateCharacter: (characterId: string, body: Record<string, unknown>) => Promise<unknown>;
   updatePersona: (personaId: string, body: Record<string, unknown>) => unknown;
-  listPersonas: () => unknown;
-  setChatPersona: (chatId: string, personaId: string) => unknown;
-  setChatPromptPreset: (chatId: string, promptPresetId: string) => unknown;
-  createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) => unknown;
-  deletePersona: (personaId: string) => void;
+  listPersonas: () => Promise<unknown>;
+  setChatPersona: (chatId: string, personaId: string) => Promise<unknown>;
+  setChatPromptPreset: (chatId: string, promptPresetId: string) => Promise<unknown>;
+  createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) => Promise<unknown>;
+  deletePersona: (personaId: string) => Promise<void>;
   getPersonalLorebookStatus: (personaId: string) => unknown;
   setPersonalLorebookEnabled: (personaId: string, enabled: boolean) => unknown;
   updateLorebook: (lorebookId: string, body: { chatId: string; lorebookRaw: string }) => unknown;
@@ -48,9 +48,9 @@ export interface RuntimeApi {
   forkBranch: (chatId: string) => unknown;
   activateBranch: (chatId: string, branchId: string) => unknown;
   deleteBranch: (chatId: string, branchId: string) => unknown;
-  archiveCharacter: (characterId: string) => unknown;
-  unarchiveCharacter: (characterId: string) => unknown;
-  deleteCharacter: (characterId: string) => void;
+  archiveCharacter: (characterId: string) => Promise<unknown>;
+  unarchiveCharacter: (characterId: string) => Promise<unknown>;
+  deleteCharacter: (characterId: string) => Promise<void>;
   deleteChat: (chatId: string) => void;
   renameChat: (chatId: string, title: string) => unknown;
   listPromptPresets: () => unknown;
@@ -62,11 +62,11 @@ export interface RuntimeApi {
 export function createApiRouter(
   runtime: RuntimeApi,
   deps: {
-    getRequiredProviderProfile: (id: string) => { endpoint: string; apiKey?: string | null };
+    getRequiredProviderProfile: (id: string) => Promise<{ endpoint: string; apiKey?: string | null }>;
     sessionRuntime: {
       createCharacterFromScratch: (body: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }) => Promise<unknown>;
       createFreeChat: () => Promise<unknown>;
-      getProviderProfile: (id: string) => { endpoint: string; apiKey?: string | null } | null;
+      getProviderProfile: (id: string) => Promise<{ endpoint: string; apiKey?: string | null } | null>;
     };
     providerOrchestrator: { refreshProfileModels: (profile: any) => Promise<unknown> };
     listProviderModels: (opts: { baseUrl: string; apiKey: string }) => Promise<unknown>;
@@ -76,23 +76,23 @@ export function createApiRouter(
   },
 ) {
   return new Hono()
-    .post("/api/debug/send-log", zValidator("json", schemas.debugSendLogSchema), (c) => {
+    .post("/api/debug/send-log", zValidator("json", schemas.debugSendLogSchema), async (c) => {
       const body = c.req.valid("json");
       logSendDebug("web.debug", typeof body === "object" && body ? body as Record<string, unknown> : { body });
       return c.json({ ok: true });
     })
-    .get("/api/bootstrap", (c) => {
-      return c.json(runtime.bootstrap());
+    .get("/api/bootstrap", async (c) => {
+      return c.json(await runtime.bootstrap());
     })
-    .get("/api/personas", (c) => {
-      return c.json(runtime.listPersonas());
+    .get("/api/personas", async (c) => {
+      return c.json(await runtime.listPersonas());
     })
-    .post("/api/personas", zValidator("json", schemas.createPersonaSchema), (c) => {
+    .post("/api/personas", zValidator("json", schemas.createPersonaSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(runtime.createPersona(body), 201);
+      return c.json(await runtime.createPersona(body), 201);
     })
-    .get("/api/chats/:chatId", (c) => {
-      return c.json(runtime.getChatSnapshot(c.req.param("chatId")));
+    .get("/api/chats/:chatId", async (c) => {
+      return c.json(await runtime.getChatSnapshot(c.req.param("chatId")));
     })
     .post("/api/characters", zValidator("json", schemas.createCharacterSchema), async (c) => {
       const body = c.req.valid("json");
@@ -114,37 +114,37 @@ export function createApiRouter(
       if (!characterId) {
         return c.json(await deps.sessionRuntime.createFreeChat());
       }
-      return c.json(runtime.createChatForCharacter(characterId));
+      return c.json(await runtime.createChatForCharacter(characterId));
     })
-    .post("/api/chats/:chatId/clone", (c) => {
-      return c.json(runtime.cloneChat(c.req.param("chatId")));
+    .post("/api/chats/:chatId/clone", async (c) => {
+      return c.json(await runtime.cloneChat(c.req.param("chatId")));
     })
-    .get("/api/characters/:characterId/export", (c) => {
-      return c.json(runtime.exportCharacter(c.req.param("characterId")));
+    .get("/api/characters/:characterId/export", async (c) => {
+      return c.json(await runtime.exportCharacter(c.req.param("characterId")));
     })
-    .get("/api/chats/:chatId/export.jsonl", (c) => {
+    .get("/api/chats/:chatId/export.jsonl", async (c) => {
       return c.text(
-        runtime.exportChatJsonl(c.req.param("chatId")),
+        await runtime.exportChatJsonl(c.req.param("chatId")),
         200,
         { "Content-Type": "application/x-ndjson; charset=utf-8" },
       );
     })
-    .get("/api/prompt-traces/:traceId/export", (c) => {
-      return c.json(runtime.exportPromptTrace(c.req.param("traceId")));
+    .get("/api/prompt-traces/:traceId/export", async (c) => {
+      return c.json(await runtime.exportPromptTrace(c.req.param("traceId")));
     })
-    .patch("/api/chats/:chatId/settings", zValidator("json", schemas.updateChatSettingsSchema), (c) => {
+    .patch("/api/chats/:chatId/settings", zValidator("json", schemas.updateChatSettingsSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(
-        runtime.updateChatSettings(c.req.param("chatId"), body),
+        await runtime.updateChatSettings(c.req.param("chatId"), body),
       );
     })
-    .post("/api/chats/:chatId/messages/:messageId/branch", (c) => {
-      return c.json(runtime.branchChat(c.req.param("chatId"), c.req.param("messageId")));
+    .post("/api/chats/:chatId/messages/:messageId/branch", async (c) => {
+      return c.json(await runtime.branchChat(c.req.param("chatId"), c.req.param("messageId")));
     })
     .post("/api/chats/:chatId/messages/:messageId/regenerate", async (c) => {
       const chatId = c.req.param("chatId");
       const messageId = c.req.param("messageId");
-      const body = await c.req.json();
+      const body = await readOptionalJson(c.req.raw);
       const regenStartMs = Date.now();
       logSendDebug("api.route.regenerate.start", { chatId, messageId });
       try {
@@ -161,21 +161,21 @@ export function createApiRouter(
         throw err;
       }
     })
-    .post("/api/chats/:chatId/messages/:messageId/variants/:variantIndex/select", (c) => {
+    .post("/api/chats/:chatId/messages/:messageId/variants/:variantIndex/select", async (c) => {
       return c.json(
-        runtime.selectVariant(
+        await runtime.selectVariant(
           c.req.param("chatId"),
           c.req.param("messageId"),
           Number(c.req.param("variantIndex")),
         ),
       );
     })
-    .patch("/api/chats/:chatId/messages/:messageId", zValidator("json", schemas.editMessageSchema), (c) => {
+    .patch("/api/chats/:chatId/messages/:messageId", zValidator("json", schemas.editMessageSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(runtime.editMessage(c.req.param("chatId"), c.req.param("messageId"), body.content ?? ""));
+      return c.json(await runtime.editMessage(c.req.param("chatId"), c.req.param("messageId"), body.content ?? ""));
     })
-    .delete("/api/chats/:chatId/messages/:messageId", (c) => {
-      return c.json(runtime.deleteMessage(c.req.param("chatId"), c.req.param("messageId")));
+    .delete("/api/chats/:chatId/messages/:messageId", async (c) => {
+      return c.json(await runtime.deleteMessage(c.req.param("chatId"), c.req.param("messageId")));
     })
     .post("/api/chats/:chatId/messages", zValidator("json", schemas.sendMessageSchema), async (c) => {
       const chatId = c.req.param("chatId");
@@ -183,36 +183,36 @@ export function createApiRouter(
       logSendDebug("api.route.messages.post", { chatId, contentLength: body.content?.length ?? 0 });
       return c.json(await runtime.sendMessage(chatId, body, c.req.raw.signal));
     })
-    .post("/api/chats/:chatId/set-persona", zValidator("json", schemas.setPersonaSchema), (c) => {
+    .post("/api/chats/:chatId/set-persona", zValidator("json", schemas.setPersonaSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(runtime.setChatPersona(c.req.param("chatId"), body.personaId));
+      return c.json(await runtime.setChatPersona(c.req.param("chatId"), body.personaId));
     })
-    .post("/api/chats/:chatId/set-prompt-preset", zValidator("json", schemas.setPromptPresetSchema), (c) => {
+    .post("/api/chats/:chatId/set-prompt-preset", zValidator("json", schemas.setPromptPresetSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(runtime.setChatPromptPreset(c.req.param("chatId"), body.promptPresetId));
+      return c.json(await runtime.setChatPromptPreset(c.req.param("chatId"), body.promptPresetId));
     })
-    .post("/api/chats/:chatId/fork", (c) => {
-      return c.json(runtime.forkBranch(c.req.param("chatId")));
+    .post("/api/chats/:chatId/fork", async (c) => {
+      return c.json(await runtime.forkBranch(c.req.param("chatId")));
     })
-    .post("/api/chats/:chatId/branches/:branchId/activate", (c) => {
-      return c.json(runtime.activateBranch(c.req.param("chatId"), c.req.param("branchId")));
+    .post("/api/chats/:chatId/branches/:branchId/activate", async (c) => {
+      return c.json(await runtime.activateBranch(c.req.param("chatId"), c.req.param("branchId")));
     })
-    .delete("/api/chats/:chatId/branches/:branchId", (c) => {
-      return c.json(runtime.deleteBranch(c.req.param("chatId"), c.req.param("branchId")));
+    .delete("/api/chats/:chatId/branches/:branchId", async (c) => {
+      return c.json(await runtime.deleteBranch(c.req.param("chatId"), c.req.param("branchId")));
     })
-    .delete("/api/chats/:chatId", (c) => {
+    .delete("/api/chats/:chatId", async (c) => {
       runtime.deleteChat(c.req.param("chatId"));
       return c.body(null, 204);
     })
-    .patch("/api/chats/:chatId/title", zValidator("json", schemas.renameChatSchema), (c) => {
+    .patch("/api/chats/:chatId/title", zValidator("json", schemas.renameChatSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(runtime.renameChat(c.req.param("chatId"), body.title));
+      return c.json(await runtime.renameChat(c.req.param("chatId"), body.title));
     })
-    .patch("/api/characters/:characterId/archive", (c) => {
-      return c.json(runtime.archiveCharacter(c.req.param("characterId")));
+    .patch("/api/characters/:characterId/archive", async (c) => {
+      return c.json(await runtime.archiveCharacter(c.req.param("characterId")));
     })
-    .patch("/api/characters/:characterId/unarchive", (c) => {
-      return c.json(runtime.unarchiveCharacter(c.req.param("characterId")));
+    .patch("/api/characters/:characterId/unarchive", async (c) => {
+      return c.json(await runtime.unarchiveCharacter(c.req.param("characterId")));
     })
     .patch("/api/characters/:characterId", zValidator("json", schemas.updateCharacterSchema), async (c) => {
       const body = c.req.valid("json");
@@ -220,77 +220,77 @@ export function createApiRouter(
         await runtime.updateCharacter(c.req.param("characterId"), body),
       );
     })
-    .delete("/api/characters/:characterId", (c) => {
+    .delete("/api/characters/:characterId", async (c) => {
       runtime.deleteCharacter(c.req.param("characterId"));
       return c.body(null, 204);
     })
-    .patch("/api/personas/:personaId", zValidator("json", schemas.updatePersonaSchema), (c) => {
+    .patch("/api/personas/:personaId", zValidator("json", schemas.updatePersonaSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(
-        runtime.updatePersona(c.req.param("personaId"), body),
+        await runtime.updatePersona(c.req.param("personaId"), body),
       );
     })
-    .delete("/api/personas/:personaId", (c) => {
+    .delete("/api/personas/:personaId", async (c) => {
       runtime.deletePersona(c.req.param("personaId"));
       return c.body(null, 204);
     })
-    .get("/api/personas/:personaId/personal-lorebook", (c) => {
-      return c.json(runtime.getPersonalLorebookStatus(c.req.param("personaId")));
+    .get("/api/personas/:personaId/personal-lorebook", async (c) => {
+      return c.json(await runtime.getPersonalLorebookStatus(c.req.param("personaId")));
     })
-    .put("/api/personas/:personaId/personal-lorebook", zValidator("json", schemas.setPersonalLorebookSchema), (c) => {
+    .put("/api/personas/:personaId/personal-lorebook", zValidator("json", schemas.setPersonalLorebookSchema), async (c) => {
       const body = c.req.valid("json");
       const enabled = body.enabled === true;
-      return c.json(runtime.setPersonalLorebookEnabled(c.req.param("personaId"), enabled));
+      return c.json(await runtime.setPersonalLorebookEnabled(c.req.param("personaId"), enabled));
     })
-    .patch("/api/lorebooks/:lorebookId", zValidator("json", schemas.updateLorebookSchema), (c) => {
+    .patch("/api/lorebooks/:lorebookId", zValidator("json", schemas.updateLorebookSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(
-        runtime.updateLorebook(c.req.param("lorebookId"), body),
+        await runtime.updateLorebook(c.req.param("lorebookId"), body),
       );
     })
-    .post("/api/lorebooks/:lorebookId/test-activation", zValidator("json", schemas.testActivationSchema), (c) => {
+    .post("/api/lorebooks/:lorebookId/test-activation", zValidator("json", schemas.testActivationSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(
-        runtime.testLoreActivation(c.req.param("lorebookId"), body),
+        await runtime.testLoreActivation(c.req.param("lorebookId"), body),
       );
     })
-    .get("/api/lorebooks/:lorebookId/entries", (c) => {
-      return c.json(runtime.listLoreEntries(c.req.param("lorebookId")));
+    .get("/api/lorebooks/:lorebookId/entries", async (c) => {
+      return c.json(await runtime.listLoreEntries(c.req.param("lorebookId")));
     })
-    .post("/api/lorebooks/:lorebookId/entries", zValidator("json", schemas.createLoreEntrySchema), (c) => {
+    .post("/api/lorebooks/:lorebookId/entries", zValidator("json", schemas.createLoreEntrySchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(runtime.createLoreEntry(c.req.param("lorebookId"), body));
+      return c.json(await runtime.createLoreEntry(c.req.param("lorebookId"), body));
     })
-    .patch("/api/lorebooks/:lorebookId/entries/:entryId", zValidator("json", schemas.updateLoreEntrySchema), (c) => {
+    .patch("/api/lorebooks/:lorebookId/entries/:entryId", zValidator("json", schemas.updateLoreEntrySchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(runtime.updateLoreEntry(c.req.param("lorebookId"), c.req.param("entryId"), body));
+      return c.json(await runtime.updateLoreEntry(c.req.param("lorebookId"), c.req.param("entryId"), body));
     })
-    .delete("/api/lorebooks/:lorebookId/entries/:entryId", (c) => {
+    .delete("/api/lorebooks/:lorebookId/entries/:entryId", async (c) => {
       runtime.deleteLoreEntry(c.req.param("lorebookId"), c.req.param("entryId"));
       return c.json({ ok: true });
     })
-    .get("/api/prompt-presets", (c) => {
-      return c.json(runtime.listPromptPresets());
+    .get("/api/prompt-presets", async (c) => {
+      return c.json(await runtime.listPromptPresets());
     })
-    .post("/api/prompt-presets", zValidator("json", schemas.createPromptPresetSchema), (c) => {
+    .post("/api/prompt-presets", zValidator("json", schemas.createPromptPresetSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(runtime.createPromptPreset(body), 201);
+      return c.json(await runtime.createPromptPreset(body), 201);
     })
-    .patch("/api/prompt-presets/:presetId", zValidator("json", schemas.updatePromptPresetSchema), (c) => {
+    .patch("/api/prompt-presets/:presetId", zValidator("json", schemas.updatePromptPresetSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(runtime.updatePromptPreset(c.req.param("presetId"), body));
+      return c.json(await runtime.updatePromptPreset(c.req.param("presetId"), body));
     })
-    .delete("/api/prompt-presets/:presetId", (c) => {
+    .delete("/api/prompt-presets/:presetId", async (c) => {
       runtime.deletePromptPreset(c.req.param("presetId"));
       return c.body(null, 204);
     })
-    .get("/api/providers", (c) => {
-      return c.json(runtime.listProviderProfiles());
+    .get("/api/providers", async (c) => {
+      return c.json(await runtime.listProviderProfiles());
     })
-    .get("/api/providers/:providerId", (c) => {
-      return c.json(runtime.fetchProviderProfile(c.req.param("providerId")));
+    .get("/api/providers/:providerId", async (c) => {
+      return c.json(await runtime.fetchProviderProfile(c.req.param("providerId")));
     })
-    .delete("/api/providers/:providerId", (c) => {
+    .delete("/api/providers/:providerId", async (c) => {
       runtime.deleteProviderProfile(c.req.param("providerId"));
       return c.json({ ok: true });
     })
@@ -310,8 +310,8 @@ export function createApiRouter(
       const body = c.req.valid("json");
       return c.json(await runtime.saveProviderDraft(body));
     })
-    .post("/api/providers/:providerId/activate", (c) => {
-      return c.json(runtime.activateProviderProfile(c.req.param("providerId")));
+    .post("/api/providers/:providerId/activate", async (c) => {
+      return c.json(await runtime.activateProviderProfile(c.req.param("providerId")));
     })
     .post("/api/providers/fetch-models", zValidator("json", schemas.fetchModelsSchema), async (c) => {
       const body = c.req.valid("json");
@@ -339,11 +339,11 @@ export function createApiRouter(
       }
       return c.json(await deps.testProviderChat({ baseUrl, apiKey, model }));
     })
-    .post("/api/providers/:providerId/models", (c) => {
-      return c.json(runtime.fetchProviderModels(c.req.param("providerId")));
+    .post("/api/providers/:providerId/models", async (c) => {
+      return c.json(await runtime.fetchProviderModels(c.req.param("providerId")));
     })
-    .post("/api/providers/:providerId/test", (c) => {
-      return c.json(runtime.testProviderProfile(c.req.param("providerId")));
+    .post("/api/providers/:providerId/test", async (c) => {
+      return c.json(await runtime.testProviderProfile(c.req.param("providerId")));
     })
     .post("/api/providers/:providerId/test-chat", zValidator("json", schemas.testChatProfileSchema), async (c) => {
       const body = c.req.valid("json");
@@ -351,13 +351,23 @@ export function createApiRouter(
       if (!model) {
         return c.json({ error: "model is required." }, 400);
       }
-      const profile = deps.getRequiredProviderProfile(c.req.param("providerId"));
+      const profile = await deps.getRequiredProviderProfile(c.req.param("providerId"));
       return c.json(await deps.testProviderChat({
         baseUrl: profile.endpoint,
         apiKey: profile.apiKey ?? "",
         model,
       }));
     });
+}
+
+async function readOptionalJson(request: Request): Promise<unknown> {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return {};
+  }
+
+  const text = await request.text();
+  return text.trim() ? JSON.parse(text) : {};
 }
 
 export type AppType = ReturnType<typeof createApiRouter>;
