@@ -54,16 +54,48 @@ export function App() {
   if (!app.snapshot) {
     return (
       <div className="app">
-        {app.isFirstRun ? (
+        <Sidebar
+          sidebarCollapsed={app.sidebarCollapsed}
+          activeChatId={app.activeChatId}
+          characterTabs={app.characterTabs}
+          chats={[]}
+          branches={[]}
+          activeBranchId={null}
+          personaName="No persona"
+          activePromptTraceId={null}
+          onToggleCollapsed={() => app.setSidebarCollapsed(!app.sidebarCollapsed)}
+          onSwitchChat={(chatId) => void app.handleSwitchChat(chatId)}
+          onActivateBranch={(branchId) => void app.handleActivateBranch(branchId)}
+          onFork={() => void app.handleFork()}
+          onImportFiles={(files) => void app.handleImportFiles(files)}
+          onOpenPromptManager={app.openPromptManager}
+          onOpenPersonaManager={app.openPersonaModal}
+          onCreateChat={(characterId) => void app.onCreateChat(characterId)}
+          onCloneChat={(chatId) => void app.onCloneChat(chatId)}
+          onExportCharacter={(characterId) => void app.onExportCharacter(characterId)}
+          onExportChatJsonl={(chatId) => void app.onExportChatJsonl(chatId)}
+          onExportPromptTrace={(traceId) => void app.onExportPromptTrace(traceId)}
+          renamingChatId={app.renamingChatId}
+          renameDraft={app.renameDraft}
+          onArchiveCharacter={(characterId) => void app.handleArchiveCharacter(characterId)}
+          onDeleteCharacter={(characterId) => void app.handleDeleteCharacter(characterId)}
+          onDeleteChat={(chatId) => void app.handleDeleteChat(chatId)}
+          onRenameChat={(chatId, title) => void app.handleRenameChat(chatId, title)}
+          onRenameStart={(chatId, title) => { app.setRenamingChatId(chatId); app.setRenameDraft(title); }}
+          onRenameDraftChange={app.setRenameDraft}
+          onRenameCancel={() => app.setRenamingChatId(null)}
+          onRequestDestructiveConfirm={(config) => app.setConfirmDestroy(config)}
+          onDeleteActiveBranch={() => void app.handleDeleteActiveBranch()}
+        />
+        <main className="main" style={{ alignItems: "center", display: "flex", justifyContent: "center" }}>
+          <div className="scene-note">No active chat. Select a character to create one.</div>
+        </main>
+        {app.isFirstRun && app.characterTabs.length === 0 && (
           <WelcomeScreen
             onCreateCharacter={(input) => app.handleCreateCharacter(input)}
             onImportFiles={(files) => void app.handleImportFiles(files)}
             onFreeChat={() => app.handleFreeChat()}
           />
-        ) : (
-          <main className="main" style={{ alignItems: "center", display: "flex", justifyContent: "center" }}>
-            <div className="scene-note">No active chat.</div>
-          </main>
         )}
       </div>
     );

@@ -4,7 +4,7 @@ export const debugSendLogSchema = z.record(z.unknown());
 
 export const createPersonaSchema = z.object({
   name: z.string().min(1),
-  description: z.string().min(1),
+  description: z.string().optional().default(""),
   pronouns: z.string().nullable().optional(),
   defaultForNewChats: z.boolean().optional(),
 });

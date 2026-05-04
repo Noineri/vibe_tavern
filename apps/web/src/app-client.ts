@@ -61,6 +61,8 @@ export interface AppSnapshot {
   } | null;
 }
 
+export type CharacterTabRecord = AppSnapshot["character"];
+
 export interface AppMessage extends Message {
   variants: MessageVariant[];
   selectedVariantIndex: number | null;
@@ -139,18 +141,21 @@ async function unwrapRpc<T>(response: RpcResponse): Promise<T> {
 export async function bootstrapApp(): Promise<{
   initialChatId: ChatId | null;
   snapshot: AppSnapshot | null;
+  characters: CharacterTabRecord[];
   isFirstRun: boolean;
 }> {
   const response = await client.api.bootstrap.$get();
   const data = await unwrapRpc<{
     initialChatId: ChatId | null;
     snapshot: AppSnapshot | null;
+    characters?: CharacterTabRecord[];
     isFirstRun?: boolean;
   }>(response);
 
   return {
     initialChatId: data.initialChatId,
     snapshot: data.snapshot ? normalizeSnapshot(data.snapshot) : null,
+    characters: Array.isArray(data.characters) ? data.characters : [],
     isFirstRun: data.isFirstRun ?? false,
   };
 }

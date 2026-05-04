@@ -227,6 +227,32 @@ export class ChatStore {
     return this.mapRow(row);
   }
 
+  async setPersona(id: string, personaId: string | null): Promise<Chat> {
+    const now = this.clock.now();
+    await this.db
+      .update(chats)
+      .set({ personaId, updatedAt: now })
+      .where(eq(chats.id, id))
+      .run();
+
+    const row = await this.db.select().from(chats).where(eq(chats.id, id)).get();
+    if (!row) throw new Error(`Chat '${id}' not found after persona update`);
+    return this.mapRow(row);
+  }
+
+  async setPromptPreset(id: string, promptPresetId: string): Promise<Chat> {
+    const now = this.clock.now();
+    await this.db
+      .update(chats)
+      .set({ promptPresetId, updatedAt: now })
+      .where(eq(chats.id, id))
+      .run();
+
+    const row = await this.db.select().from(chats).where(eq(chats.id, id)).get();
+    if (!row) throw new Error(`Chat '${id}' not found after prompt preset update`);
+    return this.mapRow(row);
+  }
+
   // ─── Branches ──────────────────────────────────────────────────────────────
 
   async getBranches(chatId: string): Promise<ChatBranch[]> {

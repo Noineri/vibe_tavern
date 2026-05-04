@@ -144,7 +144,7 @@ export function createApiRouter(
     .post("/api/chats/:chatId/messages/:messageId/regenerate", async (c) => {
       const chatId = c.req.param("chatId");
       const messageId = c.req.param("messageId");
-      const body = await c.req.json();
+      const body = await readOptionalJson(c.req.raw);
       const regenStartMs = Date.now();
       logSendDebug("api.route.regenerate.start", { chatId, messageId });
       try {
@@ -358,6 +358,16 @@ export function createApiRouter(
         model,
       }));
     });
+}
+
+async function readOptionalJson(request: Request): Promise<unknown> {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return {};
+  }
+
+  const text = await request.text();
+  return text.trim() ? JSON.parse(text) : {};
 }
 
 export type AppType = ReturnType<typeof createApiRouter>;
