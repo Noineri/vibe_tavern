@@ -107,6 +107,7 @@ export interface ProviderExecutionInput {
   model: string;
   prompt: AssemblePromptResponse;
   signal?: AbortSignal;
+  prefill?: string;
 }
 
 /** Streaming executor function signature. */

@@ -198,9 +198,9 @@ async function ensureSeedData() {
     fetchProviderModels: async (providerProfileId: string) => ({
       models: await providerOrchestrator.refreshProfileModels(await getRequiredProviderProfile(providerProfileId)),
     }),
-    fetchModelsByEndpoint: async (baseUrl: string, apiKey?: string) => {
+    fetchModelsByEndpoint: async (baseUrl: string, apiKey?: string, providerType?: string) => {
       const normalized = normalizeOpenAiCompatibleBaseUrl(baseUrl);
-      return listProviderModels({ baseUrl: normalized, apiKey: apiKey ?? "" });
+      return listProviderModels({ baseUrl: normalized, apiKey: apiKey ?? "", providerType });
     },
     importJson: (body: { fileName: string; jsonText: string; chatId?: string }) => sessionRuntime.importJson(body),
     forkBranch: (chatId: string) => chatRuntime.forkBranch(brandId<ChatId>(chatId)),

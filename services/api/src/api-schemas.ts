@@ -103,6 +103,7 @@ export const updateProviderProfileSchema = z.record(z.unknown());
 export const fetchModelsSchema = z.object({
   baseUrl: z.string().optional(),
   apiKey: z.string().optional(),
+  providerType: z.string().optional(),
 });
 
 export const testChatSchema = z.object({

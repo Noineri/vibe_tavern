@@ -11,6 +11,8 @@ import type { GenerationResult } from "./provider-execution-types.js";
 import type { ProviderExecutionInput } from "./provider-execution-types.js";
 import { mapProfileToSdkModel } from "./provider-profile-mapper.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
+import { getProviderCapabilities } from "./provider-capabilities.js";
+import type { ProviderType } from "@rp-platform/domain";
 import { cancelled, providerError } from "../errors.js";
 import { logSendDebug } from "../send-debug-log.js";
 
@@ -44,6 +46,10 @@ export async function nonstreamingProviderExecute(
     const systemMessages = messages.filter(m => m.role === "system");
     const conversationMessages = messages.filter(m => m.role !== "system");
     const systemPrompt = systemMessages.map(m => m.content).join("\n\n") || undefined;
+    const capabilities = getProviderCapabilities(input.profile.type as ProviderType);
+    if (input.prefill && capabilities.prefill) {
+      conversationMessages.push({ role: "assistant", content: input.prefill });
+    }
 
     const samplerConfig = buildSamplerConfig(input.profile);
     logSendDebug("provider.nonstream.samplerConfig", {
