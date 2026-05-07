@@ -27,9 +27,9 @@ export function App() {
 
   if (app.isLoading) {
     return (
-      <div className="app">
-        <main className="main" style={{ alignItems: "center", display: "flex", justifyContent: "center" }}>
-          <div className="scene-note">Loading Claw Tavern...</div>
+      <div className="flex h-screen overflow-hidden bg-bg text-t1 font-ui">
+        <main className="flex min-w-0 flex-1 flex-col items-center justify-center overflow-hidden">
+          <div className="font-body text-[12.5px] italic text-t3">Loading Claw Tavern...</div>
         </main>
       </div>
     );
@@ -37,8 +37,8 @@ export function App() {
 
   if (app.loadError) {
     return (
-      <div className="app">
-        <main className="main" style={{ alignItems: "center", display: "flex", justifyContent: "center" }}>
+      <div className="flex h-screen overflow-hidden bg-bg text-t1 font-ui">
+        <main className="flex min-w-0 flex-1 flex-col items-center justify-center overflow-hidden">
           <div style={{ display: "grid", gap: 12, maxWidth: 420, padding: 24 }}>
             <div className="build-section-title">Bootstrap failed</div>
             <div className="build-section-sub">{app.loadError}</div>
@@ -140,7 +140,7 @@ export function App() {
   }
 
   return (
-    <div className="app">
+    <div className="flex h-screen overflow-hidden bg-bg text-t1 font-ui">
       <Sidebar
         sidebarCollapsed={app.sidebarCollapsed}
         activeChatId={activeChatId}
@@ -177,7 +177,7 @@ export function App() {
         onSelectCharacter={(id) => app.setSelectedCharacterId(id)}
       />
 
-      <main className="main">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar
           characterName={snapshot?.character.name ?? ""}
           characterSubtitle={snapshot?.character.subtitle ?? ""}
