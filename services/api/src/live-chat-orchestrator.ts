@@ -5,6 +5,7 @@ import type { SessionSnapshot } from "./session-runtime.js";
 import type { ProviderOrchestrator } from "./provider-orchestrator.js";
 import type { StoredProviderProfileRecord } from "./session-runtime-dto.js";
 import { nonstreamingProviderExecute } from "./ai/nonstreaming-provider-executor.js";
+import { streamProviderExecutor } from "./ai/stream-provider-executor.js";
 import { logSendDebug } from "./send-debug-log.js";
 
 export class LiveChatOrchestrator {
@@ -113,6 +114,141 @@ export class LiveChatOrchestrator {
       promptMessageCount: countPromptMessages(prompt),
       reply,
       snapshot,
+    };
+  }
+
+  async *sendMessageStream(input: {
+    chatId: string;
+    content: string;
+    profile: StoredProviderProfileRecord;
+    model: string;
+    prefill?: string;
+    signal?: AbortSignal;
+  }): AsyncGenerator<{ event: string; data: string }> {
+    logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: input.model });
+    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, input.model);
+    const startedAt = Date.now();
+
+    let streamResult;
+    try {
+      streamResult = await streamProviderExecutor({
+        profile: input.profile,
+        model: input.model,
+        prompt: prepared.prompt,
+        signal: input.signal,
+        prefill: input.prefill,
+      });
+    } catch (err) {
+      this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
+      throw err;
+    }
+
+    let collected = "";
+    try {
+      for await (const chunk of streamResult.stream) {
+        if (chunk.type === "text-delta" && chunk.delta) {
+          collected += chunk.delta;
+          yield { event: "text-delta", data: JSON.stringify({ delta: chunk.delta }) };
+        }
+      }
+    } catch (err) {
+      if (input.signal?.aborted) {
+        // Abort — save partial text
+        const latencyMs = Date.now() - startedAt;
+        if (collected) {
+          await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), collected, latencyMs);
+        }
+        yield { event: "abort", data: JSON.stringify({ partialLength: collected.length }) };
+        return;
+      }
+      throw err;
+    }
+
+    const latencyMs = Date.now() - startedAt;
+    const finish = await streamResult.finished;
+    const finalText = (await streamResult.text) || collected;
+
+    const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), finalText, latencyMs);
+    logSendDebug("live.send-stream.done", { chatId: input.chatId, latencyMs, replyLength: finalText.length });
+
+    yield {
+      event: "finish",
+      data: JSON.stringify({
+        finishReason: finish.finishReason,
+        usage: finish.usage,
+        messageCount: snapshot.messages.length,
+      }),
+    };
+  }
+
+  async *regenerateMessageStream(input: {
+    chatId: string;
+    messageId: string;
+    profile: StoredProviderProfileRecord;
+    model: string;
+    prefill?: string;
+    signal?: AbortSignal;
+  }): AsyncGenerator<{ event: string; data: string }> {
+    logSendDebug("live.regenerate-stream.start", { chatId: input.chatId, messageId: input.messageId, model: input.model });
+    const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+      excludeMessageId: brandId<MessageId>(input.messageId),
+      model: input.model,
+    });
+    const startedAt = Date.now();
+
+    let streamResult;
+    try {
+      streamResult = await streamProviderExecutor({
+        profile: input.profile,
+        model: input.model,
+        prompt,
+        signal: input.signal,
+        prefill: input.prefill,
+      });
+    } catch (err) {
+      this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
+      throw err;
+    }
+
+    let collected = "";
+    try {
+      for await (const chunk of streamResult.stream) {
+        if (chunk.type === "text-delta" && chunk.delta) {
+          collected += chunk.delta;
+          yield { event: "text-delta", data: JSON.stringify({ delta: chunk.delta }) };
+        }
+      }
+    } catch (err) {
+      if (input.signal?.aborted) {
+        const latencyMs = Date.now() - startedAt;
+        if (collected) {
+          await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
+            content: collected,
+            latencyMs,
+          });
+        }
+        yield { event: "abort", data: JSON.stringify({ partialLength: collected.length }) };
+        return;
+      }
+      throw err;
+    }
+
+    const latencyMs = Date.now() - startedAt;
+    const finish = await streamResult.finished;
+    const finalText = (await streamResult.text) || collected;
+
+    await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
+      content: finalText,
+      latencyMs,
+    });
+    logSendDebug("live.regenerate-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
+
+    yield {
+      event: "finish",
+      data: JSON.stringify({
+        finishReason: finish.finishReason,
+        usage: finish.usage,
+      }),
     };
   }
 }

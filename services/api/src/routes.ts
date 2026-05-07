@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
+import { streamSSE } from "hono/streaming";
 import { logSendDebug } from "./send-debug-log.js";
 import * as schemas from "./api-schemas.js";
 import { isDomainError, providerError } from "./errors.js";
@@ -15,10 +16,12 @@ export interface RuntimeApi {
   updateChatSettings: (chatId: string, body: { title: string; subtitle: string; scenario: string; systemPrompt: string }) => unknown;
   branchChat: (chatId: string, messageId: string) => unknown;
   regenerateMessage: (chatId: string, messageId: string, body: unknown, signal?: AbortSignal) => Promise<unknown>;
+  regenerateMessageStream: (chatId: string, messageId: string, body: unknown, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
   selectVariant: (chatId: string, messageId: string, variantIndex: number) => unknown;
   editMessage: (chatId: string, messageId: string, content: string) => unknown;
   deleteMessage: (chatId: string, messageId: string) => unknown;
   sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<unknown>;
+  sendMessageStream: (chatId: string, body: { content: string }, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
   updateCharacter: (characterId: string, body: Record<string, unknown>) => Promise<unknown>;
   updatePersona: (personaId: string, body: Record<string, unknown>) => unknown;
   listPersonas: () => Promise<unknown>;
@@ -161,6 +164,18 @@ export function createApiRouter(
         throw err;
       }
     })
+    .post("/api/chats/:chatId/messages/:messageId/regenerate/stream", async (c) => {
+      const chatId = c.req.param("chatId");
+      const messageId = c.req.param("messageId");
+      const body = await readOptionalJson(c.req.raw);
+      logSendDebug("api.route.regenerate-stream.start", { chatId, messageId });
+      const gen = runtime.regenerateMessageStream(chatId, messageId, body, c.req.raw.signal);
+      return streamSSE(c, async (stream) => {
+        for await (const event of gen) {
+          await stream.writeSSE({ event: event.event, data: event.data });
+        }
+      });
+    })
     .post("/api/chats/:chatId/messages/:messageId/variants/:variantIndex/select", async (c) => {
       return c.json(
         await runtime.selectVariant(
@@ -182,6 +197,17 @@ export function createApiRouter(
       const body = c.req.valid("json");
       logSendDebug("api.route.messages.post", { chatId, contentLength: body.content?.length ?? 0 });
       return c.json(await runtime.sendMessage(chatId, body, c.req.raw.signal));
+    })
+    .post("/api/chats/:chatId/messages/stream", zValidator("json", schemas.sendMessageSchema), async (c) => {
+      const chatId = c.req.param("chatId");
+      const body = c.req.valid("json");
+      logSendDebug("api.route.messages-stream.post", { chatId, contentLength: body.content?.length ?? 0 });
+      const gen = runtime.sendMessageStream(chatId, body, c.req.raw.signal);
+      return streamSSE(c, async (stream) => {
+        for await (const event of gen) {
+          await stream.writeSSE({ event: event.event, data: event.data });
+        }
+      });
     })
     .post("/api/chats/:chatId/set-persona", zValidator("json", schemas.setPersonaSchema), async (c) => {
       const body = c.req.valid("json");
