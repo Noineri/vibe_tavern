@@ -1,17 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import type { ProviderProfileRecord } from "../app-client.js";
 import type { ProviderProbeResponse } from "@rp-platform/domain";
-import { PROVIDER_TYPE } from "@rp-platform/domain";
-import {
-  PRESET_GROUPS,
-  PROVIDER_PRESETS,
-  getPresetGroup,
-} from "../provider-presets.js";
+import { PROVIDER_PRESETS, getPresetGroup } from "../provider-presets.js";
 import { Icons } from "./shared/icons.js";
 import {
   ProviderActionFooter,
   ProviderProfileListSection,
+  ProviderFormFields,
   ProviderSamplerFields,
+  ProviderModelSelectorSection,
+  ProviderCapabilitySection,
 } from "./provider-modal-sections.js";
 import { useDirtyState } from "./shared/use-dirty-state.js";
 import { ConfirmCloseModal } from "./shared/confirm-close-modal.js";
@@ -91,6 +89,32 @@ function profileToForm(p: ProviderProfileRecord): FormState {
   };
 }
 
+/** Provider capability flags derived from provider type. */
+interface Capabilities {
+  nonStreamGeneration: boolean;
+  abortSignal: boolean;
+  streaming: boolean;
+  prefill: boolean;
+  sdkSupport: string;
+}
+
+function getCapabilities(type: string): Capabilities {
+  switch (type) {
+    case "openai_compat":
+      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, sdkSupport: "native" };
+    case "anthropic":
+    case "google":
+      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: false, sdkSupport: "native" };
+    case "ollama":
+    case "llamacpp":
+      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, sdkSupport: "openai_fallback" };
+    case "koboldcpp":
+      return { nonStreamGeneration: false, abortSignal: false, streaming: false, prefill: false, sdkSupport: "unsupported" };
+    default:
+      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, sdkSupport: "native" };
+  }
+}
+
 export function ProviderModal({
   isOpen,
   providerProfiles,
@@ -127,7 +151,7 @@ export function ProviderModal({
     try {
       const cached = await onFetchModels(baseUrl, apiKey, true);
       if (cached.length > 0) setModels(cached);
-    } catch {}
+    } catch { /* ignore */ }
   };
 
   useEffect(() => {
@@ -168,12 +192,7 @@ export function ProviderModal({
     if (!fmt) return;
     setForm((f) =>
       f
-        ? {
-            ...f,
-            providerPreset: fmt.id,
-            type: fmt.type,
-            baseUrl: fmt.baseUrl,
-          }
+        ? { ...f, providerPreset: fmt.id, type: fmt.type, baseUrl: fmt.baseUrl }
         : f,
     );
     markDirty();
@@ -327,14 +346,6 @@ export function ProviderModal({
       )
     : providerProfiles;
 
-  const presetGroup = form ? getPresetGroup(form.providerPreset) : null;
-  const filteredPresets = presetGroup
-    ? PROVIDER_PRESETS.filter((f) => f.group === presetGroup)
-    : PROVIDER_PRESETS;
-  const presetEndpoint = form?.providerPreset
-    ? PROVIDER_PRESETS.find((f) => f.id === form.providerPreset)?.baseUrl ?? ""
-    : "";
-
   const filteredModels = modelSearch.trim()
     ? models.filter(
         (m) =>
@@ -343,21 +354,17 @@ export function ProviderModal({
       )
     : models;
 
-  const duplicateNameWarning =
-    form?.name &&
-    providerProfiles.some(
-      (p) => p.id !== editingId && p.name.trim().toLowerCase() === form.name.trim().toLowerCase(),
-    );
+  const capabilities = form ? getCapabilities(form.type) : null;
 
   return (
-    <div className="api-overlay" onClick={(e) => e.target === e.currentTarget && handleClose()}>
+    <div
+      className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]"
+      onClick={(e) => e.target === e.currentTarget && handleClose()}
+    >
       {confirmClose && (
         <ConfirmCloseModal
           onCancel={() => setConfirmClose(false)}
-          onConfirm={() => {
-            reset();
-            onClose();
-          }}
+          onConfirm={() => { reset(); onClose(); }}
         />
       )}
       {confirmDelete && (
@@ -365,6 +372,7 @@ export function ProviderModal({
           title="Delete provider"
           body={
             <>
+              {/* TODO(i18n) */}
               Delete profile <b>{form?.name}</b>? This cannot be undone.
             </>
           }
@@ -375,502 +383,108 @@ export function ProviderModal({
       )}
 
       <div
-        className="api-modal"
+        className="flex max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]"
         style={{ width: 860, height: 680 }}
-        onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className="api-head"
-          style={{ paddingBottom: 16, borderBottom: "1px solid var(--border)" }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              justifyContent: "space-between",
-            }}
-          >
+        {/* HEADER */}
+        <div className="shrink-0 border-b border-border px-6 pb-4 pt-5">
+          <div className="flex items-start justify-between">
             <div>
               <div
-                className="api-title"
-                style={{ display: "flex", alignItems: "center" }}
+                className="flex items-center gap-2 font-body text-[18px] font-semibold text-t1"
+                style={{ marginBottom: 4 }}
               >
-                Provider Settings
-                {dirty && <span className="dirty-dot" title="Unsaved changes" />}
+                {/* TODO(i18n) */}
+                Настройки провайдера
+                {dirty && (
+                  <span
+                    className="h-2 w-2 rounded-full bg-accent"
+                    title="Unsaved changes"
+                  />
+                )}
               </div>
-              <div className="api-sub">
-                Provider profiles for API connections (local and cloud).
+              {/* TODO(i18n) */}
+              <div className="font-ui text-[13px] text-t3">
+                Профили провайдеров для API-подключений (локальных и облачных).
               </div>
             </div>
-            <button
-              className="iBtn"
-              aria-label="Close provider settings"
-              title="Close provider settings"
+            <div
+              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1"
               onClick={handleClose}
             >
               <Icons.Close />
-            </button>
+            </div>
           </div>
-        </div>
-
-        <div
-          className="api-body"
-          style={{ padding: 0, display: "flex", flex: 1, overflow: "hidden", flexDirection: "column" }}
-        >
           {dirty && (
-            <div className="unsaved-bar" style={{ margin: "12px 20px 0" }}>
-              <Icons.Edit />
-              Unsaved changes
+            <div
+              className="mt-3 flex items-center gap-2 rounded-md border border-border bg-s2 font-ui text-[12px] text-t2"
+              style={{ padding: "5px 12px" }}
+            >
+              <span className="shrink-0 text-accent-t"><Icons.Edit /></span>
+              {/* TODO(i18n) */}
+              Несохранённые изменения
             </div>
           )}
-          <div className="pm-layout" style={{ margin: 0, width: "100%", flex: 1, minHeight: 0 }}>
-            <ProviderProfileListSection
-              filteredProfiles={filteredProfiles}
-              editingId={editingId}
-              activeProviderProfileId={activeProviderProfileId}
-              profileSearch={profileSearch}
-              onProfileSearchChange={setProfileSearch}
-              onSelectProfile={handleSelect}
-              onAddProfile={handleAdd}
-            />
+        </div>
 
-            <div className="pm-main">
-              {!form ? (
-                <div className="api-hint">Select a profile or create a new one.</div>
-              ) : (
-                <>
-                  <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-                    <div className="api-field" style={{ flex: 2, marginBottom: 0 }}>
-                      <label>Profile name</label>
-                      <input
-                        type="text"
-                        value={form.name}
-                        onChange={(e) => updateForm("name", e.target.value)}
-                        placeholder="e.g. OpenRouter RP"
-                      />
-                      {duplicateNameWarning && (
-                        <div className="field-warning">
-                          <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 16 16"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                          >
-                            <circle cx="8" cy="8" r="6.5" />
-                            <line x1="8" y1="5" x2="8" y2="9" />
-                            <circle cx="8" cy="11.5" r="0.8" fill="currentColor" stroke="none" />
-                          </svg>
-                          A profile with this name already exists
-                        </div>
-                      )}
-                    </div>
-                    <div className="api-field" style={{ flex: 1, marginBottom: 0 }}>
-                      <label>Provider preset</label>
-                      <select
-                        value={presetGroup ?? ""}
-                        onChange={(e) => {
-                          const g = e.target.value;
-                          if (!g) {
-                            updateForm("providerPreset", "");
-                            updateForm("type", PROVIDER_TYPE.openaiCompat);
-                          } else {
-                            const first = PROVIDER_PRESETS.find((f) => f.group === g);
-                            if (first) applyPreset(first.id);
-                          }
-                        }}
-                        style={{ height: 34 }}
-                      >
-                        <option value="">Custom</option>
-                        {PRESET_GROUPS.map((g) => (
-                          <option key={g.id} value={g.id}>
-                            {g.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
+        {/* BODY — sidebar + main */}
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <ProviderProfileListSection
+            filteredProfiles={filteredProfiles}
+            editingId={editingId}
+            activeProviderProfileId={activeProviderProfileId}
+            profileSearch={profileSearch}
+            onProfileSearchChange={setProfileSearch}
+            onSelectProfile={handleSelect}
+            onAddProfile={handleAdd}
+          />
 
-                  <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-                    <div className="api-field" style={{ flex: 1, marginBottom: 0 }}>
-                      <label>API format</label>
-                      <select
-                        value={form.providerPreset || ""}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val) applyPreset(val);
-                        }}
-                        style={{ height: 34 }}
-                      >
-                        <option value="">Custom</option>
-                        {filteredPresets.map((f) => (
-                          <option key={f.id} value={f.id}>
-                            {f.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="api-field" style={{ flex: 1, marginBottom: 0 }}>
-                      <label>Preset endpoint</label>
-                      <input
-                        type="text"
-                        value={presetEndpoint || "Custom"}
-                        readOnly
-                        style={{ opacity: 0.72 }}
-                      />
-                    </div>
-                  </div>
+          <div className="flex-1 overflow-y-auto" style={{ padding: 24 }}>
+            {!form ? (
+              <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
+                {/* TODO(i18n) */}
+                Выберите профиль или создайте новый.
+              </div>
+            ) : (
+              <>
+                <ProviderFormFields
+                  form={form}
+                  editingId={editingId}
+                  providerProfiles={providerProfiles}
+                  updateForm={updateForm}
+                  applyPreset={applyPreset}
+                  testOk={testOk}
+                  testing={testing}
+                  testingChat={testingChat}
+                  chatResult={chatResult}
+                  onTest={handleTestConnection}
+                  onTestChat={handleTestChat}
+                />
 
-                  <div className="api-field">
-                    <label>API Endpoint (Base URL)</label>
-                    <input
-                      type="text"
-                      value={form.baseUrl}
-                      onChange={(e) => updateForm("baseUrl", e.target.value)}
-                      placeholder="https://api.openai.com/v1"
-                    />
-                  </div>
+                <ProviderModelSelectorSection
+                  form={form}
+                  models={models}
+                  filteredModels={filteredModels}
+                  fetching={fetching}
+                  fetchError={fetchError}
+                  modelSearch={modelSearch}
+                  modelListOpen={modelListOpen}
+                  updateForm={updateForm}
+                  onFetchModels={handleFetchModels}
+                  setModelSearch={setModelSearch}
+                  setModelListOpen={setModelListOpen}
+                  dropdownRef={dropdownRef}
+                />
 
-                  <div className="api-field">
-                    <label
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        cursor: "pointer",
-                        color: "var(--t1)",
-                      }}
-                    >
-                      <div className="toggle">
-                        <input
-                          type="checkbox"
-                          checked={form.streamResponse}
-                          onChange={(e) => updateForm("streamResponse", e.target.checked)}
-                        />
-                        <div className="tgl-sl" />
-                      </div>
-                      Stream response
-                    </label>
-                    <div className="api-hint">
-                      On: character-by-character streaming. Off: full response appears at once.
-                    </div>
-                  </div>
+                <ProviderCapabilitySection capabilities={capabilities} />
 
-                  <div className="api-field">
-                    <label>API Key</label>
-                    <input
-                      type="password"
-                      value={form.apiKey}
-                      onChange={(e) => updateForm("apiKey", e.target.value)}
-                      placeholder={form.hasStoredApiKey ? "Stored on backend" : "sk-..."}
-                    />
-                  </div>
-
-                  <div style={{ marginBottom: 12 }}>
-                    {!form.apiKey && !form.hasStoredApiKey && (
-                      <div
-                        style={{
-                          padding: "8px 12px",
-                          background: "var(--s2)",
-                          borderRadius: 6,
-                          fontSize: 12,
-                          color: "var(--t3)",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                        }}
-                      >
-                        <span style={{ opacity: 0.5 }}>&#8857;</span>
-                        <span>
-                          No provider connected — enter API key above to connect
-                        </span>
-                      </div>
-                    )}
-                    {form.apiKey && !form.model && (
-                      <div
-                        style={{
-                          padding: "8px 12px",
-                          background: "var(--s2)",
-                          borderRadius: 6,
-                          fontSize: 12,
-                          color: "var(--t3)",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                        }}
-                      >
-                        <span style={{ opacity: 0.5 }}>&#8857;</span>
-                        <span>No model selected — choose a model to start chatting</span>
-                      </div>
-                    )}
-                    {(form.apiKey || form.hasStoredApiKey) && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                        <button
-                          className={`api-test-btn ${testing ? "testing" : testOk === true ? "ok" : testOk === false ? "err" : "idle"}`}
-                          style={{ height: 30, fontSize: 12 }}
-                          onClick={() => void handleTestConnection()}
-                        >
-                          Test Connection
-                        </button>
-                        {testOk === true && (
-                          <span className="api-test-result ok">
-                            <Icons.Check /> Connection successful
-                          </span>
-                        )}
-                        {testOk === false && (
-                          <span className="api-test-result err">
-                            <svg
-                              width="12"
-                              height="12"
-                              viewBox="0 0 16 16"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                            >
-                              <circle cx="8" cy="8" r="6.5" />
-                              <line x1="8" y1="5" x2="8" y2="9" />
-                              <circle cx="8" cy="11.5" r="0.8" fill="currentColor" stroke="none" />
-                            </svg>
-                            Connection failed
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {(form.apiKey || form.hasStoredApiKey) && form.model.trim() && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-                        <button
-                          className={`api-test-btn ${testingChat ? "testing" : chatResult?.reply ? "ok" : chatResult?.error ? "err" : "idle"}`}
-                          style={{ height: 30, fontSize: 12 }}
-                          onClick={() => void handleTestChat()}
-                          disabled={testingChat}
-                        >
-                          Test &quot;Hi&quot;
-                        </button>
-                      </div>
-                    )}
-                    {chatResult && (
-                      <div className="test-chat-result">
-                        {chatResult.reply && (
-                          <div className="test-chat-reply">
-                            <Icons.Check />
-                            <span>{chatResult.reply.length > 200 ? chatResult.reply.slice(0, 200) + "..." : chatResult.reply}</span>
-                          </div>
-                        )}
-                        {chatResult.error && (
-                          <div className="test-chat-error">
-                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                              <circle cx="8" cy="8" r="6.5" />
-                              <line x1="8" y1="5" x2="8" y2="9" />
-                              <circle cx="8" cy="11.5" r="0.8" fill="currentColor" stroke="none" />
-                            </svg>
-                            <span>{chatResult.error}</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="api-section-title">Model</div>
-                  <div className="api-row" style={{ alignItems: "flex-end", marginBottom: 16 }}>
-                    <div className="api-field" style={{ flex: 1 }} ref={dropdownRef}>
-                      <label>Selected model</label>
-                      {models.length > 0 ? (
-                        <div style={{ position: "relative" }}>
-                          <button
-                            type="button"
-                            onClick={() => setModelListOpen((v) => !v)}
-                            style={{
-                              height: 34,
-                              width: "100%",
-                              background: "var(--s1, var(--s2))",
-                              border: "1px solid var(--border)",
-                              borderRadius: 6,
-                              padding: "0 10px",
-                              color: "var(--t1)",
-                              fontFamily: "var(--font-ui)",
-                              fontSize: 12,
-                              textAlign: "left",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              cursor: "pointer",
-                            }}
-                          >
-                            <span
-                              style={{
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {models.find((m) => m.id === form.model)?.label || form.model} (
-                              {form.model})
-                            </span>
-                            <span style={{ color: "var(--t3)", marginLeft: 8 }}>
-                              <Icons.Caret direction="d" />
-                            </span>
-                          </button>
-                          {modelListOpen && (
-                            <div
-                              style={{
-                                position: "absolute",
-                                left: 0,
-                                right: 0,
-                                top: 38,
-                                zIndex: 40,
-                                background: "var(--surface)",
-                                border: "1px solid var(--border2)",
-                                borderRadius: 6,
-                                boxShadow: "0 12px 28px rgba(0,0,0,.35)",
-                                overflow: "hidden",
-                              }}
-                            >
-                              <input
-                                type="text"
-                                placeholder="Search models..."
-                                value={modelSearch}
-                                onChange={(e) => setModelSearch(e.target.value)}
-                                autoFocus
-                                style={{
-                                  height: 30,
-                                  fontSize: 11,
-                                  background: "var(--s2)",
-                                  border: 0,
-                                  borderBottom: "1px solid var(--border)",
-                                  borderRadius: 0,
-                                  padding: "0 8px",
-                                  color: "var(--t1)",
-                                  fontFamily: "var(--font-ui)",
-                                  width: "100%",
-                                  boxSizing: "border-box",
-                                  outline: "none",
-                                }}
-                              />
-                              <div style={{ maxHeight: 150, overflowY: "auto" }}>
-                                {filteredModels.map((m) => (
-                                  <div
-                                    key={m.id}
-                                    onClick={() => {
-                                      updateForm("model", m.id);
-                                      setModelListOpen(false);
-                                      setModelSearch("");
-                                    }}
-                                    style={{
-                                      padding: "8px 10px",
-                                      fontSize: 12,
-                                      color:
-                                        m.id === form.model
-                                          ? "var(--accent-t)"
-                                          : "var(--t2)",
-                                      background:
-                                        m.id === form.model ? "var(--s2)" : "transparent",
-                                      cursor: "pointer",
-                                    }}
-                                  >
-                                    {m.label} ({m.id})
-                                  </div>
-                                ))}
-                                {filteredModels.length === 0 && (
-                                  <div
-                                    style={{
-                                      padding: "8px 10px",
-                                      fontSize: 11,
-                                      color: "var(--t4)",
-                                    }}
-                                  >
-                                    No models match
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                          {!models.find((m) => m.id === form.model) && form.model && (
-                            <div style={{ marginTop: 4, fontSize: 11, color: "var(--t3)" }}>
-                              Custom model: {form.model}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <input
-                          type="text"
-                          value={form.model}
-                          onChange={(e) => updateForm("model", e.target.value)}
-                          placeholder="Model ID (e.g. gpt-4o)"
-                        />
-                      )}
-                    </div>
-                    <button
-                      onClick={() => void handleFetchModels()}
-                      style={{
-                        background: "var(--s2)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 6,
-                        cursor: "pointer",
-                        fontSize: 12,
-                        color: "var(--t2)",
-                        fontFamily: "var(--font-ui)",
-                        padding: "0 12px",
-                        height: 34,
-                        flexShrink: 0,
-                        transition: "background .1s,color .1s",
-                        whiteSpace: "nowrap",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 4,
-                      }}
-                    >
-                      {fetching ? (
-                        <>
-                          <span className="gen-cur" style={{ display: "inline-flex" }}>
-                            <span />
-                            <span />
-                            <span />
-                          </span>{" "}
-                          Loading...
-                        </>
-                      ) : (
-                        <>
-                          <Icons.Regen /> Refresh list
-                        </>
-                      )}
-                    </button>
-                  </div>
-                  {fetchError && (
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "oklch(0.72 0.14 70)",
-                        marginTop: -8,
-                        marginBottom: 12,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                      >
-                        <circle cx="8" cy="8" r="6.5" />
-                        <line x1="8" y1="5" x2="8" y2="9" />
-                        <circle cx="8" cy="11.5" r="0.8" fill="currentColor" stroke="none" />
-                      </svg>
-                      {fetchError}
-                    </div>
-                  )}
-
-                  <ProviderSamplerFields form={form} updateForm={updateForm} />
-                </>
-              )}
-            </div>
+                <ProviderSamplerFields form={form} updateForm={updateForm} />
+              </>
+            )}
           </div>
         </div>
 
+        {/* FOOTER */}
         <ProviderActionFooter
           providerProfiles={providerProfiles}
           saveState={saveState}

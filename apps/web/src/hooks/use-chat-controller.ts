@@ -9,10 +9,13 @@ import {
   forkBranch,
   logClientSendDebug,
   regenerateChatMessage,
+  regenerateChatMessageStream,
   selectMessageVariant,
   sendChatMessage,
+  sendChatMessageStream,
   type AppMessage,
   type AppSnapshot,
+  type ChatGenerationStatus,
 } from "../app-client.js";
 
 export interface ChatControllerDeps {
@@ -24,6 +27,8 @@ export interface ChatControllerDeps {
   getCanSendViaActiveProfile: () => boolean;
   getEditingDraft: () => string;
   getEditingMessageId: () => string | null;
+  getGenerationStatus: () => ChatGenerationStatus;
+  getStreamResponse: () => boolean;
   // write / mutate
   setSnapshot: (chatId: ChatId, next: AppSnapshot) => void;
   setDraft: (draft: string) => void;
@@ -34,6 +39,7 @@ export interface ChatControllerDeps {
   setEditingMessageId: (id: string | null) => void;
   setEditingDraft: (draft: string) => void;
   setSelectedTraceId: (id: string | null) => void;
+  setGenerationStatus: (status: ChatGenerationStatus) => void;
 }
 
 export interface ChatControllerActions {
@@ -60,6 +66,8 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     getCanSendViaActiveProfile,
     getEditingDraft,
     getEditingMessageId,
+    getGenerationStatus,
+    getStreamResponse,
     setSnapshot,
     setDraft,
     setIsSending,
@@ -69,6 +77,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     setEditingMessageId,
     setEditingDraft,
     setSelectedTraceId,
+    setGenerationStatus,
   } = deps;
 
   const abortRef = useRef<AbortController | null>(null);
@@ -114,11 +123,25 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     setIsSending(true);
 
     try {
-      void logClientSendDebug("web.hook.handleSend.request", { activeChatId });
-      const nextSnapshot = await sendChatMessage(activeChatId, { content: trimmed }, { signal: controller.signal });
-      setSnapshot(activeChatId, nextSnapshot);
-      setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
-      void logClientSendDebug("web.hook.handleSend.success", { activeChatId });
+      if (getStreamResponse()) {
+        void logClientSendDebug("web.hook.handleSend.stream-request", { activeChatId, generationStatus: getGenerationStatus() });
+        let collected = "";
+        await sendChatMessageStream(activeChatId, { content: trimmed }, {
+          signal: controller.signal,
+          onStatus: setGenerationStatus,
+          onChunk: (delta) => {
+            collected += delta;
+          },
+        });
+        setSnapshot(activeChatId, await fetchChat(activeChatId));
+        void logClientSendDebug("web.hook.handleSend.stream-success", { activeChatId, replyLength: collected.length });
+      } else {
+        void logClientSendDebug("web.hook.handleSend.request", { activeChatId });
+        const nextSnapshot = await sendChatMessage(activeChatId, { content: trimmed }, { signal: controller.signal });
+        setSnapshot(activeChatId, nextSnapshot);
+        setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
+        void logClientSendDebug("web.hook.handleSend.success", { activeChatId });
+      }
     } catch (error) {
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleSend.cancelled", { activeChatId });
@@ -215,9 +238,23 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     setMessageActionId(messageId);
     setChatNotice("");
     try {
-      const nextSnapshot = await regenerateChatMessage(activeChatId, messageId, { signal: controller.signal });
-      setSnapshot(activeChatId, nextSnapshot);
-      setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
+      if (getStreamResponse()) {
+        void logClientSendDebug("web.hook.handleRegenerate.stream-request", { activeChatId, messageId, generationStatus: getGenerationStatus() });
+        let collected = "";
+        await regenerateChatMessageStream(activeChatId, messageId, {
+          signal: controller.signal,
+          onStatus: setGenerationStatus,
+          onChunk: (delta) => {
+            collected += delta;
+          },
+        });
+        setSnapshot(activeChatId, await fetchChat(activeChatId));
+        void logClientSendDebug("web.hook.handleRegenerate.stream-success", { activeChatId, messageId, replyLength: collected.length });
+      } else {
+        const nextSnapshot = await regenerateChatMessage(activeChatId, messageId, { signal: controller.signal });
+        setSnapshot(activeChatId, nextSnapshot);
+        setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
+      }
     } catch (error) {
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleRegenerate.cancelled", { activeChatId, messageId });

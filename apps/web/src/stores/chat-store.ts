@@ -8,6 +8,7 @@ export interface ChatState {
   snapshot: AppSnapshot | null;
   draft: string;
   isSending: boolean;
+  generationStatus: import("../app-client.js").ChatGenerationStatus;
   selectedTraceId: string | null;
   editingMessageId: string | null;
   editingDraft: string;
@@ -28,6 +29,7 @@ export interface ChatActions {
   setEditingDraft: (draft: string) => void;
   setMessageActionId: (id: string | null) => void;
   setPendingUserMessageContent: (content: string | null) => void;
+  setGenerationStatus: (status: import("../app-client.js").ChatGenerationStatus) => void;
   setChatNotice: (notice: string) => void;
 }
 
@@ -39,6 +41,7 @@ export const useChatStore = create<ChatStore>()((set) => ({
   snapshot: null,
   draft: "",
   isSending: false,
+  generationStatus: "idle" as import("../app-client.js").ChatGenerationStatus,
   selectedTraceId: null,
   editingMessageId: null,
   editingDraft: "",
@@ -57,5 +60,6 @@ export const useChatStore = create<ChatStore>()((set) => ({
   setEditingDraft: (draft) => set({ editingDraft: draft }),
   setMessageActionId: (id) => set({ messageActionId: id }),
   setPendingUserMessageContent: (content) => set({ pendingUserMessageContent: content }),
+  setGenerationStatus: (status) => set({ generationStatus: status }),
   setChatNotice: (notice) => set({ chatNotice: notice }),
 }));
