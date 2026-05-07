@@ -5,6 +5,7 @@ import type { ChatListItem } from "../app-client.js";
 import type { CharacterTab } from "./app-shell-types.js";
 import { initials } from "./app-shell-helpers.js";
 import { Icons } from "./shared/icons.js";
+import { cn } from "../lib/cn.js";
 
 interface SidebarProps {
   sidebarCollapsed: boolean;
@@ -92,10 +93,20 @@ export function Sidebar(input: SidebarProps) {
   }
 
   return (
-    <aside className={`sidebar${input.sidebarCollapsed ? " col" : ""}`}>
-      <div className="sb-head">
-        <div className="logo-mark">r</div>
-        {!input.sidebarCollapsed && <div className="app-name">Claw Tavern</div>}
+    <div className={cn(
+      input.sidebarCollapsed ? 'w-[48px] min-w-[48px]' : 'w-[var(--sw)] min-w-[var(--sw)]',
+      'shrink-0 overflow-hidden border-r border-border bg-surface flex flex-col transition-all duration-[180ms] ease-out'
+    )}>
+      <div className={cn(
+        "flex shrink-0 items-center gap-2.5 border-b border-border px-3",
+        input.sidebarCollapsed ? 'justify-center' : ''
+      )} style={{ height: 52 }}>
+        {!input.sidebarCollapsed && (
+          <div className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[5px] bg-accent font-body text-[13px] font-medium italic text-on-accent">r</div>
+        )}
+        {!input.sidebarCollapsed && (
+          <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap font-body text-[14px] font-medium tracking-[-0.01em] text-t1">Claw Tavern</span>
+        )}
         <button
           className="iBtn"
           aria-label={input.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -117,9 +128,9 @@ export function Sidebar(input: SidebarProps) {
             onChange={onFilePicked}
           />
 
-          <section className="sb-sec">
-            <div style={{ display: "flex", alignItems: "center", paddingRight: 10 }}>
-              <div className="sb-lbl" style={{ flex: 1 }}>Characters</div>
+          <section className="border-b border-border py-1.5">
+            <div className="flex items-center pr-2.5">
+              <div className="px-[13px] pb-[5px] pt-1 text-[calc(var(--ui-fs)-4px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ flex: 1 }}>Characters</div>
               <button className="iBtn" style={{ width: 20, height: 20 }} onClick={triggerImport} title="Import character (PNG/JSON)">
                 <Icons.Import />
               </button>
@@ -128,7 +139,7 @@ export function Sidebar(input: SidebarProps) {
               </button>
             </div>
             {input.characterTabs.length === 0 ? (
-              <div style={{ padding: "16px 14px", textAlign: "center", color: "var(--t3)", fontSize: 12 }}>
+              <div className="px-3.5 py-5 text-center text-t3 text-xs leading-relaxed">
                 No characters yet — import a card to start.
               </div>
             ) : (
@@ -139,8 +150,11 @@ export function Sidebar(input: SidebarProps) {
                 return (
                   <div
                     key={character.id}
-                    className={`sb-item${isActive ? " act" : ""}`}
-                    style={{ position: "relative", zIndex: menuOpen ? 100 : 1, cursor: "pointer" }}
+                    className={cn(
+                      'group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded text-[calc(var(--ui-fs)-1px)] transition-colors duration-100 hover:bg-s2 hover:text-t1',
+                      isActive ? 'bg-accent-dim text-accent-t' : 'text-t2'
+                    )}
+                    style={{ position: "relative", zIndex: menuOpen ? 100 : 1, padding: '6px 10px' }}
                     onClick={() => {
                       if (character.chatId) {
                         input.onSwitchChat(character.chatId);
@@ -149,14 +163,18 @@ export function Sidebar(input: SidebarProps) {
                       }
                     }}
                   >
-                    <span className={`sb-ava${isActive ? " on" : ""}`}>{initials(character.name)}</span>
-                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span className={cn(
+                      'flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full font-ui text-[calc(var(--ui-fs)-3px)] not-italic avatar-fallback initials crop-framing',
+                      isActive ? 'bg-accent text-on-accent' : 'bg-s3 text-t2'
+                    )}>{initials(character.name)}</span>
+                    <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                       {character.name}
                     </span>
+
                     {!menuOpen && (
-                      <div className="sb-char-acts">
+                      <div className="absolute right-1 top-1/2 flex -translate-y-1/2 gap-0.5 rounded pl-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
                         <button
-                          className="sb-chat-btn"
+                          className="flex h-[22px] w-[22px] scale-90 items-center justify-center rounded text-t3 transition-colors duration-100 hover:text-t1"
                           aria-label="Character actions"
                           title="Character actions"
                           onClick={(event) => {
@@ -171,16 +189,18 @@ export function Sidebar(input: SidebarProps) {
                         </button>
                       </div>
                     )}
+
                     {menuOpen && charMenuPos && createPortal(
                       <div
-                        className="sb-chat-menu-popover"
+                        className="absolute z-[200] w-[190px] rounded-md border border-border2 bg-surface py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
                         ref={charMenuRef}
                         onClick={(event) => event.stopPropagation()}
                         style={{ top: charMenuPos.top, right: charMenuPos.right }}
                       >
                         <div
-                          className="sb-menu-item"
+                          className="flex cursor-pointer items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
                           role="menuitem"
+                          style={{ padding: '7px 12px' }}
                           onClick={() => {
                             setCharMenuId(null); setCharMenuPos(null);
                             input.onExportCharacter(character.id);
@@ -189,8 +209,9 @@ export function Sidebar(input: SidebarProps) {
                           <Icons.Download /> Export
                         </div>
                         <div
-                          className="sb-menu-item"
+                          className="flex cursor-pointer items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
                           role="menuitem"
+                          style={{ padding: '7px 12px' }}
                           onClick={() => {
                             setCharMenuId(null); setCharMenuPos(null);
                             input.onArchiveCharacter(character.id);
@@ -198,10 +219,11 @@ export function Sidebar(input: SidebarProps) {
                         >
                           <Icons.Book /> Archive
                         </div>
-                        <div className="sb-menu-sep" />
+                        <div className="my-1 h-px bg-border" />
                         <div
-                          className="sb-menu-item danger"
+                          className="flex cursor-pointer items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-danger-text transition-colors duration-100 hover:bg-danger-dim hover:text-danger-text [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
                           role="menuitem"
+                          style={{ padding: '7px 12px' }}
                           onClick={() => {
                             setCharMenuId(null); setCharMenuPos(null);
                             input.onRequestDestructiveConfirm({
@@ -223,9 +245,9 @@ export function Sidebar(input: SidebarProps) {
             )}
           </section>
 
-          <section className="sb-sec grow">
-            <div style={{ display: "flex", alignItems: "center", paddingRight: 10 }}>
-              <div className="sb-lbl" style={{ flex: 1 }}>Chats</div>
+          <section className="flex-1 overflow-y-auto border-b-0 py-1.5" style={{ paddingLeft: 0, paddingRight: 0 }}>
+            <div className="flex items-center pr-2.5">
+              <div className="px-[13px] pb-[5px] pt-1 text-[calc(var(--ui-fs)-4px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ flex: 1 }}>Chats</div>
               <button className="iBtn" style={{ width: 20, height: 20 }} onClick={triggerImport} title="Import chat (JSONL)">
                 <Icons.Import />
               </button>
@@ -238,7 +260,7 @@ export function Sidebar(input: SidebarProps) {
               </button>
             </div>
             {input.chats.length === 0 ? (
-              <div style={{ padding: "20px 14px", textAlign: "center", color: "var(--t3)", fontSize: 12, lineHeight: 1.5 }}>
+              <div className="px-3.5 py-5 text-center text-t3 text-xs leading-relaxed">
                 Send a message to start a chat.
               </div>
             ) : (
@@ -250,13 +272,17 @@ export function Sidebar(input: SidebarProps) {
                 return (
                   <div
                     key={chat.id}
-                    className={`sb-chat${isActive ? " act" : ""}`}
-                    style={{ position: "relative", zIndex: chatMenuOpen || branchPopOpen ? 100 : 1, cursor: "pointer" }}
+                    className={cn(
+                      'group relative mx-1 flex cursor-pointer flex-col rounded transition-colors duration-100 hover:bg-s2',
+                      isActive && 'bg-accent-dim'
+                    )}
+                    style={{ position: "relative", zIndex: chatMenuOpen || branchPopOpen ? 100 : 1, cursor: "pointer", padding: '6px 10px' }}
                     onClick={() => input.onSwitchChat(chat.id)}
                   >
                     {input.renamingChatId === chat.id ? (
                       <input
-                        className="sb-chat-rename-input"
+                        className="mb-px w-full rounded border border-accent bg-bg font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none"
+                        style={{ padding: '2px 5px' }}
                         value={input.renameDraft}
                         autoFocus
                         onChange={(event) => input.onRenameDraftChange(event.target.value)}
@@ -277,15 +303,18 @@ export function Sidebar(input: SidebarProps) {
                         }}
                       />
                     ) : (
-                      <div className="sb-ct">{chat.title}</div>
+                      <div className={cn(
+                        'overflow-hidden text-ellipsis whitespace-nowrap pr-4 text-[calc(var(--ui-fs)-1px)] text-t1',
+                        isActive && 'text-accent-t'
+                      )}>{chat.title}</div>
                     )}
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 1 }}>
-                      <div className="sb-cm" style={{ marginTop: 0 }}>
+                    <div className="mt-px flex items-center gap-1.5">
+                      <div className="text-[calc(var(--ui-fs)-3px)] text-t3">
                         {chat.characterName} · {chat.messageCount} msgs
                       </div>
                       {isActive && branchCount > 0 && (
                         <div
-                          className="sb-quick-branch"
+                          className="inline-flex cursor-pointer items-center gap-[3px] rounded px-1 py-px font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3 transition-colors duration-100 hover:bg-border hover:text-t1 [&_svg]:h-2.5 [&_svg]:w-2.5"
                           onClick={(event) => {
                             event.stopPropagation();
                             setBranchPopId(branchPopOpen ? null : chat.id);
@@ -299,9 +328,12 @@ export function Sidebar(input: SidebarProps) {
                     </div>
 
                     {!chatMenuOpen && (
-                      <div className="sb-chat-acts">
+                      <div className="absolute right-1 top-2 flex gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
                         <button
-                          className="sb-chat-btn"
+                          className={cn(
+                            'flex h-[22px] w-[22px] scale-90 items-center justify-center rounded text-t3 transition-colors duration-100 hover:text-t1',
+                            isActive && 'hover:text-accent-t'
+                          )}
                           aria-label="Chat actions"
                           title="Chat actions"
                           onClick={(event) => {
@@ -318,14 +350,15 @@ export function Sidebar(input: SidebarProps) {
 
                     {chatMenuOpen && chatMenuPos && createPortal(
                       <div
-                        className="sb-chat-menu-popover"
+                        className="absolute z-[200] w-[190px] rounded-md border border-border2 bg-surface py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
                         ref={chatMenuRef}
                         onClick={(event) => event.stopPropagation()}
                         style={{ top: chatMenuPos.top, right: chatMenuPos.right }}
                       >
                         <div
-                          className="sb-menu-item"
+                          className="flex cursor-pointer items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
                           role="menuitem"
+                          style={{ padding: '7px 12px' }}
                           onClick={() => {
                             setChatMenuId(null); setChatMenuPos(null);
                             input.onRenameStart(chat.id, chat.title);
@@ -334,8 +367,9 @@ export function Sidebar(input: SidebarProps) {
                           <Icons.Edit /> Rename
                         </div>
                         <div
-                          className="sb-menu-item"
+                          className="flex cursor-pointer items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
                           role="menuitem"
+                          style={{ padding: '7px 12px' }}
                           onClick={() => {
                             setChatMenuId(null); setChatMenuPos(null);
                             input.onCloneChat(chat.id);
@@ -344,8 +378,9 @@ export function Sidebar(input: SidebarProps) {
                           <Icons.Copy /> Clone chat
                         </div>
                         <div
-                          className="sb-menu-item"
+                          className="flex cursor-pointer items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
                           role="menuitem"
+                          style={{ padding: '7px 12px' }}
                           onClick={() => {
                             setChatMenuId(null); setChatMenuPos(null);
                             input.onExportChatJsonl(chat.id);
@@ -353,11 +388,21 @@ export function Sidebar(input: SidebarProps) {
                         >
                           <Icons.Download /> Export (JSONL)
                         </div>
-                        <div className="sb-menu-item disabled" role="menuitem" aria-disabled="true" title="Markdown export is deferred; use JSONL export">
+                        <div
+                          className="flex cursor-pointer items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 opacity-45 cursor-not-allowed [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
+                          role="menuitem"
+                          aria-disabled="true"
+                          title="Markdown export is deferred; use JSONL export"
+                        >
                           <Icons.Download /> Export Markdown
                         </div>
                         <div
-                          className={`sb-menu-item${chat.id === input.activeChatId && input.activePromptTraceId ? "" : " disabled"}`}
+                          className={cn(
+                            'flex cursor-pointer items-center gap-2 text-[calc(var(--ui-fs)-2px)] transition-colors duration-100 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0',
+                            chat.id === input.activeChatId && input.activePromptTraceId
+                              ? 'text-t2 hover:bg-s2 hover:text-t1'
+                              : 'text-t2 opacity-45 cursor-not-allowed'
+                          )}
                           role="menuitem"
                           aria-disabled={chat.id !== input.activeChatId || !input.activePromptTraceId}
                           title={chat.id !== input.activeChatId || !input.activePromptTraceId ? "No prompt trace available for this chat" : ""}
@@ -370,10 +415,11 @@ export function Sidebar(input: SidebarProps) {
                         >
                           <Icons.Download /> Export Prompt Trace
                         </div>
-                        <div className="sb-menu-sep" />
+                        <div className="my-1 h-px bg-border" />
                         <div
-                          className="sb-menu-item danger"
+                          className="flex cursor-pointer items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-danger-text transition-colors duration-100 hover:bg-danger-dim hover:text-danger-text [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
                           role="menuitem"
+                          style={{ padding: '7px 12px' }}
                           onClick={() => {
                             setChatMenuId(null); setChatMenuPos(null);
                             input.onRequestDestructiveConfirm({
@@ -391,8 +437,8 @@ export function Sidebar(input: SidebarProps) {
                     )}
 
                     {branchPopOpen && isActive && (
-                      <div className="sb-chat-branches" ref={branchPopRef} onClick={(event) => event.stopPropagation()}>
-                        <div style={{ fontSize: 9, textTransform: "uppercase", color: "var(--t3)", marginBottom: 4, paddingLeft: 4, fontWeight: 500, letterSpacing: ".05em" }}>
+                      <div className="mt-1.5 flex cursor-default flex-col gap-0.5 border-t border-dashed border-border2 pt-1.5" ref={branchPopRef} onClick={(event) => event.stopPropagation()}>
+                        <div className="mb-1 pl-1 text-[9px] font-medium uppercase tracking-[0.05em] text-t3">
                           Timeline branches
                         </div>
                         {input.branches.map((branch) => {
@@ -400,21 +446,28 @@ export function Sidebar(input: SidebarProps) {
                           return (
                             <div
                               key={branch.id}
-                              className={`sb-branch-item${isActiveBranch ? " act" : ""}`}
+                              className={cn(
+                                'group/br relative cursor-pointer rounded pl-3.5 pr-2 transition-colors duration-100 before:absolute before:left-[5px] before:top-[9px] before:h-1 before:w-1 before:rounded-full before:bg-border2 before:transition-colors hover:bg-s2 hover:before:bg-t3',
+                                isActiveBranch && 'bg-accent-dim before:bg-accent'
+                              )}
+                              style={{ paddingTop: 5, paddingBottom: 5 }}
                               onClick={(event) => {
                                 event.stopPropagation();
                                 input.onActivateBranch(branch.id);
                               }}
                             >
-                              <div className="sb-br-title">{branch.label || "Unnamed branch"}</div>
-                              <div className="sb-br-preview">
+                              <div className={cn(
+                                'mb-px min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] font-medium text-t2',
+                                isActiveBranch && 'text-accent-t'
+                              )}>{branch.label || "Unnamed branch"}</div>
+                              <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] italic text-t3">
                                 {isActiveBranch ? "Active" : "Tap to switch"}
                               </div>
                             </div>
                           );
                         })}
                         <div
-                          className="sb-branch-action"
+                          className="mt-0.5 cursor-pointer rounded border-t border-border px-2 py-1.5 text-center text-[calc(var(--ui-fs)-3px)] italic text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1"
                           role="button"
                           tabIndex={0}
                           onClick={(event) => {
@@ -430,9 +483,11 @@ export function Sidebar(input: SidebarProps) {
                           const activeIsRoot = rootBranch != null && input.activeBranchId === rootBranch.id;
                           const canAct = !activeIsRoot && input.branches.length > 1;
                           return (
-                            <div className={`sb-branch-action${canAct ? "" : " disabled"}`}
+                            <div className={cn(
+                              'cursor-pointer rounded border-t border-border px-2 py-1.5 text-center text-[calc(var(--ui-fs)-3px)] italic text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1',
+                              !canAct && 'opacity-45 cursor-not-allowed'
+                            )}
                               role="button" tabIndex={0} aria-disabled={!canAct}
-                              style={canAct ? undefined : { opacity: 0.45, cursor: "not-allowed" }}
                               title={canAct ? "" : "Switch to a non-main branch first"}
                               onClick={(event) => {
                                 if (!canAct) return;
@@ -458,9 +513,10 @@ export function Sidebar(input: SidebarProps) {
             )}
           </section>
 
-          <section className="sb-foot">
+          <section className="mt-auto shrink-0 border-t border-border px-1 py-1.5">
             <div
-              className="sb-item"
+              className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
+              style={{ padding: '6px 10px' }}
               role="button"
               tabIndex={0}
               onClick={input.onOpenPromptManager}
@@ -471,13 +527,14 @@ export function Sidebar(input: SidebarProps) {
                 }
               }}
             >
-              <span className="sb-ava" style={{ background: "transparent", color: "var(--t2)" }}>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent font-ui text-[calc(var(--ui-fs)-3px)] not-italic text-t2">
                 <Icons.Terminal />
               </span>
               <span>Prompt Manager</span>
             </div>
             <div
-              className="sb-item"
+              className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
+              style={{ padding: '6px 10px' }}
               role="button"
               tabIndex={0}
               onClick={input.onOpenPersonaManager}
@@ -488,15 +545,15 @@ export function Sidebar(input: SidebarProps) {
                 }
               }}
             >
-              <span className="sb-ava">Y</span>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-3px)] not-italic text-t2">{initials(input.personaName)}</span>
               <span>{input.personaName}</span>
-              <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--t3)", flexShrink: 0 }}>
+              <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">
                 Your Persona
               </span>
             </div>
           </section>
         </>
       )}
-    </aside>
+    </div>
   );
 }

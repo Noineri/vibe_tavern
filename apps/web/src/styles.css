@@ -291,7 +291,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .app{display:flex;height:100vh;overflow:hidden}
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 
-/* ── Sidebar ── */
+/* ═══ Sidebar — ported to Tailwind in VP-W2-SIDEBAR ═══
 .sidebar{
   width:var(--sw);min-width:var(--sw);
   background:var(--surface);border-right:1px solid var(--border);
@@ -302,8 +302,10 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .sb-head{height:52px;display:flex;align-items:center;padding:0 10px;border-bottom:1px solid var(--border);gap:9px;flex-shrink:0}
 .logo-mark{width:26px;height:26px;background:var(--accent);border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:var(--font-body);font-style:italic;font-size:13px;color:#fff;font-weight:500}
 .app-name{font-family:var(--font-body);font-size:14px;font-weight:500;color:var(--t1);flex:1;white-space:nowrap;overflow:hidden;letter-spacing:-.01em}
+═══ End Sidebar ═══ */
 .iBtn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:5px;cursor:pointer;color:var(--t3);transition:background .1s,color .1s;flex-shrink:0}
 .iBtn:hover{background:var(--s2);color:var(--t1)}
+/* ═══ Sidebar (cont.) ═══
 .sb-sec{padding:6px 0;border-bottom:1px solid var(--border)}
 .sb-sec.grow{flex:1;overflow-y:auto;border-bottom:none}
 .sb-lbl{font-size:calc(var(--ui-fs) - 4px);text-transform:uppercase;letter-spacing:.08em;color:var(--t3);padding:4px 13px 5px;font-weight:500}
@@ -320,6 +322,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .sb-cm{font-size:11px;color:var(--t3);margin-top:1px}
 .sb-chat.act .sb-ct{color:var(--accent-t)}
 .sb-foot{padding:6px 4px;border-top:1px solid var(--border);margin-top:auto;flex-shrink:0}
+═══ End Sidebar ═══ */
 
 /* ── Header ── */
 .chat-header{height:52px;display:flex;align-items:center;padding:0 20px;border-bottom:1px solid var(--border);gap:12px;flex-shrink:0;background:var(--surface)}
@@ -568,7 +571,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .loading-shimmer{background:linear-gradient(90deg,var(--s2) 25%,var(--s3) 50%,var(--s2) 75%);background-size:200% 100%;animation:shimmer 1.4s ease infinite;border-radius:4px}
 .loading-row{height:14px;border-radius:3px;margin-bottom:10px}
 
-/* ── D2: sidebar baseline (search, archive, char/chat menus, branches, rename) ── */
+/* ═══ Sidebar extended (D2) — moved to Tailwind in VP-W2-SIDEBAR ═══
 .sb-tools{display:flex;flex-direction:column;gap:6px;padding:4px 8px 8px}
 .sb-search{display:flex;align-items:center;gap:6px;background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--t3)}
 .sb-search input{min-width:0;flex:1;background:transparent;border:0;outline:0;color:var(--t1);font-size:12px;font-family:var(--font-ui)}
@@ -615,6 +618,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .sb-menu-item.danger:hover:not(.disabled){background:rgba(220,50,50,0.1);color:oklch(0.75 0.14 25)}
 .sb-menu-item.disabled{opacity:.45;cursor:not-allowed}
 .sb-menu-sep{height:1px;background:var(--border);margin:4px 0}
+═══ End Sidebar extended ═══ */
 
 /* ── R3D2: ProviderModal additions ── */
 .unsaved-bar{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--t2);background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:6px 12px;margin-bottom:12px}
