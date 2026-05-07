@@ -127,6 +127,15 @@ export interface TestChatResponse {
   error?: string;
 }
 
+export type ChatGenerationStatus =
+  | "idle"
+  | "preparing"
+  | "waiting_full"
+  | "streaming"
+  | "aborting"
+  | "cancelled"
+  | "failed";
+
 type RpcResponse = { ok: boolean; status: number; json(): Promise<unknown>; text(): Promise<string> };
 
 async function unwrapRpc<T>(response: RpcResponse): Promise<T> {
@@ -297,6 +306,129 @@ export async function sendChatMessage(
   );
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);
+}
+
+export async function sendChatMessageStream(
+  chatId: ChatId,
+  input: { content: string },
+  opts: {
+    signal?: AbortSignal;
+    onStatus: (status: ChatGenerationStatus) => void;
+    onChunk: (delta: string) => void;
+  },
+): Promise<{ finishReason: string; usage?: Record<string, number> }> {
+  const baseUrl = getGatewayBaseUrl();
+  opts.onStatus("preparing");
+  const response = await fetch(`${baseUrl}/api/chats/${chatId}/messages/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    signal: opts.signal,
+  });
+
+  if (!response.ok) {
+    opts.onStatus("failed");
+    throw new Error(`Stream request failed: ${response.status}`);
+  }
+
+  opts.onStatus("streaming");
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response body");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finishReason = "stop";
+  let usage: Record<string, number> | undefined;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const data = line.slice(6);
+        if (data === "[DONE]") continue;
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.delta) opts.onChunk(parsed.delta);
+          if (parsed.finishReason) finishReason = parsed.finishReason;
+          if (parsed.usage) usage = parsed.usage;
+        } catch { /* skip malformed */ }
+      }
+      if (line.startsWith("event: abort")) {
+        opts.onStatus("cancelled");
+        return { finishReason: "cancelled", usage };
+      }
+    }
+  }
+
+  opts.onStatus("idle");
+  return { finishReason, usage };
+}
+
+export async function regenerateChatMessageStream(
+  chatId: ChatId,
+  messageId: string,
+  opts: {
+    signal?: AbortSignal;
+    onStatus: (status: ChatGenerationStatus) => void;
+    onChunk: (delta: string) => void;
+  },
+): Promise<{ finishReason: string; usage?: Record<string, number> }> {
+  const baseUrl = getGatewayBaseUrl();
+  opts.onStatus("preparing");
+  const response = await fetch(`${baseUrl}/api/chats/${chatId}/messages/${messageId}/regenerate/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal: opts.signal,
+  });
+
+  if (!response.ok) {
+    opts.onStatus("failed");
+    throw new Error(`Stream request failed: ${response.status}`);
+  }
+
+  opts.onStatus("streaming");
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response body");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finishReason = "stop";
+  let usage: Record<string, number> | undefined;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const data = line.slice(6);
+        if (data === "[DONE]") continue;
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.delta) opts.onChunk(parsed.delta);
+          if (parsed.finishReason) finishReason = parsed.finishReason;
+          if (parsed.usage) usage = parsed.usage;
+        } catch { /* skip malformed */ }
+      }
+      if (line.startsWith("event: abort")) {
+        opts.onStatus("cancelled");
+        return { finishReason: "cancelled", usage };
+      }
+    }
+  }
+
+  opts.onStatus("idle");
+  return { finishReason, usage };
 }
 
 export async function selectMessageVariant(

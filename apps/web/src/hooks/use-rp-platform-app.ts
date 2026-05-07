@@ -252,6 +252,9 @@ export function useRpPlatformApp() {
   const canSendViaActiveProfileRef = useRef(provider.canSendViaActiveProfile);
   canSendViaActiveProfileRef.current = provider.canSendViaActiveProfile;
 
+  const streamResponseRef = useRef(provider.activeProviderProfile?.streamResponse ?? connection.streamResponse);
+  streamResponseRef.current = provider.activeProviderProfile?.streamResponse ?? connection.streamResponse;
+
   function snapshotRefresh(chatId: ChatId, next: AppSnapshot): void {
     useChatStore.getState().setSnapshotForChat(chatId, next);
   }
@@ -273,6 +276,9 @@ export function useRpPlatformApp() {
     setEditingMessageId: useChatStore.getState().setEditingMessageId,
     setEditingDraft: useChatStore.getState().setEditingDraft,
     setSelectedTraceId: useChatStore.getState().setSelectedTraceId,
+    getGenerationStatus: () => useChatStore.getState().generationStatus,
+    getStreamResponse: () => streamResponseRef.current,
+    setGenerationStatus: useChatStore.getState().setGenerationStatus,
   });
 
   const character = useCharacterController({
