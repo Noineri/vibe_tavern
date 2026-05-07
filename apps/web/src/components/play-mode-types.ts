@@ -69,4 +69,9 @@ export interface InputAreaProps {
 export interface PlayModeProps {
   messageList: MessageListProps;
   inputArea: InputAreaProps;
+  avatarPanel?: {
+    src: string;
+    open: boolean;
+    onClose: () => void;
+  };
 }
