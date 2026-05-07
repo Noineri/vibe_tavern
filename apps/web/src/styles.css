@@ -1,35 +1,120 @@
+@import "tailwindcss/theme" layer(theme);
+@import "tailwindcss/utilities" layer(utilities);
+
 /*
  * Claw Tavern visual language.
- * Извлечено из rp_platform_plan/Maket.html.
- * Изменения: расширен селектор .api-field (добавлен textarea) — MAKET_GAPS §0.1.
+ * Источник палитры и фонтов: rp_platform_plan/maket_app/src/styles.css
  * Править только после синхронизации с макетом. См. GUIDE.md §8.
  */
+
+/* ─── Tailwind v4 theme registration ─── */
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-s2: var(--s2);
+  --color-s3: var(--s3);
+  --color-border: var(--border);
+  --color-border2: var(--border2);
+  --color-t1: var(--t1);
+  --color-t2: var(--t2);
+  --color-t3: var(--t3);
+  --color-t4: var(--t4);
+  --color-accent: var(--accent);
+  --color-accent-t: var(--accent-t);
+  --color-accent-dim: var(--accent-dim);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--on-accent);
+  --color-danger: var(--danger);
+  --color-danger-dim: var(--danger-dim);
+  --color-danger-text: var(--danger-text);
+  --color-success: var(--success);
+  --color-success-dim: var(--success-dim);
+  --color-success-text: var(--success-text);
+  --color-warning: var(--warning);
+  --color-warning-dim: var(--warning-dim);
+  --color-warning-text: var(--warning-text);
+  --color-info: var(--info);
+  --color-info-dim: var(--info-dim);
+  --color-info-text: var(--info-text);
+  --color-user-bg: var(--user-bg);
+  --font-ui: 'Inter', system-ui, sans-serif;
+  --font-body: 'Alegreya', Georgia, serif;
+  --animate-genp: genp 1.3s ease-in-out infinite;
+}
+
+@layer base {
+  html, body { font-family: var(--font-ui); }
+}
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 button{border:0;background:transparent;font:inherit;color:inherit}
 
+/* ─── Тёмная тема ─── */
 :root{
-  --bg:#0d0c0b;--surface:#131210;--s2:#1c1a17;--s3:#252220;
-  --border:#2d2925;--border2:#3a3530;
-  --t1:#e4ddd4;--t2:#9a9088;--t3:#5a534c;--t4:#3a342e;
-  --accent:oklch(0.72 0.14 75);--accent-t:oklch(0.78 0.12 75);
-  --accent-dim:rgba(212,168,50,0.1);--accent-hover:rgba(212,168,50,0.18);
-  --user-bg:#17191a;
-  --danger:oklch(0.62 0.2 25);--danger-dim:oklch(0.22 0.06 25);--danger-text:oklch(0.75 0.14 25);
-  --font-ui:'DM Sans',system-ui,sans-serif;
-  --font-body:'Lora',Georgia,serif;
-  --r:6px;--sw:248px;--mw:820px;--mfs:15.5px;--ui-fs:14px;
+  /* Фоны */
+  --bg:#141210;
+  --surface:#1f1d1a;
+  --s2:#272420;
+  --s3:#302c27;
+  /* Рамки */
+  --border:#36312c;
+  --border2:#423c36;
+  /* Текст */
+  --t1:#d1d0ba;
+  --t2:#a3988f;
+  --t3:#756a5f;
+  --t4:#4f473f;
+  /* Акцент (золотой) */
+  --accent:oklch(0.72 0.14 75);
+  --accent-t:oklch(0.78 0.12 75);
+  --accent-dim:rgba(212,168,50,0.1);
+  --accent-hover:rgba(212,168,50,0.18);
+  /* Фон сообщения пользователя */
+  --user-bg:#1a1816;
+  /* Опасность (красный) */
+  --danger:oklch(0.62 0.2 25);
+  --danger-dim:oklch(0.22 0.06 25);
+  --danger-text:oklch(0.75 0.14 25);
+  /* Успех (зелёный) */
+  --success:oklch(0.68 0.16 145);
+  --success-dim:oklch(0.28 0.06 145);
+  --success-text:oklch(0.78 0.14 145);
+  /* Инфо (синий) */
+  --info:oklch(0.6 0.15 250);
+  --info-dim:oklch(0.24 0.06 250);
+  /* Предупреждение (жёлтый) */
+  --warning:oklch(0.72 0.14 70);
+  --warning-dim:oklch(0.28 0.06 70);
+  --warning-text:oklch(0.78 0.12 70);
+  /* Общие */
+  --on-accent:#fff;
+  /* Размеры и геометрия */
+  --r:6px;--sw:248px;--mw:820px;--mfs:17px;--ui-fs:16px;
 }
+/* ─── Светлая тема ─── */
 :root.light{
-  --bg:#f7f4f0;--surface:#fdfaf6;--s2:#f0ece5;--s3:#e5e0d8;
-  --border:#ddd7ce;--border2:#ccc5bb;
-  --t1:#1c1914;--t2:#7a736a;--t3:#b0a89e;--t4:#d5cfc8;
-  --accent:oklch(0.52 0.14 75);--accent-t:oklch(0.46 0.14 75);
-  --accent-dim:rgba(155,116,18,0.08);--accent-hover:rgba(155,116,18,0.14);
+  --bg:#f7f0e6;
+  --surface:#d9cfc3;
+  --s2:#f0ece5;
+  --s3:#e5e0d8;
+  --border:#ddd7ce;
+  --border2:#ccc5bb;
+  --t1:#3a332d;
+  --t2:#7a736a;
+  --t3:#8a857f;
+  --t4:#d5cfc8;
+  --accent:oklch(0.52 0.14 75);
+  --accent-t:oklch(0.46 0.14 75);
+  --accent-dim:rgba(155,116,18,0.08);
+  --accent-hover:rgba(155,116,18,0.14);
   --user-bg:#edeae5;
   --danger:oklch(0.55 0.2 25);--danger-dim:oklch(0.92 0.04 25);--danger-text:oklch(0.45 0.16 25);
+  --success:oklch(0.5 0.14 145);--success-dim:oklch(0.92 0.04 145);--success-text:oklch(0.4 0.12 145);
+  --info:oklch(0.45 0.14 250);--info-dim:oklch(0.92 0.04 250);
+  --warning:oklch(0.55 0.14 70);--warning-dim:oklch(0.92 0.04 70);--warning-text:oklch(0.45 0.1 70);
+  --on-accent:#fff;
 }
-html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(--t1);overflow:hidden}
+html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 
 /* ── Layout ── */
