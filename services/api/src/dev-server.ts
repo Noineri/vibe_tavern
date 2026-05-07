@@ -16,7 +16,7 @@ import { createRuntimeStore } from "./session-runtime-store.js";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-const rootDir = resolve(import.meta.dir, '..', '..', '..');
+const rootDir = process.env.RP_PLATFORM_ROOT_DIR ?? resolve(import.meta.dir, '..', '..', '..');
 
 const host = process.env.RP_PLATFORM_API_HOST ?? "127.0.0.1";
 const port = Number(process.env.RP_PLATFORM_API_PORT ?? "8787");
