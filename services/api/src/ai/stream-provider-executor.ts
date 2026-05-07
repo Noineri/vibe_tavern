@@ -8,6 +8,7 @@
 import { streamText } from "ai";
 import type { ProviderExecutor, ProviderStreamResult, ProviderStreamChunk, ProviderStreamFinish } from "./provider-execution-types.js";
 import { mapProfileToSdkModel } from "./provider-profile-mapper.js";
+import { buildSamplerConfig } from "./sampler-mapper.js";
 import { cancelled, providerError } from "../errors.js";
 
 /**
@@ -89,14 +90,13 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
     const conversationMessages = messages.filter(m => m.role !== "system");
     const systemPrompt = systemMessages.map(m => m.content).join("\n\n") || undefined;
 
+    const samplerConfig = buildSamplerConfig(input.profile);
     const result = streamText({
       model,
       messages: conversationMessages,
       ...(systemPrompt ? { system: systemPrompt } : {}),
       abortSignal: input.signal,
-      temperature: input.profile.temperature ?? undefined,
-      topP: input.profile.topP ?? undefined,
-      maxTokens: input.profile.maxTokens ?? undefined,
+      ...samplerConfig,
     });
 
     const stream = mapTextStream(result.textStream);
