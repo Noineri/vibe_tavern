@@ -1,13 +1,35 @@
-@import "tailwindcss/theme" layer(theme);
-@import "tailwindcss/utilities" layer(utilities);
+@import "tailwindcss";
 
-/*
- * Claw Tavern visual language.
- * Источник палитры и фонтов: rp_platform_plan/maket_app/src/styles.css
- * Править только после синхронизации с макетом. См. GUIDE.md §8.
- */
+/* ─── Font faces ─── */
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter-VariableFont_opsz,wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter-Italic-VariableFont_opsz,wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Alegreya';
+  src: url('/fonts/Alegreya-VariableFont_wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Alegreya';
+  src: url('/fonts/Alegreya-Italic-VariableFont_wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
 
-/* ─── Tailwind v4 theme registration ─── */
 @theme {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
@@ -45,6 +67,154 @@
 @layer base {
   html, body { font-family: var(--font-ui); }
 }
+
+/* ─── Intentional globals ─── */
+/* ─── Тёмная тема ─── */
+:root{
+  /* Фоны */
+  --bg:#141210;             /* основной фон приложения */
+  --surface:#1f1d1a;        /* фон панелей, модалок, карточек */
+  --s2:#272420;             /* фон инпутов, кнопок, ячеек списков */
+  --s3:#302c27;             /* фон аватарок-инициалов, прогресс-баров */
+  /* Рамки */
+  --border:#36312c;         /* обычные разделители и рамки */
+  --border2:#423c36;        /* утолщённые/акцентные рамки */
+  /* Текст */
+  --t1:#d1d0ba;             /* основной текст */
+  --t2:#a3988f;             /* второстепенный текст (подписи, метаданные) */
+  --t3:#756a5f;             /* тусклый текст (плейсхолдеры, таймстампы) */
+  --t4:#4f473f;             /* самый тусклый (неактивные элементы) */
+  /* Акцент (золотой) */
+  --accent:oklch(0.72 0.14 75);            /* кнопки, переключатели */
+  --accent-t:oklch(0.78 0.12 75);          /* текст акцентного цвета */
+  --accent-dim:rgba(212,168,50,0.1);       /* фон выделенной строки/ячейки */
+  --accent-hover:rgba(212,168,50,0.18);    /* ховер по акцентному фону */
+  /* Фон сообщения пользователя */
+  --user-bg:#1a1816;
+  /* Опасность (красный) */
+  --danger:oklch(0.62 0.2 25);             /* кнопки удаления */
+  --danger-dim:oklch(0.22 0.06 25);        /* фон конфирма удаления */
+  --danger-text:oklch(0.75 0.14 25);       /* текст ошибки/предупреждения */
+  /* Успех (зелёный) */
+  --success:oklch(0.68 0.16 145);
+  --success-dim:oklch(0.28 0.06 145);
+  --success-text:oklch(0.78 0.14 145);
+  /* Инфо (синий) */
+  --info:oklch(0.6 0.15 250);
+  --info-dim:oklch(0.24 0.06 250);
+  /* Предупреждение (жёлтый) */
+  --warning:oklch(0.72 0.14 70);
+  --warning-dim:oklch(0.28 0.06 70);
+  --warning-text:oklch(0.78 0.12 70);
+  /* Общие */
+  --on-accent:#fff;         /* текст на акцентной кнопке */
+  --on-danger:#fff;         /* текст на кнопке удаления */
+  /* Размеры и геометрия */
+  --r:6px;                  /* базовый радиус скругления */
+  --sw:248px;               /* ширина боковой панели */
+  --mw:820px;               /* максимальная ширина сообщения в чате */
+  --mfs:17px;               /* размер шрифта сообщений (Alegreya, управляется твиками) */
+  --ui-fs:16px;             /* размер шрифта интерфейса (Inter, управляется твиками) */
+}
+/* ─── Светлая тема ─── */
+:root.light{
+  /* Фоны */
+  --bg:#f7f0e6;             /* основной фон */
+  --surface:#d9cfc3;        /* панели и модалки */
+  --s2:#f0ece5;             /* инпуты и ячейки */
+  --s3:#e5e0d8;             /* аватарки, прогресс-бары */
+  /* Рамки */
+  --border:#ddd7ce;
+  --border2:#ccc5bb;
+  /* Текст */
+  --t1:#3a332d;             /* основной */
+  --t2:#7a736a;             /* второстепенный */
+  --t3:#8a857f;             /* тусклый */
+  --t4:#d5cfc8;             /* самый тусклый */
+  /* Акцент (тёмное золото) */
+  --accent:oklch(0.52 0.14 75);
+  --accent-t:oklch(0.46 0.14 75);
+  --accent-dim:rgba(155,116,18,0.08);
+  --accent-hover:rgba(155,116,18,0.14);
+  /* Фон сообщения пользователя */
+  --user-bg:#edeae5;
+  /* Опасность */
+  --danger:oklch(0.55 0.2 25);--danger-dim:oklch(0.92 0.04 25);--danger-text:oklch(0.45 0.16 25);
+  /* Успех */
+  --success:oklch(0.5 0.14 145);--success-dim:oklch(0.92 0.04 145);--success-text:oklch(0.4 0.12 145);
+  /* Инфо */
+  --info:oklch(0.45 0.14 250);--info-dim:oklch(0.92 0.04 250);
+  /* Предупреждение */
+  --warning:oklch(0.55 0.14 70);--warning-dim:oklch(0.92 0.04 70);--warning-text:oklch(0.45 0.1 70);
+  /* Общие */
+  --on-accent:#fff;--on-danger:#fff;
+}
+html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+/* ── Live component classes (referenced in JSX) ── */
+.avatar-fallback{font-weight:600;letter-spacing:.01em}
+.avatar-fallback.broken-avatar,.avatar-fallback.broken-image{background:repeating-linear-gradient(135deg,var(--s2),var(--s2) 5px,var(--s3) 5px,var(--s3) 10px);color:var(--t3);border:1px solid var(--border2)}
+
+.group-badge-viktor{background:linear-gradient(135deg,oklch(0.3 0.08 250),oklch(0.42 0.1 250));color:oklch(0.82 0.08 250)}
+.group-badge-mira{background:linear-gradient(135deg,oklch(0.28 0.1 320),oklch(0.42 0.12 320));color:oklch(0.84 0.1 320)}
+
+.speaker-row{display:flex;align-items:center;gap:6px;color:var(--t3);font-size:calc(var(--ui-fs) - 3px)}
+
+.char-ava{
+  width:37px;height:37px;border-radius:50%;background:var(--s3);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-body);font-style:italic;font-size:calc(var(--ui-fs) - 1px);color:var(--t2);
+  overflow:hidden;cursor:pointer;transition:opacity .15s;border:1.5px solid transparent
+}
+.char-ava:hover{opacity:.85;border-color:var(--accent)}
+.char-ava img{width:100%;height:100%;object-fit:cover;object-position:top center}
+
+.gen-cur{display:inline-flex;align-items:center;gap:3px;margin-left:5px;vertical-align:middle}
+.gen-cur span{width:4px;height:4px;background:var(--accent);border-radius:50%;animation:genp 1.3s ease-in-out infinite}
+.gen-cur span:nth-child(2){animation-delay:.18s}
+.gen-cur span:nth-child(3){animation-delay:.36s}
+
+.tw-title{font-size:calc(var(--ui-fs) - 3px);font-weight:600;color:var(--t1);margin-bottom:13px;letter-spacing:.05em;text-transform:uppercase}
+
+.dirty-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-left:6px;flex-shrink:0;vertical-align:middle;}
+
+/* Keyframes */
+@keyframes genp{0%,60%,100%{opacity:.25;transform:scale(.75)}30%{opacity:1;transform:scale(1)}}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+@keyframes bootdot{0%,60%,100%{opacity:.25;transform:scale(.8)}30%{opacity:1;transform:scale(1);background:var(--accent);}}
+@keyframes toastIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes toastOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(8px)}}
+
+/* Responsive exceptions */
+@media(max-width:768px){
+  .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:200;transform:translateX(-100%);transition:transform .2s ease}
+  .sidebar.mobile-open{transform:translateX(0)}
+  .mobile-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199}
+  .chat-header{padding:0 12px;gap:8px}
+  .hdr-right{gap:4px}
+  .provider-badge{display:none}
+  .cache-badge{display:none}
+  .badge-low-priority{display:none}
+  .composer-mobile .input-row{flex-wrap:wrap}
+  .modal-overlay{padding:12px}
+  .modal-box{max-height:90vh;width:100%;border-radius:12px}
+  .build-nav-tabs{flex-wrap:wrap}
+  .badge-stack .hdr-badge-overflow{flex-wrap:wrap;gap:3px}
+}
+@media(max-width:480px){
+  .mem-badge span{display:none}
+  .mode-pill{font-size:calc(var(--ui-fs) - 3px);padding:2px 8px}
+  .char-sub{display:none}
+  .sb-item{font-size:calc(var(--ui-fs) - 2px)}
+  .small-viewport .hdr-right{gap:3px}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Legacy CSS classes — kept as reference during Tailwind migration.
+   Each class is commented out when its consuming component is ported.
+   Search by component name in comments to find related classes.
+   ═══════════════════════════════════════════════════════════════════════ */
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 button{border:0;background:transparent;font:inherit;color:inherit}
