@@ -110,6 +110,22 @@ async function ensureSeedData() {
       });
       return result.snapshot;
     },
+    regenerateMessageStream: async function*(chatId: string, messageId: string, _body: unknown, signal?: AbortSignal) {
+      const profile = await providerProfileService.resolveActiveProviderProfile();
+      if (!profile) {
+        throw validation("No active provider profile. Activate one in Provider settings.");
+      }
+      if (!profile.defaultModel) {
+        throw validation("Active provider profile has no default model. Pick a model and save the profile.");
+      }
+      yield* liveChatOrchestrator.regenerateMessageStream({
+        chatId,
+        messageId,
+        profile,
+        model: profile.defaultModel,
+        signal,
+      });
+    },
     selectVariant: (chatId: string, messageId: string, variantIndex: number) =>
       chatRuntime.selectMessageVariant(brandId<ChatId>(chatId), brandId<MessageId>(messageId), variantIndex),
     editMessage: (chatId: string, messageId: string, content: string) =>
@@ -148,6 +164,22 @@ async function ensureSeedData() {
         promptMessageCount: result.promptMessageCount,
       });
       return result.snapshot;
+    },
+    sendMessageStream: async function*(chatId: string, body: { content: string }, signal?: AbortSignal) {
+      const profile = await providerProfileService.resolveActiveProviderProfile();
+      if (!profile) {
+        throw validation("No active provider profile. Activate one in Provider settings.");
+      }
+      if (!profile.defaultModel) {
+        throw validation("Active provider profile has no default model. Pick a model and save the profile.");
+      }
+      yield* liveChatOrchestrator.sendMessageStream({
+        chatId,
+        content: body.content,
+        profile,
+        model: profile.defaultModel,
+        signal,
+      });
     },
     updateCharacter: (characterId: string, body: { chatId?: string; name?: string; description?: string; scenario?: string; systemPrompt?: string; mesExample?: string | null; alternateGreetings?: string[]; postHistoryInstructions?: string | null; creatorNotes?: string | null }) =>
       sessionRuntime.updateCharacter(brandId<CharacterId>(characterId), { ...body, chatId: body.chatId != null ? brandId<ChatId>(body.chatId) : undefined }),
