@@ -187,6 +187,23 @@ export async function testProviderChat(
 }
 
 export async function listProviderModels(
+	input: Omit<ProviderConnectionInput, "model"> & { providerType?: string },
+): Promise<ProviderModelOption[]> {
+	const providerType = input.providerType ?? "openai_compat";
+
+	switch (providerType) {
+		case "anthropic":
+			return listAnthropicModels(input);
+		case "google":
+			return listGoogleModels(input);
+		case "ollama":
+			return listOllamaModels(input);
+		default:
+			return listOpenAiCompatModels(input);
+	}
+}
+
+async function listOpenAiCompatModels(
 	input: Omit<ProviderConnectionInput, "model">,
 ): Promise<ProviderModelOption[]> {
 	const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
@@ -234,6 +251,90 @@ export async function listProviderModels(
 		})
 		.filter((record): record is ProviderModelOption => Boolean(record))
 		.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+async function listAnthropicModels(
+	input: Omit<ProviderConnectionInput, "model">,
+): Promise<ProviderModelOption[]> {
+	const baseUrl = (input.baseUrl || "").replace(/\/+$/, "");
+	const url = `${baseUrl}/models`;
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), MODEL_LIST_TIMEOUT_MS);
+
+	let response: Response;
+	try {
+		response = await fetch(url, {
+			method: "GET",
+			headers: {
+				Accept: "application/json",
+				...(input.apiKey ? { "x-api-key": input.apiKey, "anthropic-version": "2023-06-01" } : {}),
+			},
+			signal: controller.signal,
+		});
+		clearTimeout(timer);
+	} catch (error) {
+		clearTimeout(timer);
+		throw wrapProviderNetworkError(error, { operation: "Anthropic model list", timeoutMs: MODEL_LIST_TIMEOUT_MS });
+	}
+
+	if (!response.ok) {
+		throw new Error(`Anthropic model list failed: ${response.status} ${response.statusText}`);
+	}
+
+	interface AnthropicModel { id: string; display_name?: string; }
+	const payload = (await response.json()) as { data?: AnthropicModel[] };
+	const records = Array.isArray(payload.data) ? payload.data : [];
+	return records
+		.map((r) => ({ id: r.id, label: r.display_name ?? r.id }))
+		.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+async function listGoogleModels(
+	_input: Omit<ProviderConnectionInput, "model">,
+): Promise<ProviderModelOption[]> {
+	return [
+		{ id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+		{ id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+		{ id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+		{ id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite" },
+	].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+async function listOllamaModels(
+	input: Omit<ProviderConnectionInput, "model">,
+): Promise<ProviderModelOption[]> {
+	const baseUrl = (input.baseUrl || "").replace(/\/+$/, "");
+	const url = `${baseUrl.replace(/\/v1$/, "")}/api/tags`;
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), MODEL_LIST_TIMEOUT_MS);
+
+	let response: Response;
+	try {
+		response = await fetch(url, {
+			method: "GET",
+			headers: { Accept: "application/json" },
+			signal: controller.signal,
+		});
+		clearTimeout(timer);
+	} catch (error) {
+		clearTimeout(timer);
+		throw wrapProviderNetworkError(error, { operation: "Ollama model list", timeoutMs: MODEL_LIST_TIMEOUT_MS });
+	}
+
+	if (!response.ok) {
+		throw new Error(`Ollama model list failed: ${response.status} ${response.statusText}`);
+	}
+
+	interface OllamaModel { name: string; model?: string; }
+	const payload = (await response.json()) as { models?: OllamaModel[] };
+	const records = Array.isArray(payload.models) ? payload.models : [];
+	return records
+		.map((r) => {
+			const id = (r.name ?? r.model ?? "").trim();
+			return id ? { id, label: id } : null;
+		})
+		.filter((r): r is ProviderModelOption => r !== null)
+		.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 function buildHeaders(apiKey: string, withBody = false): HeadersInit {

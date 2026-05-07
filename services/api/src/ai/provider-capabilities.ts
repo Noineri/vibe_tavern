@@ -19,7 +19,7 @@ export interface ProviderCapabilityFlags {
   /** Provider supports SSE/streaming responses. */
   streaming: boolean;
   /** Provider supports prefill (prefixing assistant content). */
-  prefill: boolean | null;
+  prefill: boolean;
   /** How this provider kind maps to the AI SDK. */
   sdkSupport: SdkSupportKind;
 }
@@ -33,49 +33,49 @@ export type ProviderCapabilityMap = Record<ProviderType, ProviderCapabilityFlags
  * - nonStreamGeneration: all current providers already support this.
  * - abortSignal: all providers use fetch-based HTTP which supports AbortSignal.
  * - streaming: true — streaming executor (FW-AI2) uses streamText(); route collects in this brief, SSE forwarding in FW-AI5.
- * - prefill: null (unknown) — not yet investigated for most providers.
+ * - prefill: deterministic per type — true for openai_compat/ollama/llamacpp, false for anthropic/google/koboldcpp.
  */
 export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
   openai_compat: {
     nonStreamGeneration: true,
     abortSignal: true,
     streaming: true,
-    prefill: null,
+    prefill: true,
     sdkSupport: "native",
   },
   anthropic: {
     nonStreamGeneration: true,
     abortSignal: true,
     streaming: true,
-    prefill: null,
+    prefill: false,
     sdkSupport: "native",
   },
   google: {
     nonStreamGeneration: true,
     abortSignal: true,
     streaming: true,
-    prefill: null,
+    prefill: false,
     sdkSupport: "native",
   },
   ollama: {
     nonStreamGeneration: true,
     abortSignal: true,
     streaming: true,
-    prefill: null,
+    prefill: true,
     sdkSupport: "openai_fallback",
   },
   llamacpp: {
     nonStreamGeneration: true,
     abortSignal: true,
     streaming: true,
-    prefill: null,
+    prefill: true,
     sdkSupport: "openai_fallback",
   },
   koboldcpp: {
     nonStreamGeneration: false,
     abortSignal: false,
     streaming: false,
-    prefill: null,
+    prefill: false,
     sdkSupport: "unsupported",
   },
 };

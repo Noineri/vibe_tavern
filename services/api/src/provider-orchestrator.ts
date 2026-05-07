@@ -15,6 +15,7 @@ export class ProviderOrchestrator {
       const models = await listProviderModels({
         baseUrl: profile.endpoint,
         apiKey: profile.apiKey ?? "",
+        providerType: profile.type,
       });
       const normalized = models.map((model) => ({
         id: model.id,

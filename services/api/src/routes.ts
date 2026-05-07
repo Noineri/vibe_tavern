@@ -69,7 +69,7 @@ export function createApiRouter(
       getProviderProfile: (id: string) => Promise<{ endpoint: string; apiKey?: string | null } | null>;
     };
     providerOrchestrator: { refreshProfileModels: (profile: any) => Promise<unknown> };
-    listProviderModels: (opts: { baseUrl: string; apiKey: string }) => Promise<unknown>;
+    listProviderModels: (opts: { baseUrl: string; apiKey: string; providerType?: string }) => Promise<unknown>;
     normalizeOpenAiCompatibleBaseUrl: (url: string) => string;
     probeProviderConnection: (opts: { baseUrl: string; apiKey: string }) => Promise<unknown>;
     testProviderChat: (opts: { baseUrl: string; apiKey: string; model: string }) => Promise<unknown>;
@@ -322,7 +322,7 @@ export function createApiRouter(
       }
       try {
         const normalized = deps.normalizeOpenAiCompatibleBaseUrl(baseUrl);
-        const models = await deps.listProviderModels({ baseUrl: normalized, apiKey: apiKey ?? "" });
+        const models = await deps.listProviderModels({ baseUrl: normalized, apiKey: apiKey ?? "", providerType: body?.providerType });
         return c.json({ models });
       } catch (err) {
         if (isDomainError(err)) throw err;

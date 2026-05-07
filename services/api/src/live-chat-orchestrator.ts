@@ -18,6 +18,7 @@ export class LiveChatOrchestrator {
     content: string;
     profile: StoredProviderProfileRecord;
     model: string;
+    prefill?: string;
     signal?: AbortSignal;
   }): Promise<{
     preparedMessageCount: number;
@@ -42,6 +43,7 @@ export class LiveChatOrchestrator {
         model: input.model,
         prompt: prepared.prompt,
         signal: input.signal,
+        prefill: input.prefill,
       });
       reply = result.text;
     } catch (err) {
@@ -66,6 +68,7 @@ export class LiveChatOrchestrator {
     messageId: string;
     profile: StoredProviderProfileRecord;
     model: string;
+    prefill?: string;
     signal?: AbortSignal;
   }): Promise<{
     promptMessageCount: number;
@@ -91,6 +94,7 @@ export class LiveChatOrchestrator {
         model: input.model,
         prompt,
         signal: input.signal,
+        prefill: input.prefill,
       });
       reply = result.text;
     } catch (err) {
