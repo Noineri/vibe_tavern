@@ -324,7 +324,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .sb-foot{padding:6px 4px;border-top:1px solid var(--border);margin-top:auto;flex-shrink:0}
 ═══ End Sidebar ═══ */
 
-/* ── Header ── */
+/* ═══ TopBar — ported to Tailwind in VP-W2-TOPBAR ═══
 .chat-header{height:52px;display:flex;align-items:center;padding:0 20px;border-bottom:1px solid var(--border);gap:12px;flex-shrink:0;background:var(--surface)}
 .char-info{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
 .char-ava{
@@ -338,21 +338,25 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .char-name{font-size:14px;font-weight:500;color:var(--t1);line-height:1.2}
 .char-sub{font-size:11px;color:var(--t3);margin-top:1px}
 .hdr-right{display:flex;align-items:center;gap:7px}
+═══ End TopBar core ═══ */
 
-/* ── Memory Badge ── */
+/* ═══ TopBar mem/mode — ported to Tailwind in VP-W2-TOPBAR ═══
 .mem-badge{display:flex;align-items:center;gap:5px;background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--t2);cursor:pointer;position:relative;transition:border-color .15s,color .15s;flex-shrink:0}
 .mem-badge:hover{border-color:var(--accent);color:var(--accent-t)}
 .mem-dot{width:6px;height:6px;border-radius:50%;background:oklch(0.68 0.16 145);flex-shrink:0}
 .mem-pop{position:absolute;top:calc(100% + 8px);right:0;width:270px;background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:13px 15px;z-index:200;box-shadow:0 12px 32px rgba(0,0,0,.4)}
 .mem-pop-ttl{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px;font-weight:500}
+═══ End TopBar mem/mode (part 1) ═══ */
 .input-pop{position:absolute;bottom:calc(100% + 8px);top:auto;right:auto;z-index:220}
 .input-pop.center{left:50%;transform:translateX(-50%)}
+/* ═══ TopBar mem/mode (part 2) — ported to Tailwind in VP-W2-TOPBAR ═══
 .mem-ent{font-size:12px;color:var(--t2);padding:5px 0;border-bottom:1px solid var(--border);line-height:1.45}
 .mem-ent:last-child{border-bottom:none}
 .mem-ent strong{color:var(--t1);font-weight:500}
 
 .mode-pill{font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;background:var(--accent-dim);color:var(--accent-t);cursor:pointer;letter-spacing:.02em;transition:background .15s;white-space:nowrap}
 .mode-pill:hover{background:var(--accent-hover)}
+═══ End TopBar mem/mode (part 2) ═══ */
 
 /* ── Avatar Float ── */
 .ava-float{position:fixed;z-index:100;user-select:none;}
@@ -510,7 +514,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .add-btn-row{display:flex;align-items:center;justify-content:center;padding:10px;border:1px dashed var(--border2);border-radius:8px;cursor:pointer;color:var(--t2);font-size:12px;transition:background .15s,color .15s,border-color .15s}
 .add-btn-row:hover{background:var(--s2);color:var(--t1);border-color:var(--border)}
 
-/* ── Provider Badge ── */
+/* ═══ Provider Badge — ported to Tailwind in VP-W2-TOPBAR ═══
 .provider-badge{display:flex;align-items:center;gap:5px;background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--t2);cursor:pointer;transition:border-color .15s,color .15s;flex-shrink:0;font-family:var(--font-ui)}
 .provider-badge:hover{border-color:var(--border2);color:var(--t1)}
 .provider-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;transition:background .3s}
@@ -518,6 +522,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .provider-dot.none{background:var(--t4)}
 .provider-dot.err{background:oklch(0.62 0.2 25)}
 .provider-name{font-weight:500;color:var(--t1)}
+═══ End Provider Badge ═══ */
 
 /* ── API Modal ── */
 .api-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
