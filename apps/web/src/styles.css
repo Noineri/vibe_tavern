@@ -551,13 +551,11 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .api-hint a:hover{text-decoration:underline}
 .api-row{display:flex;gap:8px;align-items:flex-end}
 .api-row .api-field{flex:1;margin-bottom:0}
-/* Provider-specific legacy CSS - orphaned after ProviderModal re-port
 .api-test-btn{height:34px;padding:0 14px;border-radius:6px;font-size:12px;font-weight:500;font-family:var(--font-ui);cursor:pointer;white-space:nowrap;flex-shrink:0;transition:filter .1s,background .1s}
 .api-test-btn.idle{background:var(--s3);color:var(--t2)}
 .api-test-btn.idle:hover{background:var(--border2);color:var(--t1)}
 .api-test-btn.ok{background:oklch(0.28 0.06 145);color:oklch(0.78 0.14 145)}
 .api-test-btn.err{background:oklch(0.22 0.06 25);color:oklch(0.72 0.18 25)}
-*/
 .api-section-title{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin:18px 0 10px;padding-top:14px;border-top:1px solid var(--border)}
 .api-section-title:first-child{margin-top:0;border-top:none;padding-top:0}
 .api-foot{padding:14px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
@@ -638,7 +636,6 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 ═══ End Sidebar extended ═══ */
 
 /* ── R3D2: ProviderModal additions ── */
-/*
 .unsaved-bar{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--t2);background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:6px 12px;margin-bottom:12px}
 .unsaved-bar svg{color:var(--accent-t);flex-shrink:0}
 .save-btn-saved{background:oklch(0.28 0.06 145)!important;color:oklch(0.78 0.14 145)!important}
@@ -654,7 +651,6 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .test-chat-error svg{flex-shrink:0;margin-top:2px}
 .field-warning{font-size:11px;color:oklch(0.72 0.14 70);margin-top:4px;display:flex;align-items:center;gap:4px}
 .field-warning svg{width:12px;height:12px}
-End Provider CSS */
 @media(max-width:768px){.provider-badge{display:none}}
 
 /* ── D23: WelcomeScreen ── */
