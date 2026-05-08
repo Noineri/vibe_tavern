@@ -52,7 +52,7 @@ export function InputArea(input: InputAreaProps) {
   const statusText = input.notice || (!input.canSend ? input.sendLabel : "");
 
   return (
-    <div className={cn("relative z-10 shrink-0 border-t border-border bg-surface transition-opacity duration-200", input.canSend || input.isSending ? 'opacity-100 pointer-events-auto' : 'pointer-events-none opacity-45')} style={{padding:'10px 16px 14px'}}>
+    <div className="relative z-10 shrink-0 border-t border-border bg-surface transition-opacity duration-200" style={{padding:'10px 16px 14px', opacity: input.canSend || input.isSending ? 1 : 0.82}}>
       <div className="rounded-lg border border-border bg-bg transition-colors duration-150 focus-within:border-border2">
         <textarea
           className="max-h-40 min-h-[55px] w-full resize-none border-0 bg-transparent font-body text-[16.5px] leading-[1.65] text-t1 outline-none placeholder:text-t4"
