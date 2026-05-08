@@ -27,9 +27,6 @@ export function MessageBlock(input: MessageBlockProps) {
   const regenLabel = "regen";
   const deleteLabel = "delete";
   const createdLabel = formatMessageTime(input.message.createdAt);
-  const updatedLabel = input.message.updatedAt !== input.message.createdAt ? "edited" : null;
-  const stateLabel = input.message.state !== "complete" ? input.message.state : null;
-  const variantLabel = !isUser && variantCount > 1 ? `swipe ${selectedVariantIndex + 1}/${variantCount}` : null;
 
   return (
     <div className="relative" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'0 auto', paddingLeft:28, paddingRight:28}}>
@@ -128,12 +125,9 @@ export function MessageBlock(input: MessageBlockProps) {
           </>
         )}
 
-        {!input.isEditing && !isGenerating && (
-          <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t3/50" style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-            {createdLabel && <span style={{background:'var(--s2)',border:'1px solid var(--border)',borderRadius:4,padding:'2px 6px'}}>{createdLabel}</span>}
-            {updatedLabel && <span style={{background:'var(--s2)',border:'1px solid var(--border)',borderRadius:4,padding:'2px 6px'}}>{updatedLabel}</span>}
-            {stateLabel && <span style={{background:'var(--s2)',border:'1px solid var(--border)',borderRadius:4,padding:'2px 6px'}}>{stateLabel}</span>}
-            {variantLabel && <span style={{background:'var(--s2)',border:'1px solid var(--border)',borderRadius:4,padding:'2px 6px'}}>{variantLabel}</span>}
+        {!input.isEditing && !isGenerating && createdLabel && (
+          <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t3/50">
+            {createdLabel}
           </div>
         )}
 
