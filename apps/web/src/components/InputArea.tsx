@@ -70,7 +70,7 @@ export function InputArea(input: InputAreaProps) {
           rows={2}
         />
 
-        <div className="flex items-center gap-[7px]" style={{ padding: "6px 12px 9px" }}>
+        <div className="relative flex items-center gap-[7px]" style={{ padding: "6px 92px 9px 12px" }}>
           <div className="speaker-row multi-persona" title="multi-persona">
             <span className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.06em] text-t3">Speak as</span>
           </div>
@@ -104,7 +104,7 @@ export function InputArea(input: InputAreaProps) {
             )}
           </div>
 
-          <div className="ml-auto flex items-center gap-[5px]">
+          <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-[5px]">
             {input.isSending ? (
               <button
                 className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
