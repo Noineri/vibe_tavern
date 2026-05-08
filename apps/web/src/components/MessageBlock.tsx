@@ -138,7 +138,7 @@ export function MessageBlock(input: MessageBlockProps) {
         )}
 
         {!input.isEditing && !isGenerating && (
-          <div className="flex items-center gap-px mt-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <div className="relative flex items-center gap-px mt-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
             <span
               className={cn('flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all duration-150 hover:bg-s2 hover:text-t2', copied && 'translate-y-[-1px] bg-success-dim text-success-text')}
               style={{padding:'3px 7px'}}
@@ -168,7 +168,7 @@ export function MessageBlock(input: MessageBlockProps) {
               ><Icons.Regen />{regenLabel}</span>
             )}
             <span
-              className="ml-auto flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+              className="absolute right-0 flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
               style={{padding:'3px 7px'}}
               onClick={() => { if (!input.isBusy) input.onDelete(); }}
               title={deleteLabel}
