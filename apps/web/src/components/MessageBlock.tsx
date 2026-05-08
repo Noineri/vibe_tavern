@@ -1,10 +1,12 @@
-import type { ChangeEvent } from "react";
+import { useState } from "react";
+import { cn } from "../lib/cn.js";
 import { Markdown } from "../lib/markdown.js";
 import { initials } from "./app-shell-helpers.js";
 import type { MessageBlockProps } from "./play-mode-types.js";
 import { Icons } from "./shared/icons.js";
 
 export function MessageBlock(input: MessageBlockProps) {
+  const [copied, setCopied] = useState(false);
   const isUser = input.message.role === "user";
   const variants = Array.isArray(input.message.variants) ? input.message.variants : [];
   const variantCount = variants.length;
@@ -30,49 +32,44 @@ export function MessageBlock(input: MessageBlockProps) {
   const variantLabel = !isUser && variantCount > 1 ? `swipe ${selectedVariantIndex + 1}/${variantCount}` : null;
 
   return (
-    <div className="msg-wrap">
-      <div className="msg-block">
-        <div className={`msg-lbl${isUser ? "" : " char-lbl"}`}>
-          <span className="msg-mini-ava">
+    <div className="relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))]" style={{paddingLeft:28,paddingRight:28}}>
+      <div className="relative group" style={{paddingTop:10,paddingBottom:10}}>
+        <div className={isUser
+          ? "flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3"
+          : "flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85"
+        } style={{marginBottom:'5px'}}>
+          <div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[9px] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
             {isUser ? "Y" : initials(input.characterName)}
-          </span>
+          </div>
           <span>{isUser ? "You" : input.characterName}</span>
           {greetingActive && (
-            <span className="greeting-swipe">
+            <span className="ml-auto flex items-center gap-1 text-[calc(var(--ui-fs)-3px)] text-t3">
               <button
-                className="greeting-swipe-btn"
+                className="cursor-pointer text-t3 transition-colors duration-100 hover:text-accent"
                 disabled={!canSwitch || greetIdx <= 0}
                 onClick={() => input.onGreetingIndexChange(Math.max(0, greetIdx - 1))}
-              >
-                ◀
-              </button>
+              >◀</button>
               Greeting {greetIdx + 1}/{greetingOptions!.length}
               <button
-                className="greeting-swipe-btn"
+                className="cursor-pointer text-t3 transition-colors duration-100 hover:text-accent"
                 disabled={!canSwitch || greetIdx >= greetingOptions!.length - 1}
                 onClick={() => input.onGreetingIndexChange(Math.min(greetingOptions!.length - 1, greetIdx + 1))}
-              >
-                ▶
-              </button>
+              >▶</button>
             </span>
           )}
           {!isUser && variantCount > 1 && canSwitch && (
-            <span className="swipe-ctrl">
+            <span className="ml-auto flex items-center gap-1">
               <button
-                className="sw-btn"
+                className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t1"
                 disabled={input.isBusy || selectedVariantIndex <= 0}
                 onClick={input.onSelectPreviousVariant}
-              >
-                <Icons.Caret direction="l" />
-              </button>
-              <span className="sw-n">{selectedVariantIndex + 1}/{variantCount}</span>
+              ><Icons.Caret direction="l" /></button>
+              <span className="min-w-6 text-center text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3">{selectedVariantIndex + 1}/{variantCount}</span>
               <button
-                className="sw-btn"
+                className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t1"
                 disabled={input.isBusy || selectedVariantIndex >= variantCount - 1}
                 onClick={input.onSelectNextVariant}
-              >
-                <Icons.Caret direction="r" />
-              </button>
+              ><Icons.Caret direction="r" /></button>
             </span>
           )}
         </div>
@@ -80,128 +77,113 @@ export function MessageBlock(input: MessageBlockProps) {
         {input.isEditing ? (
           <>
             <textarea
-              className="edit-ta"
+              className="min-h-[140px] w-full resize-y rounded-md border border-accent bg-s2 font-body text-[length:var(--mfs)] leading-[1.82] text-t1 outline-none"
+              style={{padding:'12px 14px'}}
               value={input.editingDraft}
-              onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-                input.onEditingDraftChange(event.target.value)
-              }
+              onChange={e => input.onEditingDraftChange(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') input.onCancelEdit(); }}
+              autoFocus
             />
-            <div className="edit-acts">
-              <button className="edit-btn sv" disabled={input.isBusy} onClick={input.onSaveEdit}>
-                Save
-              </button>
-              <button className="edit-btn cn" disabled={input.isBusy} onClick={input.onCancelEdit}>
-                Cancel
-              </button>
+            <div className="mt-1.5 flex gap-1.5">
+              <button
+                className="cursor-pointer rounded-[5px] bg-accent font-ui text-xs font-medium text-on-accent transition-all duration-100 hover:brightness-110"
+                style={{padding:'5px 12px'}}
+                disabled={input.isBusy}
+                onClick={input.onSaveEdit}
+              >Save</button>
+              <button
+                className="cursor-pointer rounded-[5px] bg-s2 font-ui text-xs font-medium text-t2 transition-all duration-100 hover:bg-s3"
+                style={{padding:'5px 12px'}}
+                disabled={input.isBusy}
+                onClick={input.onCancelEdit}
+              >Cancel</button>
             </div>
           </>
         ) : isUser ? (
-          <div className="user-wrap">
-            <Markdown className="msg-body" text={displayContent} />
+          <div className="my-0.5 rounded-md bg-user-bg" style={{padding:'13px 16px'}}>
+            <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 opacity-88 [&_em]:italic [&_em]:text-t2">
+              <Markdown text={displayContent} />
+            </div>
           </div>
         ) : isGenerating && !input.message.content?.trim() ? (
-          <div className="msg-body">
-            <span className="gen-cur" aria-label="Generating response">
-              <span />
-              <span />
-              <span />
+          <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
+            <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label="Generating response">
+              <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
+              <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
+              <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
             </span>
           </div>
         ) : (
           <>
-            <Markdown className="msg-body" text={displayContent} />
+            <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
+              <Markdown text={displayContent} />
+            </div>
             {isGenerating && (
-              <span className="gen-cur" aria-label="Generating response">
-                <span />
-                <span />
-                <span />
+              <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label="Generating response">
+                <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
+                <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
+                <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
               </span>
             )}
           </>
         )}
 
         {!input.isEditing && !isGenerating && (
-          <div
-            className="msg-meta message-meta"
-            style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 6, fontSize: 10.5, color: "var(--t3)", fontFamily: "var(--font-ui)" }}
-          >
-            {createdLabel && <span style={metaChipStyle}>{createdLabel}</span>}
-            {updatedLabel && <span style={metaChipStyle}>{updatedLabel}</span>}
-            {stateLabel && <span style={metaChipStyle}>{stateLabel}</span>}
-            {variantLabel && <span style={metaChipStyle}>{variantLabel}</span>}
+          <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t3/50" style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+            {createdLabel && <span style={{background:'var(--s2)',border:'1px solid var(--border)',borderRadius:4,padding:'2px 6px'}}>{createdLabel}</span>}
+            {updatedLabel && <span style={{background:'var(--s2)',border:'1px solid var(--border)',borderRadius:4,padding:'2px 6px'}}>{updatedLabel}</span>}
+            {stateLabel && <span style={{background:'var(--s2)',border:'1px solid var(--border)',borderRadius:4,padding:'2px 6px'}}>{stateLabel}</span>}
+            {variantLabel && <span style={{background:'var(--s2)',border:'1px solid var(--border)',borderRadius:4,padding:'2px 6px'}}>{variantLabel}</span>}
           </div>
         )}
 
         {!input.isEditing && !isGenerating && (
-          <div className="msg-acts">
+          <div className="flex items-center gap-px mt-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
             <button
-              className="act-btn"
+              className={cn('flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all duration-150 hover:bg-s2 hover:text-t2', copied && 'translate-y-[-1px] bg-success-dim text-success-text')}
+              style={{padding:'3px 7px'}}
               disabled={input.isBusy}
-              onClick={() => void navigator.clipboard?.writeText(input.message.content)}
+              onClick={() => { void navigator.clipboard?.writeText(input.message.content); setCopied(true); setTimeout(() => setCopied(false), 1000); }}
               title={copyLabel}
-              aria-label={copyLabel}
-            >
-              <Icons.Copy />
-              {copyLabel}
-            </button>
+            ><Icons.Copy />{copied ? "Copied" : copyLabel}</button>
             <button
-              className="act-btn"
+              className="flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+              style={{padding:'3px 7px'}}
               disabled={input.isBusy}
               onClick={input.onStartEdit}
               title={editLabel}
-              aria-label={editLabel}
-            >
-              <Icons.Edit />
-              {editLabel}
-            </button>
+            ><Icons.Edit />{editLabel}</button>
             {input.canBranch && (
               <button
-                className="act-btn"
+                className="flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+                style={{padding:'3px 7px'}}
                 disabled={input.isBusy}
                 onClick={input.onBranch}
                 title={branchLabel}
-                aria-label={branchLabel}
-              >
-                <Icons.Branch />
-                {branchLabel}
-              </button>
+              ><Icons.Branch />{branchLabel}</button>
             )}
             {input.canRegenerate && (
               <button
-                className="act-btn"
+                className="flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+                style={{padding:'3px 7px'}}
                 disabled={input.isBusy}
                 onClick={input.onRegenerate}
                 title={regenLabel}
-                aria-label={regenLabel}
-              >
-                <Icons.Regen />
-                {regenLabel}
-              </button>
+              ><Icons.Regen />{regenLabel}</button>
             )}
             <button
-              className="act-btn"
-              style={{ marginLeft: "auto" }}
+              className="ml-auto flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+              style={{padding:'3px 7px'}}
               disabled={input.isBusy}
               onClick={input.onDelete}
               title={deleteLabel}
-              aria-label={deleteLabel}
-            >
-              <Icons.Trash />
-              {deleteLabel}
-            </button>
+            ><Icons.Trash />{deleteLabel}</button>
           </div>
         )}
       </div>
     </div>
   );
 }
-
-const metaChipStyle = {
-  background: "var(--s2)",
-  border: "1px solid var(--border)",
-  borderRadius: 4,
-  padding: "2px 6px",
-};
 
 function formatMessageTime(value: string): string {
   const date = new Date(value);
