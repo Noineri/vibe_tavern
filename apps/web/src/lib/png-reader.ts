@@ -108,7 +108,13 @@ export async function extractPngMetadata(file: File): Promise<PngMetadata[]> {
 function decodeCardText(text: string): unknown {
   // Try base64 first (standard SillyTavern encoding)
   try {
-    const decoded = atob(text);
+    const binary = atob(text);
+    // Convert binary string to proper UTF-8 bytes before decoding
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const decoded = new TextDecoder().decode(bytes);
     return JSON.parse(decoded);
   } catch {
     // Not valid base64+JSON — try raw JSON
