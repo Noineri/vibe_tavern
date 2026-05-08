@@ -115,55 +115,57 @@ export function Sidebar(input: SidebarProps) {
       </div>
 
       {input.sidebarCollapsed && (
-        <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto" style={{padding:'8px 0'}}>
-          {input.characterTabs.map((character) => {
-            const isActive = character.chatId === input.activeChatId
-              || (!character.chatId && character.id === input.selectedCharacterId);
-            return (
-              <div
-                key={character.id}
-                className={cn(
-                  'flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all duration-150 hover:rounded-xl hover:bg-s2',
-                  isActive && 'rounded-xl bg-accent-dim ring-2 ring-accent'
-                )}
-                onClick={() => {
-                  if (character.chatId) {
-                    input.onSwitchChat(character.chatId);
-                  } else {
-                    input.onSelectCharacter(character.id);
-                  }
-                }}
-                title={character.name}
-              >
-                <span className={cn('flex h-full w-full items-center justify-center rounded-full font-ui text-sm', isActive ? 'bg-accent text-on-accent' : 'bg-s3 text-t2')}>
-                  {initials(character.name)}
-                </span>
-              </div>
-            );
-          })}
+        <div className="flex min-h-0 flex-1 flex-col items-center">
+          <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto" style={{padding:'8px 0'}}>
+            {input.characterTabs.map((character) => {
+              const isActive = character.chatId === input.activeChatId
+                || (!character.chatId && character.id === input.selectedCharacterId);
+              return (
+                <div
+                  key={character.id}
+                  className={cn(
+                    'flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all duration-150 hover:rounded-xl hover:bg-s2',
+                    isActive && 'rounded-xl bg-accent-dim ring-2 ring-accent'
+                  )}
+                  onClick={() => {
+                    if (character.chatId) {
+                      input.onSwitchChat(character.chatId);
+                    } else {
+                      input.onSelectCharacter(character.id);
+                    }
+                  }}
+                  title={character.name}
+                >
+                  <span className={cn('flex h-full w-full items-center justify-center rounded-full font-ui text-sm', isActive ? 'bg-accent text-on-accent' : 'bg-s3 text-t2')}>
+                    {initials(character.name)}
+                  </span>
+                </div>
+              );
+            })}
 
-          <div className="my-1 h-px w-8 shrink-0 bg-border" />
+            <div className="my-1 h-px w-8 shrink-0 bg-border" />
 
-          {input.chats.map((chat) => {
-            const initial = (chat.title || '?').trim().charAt(0).toUpperCase() || '?';
-            return (
-              <div
-                key={chat.id}
-                className={cn(
-                  'flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full font-ui text-xs font-medium transition-all duration-150 hover:rounded-xl hover:bg-s2',
-                  chat.id === input.activeChatId ? 'rounded-xl bg-accent text-on-accent' : 'bg-s3 text-t2'
-                )}
-                onClick={() => input.onSwitchChat(chat.id)}
-                title={chat.title}
-              >
-                {initial}
-              </div>
-            );
-          })}
+            {input.chats.map((chat) => {
+              const initial = (chat.title || '?').trim().charAt(0).toUpperCase() || '?';
+              return (
+                <div
+                  key={chat.id}
+                  className={cn(
+                    'flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full font-ui text-xs font-medium transition-all duration-150 hover:rounded-xl hover:bg-s2',
+                    chat.id === input.activeChatId ? 'rounded-xl bg-accent text-on-accent' : 'bg-s3 text-t2'
+                  )}
+                  onClick={() => input.onSwitchChat(chat.id)}
+                  title={chat.title}
+                >
+                  {initial}
+                </div>
+              );
+            })}
+          </div>
 
-          <div className="my-1 h-px w-8 shrink-0 bg-border" />
+          <div className="h-px w-8 shrink-0 bg-border" />
 
-          <div className="mt-auto flex shrink-0 flex-col items-center gap-1">
+          <div className="flex shrink-0 flex-col items-center gap-1" style={{padding:'8px 0'}}>
             <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={input.onOpenPromptManager} title="Prompt Manager"><Icons.Terminal /></div>
             <div className="flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={input.onOpenPersonaManager} title={input.personaName}>
               {initials(input.personaName)}
