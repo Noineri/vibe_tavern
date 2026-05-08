@@ -5,6 +5,7 @@ import { MessageBlock } from "./MessageBlock.js";
 import type { MessageListProps } from "./play-mode-types.js";
 
 export function MessageList(input: MessageListProps) {
+  const msgsRef = useRef<HTMLDivElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const [greetingIndex, setGreetingIndex] = useState(0);
   const firstCharMsgId = useMemo(() => {
@@ -27,8 +28,12 @@ export function MessageList(input: MessageListProps) {
   }, [input.messages.length, input.pendingUserMessageContent]);
 
   return (
-    <div className="msgs">
-      <div className="scene-note">{input.scenario}</div>
+    <div className="flex-1 overflow-y-auto scroll-smooth" style={{paddingBottom:12,paddingTop:28}} ref={msgsRef}>
+      {/* TODO: VP-W4+ — EmptyState component for no active chat */}
+      {/* TODO: VP-W4+ — EmptyState component for empty chat */}
+      <div className="mx-auto max-w-msg text-center font-body text-[12.5px] italic text-t3" style={{paddingLeft:24,paddingRight:24,paddingTop:4,paddingBottom:'26px'}}>
+        {input.scenario}
+      </div>
 
       {input.messages.map((message, index) => {
         const previous = index > 0 ? input.messages[index - 1] : null;
@@ -40,8 +45,8 @@ export function MessageList(input: MessageListProps) {
         return (
           <Fragment key={message.id}>
             {showSeparator && (
-              <div className="msg-sep">
-                <div className="msg-sep-l" />
+              <div className="mx-auto mb-1.5 mt-2 max-w-msg" style={{paddingLeft:28,paddingRight:28}}>
+                <div className="h-px bg-border opacity-40"/>
               </div>
             )}
             <MessageBlock
@@ -83,37 +88,39 @@ export function MessageList(input: MessageListProps) {
       {input.pendingUserMessageContent && (
         <>
           {input.messages.length > 0 && (
-            <div className="msg-sep">
-              <div className="msg-sep-l" />
+            <div className="mx-auto mb-1.5 mt-2 max-w-msg" style={{paddingLeft:28,paddingRight:28}}>
+              <div className="h-px bg-border opacity-40"/>
             </div>
           )}
-          <div className="msg-wrap">
-            <div className="msg-block">
-              <div className="msg-lbl">
-                <span className="msg-mini-ava">Y</span>
+          <div className="relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))]" style={{paddingLeft:28,paddingRight:28}}>
+            <div className="relative group" style={{paddingTop:10,paddingBottom:10}}>
+              <div className="flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3" style={{marginBottom:'5px'}}>
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[9px] italic text-t3">Y</span>
                 <span>You</span>
               </div>
-              <div className="user-wrap">
-                <Markdown className="msg-body" text={input.pendingUserMessageContent} />
+              <div className="my-0.5 rounded-md bg-user-bg" style={{padding:'13px 16px'}}>
+                <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 opacity-88 [&_em]:italic [&_em]:text-t2">
+                  <Markdown text={input.pendingUserMessageContent} />
+                </div>
               </div>
             </div>
           </div>
-          <div className="msg-sep">
-            <div className="msg-sep-l" />
+          <div className="mx-auto mb-1.5 mt-2 max-w-msg" style={{paddingLeft:28,paddingRight:28}}>
+            <div className="h-px bg-border opacity-40"/>
           </div>
-          <div className="msg-wrap" aria-label="Generating response">
-            <div className="msg-block">
-              <div className="msg-lbl char-lbl">
-                <span className="msg-mini-ava">
+          <div className="relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))]" style={{paddingLeft:28,paddingRight:28}} aria-label="Generating response">
+            <div className="relative group" style={{paddingTop:10,paddingBottom:10}}>
+              <div className="flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85" style={{marginBottom:'5px'}}>
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[9px] italic text-t3">
                   {input.characterName.slice(0, 1).toUpperCase()}
                 </span>
                 <span>{input.characterName}</span>
               </div>
-              <div className="msg-body">
-                <span className="gen-cur" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
+              <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
+                <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-hidden="true">
+                  <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
+                  <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
+                  <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
                 </span>
               </div>
             </div>
@@ -121,7 +128,15 @@ export function MessageList(input: MessageListProps) {
         </>
       )}
 
-      <div ref={endRef} style={{ height: 1 }} />
+      <div ref={endRef} className="h-px"/>
+      {/* TODO: VP-W4+ — scroll-to-bottom button
+          Maket structure:
+          <div className="sticky bottom-2 z-20 flex justify-center pointer-events-none">
+            <div className="pointer-events-auto inline-flex items-center gap-1.5 rounded-2xl border border-border bg-surface px-3.5 py-1.5 text-[calc(var(--ui-fs)-3px)] text-t2 shadow-[0_4px_16px_rgba(0,0,0,.25)] transition-opacity duration-200 cursor-pointer" style={{padding:'5px 14px'}} onClick={scrollHandler}>
+              <span>↓</span> Scroll to latest
+            </div>
+          </div>
+      */}
     </div>
   );
 }
