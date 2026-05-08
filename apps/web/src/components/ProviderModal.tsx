@@ -4,16 +4,16 @@ import type { ProviderProbeResponse } from "@rp-platform/domain";
 import { PROVIDER_PRESETS } from "../provider-presets.js";
 import { Icons } from "./shared/icons.js";
 import {
-  ProviderActionFooter,
-  ProviderProfileListSection,
-  ProviderFormFields,
-  ProviderSamplerFields,
-  ProviderModelSelectorSection,
-  ProviderCapabilitySection,
-} from "./provider-modal-sections.js";
+  ProviderProfileList,
+  ProviderForm,
+  ProviderModelSelector,
+  ProviderCapabilityPanel,
+  ProviderSamplerPanel,
+} from "./provider/index.js";
 import { useDirtyState } from "./shared/use-dirty-state.js";
 import { ConfirmCloseModal } from "./shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
+import { SaveButton } from "./shared/SaveBar.js";
 
 export interface FormState {
   id: string;
@@ -28,6 +28,7 @@ export interface FormState {
   topP: number;
   minP: number;
   topK: number;
+  topA: number;
   typicalP: number;
   repPen: number;
   freqPen: number;
@@ -35,8 +36,10 @@ export interface FormState {
   maxTokens: number;
   contextBudget: number;
   stopSeq: string;
+  logitBias: string;
   seed: string | null;
   reasoningEffort: string;
+  showReasoning: boolean;
   streamResponse: boolean;
 }
 
@@ -64,10 +67,11 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     id: p.id, name: p.name, type: p.type, providerPreset: preset?.id ?? "",
     baseUrl: p.endpoint, apiKey: "", hasStoredApiKey: p.hasStoredApiKey,
     model: p.defaultModel ?? "", temperature: p.temperature ?? 0.9, topP: p.topP ?? 1.0,
-    minP: p.minP ?? 0.05, topK: p.topK ?? 40, typicalP: p.typicalP ?? 1.0,
+    minP: p.minP ?? 0.05, topK: p.topK ?? 40, topA: 0, typicalP: p.typicalP ?? 1.0,
     repPen: p.repPen ?? 1.1, freqPen: p.freqPen ?? 0.0, presPen: p.presPen ?? 0.0,
     maxTokens: p.maxTokens ?? 8192, contextBudget: p.contextBudget ?? 128000,
-    stopSeq: p.stopSeq ?? "", seed: p.seed ?? null, reasoningEffort: p.reasoningEffort ?? "medium",
+    stopSeq: p.stopSeq ?? "", logitBias: "", seed: p.seed ?? null, showReasoning: false,
+    reasoningEffort: p.reasoningEffort ?? "medium",
     streamResponse: p.streamResponse ?? true,
   };
 }
@@ -226,9 +230,9 @@ export function ProviderModal({
       {confirmClose && <ConfirmCloseModal onCancel={() => setConfirmClose(false)} onConfirm={() => { reset(); onClose(); }} />}
       {confirmDelete && (
         <DestructiveConfirmModal
-          title="Delete provider"
-          body={<>{/* TODO(i18n) */}Delete profile <b>{form?.name}</b>? This cannot be undone.</>}
-          confirmLabel="Delete provider"
+          title="Delete Profile"
+          body={<>Delete profile <b>{form?.name}</b>? This cannot be undone.</>}
+          confirmLabel="Delete Profile"
           onConfirm={() => void confirmDeleteAction()}
           onCancel={() => setConfirmDelete(false)}
         />
@@ -236,28 +240,28 @@ export function ProviderModal({
 
       <div className="flex max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]" style={{ width: 860, height: 680 }}>
         {/* HEADER */}
-        <div className="shrink-0 border-b border-border px-6 pb-4 pt-5">
+        <div className="shrink-0 border-b border-border" style={{padding:'20px 24px 16px'}}>
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center gap-2 font-body text-[18px] font-semibold text-t1" style={{ marginBottom: 4 }}>
-                {/* TODO(i18n) */}Настройки провайдера
+                Provider Settings
                 {dirty && <span className="h-2 w-2 rounded-full bg-accent" title="Unsaved changes" />}
               </div>
-              {/* TODO(i18n) */}<div className="font-ui text-[13px] text-t3">Профили провайдеров для API-подключений (локальных и облачных).</div>
+              <div className="font-ui text-[13px] text-t3">Provider profiles for API connections (local and cloud).</div>
             </div>
             <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1" onClick={handleClose}><Icons.Close /></div>
           </div>
           {dirty && (
             <div className="mt-3 flex items-center gap-2 rounded-md border border-border bg-s2 font-ui text-[12px] text-t2" style={{ padding: "5px 12px" }}>
               <span className="shrink-0 text-accent-t"><Icons.Edit /></span>
-              {/* TODO(i18n) */}Несохранённые изменения
+              Unsaved changes
             </div>
           )}
         </div>
 
         {/* BODY */}
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          <ProviderProfileListSection
+          <ProviderProfileList
             filteredProfiles={filteredProfiles} editingId={editingId}
             activeProviderProfileId={activeProviderProfileId} profileSearch={profileSearch}
             onProfileSearchChange={setProfileSearch} onSelectProfile={handleSelect} onAddProfile={handleAdd}
@@ -265,31 +269,55 @@ export function ProviderModal({
           <div className="flex-1 overflow-y-auto" style={{ padding: 24 }}>
             {!form ? (
               <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
-                {/* TODO(i18n) */}Выберите профиль или создайте новый.
+                Select a profile or create a new one.
               </div>
             ) : (
               <>
-                <ProviderFormFields form={form} editingId={editingId} providerProfiles={providerProfiles}
+                <ProviderForm form={form} editingId={editingId} providerProfiles={providerProfiles}
                   updateForm={updateForm} applyPreset={applyPreset} testOk={testOk} testing={testing}
                   testingChat={testingChat} chatResult={chatResult} onTest={handleTestConnection} onTestChat={handleTestChat}
                 />
-                <ProviderModelSelectorSection form={form} models={models} filteredModels={filteredModels}
+                <ProviderModelSelector form={form} models={models} filteredModels={filteredModels}
                   fetching={fetching} fetchError={fetchError} modelSearch={modelSearch} modelListOpen={modelListOpen}
                   updateForm={updateForm} onFetchModels={handleFetchModels} setModelSearch={setModelSearch}
                   setModelListOpen={setModelListOpen} dropdownRef={dropdownRef}
                 />
-                <ProviderCapabilitySection capabilities={capabilities} />
-                <ProviderSamplerFields form={form} updateForm={updateForm} />
+                <ProviderCapabilityPanel capabilities={capabilities} />
+                <ProviderSamplerPanel form={form} updateForm={updateForm} />
               </>
             )}
           </div>
         </div>
 
         {/* FOOTER */}
-        <ProviderActionFooter providerProfiles={providerProfiles} saveState={saveState}
-          onDuplicate={handleDuplicate} onDelete={handleDelete}
-          onSave={() => triggerSave(() => void handleSaveProfile())} onActivate={handleActivate}
-        />
+        <div className="flex shrink-0 items-center justify-between border-t border-border" style={{padding:'16px 24px'}}>
+          <div className="flex gap-4">
+            <span
+              className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1"
+              onClick={() => void handleDuplicate()}
+            >
+              <Icons.Copy /> Duplicate Profile
+            </span>
+            {providerProfiles.length > 1 && (
+              <span
+                className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-danger/80 transition-colors hover:text-danger"
+                onClick={handleDelete}
+              >
+                <Icons.Trash /> Delete Profile
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <SaveButton dirty={dirty} saveState={saveState} onClick={() => triggerSave(() => void handleSaveProfile())} label="Save Profile" />
+            <button
+              className="h-[37px] rounded-md bg-accent font-ui text-[13px] font-medium text-white shadow-lg shadow-accent/20 transition-all hover:bg-accent-t"
+              style={{paddingLeft:24, paddingRight:24}}
+              onClick={() => void handleActivate()}
+            >
+              Make Active
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
