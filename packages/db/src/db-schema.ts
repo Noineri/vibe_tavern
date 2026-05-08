@@ -173,6 +173,7 @@ export const promptTraces = sqliteTable('prompt_traces', {
   assembledLayersJson: text('assembled_layers_json').notNull(),
   tokenAccountingJson: text('token_accounting_json').notNull(),
   finalPayloadJson: text('final_payload_json').notNull().default('{}'),
+  prefill: text('prefill'),
   latencyMs: integer('latency_ms').notNull(),
   createdAt: text('created_at').notNull(),
 }, (table) => ({

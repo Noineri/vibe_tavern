@@ -200,12 +200,15 @@ export interface PromptTrace {
     reason: string;
     tokenCount: number;
     text: string;
+    injectionDepth?: number;
+    modes?: string[];
   }>;
   tokenAccounting: Record<string, number>;
   activatedLoreEntries: LoreEntryId[];
   retrievedMemories: Array<Record<string, unknown>>;
   finalPayload: Record<string, unknown>;
   latencyMs: number;
+  prefill?: string | null;
   createdAt: Timestamp;
 }
 

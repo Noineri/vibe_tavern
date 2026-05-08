@@ -156,6 +156,7 @@ export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto
     activatedLoreEntries: [],
     retrievedMemories: [],
     finalPayload: trace.finalPayload,
+    prefill: trace.prefill ?? null,
   };
 }
 

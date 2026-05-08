@@ -402,6 +402,11 @@ export function BuildMode(input: BuildModeProps) {
             ? <>Showing trace <span style={{ color: "var(--t2)" }}>{input.activeTrace.id}</span> &middot; {input.activeTrace.createdAt} &middot; model: {input.activeTrace.model} &middot; {input.activeTrace.latencyMs}ms</>
             : <>No active trace.</>
           } &middot; Recorded: {input.promptTraceCount}.
+          {input.activeTrace?.prefill && (
+            <div style={{ marginTop: 6, padding: "6px 10px", background: "var(--s2)", borderRadius: 6, border: "1px solid var(--border2)", fontSize: 12, fontFamily: "var(--font-body)" }}>
+              <strong style={{ color: "var(--t2)" }}>Prefill:</strong> <span style={{ color: "var(--t3)", whiteSpace: "pre-wrap" }}>{input.activeTrace.prefill}</span>
+            </div>
+          )}
         </div>
 
         {input.activeTrace ? (

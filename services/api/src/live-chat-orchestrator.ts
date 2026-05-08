@@ -44,7 +44,7 @@ export class LiveChatOrchestrator {
         model: input.model,
         prompt: prepared.prompt,
         signal: input.signal,
-        prefill: input.prefill,
+        prefill: prepared.prompt.prefill ?? undefined,
       });
       reply = result.text;
     } catch (err) {
@@ -95,7 +95,7 @@ export class LiveChatOrchestrator {
         model: input.model,
         prompt,
         signal: input.signal,
-        prefill: input.prefill,
+        prefill: prompt.prefill ?? undefined,
       });
       reply = result.text;
     } catch (err) {
@@ -136,7 +136,7 @@ export class LiveChatOrchestrator {
         model: input.model,
         prompt: prepared.prompt,
         signal: input.signal,
-        prefill: input.prefill,
+        prefill: prepared.prompt.prefill ?? undefined,
       });
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
@@ -203,7 +203,7 @@ export class LiveChatOrchestrator {
         model: input.model,
         prompt,
         signal: input.signal,
-        prefill: input.prefill,
+        prefill: prompt.prefill ?? undefined,
       });
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));

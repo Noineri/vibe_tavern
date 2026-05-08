@@ -50,6 +50,9 @@ export interface PromptAssemblyResolver {
       jailbreak: string;
       summary: string;
       tools: string;
+      prefill: string;
+      authorsNote: string;
+      authorsNoteDepth: number;
     } | null>;
   listActiveLoreEntries(input: {
     chatId: ChatId;
@@ -71,6 +74,7 @@ export interface AssemblePromptForChatInput {
   recentMessageLimit?: number;
   excludeMessageIds?: MessageId[];
   contextBudget?: number | null;
+  mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call";
 }
 
 export interface AssemblePromptForChatResult {
@@ -156,8 +160,12 @@ export class PromptAssemblyService {
             jailbreak: promptPreset.jailbreak,
             summary: promptPreset.summary,
             tools: promptPreset.tools,
+            prefill: promptPreset.prefill,
+            authorsNote: promptPreset.authorsNote,
+            authorsNoteDepth: promptPreset.authorsNoteDepth,
           }
         : null,
+      mode: input.mode,
       lore: activeLoreEntries.map((entry) => ({
         id: entry.id,
         title: entry.title,
@@ -201,6 +209,7 @@ export class PromptAssemblyService {
           sourceId: memory.sourceId,
         })),
         finalPayload: result.finalPayload,
+        prefill: result.prefill,
       },
       promptTraceDraft: {
         chatId: chat.id as ChatId,
@@ -221,6 +230,7 @@ export class PromptAssemblyService {
         })),
         finalPayload: result.finalPayload,
         latencyMs: 0,
+        prefill: result.prefill,
       },
     };
   }
@@ -252,6 +262,8 @@ function mapPromptLayerDto(layer: {
   reason: string;
   tokenCount: number;
   text: string;
+  injectionDepth?: number;
+  modes?: string[];
 }): PromptLayerDto {
   return {
     id: layer.id,
@@ -263,5 +275,7 @@ function mapPromptLayerDto(layer: {
     reason: layer.reason,
     tokenCount: layer.tokenCount,
     text: layer.text,
+    injectionDepth: layer.injectionDepth,
+    modes: layer.modes,
   };
 }

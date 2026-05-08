@@ -126,6 +126,9 @@ class StaticPromptResolver implements PromptAssemblyResolver {
 			jailbreak: preset.postHistoryInstructions,
 			summary: preset.summaryPrompt,
 			tools: preset.toolsPrompt,
+			prefill: preset.assistantPrefix,
+			authorsNote: preset.authorsNote,
+			authorsNoteDepth: preset.authorsNoteDepth,
 		};
 	}
 

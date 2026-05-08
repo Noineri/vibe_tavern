@@ -2,6 +2,9 @@ import type { PromptLayerPosition } from "@rp-platform/domain";
 
 export type { PromptLayerPosition };
 
+/** Which generation scenario this prompt assembly is for. */
+export type AssemblyMode = "chat" | "continue" | "regenerate" | "summary" | "tool_call";
+
 export interface PromptLayer {
   id: string;
   sourceType: string;
@@ -12,6 +15,10 @@ export interface PromptLayer {
   reason: string;
   tokenCount: number;
   text: string;
+  /** For in_chat layers: insert at this many messages from end of history. Undefined = treat as block before history. */
+  injectionDepth?: number;
+  /** Which assembly modes this layer is active in. Undefined = all modes (backward compat). */
+  modes?: AssemblyMode[];
 }
 
 export interface RecentMessage {
@@ -46,7 +53,12 @@ export interface PromptAssemblyContext {
     jailbreak?: string | null;
     summary?: string | null;
     tools?: string | null;
+    prefill?: string | null;
+    authorsNote?: string | null;
+    authorsNoteDepth?: number | null;
   } | null;
+  /** Assembly mode. Defaults to "chat". */
+  mode?: AssemblyMode;
   lore?: Array<{
     id: string;
     title: string;
@@ -88,4 +100,6 @@ export interface PromptAssemblyResult {
     reason: string;
   }>;
   finalPayload: Record<string, unknown>;
+  /** Assistant prefill text, passed through from preset for executor use. */
+  prefill?: string | null;
 }

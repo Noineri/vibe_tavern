@@ -109,6 +109,7 @@ export class ChatRuntime {
         tokenAccounting: pending.draft.tokenAccounting,
         finalPayload: pending.draft.finalPayload,
         latencyMs,
+        prefill: pending.draft.prefill,
       });
     }
 
@@ -151,6 +152,7 @@ export class ChatRuntime {
         tokenAccounting: pending.draft.tokenAccounting,
         finalPayload: pending.draft.finalPayload,
         latencyMs: input.latencyMs,
+        prefill: pending.draft.prefill,
       });
     }
     return await getSnapshot(chatId);
