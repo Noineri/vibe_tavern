@@ -45,7 +45,7 @@ export function MessageList(input: MessageListProps) {
         return (
           <Fragment key={message.id}>
             {showSeparator && (
-              <div className="mx-auto mb-1.5 mt-2" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))',paddingLeft:28,paddingRight:28}}>
+              <div style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'8px auto 6px', paddingLeft:28, paddingRight:28}}>
                 <div className="h-px bg-border opacity-40"/>
               </div>
             )}
@@ -88,7 +88,7 @@ export function MessageList(input: MessageListProps) {
       {input.pendingUserMessageContent && (
         <>
           {input.messages.length > 0 && (
-            <div className="mx-auto mb-1.5 mt-2" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))',paddingLeft:28,paddingRight:28}}>
+            <div style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'8px auto 6px', paddingLeft:28, paddingRight:28}}>
               <div className="h-px bg-border opacity-40"/>
             </div>
           )}
@@ -105,7 +105,7 @@ export function MessageList(input: MessageListProps) {
               </div>
             </div>
           </div>
-          <div className="mx-auto mb-1.5 mt-2" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))',paddingLeft:28,paddingRight:28}}>
+          <div style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'8px auto 6px', paddingLeft:28, paddingRight:28}}>
             <div className="h-px bg-border opacity-40"/>
           </div>
           <div className="relative" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'0 auto', paddingLeft:28, paddingRight:28}} aria-label="Generating response">

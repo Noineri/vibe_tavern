@@ -71,6 +71,29 @@ export function InputArea(input: InputAreaProps) {
         />
 
         <div className="flex items-center gap-[7px]" style={{ padding: "6px 12px 9px" }}>
+          <div className="flex items-center gap-[5px]">
+            {input.isSending ? (
+              <button
+                className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
+                style={{ padding: "0 14px" }}
+                onClick={input.onCancel}
+              >
+                Cancel
+              </button>
+            ) : (
+              <button
+                className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[5px] bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all duration-150 hover:brightness-110 disabled:cursor-default disabled:opacity-45 disabled:filter-none"
+                style={{ padding: "0 16px", background: "var(--accent)", color: "var(--on-accent)", borderRadius: 5 }}
+                disabled={!input.canSend}
+                onClick={input.onSend}
+                aria-label={input.sendLabel}
+                title={input.sendLabel}
+              >
+                {sendButtonText}
+              </button>
+            )}
+          </div>
+
           <div className="speaker-row multi-persona" title="multi-persona">
             <span className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.06em] text-t3">Speak as</span>
           </div>
@@ -104,28 +127,6 @@ export function InputArea(input: InputAreaProps) {
             )}
           </div>
 
-          <div className="ml-auto flex items-center gap-[5px]">
-            {input.isSending ? (
-              <button
-                className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
-                style={{ padding: "0 14px" }}
-                onClick={input.onCancel}
-              >
-                Cancel
-              </button>
-            ) : (
-              <button
-                className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[5px] bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all duration-150 hover:brightness-110 disabled:cursor-default disabled:opacity-45 disabled:filter-none"
-                style={{ padding: "0 16px", background: "var(--accent)", color: "var(--on-accent)", borderRadius: 5 }}
-                disabled={!input.canSend}
-                onClick={input.onSend}
-                aria-label={input.sendLabel}
-                title={input.sendLabel}
-              >
-                {sendButtonText}
-              </button>
-            )}
-          </div>
         </div>
       </div>
     </div>
