@@ -32,7 +32,7 @@ export function MessageBlock(input: MessageBlockProps) {
   const variantLabel = !isUser && variantCount > 1 ? `swipe ${selectedVariantIndex + 1}/${variantCount}` : null;
 
   return (
-    <div className="relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))]" style={{paddingLeft:28,paddingRight:28}}>
+    <div className="relative" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'0 auto', paddingLeft:28, paddingRight:28}}>
       <div className="relative group" style={{paddingTop:10,paddingBottom:10}}>
         <div className={isUser
           ? "flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3"
