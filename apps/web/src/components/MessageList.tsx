@@ -31,9 +31,6 @@ export function MessageList(input: MessageListProps) {
     <div className="flex-1 overflow-y-auto scroll-smooth" style={{paddingBottom:12,paddingTop:28}} ref={msgsRef}>
       {/* TODO: VP-W4+ — EmptyState component for no active chat */}
       {/* TODO: VP-W4+ — EmptyState component for empty chat */}
-      <div className="mx-auto max-w-msg text-center font-body text-[12.5px] italic text-t3" style={{paddingLeft:24,paddingRight:24,paddingTop:4,paddingBottom:'26px'}}>
-        {input.scenario}
-      </div>
 
       {input.messages.map((message, index) => {
         const previous = index > 0 ? input.messages[index - 1] : null;
