@@ -432,7 +432,8 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .msg-sep{max-width:var(--mw);margin:8px auto 6px;padding:0 28px}
 .msg-sep-l{height:1px;background:var(--border);opacity:.4}
 
-/* ── Input ── */
+/* ═══ Input — ported to Tailwind in VP-W3-INPUT-AREA ═══
+   ── Input ──
 .input-area{padding:10px 16px 14px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0}
 .input-box{background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:visible;transition:border-color .15s}
 .input-box:focus-within{border-color:var(--border2)}
@@ -455,6 +456,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .cancel-btn:hover{background:var(--danger-dim);color:var(--danger-text)}
 .cancel-btn:disabled{opacity:.45;cursor:not-allowed}
 
+═══ End Input ═══ */
 /* ── Build Mode ── */
 .build-wrap{flex:1;display:flex;overflow:hidden}
 .build-nav{width:200px;min-width:200px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:8px 0}

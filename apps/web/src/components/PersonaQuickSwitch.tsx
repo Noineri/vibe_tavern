@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Icons } from "./shared/icons.js";
+import { cn } from "../lib/cn.js";
 
 interface Props {
   personas: Array<{ id: string; name: string; description: string }>;
@@ -27,36 +28,33 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
 
   if (!activePersona) {
     return (
-      <div className="char-pill">
+      <div className="flex shrink-0 cursor-default items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim text-xs font-medium text-accent-t" style={{ padding: '3px 9px' }}>
         <span>No Persona</span>
       </div>
     );
   }
 
   return (
-    <div className="char-pill" style={{ position: "relative", padding: 0, overflow: "visible" }} ref={containerRef}>
+    <div className="relative" ref={containerRef}>
       <button
-        className="pill-btn"
+        className="flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim text-xs font-medium text-accent-t"
+        style={{padding:'3px 9px'}}
         onClick={() => setIsOpen(!isOpen)}
       >
-        <span>{activePersona.name}</span>
+        <span>{activePersona.name.split(' ')[0]}</span>
         <Icons.Caret direction={isOpen ? "u" : "d"} />
       </button>
       {isOpen && (
-        <div
-          style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 8, width: 240, background: "var(--surface)", border: "1px solid var(--border2)", borderRadius: 8, padding: "8px", zIndex: 200, boxShadow: "0 12px 32px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", gap: 4 }}
-        >
-          <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--t3)", marginBottom: 4, fontWeight: 500, padding: "0 4px" }}>Switch Persona</div>
-          {personas.map((p) => (
+        <div className="absolute bottom-[calc(100%+8px)] z-[220] left-0 w-[220px] rounded-lg border border-border2 bg-surface py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
+          <div className="pt-1 px-4 pb-2 text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1">Switch Persona</div>
+          {personas.map(p => (
             <button
               key={p.id}
+              className={cn("flex w-full cursor-pointer items-center gap-2 py-1.5 px-4 text-left text-[13px] text-t1 hover:bg-s2", p.id === activePersonaId && "bg-accent-dim")}
               onClick={() => { onSelect(p.id); setIsOpen(false); }}
-              style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px", background: p.id === activePersonaId ? "var(--accent-dim)" : "transparent", border: p.id === activePersonaId ? "1px solid var(--accent)" : "1px solid transparent", color: p.id === activePersonaId ? "var(--accent-t)" : "var(--t2)", cursor: "pointer", borderRadius: 6, transition: "background 0.15s" }}
-              onMouseEnter={(e) => { if (p.id !== activePersonaId) e.currentTarget.style.background = "var(--s2)"; }}
-              onMouseLeave={(e) => { if (p.id !== activePersonaId) e.currentTarget.style.background = "transparent"; }}
             >
-              <div style={{ fontWeight: 500, fontSize: 13, color: p.id === activePersonaId ? "var(--t1)" : "inherit" }}>{p.name}</div>
-              <div style={{ fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 2 }}>{p.description}</div>
+              <div className="w-4 shrink-0 flex justify-center text-accent-t">{p.id === activePersonaId && <Icons.Check />}</div>
+              <div className="overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</div>
             </button>
           ))}
         </div>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, KeyboardEvent } from "react";
 import type { InputAreaProps } from "./play-mode-types.js";
 import { PersonaQuickSwitch } from "./PersonaQuickSwitch.js";
+import { cn } from "../lib/cn.js";
 
 function bucketTokens(accounting: Record<string, number>): {
   system: number;
@@ -52,105 +52,64 @@ export function InputArea(input: InputAreaProps) {
   const statusText = input.notice || (!input.canSend ? input.sendLabel : "");
 
   return (
-    <div className="input-area">
-      <div className="input-box" style={input.canSend || input.isSending ? undefined : { opacity: 0.82 }}>
+    <div className={cn("relative z-10 shrink-0 border-t border-border bg-surface px-4 pb-3.5 pt-2.5 transition-opacity duration-200", input.canSend || input.isSending ? 'opacity-100 pointer-events-auto' : 'pointer-events-none opacity-45')}>
+      <div className="rounded-lg border border-border bg-bg transition-colors duration-150 focus-within:border-border2">
         <textarea
-          className="input-ta"
-          value={input.draft}
-          onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-            input.onDraftChange(event.target.value)
-          }
-          onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
-            if (event.key === "Enter" && !event.shiftKey && input.canSend) {
-              event.preventDefault();
-              input.onSend();
-            }
-          }}
+          className="max-h-40 min-h-[55px] w-full resize-none border-0 bg-transparent px-4 pb-2 font-body text-[16.5px] leading-[1.65] text-t1 outline-none placeholder:text-t4"
+          style={{paddingTop:'13px'}}
           placeholder="Continue the story..."
+          value={input.draft}
+          onChange={e => input.onDraftChange(e.target.value)}
+          onKeyDown={e => { if (e.key==='Enter' && !e.shiftKey && input.canSend) { e.preventDefault(); input.onSend(); } }}
           rows={2}
         />
         {statusText && (
           <div
+            className="max-w-[calc(100%-20px)] m-[0_10px_2px] rounded bg-s2 border border-border text-[11px] text-t3 whitespace-nowrap overflow-hidden text-ellipsis"
+            style={{padding:'5px 8px'}}
             title={statusText}
-            style={{
-              display: "inline-flex",
-              maxWidth: "calc(100% - 20px)",
-              margin: "0 10px 2px",
-              padding: "5px 8px",
-              borderRadius: 5,
-              background: "var(--s2)",
-              border: "1px solid var(--border)",
-              fontSize: 11,
-              color: "var(--t3)",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
           >
             {statusText}
           </div>
         )}
-        <div className="input-row">
+        <div className="flex items-center gap-[7px] px-3 pt-1.5" style={{paddingBottom:'9px'}}>
+          {/* TODO: VP-W4+ — multi-persona speaker row */}
           <PersonaQuickSwitch personas={input.personas} activePersonaId={input.activePersonaId} onSelect={input.onSetPersona} />
-          <div className="sep-v" />
-          <div ref={tokenPopRef}>
+          <div className="mx-0.5 h-3.5 w-px shrink-0 bg-border"/>
+          <div className="relative" ref={tokenPopRef}>
             <span
-              className={`tok-c ${tokenState}`}
-              onClick={() => setTokenPopOpen((o) => !o)}
+              className={cn("cursor-pointer whitespace-nowrap text-[calc(var(--ui-fs)-3px)] tabular-nums transition-colors duration-150 hover:text-t1", tokenState === 'warn' ? 'text-danger-text' : tokenState === 'mid' ? 'text-warning-text' : 'text-t3')}
+              onClick={() => setTokenPopOpen(o => !o)}
             >
               {totalUsed.toLocaleString()}
             </span>
             {tokenPopOpen && (
-              <div className="mem-pop input-pop center">
-                <div className="mem-pop-ttl">Context Breakdown</div>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
-                  <span style={{ color: "var(--t2)" }}>System</span>
-                  <span style={{ color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>{buckets.system.toLocaleString()}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
-                  <span style={{ color: "var(--t2)" }}>Character</span>
-                  <span style={{ color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>{buckets.character.toLocaleString()}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
-                  <span style={{ color: "var(--t2)" }}>Lore (RAG)</span>
-                  <span style={{ color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>{buckets.lore.toLocaleString()}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
-                  <span style={{ color: "var(--t2)" }}>Summary</span>
-                  <span style={{ color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>{buckets.summary.toLocaleString()}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
-                  <span style={{ color: "var(--t2)" }}>History</span>
-                  <span style={{ color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>{buckets.history.toLocaleString()}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
-                  <span style={{ color: "var(--t2)" }}>Current Input</span>
-                  <span style={{ color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>{inputTokens.toLocaleString()}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0 0", fontSize: 12, fontWeight: 500 }}>
-                  <span style={{ color: "var(--t1)" }}>Total Used</span>
-                  <span style={{ color: "var(--accent-t)", fontVariantNumeric: "tabular-nums" }}>{totalUsed.toLocaleString()}</span>
-                </div>
+              <div className="absolute bottom-[calc(100%+8px)] left-1/2 z-[220] w-[220px] -translate-x-1/2 rounded-lg border border-border2 bg-surface py-2.5 px-3.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
+                <div className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1.5 pb-1.5">Context Breakdown</div>
+                <div className="flex justify-between text-xs text-t2 mb-1"><span>System</span> <span className="text-t1" style={{fontVariantNumeric:'tabular-nums'}}>{buckets.system.toLocaleString()}</span></div>
+                <div className="flex justify-between text-xs text-t2 mb-1"><span>Character</span> <span className="text-t1" style={{fontVariantNumeric:'tabular-nums'}}>{buckets.character.toLocaleString()}</span></div>
+                <div className="flex justify-between text-xs text-t2 mb-1"><span>Lore (RAG)</span> <span className="text-t1" style={{fontVariantNumeric:'tabular-nums'}}>{buckets.lore.toLocaleString()}</span></div>
+                <div className="flex justify-between text-xs text-t2 mb-1"><span>Summary</span> <span className="text-t1" style={{fontVariantNumeric:'tabular-nums'}}>{buckets.summary.toLocaleString()}</span></div>
+                <div className="flex justify-between text-xs text-t2 mb-1"><span>History</span> <span className="text-t1" style={{fontVariantNumeric:'tabular-nums'}}>{buckets.history.toLocaleString()}</span></div>
+                <div className="flex justify-between text-xs text-t2 mb-1.5"><span>Current Input</span> <span className="text-t1" style={{fontVariantNumeric:'tabular-nums'}}>{inputTokens.toLocaleString()}</span></div>
+                <div className="flex justify-between text-xs font-medium text-t1 border-t border-border pt-1.5 mt-0.5"><span>Total Used</span> <span style={{fontVariantNumeric:'tabular-nums'}}>{totalUsed.toLocaleString()}</span></div>
               </div>
             )}
           </div>
-          <div className="input-r">
+          {/* TODO: VP-W4+ — preparing/waiting/aborting/no-key/no-model send states */}
+          <div className="ml-auto flex items-center gap-[5px]">
             {input.isSending ? (
               <button
-                className="cancel-btn"
+                className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface px-3.5 font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
                 onClick={input.onCancel}
-                title="Stop generation"
               >
                 Cancel
               </button>
             ) : (
               <button
-                className="send-btn"
-                style={input.canSend ? undefined : { background: "var(--s3)", color: "var(--t2)" }}
+                className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[5px] bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all duration-150 hover:brightness-110 disabled:cursor-default disabled:opacity-45 disabled:filter-none"
                 disabled={!input.canSend}
                 onClick={input.onSend}
-                aria-label={input.sendLabel}
-                title={input.sendLabel}
               >
                 {sendButtonText}
               </button>
