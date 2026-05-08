@@ -27,6 +27,11 @@ export async function extractPngMetadata(file: File): Promise<PngMetadata[]> {
     const dataStart = offset + 8;
     const dataEnd = dataStart + length;
 
+    // Bounds check: prevent malformed chunks from reading past buffer
+    if (dataEnd > buffer.byteLength) {
+      break;
+    }
+
     if (type === 'tEXt') {
       // tEXt: Keyword\0Text
       const chunkData = uint8.slice(dataStart, dataEnd);
@@ -42,8 +47,8 @@ export async function extractPngMetadata(file: File): Promise<PngMetadata[]> {
       const null1 = chunkData.indexOf(0);
       if (null1 !== -1) {
         const keyword = new TextDecoder().decode(chunkData.slice(0, null1));
-        // Simple skip to the text part (after 4 more null-terminated/fixed fields)
-        // In ST/Janitor, we mostly care about 'chara' keyword
+        const compressionFlag = chunkData[null1 + 1];
+
         let currentPos = null1 + 3; // Skip null, compression flag, compression method
 
         // Skip Language Tag
@@ -53,8 +58,38 @@ export async function extractPngMetadata(file: File): Promise<PngMetadata[]> {
         while (currentPos < chunkData.length && chunkData[currentPos] !== 0) currentPos++;
         currentPos++;
 
-        const text = new TextDecoder().decode(chunkData.slice(currentPos));
-        metadata.push({ keyword, text });
+        if (compressionFlag === 0) {
+          // Uncompressed text
+          const text = new TextDecoder().decode(chunkData.slice(currentPos));
+          metadata.push({ keyword, text });
+        } else if (compressionFlag === 1) {
+          // zlib-compressed text (decompress via DecompressionStream)
+          try {
+            const compressed = chunkData.slice(currentPos);
+            const ds = new DecompressionStream('deflate');
+            const writer = ds.writable.getWriter();
+            writer.write(compressed);
+            writer.close();
+            const reader = ds.readable.getReader();
+            const chunks: Uint8Array[] = [];
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+            }
+            const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+            const combined = new Uint8Array(totalLength);
+            let pos = 0;
+            for (const chunk of chunks) {
+              combined.set(chunk, pos);
+              pos += chunk.length;
+            }
+            const text = new TextDecoder().decode(combined);
+            metadata.push({ keyword, text });
+          } catch {
+            // Skip malformed compressed chunks
+          }
+        }
       }
     }
 
@@ -66,25 +101,48 @@ export async function extractPngMetadata(file: File): Promise<PngMetadata[]> {
 }
 
 /**
- * Parses the extracted metadata into a Character object.
- * Supports SillyTavern V2 (base64) and V3 (json).
+ * Try to decode a string that may be base64-encoded JSON, or raw JSON.
+ * SillyTavern always base64-encodes both 'chara' (V2) and 'ccv3' (V3) chunks,
+ * but some tools write raw JSON. Try both.
  */
-export function parseCharacterMetadata(metadata: PngMetadata[]): any {
-  // Prefer ccv3 (V3) over chara (V2)
-  const v3 = metadata.find(m => m.keyword === 'ccv3');
-  if (v3) {
-    return JSON.parse(v3.text);
+function decodeCardText(text: string): unknown {
+  // Try base64 first (standard SillyTavern encoding)
+  try {
+    const decoded = atob(text);
+    return JSON.parse(decoded);
+  } catch {
+    // Not valid base64+JSON — try raw JSON
   }
 
+  // Try raw JSON (non-standard but common)
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parses the extracted metadata into a Character object.
+ * Supports SillyTavern V2 (chara) and V3 (ccv3).
+ * V3 takes precedence. Falls back to V2 if V3 fails.
+ */
+export function parseCharacterMetadata(metadata: PngMetadata[]): unknown {
+  // Try ccv3 (V3) first — SillyTavern writes this as base64-encoded JSON
+  const v3 = metadata.find(m => m.keyword === 'ccv3');
+  if (v3) {
+    const parsed = decodeCardText(v3.text);
+    if (parsed && typeof parsed === 'object') {
+      return parsed;
+    }
+  }
+
+  // Fall back to chara (V2)
   const v2 = metadata.find(m => m.keyword === 'chara');
   if (v2) {
-    try {
-      // V2 is usually Base64 encoded JSON
-      const decoded = atob(v2.text);
-      return JSON.parse(decoded);
-    } catch {
-      // Sometimes it's raw JSON if not following strict spec
-      return JSON.parse(v2.text);
+    const parsed = decodeCardText(v2.text);
+    if (parsed && typeof parsed === 'object') {
+      return parsed;
     }
   }
 

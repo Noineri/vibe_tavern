@@ -9,6 +9,7 @@ import {
   makeDeterministicId,
   normalizeTimestamp,
   parseJsonInput,
+  sanitizeRecord,
   slugify,
   stableJson,
 } from "../shared.js";
@@ -102,7 +103,7 @@ export function importCharacterCardV3Json(
     characterVersion: asOptionalString(data.character_version),
     alternateGreetings: asStringArray(data.alternate_greetings),
     groupOnlyGreetings: asStringArray(data.group_only_greetings),
-    extensions: isRecord(data.extensions) ? data.extensions : {},
+    extensions: isRecord(data.extensions) ? sanitizeRecord(data.extensions) : {},
     createdAt: typeof root.create_date === "string" ? importedAt : null,
   };
 
@@ -114,7 +115,26 @@ export function importCharacterCardV3Json(
     warnings.push("Character card has no scenario.");
   }
 
-  const slug = slugify(normalized.name);
+  // Strip control characters from all string fields
+  const ctrlRe = /[\x00-\x08\x0B\x0C\x0E-\x1F]/g;
+  const cleaned = {
+    ...normalized,
+    name: normalized.name.replace(ctrlRe, ""),
+    description: normalized.description.replace(ctrlRe, ""),
+    personality: normalized.personality.replace(ctrlRe, ""),
+    scenario: normalized.scenario.replace(ctrlRe, ""),
+    firstMessage: normalized.firstMessage.replace(ctrlRe, ""),
+    exampleMessages: normalized.exampleMessages.replace(ctrlRe, ""),
+    systemPrompt: normalized.systemPrompt.replace(ctrlRe, ""),
+    postHistoryInstructions: normalized.postHistoryInstructions.replace(ctrlRe, ""),
+    depthPrompt: normalized.depthPrompt.replace(ctrlRe, ""),
+    creatorNotes: normalized.creatorNotes.replace(ctrlRe, ""),
+    alternateGreetings: normalized.alternateGreetings.map(g => g.replace(ctrlRe, "")),
+    groupOnlyGreetings: normalized.groupOnlyGreetings.map(g => g.replace(ctrlRe, "")),
+    tags: normalized.tags.map(t => t.replace(ctrlRe, "")),
+  };
+
+  const slug = slugify(cleaned.name);
   const characterId: CharacterId = brandId<CharacterId>(makeDeterministicId(
     ENTITY_ID_NAMESPACE.character,
     `${slug}:${stableJson(root)}`,
@@ -127,22 +147,22 @@ export function importCharacterCardV3Json(
   const character: Character = {
     id: characterId,
     slug,
-    name: normalized.name,
-    description: normalized.description,
-    personalitySummary: normalized.personality || null,
-    defaultScenario: normalized.scenario || null,
-    firstMessage: normalized.firstMessage || null,
-    mesExample: normalized.exampleMessages || null,
-    alternateGreetings: normalized.alternateGreetings,
-    postHistoryInstructions: normalized.postHistoryInstructions || null,
-    creatorNotes: normalized.creatorNotes || null,
-    characterBook: normalized.characterBook,
-    depthPrompt: normalized.depthPrompt || null,
-    depthPromptDepth: normalized.depthPromptDepth,
-    depthPromptRole: normalized.depthPromptRole,
-    extensions: normalized.extensions,
-    systemPrompt: normalized.systemPrompt || null,
-    tags: normalized.tags,
+    name: cleaned.name,
+    description: cleaned.description,
+    personalitySummary: cleaned.personality || null,
+    defaultScenario: cleaned.scenario || null,
+    firstMessage: cleaned.firstMessage || null,
+    mesExample: cleaned.exampleMessages || null,
+    alternateGreetings: cleaned.alternateGreetings,
+    postHistoryInstructions: cleaned.postHistoryInstructions || null,
+    creatorNotes: cleaned.creatorNotes || null,
+    characterBook: cleaned.characterBook,
+    depthPrompt: cleaned.depthPrompt || null,
+    depthPromptDepth: cleaned.depthPromptDepth,
+    depthPromptRole: cleaned.depthPromptRole,
+    extensions: cleaned.extensions,
+    systemPrompt: cleaned.systemPrompt || null,
+    tags: cleaned.tags,
     avatarAssetId: null,
     status: options.characterStatus ?? "active",
     createdAt: importedAt,
