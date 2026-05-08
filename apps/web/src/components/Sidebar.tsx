@@ -97,7 +97,7 @@ export function Sidebar(input: SidebarProps) {
       input.sidebarCollapsed ? 'w-[54px] min-w-[54px]' : 'w-[var(--sw)] min-w-[var(--sw)]',
       'shrink-0 overflow-hidden border-r border-border bg-surface flex flex-col transition-all duration-[180ms] ease-out'
     )}>
-      <div className="flex h-[60px] shrink-0 items-center gap-2.5 border-b border-border px-3" style={{ justifyContent: input.sidebarCollapsed ? 'center' : undefined, padding: input.sidebarCollapsed ? '0 6px' : undefined }}>
+      <div className="flex h-[60px] shrink-0 items-center gap-2.5 border-b border-border" style={{ justifyContent: input.sidebarCollapsed ? 'center' : undefined, padding: input.sidebarCollapsed ? '0 6px' : '0 12px' }}>
         {!input.sidebarCollapsed && (
           <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[5px] bg-accent font-body text-[calc(var(--ui-fs)-1px)] font-medium italic text-on-accent">r</div>
         )}
@@ -114,6 +114,64 @@ export function Sidebar(input: SidebarProps) {
         </button>
       </div>
 
+      {input.sidebarCollapsed && (
+        <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto" style={{padding:'8px 0'}}>
+          {input.characterTabs.map((character) => {
+            const isActive = character.chatId === input.activeChatId
+              || (!character.chatId && character.id === input.selectedCharacterId);
+            return (
+              <div
+                key={character.id}
+                className={cn(
+                  'flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all duration-150 hover:rounded-xl hover:bg-s2',
+                  isActive && 'rounded-xl bg-accent-dim ring-2 ring-accent'
+                )}
+                onClick={() => {
+                  if (character.chatId) {
+                    input.onSwitchChat(character.chatId);
+                  } else {
+                    input.onSelectCharacter(character.id);
+                  }
+                }}
+                title={character.name}
+              >
+                <span className={cn('flex h-full w-full items-center justify-center rounded-full font-ui text-sm', isActive ? 'bg-accent text-on-accent' : 'bg-s3 text-t2')}>
+                  {initials(character.name)}
+                </span>
+              </div>
+            );
+          })}
+
+          <div className="my-1 h-px w-8 shrink-0 bg-border" />
+
+          {input.chats.map((chat) => {
+            const initial = (chat.title || '?').trim().charAt(0).toUpperCase() || '?';
+            return (
+              <div
+                key={chat.id}
+                className={cn(
+                  'flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full font-ui text-xs font-medium transition-all duration-150 hover:rounded-xl hover:bg-s2',
+                  chat.id === input.activeChatId ? 'rounded-xl bg-accent text-on-accent' : 'bg-s3 text-t2'
+                )}
+                onClick={() => input.onSwitchChat(chat.id)}
+                title={chat.title}
+              >
+                {initial}
+              </div>
+            );
+          })}
+
+          <div className="my-1 h-px w-8 shrink-0 bg-border" />
+
+          <div className="mt-auto flex shrink-0 flex-col items-center gap-1">
+            <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={input.onOpenPromptManager} title="Prompt Manager"><Icons.Terminal /></div>
+            <div className="flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={input.onOpenPersonaManager} title={input.personaName}>
+              {initials(input.personaName)}
+            </div>
+          </div>
+        </div>
+      )}
+
       {!input.sidebarCollapsed && (
         <>
           <input
@@ -125,9 +183,9 @@ export function Sidebar(input: SidebarProps) {
             onChange={onFilePicked}
           />
 
-          <section className="border-b border-border py-1.5">
-            <div className="flex items-center pr-2.5">
-              <div className="px-[13px] pb-[5px] pt-1 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ flex: 1 }}>Characters</div>
+          <section className="border-b border-border" style={{padding:'6px 0'}}>
+            <div className="flex items-center" style={{paddingRight:'10px'}}>
+              <div className="text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ flex: 1, padding:'4px 13px 5px' }}>Characters</div>
               <button className="iBtn" style={{ width: 20, height: 20 }} onClick={triggerImport} title="Import character (PNG/JSON)">
                 <Icons.Import />
               </button>
@@ -136,7 +194,7 @@ export function Sidebar(input: SidebarProps) {
               </button>
             </div>
             {input.characterTabs.length === 0 ? (
-              <div className="px-3.5 py-5 text-center text-t3 text-xs leading-relaxed">
+              <div className="text-center text-t3 text-xs leading-relaxed" style={{padding:'20px 14px'}}>
                 No characters yet — import a card to start.
               </div>
             ) : (
@@ -169,7 +227,7 @@ export function Sidebar(input: SidebarProps) {
                     </span>
 
                     {!menuOpen && (
-                      <div className="absolute right-1 top-1/2 flex -translate-y-1/2 gap-0.5 rounded pl-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+                      <div className="absolute right-1 top-1/2 flex -translate-y-1/2 gap-0.5 rounded opacity-0 transition-opacity duration-150 group-hover:opacity-100" style={{paddingLeft:'6px'}}>
                         <button
                           className="flex h-[22px] w-[22px] scale-90 items-center justify-center rounded text-t3 transition-colors duration-100 hover:text-t1"
                           aria-label="Character actions"
@@ -189,10 +247,10 @@ export function Sidebar(input: SidebarProps) {
 
                     {menuOpen && charMenuPos && createPortal(
                       <div
-                        className="absolute z-[200] w-[190px] rounded-md border border-border2 bg-surface py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
+                        className="absolute z-[200] w-[190px] rounded-md border border-border2 bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
                         ref={charMenuRef}
                         onClick={(event) => event.stopPropagation()}
-                        style={{ top: charMenuPos.top, right: charMenuPos.right }}
+                        style={{ top: charMenuPos.top, right: charMenuPos.right, padding:'4px 0' }}
                       >
                         <div
                           className="flex cursor-pointer items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
@@ -242,9 +300,9 @@ export function Sidebar(input: SidebarProps) {
             )}
           </section>
 
-          <section className="flex-1 overflow-y-auto border-b-0 py-1.5" style={{ paddingLeft: 0, paddingRight: 0 }}>
-            <div className="flex items-center pr-2.5">
-              <div className="px-[13px] pb-[5px] pt-1 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ flex: 1 }}>Chats</div>
+          <section className="flex-1 overflow-y-auto border-b-0" style={{ padding:'6px 0' }}>
+            <div className="flex items-center" style={{paddingRight:'10px'}}>
+              <div className="text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ flex: 1, padding:'4px 13px 5px' }}>Chats</div>
               <button className="iBtn" style={{ width: 20, height: 20 }} onClick={triggerImport} title="Import chat (JSONL)">
                 <Icons.Import />
               </button>
@@ -257,7 +315,7 @@ export function Sidebar(input: SidebarProps) {
               </button>
             </div>
             {input.chats.length === 0 ? (
-              <div className="px-3.5 py-5 text-center text-t3 text-xs leading-relaxed">
+              <div className="text-center text-t3 text-xs leading-relaxed" style={{padding:'20px 14px'}}>
                 Send a message to start a chat.
               </div>
             ) : (
@@ -311,7 +369,8 @@ export function Sidebar(input: SidebarProps) {
                       </div>
                       {isActive && branchCount > 0 && (
                         <div
-                          className="inline-flex cursor-pointer items-center gap-[3px] rounded px-1 py-px font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3 transition-colors duration-100 hover:bg-border hover:text-t1 [&_svg]:h-2.5 [&_svg]:w-2.5"
+                          className="inline-flex cursor-pointer items-center gap-[3px] rounded font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3 transition-colors duration-100 hover:bg-border hover:text-t1 [&_svg]:h-2.5 [&_svg]:w-2.5"
+                          style={{padding:'1px 4px'}}
                           onClick={(event) => {
                             event.stopPropagation();
                             setBranchPopId(branchPopOpen ? null : chat.id);
@@ -347,10 +406,10 @@ export function Sidebar(input: SidebarProps) {
 
                     {chatMenuOpen && chatMenuPos && createPortal(
                       <div
-                        className="absolute z-[200] w-[190px] rounded-md border border-border2 bg-surface py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
+                        className="absolute z-[200] w-[190px] rounded-md border border-border2 bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
                         ref={chatMenuRef}
                         onClick={(event) => event.stopPropagation()}
-                        style={{ top: chatMenuPos.top, right: chatMenuPos.right }}
+                        style={{ top: chatMenuPos.top, right: chatMenuPos.right, padding:'4px 0' }}
                       >
                         <div
                           className="flex cursor-pointer items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
@@ -434,8 +493,8 @@ export function Sidebar(input: SidebarProps) {
                     )}
 
                     {branchPopOpen && isActive && (
-                      <div className="mt-1.5 flex cursor-default flex-col gap-0.5 border-t border-dashed border-border2 pt-1.5" ref={branchPopRef} onClick={(event) => event.stopPropagation()}>
-                        <div className="mb-1 pl-1 text-[9px] font-medium uppercase tracking-[0.05em] text-t3">
+                      <div className="mt-1.5 flex cursor-default flex-col gap-0.5 border-t border-dashed border-border2" style={{paddingTop:'6px'}} ref={branchPopRef} onClick={(event) => event.stopPropagation()}>
+                        <div className="mb-1 text-[9px] font-medium uppercase tracking-[0.05em] text-t3" style={{paddingLeft:'4px'}}>
                           Timeline branches
                         </div>
                         {input.branches.map((branch) => {
@@ -464,7 +523,8 @@ export function Sidebar(input: SidebarProps) {
                           );
                         })}
                         <div
-                          className="mt-0.5 cursor-pointer rounded border-t border-border px-2 py-1.5 text-center text-[calc(var(--ui-fs)-3px)] italic text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1"
+                          className="mt-0.5 cursor-pointer rounded border-t border-border text-center text-[calc(var(--ui-fs)-3px)] italic text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1"
+                          style={{padding:'6px 8px'}}
                           role="button"
                           tabIndex={0}
                           onClick={(event) => {
@@ -481,9 +541,10 @@ export function Sidebar(input: SidebarProps) {
                           const canAct = !activeIsRoot && input.branches.length > 1;
                           return (
                             <div className={cn(
-                              'cursor-pointer rounded border-t border-border px-2 py-1.5 text-center text-[calc(var(--ui-fs)-3px)] italic text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1',
+                              'cursor-pointer rounded border-t border-border text-center text-[calc(var(--ui-fs)-3px)] italic text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1',
                               !canAct && 'opacity-45 cursor-not-allowed'
                             )}
+                              style={{padding:'6px 8px'}}
                               role="button" tabIndex={0} aria-disabled={!canAct}
                               title={canAct ? "" : "Switch to a non-main branch first"}
                               onClick={(event) => {
@@ -510,7 +571,7 @@ export function Sidebar(input: SidebarProps) {
             )}
           </section>
 
-          <section className="mt-auto shrink-0 border-t border-border px-1 py-1.5">
+          <section className="mt-auto shrink-0 border-t border-border" style={{padding:'6px 4px'}}>
             <div
               className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
               style={{ padding: '6px 10px' }}
