@@ -45,12 +45,13 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
         <Icons.Caret direction={isOpen ? "u" : "d"} />
       </button>
       {isOpen && (
-        <div className="absolute bottom-[calc(100%+8px)] z-[220] left-0 w-[220px] rounded-lg border border-border2 bg-surface py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
-          <div className="pt-1 px-4 pb-2 text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1">Switch Persona</div>
+        <div className="absolute bottom-[calc(100%+8px)] z-[220] left-0 w-[220px] rounded-lg border border-border2 bg-surface shadow-[0_12px_28px_rgba(0,0,0,0.45)]" style={{padding:'8px 0'}}>
+          <div className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1" style={{padding:'4px 16px 8px'}}>Switch Persona</div>
           {personas.map(p => (
             <button
               key={p.id}
-              className={cn("flex w-full cursor-pointer items-center gap-2 py-1.5 px-4 text-left text-[13px] text-t1 hover:bg-s2", p.id === activePersonaId && "bg-accent-dim")}
+              className={cn("flex w-full cursor-pointer items-center gap-2 text-left text-[13px] text-t1 hover:bg-s2", p.id === activePersonaId && "bg-accent-dim")}
+              style={{padding:'6px 16px'}}
               onClick={() => { onSelect(p.id); setIsOpen(false); }}
             >
               <div className="w-4 shrink-0 flex justify-center text-accent-t">{p.id === activePersonaId && <Icons.Check />}</div>

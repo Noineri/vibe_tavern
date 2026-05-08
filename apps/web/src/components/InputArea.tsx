@@ -52,11 +52,11 @@ export function InputArea(input: InputAreaProps) {
   const statusText = input.notice || (!input.canSend ? input.sendLabel : "");
 
   return (
-    <div className={cn("relative z-10 shrink-0 border-t border-border bg-surface px-4 pb-3.5 pt-2.5 transition-opacity duration-200", input.canSend || input.isSending ? 'opacity-100 pointer-events-auto' : 'pointer-events-none opacity-45')}>
+    <div className={cn("relative z-10 shrink-0 border-t border-border bg-surface transition-opacity duration-200", input.canSend || input.isSending ? 'opacity-100 pointer-events-auto' : 'pointer-events-none opacity-45')} style={{padding:'10px 16px 14px'}}>
       <div className="rounded-lg border border-border bg-bg transition-colors duration-150 focus-within:border-border2">
         <textarea
-          className="max-h-40 min-h-[55px] w-full resize-none border-0 bg-transparent px-4 pb-2 font-body text-[16.5px] leading-[1.65] text-t1 outline-none placeholder:text-t4"
-          style={{paddingTop:'13px'}}
+          className="max-h-40 min-h-[55px] w-full resize-none border-0 bg-transparent font-body text-[16.5px] leading-[1.65] text-t1 outline-none placeholder:text-t4"
+          style={{padding:'13px 16px 8px'}}
           placeholder="Continue the story..."
           value={input.draft}
           onChange={e => input.onDraftChange(e.target.value)}
@@ -72,7 +72,7 @@ export function InputArea(input: InputAreaProps) {
             {statusText}
           </div>
         )}
-        <div className="flex items-center gap-[7px] px-3 pt-1.5" style={{paddingBottom:'9px'}}>
+        <div className="flex items-center gap-[7px]" style={{padding:'6px 12px 9px'}}>
           {/* TODO: VP-W4+ — multi-persona speaker row */}
           <PersonaQuickSwitch personas={input.personas} activePersonaId={input.activePersonaId} onSelect={input.onSetPersona} />
           <div className="mx-0.5 h-3.5 w-px shrink-0 bg-border"/>
@@ -84,15 +84,15 @@ export function InputArea(input: InputAreaProps) {
               {totalUsed.toLocaleString()}
             </span>
             {tokenPopOpen && (
-              <div className="absolute bottom-[calc(100%+8px)] left-1/2 z-[220] w-[220px] -translate-x-1/2 rounded-lg border border-border2 bg-surface py-2.5 px-3.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
-                <div className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1.5 pb-1.5">Context Breakdown</div>
+              <div className="absolute bottom-[calc(100%+8px)] left-1/2 z-[220] w-[220px] -translate-x-1/2 rounded-lg border border-border2 bg-surface shadow-[0_12px_28px_rgba(0,0,0,0.45)]" style={{padding:'10px 14px'}}>
+                <div className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1.5" style={{paddingBottom:'6px'}}>Context Breakdown</div>
                 <div className="flex justify-between text-xs text-t2 mb-1"><span>System</span> <span className="text-t1" style={{fontVariantNumeric:'tabular-nums'}}>{buckets.system.toLocaleString()}</span></div>
                 <div className="flex justify-between text-xs text-t2 mb-1"><span>Character</span> <span className="text-t1" style={{fontVariantNumeric:'tabular-nums'}}>{buckets.character.toLocaleString()}</span></div>
                 <div className="flex justify-between text-xs text-t2 mb-1"><span>Lore (RAG)</span> <span className="text-t1" style={{fontVariantNumeric:'tabular-nums'}}>{buckets.lore.toLocaleString()}</span></div>
                 <div className="flex justify-between text-xs text-t2 mb-1"><span>Summary</span> <span className="text-t1" style={{fontVariantNumeric:'tabular-nums'}}>{buckets.summary.toLocaleString()}</span></div>
                 <div className="flex justify-between text-xs text-t2 mb-1"><span>History</span> <span className="text-t1" style={{fontVariantNumeric:'tabular-nums'}}>{buckets.history.toLocaleString()}</span></div>
                 <div className="flex justify-between text-xs text-t2 mb-1.5"><span>Current Input</span> <span className="text-t1" style={{fontVariantNumeric:'tabular-nums'}}>{inputTokens.toLocaleString()}</span></div>
-                <div className="flex justify-between text-xs font-medium text-t1 border-t border-border pt-1.5 mt-0.5"><span>Total Used</span> <span style={{fontVariantNumeric:'tabular-nums'}}>{totalUsed.toLocaleString()}</span></div>
+                <div className="flex justify-between text-xs font-medium text-t1 border-t border-border mt-0.5" style={{paddingTop:'6px'}}><span>Total Used</span> <span style={{fontVariantNumeric:'tabular-nums'}}>{totalUsed.toLocaleString()}</span></div>
               </div>
             )}
           </div>
@@ -100,14 +100,16 @@ export function InputArea(input: InputAreaProps) {
           <div className="ml-auto flex items-center gap-[5px]">
             {input.isSending ? (
               <button
-                className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface px-3.5 font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
+                className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
+                style={{padding:'0 14px'}}
                 onClick={input.onCancel}
               >
                 Cancel
               </button>
             ) : (
               <button
-                className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[5px] bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all duration-150 hover:brightness-110 disabled:cursor-default disabled:opacity-45 disabled:filter-none"
+                className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[5px] bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all duration-150 hover:brightness-110 disabled:cursor-default disabled:opacity-45 disabled:filter-none"
+                style={{padding:'0 16px'}}
                 disabled={!input.canSend}
                 onClick={input.onSend}
               >
