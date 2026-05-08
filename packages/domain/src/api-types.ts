@@ -41,6 +41,9 @@ export interface PromptPresetDto {
   bindModel: string;
   system: string;
   jailbreak: string;
+  prefill: string;
+  authorsNote: string;
+  authorsNoteDepth: number;
   summary: string;
   tools: string;
   createdAt: string;

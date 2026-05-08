@@ -856,11 +856,26 @@ export class SessionRuntime {
 
 	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string }>> {
 		const characters = await this.stores.characters.listIncludingSystem();
-		return characters.map((c) => ({
-			id: c.id,
-			name: c.name,
-			subtitle: c.tags.length > 0 ? c.tags[0] : '',
-		}));
+		const hasUserChars = characters.some((c) => c.id !== 'char_system');
+
+		if (!hasUserChars) {
+			return characters.map((c) => ({
+				id: c.id,
+				name: c.name,
+				subtitle: c.tags.length > 0 ? c.tags[0] : '',
+			}));
+		}
+
+		const allChats = await this.stores.chats.listAll();
+		const hasSystemChat = allChats.some((c) => c.characterId === 'char_system');
+
+		return characters
+			.filter((c) => c.id !== 'char_system' || hasSystemChat)
+			.map((c) => ({
+				id: c.id,
+				name: c.name,
+				subtitle: c.tags.length > 0 ? c.tags[0] : '',
+			}));
 	}
 
 	private async toChatListItem(chatId: ChatId): Promise<ChatListItem> {

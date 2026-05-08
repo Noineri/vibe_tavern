@@ -14,6 +14,9 @@ export async function listPromptPresets(deps: PresetModuleDeps): Promise<PromptP
     bindModel: p.bindProviderPresetId ?? "",
     system: p.systemPrompt,
     jailbreak: p.postHistoryInstructions,
+    prefill: p.assistantPrefix,
+    authorsNote: p.authorsNote,
+    authorsNoteDepth: p.authorsNoteDepth,
     summary: p.summaryPrompt,
     tools: p.toolsPrompt,
     createdAt: p.createdAt,
@@ -26,6 +29,9 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
   bindModel?: string;
   system?: string;
   jailbreak?: string;
+  prefill?: string;
+  authorsNote?: string;
+  authorsNoteDepth?: number;
   summary?: string;
   tools?: string;
 }): Promise<PromptPresetDto> {
@@ -38,6 +44,9 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
     bindProviderPresetId: normalizeBindModel(input.bindModel),
     systemPrompt: input.system ?? "",
     postHistoryInstructions: input.jailbreak ?? "",
+    assistantPrefix: input.prefill ?? "",
+    authorsNote: input.authorsNote ?? "",
+    authorsNoteDepth: input.authorsNoteDepth ?? 4,
     summaryPrompt: input.summary ?? "",
     toolsPrompt: input.tools ?? "",
   });
@@ -47,6 +56,9 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
     bindModel: created.bindProviderPresetId ?? "",
     system: created.systemPrompt,
     jailbreak: created.postHistoryInstructions,
+    prefill: created.assistantPrefix,
+    authorsNote: created.authorsNote,
+    authorsNoteDepth: created.authorsNoteDepth,
     summary: created.summaryPrompt,
     tools: created.toolsPrompt,
     createdAt: created.createdAt,
@@ -59,6 +71,9 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
   bindModel?: string;
   system?: string;
   jailbreak?: string;
+  prefill?: string;
+  authorsNote?: string;
+  authorsNoteDepth?: number;
   summary?: string;
   tools?: string;
 }): Promise<PromptPresetDto> {
@@ -68,6 +83,9 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
       bindProviderPresetId: patch.bindModel === undefined ? undefined : normalizeBindModel(patch.bindModel),
       systemPrompt: patch.system,
       postHistoryInstructions: patch.jailbreak,
+      assistantPrefix: patch.prefill,
+      authorsNote: patch.authorsNote,
+      authorsNoteDepth: patch.authorsNoteDepth,
       summaryPrompt: patch.summary,
       toolsPrompt: patch.tools,
     });
@@ -77,6 +95,9 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
       bindModel: updated.bindProviderPresetId ?? "",
       system: updated.systemPrompt,
       jailbreak: updated.postHistoryInstructions,
+      prefill: updated.assistantPrefix,
+      authorsNote: updated.authorsNote,
+      authorsNoteDepth: updated.authorsNoteDepth,
       summary: updated.summaryPrompt,
       tools: updated.toolsPrompt,
       createdAt: updated.createdAt,
