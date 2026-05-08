@@ -13,6 +13,8 @@ import {
   selectMessageVariant,
   sendChatMessage,
   sendChatMessageStream,
+  generateReply,
+  generateReplyStream,
   type AppMessage,
   type AppSnapshot,
   type ChatGenerationStatus,
@@ -52,6 +54,7 @@ export interface ChatControllerActions {
   handleDeleteMessage: (messageId: string) => Promise<void>;
   handleRegenerateMessage: (messageId: string) => Promise<void>;
   handleSelectMessageVariant: (messageId: string, variantIndex: number) => Promise<void>;
+  handleResend: () => Promise<void>;
   handleFork: () => Promise<void>;
   handleActivateBranch: (branchId: ChatBranchId) => Promise<void>;
   handleDeleteActiveBranch: () => Promise<void>;
@@ -157,6 +160,61 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       setChatNotice(error instanceof Error && error.message ? error.message : "Message sending failed.");
     } finally {
       setPendingUserMessageContent(null);
+      setIsSending(false);
+      abortRef.current = null;
+    }
+  }, []);
+
+  const handleResend = useCallback(async (): Promise<void> => {
+    const activeChatId = getActiveChatId();
+    if (!activeChatId) return;
+
+    if (!getCanSendViaActiveProfile()) {
+      setChatNotice(
+        "Resend is unavailable until a provider profile is activated and its default model is set.",
+      );
+      return;
+    }
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setIsSending(true);
+    setChatNotice("");
+    try {
+      if (getStreamResponse()) {
+        void logClientSendDebug("web.hook.handleResend.stream-request", { activeChatId, generationStatus: getGenerationStatus() });
+        let collected = "";
+        await generateReplyStream(activeChatId, {
+          signal: controller.signal,
+          onStatus: setGenerationStatus,
+          onChunk: (delta) => {
+            collected += delta;
+          },
+        });
+        setSnapshot(activeChatId, await fetchChat(activeChatId));
+        void logClientSendDebug("web.hook.handleResend.stream-success", { activeChatId, replyLength: collected.length });
+      } else {
+        void logClientSendDebug("web.hook.handleResend.request", { activeChatId });
+        const nextSnapshot = await generateReply(activeChatId, { signal: controller.signal });
+        setSnapshot(activeChatId, nextSnapshot);
+        setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
+        void logClientSendDebug("web.hook.handleResend.success", { activeChatId });
+      }
+    } catch (error) {
+      if (controller.signal.aborted) {
+        void logClientSendDebug("web.hook.handleResend.cancelled", { activeChatId });
+        setSnapshot(activeChatId, await fetchChat(activeChatId));
+        setChatNotice("Generation cancelled.");
+        return;
+      }
+      void logClientSendDebug("web.hook.handleResend.error", {
+        activeChatId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      setSnapshot(activeChatId, await fetchChat(activeChatId));
+      setChatNotice(error instanceof Error && error.message ? error.message : "Resend failed.");
+    } finally {
       setIsSending(false);
       abortRef.current = null;
     }
@@ -321,6 +379,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     handleDeleteMessage,
     handleRegenerateMessage,
     handleSelectMessageVariant,
+    handleResend,
     handleFork,
     handleActivateBranch,
     handleDeleteActiveBranch,

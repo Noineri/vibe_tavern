@@ -10,6 +10,7 @@ export interface MessageBlockProps {
   isBusy: boolean;
   canBranch: boolean;
   canRegenerate: boolean;
+  canResend: boolean;
   canSwitchVariant: boolean;
   greetingOptions?: string[];
   greetingIndex: number;
@@ -21,6 +22,7 @@ export interface MessageBlockProps {
   onSaveEdit: () => void;
   onDelete: () => void;
   onRegenerate: () => void;
+  onResend: () => void;
   onSelectPreviousVariant: () => void;
   onSelectNextVariant: () => void;
 }
@@ -45,6 +47,7 @@ export interface MessageListProps {
   onSaveEdit: (messageId: string) => void;
   onDelete: (messageId: string) => void;
   onRegenerate: (messageId: string) => void;
+  onResend: () => void;
   onSelectVariant: (messageId: string, variantIndex: number) => void;
 }
 

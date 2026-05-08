@@ -181,6 +181,37 @@ async function ensureSeedData() {
         signal,
       });
     },
+    generateReply: async (chatId: string, signal?: AbortSignal) => {
+      const profile = await providerProfileService.resolveActiveProviderProfile();
+      if (!profile) {
+        throw validation("No active provider profile. Activate one in Provider settings.");
+      }
+      if (!profile.defaultModel) {
+        throw validation("Active provider profile has no default model. Pick a model and save the profile.");
+      }
+      const result = await liveChatOrchestrator.generateReply({
+        chatId,
+        profile,
+        model: profile.defaultModel,
+        signal,
+      });
+      return result.snapshot;
+    },
+    generateReplyStream: async function*(chatId: string, signal?: AbortSignal) {
+      const profile = await providerProfileService.resolveActiveProviderProfile();
+      if (!profile) {
+        throw validation("No active provider profile. Activate one in Provider settings.");
+      }
+      if (!profile.defaultModel) {
+        throw validation("Active provider profile has no default model. Pick a model and save the profile.");
+      }
+      yield* liveChatOrchestrator.generateReplyStream({
+        chatId,
+        profile,
+        model: profile.defaultModel,
+        signal,
+      });
+    },
     updateCharacter: (characterId: string, body: { chatId?: string; name?: string; description?: string; scenario?: string; systemPrompt?: string; mesExample?: string | null; alternateGreetings?: string[]; postHistoryInstructions?: string | null; creatorNotes?: string | null }) =>
       sessionRuntime.updateCharacter(brandId<CharacterId>(characterId), { ...body, chatId: body.chatId != null ? brandId<ChatId>(body.chatId) : undefined }),
     updatePersona: (personaId: string, body: { chatId?: string; name?: string; description?: string }) =>

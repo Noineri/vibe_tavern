@@ -64,6 +64,46 @@ export class LiveChatOrchestrator {
     };
   }
 
+  async generateReply(input: {
+    chatId: string;
+    profile: StoredProviderProfileRecord;
+    model: string;
+    prefill?: string;
+    signal?: AbortSignal;
+  }): Promise<{
+    promptMessageCount: number;
+    reply: string;
+    snapshot: SessionSnapshot;
+  }> {
+    logSendDebug("live.generateReply.start", { chatId: input.chatId, model: input.model });
+    const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+      model: input.model,
+    });
+    const startedAt = Date.now();
+    let reply: string;
+    try {
+      const result = await nonstreamingProviderExecute({
+        profile: input.profile,
+        model: input.model,
+        prompt,
+        signal: input.signal,
+        prefill: prompt.prefill ?? undefined,
+      });
+      reply = result.text;
+    } catch (err) {
+      this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
+      throw err;
+    }
+    const latencyMs = Date.now() - startedAt;
+    logSendDebug("live.generateReply.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
+    const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs);
+    return {
+      promptMessageCount: countPromptMessages(prompt),
+      reply,
+      snapshot,
+    };
+  }
+
   async regenerateMessage(input: {
     chatId: string;
     messageId: string;
@@ -170,6 +210,70 @@ export class LiveChatOrchestrator {
 
     const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), finalText, latencyMs);
     logSendDebug("live.send-stream.done", { chatId: input.chatId, latencyMs, replyLength: finalText.length });
+
+    yield {
+      event: "finish",
+      data: JSON.stringify({
+        finishReason: finish.finishReason,
+        usage: finish.usage,
+        messageCount: snapshot.messages.length,
+      }),
+    };
+  }
+
+  async *generateReplyStream(input: {
+    chatId: string;
+    profile: StoredProviderProfileRecord;
+    model: string;
+    prefill?: string;
+    signal?: AbortSignal;
+  }): AsyncGenerator<{ event: string; data: string }> {
+    logSendDebug("live.generateReply-stream.start", { chatId: input.chatId, model: input.model });
+    const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
+      model: input.model,
+    });
+    const startedAt = Date.now();
+
+    let streamResult;
+    try {
+      streamResult = await streamProviderExecutor({
+        profile: input.profile,
+        model: input.model,
+        prompt,
+        signal: input.signal,
+        prefill: prompt.prefill ?? undefined,
+      });
+    } catch (err) {
+      this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
+      throw err;
+    }
+
+    let collected = "";
+    try {
+      for await (const chunk of streamResult.stream) {
+        if (chunk.type === "text-delta" && chunk.delta) {
+          collected += chunk.delta;
+          yield { event: "text-delta", data: JSON.stringify({ delta: chunk.delta }) };
+        }
+      }
+    } catch (err) {
+      if (input.signal?.aborted) {
+        const latencyMs = Date.now() - startedAt;
+        if (collected) {
+          await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), collected, latencyMs);
+        }
+        yield { event: "abort", data: JSON.stringify({ partialLength: collected.length }) };
+        return;
+      }
+      throw err;
+    }
+
+    const latencyMs = Date.now() - startedAt;
+    const finish = await streamResult.finished;
+    const finalText = (await streamResult.text) || collected;
+
+    const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), finalText, latencyMs);
+    logSendDebug("live.generateReply-stream.done", { chatId: input.chatId, latencyMs, replyLength: finalText.length });
 
     yield {
       event: "finish",

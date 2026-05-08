@@ -91,6 +91,9 @@ export function App() {
         onSaveEdit: (messageId) => void app.handleSaveMessageEdit(messageId),
         onDelete: (messageId) => void app.handleDeleteMessage(messageId),
         onRegenerate: (messageId) => void app.handleRegenerateMessage(messageId),
+        onResend: () => {
+          void app.handleResend();
+        },
         onSelectVariant: (messageId, variantIndex) =>
           void app.handleSelectMessageVariant(messageId, variantIndex),
         alternateGreetings: snapshot.character.alternateGreetings,
