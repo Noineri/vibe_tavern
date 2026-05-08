@@ -217,8 +217,8 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
    Search by component name in comments to find related classes.
    ═══════════════════════════════════════════════════════════════════════ */
 
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-button{border:0;background:transparent;font:inherit;color:inherit}
+@layer base{*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+button{border:0;background:transparent;font:inherit;color:inherit}}
 
 /* ─── Тёмная тема ─── */
 :root{
@@ -635,7 +635,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .sb-menu-sep{height:1px;background:var(--border);margin:4px 0}
 ═══ End Sidebar extended ═══ */
 
-/* ── R3D2: ProviderModal additions ── */
+/* ═══ Provider-specific legacy CSS — orphaned after ProviderModal re-port ═══
 .unsaved-bar{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--t2);background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:6px 12px;margin-bottom:12px}
 .unsaved-bar svg{color:var(--accent-t);flex-shrink:0}
 .save-btn-saved{background:oklch(0.28 0.06 145)!important;color:oklch(0.78 0.14 145)!important}
@@ -651,6 +651,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .test-chat-error svg{flex-shrink:0;margin-top:2px}
 .field-warning{font-size:11px;color:oklch(0.72 0.14 70);margin-top:4px;display:flex;align-items:center;gap:4px}
 .field-warning svg{width:12px;height:12px}
+═══ End Provider-specific legacy CSS ═══ */
 @media(max-width:768px){.provider-badge{display:none}}
 
 /* ── D23: WelcomeScreen ── */

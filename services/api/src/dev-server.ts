@@ -330,6 +330,7 @@ async function ensureSeedData() {
     fetch: app.fetch,
     port,
     hostname: host,
+    idleTimeout: 255, // seconds — allows long-running non-streaming provider requests
   });
 
   console.log(`RP Platform API listening on http://${host}:${port}`);
