@@ -63,6 +63,7 @@ export interface PromptTrace {
   finalPayload: Record<string, unknown>;
   latencyMs: number;
   createdAt: string;
+  prefill?: string | null;
 }
 
 // ─── Input types ──────────────────────────────────────────────────────────────
@@ -77,6 +78,7 @@ export interface SaveTraceData {
   tokenAccounting: Record<string, number>;
   finalPayload?: Record<string, unknown>;
   latencyMs: number;
+  prefill?: string | null;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -686,6 +688,7 @@ export class ChatStore {
         assembledLayersJson: JSON.stringify(data.assembledLayers),
         tokenAccountingJson: JSON.stringify(data.tokenAccounting),
         finalPayloadJson: JSON.stringify(data.finalPayload ?? {}),
+        prefill: data.prefill ?? null,
         latencyMs: data.latencyMs,
         createdAt: now,
       })
@@ -792,6 +795,7 @@ export class ChatStore {
       tokenAccounting: JSON.parse(row.tokenAccountingJson),
       finalPayload: JSON.parse(row.finalPayloadJson),
       latencyMs: row.latencyMs,
+      prefill: row.prefill ?? null,
       createdAt: row.createdAt,
     };
   }

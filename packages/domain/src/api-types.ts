@@ -14,6 +14,8 @@ export interface PromptLayerDto {
   reason: string;
   tokenCount: number;
   text: string;
+  injectionDepth?: number;
+  modes?: string[];
 }
 
 export interface AssemblePromptResponse {
@@ -22,6 +24,7 @@ export interface AssemblePromptResponse {
   activatedLoreEntries: string[];
   retrievedMemories: Array<Record<string, unknown>>;
   finalPayload: Record<string, unknown>;
+  prefill?: string | null;
 }
 
 export interface PromptTraceRecordDto extends AssemblePromptResponse {

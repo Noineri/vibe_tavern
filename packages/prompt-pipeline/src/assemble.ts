@@ -5,11 +5,13 @@ import type {
   PromptLayerPosition,
   RecentMessage,
 } from "./types.js";
+import type { AssemblyMode } from "./types.js";
 import { estimateTokens, findSafeCompactionBoundary } from "./compaction.js";
 import { createPhaseOneMacroEngine } from "./macro-registry.js";
 import { buildPromptVariableContext, type PromptVariableContext } from "./prompt-variable-context.js";
 import {
   DEFAULT_PROMPT_LAYER_PRIORITY,
+  LAYER_MODES,
   PROMPT_FORMAT,
   PROMPT_LAYER_ID,
   PROMPT_LAYER_POSITION_RANK,
@@ -180,6 +182,19 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         text: context.preset.jailbreak,
       }),
     );
+  }
+
+  if (context.preset?.authorsNote?.trim()) {
+    const layer = makeLayer({
+      id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
+      sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+      sourceId: context.preset.id,
+      position: "in_chat",
+      priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
+      text: context.preset.authorsNote,
+    });
+    layer.injectionDepth = context.preset.authorsNoteDepth ?? 4;
+    layers.push(layer);
   }
 
   if (context.preset?.summary?.trim()) {
@@ -385,7 +400,22 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     );
   }
 
-  const orderedLayers = sortLayers(layers).filter((layer) => layer.text.length > 0);
+  // --- Assign modes to built-in layers from LAYER_MODES ---
+  for (const layer of layers) {
+    const layerModes = LAYER_MODES[layer.id];
+    if (layerModes) {
+      layer.modes = layerModes;
+    }
+  }
+
+  // --- Mode filtering ---
+  const effectiveMode: AssemblyMode = context.mode ?? "chat";
+  const modeFilteredLayers = layers.filter((layer) => {
+    if (!layer.modes) return true; // no modes = always active (backward compat)
+    return layer.modes.includes(effectiveMode);
+  });
+
+  const orderedLayers = sortLayers(modeFilteredLayers).filter((layer) => layer.text.length > 0);
   const totalTokenEstimate = orderedLayers.reduce((sum, layer) => sum + layer.tokenCount, 0);
 
   const nonHiddenLayers = orderedLayers.filter(
@@ -394,6 +424,54 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   const beforePrompt = nonHiddenLayers.filter((l) => l.position === "before_prompt");
   const inPrompt = nonHiddenLayers.filter((l) => l.position === "in_prompt");
   const inChat = nonHiddenLayers.filter((l) => l.position === "in_chat");
+
+  // Split in_chat into depth-aware (interleaved into history) and block (before history)
+  const inChatWithDepth = inChat
+    .filter((l) => typeof l.injectionDepth === "number")
+    .sort((a, b) => b.injectionDepth! - a.injectionDepth!); // deepest first to preserve indices
+  const inChatBlock = inChat.filter((l) => typeof l.injectionDepth !== "number");
+
+  // Build history messages
+  const historyMessages: Array<{
+    role: "system" | "user" | "assistant" | "tool";
+    content: string;
+    messageId?: string;
+    layerId?: string;
+  }> = recentMessagesForHistory.map((message) => ({
+    role: message.role as "system" | "user" | "assistant" | "tool",
+    content: message.content,
+    messageId: message.id,
+  }));
+
+  // Interleave in-chat layers with depth (deepest first to preserve indices)
+  for (const layer of inChatWithDepth) {
+    const insertAt = Math.max(0, historyMessages.length - layer.injectionDepth!);
+    historyMessages.splice(insertAt, 0, {
+      role: "system" as const,
+      content: layer.text,
+      layerId: layer.id,
+    });
+  }
+
+  // Build final messages array
+  const messages = [
+    ...beforePrompt.map((layer) => ({
+      role: "system" as const,
+      content: layer.text,
+      layerId: layer.id,
+    })),
+    ...inPrompt.map((layer) => ({
+      role: "system" as const,
+      content: layer.text,
+      layerId: layer.id,
+    })),
+    ...inChatBlock.map((layer) => ({
+      role: "system" as const,
+      content: layer.text,
+      layerId: layer.id,
+    })),
+    ...historyMessages,
+  ];
 
   return {
     layers: orderedLayers,
@@ -404,29 +482,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       ...(context.memory?.retrieval ?? []).map((entry) => entry.id),
     ],
     droppedLayers,
-    finalPayload: {
-      messages: [
-        ...beforePrompt.map((layer) => ({
-          role: "system" as const,
-          content: layer.text,
-          layerId: layer.id,
-        })),
-        ...inPrompt.map((layer) => ({
-          role: "system" as const,
-          content: layer.text,
-          layerId: layer.id,
-        })),
-        ...inChat.map((layer) => ({
-          role: "system" as const,
-          content: layer.text,
-          layerId: layer.id,
-        })),
-        ...recentMessagesForHistory.map((message) => ({
-          role: message.role,
-          content: message.content,
-          messageId: message.id,
-        })),
-      ],
-    },
+    finalPayload: { messages },
+    prefill: context.preset?.prefill || null,
   };
 }

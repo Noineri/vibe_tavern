@@ -1,4 +1,5 @@
 import type { PromptLayerPosition } from "./types.js";
+import type { AssemblyMode } from "./types.js";
 
 export const DEFAULT_PROMPT_LAYER_PRIORITY = 0;
 
@@ -18,18 +19,20 @@ export const PROMPT_LAYER_PRIORITY = {
   persona: 850,
   summaryMemory: 500,
   retrievalMemory: 400,
+  promptPresetSummary: 350,
   toolInstructions: 300,
+  promptPresetAuthorsNote: 170,
   postHistoryInstructions: 160,
   mesExample: 150,
   recentHistory: 100,
   preflightCompaction: 50,
-  promptPresetSummary: 350,
 } as const;
 
 export const PROMPT_LAYER_ID = {
   promptPresetSystem: "prompt_preset_system",
   promptPresetJailbreak: "prompt_preset_jailbreak",
   promptPresetSummary: "prompt_preset_summary",
+  promptPresetAuthorsNote: "prompt_preset_authors_note",
   characterSystemPrompt: "character_system_prompt",
   characterBase: "character_base",
   characterPersonality: "character_personality",
@@ -89,3 +92,21 @@ export const PROMPT_LAYER_REASON = {
   emptyRetrievalMemory: "empty retrieval memory",
   preflightCompaction: (droppedCount: number) => `preflight_compaction_dropped_${droppedCount}`,
 } as const;
+
+/** Which assembly modes each built-in layer is active in. Undefined = all modes (backward compat). */
+export const LAYER_MODES: Record<string, AssemblyMode[]> = {
+  prompt_preset_system:        ["chat", "continue", "regenerate"],
+  prompt_preset_jailbreak:     ["chat", "continue", "regenerate"],
+  prompt_preset_summary:       ["summary"],
+  prompt_preset_authors_note:  ["chat", "continue", "regenerate"],
+  character_system_prompt:     ["chat", "continue", "regenerate"],
+  character_base:              ["chat", "continue", "regenerate", "summary"],
+  character_personality:       ["chat", "continue", "regenerate"],
+  persona:                     ["chat", "continue", "regenerate", "summary"],
+  tool_instructions:           ["chat", "continue", "regenerate", "tool_call"],
+  post_history_instructions:   ["chat", "continue", "regenerate"],
+  mes_example:                 ["chat", "continue", "regenerate"],
+  preflight_compaction:        ["chat", "continue", "regenerate"],
+  // Lore and memory layers default to chat modes
+  // (lore entries inherit from their source; these are fallbacks)
+};
