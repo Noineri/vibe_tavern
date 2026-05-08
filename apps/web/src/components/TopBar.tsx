@@ -51,7 +51,8 @@ export function TopBar(input: TopBarProps) {
 
       <div className="flex min-w-0 shrink items-center gap-[5px] flex-1 overflow-visible">
         {input.mode === 'play' && (
-          <div className="flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-s2 px-3 py-1 text-[calc(var(--ui-fs)-3px)] text-t2 transition-colors duration-150 hover:border-accent hover:text-accent-t"
+          <div className="flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-s2 text-[calc(var(--ui-fs)-3px)] text-t2 transition-colors duration-150 hover:border-accent hover:text-accent-t"
+            style={{padding:'4px 12px'}}
             onClick={() => setContextModalOpen()}
             title={t("scenario_memory")}>
             <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"/>
@@ -74,7 +75,8 @@ export function TopBar(input: TopBarProps) {
 
         <div className="flex-1 min-w-2"/>
 
-        <div className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-accent-t transition-colors duration-150 hover:bg-accent-hover"
+        <div className="cursor-pointer rounded-full bg-accent-dim text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-accent-t transition-colors duration-150 hover:bg-accent-hover"
+          style={{padding:'4px 12px'}}
           tabIndex={0}
           onClick={input.onToggleMode}>
           {input.mode === 'play' ? t("build") : t("play")}
