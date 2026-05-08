@@ -564,7 +564,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .api-cancel-btn{height:32px;padding:0 14px;background:transparent;color:var(--t3);border-radius:6px;font-size:12.5px;font-family:var(--font-ui);cursor:pointer;transition:color .15s}
 .api-cancel-btn:hover{color:var(--t1)}
 
-/* ── Prompt Manager ── */
+/* ═══ Prompt Manager — ported to Tailwind in VP-W4-PROMPT-MANAGER ═══
 .pm-layout{display:flex;height:100%;margin:-20px;}
 .pm-nav{width:180px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:10px 0;}
 .pm-main{flex:1;padding:20px;overflow-y:auto;}
@@ -573,6 +573,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .pm-preset.act{background:var(--accent-dim);color:var(--accent-t);border-left-color:var(--accent);}
 .pm-add-btn{margin:10px 14px;padding:6px;font-size:11.5px;text-align:center;border:1px dashed var(--border2);border-radius:6px;cursor:pointer;color:var(--t3);transition:color .15s,border-color .15s;}
 .pm-add-btn:hover{color:var(--t1);border-color:var(--border);}
+═══ End Prompt Manager ═══ */
 
 /* ── D8a: shared confirm/empty-state/dirty-state primitives ── */
 .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:60px 24px;text-align:center;min-height:220px;user-select:none}

@@ -307,7 +307,7 @@ export function createApiRouter(
       return c.json(await runtime.updatePromptPreset(c.req.param("presetId"), body));
     })
     .delete("/api/prompt-presets/:presetId", async (c) => {
-      runtime.deletePromptPreset(c.req.param("presetId"));
+      await runtime.deletePromptPreset(c.req.param("presetId"));
       return c.body(null, 204);
     })
     .get("/api/providers", async (c) => {
