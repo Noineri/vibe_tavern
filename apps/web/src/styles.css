@@ -31,6 +31,7 @@
 }
 
 @theme {
+  --spacing: 0.25rem;
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-s2: var(--s2);
