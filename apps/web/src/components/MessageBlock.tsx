@@ -145,6 +145,14 @@ export function MessageBlock(input: MessageBlockProps) {
               onClick={() => { if (!input.isBusy) input.onStartEdit(); }}
               title={editLabel}
             ><Icons.Edit />{editLabel}</span>
+            {input.canResend && (
+              <span
+                className="flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+                style={{padding:'3px 7px'}}
+                onClick={() => { if (!input.isBusy) input.onResend(); }}
+                title="resend"
+              ><Icons.Regen />resend</span>
+            )}
             {input.canBranch && (
               <span
                 className="flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"

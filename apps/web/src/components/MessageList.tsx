@@ -60,6 +60,7 @@ export function MessageList(input: MessageListProps) {
               isBusy={input.isSending || input.messageActionId === message.id}
               canBranch={isLastMessage(input.messages, message.id)}
               canRegenerate={message.id !== firstCharMsgId && isLastAssistantMessage(input.messages, message.id)}
+              canResend={isLastMessage(input.messages, message.id) && message.role === "user" && !input.pendingUserMessageContent}
               canSwitchVariant={isLastMessage(input.messages, message.id)}
               greetingOptions={message.id === firstCharMsgId ? greetingOptions : undefined}
               greetingIndex={message.id === firstCharMsgId ? greetingIndex : 0}
@@ -71,6 +72,7 @@ export function MessageList(input: MessageListProps) {
               onSaveEdit={() => input.onSaveEdit(message.id)}
               onDelete={() => input.onDelete(message.id)}
               onRegenerate={() => input.onRegenerate(message.id)}
+              onResend={() => input.onResend()}
               onSelectPreviousVariant={() =>
                 input.onSelectVariant(message.id, (message.selectedVariantIndex ?? 0) - 1)
               }
@@ -102,6 +104,31 @@ export function MessageList(input: MessageListProps) {
               </div>
             </div>
           </div>
+          <div style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'8px auto 6px', paddingLeft:28, paddingRight:28}}>
+            <div className="h-px bg-border opacity-40"/>
+          </div>
+          <div className="relative" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'0 auto', paddingLeft:28, paddingRight:28}} aria-label="Generating response">
+            <div className="relative group" style={{paddingTop:10,paddingBottom:10}}>
+              <div className="flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85" style={{marginBottom:'5px'}}>
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[9px] italic text-t3">
+                  {input.characterName.slice(0, 1).toUpperCase()}
+                </span>
+                <span>{input.characterName}</span>
+              </div>
+              <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
+                <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-hidden="true">
+                  <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
+                  <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
+                  <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
+                </span>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {!input.pendingUserMessageContent && input.isSending && input.messages.length > 0 && input.messages[input.messages.length - 1].role === "user" && (
+        <>
           <div style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'8px auto 6px', paddingLeft:28, paddingRight:28}}>
             <div className="h-px bg-border opacity-40"/>
           </div>

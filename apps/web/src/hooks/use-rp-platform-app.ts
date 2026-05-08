@@ -523,6 +523,7 @@ export function useRpPlatformApp() {
     personas,
     renderSendLabel,
     handleSend: chat.handleSend,
+    handleResend: chat.handleResend,
     handleCancelGeneration: chat.handleCancelGeneration,
     handleConnect: provider.handleConnect,
     handleLoadProviderProfile: provider.handleLoadProviderProfile,

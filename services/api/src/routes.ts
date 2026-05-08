@@ -22,6 +22,8 @@ export interface RuntimeApi {
   deleteMessage: (chatId: string, messageId: string) => unknown;
   sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<unknown>;
   sendMessageStream: (chatId: string, body: { content: string }, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
+  generateReply: (chatId: string, signal?: AbortSignal) => Promise<unknown>;
+  generateReplyStream: (chatId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
   updateCharacter: (characterId: string, body: Record<string, unknown>) => Promise<unknown>;
   updatePersona: (personaId: string, body: Record<string, unknown>) => unknown;
   listPersonas: () => Promise<unknown>;
@@ -203,6 +205,21 @@ export function createApiRouter(
       const body = c.req.valid("json");
       logSendDebug("api.route.messages-stream.post", { chatId, contentLength: body.content?.length ?? 0 });
       const gen = runtime.sendMessageStream(chatId, body, c.req.raw.signal);
+      return streamSSE(c, async (stream) => {
+        for await (const event of gen) {
+          await stream.writeSSE({ event: event.event, data: event.data });
+        }
+      });
+    })
+    .post("/api/chats/:chatId/generate-reply", async (c) => {
+      const chatId = c.req.param("chatId");
+      logSendDebug("api.route.generate-reply.post", { chatId });
+      return c.json(await runtime.generateReply(chatId, c.req.raw.signal));
+    })
+    .post("/api/chats/:chatId/generate-reply/stream", async (c) => {
+      const chatId = c.req.param("chatId");
+      logSendDebug("api.route.generate-reply-stream.post", { chatId });
+      const gen = runtime.generateReplyStream(chatId, c.req.raw.signal);
       return streamSSE(c, async (stream) => {
         for await (const event of gen) {
           await stream.writeSSE({ event: event.event, data: event.data });
