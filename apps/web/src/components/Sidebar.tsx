@@ -94,18 +94,15 @@ export function Sidebar(input: SidebarProps) {
 
   return (
     <div className={cn(
-      input.sidebarCollapsed ? 'w-[48px] min-w-[48px]' : 'w-[var(--sw)] min-w-[var(--sw)]',
+      input.sidebarCollapsed ? 'w-[54px] min-w-[54px]' : 'w-[var(--sw)] min-w-[var(--sw)]',
       'shrink-0 overflow-hidden border-r border-border bg-surface flex flex-col transition-all duration-[180ms] ease-out'
     )}>
-      <div className={cn(
-        "flex shrink-0 items-center gap-2.5 border-b border-border px-3",
-        input.sidebarCollapsed ? 'justify-center' : ''
-      )} style={{ height: 52 }}>
+      <div className="flex h-[60px] shrink-0 items-center gap-2.5 border-b border-border px-3" style={{ justifyContent: input.sidebarCollapsed ? 'center' : undefined, padding: input.sidebarCollapsed ? '0 6px' : undefined }}>
         {!input.sidebarCollapsed && (
-          <div className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[5px] bg-accent font-body text-[13px] font-medium italic text-on-accent">r</div>
+          <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[5px] bg-accent font-body text-[calc(var(--ui-fs)-1px)] font-medium italic text-on-accent">r</div>
         )}
         {!input.sidebarCollapsed && (
-          <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap font-body text-[14px] font-medium tracking-[-0.01em] text-t1">Claw Tavern</span>
+          <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap font-body text-[length:var(--ui-fs)] font-medium tracking-[-0.01em] text-t1">Claw Tavern</span>
         )}
         <button
           className="iBtn"
@@ -130,7 +127,7 @@ export function Sidebar(input: SidebarProps) {
 
           <section className="border-b border-border py-1.5">
             <div className="flex items-center pr-2.5">
-              <div className="px-[13px] pb-[5px] pt-1 text-[calc(var(--ui-fs)-4px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ flex: 1 }}>Characters</div>
+              <div className="px-[13px] pb-[5px] pt-1 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ flex: 1 }}>Characters</div>
               <button className="iBtn" style={{ width: 20, height: 20 }} onClick={triggerImport} title="Import character (PNG/JSON)">
                 <Icons.Import />
               </button>
@@ -247,7 +244,7 @@ export function Sidebar(input: SidebarProps) {
 
           <section className="flex-1 overflow-y-auto border-b-0 py-1.5" style={{ paddingLeft: 0, paddingRight: 0 }}>
             <div className="flex items-center pr-2.5">
-              <div className="px-[13px] pb-[5px] pt-1 text-[calc(var(--ui-fs)-4px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ flex: 1 }}>Chats</div>
+              <div className="px-[13px] pb-[5px] pt-1 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ flex: 1 }}>Chats</div>
               <button className="iBtn" style={{ width: 20, height: 20 }} onClick={triggerImport} title="Import chat (JSONL)">
                 <Icons.Import />
               </button>
