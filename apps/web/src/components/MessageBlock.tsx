@@ -139,45 +139,40 @@ export function MessageBlock(input: MessageBlockProps) {
 
         {!input.isEditing && !isGenerating && (
           <div className="flex items-center gap-px mt-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-            <button
+            <span
               className={cn('flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all duration-150 hover:bg-s2 hover:text-t2', copied && 'translate-y-[-1px] bg-success-dim text-success-text')}
               style={{padding:'3px 7px'}}
-              disabled={input.isBusy}
-              onClick={() => { void navigator.clipboard?.writeText(input.message.content); setCopied(true); setTimeout(() => setCopied(false), 1000); }}
+              onClick={() => { if (input.isBusy) return; void navigator.clipboard?.writeText(displayContent); setCopied(true); setTimeout(() => setCopied(false), 1000); }}
               title={copyLabel}
-            ><Icons.Copy />{copied ? "Copied" : copyLabel}</button>
-            <button
+            >{copied ? <Icons.Check /> : <Icons.Copy />}{copied ? "copied" : copyLabel}</span>
+            <span
               className="flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
               style={{padding:'3px 7px'}}
-              disabled={input.isBusy}
-              onClick={input.onStartEdit}
+              onClick={() => { if (!input.isBusy) input.onStartEdit(); }}
               title={editLabel}
-            ><Icons.Edit />{editLabel}</button>
+            ><Icons.Edit />{editLabel}</span>
             {input.canBranch && (
-              <button
+              <span
                 className="flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
                 style={{padding:'3px 7px'}}
-                disabled={input.isBusy}
-                onClick={input.onBranch}
+                onClick={() => { if (!input.isBusy) input.onBranch(); }}
                 title={branchLabel}
-              ><Icons.Branch />{branchLabel}</button>
+              ><Icons.Branch />{branchLabel}</span>
             )}
             {input.canRegenerate && (
-              <button
+              <span
                 className="flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
                 style={{padding:'3px 7px'}}
-                disabled={input.isBusy}
-                onClick={input.onRegenerate}
+                onClick={() => { if (!input.isBusy) input.onRegenerate(); }}
                 title={regenLabel}
-              ><Icons.Regen />{regenLabel}</button>
+              ><Icons.Regen />{regenLabel}</span>
             )}
-            <button
+            <span
               className="ml-auto flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
               style={{padding:'3px 7px'}}
-              disabled={input.isBusy}
-              onClick={input.onDelete}
+              onClick={() => { if (!input.isBusy) input.onDelete(); }}
               title={deleteLabel}
-            ><Icons.Trash />{deleteLabel}</button>
+            ><Icons.Trash /></span>
           </div>
         )}
       </div>

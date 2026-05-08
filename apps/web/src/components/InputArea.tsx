@@ -107,7 +107,7 @@ export function InputArea(input: InputAreaProps) {
           <div className="ml-auto flex items-center gap-[5px]">
             {input.isSending ? (
               <button
-                className="cancel-btn"
+                className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
                 style={{ padding: "0 14px" }}
                 onClick={input.onCancel}
               >
@@ -115,8 +115,8 @@ export function InputArea(input: InputAreaProps) {
               </button>
             ) : (
               <button
-                className="send-btn"
-                style={{ padding: "0 16px" }}
+                className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[5px] bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all duration-150 hover:brightness-110 disabled:cursor-default disabled:opacity-45 disabled:filter-none"
+                style={{ padding: "0 16px", background: "var(--accent)", color: "var(--on-accent)", borderRadius: 5 }}
                 disabled={!input.canSend}
                 onClick={input.onSend}
                 aria-label={input.sendLabel}
