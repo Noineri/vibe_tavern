@@ -16,11 +16,6 @@ export interface CharacterFormProps {
   onAvatarUpload: (file: File) => void;
 }
 
-/**
- * Parse a character card file (PNG/JSON) into a partial draft that can be
- * merged into the existing character draft. Only standard V2/V3 fields are
- * mapped; unknown fields are ignored.
- */
 function parseCardToDraft(raw: unknown): Record<string, any> {
   if (!raw || typeof raw !== "object") return {};
   const data = (raw as any).data && typeof (raw as any).data === "object" ? (raw as any).data : raw;
@@ -48,17 +43,20 @@ function parseCardToDraft(raw: unknown): Record<string, any> {
   return result;
 }
 
+/* ── shared inline style objects (avoids Tailwind v4 numeric spacing bugs) ── */
+const s = {
+  fieldWrap: { marginBottom: 20 } as React.CSSProperties,
+  label: { marginBottom: 6, display: "block" } as React.CSSProperties,
+  inputPadding: { padding: "6px 10px" } as React.CSSProperties,
+  sectionGap: { marginTop: 24, marginBottom: 12, paddingBottom: 6 } as React.CSSProperties,
+};
+
+const inputCls = "w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent";
+const textareaCls = inputCls;
+const monoCls = inputCls + " font-mono text-xs";
+
 export function CharacterForm({
-  draft,
-  patchDraft,
-  setDraft,
-  isDirty,
-  isSaving,
-  saveNotice,
-  avatarUrl,
-  onSave,
-  onReset,
-  onAvatarUpload,
+  draft, patchDraft, setDraft, isDirty, isSaving, saveNotice, avatarUrl, onSave, onReset, onAvatarUpload,
 }: CharacterFormProps) {
   const [altGreetIdx, setAltGreetIdx] = useState(0);
   const [tagInput, setTagInput] = useState("");
@@ -72,9 +70,7 @@ export function CharacterForm({
   function handleAvatarPick(files: FileList | null) {
     if (!files || files.length === 0) return;
     const file = files[0];
-    // Local preview
     patchDraft("_avatarPreview", URL.createObjectURL(file));
-    // Notify parent for server upload
     onAvatarUpload(file);
   }
 
@@ -96,10 +92,7 @@ export function CharacterForm({
           throw new Error("Unsupported file type. Use PNG or JSON character cards.");
         }
         const merged = parseCardToDraft(raw);
-        if (Object.keys(merged).length === 0) {
-          throw new Error("No character data found in file.");
-        }
-        // Merge into draft — user must Save to persist
+        if (Object.keys(merged).length === 0) throw new Error("No character data found in file.");
         setDraft({ ...draft, ...merged });
       } catch (err) {
         setImportError(err instanceof Error ? err.message : "Failed to import");
@@ -117,40 +110,32 @@ export function CharacterForm({
     if (e.key === "Enter" && tagInput.trim()) {
       e.preventDefault();
       const tags: string[] = draft.tags || [];
-      if (!tags.includes(tagInput.trim())) {
-        patchDraft("tags", [...tags, tagInput.trim()]);
-      }
+      if (!tags.includes(tagInput.trim())) patchDraft("tags", [...tags, tagInput.trim()]);
       setTagInput("");
     }
   }
 
   const displayAvatar = avatarPreview || avatarUrl;
+  const lblCls = "block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3";
 
   return (
-    <div style={{maxWidth:600}}>
-      {/* Header row: name + save + import */}
-      <div className="mb-1.5 flex items-center justify-between">
-        <div className="mb-1.5 font-body text-[22px] font-medium text-t1">
+    <div style={{ maxWidth: 600 }}>
+      {/* Header row */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <div className="font-body text-[22px] font-medium text-t1" style={{ marginBottom: 6 }}>
           {draft.name || "Unnamed"}
         </div>
-        <div className="flex items-center gap-2">
-          {/* Import button — loads card into draft, does NOT save */}
-          <input
-            ref={importInputRef}
-            type="file"
-            className="hidden"
-            accept=".png,.json,image/png,application/json"
-            onChange={(e) => handleImportFile(e.target.files)}
-          />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input ref={importInputRef} type="file" className="hidden" accept=".png,.json,image/png,application/json" onChange={(e) => handleImportFile(e.target.files)} />
           <button
-            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
+            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
+            style={{ height: 28, width: 28 }}
             title="Import character card into draft"
             onClick={() => importInputRef.current?.click()}
             disabled={isSaving}
           >
             {Ic.import()}
           </button>
-          {/* Save button */}
           <button
             className="cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
             style={{ height: 28, padding: "0 14px" }}
@@ -163,265 +148,143 @@ export function CharacterForm({
       </div>
 
       {importError && (
-        <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-red-400">
+        <div className="rounded-md border border-border2 bg-s2 font-ui text-xs text-red-400" style={{ marginBottom: 12, padding: "6px 12px" }}>
           {importError}
         </div>
       )}
 
-      <div className="mb-7 font-ui text-[calc(var(--ui-fs)-1px)] text-t2 leading-[1.55]">
+      <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t2" style={{ marginBottom: 28, lineHeight: 1.55 }}>
         Character card — edit inline
       </div>
 
-      {/* Avatar + Name row */}
-      <div className="mb-5 flex gap-4">
+      {/* Avatar + Name */}
+      <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
         <div
-          className="group relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t"
+          className="group relative flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t"
+          style={{ height: 64, width: 64 }}
           onClick={() => avaInputRef.current?.click()}
           title="Change avatar"
         >
-          <input
-            ref={avaInputRef}
-            type="file"
-            className="hidden"
-            accept="image/*"
-            onChange={(e) => handleAvatarPick(e.target.files)}
-          />
+          <input ref={avaInputRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleAvatarPick(e.target.files)} />
           {displayAvatar ? (
             <>
               <img src={displayAvatar} alt="" className="h-full w-full object-cover" />
-              <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100">
-                <Ic.edit />
-              </div>
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
             </>
-          ) : (
-            <Ic.plus />
-          )}
+          ) : <Ic.plus />}
         </div>
-        <div className="flex-1">
-          <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-            Name
-          </label>
-          <input
-            type="text"
-            className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
-            value={draft.name || ""}
-            disabled={isSaving}
-            onChange={(e) => patchDraft("name", e.target.value)}
-          />
+        <div style={{ flex: 1 }}>
+          <label className={lblCls} style={s.label}>Name</label>
+          <input type="text" className={inputCls} style={s.inputPadding} value={draft.name || ""} disabled={isSaving} onChange={(e) => patchDraft("name", e.target.value)} />
         </div>
       </div>
 
       {/* Description */}
-      <div className="mb-5">
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-          Description
-        </label>
-        <textarea
-          className="w-full min-h-[100px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
-          value={draft.description || ""}
-          disabled={isSaving}
-          onChange={(e) => patchDraft("description", e.target.value)}
-        />
+      <div style={s.fieldWrap}>
+        <label className={lblCls} style={s.label}>Description</label>
+        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 100 }} value={draft.description || ""} disabled={isSaving} onChange={(e) => patchDraft("description", e.target.value)} />
       </div>
 
       {/* First Message */}
-      <div className="mb-5">
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-          First Message (Greeting)
-        </label>
-        <textarea
-          className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
-          value={draft.firstMessage || ""}
-          disabled={isSaving}
-          onChange={(e) => patchDraft("firstMessage", e.target.value)}
-          placeholder="Character's first message..."
-        />
+      <div style={s.fieldWrap}>
+        <label className={lblCls} style={s.label}>First Message (Greeting)</label>
+        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 120 }} value={draft.firstMessage || ""} disabled={isSaving} onChange={(e) => patchDraft("firstMessage", e.target.value)} placeholder="Character's first message..." />
       </div>
 
       {/* Alternate Greetings */}
-      <div className="mb-5">
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-          Alternate Greetings
-        </label>
-        <div className="mb-2 flex flex-wrap gap-1">
+      <div style={s.fieldWrap}>
+        <label className={lblCls} style={s.label}>Alternate Greetings</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
           {(draft.alternateGreetings || []).map((_: any, idx: number) => (
             <span
               key={idx}
               className={cn(
-                "inline-flex items-center gap-1 rounded border border-border bg-s2 px-2.5 py-0.5 font-ui text-xs text-t2 cursor-pointer transition-all",
+                "inline-flex items-center rounded border border-border bg-s2 font-ui text-xs text-t2 cursor-pointer transition-all",
                 idx === altGreetIdx && "border-accent bg-accent-dim text-accent-t",
               )}
+              style={{ padding: "2px 10px", gap: 4 }}
               onClick={() => setAltGreetIdx(idx)}
             >
               Alt {idx + 1}
-              <span
-                className="ml-0.5 cursor-pointer text-[10px]"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const next = [...(draft.alternateGreetings || [])];
-                  next.splice(idx, 1);
-                  patchDraft("alternateGreetings", next);
-                  if (altGreetIdx >= next.length) setAltGreetIdx(Math.max(0, next.length - 1));
-                }}
-              >
-                ✕
-              </span>
+              <span style={{ marginLeft: 2, fontSize: 10 }} className="cursor-pointer" onClick={(e) => {
+                e.stopPropagation();
+                const next = [...(draft.alternateGreetings || [])]; next.splice(idx, 1);
+                patchDraft("alternateGreetings", next);
+                if (altGreetIdx >= next.length) setAltGreetIdx(Math.max(0, next.length - 1));
+              }}>✕</span>
             </span>
           ))}
           <span
-            className="inline-flex items-center justify-center rounded border border-dashed border-border bg-transparent px-2.5 py-0.5 font-ui text-xs text-t3 cursor-pointer"
+            className="inline-flex items-center justify-center rounded border border-dashed border-border bg-transparent font-ui text-xs text-t3 cursor-pointer"
+            style={{ padding: "2px 10px" }}
             onClick={() => {
               const next = [...(draft.alternateGreetings || []), ""];
               patchDraft("alternateGreetings", next);
               setAltGreetIdx(next.length - 1);
             }}
-          >
-            +
-          </span>
+          >+</span>
         </div>
         {(draft.alternateGreetings || []).length > 0 && (
-          <textarea
-            className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
-            value={(draft.alternateGreetings || [])[altGreetIdx] || ""}
-            disabled={isSaving}
-            onChange={(e) => {
-              const next = [...(draft.alternateGreetings || [])];
-              next[altGreetIdx] = e.target.value;
-              patchDraft("alternateGreetings", next);
-            }}
-            placeholder="Alternate greeting..."
-          />
+          <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 120 }} value={(draft.alternateGreetings || [])[altGreetIdx] || ""} disabled={isSaving} onChange={(e) => {
+            const next = [...(draft.alternateGreetings || [])]; next[altGreetIdx] = e.target.value; patchDraft("alternateGreetings", next);
+          }} placeholder="Alternate greeting..." />
         )}
       </div>
 
       {/* Message Examples */}
-      <div className="mb-5">
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-          Message Examples
-        </label>
-        <textarea
-          className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-          value={draft.mesExample || ""}
-          disabled={isSaving}
-          onChange={(e) => patchDraft("mesExample", e.target.value)}
-          placeholder="<START>..."
-        />
+      <div style={s.fieldWrap}>
+        <label className={lblCls} style={s.label}>Message Examples</label>
+        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 120 }} value={draft.mesExample || ""} disabled={isSaving} onChange={(e) => patchDraft("mesExample", e.target.value)} placeholder="<START>..." />
       </div>
 
       {/* Scenario */}
-      <div className="mb-5">
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-          Scenario
-        </label>
-        <textarea
-          className="w-full min-h-[100px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
-          value={draft.scenario || ""}
-          disabled={isSaving}
-          onChange={(e) => patchDraft("scenario", e.target.value)}
-        />
+      <div style={s.fieldWrap}>
+        <label className={lblCls} style={s.label}>Scenario</label>
+        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 100 }} value={draft.scenario || ""} disabled={isSaving} onChange={(e) => patchDraft("scenario", e.target.value)} />
       </div>
 
       {/* Personality Summary */}
-      <div className="mb-5">
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-          Personality Summary
-        </label>
-        <textarea
-          className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
-          value={draft.personalitySummary || ""}
-          disabled={isSaving}
-          onChange={(e) => patchDraft("personalitySummary", e.target.value)}
-        />
+      <div style={s.fieldWrap}>
+        <label className={lblCls} style={s.label}>Personality Summary</label>
+        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.personalitySummary || ""} disabled={isSaving} onChange={(e) => patchDraft("personalitySummary", e.target.value)} />
       </div>
 
       {/* Advanced separator */}
-      <div
-        className="border-b border-border font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t3"
-        style={{ marginTop: 24, marginBottom: 12, paddingBottom: 6 }}
-      >
+      <div className="border-b border-border font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t3" style={s.sectionGap}>
         Advanced Fields (V3)
       </div>
 
       {/* Post-History Instructions */}
-      <div className="mb-5">
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-          Post-History Instructions
-        </label>
-        <textarea
-          className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-          value={draft.postHistoryInstructions || ""}
-          disabled={isSaving}
-          onChange={(e) => patchDraft("postHistoryInstructions", e.target.value)}
-          placeholder="Instructions appended to the end of chat history (Jailbreak)..."
-        />
+      <div style={s.fieldWrap}>
+        <label className={lblCls} style={s.label}>Post-History Instructions</label>
+        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.postHistoryInstructions || ""} disabled={isSaving} onChange={(e) => patchDraft("postHistoryInstructions", e.target.value)} placeholder="Instructions appended to the end of chat history (Jailbreak)..." />
       </div>
 
       {/* Creator Notes */}
-      <div className="mb-5">
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-          Creator Notes
-        </label>
-        <textarea
-          className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
-          value={draft.creatorNotes || ""}
-          disabled={isSaving}
-          onChange={(e) => patchDraft("creatorNotes", e.target.value)}
-          placeholder="Internal creator notes..."
-        />
+      <div style={s.fieldWrap}>
+        <label className={lblCls} style={s.label}>Creator Notes</label>
+        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.creatorNotes || ""} disabled={isSaving} onChange={(e) => patchDraft("creatorNotes", e.target.value)} placeholder="Internal creator notes..." />
       </div>
 
       {/* Character Book JSON */}
-      <div className="mb-5">
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-          Character Book (JSON)
-        </label>
-        <textarea
-          className="w-full min-h-[80px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-          value={draft.characterBook || ""}
-          disabled={isSaving}
-          onChange={(e) => patchDraft("characterBook", e.target.value)}
-          placeholder='{"entries":[...]}'
-        />
+      <div style={s.fieldWrap}>
+        <label className={lblCls} style={s.label}>Character Book (JSON)</label>
+        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 80 }} value={draft.characterBook || ""} disabled={isSaving} onChange={(e) => patchDraft("characterBook", e.target.value)} placeholder='{"entries":[...]}'  />
       </div>
 
       {/* Depth Prompt row */}
-      <div className="flex items-end gap-3">
-        <div className="mb-5 flex-1">
-          <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-            Depth Prompt
-          </label>
-          <textarea
-            className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-            value={draft.depthPrompt || ""}
-            disabled={isSaving}
-            onChange={(e) => patchDraft("depthPrompt", e.target.value)}
-            placeholder="Prompt injected at a specific depth..."
-          />
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 12 }}>
+        <div style={{ ...s.fieldWrap, flex: 1 }}>
+          <label className={lblCls} style={s.label}>Depth Prompt</label>
+          <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.depthPrompt || ""} disabled={isSaving} onChange={(e) => patchDraft("depthPrompt", e.target.value)} placeholder="Prompt injected at a specific depth..." />
         </div>
-        <div className="mb-5 w-20 shrink-0">
-          <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-            Depth
-          </label>
-          <input
-            type="number"
-            className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
-            min={0}
-            max={999}
-            value={draft.depthPromptDepth ?? 4}
-            disabled={isSaving}
-            onChange={(e) => patchDraft("depthPromptDepth", Number(e.target.value))}
-          />
+        <div style={{ ...s.fieldWrap, width: 80, flexShrink: 0 }}>
+          <label className={lblCls} style={s.label}>Depth</label>
+          <input type="number" className={inputCls} style={s.inputPadding} min={0} max={999} value={draft.depthPromptDepth ?? 4} disabled={isSaving} onChange={(e) => patchDraft("depthPromptDepth", Number(e.target.value))} />
         </div>
-        <div className="mb-5 w-[110px] shrink-0">
-          <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-            Role
-          </label>
-          <select
-            className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
-            value={draft.depthPromptRole || "system"}
-            disabled={isSaving}
-            onChange={(e) => patchDraft("depthPromptRole", e.target.value)}
-          >
+        <div style={{ ...s.fieldWrap, width: 110, flexShrink: 0 }}>
+          <label className={lblCls} style={s.label}>Role</label>
+          <select className={inputCls} style={s.inputPadding} value={draft.depthPromptRole || "system"} disabled={isSaving} onChange={(e) => patchDraft("depthPromptRole", e.target.value)}>
             <option value="system">system</option>
             <option value="user">user</option>
             <option value="assistant">assistant</option>
@@ -430,73 +293,34 @@ export function CharacterForm({
       </div>
 
       {/* Extensions JSON */}
-      <div className="mb-5">
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-          Extensions (JSON)
-        </label>
-        <textarea
-          className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-          value={draft.extensions || ""}
-          disabled={isSaving}
-          onChange={(e) => patchDraft("extensions", e.target.value)}
-          placeholder='{"talkativeness":"0.5",...}'
-        />
+      <div style={s.fieldWrap}>
+        <label className={lblCls} style={s.label}>Extensions (JSON)</label>
+        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.extensions || ""} disabled={isSaving} onChange={(e) => patchDraft("extensions", e.target.value)} placeholder='{"talkativeness":"0.5",...}' />
       </div>
 
       {/* System Prompt Override */}
-      <div className="mb-5">
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-          System Prompt Override
-        </label>
-        <textarea
-          className="w-full min-h-[80px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-          value={draft.systemPrompt || ""}
-          disabled={isSaving}
-          onChange={(e) => patchDraft("systemPrompt", e.target.value)}
-          placeholder="Leave empty to use the global prompt..."
-        />
+      <div style={s.fieldWrap}>
+        <label className={lblCls} style={s.label}>System Prompt Override</label>
+        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 80 }} value={draft.systemPrompt || ""} disabled={isSaving} onChange={(e) => patchDraft("systemPrompt", e.target.value)} placeholder="Leave empty to use the global prompt..." />
       </div>
 
-      {/* Tags — input + chips */}
-      <div className="mb-5">
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
-          Tags
-        </label>
-        <input
-          type="text"
-          className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
-          value={tagInput}
-          disabled={isSaving}
-          onChange={(e) => setTagInput(e.target.value)}
-          onKeyDown={handleTagKey}
-          placeholder="Enter tag and press Enter"
-        />
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {/* Tags */}
+      <div style={s.fieldWrap}>
+        <label className={lblCls} style={s.label}>Tags</label>
+        <input type="text" className={inputCls} style={s.inputPadding} value={tagInput} disabled={isSaving} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagKey} placeholder="Enter tag and press Enter" />
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
           {(draft.tags || []).map((tag: string) => (
-            <span
-              key={tag}
-              className="cursor-pointer rounded bg-accent-dim px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1"
-              onClick={() => toggleTag(tag)}
-            >
+            <span key={tag} className="cursor-pointer rounded bg-accent-dim font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" style={{ padding: "4px 10px" }} onClick={() => toggleTag(tag)}>
               {tag} ✕
             </span>
           ))}
         </div>
       </div>
 
-      {/* Footer: Reset + save notice */}
+      {/* Footer */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
-        <button
-          className="cursor-pointer rounded-md bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
-          style={{ height: 28, padding: "0 12px" }}
-          disabled={isSaving || !isDirty}
-          onClick={onReset}
-        >
-          Reset
-        </button>
-        <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3" style={{ margin: 0 }}>
-          {saveNotice || (isDirty ? "Unsaved changes" : "Saved state")}
-        </span>
+        <button className="cursor-pointer rounded-md bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" style={{ height: 28, padding: "0 12px" }} disabled={isSaving || !isDirty} onClick={onReset}>Reset</button>
+        <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{saveNotice || (isDirty ? "Unsaved changes" : "Saved state")}</span>
       </div>
     </div>
   );
