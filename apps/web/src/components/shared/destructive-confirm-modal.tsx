@@ -24,15 +24,15 @@ export function DestructiveConfirmModal(input: DestructiveConfirmModalProps) {
         </div>
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
           <button
-            className="api-cancel-btn"
-            style={{ border: "1px solid var(--border)" }}
+            className="h-8 cursor-pointer rounded-md border-0 bg-transparent font-ui text-[12.5px] text-t3 transition-colors duration-150 hover:text-t1"
+            style={{ padding: "0 14px", border: "1px solid var(--border)" }}
             onClick={input.onCancel}
           >
             Cancel
           </button>
           <button
-            className="api-save-btn"
-            style={{ background: "oklch(0.4 0.15 25)", color: "#fff" }}
+            className="h-8 cursor-pointer rounded-md border-0 font-ui text-[12.5px] font-medium text-white transition-[filter] duration-100 hover:brightness-110"
+            style={{ padding: "0 18px", background: "oklch(0.4 0.15 25)" }}
             onClick={input.onConfirm}
           >
             {input.confirmLabel || "Confirm"}
