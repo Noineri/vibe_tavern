@@ -34,6 +34,15 @@ export const sendMessageSchema = z.object({
   content: z.string(),
 });
 
+export const summarizeChatSchema = z.object({
+  providerProfileId: z.string().min(1),
+  maxMessages: z.number().int().min(1).max(200),
+});
+
+export const saveChatSummarySchema = z.object({
+  summary: z.string(),
+});
+
 export const editMessageSchema = z.object({
   content: z.string().optional().default(""),
 });

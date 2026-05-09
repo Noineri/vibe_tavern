@@ -89,7 +89,7 @@ export interface ImportResult {
 	activeChatId: ChatId;
 	snapshot: SessionSnapshot;
 	imported: {
-		kind: "character" | "lorebook";
+		kind: "character" | "lorebook" | "chat";
 		name: string;
 		fileName: string;
 		warningCount: number;
@@ -280,6 +280,29 @@ export class SessionRuntime {
 	): Promise<PromptTraceRecordDto[]> {
 		const traces = await this.stores.chats.getTracesByChat(chatId, branchId);
 		return traces.slice(0, limit).map(mapPromptTraceRecord);
+	}
+
+	async assembleSummaryPrompt(input: {
+		chatId: ChatId;
+		model: string;
+		recentMessageLimit: number;
+		contextBudget?: number | null;
+	}) {
+		const chat = await this.stores.chats.getById(input.chatId);
+		if (!chat) {
+			throw notFound("Chat", `Chat '${input.chatId}' was not found.`);
+		}
+		return this.assemblePrompt(input.chatId, chat.activeBranchId as ChatBranchId, {
+			model: input.model,
+			recentMessageLimit: input.recentMessageLimit,
+			contextBudget: input.contextBudget ?? null,
+			mode: "summary",
+		});
+	}
+
+	async updateChatSummary(chatId: ChatId, summary: string): Promise<SessionSnapshot> {
+		await this.stores.chats.updateSummary(chatId, summary);
+		return this.getSnapshot(chatId);
 	}
 
 	async switchChat(chatId: ChatId): Promise<SessionSnapshot> {
@@ -860,7 +883,7 @@ export class SessionRuntime {
 	private async assemblePrompt(
 		chatId: ChatId,
 		branchId?: ChatBranchId,
-		options?: { excludeMessageIds?: MessageId[]; model?: string },
+		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call"; contextBudget?: number | null },
 	) {
 		void await this.getActiveProviderProfile();
 		return this.promptService.assembleForChat({
@@ -868,7 +891,9 @@ export class SessionRuntime {
 			branchId,
 			model: options?.model ?? SYSTEM_RESOURCE_ID.unresolvedModel,
 			excludeMessageIds: options?.excludeMessageIds,
-			contextBudget: null,
+			recentMessageLimit: options?.recentMessageLimit,
+			mode: options?.mode,
+			contextBudget: options?.contextBudget ?? null,
 		});
 	}
 

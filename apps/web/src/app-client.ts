@@ -27,7 +27,7 @@ export interface PersonaRecord {
 export interface AppSnapshot {
   chats: ChatListItem[];
   allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
-  activeChat: Chat;
+  activeChat: Chat & { summary?: string; messageHistoryLimit?: number };
   activeBranch: ChatBranch;
   branches: ChatBranch[];
   messages: AppMessage[];
@@ -76,7 +76,7 @@ export interface ImportJsonResponse {
   activeChatId: ChatId;
   snapshot: AppSnapshot;
   imported: {
-    kind: "character" | "lorebook";
+    kind: "character" | "lorebook" | "chat";
     name: string;
     fileName: string;
     warningCount: number;
@@ -145,8 +145,9 @@ type RpcResponse = { ok: boolean; status: number; json(): Promise<unknown>; text
 
 async function unwrapRpc<T>(response: RpcResponse): Promise<T> {
   if (!response.ok) {
-    const errorBody = await response.json() as { error?: string };
-    throw new Error(errorBody?.error || `Request failed: ${response.status}`);
+    const errorBody = await response.json().catch(() => null) as { error?: string | { message?: string } } | null;
+    const error = errorBody?.error;
+    throw new Error(typeof error === "string" ? error : error?.message || `Request failed: ${response.status}`);
   }
   return response.json() as Promise<T>;
 }
@@ -316,6 +317,28 @@ export async function sendChatMessage(
   );
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);
+}
+
+export async function summarizeChat(
+  chatId: ChatId,
+  input: { providerProfileId: string; maxMessages: number },
+  options?: { signal?: AbortSignal },
+): Promise<{ summary: string; snapshot: AppSnapshot }> {
+  const response = await client.api.chats[":chatId"].summary.$post(
+    { param: { chatId }, json: input },
+    { init: { signal: options?.signal } },
+  );
+  const data = await unwrapRpc<{ summary: string; snapshot: AppSnapshot }>(response);
+  return { summary: data.summary, snapshot: normalizeSnapshot(data.snapshot) };
+}
+
+export async function saveChatSummary(
+  chatId: ChatId,
+  summary: string,
+): Promise<{ summary: string; snapshot: AppSnapshot }> {
+  const response = await client.api.chats[":chatId"].summary.$put({ param: { chatId }, json: { summary } });
+  const data = await unwrapRpc<{ summary: string; snapshot: AppSnapshot }>(response);
+  return { summary: data.summary, snapshot: normalizeSnapshot(data.snapshot) };
 }
 
 export async function sendChatMessageStream(

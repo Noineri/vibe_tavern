@@ -1,4 +1,5 @@
 import { BuildMode } from "./components/BuildMode.js";
+import { ContextMemoryModal } from "./components/ContextMemoryModal.js";
 import { CreateCharacterModal } from "./components/CreateCharacterModal.js";
 import { ImportSurface } from "./components/ImportSurface.js";
 import { PersonaModal } from "./components/PersonaModal.js";
@@ -57,6 +58,8 @@ export function App() {
   const activeChatId = app.activeChatId ?? snapshot?.activeChat.id ?? null;
   const personaName = snapshot?.persona?.name ?? "No persona";
   const providerConnected = app.connection.status === "connected";
+  const contextUsed = app.activePromptTrace?.tokenAccounting?.total ?? 0;
+  const contextLimit = app.activeProviderProfile?.contextBudget ?? 0;
   const switchMode = () => app.setMode(isPlayMode ? "build" : "play");
   const openPromptTrace = () => {
     app.setMode("build");
@@ -200,12 +203,25 @@ export function App() {
           theme={app.theme}
           onOpenProviderSettings={app.openConnectionPanel}
           onOpenTracePanel={openPromptTrace}
+          onOpenContextMemory={app.openContextMemory}
           onToggleMode={switchMode}
           onToggleTheme={() => app.setTheme(app.theme === "dark" ? "light" : "dark")}
         />
 
         {shellSurface}
       </main>
+
+      <ContextMemoryModal
+        isOpen={app.isContextMemoryOpen}
+        onClose={app.closeContextMemory}
+        activeChatId={activeChatId}
+        providers={app.providerProfiles.map(p => ({ id: p.id, name: p.name, defaultModel: p.defaultModel, hasStoredApiKey: p.hasStoredApiKey, isActive: p.isActive }))}
+        contextWindow={{ used: contextUsed, limit: contextLimit }}
+        currentSummary={snapshot?.activeChat.summary ?? ""}
+        messageCount={snapshot?.messages.length ?? 0}
+        onSummarize={app.handleSummarizeChat}
+        onSaveSummary={app.handleSaveChatSummary}
+      />
 
       <ProviderModal
         isOpen={app.isProviderModalOpen}

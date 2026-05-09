@@ -10,6 +10,8 @@ import {
   updatePromptPreset,
   deletePromptPreset,
   setChatPromptPreset,
+  summarizeChat,
+  saveChatSummary,
   type AppSnapshot,
   type PersonaRecord,
 } from "../app-client.js";
@@ -108,6 +110,7 @@ export function useRpPlatformApp() {
   const [isPromptManagerOpen, setPromptManagerOpen] = useState(false);
   const [isPersonaModalOpen, setPersonaModalOpen] = useState(false);
   const [isCreateCharacterModalOpen, setCreateCharacterModalOpen] = useState(false);
+  const [isContextMemoryOpen, setContextMemoryOpen] = useState(false);
   const [connection, setConnection] = useState<ConnectionState>(() => createInitialConnectionState());
   const [isImportDragActive, setIsImportDragActive] = useState(false);
   const [importNotice, setImportNotice] = useState("");
@@ -419,6 +422,30 @@ export function useRpPlatformApp() {
     setPersonaModalOpen(false);
   }
 
+  function openContextMemory(): void {
+    setContextMemoryOpen(true);
+  }
+
+  function closeContextMemory(): void {
+    setContextMemoryOpen(false);
+  }
+
+  async function handleSummarizeChat(input: { providerProfileId: string; maxMessages: number }): Promise<string> {
+    const chatId = useChatStore.getState().activeChatId;
+    if (!chatId) throw new Error("No active chat.");
+    const result = await summarizeChat(chatId, input);
+    snapshotRefresh(chatId, result.snapshot);
+    return result.summary;
+  }
+
+  async function handleSaveChatSummary(summary: string): Promise<string> {
+    const chatId = useChatStore.getState().activeChatId;
+    if (!chatId) throw new Error("No active chat.");
+    const result = await saveChatSummary(chatId, summary);
+    snapshotRefresh(chatId, result.snapshot);
+    return result.summary;
+  }
+
   function openCreateCharacterModal(): void {
     setCreateCharacterModalOpen(true);
   }
@@ -498,6 +525,11 @@ export function useRpPlatformApp() {
     isCreateCharacterModalOpen,
     openCreateCharacterModal,
     closeCreateCharacterModal,
+    isContextMemoryOpen,
+    openContextMemory,
+    closeContextMemory,
+    handleSummarizeChat,
+    handleSaveChatSummary,
     connection,
     patchConnection,
     isImportDragActive,

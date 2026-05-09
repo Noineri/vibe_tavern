@@ -7,7 +7,7 @@ import type {
 	PromptPresetId,
 } from "@rp-platform/domain";
 import { brandId, type CharacterId } from "@rp-platform/domain";
-import { serializeSillyTavernChat } from "../../../packages/import-export/src/chats/st-chat.js";
+import { parseSillyTavernChat, serializeSillyTavernChat } from "../../../packages/import-export/src/chats/st-chat.js";
 import {
 	importCharacterCardV3Json,
 } from "../../../packages/import-export/src/index.js";
@@ -38,7 +38,7 @@ export interface ImportResult {
 	activeChatId: ChatId;
 	snapshot: import("./session-runtime.js").SessionSnapshot;
 	imported: {
-		kind: "character" | "lorebook";
+		kind: "character" | "lorebook" | "chat";
 		name: string;
 		fileName: string;
 		warningCount: number;
@@ -224,6 +224,10 @@ export async function importJson(
 		throw validation("Import payload is empty.");
 	}
 
+	if (input.fileName.toLowerCase().endsWith(".jsonl")) {
+		return importSillyTavernChat(deps, input.fileName, trimmed, input.chatId);
+	}
+
 	const parsed = JSON.parse(trimmed) as Record<string, unknown>;
 
 	if (parsed.spec === "chara_card_v3") {
@@ -300,6 +304,70 @@ export async function importJson(
 
 	// Lorebook import — phase 2
 	throw validation("Lorebook import is not supported in phase 1.");
+}
+
+async function importSillyTavernChat(
+	deps: ImportExportModuleDeps,
+	fileName: string,
+	jsonlContent: string,
+	sourceChatId?: string,
+): Promise<ImportResult> {
+	if (!sourceChatId) {
+		throw validation("Select a character/chat before importing a SillyTavern JSONL chat.");
+	}
+
+	const sourceChat = await deps.stores.chats.getById(sourceChatId as ChatId);
+	if (!sourceChat) {
+		throw notFound("Chat", `Chat '${sourceChatId}' was not found.`);
+	}
+
+	const parsed = parseSillyTavernChat(jsonlContent);
+	const importedMessages = parsed.messages.filter((message) => message.content.trim());
+	if (importedMessages.length === 0) {
+		throw validation("No messages were found in the SillyTavern JSONL file.");
+	}
+
+	const title = fileName.replace(/\.jsonl$/i, "") || parsed.metadata.characterName || sourceChat.title;
+	const chat = await deps.chatApp.createChat({
+		characterId: sourceChat.characterId as CharacterId,
+		personaId: (sourceChat.personaId as PersonaId | null) ?? await deps.resolveDefaultPersonaId(),
+		title,
+		promptPresetId: sourceChat.promptPresetId as PromptPresetId,
+	});
+	const createdId = chat.id as ChatId;
+	deps.chatOrder.unshift(createdId);
+
+	for (const imported of importedMessages) {
+		const selectedVariant = imported.variants.find((variant) => variant.isSelected) ?? imported.variants[0];
+		const variants = imported.variants.length > 0 ? imported.variants : [{ content: imported.content, isSelected: true }];
+		const message = await deps.stores.chats.addMessage({
+			chatId: createdId,
+			branchId: chat.activeBranchId,
+			role: imported.role,
+			authorType: imported.role === "user" ? "user" : imported.role === "system" ? "system" : "assistant",
+			content: variants[0]?.content ?? imported.content,
+		});
+		for (const variant of variants.slice(1)) {
+			await deps.stores.chats.addVariant(message.id, variant.content);
+		}
+		const selectedIndex = variants.findIndex((variant) => variant.content === selectedVariant?.content);
+		if (selectedIndex > 0) {
+			await deps.stores.chats.selectVariant(message.id, selectedIndex);
+		}
+	}
+
+	return {
+		activeChatId: createdId,
+		snapshot: await deps.getSnapshot(createdId),
+		imported: {
+			kind: "chat",
+			name: title,
+			fileName,
+			warningCount: 0,
+			warnings: [],
+			attachedToCharacterName: parsed.metadata.characterName,
+		},
+	};
 }
 
 async function resolveChatNames(

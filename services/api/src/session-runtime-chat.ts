@@ -22,7 +22,7 @@ export interface ChatRuntimeDeps {
   assemblePrompt: (
     chatId: ChatId,
     branchId?: ChatBranchId,
-    options?: { excludeMessageIds?: MessageId[]; model?: string },
+    options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call"; contextBudget?: number | null },
   ) => Promise<{
     branchId: ChatBranchId;
     prompt: AssemblePromptResponse;

@@ -32,16 +32,18 @@ export function useCharacterImport() {
         } catch (err) {
           console.warn("Failed to upload character avatar during import:", err);
         }
+      } else if (lowerName.endsWith(".jsonl")) {
+        payload = await file.text();
       } else if (file.type === "application/json" || lowerName.endsWith(".json")) {
         const text = await file.text();
         payload = JSON.parse(text);
       } else {
-        throw new Error("Unsupported file type. Please upload a PNG character card or JSON file.");
+        throw new Error("Unsupported file type. Please upload a PNG character card, JSON file, or SillyTavern JSONL chat.");
       }
 
       const result = await importJson({
         fileName: file.name,
-        jsonText: JSON.stringify(payload),
+        jsonText: typeof payload === "string" ? payload : JSON.stringify(payload),
         chatId: options?.chatId,
       });
 

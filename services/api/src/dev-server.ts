@@ -7,6 +7,7 @@ import { SessionRuntime } from "./session-runtime.js";
 import { ProviderProfileService } from "./provider-profile-service.js";
 import { PromptPresetService } from "./prompt-preset-service.js";
 import { ProviderOrchestrator } from "./provider-orchestrator.js";
+import { ChatSummaryService } from "./chat-summary-service.js";
 import { listProviderModels, normalizeOpenAiCompatibleBaseUrl, probeProviderConnection, testProviderChat } from "./provider-gateway.js";
 import { logSendDebug } from "./send-debug-log.js";
 import { createApiRouter } from "./routes.js";
@@ -93,6 +94,7 @@ async function ensureSeedData() {
   const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
   const chatRuntime = sessionRuntime.chatRuntime;
   const liveChatOrchestrator = new LiveChatOrchestrator(chatRuntime, providerOrchestrator);
+  const chatSummaryService = new ChatSummaryService(sessionRuntime, providerProfileService);
 
   // 10. Wire routes and start server
   const runtime = {
@@ -198,6 +200,10 @@ async function ensureSeedData() {
         signal,
       });
     },
+    summarizeChat: (chatId: string, body: { providerProfileId: string; maxMessages: number }, signal?: AbortSignal) =>
+      chatSummaryService.summarizeChat({ chatId, providerProfileId: body.providerProfileId, maxMessages: body.maxMessages, signal }),
+    saveChatSummary: (chatId: string, body: { summary: string }) =>
+      chatSummaryService.saveChatSummary({ chatId, summary: body.summary }),
     generateReply: async (chatId: string, signal?: AbortSignal) => {
       const profile = await providerProfileService.resolveActiveProviderProfile();
       if (!profile) {
@@ -386,7 +392,7 @@ async function ensureSeedData() {
 
   app.use("*", cors({
     origin: "*",
-    allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type"],
   }));
 

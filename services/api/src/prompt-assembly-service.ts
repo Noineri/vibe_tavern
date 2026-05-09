@@ -174,7 +174,9 @@ export class PromptAssemblyService {
         position: entry.position,
       })),
       memory: {
-        summary: [],
+        summary: chat.summary?.trim()
+          ? [{ id: `chat_summary_${chat.id}`, kind: "chat", summary: chat.summary }]
+          : [],
         retrieval: retrievedMemories.map((memory) => ({
           id: memory.id,
           sourceType: memory.sourceType,
