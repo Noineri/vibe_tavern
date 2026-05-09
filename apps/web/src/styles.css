@@ -535,7 +535,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .provider-name{font-weight:500;color:var(--t1)}
 ═══ End Provider Badge ═══ */
 
-/* ── API Modal ── */
+/* ═══ Shared modal overlay/layout — ported to Tailwind in VP-W4-WELCOME-SCREEN ═══
 .api-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
 .api-modal{background:var(--surface);border:1px solid var(--border2);border-radius:12px;width:500px;max-width:calc(100vw - 32px);max-height:calc(100vh - 60px);display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.5);overflow:hidden}
 .api-head{padding:18px 20px 0;flex-shrink:0}
@@ -564,6 +564,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .api-save-btn:hover{filter:brightness(1.1)}
 .api-cancel-btn{height:32px;padding:0 14px;background:transparent;color:var(--t3);border-radius:6px;font-size:12.5px;font-family:var(--font-ui);cursor:pointer;transition:color .15s}
 .api-cancel-btn:hover{color:var(--t1)}
+═══ End Shared modal CSS ═══ */
 
 /* ═══ Prompt Manager — ported to Tailwind in VP-W4-PROMPT-MANAGER ═══
 .pm-layout{display:flex;height:100%;margin:-20px;}
@@ -656,7 +657,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 ═══ End Provider-specific legacy CSS ═══ */
 @media(max-width:768px){.provider-badge{display:none}}
 
-/* ── D23: WelcomeScreen ── */
+/* ═══ WelcomeScreen — ported to Tailwind in VP-W4-WELCOME-SCREEN ═══
 .ws-modal{width:540px!important;max-width:calc(100vw - 32px);max-height:calc(100vh - 40px)}
 .ws-head{padding:28px 28px 0;text-align:center}
 .ws-title{font-size:1.35rem;font-weight:700;color:var(--t1);margin-bottom:6px}
@@ -681,6 +682,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .ws-btn--primary:disabled{opacity:.4;cursor:default}
 .ws-btn--ghost{background:transparent;color:var(--t2);padding:10px 12px}
 .ws-btn--ghost:hover{color:var(--t1)}
+═══ End WelcomeScreen ═══ */
 
 .alt-tab{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:12px;border:1px solid var(--border);background:var(--s2);color:var(--t2)}
 .alt-tab.act{background:var(--accent-dim);border-color:var(--accent);color:var(--accent-t)}

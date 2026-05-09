@@ -5,9 +5,9 @@ interface ConfirmCloseModalProps {
 
 export function ConfirmCloseModal(input: ConfirmCloseModalProps) {
   return (
-    <div className="api-overlay" style={{ zIndex: 700 }} onClick={input.onCancel}>
+    <div className="fixed inset-0 z-[700] flex items-center justify-center bg-black/50" onClick={input.onCancel}>
       <div
-        className="api-modal"
+        className="w-[320px] rounded-lg border border-border bg-surface p-5 shadow-xl"
         style={{ width: 360, padding: 28, textAlign: "center" }}
         onClick={(event) => event.stopPropagation()}
       >

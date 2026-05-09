@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react';
+import { Ic } from './shared/icons';
+import { cn } from '../lib/cn';
 
 interface WelcomeScreenProps {
   onCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }) => Promise<void>;
@@ -44,40 +46,43 @@ export function WelcomeScreen({ onCreateCharacter, onImportFiles, onFreeChat }: 
     }
   };
 
+  const cardBase = "flex flex-col items-center gap-1.5 rounded-[10px] border border-border2 bg-s2 text-center text-t1 transition-all hover:border-accent hover:bg-surface";
+
   return (
-    <div className="api-overlay">
-      <div className="api-modal ws-modal">
-        <div className="ws-head">
-          <div className="ws-title">Добро пожаловать</div>
-          <div className="ws-sub">Выберите, как начать</div>
+    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]">
+      <div className="flex max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]" style={{width:540}}>
+        <div className="text-center" style={{padding:'28px 28px 0'}}>
+          <div className="font-ui text-[1.35rem] font-bold text-t1" style={{marginBottom:6}}>Добро пожаловать</div>
+          <div className="font-ui text-[0.88rem] text-t2" style={{marginBottom:24}}>Выберите, как начать</div>
         </div>
 
         {!creating ? (
-          <div className="ws-cards">
-            <button className="ws-card" onClick={() => setCreating(true)}>
-              <div className="ws-card-icon">✦</div>
-              <div className="ws-card-title">Создать персонажа</div>
-              <div className="ws-card-sub">Заполните имя, описание, первое сообщение и другие поля</div>
+          <div className="flex flex-col gap-3" style={{padding:'0 28px 28px'}}>
+            <button className={cardBase} style={{padding:'20px 16px', cursor:'pointer'}} onClick={() => setCreating(true)}>
+              <div className="text-[1.4rem] text-accent">{Ic.edit()}</div>
+              <div className="font-ui text-[0.95rem] font-semibold">Создать персонажа</div>
+              <div className="font-ui text-[0.8rem] text-t2">Заполните имя, описание, первое сообщение и другие поля</div>
             </button>
 
-            <button className="ws-card" onClick={() => fileRef.current?.click()}>
-              <div className="ws-card-icon">↑</div>
-              <div className="ws-card-title">Загрузить карточку</div>
-              <div className="ws-card-sub">Загрузите PNG или JSON карточку персонажа</div>
+            <button className={cardBase} style={{padding:'20px 16px', cursor:'pointer'}} onClick={() => fileRef.current?.click()}>
+              <div className="text-[1.4rem] text-accent">{Ic.import()}</div>
+              <div className="font-ui text-[0.95rem] font-semibold">Загрузить карточку</div>
+              <div className="font-ui text-[0.8rem] text-t2">Загрузите PNG или JSON карточку персонажа</div>
             </button>
 
-            <button className="ws-card ws-card--muted" onClick={handleFreeChat} disabled={busy}>
-              <div className="ws-card-icon">💬</div>
-              <div className="ws-card-title">Продолжить без персонажа</div>
-              <div className="ws-card-sub">Начните свободный чат прямо сейчас</div>
+            <button className={cn(cardBase, "opacity-70 hover:opacity-100")} style={{padding:'20px 16px', cursor:'pointer'}} onClick={handleFreeChat} disabled={busy}>
+              <div className="text-[1.4rem] text-accent">{Ic.plus()}</div>
+              <div className="font-ui text-[0.95rem] font-semibold">Продолжить без персонажа</div>
+              <div className="font-ui text-[0.8rem] text-t2">Начните свободный чат прямо сейчас</div>
             </button>
           </div>
         ) : (
-          <div className="ws-form">
-            <label className="ws-field">
-              <span className="ws-field-label">Имя *</span>
+          <div className="flex flex-col gap-3.5" style={{padding:'0 28px 28px'}}>
+            <label className="flex flex-col gap-1">
+              <span className="font-ui text-[0.8rem] font-semibold text-t2">Имя *</span>
               <input
-                className="ws-input"
+                className="w-full rounded-lg border border-border2 bg-s2 font-ui text-[0.9rem] text-t1 outline-none transition-colors focus:border-accent"
+                style={{padding:'10px 12px'}}
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -85,45 +90,49 @@ export function WelcomeScreen({ onCreateCharacter, onImportFiles, onFreeChat }: 
                 autoFocus
               />
             </label>
-            <label className="ws-field">
-              <span className="ws-field-label">Описание</span>
+            <label className="flex flex-col gap-1">
+              <span className="font-ui text-[0.8rem] font-semibold text-t2">Описание</span>
               <textarea
-                className="ws-textarea"
+                className="w-full resize-y rounded-lg border border-border2 bg-s2 font-ui text-[0.9rem] text-t1 outline-none transition-colors focus:border-accent"
+                style={{padding:'10px 12px', minHeight:60}}
                 value={desc}
                 onChange={(e) => setDesc(e.target.value)}
                 rows={3}
               />
             </label>
-            <label className="ws-field">
-              <span className="ws-field-label">Первое сообщение</span>
+            <label className="flex flex-col gap-1">
+              <span className="font-ui text-[0.8rem] font-semibold text-t2">Первое сообщение</span>
               <textarea
-                className="ws-textarea"
+                className="w-full resize-y rounded-lg border border-border2 bg-s2 font-ui text-[0.9rem] text-t1 outline-none transition-colors focus:border-accent"
+                style={{padding:'10px 12px', minHeight:60}}
                 value={firstMsg}
                 onChange={(e) => setFirstMsg(e.target.value)}
                 rows={3}
               />
             </label>
-            <label className="ws-field">
-              <span className="ws-field-label">Сценарий</span>
+            <label className="flex flex-col gap-1">
+              <span className="font-ui text-[0.8rem] font-semibold text-t2">Сценарий</span>
               <textarea
-                className="ws-textarea"
+                className="w-full resize-y rounded-lg border border-border2 bg-s2 font-ui text-[0.9rem] text-t1 outline-none transition-colors focus:border-accent"
+                style={{padding:'10px 12px', minHeight:60}}
                 value={scenario}
                 onChange={(e) => setScenario(e.target.value)}
                 rows={3}
               />
             </label>
-            <label className="ws-field">
-              <span className="ws-field-label">Личность</span>
+            <label className="flex flex-col gap-1">
+              <span className="font-ui text-[0.8rem] font-semibold text-t2">Личность</span>
               <textarea
-                className="ws-textarea"
+                className="w-full resize-y rounded-lg border border-border2 bg-s2 font-ui text-[0.9rem] text-t1 outline-none transition-colors focus:border-accent"
+                style={{padding:'10px 12px', minHeight:60}}
                 value={personalitySummary}
                 onChange={(e) => setPersonalitySummary(e.target.value)}
                 rows={2}
               />
             </label>
-            <div className="ws-form-actions">
-              <button className="ws-btn ws-btn--ghost" onClick={() => setCreating(false)} disabled={busy}>← Назад</button>
-              <button className="ws-btn ws-btn--primary" disabled={!canCreate} onClick={handleCreate}>
+            <div className="mt-1 flex items-center justify-between">
+              <button className="cursor-pointer rounded-lg border-0 bg-transparent font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1" style={{padding:'10px 12px'}} onClick={() => setCreating(false)} disabled={busy}>← Назад</button>
+              <button className="cursor-pointer rounded-lg border-0 bg-accent font-ui text-[0.9rem] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40" style={{padding:'10px 22px'}} disabled={!canCreate} onClick={handleCreate}>
                 {busy ? 'Создание…' : 'Создать'}
               </button>
             </div>
@@ -134,7 +143,7 @@ export function WelcomeScreen({ onCreateCharacter, onImportFiles, onFreeChat }: 
           ref={fileRef}
           type="file"
           accept=".png,.json"
-          style={{ display: 'none' }}
+          className="hidden"
           onChange={(e) => {
             if (e.target.files && e.target.files.length > 0) {
               onImportFiles(e.target.files);
