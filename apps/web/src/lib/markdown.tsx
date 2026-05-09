@@ -5,11 +5,11 @@ interface MarkdownProps {
   className?: string;
 }
 
-function parseInlineFormatting(text: string): (string | React.ReactNode)[] {
+function parseInlineFormatting(text: string, keyPrefix: string): (string | React.ReactNode)[] {
   const parts = text.split(/(\*[^*]+\*)/g);
   return parts.map((part, index) => {
     if (part.startsWith('*') && part.endsWith('*')) {
-      return <em key={index}>{part.slice(1, -1)}</em>;
+      return <em key={`${keyPrefix}-${index}`}>{part.slice(1, -1)}</em>;
     }
     return part;
   });
@@ -22,7 +22,7 @@ function renderParagraphContent(text: string): React.ReactNode[] {
   const result: React.ReactNode[] = [];
   for (let i = 0; i < lines.length; i++) {
     if (i > 0) result.push(<br key={`br-${i}`} />);
-    result.push(...parseInlineFormatting(lines[i]));
+    result.push(...parseInlineFormatting(lines[i], `l${i}`));
   }
   return result;
 }

@@ -1,0 +1,18 @@
+import React from 'react';
+
+interface MemBadgeProps {
+  label: string;
+  onClick: () => void;
+}
+
+export function MemBadge({ label, onClick }: MemBadgeProps) {
+  return (
+    <div className="flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-s2 text-[calc(var(--ui-fs)-3px)] text-t2 transition-colors duration-150 hover:border-accent hover:text-accent-t"
+      style={{padding:'4px 12px'}}
+      onClick={onClick}
+      title={label}>
+      <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"/>
+      <span>{label}</span>
+    </div>
+  );
+}

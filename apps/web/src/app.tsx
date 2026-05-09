@@ -9,6 +9,8 @@ import { Sidebar } from "./components/Sidebar.js";
 import { TopBar } from "./components/TopBar.js";
 import { WelcomeScreen } from "./components/WelcomeScreen.js";
 import { DestructiveConfirmModal } from "./components/shared/destructive-confirm-modal.js";
+import { TweaksPanel } from "./components/popovers/TweaksPanel.js";
+import { AvatarPanel } from "./components/popovers/AvatarPanel.js";
 import { useRpPlatformApp } from "./hooks/use-rp-platform-app.js";
 import { getGatewayBaseUrl } from "./gateway-client.js";
 
@@ -52,6 +54,47 @@ export function App() {
     app.setMode("build");
     app.setBuildTab("trace");
   };
+
+  const tweaksT = (key: string): string => {
+    const map: Record<string, string> = {
+      settings_interface: "Interface",
+      twDark: "Dark theme",
+      twFontSize: "Font size",
+      twUiFontSize: "UI font size",
+      twSmall: "Small",
+      twMedium: "Medium",
+      twLarge: "Large",
+      twWidth: "Message width",
+      twNarrow: "Narrow",
+      twWide: "Wide",
+      twLang: "Language",
+    };
+    return map[key] ?? key;
+  };
+
+  const tweaksPanelSettings = {
+    theme: app.theme as 'dark' | 'light',
+    fontSize: app.tweaksSettings.fontSize,
+    uiFontSize: app.tweaksSettings.uiFontSize,
+    messageWidth: app.tweaksSettings.messageWidth,
+    lang: app.tweaksSettings.lang,
+  };
+
+  const handleSetTweak = (key: string, value: unknown) => {
+    if (key === 'theme') {
+      app.setTheme(value as 'dark' | 'light');
+    } else if (key === 'fontSize' || key === 'uiFontSize') {
+      app.updateTweak(key, value as number);
+    } else if (key === 'messageWidth') {
+      app.updateTweak(key, value as 'narrow' | 'medium' | 'wide');
+    } else if (key === 'lang') {
+      app.updateTweak(key, value as string);
+    }
+  };
+
+  const avatarSrc = snapshot?.character.avatarAssetId
+    ? `${getGatewayBaseUrl()}/api/assets/${snapshot.character.avatarAssetId}`
+    : undefined;
 
   let shellSurface: React.ReactNode;
 
@@ -201,10 +244,28 @@ export function App() {
           onOpenContextMemory={app.openContextMemory}
           onToggleMode={switchMode}
           onToggleTheme={() => app.setTheme(app.theme === "dark" ? "light" : "dark")}
+          onOpenAvatar={() => app.setAvatarOpen(true)}
+          onToggleTweaks={() => app.setTweaksOpen(!app.tweaksOpen)}
+          tweaksOpen={app.tweaksOpen}
         />
 
         {shellSurface}
       </main>
+
+      {app.tweaksOpen && (
+        <TweaksPanel
+          settings={tweaksPanelSettings}
+          setSetting={handleSetTweak}
+          t={tweaksT}
+        />
+      )}
+
+      {app.avatarOpen && avatarSrc && (
+        <AvatarPanel
+          src={avatarSrc}
+          onClose={() => app.setAvatarOpen(false)}
+        />
+      )}
 
       <ContextMemoryModal
         isOpen={app.isContextMemoryOpen}

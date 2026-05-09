@@ -157,19 +157,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .avatar-fallback{font-weight:600;letter-spacing:.01em}
 .avatar-fallback.broken-avatar,.avatar-fallback.broken-image{background:repeating-linear-gradient(135deg,var(--s2),var(--s2) 5px,var(--s3) 5px,var(--s3) 10px);color:var(--t3);border:1px solid var(--border2)}
 
-.group-badge-viktor{background:linear-gradient(135deg,oklch(0.3 0.08 250),oklch(0.42 0.1 250));color:oklch(0.82 0.08 250)}
-.group-badge-mira{background:linear-gradient(135deg,oklch(0.28 0.1 320),oklch(0.42 0.12 320));color:oklch(0.84 0.1 320)}
-
 .speaker-row{display:flex;align-items:center;gap:6px;color:var(--t3);font-size:calc(var(--ui-fs) - 3px)}
-
-.char-ava{
-  width:37px;height:37px;border-radius:50%;background:var(--s3);flex-shrink:0;
-  display:flex;align-items:center;justify-content:center;
-  font-family:var(--font-body);font-style:italic;font-size:calc(var(--ui-fs) - 1px);color:var(--t2);
-  overflow:hidden;cursor:pointer;transition:opacity .15s;border:1.5px solid transparent
-}
-.char-ava:hover{opacity:.85;border-color:var(--accent)}
-.char-ava img{width:100%;height:100%;object-fit:cover;object-position:top center}
 
 .gen-cur{display:inline-flex;align-items:center;gap:3px;margin-left:5px;vertical-align:middle}
 .gen-cur span{width:4px;height:4px;background:var(--accent);border-radius:50%;animation:genp 1.3s ease-in-out infinite}
@@ -192,23 +180,6 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
   .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:200;transform:translateX(-100%);transition:transform .2s ease}
   .sidebar.mobile-open{transform:translateX(0)}
   .mobile-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199}
-  .chat-header{padding:0 12px;gap:8px}
-  .hdr-right{gap:4px}
-  .provider-badge{display:none}
-  .cache-badge{display:none}
-  .badge-low-priority{display:none}
-  .composer-mobile .input-row{flex-wrap:wrap}
-  .modal-overlay{padding:12px}
-  .modal-box{max-height:90vh;width:100%;border-radius:12px}
-  .build-nav-tabs{flex-wrap:wrap}
-  .badge-stack .hdr-badge-overflow{flex-wrap:wrap;gap:3px}
-}
-@media(max-width:480px){
-  .mem-badge span{display:none}
-  .mode-pill{font-size:calc(var(--ui-fs) - 3px);padding:2px 8px}
-  .char-sub{display:none}
-  .sb-item{font-size:calc(var(--ui-fs) - 2px)}
-  .small-viewport .hdr-right{gap:3px}
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -219,78 +190,6 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 
 @layer base{*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 button{border:0;background:transparent;font:inherit;color:inherit}}
-
-/* ─── Тёмная тема ─── */
-:root{
-  /* Фоны */
-  --bg:#141210;
-  --surface:#1f1d1a;
-  --s2:#272420;
-  --s3:#302c27;
-  /* Рамки */
-  --border:#36312c;
-  --border2:#423c36;
-  /* Текст */
-  --t1:#d1d0ba;
-  --t2:#a3988f;
-  --t3:#756a5f;
-  --t4:#4f473f;
-  /* Акцент (золотой) */
-  --accent:oklch(0.72 0.14 75);
-  --accent-t:oklch(0.78 0.12 75);
-  --accent-dim:rgba(212,168,50,0.1);
-  --accent-hover:rgba(212,168,50,0.18);
-  /* Фон сообщения пользователя */
-  --user-bg:#1a1816;
-  /* Опасность (красный) */
-  --danger:oklch(0.62 0.2 25);
-  --danger-dim:oklch(0.22 0.06 25);
-  --danger-text:oklch(0.75 0.14 25);
-  /* Успех (зелёный) */
-  --success:oklch(0.68 0.16 145);
-  --success-dim:oklch(0.28 0.06 145);
-  --success-text:oklch(0.78 0.14 145);
-  /* Инфо (синий) */
-  --info:oklch(0.6 0.15 250);
-  --info-dim:oklch(0.24 0.06 250);
-  /* Предупреждение (жёлтый) */
-  --warning:oklch(0.72 0.14 70);
-  --warning-dim:oklch(0.28 0.06 70);
-  --warning-text:oklch(0.78 0.12 70);
-  /* Общие */
-  --on-accent:#fff;
-  /* Размеры и геометрия */
-  --r:6px;--sw:248px;--mw:820px;--mfs:17px;--ui-fs:16px;
-}
-/* ─── Светлая тема ─── */
-:root.light{
-  --bg:#f7f0e6;
-  --surface:#d9cfc3;
-  --s2:#f0ece5;
-  --s3:#e5e0d8;
-  --border:#ddd7ce;
-  --border2:#ccc5bb;
-  --t1:#3a332d;
-  --t2:#7a736a;
-  --t3:#8a857f;
-  --t4:#d5cfc8;
-  --accent:oklch(0.52 0.14 75);
-  --accent-t:oklch(0.46 0.14 75);
-  --accent-dim:rgba(155,116,18,0.08);
-  --accent-hover:rgba(155,116,18,0.14);
-  --user-bg:#edeae5;
-  --danger:oklch(0.55 0.2 25);--danger-dim:oklch(0.92 0.04 25);--danger-text:oklch(0.45 0.16 25);
-  --success:oklch(0.5 0.14 145);--success-dim:oklch(0.92 0.04 145);--success-text:oklch(0.4 0.12 145);
-  --info:oklch(0.45 0.14 250);--info-dim:oklch(0.92 0.04 250);
-  --warning:oklch(0.55 0.14 70);--warning-dim:oklch(0.92 0.04 70);--warning-text:oklch(0.45 0.1 70);
-  --on-accent:#fff;
-}
-html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
-::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
-
-/* ── Layout ── */
-.app{display:flex;height:100vh;overflow:hidden}
-.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 
 /* ═══ Sidebar — ported to Tailwind in VP-W2-SIDEBAR ═══
 .sidebar{
@@ -348,8 +247,6 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .mem-pop{position:absolute;top:calc(100% + 8px);right:0;width:270px;background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:13px 15px;z-index:200;box-shadow:0 12px 32px rgba(0,0,0,.4)}
 .mem-pop-ttl{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px;font-weight:500}
 ═══ End TopBar mem/mode (part 1) ═══ */
-.input-pop{position:absolute;bottom:calc(100% + 8px);top:auto;right:auto;z-index:220}
-.input-pop.center{left:50%;transform:translateX(-50%)}
 /* ═══ TopBar mem/mode (part 2) — ported to Tailwind in VP-W2-TOPBAR ═══
 .mem-ent{font-size:12px;color:var(--t2);padding:5px 0;border-bottom:1px solid var(--border);line-height:1.45}
 .mem-ent:last-child{border-bottom:none}
@@ -359,7 +256,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .mode-pill:hover{background:var(--accent-hover)}
 ═══ End TopBar mem/mode (part 2) ═══ */
 
-/* ── Avatar Float ── */
+/* ═══ Avatar Float — ported to Tailwind in VP-W5-POPOVERS ═══
 .ava-float{position:fixed;z-index:100;user-select:none;}
 .ava-float-img{display:block;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.45);cursor:grab;-webkit-user-drag:none;max-width:320px;width:320px;}
 .ava-float-img:active{cursor:grabbing}
@@ -367,6 +264,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .ava-float:hover .ava-float-close{opacity:1}
 .ava-float-hint{position:absolute;bottom:-20px;left:0;right:0;text-align:center;font-size:10px;color:var(--t3);pointer-events:none;opacity:0;transition:opacity .15s;white-space:nowrap;}
 .ava-float:hover .ava-float-hint{opacity:1}
+═══ End Avatar Float ═══ */
 /* ═══ Mini avatars — ported to Tailwind in VP-W3-MESSAGE-BLOCK ═══
 .msg-mini-ava{width:20px;height:20px;border-radius:50%;background:var(--s3);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--t3);font-family:var(--font-body);font-style:italic}
 .msg-mini-ava img{width:100%;height:100%;object-fit:cover;object-position:top center}
@@ -417,21 +315,6 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .edit-btn.cn{background:var(--s2);color:var(--t2)}
 .edit-btn.cn:hover{background:var(--s3)}
 ═══ End Swipe + Actions + Gen-cur + Edit ═══ */
-@keyframes genp{0%,60%,100%{opacity:.25;transform:scale(.75)}30%{opacity:1;transform:scale(1)}}
-
-/* tool call */
-.tool-wrap{max-width:var(--mw);margin:4px auto;padding:0 28px}
-.tool-inner{display:flex;align-items:flex-start;gap:8px;padding:7px 11px;background:var(--surface);border:1px solid var(--border);border-radius:6px;cursor:pointer;transition:border-color .15s;font-size:12px;color:var(--t3);font-family:var(--font-ui)}
-.tool-inner:hover{border-color:var(--border2)}
-.tool-inner.open{border-color:var(--accent)}
-.tool-n{color:var(--t2);font-weight:500}
-.tool-q{color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-.tool-chev{margin-left:auto;flex-shrink:0;transition:transform .18s}
-.tool-chev.r{transform:rotate(90deg)}
-.tool-body{padding:9px 11px 11px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px;width:100%}
-.tool-res{background:var(--s2);border-radius:4px;padding:8px 10px}
-.tool-rn{font-size:11px;font-weight:500;color:var(--accent-t);margin-bottom:2px}
-.tool-rs{font-size:12px;color:var(--t2);line-height:1.5}
 
 /* separator */
 /* ═══ Message separators — ported to Tailwind in VP-W3-MESSAGE-LIST ═══
@@ -494,7 +377,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .build-tag:hover{background:var(--border2);color:var(--t1)}
 .build-tag.on{background:var(--accent-dim);color:var(--accent-t)}
 
-/* ── Tweaks ── */
+/* ═══ Tweaks — ported to Tailwind in VP-W5-POPOVERS ═══
 .tweaks-panel{position:fixed;top:60px;right:20px;width:210px;background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:13px 15px;z-index:300;box-shadow:0 8px 28px rgba(0,0,0,.35)}
 .tw-title{font-size:11px;font-weight:600;color:var(--t1);margin-bottom:11px;letter-spacing:.05em;text-transform:uppercase}
 .tw-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
@@ -506,6 +389,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .tgl-sl::before{content:'';position:absolute;width:11px;height:11px;left:3px;top:3px;background:var(--t3);border-radius:50%;transition:transform .18s,background .18s}
 .toggle input:checked+.tgl-sl{background:var(--accent)}
 .toggle input:checked+.tgl-sl::before{transform:translateX(13px);background:#fff}
+═══ End Tweaks ═══ */
 
 /* ═══ Personas — ported to Tailwind in VP-W4-PERSONA-MODAL ═══
 .persona-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
@@ -589,9 +473,6 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .empty-cta{margin-top:4px;font-size:12px;color:var(--accent-t);background:var(--accent-dim);border-radius:6px;padding:6px 16px;cursor:pointer;transition:background .15s}
 .empty-cta:hover{background:var(--accent)}
 .dirty-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-left:6px;flex-shrink:0;vertical-align:middle}
-@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-.loading-shimmer{background:linear-gradient(90deg,var(--s2) 25%,var(--s3) 50%,var(--s2) 75%);background-size:200% 100%;animation:shimmer 1.4s ease infinite;border-radius:4px}
-.loading-row{height:14px;border-radius:3px;margin-bottom:10px}
 
 /* ═══ Sidebar extended (D2) — moved to Tailwind in VP-W2-SIDEBAR ═══
 .sb-tools{display:flex;flex-direction:column;gap:6px;padding:4px 8px 8px}
@@ -659,7 +540,6 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .field-warning{font-size:11px;color:oklch(0.72 0.14 70);margin-top:4px;display:flex;align-items:center;gap:4px}
 .field-warning svg{width:12px;height:12px}
 ═══ End Provider-specific legacy CSS ═══ */
-@media(max-width:768px){.provider-badge{display:none}}
 
 /* ═══ WelcomeScreen — ported to Tailwind in VP-W4-WELCOME-SCREEN ═══
 .ws-modal{width:540px!important;max-width:calc(100vw - 32px);max-height:calc(100vh - 40px)}
