@@ -404,39 +404,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             </div>
           </div>
 
-          {/* Capabilities separator */}
-          <div className="border-b border-border font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t3" style={{marginTop:24, marginBottom:12, paddingBottom:6}}>Capabilities</div>
-
-          {/* Built-in tools — TODO: wire to backend */}
-          <div style={{marginBottom:12}}>
-            <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3" style={{marginBottom:6}}>Built-in tools</div>
-            {[
-              { id: 'bi_search', name: 'Web Search', mode: 'disabled' },
-              { id: 'bi_code', name: 'Code Interpreter', mode: 'disabled' },
-              { id: 'bi_image', name: 'Image Generation', mode: 'disabled' },
-            ].map(tool => (
-              <div key={tool.id} className="flex items-center justify-between rounded bg-s2" style={{marginBottom:3, padding:'6px 8px'}}>
-                <span className="text-xs text-t1">{tool.name}</span>
-                <select
-                  className="h-6 rounded border border-border bg-surface font-ui text-[calc(var(--ui-fs)-3px)] text-t1"
-                  style={{padding:'0 4px'}}
-                  value={tool.mode}
-                  disabled
-                >
-                  <option value="disabled">disabled</option>
-                  <option value="ask">ask</option>
-                  <option value="active">active</option>
-                  <option value="hidden_system">hidden_system</option>
-                </select>
-              </div>
-            ))}
-          </div>
-
-          {/* MCP tools — TODO: wire to backend */}
-          <div>
-            <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3" style={{marginBottom:6}}>MCP tools</div>
-            <div className="text-xs text-t4 italic">Нет подключённых MCP серверов</div>
-          </div>
+          {/* TODO: Phase 3 — Capabilities (built-in tools + MCP tools) */}
         </div>
 
         {/* Footer */}
