@@ -280,7 +280,7 @@ export function PersonaModal(input: PersonaModalProps) {
                     /* ── Non-editing state ── */
                     <>
                       <div className={cn(
-                        "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm",
+                        "flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full text-base",
                         isSelected ? "bg-accent text-white" : "bg-s3 text-t2"
                       )}>
                         {persona.avatarAssetId

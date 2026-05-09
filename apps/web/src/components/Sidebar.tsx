@@ -127,7 +127,7 @@ export function Sidebar(input: SidebarProps) {
                 <div
                   key={character.id}
                   className={cn(
-                    'flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all duration-150 hover:rounded-xl hover:bg-s2',
+                    'flex h-11 w-11 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all duration-150 hover:rounded-xl hover:bg-s2',
                     isActive && 'rounded-xl bg-accent-dim ring-2 ring-accent'
                   )}
                   onClick={() => {
@@ -170,7 +170,7 @@ export function Sidebar(input: SidebarProps) {
 
           <div className="flex shrink-0 flex-col items-center gap-1" style={{padding:'8px 0'}}>
             <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={input.onOpenPromptManager} title="Prompt Manager"><Icons.Terminal /></div>
-            <div className="flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={input.onOpenPersonaManager} title={input.personaName}>
+            <div className="flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={input.onOpenPersonaManager} title={input.personaName}>
               {initials(input.personaName)}
             </div>
           </div>
@@ -224,7 +224,7 @@ export function Sidebar(input: SidebarProps) {
                     }}
                   >
                     <span className={cn(
-                      'flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full font-ui text-[calc(var(--ui-fs)-3px)] not-italic avatar-fallback initials crop-framing',
+                      'flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full font-ui text-[calc(var(--ui-fs)-2px)] not-italic avatar-fallback initials crop-framing',
                       isActive ? 'bg-accent text-on-accent' : 'bg-s3 text-t2'
                     )}>{character.avatarAssetId ? <img src={avatarUrl(character.avatarAssetId)} alt={character.name} className="h-full w-full object-cover object-top" /> : initials(character.name)}</span>
                     <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -608,7 +608,7 @@ export function Sidebar(input: SidebarProps) {
                 }
               }}
             >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-3px)] not-italic text-t2">{input.personaAvatarAssetId ? <img src={avatarUrl(input.personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(input.personaName)}</span>
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">{input.personaAvatarAssetId ? <img src={avatarUrl(input.personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(input.personaName)}</span>
               <span>{input.personaName}</span>
               <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">
                 Your Persona
