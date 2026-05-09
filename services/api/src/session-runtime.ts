@@ -113,7 +113,7 @@ class StaticPromptResolver implements PromptAssemblyResolver {
 	async getPersona(personaId: string) {
 		const p = await this.stores.personas.getById(personaId);
 		if (!p) return null;
-		return { id: p.id, name: p.name, description: p.description };
+		return { id: p.id, name: p.name, description: p.description, pronouns: p.pronouns, avatarAssetId: p.avatarAssetId };
 	}
 
 	async getPromptPreset(presetId: string) {
@@ -285,12 +285,14 @@ export class SessionRuntime {
 		return this.getSnapshot(chatId);
 	}
 
-	async listPersonas(): Promise<Array<{ id: string; name: string; description: string }>> {
+	async listPersonas(): Promise<Array<{ id: string; name: string; description: string; pronouns: string | null; avatarAssetId: string | null }>> {
 		const personas = await this.stores.personas.listAll();
 		return personas.map((p) => ({
 			id: p.id,
 			name: p.name,
 			description: p.description,
+			pronouns: p.pronouns,
+			avatarAssetId: p.avatarAssetId,
 		}));
 	}
 
@@ -329,7 +331,7 @@ export class SessionRuntime {
 		description: string;
 		pronouns?: string | null;
 		defaultForNewChats?: boolean;
-	}): Promise<{ id: string; name: string; description: string }> {
+	}): Promise<{ id: string; name: string; description: string; pronouns: string | null; avatarAssetId: string | null }> {
 		const trimmedName = (input.name ?? "").trim();
 		const trimmedDescription = (input.description ?? "").trim();
 		if (!trimmedName) {
@@ -345,6 +347,8 @@ export class SessionRuntime {
 			id: persona.id,
 			name: persona.name,
 			description: persona.description,
+			pronouns: persona.pronouns,
+			avatarAssetId: persona.avatarAssetId,
 		};
 	}
 
@@ -661,6 +665,7 @@ export class SessionRuntime {
 			chatId?: ChatId;
 			name?: string;
 			description?: string;
+			pronouns?: string | null;
 		},
 	): Promise<SessionSnapshot> {
 		const currentPersona = await this.stores.personas.getById(brandId<PersonaId>(personaId));
@@ -674,10 +679,12 @@ export class SessionRuntime {
 		}
 
 		const nextDescription = input.description ?? currentPersona.description;
+		const nextPronouns = input.pronouns !== undefined ? input.pronouns : currentPersona.pronouns;
 
 		await this.stores.personas.update(personaId, {
 			name: nextName,
 			description: nextDescription,
+			pronouns: nextPronouns,
 		});
 
 		const preferredChat = input.chatId

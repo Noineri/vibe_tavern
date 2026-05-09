@@ -1,13 +1,15 @@
-import { useEffect, useState } from "react";
-import type { ChangeEvent } from "react";
+import { useState } from "react";
 import { Icons } from "./shared/icons.js";
 import { EmptyState } from "./shared/empty-state.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
+import { cn } from "../lib/cn.js";
 
 interface PersonaListItem {
   id: string;
   name: string;
   description: string;
+  pronouns: string | null;
+  avatarAssetId: string | null;
 }
 
 interface PersonaModalProps {
@@ -16,12 +18,10 @@ interface PersonaModalProps {
   activePersonaId: string | null;
   isSaving: boolean;
   onClose: () => void;
-  onSaveEdit: (personaId: string, draft: { name: string; description: string }) => void;
+  onSaveEdit: (personaId: string, draft: { name: string; description: string; pronouns?: string | null }) => void;
   onSetActive: (personaId: string) => void;
-  onCreatePersona: (input: { name: string; description: string }) => Promise<{ id: string } | null>;
+  onCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
   onDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
-  onGetPersonalLorebookStatus: (personaId: string) => Promise<{ enabled: boolean; lorebookId: string | null }>;
-  onSetPersonalLorebookEnabled: (personaId: string, enabled: boolean) => Promise<{ enabled: boolean; lorebookId: string | null } | null>;
 }
 
 export function PersonaModal(input: PersonaModalProps) {
@@ -29,31 +29,13 @@ export function PersonaModal(input: PersonaModalProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [editPronouns, setEditPronouns] = useState("");
+  const [editPronounsCustom, setEditPronounsCustom] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string>("");
-  const [personalLorebookEnabled, setPersonalLorebookEnabled] = useState<boolean>(false);
-  const [personalLorebookLoading, setPersonalLorebookLoading] = useState<boolean>(false);
-
-  useEffect(() => {
-    if (input.isOpen) {
-      setSelectedId(input.activePersonaId);
-      setEditingId(null);
-    }
-  }, [input.isOpen, input.activePersonaId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (input.isOpen && selectedId) {
-      input.onGetPersonalLorebookStatus(selectedId).then((status) => {
-        if (!cancelled) setPersonalLorebookEnabled(status.enabled);
-      }).catch(() => { /* ignore */ });
-    }
-    return () => { cancelled = true; };
-  }, [input.isOpen, selectedId]);
 
   if (!input.isOpen) return null;
 
-  const selectedPersona = input.personas.find((p) => p.id === selectedId) || input.personas[0] || null;
   const isEditing = editingId !== null;
   const isLastPersona = input.personas.length <= 1;
 
@@ -61,11 +43,17 @@ export function PersonaModal(input: PersonaModalProps) {
     setEditingId(persona.id);
     setEditName(persona.name);
     setEditDescription(persona.description);
+    const raw = persona.pronouns ?? "";
+    setEditPronouns(raw);
+    setEditPronounsCustom("");
   }
 
   function commitEdit(): void {
     if (!editingId || !editName.trim()) return;
-    input.onSaveEdit(editingId, { name: editName.trim(), description: editDescription });
+    const resolved = editPronouns === "custom"
+      ? (editPronounsCustom.trim() || null)
+      : (editPronouns || null);
+    input.onSaveEdit(editingId, { name: editName.trim(), description: editDescription, pronouns: resolved });
     setSelectedId(editingId);
     setEditingId(null);
   }
@@ -75,12 +63,27 @@ export function PersonaModal(input: PersonaModalProps) {
   }
 
   function setActiveAndClose(): void {
-    if (selectedPersona) input.onSetActive(selectedPersona.id);
+    const persona = input.personas.find((p) => p.id === selectedId) || input.personas[0];
+    if (persona) input.onSetActive(persona.id);
     input.onClose();
   }
 
+  function handleDelete(personaId: string): void {
+    if (isLastPersona) {
+      setDeleteError("You cannot delete the last persona.");
+      return;
+    }
+    setConfirmDeleteId(personaId);
+    setDeleteError("");
+  }
+
+  function resolvePronounsDisplay(persona: PersonaListItem): string | null {
+    if (!persona.pronouns) return null;
+    return persona.pronouns;
+  }
+
   return (
-    <div className="api-overlay" onClick={input.onClose}>
+    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={(e) => e.target === e.currentTarget && input.onClose()}>
       {confirmDeleteId && (
         <DestructiveConfirmModal
           title="Delete persona?"
@@ -110,28 +113,25 @@ export function PersonaModal(input: PersonaModalProps) {
         />
       )}
       <div
-        className="api-modal"
-        style={{ maxWidth: 480 }}
+        className="flex max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] w-[500px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="api-head" style={{ paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+        {/* Header */}
+        <div className="shrink-0" style={{ padding: "18px 20px 0" }}>
+          <div className="flex items-start justify-between">
             <div>
-              <div className="api-title">Persona Manager</div>
-              <div className="api-sub">Whose voice are you using in chat?</div>
+              <div className="font-body mb-0.5 text-[calc(var(--ui-fs)+4px)] font-medium text-t1">Persona Manager</div>
+              <div className="font-ui mb-3.5 text-[calc(var(--ui-fs)-2px)] text-t3">Whose voice are you using in chat?</div>
             </div>
-            <button
-              className="iBtn"
-              aria-label="Close persona manager"
-              title="Close persona manager"
-              onClick={input.onClose}
-            >
+            <div className="flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={input.onClose}>
               <Icons.Close />
-            </button>
+            </div>
           </div>
         </div>
-        <div className="api-body">
-          <div className="persona-list">
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
+          <div className="mb-4 flex flex-col gap-2">
             {input.personas.length === 0 && (
               <EmptyState
                 icon={<Icons.User />}
@@ -145,86 +145,118 @@ export function PersonaModal(input: PersonaModalProps) {
               return (
                 <div
                   key={persona.id}
-                  className={`persona-card${isSelected ? " act" : ""}`}
+                  className={cn(
+                    "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-all hover:bg-s2 hover:border-border2",
+                    isSelected ? "border-accent bg-accent-dim" : "border-border"
+                  )}
                   onClick={() => !isEditing && setSelectedId(persona.id)}
                 >
                   {editingThis ? (
-                    <div style={{ width: "100%" }} onClick={(event) => event.stopPropagation()}>
-                      <input
-                        className="persona-edit-field"
-                        value={editName}
-                        placeholder="Name"
-                        onChange={(event: ChangeEvent<HTMLInputElement>) => setEditName(event.target.value)}
-                      />
+                    /* ── Editing state ── */
+                    <div className="w-full" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-3 mb-3">
+                        {/* AvatarPicker stub: shows initials, no upload */}
+                        <div className={cn(
+                          "flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-dashed border-border2 bg-s2 text-sm",
+                          isSelected ? "bg-accent text-white" : "bg-s3 text-t2"
+                        )}>
+                          {persona.name.trim().charAt(0).toUpperCase() || "?"}
+                        </div>
+                        <div className="flex-1">
+                          <input
+                            className="w-full rounded border border-border bg-s2 py-2 px-2.5 font-ui text-sm text-t1 outline-none transition-colors focus:border-accent"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            placeholder="Name"
+                          />
+                          <select
+                            className="mt-2 w-full rounded border border-border bg-s2 py-2 px-2.5 font-ui text-sm text-t1 outline-none transition-colors focus:border-accent"
+                            value={editPronouns || ""}
+                            onChange={(e) => setEditPronouns(e.target.value)}
+                          >
+                            <option value="">None</option>
+                            <option value="he/him">he/him</option>
+                            <option value="she/her">she/her</option>
+                            <option value="they/them">they/them</option>
+                            <option value="it/its">it/its</option>
+                            <option value="custom">Custom…</option>
+                          </select>
+                          {editPronouns === "custom" && (
+                            <input
+                              className="mt-1 w-full rounded border border-border bg-s2 py-2 px-2.5 font-ui text-sm text-t1 outline-none transition-colors focus:border-accent"
+                              value={editPronounsCustom}
+                              onChange={(e) => setEditPronounsCustom(e.target.value)}
+                              placeholder="Custom pronouns"
+                            />
+                          )}
+                        </div>
+                      </div>
                       <textarea
-                        className="persona-edit-field"
+                        className="mb-3 w-full min-h-[60px] rounded border border-border bg-s2 py-2 px-2.5 font-ui text-xs text-t1 outline-none transition-colors focus:border-accent"
+                        style={{ resize: "vertical" }}
                         value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
                         placeholder="Description"
-                        style={{ minHeight: 60, resize: "vertical" }}
-                        onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setEditDescription(event.target.value)}
                       />
-                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      <div className="flex gap-2">
                         <button
-                          className="api-cancel-btn"
-                          style={{ height: 26, padding: "0 10px" }}
-                          onClick={cancelEdit}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          className="api-save-btn"
-                          style={{ height: 26, padding: "0 10px" }}
+                          className="h-[34px] cursor-pointer rounded-md bg-accent py-0 px-[18px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110"
                           disabled={input.isSaving || !editName.trim()}
                           onClick={commitEdit}
                         >
                           {input.isSaving ? "Saving..." : "Save"}
                         </button>
+                        <button
+                          className="h-[34px] cursor-pointer rounded-md bg-transparent py-0 px-3.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
+                          onClick={cancelEdit}
+                        >
+                          Cancel
+                        </button>
                       </div>
                     </div>
                   ) : (
+                    /* ── Non-editing state ── */
                     <>
-                      <div className="persona-ava">{persona.name.slice(0, 1).toUpperCase()}</div>
-                      <div className="persona-info">
-                        <div className="persona-name">{persona.name}</div>
-                        <div className="persona-desc">{persona.description}</div>
-                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <div className={cn(
+                        "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm",
+                        isSelected ? "bg-accent text-white" : "bg-s3 text-t2"
+                      )}>
+                        {persona.name.slice(0, 1).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-ui mb-[3px] text-[length:var(--ui-fs)] font-medium text-t1">{persona.name}</div>
+                        {resolvePronounsDisplay(persona) && (
+                          <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{resolvePronounsDisplay(persona)}</div>
+                        )}
+                        <div className="line-clamp-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-snug text-t3">{persona.description}</div>
+                        <div className="flex gap-0">
                           <div
-                            className="persona-edit-btn"
+                            className="mt-2 flex cursor-pointer items-center gap-1 rounded py-[3px] px-[7px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:bg-s2 hover:text-t2"
                             role="button"
                             tabIndex={0}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              startEdit(persona);
-                            }}
-                            onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.stopPropagation(); startEdit(persona); } }}
+                            onClick={(e) => { e.stopPropagation(); startEdit(persona); }}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); startEdit(persona); } }}
                           >
                             <Icons.Edit /> Edit
                           </div>
                           <div
-                            className="persona-edit-btn"
+                            className="mt-2 flex cursor-pointer items-center gap-1 rounded py-[3px] px-[7px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:bg-s2 hover:text-t2"
                             role="button"
                             tabIndex={0}
                             style={{ opacity: 0.45, cursor: "not-allowed" }}
                             title="Duplicate not yet implemented"
-                            onClick={(event) => event.stopPropagation()}
+                            onClick={(e) => e.stopPropagation()}
                           >
                             <Icons.Copy /> Duplicate
                           </div>
                           <div
-                            className="persona-edit-btn"
+                            className="mt-2 flex cursor-pointer items-center gap-1 rounded py-[3px] px-[7px] font-ui text-[calc(var(--ui-fs)-3px)] transition-all hover:bg-s2"
                             role="button"
                             tabIndex={0}
-                            style={{ color: "oklch(0.6 0.15 25)", cursor: isLastPersona ? "not-allowed" : "pointer", opacity: isLastPersona ? 0.6 : 1 }}
+                            style={{ color: isLastPersona ? "var(--t3)" : "oklch(0.6 0.15 25)", cursor: isLastPersona ? "not-allowed" : "pointer", opacity: isLastPersona ? 0.6 : 1 }}
                             title={isLastPersona ? "You cannot delete the last persona." : "Delete persona"}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              if (isLastPersona) {
-                                setDeleteError("You cannot delete the last persona.");
-                                return;
-                              }
-                              setConfirmDeleteId(persona.id);
-                              setDeleteError("");
-                            }}
+                            onClick={(e) => { e.stopPropagation(); handleDelete(persona.id); }}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); handleDelete(persona.id); } }}
                           >
                             <Icons.Trash /> Delete
                           </div>
@@ -235,8 +267,9 @@ export function PersonaModal(input: PersonaModalProps) {
                 </div>
               );
             })}
-            <button
-              className="add-btn-row"
+            {/* Add persona button */}
+            <div
+              className="flex items-center justify-center rounded-lg border border-dashed border-border2 p-2.5 font-ui text-xs text-t2 transition-all hover:bg-s2 hover:text-t1 hover:border-border cursor-pointer"
               onClick={async () => {
                 const created = await input.onCreatePersona({ name: "New persona", description: "" });
                 if (created) {
@@ -244,53 +277,27 @@ export function PersonaModal(input: PersonaModalProps) {
                   setEditingId(created.id);
                   setEditName("New persona");
                   setEditDescription("");
+                  setEditPronouns("");
+                  setEditPronounsCustom("");
                 }
               }}
-              style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "var(--t1)", textAlign: "left", display: "flex", alignItems: "center" }}
             >
-              <Icons.Plus /> <span style={{ marginLeft: 6 }}>Create new persona</span>
-            </button>
+              <Icons.Plus /> <span className="ml-1">Create new persona</span>
+            </div>
             {deleteError && !confirmDeleteId && (
-              <div className="api-hint" style={{ marginTop: 8, color: "oklch(0.6 0.15 25)" }}>{deleteError}</div>
+              <div className="font-ui text-[calc(var(--ui-fs)-3px)] mt-1" style={{ color: "oklch(0.6 0.15 25)" }}>{deleteError}</div>
             )}
           </div>
-
-          <div className="api-section-title" style={{ marginTop: 24 }}>Persona settings</div>
-          <div className="api-field">
-            <label
-              style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--t1)", textTransform: "none", letterSpacing: 0, fontSize: 13, fontWeight: 400, cursor: selectedPersona && !personalLorebookLoading ? "pointer" : "not-allowed", opacity: selectedPersona ? 1 : 0.6 }}
-              title={selectedPersona ? "Toggle personal lorebook for this persona" : "Select a persona first"}
-            >
-              <span className="toggle">
-                <input
-                  type="checkbox"
-                  checked={personalLorebookEnabled}
-                  disabled={!selectedPersona || personalLorebookLoading}
-                  onChange={async () => {
-                    if (!selectedPersona) return;
-                    const next = !personalLorebookEnabled;
-                    setPersonalLorebookLoading(true);
-                    const result = await input.onSetPersonalLorebookEnabled(selectedPersona.id, next);
-                    setPersonalLorebookLoading(false);
-                    if (result) setPersonalLorebookEnabled(result.enabled);
-                  }}
-                />
-                <span className="tgl-sl" />
-              </span>
-              Personal Lorebook (per-persona RAG)
-            </label>
-            <div className="api-hint" style={{ marginTop: 8 }}>
-              When enabled, facts and worldbuilding tied to this persona will be injected into context via RAG.
-            </div>
-          </div>
         </div>
-        <div className="api-foot">
-          <button className="api-cancel-btn" onClick={input.onClose} style={{ marginLeft: "auto" }}>
+
+        {/* Footer */}
+        <div className="flex shrink-0 items-center gap-2.5 border-t border-border" style={{ padding: "14px 20px" }}>
+          <button className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={input.onClose}>
             Close
           </button>
           <button
-            className="api-save-btn"
-            disabled={!selectedPersona || isEditing}
+            className="h-[37px] cursor-pointer rounded-md bg-accent py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110"
+            disabled={!selectedId || isEditing}
             onClick={setActiveAndClose}
           >
             Set as active

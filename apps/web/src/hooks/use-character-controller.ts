@@ -48,9 +48,9 @@ export interface CharacterControllerDeps {
 
 export interface CharacterControllerActions {
   handleSaveCharacter: (draftInput: BuildCharacterDraft) => Promise<void>;
-  handleSavePersona: (personaId: string, draftInput: { name: string; description: string }) => Promise<void>;
+  handleSavePersona: (personaId: string, draftInput: { name: string; description: string; pronouns?: string | null }) => Promise<void>;
   handleSetChatPersona: (personaId: string) => Promise<void>;
-  handleCreatePersona: (input: { name: string; description: string }) => Promise<{ id: string } | null>;
+  handleCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
   handleDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
   handleSetPersonalLorebook: (personaId: string, enabled: boolean) => Promise<{ enabled: boolean; lorebookId: string | null } | null>;
   handleImportFiles: (files: FileList | File[]) => Promise<void>;
@@ -142,7 +142,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     }
   }
 
-  async function handleSavePersona(personaId: string, draftInput: { name: string; description: string }): Promise<void> {
+  async function handleSavePersona(personaId: string, draftInput: { name: string; description: string; pronouns?: string | null }): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
 
@@ -153,10 +153,11 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
         chatId: activeChatId,
         name: draftInput.name,
         description: draftInput.description,
+        pronouns: draftInput.pronouns,
       });
       const updatedPersona = nextSnapshot.persona?.id === personaId
         ? nextSnapshot.persona
-        : { id: personaId, name: draftInput.name.trim(), description: draftInput.description };
+        : { id: personaId, name: draftInput.name.trim(), description: draftInput.description, pronouns: draftInput.pronouns ?? null, avatarAssetId: null };
       setPersonas((current) => current.map((persona) => persona.id === personaId ? updatedPersona : persona));
       setSnapshot(activeChatId, nextSnapshot);
       await loadPersonas();
@@ -182,11 +183,12 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     }
   }
 
-  async function handleCreatePersona(input: { name: string; description: string }): Promise<{ id: string } | null> {
+  async function handleCreatePersona(input: { name: string; description: string; pronouns?: string | null }): Promise<{ id: string } | null> {
     try {
       const created = await createPersona({
         name: input.name.trim(),
         description: input.description.trim(),
+        pronouns: input.pronouns,
       });
       setPersonas((current) => current.some((persona) => persona.id === created.id) ? current : [...current, created]);
       await loadPersonas();

@@ -505,7 +505,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .toggle input:checked+.tgl-sl{background:var(--accent)}
 .toggle input:checked+.tgl-sl::before{transform:translateX(13px);background:#fff}
 
-/* ── Personas ── */
+/* ═══ Personas — ported to Tailwind in VP-W4-PERSONA-MODAL ═══
 .persona-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
 .persona-card{display:flex;align-items:flex-start;gap:12px;padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:background .15s,border-color .15s}
 .persona-card:hover{background:var(--s2);border-color:var(--border2)}
@@ -523,6 +523,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 
 .add-btn-row{display:flex;align-items:center;justify-content:center;padding:10px;border:1px dashed var(--border2);border-radius:8px;cursor:pointer;color:var(--t2);font-size:12px;transition:background .15s,color .15s,border-color .15s}
 .add-btn-row:hover{background:var(--s2);color:var(--t1);border-color:var(--border)}
+═══ End Personas ═══ */
 
 /* ═══ Provider Badge — ported to Tailwind in VP-W2-TOPBAR ═══
 .provider-badge{display:flex;align-items:center;gap:5px;background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--t2);cursor:pointer;transition:border-color .15s,color .15s;flex-shrink:0;font-family:var(--font-ui)}

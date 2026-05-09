@@ -26,6 +26,8 @@ export type PersonaRecord = {
   id: string;
   name: string;
   description: string;
+  pronouns: string | null;
+  avatarAssetId: string | null;
 };
 
 export function toCharacterRecord(

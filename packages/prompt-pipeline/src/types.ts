@@ -45,6 +45,7 @@ export interface PromptAssemblyContext {
     id: string;
     name: string;
     description: string;
+    pronouns?: string | null;
   } | null;
   preset?: {
     id: string;

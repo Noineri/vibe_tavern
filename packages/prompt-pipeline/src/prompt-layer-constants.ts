@@ -77,7 +77,10 @@ export function createRetrievalMemoryLayerId(id: string): string {
 export const PROMPT_FORMAT = {
   characterHeader: (name: string) => `Character: ${name}`,
   scenarioHeader: (text: string) => `Scenario: ${text}`,
-  personaBlock: (name: string, desc: string) => `User persona (${name}): ${desc}`,
+  personaBlock: (name: string, desc: string, pronouns?: string | null) => {
+    const tag = pronouns ? `${name}, ${pronouns}` : name;
+    return `User persona (${tag}): ${desc}`;
+  },
   loreHeader: (title: string) => `Lore: ${title}`,
   summaryMemory: (kind: string, text: string) => `[${kind}] ${text}`,
   retrievalMemory: (sourceType: string, content: string) => `[Retrieved ${sourceType}] ${content}`,

@@ -214,7 +214,7 @@ async function ensureSeedData() {
     },
     updateCharacter: (characterId: string, body: { chatId?: string; name?: string; description?: string; scenario?: string; systemPrompt?: string; mesExample?: string | null; alternateGreetings?: string[]; postHistoryInstructions?: string | null; creatorNotes?: string | null }) =>
       sessionRuntime.updateCharacter(brandId<CharacterId>(characterId), { ...body, chatId: body.chatId != null ? brandId<ChatId>(body.chatId) : undefined }),
-    updatePersona: (personaId: string, body: { chatId?: string; name?: string; description?: string }) =>
+    updatePersona: (personaId: string, body: { chatId?: string; name?: string; description?: string; pronouns?: string | null }) =>
       sessionRuntime.updatePersona(personaId, { ...body, chatId: body.chatId != null ? brandId<ChatId>(body.chatId) : undefined }),
     listPersonas: () => sessionRuntime.listPersonas(),
     setChatPersona: (chatId: string, personaId: string) => sessionRuntime.setChatPersona(brandId<ChatId>(chatId), personaId),
