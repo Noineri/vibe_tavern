@@ -1,6 +1,7 @@
 import type { AppMode, ThemeMode } from "./app-shell-types.js";
 import { initials } from "./app-shell-helpers.js";
 import { Icons } from "./shared/icons.js";
+import { MemBadge } from "./popovers/MemBadge.js";
 import { cn } from "../lib/cn.js";
 
 interface TopBarProps {
@@ -51,13 +52,7 @@ export function TopBar(input: TopBarProps) {
 
       <div className="flex min-w-0 shrink items-center gap-[5px] flex-1 overflow-visible">
         {input.mode === 'play' && (
-          <div className="flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-s2 text-[calc(var(--ui-fs)-3px)] text-t2 transition-colors duration-150 hover:border-accent hover:text-accent-t"
-            style={{padding:'4px 12px'}}
-            onClick={() => setContextModalOpen()}
-            title={t("scenario_memory")}>
-            <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"/>
-            <span>{t("scenario_memory")}</span>
-          </div>
+          <MemBadge label="Memory" onClick={() => setContextModalOpen()} />
         )}
 
         <div className="flex min-h-8 min-w-0 max-w-[min(520px,60vw)] flex-[0_1_auto] cursor-pointer items-center gap-1.5 overflow-hidden whitespace-nowrap rounded border border-transparent bg-transparent px-2 font-ui text-[calc(var(--ui-fs)-4px)] leading-tight text-t2 transition-colors duration-150 hover:border-border hover:bg-s2 hover:text-t1"

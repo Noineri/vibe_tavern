@@ -47,6 +47,17 @@ function replaceUiMacros(
 
 const STORAGE_KEY = "rp-platform.connection-settings";
 const THEME_STORAGE_KEY = "rp-platform.theme";
+const TWEAKS_STORAGE_KEY = "rp-platform.tweaks";
+
+interface TweaksSettings {
+  fontSize: number;
+  uiFontSize: number;
+  messageWidth: 'narrow' | 'medium' | 'wide';
+  lang: string;
+}
+
+const MESSAGE_WIDTH_MAP: Record<string, string> = { narrow: '680px', medium: '820px', wide: '960px' };
+const DEFAULT_TWEAKS: TweaksSettings = { fontSize: 17, uiFontSize: 16, messageWidth: 'medium', lang: 'en' };
 
 function createInitialConnectionState(): ConnectionState {
   const envDefaults = {
@@ -125,6 +136,9 @@ export function useRpPlatformApp() {
   const [renameDraft, setRenameDraft] = useState("");
   const [isSavingCharacter, setIsSavingCharacter] = useState(false);
   const [characterSaveNotice, setCharacterSaveNotice] = useState("");
+  const [tweaksSettings, setTweaksSettings] = useState<TweaksSettings>(() => readSavedTweaks());
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [avatarOpen, setAvatarOpen] = useState(false);
   const { importFile, isImporting } = useCharacterImport();
 
   const [personas, setPersonas] = useState<PersonaRecord[]>([]);
@@ -205,6 +219,14 @@ export function useRpPlatformApp() {
   useEffect(() => {
     persistConnectionState(connection);
   }, [connection]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--mfs', `${tweaksSettings.fontSize}px`);
+    root.style.setProperty('--ui-fs', `${tweaksSettings.uiFontSize}px`);
+    root.style.setProperty('--mw', MESSAGE_WIDTH_MAP[tweaksSettings.messageWidth]);
+    persistTweaks(tweaksSettings);
+  }, [tweaksSettings]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("light", theme === "light");
@@ -454,6 +476,10 @@ export function useRpPlatformApp() {
     setCreateCharacterModalOpen(false);
   }
 
+  function updateTweak<K extends keyof TweaksSettings>(key: K, value: TweaksSettings[K]): void {
+    setTweaksSettings(prev => ({ ...prev, [key]: value }));
+  }
+
   function renderConnectionStatus(): string {
     if (connection.status === "connecting") {
       return "connecting...";
@@ -624,6 +650,12 @@ export function useRpPlatformApp() {
     onExportChatJsonl: character.handleExportChatJsonl,
     onExportPromptTrace: character.handleExportPromptTrace,
     allCharacters,
+    tweaksSettings,
+    updateTweak,
+    tweaksOpen,
+    setTweaksOpen,
+    avatarOpen,
+    setAvatarOpen,
   };
 }
 
@@ -689,5 +721,24 @@ function persistTheme(theme: ThemeMode): void {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch {
     // Ignore theme persistence failures in the UI shell.
+  }
+}
+
+function readSavedTweaks(): TweaksSettings {
+  try {
+    const raw = window.localStorage.getItem(TWEAKS_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_TWEAKS };
+    const parsed = JSON.parse(raw);
+    return { ...DEFAULT_TWEAKS, ...parsed };
+  } catch {
+    return { ...DEFAULT_TWEAKS };
+  }
+}
+
+function persistTweaks(settings: TweaksSettings): void {
+  try {
+    window.localStorage.setItem(TWEAKS_STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // Ignore tweaks persistence failures.
   }
 }
