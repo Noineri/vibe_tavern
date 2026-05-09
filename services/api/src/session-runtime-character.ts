@@ -47,7 +47,7 @@ export function toCharacterRecord(
     (typeof data.character_version === "string" && data.character_version.trim()) ||
     tags[0] ||
     version?.title ||
-    "Imported character";
+    "";
 
   return {
     id: character.id,
