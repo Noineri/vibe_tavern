@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Ic } from "../shared/icons";
 import { cn } from "../../lib/cn";
+import { CharacterImportModal } from "../ImportModals.js";
 import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader";
 
 export interface CharacterFormProps {
@@ -61,8 +62,8 @@ export function CharacterForm({
   const [altGreetIdx, setAltGreetIdx] = useState(0);
   const [tagInput, setTagInput] = useState("");
   const [importError, setImportError] = useState("");
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const avaInputRef = useRef<HTMLInputElement>(null);
-  const importInputRef = useRef<HTMLInputElement>(null);
 
   const avatarPreview = draft._avatarPreview as string | null;
   const canSave = !isSaving && draft.name?.trim();
@@ -74,8 +75,8 @@ export function CharacterForm({
     onAvatarUpload(file);
   }
 
-  function handleImportFile(files: FileList | null) {
-    if (!files || files.length === 0) return;
+  function handleImportFiles(files: File[]): void {
+    if (files.length === 0) return;
     const file = files[0];
     setImportError("");
     (async () => {
@@ -94,6 +95,7 @@ export function CharacterForm({
         const merged = parseCardToDraft(raw);
         if (Object.keys(merged).length === 0) throw new Error("No character data found in file.");
         setDraft({ ...draft, ...merged });
+        setImportModalOpen(false);
       } catch (err) {
         setImportError(err instanceof Error ? err.message : "Failed to import");
       }
@@ -126,12 +128,11 @@ export function CharacterForm({
           {draft.name || "Unnamed"}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input ref={importInputRef} type="file" className="hidden" accept=".png,.json,image/png,application/json" onChange={(e) => handleImportFile(e.target.files)} />
           <button
             className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
             style={{ height: 28, width: 28 }}
             title="Import character card into draft"
-            onClick={() => importInputRef.current?.click()}
+            onClick={() => setImportModalOpen(true)}
             disabled={isSaving}
           >
             {Ic.import()}
@@ -322,6 +323,15 @@ export function CharacterForm({
         <button className="cursor-pointer rounded-md bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" style={{ height: 28, padding: "0 12px" }} disabled={isSaving || !isDirty} onClick={onReset}>Reset</button>
         <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{saveNotice || (isDirty ? "Unsaved changes" : "Saved state")}</span>
       </div>
+
+      {importModalOpen && (
+        <CharacterImportModal
+          isImporting={false}
+          importNotice={importError}
+          onClose={() => setImportModalOpen(false)}
+          onImportFiles={handleImportFiles}
+        />
+      )}
     </div>
   );
 }
