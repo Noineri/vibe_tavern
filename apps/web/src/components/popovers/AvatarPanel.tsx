@@ -36,6 +36,7 @@ function getFitZoom(naturalWidth: number, naturalHeight: number): number {
 export function AvatarPanel({ src, onClose, t = (k) => k }: AvatarPanelProps) {
   const [pos, setPos] = useState(() => getAttachedPosition());
   const [zoom, setZoom] = useState(1);
+  const [isReady, setIsReady] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const dragging = useRef(false);
   const attachedRef = useRef(true);
@@ -164,7 +165,8 @@ export function AvatarPanel({ src, onClose, t = (k) => k }: AvatarPanelProps) {
     <div
       ref={frameRef}
       className={[
-        'group fixed z-[600] inline-block select-none overflow-visible rounded-md border border-border2/70 bg-bg/30 shadow-[0_10px_35px_rgba(0,0,0,0.35)] will-change-transform',
+        'group fixed z-[600] inline-block select-none overflow-visible rounded-md border border-border2/70 bg-bg/30 shadow-[0_10px_35px_rgba(0,0,0,0.35)] opacity-0 transition-opacity duration-150 will-change-transform',
+        isReady && 'opacity-100',
         isDragging ? 'cursor-grabbing' : 'cursor-grab',
       ].join(' ')}
       style={{
@@ -172,6 +174,7 @@ export function AvatarPanel({ src, onClose, t = (k) => k }: AvatarPanelProps) {
         top: pos.y,
         transform: `scale(${zoom})`,
         transformOrigin: 'top left',
+        pointerEvents: isReady ? 'auto' : 'none',
       }}
       onMouseDown={onMouseDown}
       onDoubleClick={toggleFit}
@@ -190,6 +193,7 @@ export function AvatarPanel({ src, onClose, t = (k) => k }: AvatarPanelProps) {
           const img = event.currentTarget;
           naturalSizeRef.current = { width: img.naturalWidth, height: img.naturalHeight };
           if (attachedRef.current) recomputeAttached();
+          requestAnimationFrame(() => setIsReady(true));
         }}
       />
       <button
