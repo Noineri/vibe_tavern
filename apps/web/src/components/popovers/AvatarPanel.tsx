@@ -89,13 +89,13 @@ export function AvatarPanel({ src, onClose, t = (k) => k }: AvatarPanelProps) {
       onDoubleClick={() => setZoom(1)}
       onWheel={(event) => {
         event.preventDefault();
-        setZoom((current) => Math.max(MIN_ZOOM, current * (1 - event.deltaY * 0.0012)));
+        setZoom((current) => Math.max(MIN_ZOOM, current * (1 - event.deltaY * 0.00045)));
       }}
       title={t('drag_scroll_zoom')}
     >
       <img
         src={src}
-        className="block w-[360px] max-w-[min(420px,80vw)] rounded-[5px] object-contain [-webkit-user-drag:none]"
+        className="block w-[360px] max-w-[min(420px,80vw)] rounded-[5px] object-contain transition-transform duration-75 ease-out [-webkit-user-drag:none]"
         draggable={false}
         alt="Character avatar"
       />
