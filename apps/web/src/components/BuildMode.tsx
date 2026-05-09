@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PromptTraceRecordDto } from "@rp-platform/domain";
 import { Ic } from "./shared/icons";
 import { cn } from "../lib/cn";
@@ -90,34 +90,34 @@ export function BuildMode(input: BuildModeProps) {
     _avatarPreview: null as string | null,
   });
 
-  // Sync draft when input props change (character switch, server save, etc.)
+  // Sync draft only when the character itself changes (different character or
+  // server confirmed a save). Do NOT react to individual field prop changes —
+  // that would overwrite the user's local edits on every parent re-render.
+  const prevCharIdRef = useRef(input.characterId);
   useEffect(() => {
-    setDraft({
-      name: input.characterName,
-      description: input.description,
-      firstMessage: input.firstMessage || "",
-      mesExample: input.mesExample || "",
-      scenario: input.scenario,
-      personalitySummary: input.subtitle || "",
-      systemPrompt: input.systemPrompt,
-      alternateGreetings: input.alternateGreetings || [],
-      postHistoryInstructions: input.postHistoryInstructions || "",
-      creatorNotes: input.creatorNotes || "",
-      characterBook: input.characterBook || "",
-      depthPrompt: input.depthPrompt || "",
-      depthPromptDepth: input.depthPromptDepth ?? 4,
-      depthPromptRole: input.depthPromptRole || "system",
-      extensions: input.extensions || "",
-      tags: input.tags || [],
-      _avatarPreview: null,
-    });
-  }, [
-    input.characterId, input.characterName, input.description, input.firstMessage,
-    input.scenario, input.subtitle, input.systemPrompt, input.mesExample,
-    input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes,
-    input.characterBook, input.depthPrompt, input.depthPromptDepth,
-    input.depthPromptRole, input.extensions, input.tags,
-  ]);
+    if (prevCharIdRef.current !== input.characterId) {
+      prevCharIdRef.current = input.characterId;
+      setDraft({
+        name: input.characterName,
+        description: input.description,
+        firstMessage: input.firstMessage || "",
+        mesExample: input.mesExample || "",
+        scenario: input.scenario,
+        personalitySummary: input.subtitle || "",
+        systemPrompt: input.systemPrompt,
+        alternateGreetings: input.alternateGreetings || [],
+        postHistoryInstructions: input.postHistoryInstructions || "",
+        creatorNotes: input.creatorNotes || "",
+        characterBook: input.characterBook || "",
+        depthPrompt: input.depthPrompt || "",
+        depthPromptDepth: input.depthPromptDepth ?? 4,
+        depthPromptRole: input.depthPromptRole || "system",
+        extensions: input.extensions || "",
+        tags: input.tags || [],
+        _avatarPreview: null,
+      });
+    }
+  }, [input.characterId]);
 
   const isDirty = useMemo(() => {
     return (
@@ -193,6 +193,36 @@ export function BuildMode(input: BuildModeProps) {
       tags: draft.tags || [],
     });
   }
+
+  // After a successful save, the snapshot updates → props change.
+  // Sync draft from the new server state so isDirty resets to false.
+  const prevNoticeRef = useRef(input.saveNotice);
+  useEffect(() => {
+    if (prevNoticeRef.current !== input.saveNotice && input.saveNotice === "Character card saved.") {
+      prevNoticeRef.current = input.saveNotice;
+      setDraft({
+        name: input.characterName,
+        description: input.description,
+        firstMessage: input.firstMessage || "",
+        mesExample: input.mesExample || "",
+        scenario: input.scenario,
+        personalitySummary: input.subtitle || "",
+        systemPrompt: input.systemPrompt,
+        alternateGreetings: input.alternateGreetings || [],
+        postHistoryInstructions: input.postHistoryInstructions || "",
+        creatorNotes: input.creatorNotes || "",
+        characterBook: input.characterBook || "",
+        depthPrompt: input.depthPrompt || "",
+        depthPromptDepth: input.depthPromptDepth ?? 4,
+        depthPromptRole: input.depthPromptRole || "system",
+        extensions: input.extensions || "",
+        tags: input.tags || [],
+        _avatarPreview: null,
+      });
+    } else {
+      prevNoticeRef.current = input.saveNotice;
+    }
+  }, [input.saveNotice]);
 
   function handleAvatarUpload(file: File): void {
     input.onAvatarUpload?.(file);
