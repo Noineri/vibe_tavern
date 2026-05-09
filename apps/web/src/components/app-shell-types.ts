@@ -43,4 +43,5 @@ export interface CharacterTab {
   name: string;
   subtitle: string;
   chatId: ChatId | null;
+  avatarAssetId: string | null;
 }

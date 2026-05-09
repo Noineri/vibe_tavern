@@ -9,6 +9,7 @@ import { TopBar } from "./components/TopBar.js";
 import { WelcomeScreen } from "./components/WelcomeScreen.js";
 import { DestructiveConfirmModal } from "./components/shared/destructive-confirm-modal.js";
 import { useRpPlatformApp } from "./hooks/use-rp-platform-app.js";
+import { getGatewayBaseUrl } from "./gateway-client.js";
 
 export function App() {
   const app = useRpPlatformApp();
@@ -97,6 +98,8 @@ export function App() {
         onSelectVariant: (messageId, variantIndex) =>
           void app.handleSelectMessageVariant(messageId, variantIndex),
         alternateGreetings: snapshot.character.alternateGreetings,
+        characterAvatarAssetId: snapshot.character.avatarAssetId ?? null,
+        personaAvatarAssetId: snapshot.persona?.avatarAssetId ?? null,
       }}
       inputArea={{
         characterName: snapshot.character.name,
@@ -153,6 +156,7 @@ export function App() {
         branches={snapshot?.branches ?? []}
         activeBranchId={snapshot?.activeBranch?.id ?? null}
         personaName={personaName}
+        personaAvatarAssetId={snapshot?.persona?.avatarAssetId ?? null}
         activePromptTraceId={app.activePromptTraceId}
         onToggleCollapsed={() => app.setSidebarCollapsed(!app.sidebarCollapsed)}
         onSwitchChat={(chatId) => void app.handleSwitchChat(chatId)}
@@ -183,6 +187,7 @@ export function App() {
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar
           characterName={snapshot?.character.name ?? ""}
+          characterAvatar={snapshot?.character.avatarAssetId ? `${getGatewayBaseUrl()}/api/assets/${snapshot.character.avatarAssetId}` : undefined}
           characterSubtitle={snapshot?.character.subtitle ?? ""}
           activatedLoreCount={app.activePromptTrace?.activatedLoreEntries.length ?? 0}
           retrievedMemoryCount={app.activePromptTrace?.retrievedMemories.length ?? 0}

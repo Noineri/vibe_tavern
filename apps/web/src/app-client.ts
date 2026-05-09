@@ -26,7 +26,7 @@ export interface PersonaRecord {
 
 export interface AppSnapshot {
   chats: ChatListItem[];
-  allCharacters: Array<{ id: string; name: string; subtitle: string }>;
+  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
   activeChat: Chat;
   activeBranch: ChatBranch;
   branches: ChatBranch[];
@@ -56,6 +56,7 @@ export interface AppSnapshot {
     depthPromptRole: string | null;
     extensions: string | null;
     tags: string[];
+    avatarAssetId: string | null;
   };
   persona: {
     id: string;
@@ -154,14 +155,14 @@ export async function bootstrapApp(): Promise<{
   initialChatId: ChatId | null;
   snapshot: AppSnapshot | null;
   isFirstRun: boolean;
-  allCharacters: Array<{ id: string; name: string; subtitle: string }>;
+  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
 }> {
   const response = await client.api.bootstrap.$get();
   const data = await unwrapRpc<{
     initialChatId: ChatId | null;
     snapshot: AppSnapshot | null;
     isFirstRun?: boolean;
-    allCharacters?: Array<{ id: string; name: string; subtitle: string }>;
+    allCharacters?: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
   }>(response);
 
   return {
@@ -829,8 +830,29 @@ export async function exportPromptTrace(traceId: string): Promise<Record<string,
   return unwrapRpc<Record<string, unknown>>(response);
 }
 
+export async function updateCharacterAvatar(characterId: string, chatId: string, avatarAssetId: string): Promise<AppSnapshot> {
+  const response = await client.api.characters[":characterId"].$patch({ param: { characterId }, json: { chatId, avatarAssetId } });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
+}
+
 export function logClientSendDebug(event: string, data: Record<string, unknown> = {}): void {
   postSendDebug(event, data);
+}
+
+export async function uploadAsset(file: File): Promise<{ assetId: string; url: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(`${baseUrl}/api/assets/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Asset upload failed (${response.status}): ${errorBody}`);
+  }
+  return response.json();
 }
 
 function postSendDebug(event: string, data: Record<string, unknown>): void {

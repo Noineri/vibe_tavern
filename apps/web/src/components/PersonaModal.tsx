@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Icons } from "./shared/icons.js";
 import { EmptyState } from "./shared/empty-state.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { cn } from "../lib/cn.js";
+import { avatarUrl } from "../lib/avatar.js";
+import { uploadAsset } from "../app-client.js";
 
 interface PersonaListItem {
   id: string;
@@ -18,7 +20,7 @@ interface PersonaModalProps {
   activePersonaId: string | null;
   isSaving: boolean;
   onClose: () => void;
-  onSaveEdit: (personaId: string, draft: { name: string; description: string; pronouns?: string | null }) => void;
+  onSaveEdit: (personaId: string, draft: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null }) => void;
   onSetActive: (personaId: string) => void;
   onCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
   onDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
@@ -31,6 +33,10 @@ export function PersonaModal(input: PersonaModalProps) {
   const [editDescription, setEditDescription] = useState("");
   const [editPronouns, setEditPronouns] = useState("");
   const [editPronounsCustom, setEditPronounsCustom] = useState("");
+  const [editAvatarAssetId, setEditAvatarAssetId] = useState<string | null>(null);
+  const [editAvatarPreview, setEditAvatarPreview] = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string>("");
 
@@ -46,6 +52,8 @@ export function PersonaModal(input: PersonaModalProps) {
     const raw = persona.pronouns ?? "";
     setEditPronouns(raw);
     setEditPronounsCustom("");
+    setEditAvatarAssetId(persona.avatarAssetId);
+    setEditAvatarPreview(null);
   }
 
   function commitEdit(): void {
@@ -53,7 +61,7 @@ export function PersonaModal(input: PersonaModalProps) {
     const resolved = editPronouns === "custom"
       ? (editPronounsCustom.trim() || null)
       : (editPronouns || null);
-    input.onSaveEdit(editingId, { name: editName.trim(), description: editDescription, pronouns: resolved });
+    input.onSaveEdit(editingId, { name: editName.trim(), description: editDescription, pronouns: resolved, avatarAssetId: editAvatarAssetId });
     setSelectedId(editingId);
     setEditingId(null);
   }
@@ -155,12 +163,66 @@ export function PersonaModal(input: PersonaModalProps) {
                     /* ── Editing state ── */
                     <div className="w-full" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-3 mb-3">
-                        {/* AvatarPicker stub: shows initials, no upload */}
-                        <div className={cn(
-                          "flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-dashed border-border2 bg-s2 text-sm",
-                          isSelected ? "bg-accent text-white" : "bg-s3 text-t2"
-                        )}>
-                          {persona.name.trim().charAt(0).toUpperCase() || "?"}
+                        {/* AvatarPicker */}
+                        <div
+                          className={cn(
+                            "group relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-dashed border-border2 bg-s2 transition-all hover:border-accent hover:text-accent-t",
+                            avatarUploading && "pointer-events-none opacity-60"
+                          )}
+                          onClick={() => !avatarUploading && avatarInputRef.current?.click()}
+                          title="Upload avatar"
+                        >
+                          <input
+                            type="file"
+                            ref={avatarInputRef}
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              setAvatarUploading(true);
+                              try {
+                                const preview = URL.createObjectURL(file);
+                                setEditAvatarPreview(preview);
+                                const result = await uploadAsset(file);
+                                setEditAvatarAssetId(result.assetId);
+                              } catch {
+                                setEditAvatarPreview(null);
+                                setEditAvatarAssetId(null);
+                              } finally {
+                                setAvatarUploading(false);
+                              }
+                            }}
+                          />
+                          {editAvatarPreview || editAvatarAssetId ? (
+                            <>
+                              <img
+                                src={editAvatarPreview || (editAvatarAssetId ? avatarUrl(editAvatarAssetId) : "")}
+                                alt=""
+                                className="h-full w-full object-cover object-top"
+                              />
+                              <button
+                                type="button"
+                                className="absolute right-0.5 bottom-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-surface text-t4 opacity-0 transition-all hover:text-danger group-hover:opacity-100"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditAvatarAssetId(null);
+                                  setEditAvatarPreview(null);
+                                  if (avatarInputRef.current) avatarInputRef.current.value = "";
+                                }}
+                                title="Remove avatar"
+                              >
+                                <svg width="10" height="10" viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                              </button>
+                            </>
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-t3 transition-colors group-hover:text-accent-t">
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                                <circle cx="12" cy="13" r="4"/>
+                              </svg>
+                            </div>
+                          )}
                         </div>
                         <div className="flex-1">
                           <input
@@ -221,7 +283,10 @@ export function PersonaModal(input: PersonaModalProps) {
                         "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm",
                         isSelected ? "bg-accent text-white" : "bg-s3 text-t2"
                       )}>
-                        {persona.name.slice(0, 1).toUpperCase()}
+                        {persona.avatarAssetId
+                          ? <img src={avatarUrl(persona.avatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
+                          : persona.name.slice(0, 1).toUpperCase()
+                        }
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="font-ui mb-[3px] text-[length:var(--ui-fs)] font-medium text-t1">{persona.name}</div>

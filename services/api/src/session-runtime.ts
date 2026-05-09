@@ -62,7 +62,7 @@ export interface ChatListItem {
 
 export interface SessionSnapshot {
 	chats: ChatListItem[];
-	allCharacters: Array<{ id: string; name: string; subtitle: string }>;
+	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
 	activeChat: import("@rp-platform/db").Chat;
 	activeBranch: import("@rp-platform/db").ChatBranch;
 	branches: import("@rp-platform/db").ChatBranch[];
@@ -82,7 +82,7 @@ export interface BootstrapState {
 	initialChatId: ChatId | null;
 	snapshot: SessionSnapshot | null;
 	isFirstRun: boolean;
-	allCharacters: Array<{ id: string; name: string; subtitle: string }>;
+	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
 }
 
 export interface ImportResult {
@@ -230,6 +230,7 @@ export class SessionRuntime {
 				id: c.id,
 				name: c.name,
 				subtitle: c.tags.length > 0 ? c.tags[0] : '',
+				avatarAssetId: c.avatarAssetId,
 			})),
 		};
 	}
@@ -871,7 +872,7 @@ export class SessionRuntime {
 		});
 	}
 
-	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string }>> {
+	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>> {
 		const characters = await this.stores.characters.listIncludingSystem();
 		const hasUserChars = characters.some((c) => c.id !== 'char_system');
 
@@ -880,6 +881,7 @@ export class SessionRuntime {
 				id: c.id,
 				name: c.name,
 				subtitle: c.tags.length > 0 ? c.tags[0] : '',
+				avatarAssetId: c.avatarAssetId,
 			}));
 		}
 
@@ -892,6 +894,7 @@ export class SessionRuntime {
 				id: c.id,
 				name: c.name,
 				subtitle: c.tags.length > 0 ? c.tags[0] : '',
+				avatarAssetId: c.avatarAssetId,
 			}));
 	}
 
