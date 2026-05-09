@@ -405,6 +405,12 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     const layerModes = LAYER_MODES[layer.id];
     if (layerModes) {
       layer.modes = layerModes;
+    } else if (
+      layer.sourceType === PROMPT_LAYER_SOURCE_TYPE.loreEntry ||
+      layer.sourceType === PROMPT_LAYER_SOURCE_TYPE.summaryMemory ||
+      layer.sourceType === PROMPT_LAYER_SOURCE_TYPE.retrievalMemory
+    ) {
+      layer.modes = ["chat", "continue", "regenerate"];
     }
   }
 

@@ -102,13 +102,13 @@ export const LAYER_MODES: Record<string, AssemblyMode[]> = {
   prompt_preset_jailbreak:     ["chat", "continue", "regenerate"],
   prompt_preset_summary:       ["summary"],
   prompt_preset_authors_note:  ["chat", "continue", "regenerate"],
-  character_system_prompt:     ["chat", "continue", "regenerate"],
+  character_system_prompt:     ["chat", "continue", "regenerate", "summary"],
   character_base:              ["chat", "continue", "regenerate", "summary"],
-  character_personality:       ["chat", "continue", "regenerate"],
+  character_personality:       ["chat", "continue", "regenerate", "summary"],
   persona:                     ["chat", "continue", "regenerate", "summary"],
   tool_instructions:           ["chat", "continue", "regenerate", "tool_call"],
   post_history_instructions:   ["chat", "continue", "regenerate"],
-  mes_example:                 ["chat", "continue", "regenerate"],
+  mes_example:                 ["chat", "continue", "regenerate", "summary"],
   preflight_compaction:        ["chat", "continue", "regenerate"],
   // Lore and memory layers default to chat modes
   // (lore entries inherit from their source; these are fallbacks)

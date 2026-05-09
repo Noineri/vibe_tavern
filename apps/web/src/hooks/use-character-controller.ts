@@ -237,6 +237,11 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
         setImportNotice(
           `Imported character: ${imported.imported.name}${formatImportWarnings(imported.imported.warningCount)}`,
         );
+      } else if (imported.imported.kind === "chat") {
+        setMode("play");
+        setImportNotice(
+          `Imported chat: ${imported.imported.name}${formatImportWarnings(imported.imported.warningCount)}`,
+        );
       } else {
         setImportNotice(
           `Attached lorebook: ${imported.imported.name} -> ${imported.imported.attachedToCharacterName ?? "current character"}${formatImportWarnings(imported.imported.warningCount)}`,

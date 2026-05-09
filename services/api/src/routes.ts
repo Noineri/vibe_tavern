@@ -22,6 +22,8 @@ export interface RuntimeApi {
   deleteMessage: (chatId: string, messageId: string) => unknown;
   sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<unknown>;
   sendMessageStream: (chatId: string, body: { content: string }, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
+  summarizeChat: (chatId: string, body: { providerProfileId: string; maxMessages: number }, signal?: AbortSignal) => Promise<unknown>;
+  saveChatSummary: (chatId: string, body: { summary: string }) => Promise<unknown>;
   generateReply: (chatId: string, signal?: AbortSignal) => Promise<unknown>;
   generateReplyStream: (chatId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
   updateCharacter: (characterId: string, body: Record<string, unknown>) => Promise<unknown>;
@@ -212,6 +214,17 @@ export function createApiRouter(
           await stream.writeSSE({ event: event.event, data: event.data });
         }
       });
+    })
+    .post("/api/chats/:chatId/summary", zValidator("json", schemas.summarizeChatSchema), async (c) => {
+      const chatId = c.req.param("chatId");
+      const body = c.req.valid("json");
+      logSendDebug("api.route.summary.post", { chatId, providerProfileId: body.providerProfileId, maxMessages: body.maxMessages });
+      return c.json(await runtime.summarizeChat(chatId, body, c.req.raw.signal));
+    })
+    .put("/api/chats/:chatId/summary", zValidator("json", schemas.saveChatSummarySchema), async (c) => {
+      const chatId = c.req.param("chatId");
+      const body = c.req.valid("json");
+      return c.json(await runtime.saveChatSummary(chatId, body));
     })
     .post("/api/chats/:chatId/generate-reply", async (c) => {
       const chatId = c.req.param("chatId");
