@@ -48,7 +48,7 @@ export interface CharacterControllerDeps {
 
 export interface CharacterControllerActions {
   handleSaveCharacter: (draftInput: BuildCharacterDraft) => Promise<void>;
-  handleSavePersona: (personaId: string, draftInput: { name: string; description: string; pronouns?: string | null }) => Promise<void>;
+  handleSavePersona: (personaId: string, draftInput: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null }) => Promise<void>;
   handleSetChatPersona: (personaId: string) => Promise<void>;
   handleCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
   handleDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
@@ -142,7 +142,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     }
   }
 
-  async function handleSavePersona(personaId: string, draftInput: { name: string; description: string; pronouns?: string | null }): Promise<void> {
+  async function handleSavePersona(personaId: string, draftInput: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null }): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
 
@@ -154,10 +154,11 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
         name: draftInput.name,
         description: draftInput.description,
         pronouns: draftInput.pronouns,
+        avatarAssetId: draftInput.avatarAssetId,
       });
       const updatedPersona = nextSnapshot.persona?.id === personaId
         ? nextSnapshot.persona
-        : { id: personaId, name: draftInput.name.trim(), description: draftInput.description, pronouns: draftInput.pronouns ?? null, avatarAssetId: null };
+        : { id: personaId, name: draftInput.name.trim(), description: draftInput.description, pronouns: draftInput.pronouns ?? null, avatarAssetId: draftInput.avatarAssetId ?? null };
       setPersonas((current) => current.map((persona) => persona.id === personaId ? updatedPersona : persona));
       setSnapshot(activeChatId, nextSnapshot);
       await loadPersonas();

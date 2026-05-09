@@ -126,7 +126,7 @@ export function useRpPlatformApp() {
   const [personas, setPersonas] = useState<PersonaRecord[]>([]);
   const [promptPresets, setPromptPresets] = useState<PromptPresetDto[]>([]);
   const [activePromptPresetId, setActivePromptPresetId] = useState<string | null>(null);
-  const [allCharacters, setAllCharacters] = useState<Array<{ id: string; name: string; subtitle: string }>>([]);
+  const [allCharacters, setAllCharacters] = useState<Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>>([]);
 
   // --- Derived state ---
 
@@ -583,7 +583,7 @@ export function useRpPlatformApp() {
 }
 
 function buildCharacterTabs(
-  allCharacters: Array<{ id: string; name: string; subtitle: string }>,
+  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>,
   chats: Array<{ id: ChatId; characterId: string }>,
 ): CharacterTab[] {
   const chatByCharId = new Map<string, ChatId>();
@@ -598,6 +598,7 @@ function buildCharacterTabs(
     name: char.name,
     subtitle: char.subtitle,
     chatId: chatByCharId.get(char.id) ?? null,
+    avatarAssetId: char.avatarAssetId,
   }));
 }
 

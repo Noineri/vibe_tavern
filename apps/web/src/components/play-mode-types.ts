@@ -25,6 +25,8 @@ export interface MessageBlockProps {
   onResend: () => void;
   onSelectPreviousVariant: () => void;
   onSelectNextVariant: () => void;
+  characterAvatarAssetId: string | null;
+  personaAvatarAssetId: string | null;
 }
 
 export interface MessageListProps {
@@ -49,6 +51,8 @@ export interface MessageListProps {
   onRegenerate: (messageId: string) => void;
   onResend: () => void;
   onSelectVariant: (messageId: string, variantIndex: number) => void;
+  characterAvatarAssetId: string | null;
+  personaAvatarAssetId: string | null;
 }
 
 export interface InputAreaProps {

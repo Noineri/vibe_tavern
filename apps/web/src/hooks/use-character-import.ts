@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import type { ChatId } from "@rp-platform/domain";
-import { importJson } from "../app-client.js";
+import { importJson, uploadAsset, updateCharacterAvatar } from "../app-client.js";
 import { extractPngMetadata, parseCharacterMetadata } from "../lib/png-reader.js";
 
 export interface CharacterImportOptions {
@@ -16,10 +16,22 @@ export function useCharacterImport() {
     try {
       let payload: unknown;
       const lowerName = file.name.toLowerCase();
+      let avatarAssetId: string | null = null;
 
-      if (file.type === "image/png" || lowerName.endsWith(".png")) {
+      const isPng = file.type === "image/png" || lowerName.endsWith(".png");
+
+      if (isPng) {
+        // Extract character JSON from PNG metadata
         const metadata = await extractPngMetadata(file);
         payload = parseCharacterMetadata(metadata);
+
+        // Upload the PNG itself as the character's avatar
+        try {
+          const asset = await uploadAsset(file);
+          avatarAssetId = asset.assetId;
+        } catch (err) {
+          console.warn("Failed to upload character avatar during import:", err);
+        }
       } else if (file.type === "application/json" || lowerName.endsWith(".json")) {
         const text = await file.text();
         payload = JSON.parse(text);
@@ -27,11 +39,25 @@ export function useCharacterImport() {
         throw new Error("Unsupported file type. Please upload a PNG character card or JSON file.");
       }
 
-      return await importJson({
+      const result = await importJson({
         fileName: file.name,
         jsonText: JSON.stringify(payload),
         chatId: options?.chatId,
       });
+
+      // If we uploaded an avatar, attach it to the newly created character
+      if (avatarAssetId && result?.activeChatId) {
+        try {
+          const characterId = result.snapshot?.character?.id;
+          if (characterId) {
+            await updateCharacterAvatar(characterId, result.activeChatId, avatarAssetId);
+          }
+        } catch (err) {
+          console.warn("Failed to attach avatar to imported character:", err);
+        }
+      }
+
+      return result;
     } catch (err: unknown) {
       console.error("Import error:", err);
       const message = err instanceof Error ? err.message : "Failed to import character";

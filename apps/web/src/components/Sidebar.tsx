@@ -6,6 +6,7 @@ import type { CharacterTab } from "./app-shell-types.js";
 import { initials } from "./app-shell-helpers.js";
 import { Icons } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
+import { avatarUrl } from "../lib/avatar.js";
 
 interface SidebarProps {
   sidebarCollapsed: boolean;
@@ -16,6 +17,7 @@ interface SidebarProps {
   branches: ChatBranch[];
   activeBranchId: ChatBranchId | null;
   personaName: string;
+  personaAvatarAssetId: string | null;
   activePromptTraceId: string | null;
   renamingChatId: ChatId | null;
   renameDraft: string;
@@ -137,7 +139,7 @@ export function Sidebar(input: SidebarProps) {
                   title={character.name}
                 >
                   <span className={cn('flex h-full w-full items-center justify-center rounded-full font-ui text-sm', isActive ? 'bg-accent text-on-accent' : 'bg-s3 text-t2')}>
-                    {initials(character.name)}
+                    {character.avatarAssetId ? <img src={avatarUrl(character.avatarAssetId)} alt={character.name} className="h-full w-full object-cover object-top" /> : initials(character.name)}
                   </span>
                 </div>
               );
@@ -223,7 +225,7 @@ export function Sidebar(input: SidebarProps) {
                     <span className={cn(
                       'flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full font-ui text-[calc(var(--ui-fs)-3px)] not-italic avatar-fallback initials crop-framing',
                       isActive ? 'bg-accent text-on-accent' : 'bg-s3 text-t2'
-                    )}>{initials(character.name)}</span>
+                    )}>{character.avatarAssetId ? <img src={avatarUrl(character.avatarAssetId)} alt={character.name} className="h-full w-full object-cover object-top" /> : initials(character.name)}</span>
                     <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                       {character.name}
                     </span>
@@ -605,7 +607,7 @@ export function Sidebar(input: SidebarProps) {
                 }
               }}
             >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-3px)] not-italic text-t2">{initials(input.personaName)}</span>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-3px)] not-italic text-t2">{input.personaAvatarAssetId ? <img src={avatarUrl(input.personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(input.personaName)}</span>
               <span>{input.personaName}</span>
               <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">
                 Your Persona

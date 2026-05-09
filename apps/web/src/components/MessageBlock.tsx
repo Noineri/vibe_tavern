@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { cn } from "../lib/cn.js";
 import { Markdown } from "../lib/markdown.js";
+import { avatarUrl } from "../lib/avatar.js";
 import { initials } from "./app-shell-helpers.js";
 import type { MessageBlockProps } from "./play-mode-types.js";
 import { Icons } from "./shared/icons.js";
@@ -36,7 +37,14 @@ export function MessageBlock(input: MessageBlockProps) {
           : "flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85"
         } style={{marginBottom:'5px'}}>
           <div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[9px] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
-            {isUser ? "Y" : initials(input.characterName)}
+            {isUser
+              ? (input.personaAvatarAssetId
+                ? <img src={avatarUrl(input.personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
+                : "Y")
+              : (input.characterAvatarAssetId
+                ? <img src={avatarUrl(input.characterAvatarAssetId)} alt={input.characterName} className="h-full w-full object-cover object-top" />
+                : initials(input.characterName))
+            }
           </div>
           <span>{isUser ? "You" : input.characterName}</span>
           {greetingActive && (

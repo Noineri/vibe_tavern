@@ -79,6 +79,8 @@ export function MessageList(input: MessageListProps) {
               onSelectNextVariant={() =>
                 input.onSelectVariant(message.id, (message.selectedVariantIndex ?? 0) + 1)
               }
+              characterAvatarAssetId={input.characterAvatarAssetId}
+              personaAvatarAssetId={input.personaAvatarAssetId}
             />
           </Fragment>
         );
