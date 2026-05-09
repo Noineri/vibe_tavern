@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { AppMessage } from "../app-client.js";
 import { Markdown } from "../lib/markdown.js";
+import { useChatStore } from "../stores/chat-store.js";
 import { MessageBlock } from "./MessageBlock.js";
 import type { MessageListProps } from "./play-mode-types.js";
 
@@ -23,9 +24,11 @@ export function MessageList(input: MessageListProps) {
     ? [firstCharMsg.content, ...alternateGreetings]
     : undefined;
 
+  const streamingText = useChatStore((s) => s.streamingText);
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [input.messages.length, input.pendingUserMessageContent]);
+  }, [input.messages.length, input.pendingUserMessageContent, streamingText]);
 
   return (
     <div className="flex-1 overflow-y-auto scroll-smooth" style={{paddingBottom:12,paddingTop:28}} ref={msgsRef}>
@@ -117,13 +120,7 @@ export function MessageList(input: MessageListProps) {
                 </span>
                 <span>{input.characterName}</span>
               </div>
-              <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
-                <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-hidden="true">
-                  <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
-                  <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
-                  <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
-                </span>
-              </div>
+              <StreamingContent characterName={input.characterName} />
             </div>
           </div>
         </>
@@ -142,13 +139,7 @@ export function MessageList(input: MessageListProps) {
                 </span>
                 <span>{input.characterName}</span>
               </div>
-              <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
-                <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-hidden="true">
-                  <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
-                  <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
-                  <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
-                </span>
-              </div>
+              <StreamingContent characterName={input.characterName} />
             </div>
           </div>
         </>
@@ -179,4 +170,29 @@ function isLastAssistantMessage(messages: AppMessage[], messageId: string): bool
 function isLastMessage(messages: AppMessage[], messageId: string): boolean {
   const lastMessage = messages[messages.length - 1];
   return lastMessage?.id === messageId;
+}
+
+const _dots = (
+  <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-hidden="true">
+    <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
+    <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
+    <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
+  </span>
+);
+
+function StreamingContent(_props: { characterName: string }) {
+  const streamingText = useChatStore((s) => s.streamingText);
+  if (streamingText) {
+    return (
+      <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
+        <Markdown text={streamingText} />
+        {_dots}
+      </div>
+    );
+  }
+  return (
+    <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
+      {_dots}
+    </div>
+  );
 }

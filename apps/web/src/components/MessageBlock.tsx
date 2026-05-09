@@ -3,10 +3,12 @@ import { cn } from "../lib/cn.js";
 import { Markdown } from "../lib/markdown.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { initials } from "./app-shell-helpers.js";
+import { useChatStore } from "../stores/chat-store.js";
 import type { MessageBlockProps } from "./play-mode-types.js";
 import { Icons } from "./shared/icons.js";
 
 export function MessageBlock(input: MessageBlockProps) {
+  const streamingText = useChatStore((s) => s.streamingText);
   const [copied, setCopied] = useState(false);
   const isUser = input.message.role === "user";
   const variants = Array.isArray(input.message.variants) ? input.message.variants : [];
@@ -22,6 +24,9 @@ export function MessageBlock(input: MessageBlockProps) {
   // Both lock when there are subsequent messages (canSwitchVariant).
   const canSwitch = input.canSwitchVariant;
   const displayContent = greetingActive ? (greetingOptions[greetIdx] ?? input.message.content) : input.message.content;
+  // When streaming, show streamed text instead of stale server content
+  const showStreaming = isGenerating && streamingText;
+  const renderContent = showStreaming ? streamingText : displayContent;
   const copyLabel = "copy";
   const editLabel = "edit";
   const branchLabel = "branch";
@@ -107,10 +112,10 @@ export function MessageBlock(input: MessageBlockProps) {
         ) : isUser ? (
           <div className="my-0.5 rounded-md bg-user-bg" style={{padding:'13px 16px'}}>
             <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 opacity-88 [&_em]:italic [&_em]:text-t2">
-              <Markdown text={displayContent} />
+              <Markdown text={renderContent} />
             </div>
           </div>
-        ) : isGenerating && !input.message.content?.trim() ? (
+        ) : isGenerating && !renderContent?.trim() ? (
           <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
             <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label="Generating response">
               <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
@@ -121,7 +126,7 @@ export function MessageBlock(input: MessageBlockProps) {
         ) : (
           <>
             <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
-              <Markdown text={displayContent} />
+              <Markdown text={renderContent} />
             </div>
             {isGenerating && (
               <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label="Generating response">
