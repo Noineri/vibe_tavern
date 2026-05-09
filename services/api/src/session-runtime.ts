@@ -588,6 +588,7 @@ export class SessionRuntime {
 			depthPromptRole?: string | null;
 			extensions?: Record<string, unknown>;
 			tags?: string[];
+			avatarAssetId?: string | null;
 		},
 	): Promise<SessionSnapshot> {
 		const currentCharacter = await this.stores.characters.getById(characterId);
@@ -635,6 +636,9 @@ export class SessionRuntime {
 			extensions: input.extensions ?? currentCharacter.extensions,
 			systemPrompt: input.systemPrompt ?? currentCharacter.systemPrompt,
 			tags: input.tags ?? currentCharacter.tags,
+			avatarAssetId: input.avatarAssetId !== undefined
+				? input.avatarAssetId
+				: currentCharacter.avatarAssetId,
 		});
 
 		// Promote system character to user character on first edit
@@ -666,6 +670,7 @@ export class SessionRuntime {
 			name?: string;
 			description?: string;
 			pronouns?: string | null;
+			avatarAssetId?: string | null;
 		},
 	): Promise<SessionSnapshot> {
 		const currentPersona = await this.stores.personas.getById(brandId<PersonaId>(personaId));
@@ -680,11 +685,13 @@ export class SessionRuntime {
 
 		const nextDescription = input.description ?? currentPersona.description;
 		const nextPronouns = input.pronouns !== undefined ? input.pronouns : currentPersona.pronouns;
+		const nextAvatarAssetId = input.avatarAssetId !== undefined ? input.avatarAssetId : currentPersona.avatarAssetId;
 
 		await this.stores.personas.update(personaId, {
 			name: nextName,
 			description: nextDescription,
 			pronouns: nextPronouns,
+			avatarAssetId: nextAvatarAssetId,
 		});
 
 		const preferredChat = input.chatId

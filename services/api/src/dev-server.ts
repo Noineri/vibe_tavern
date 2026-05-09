@@ -15,11 +15,27 @@ import { isDomainError, httpStatusForDomainError, domainErrorToJson, notFound, v
 import { createRuntimeStore } from "./session-runtime-store.js";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { unlink } from "node:fs/promises";
 
 const rootDir = process.env.RP_PLATFORM_ROOT_DIR ?? resolve(import.meta.dir, '..', '..', '..');
 
 const host = process.env.RP_PLATFORM_API_HOST ?? "127.0.0.1";
 const port = Number(process.env.RP_PLATFORM_API_PORT ?? "8787");
+
+const MIME_TO_EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+const EXT_TO_MIME: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+};
+const ALLOWED_MIMES = new Set(Object.keys(MIME_TO_EXT));
 
 // ─── Bootstrap sequence ─────────────────────────────────────────────────────
 
@@ -27,6 +43,7 @@ console.log("[bootstrap] Starting RP Platform API...");
 
 // 1. Ensure data/ directory exists
 mkdirSync(resolve(rootDir, "data"), { recursive: true });
+mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
 
 // 2. Run DB schema push (creates/updates all tables)
 console.log("[bootstrap] Running DB schema push...");
@@ -212,16 +229,30 @@ async function ensureSeedData() {
         signal,
       });
     },
-    updateCharacter: (characterId: string, body: { chatId?: string; name?: string; description?: string; scenario?: string; systemPrompt?: string; mesExample?: string | null; alternateGreetings?: string[]; postHistoryInstructions?: string | null; creatorNotes?: string | null }) =>
-      sessionRuntime.updateCharacter(brandId<CharacterId>(characterId), { ...body, chatId: body.chatId != null ? brandId<ChatId>(body.chatId) : undefined }),
-    updatePersona: (personaId: string, body: { chatId?: string; name?: string; description?: string; pronouns?: string | null }) =>
-      sessionRuntime.updatePersona(personaId, { ...body, chatId: body.chatId != null ? brandId<ChatId>(body.chatId) : undefined }),
+    updateCharacter: async (characterId: string, body: { chatId?: string; name?: string; description?: string; scenario?: string; systemPrompt?: string; mesExample?: string | null; alternateGreetings?: string[]; postHistoryInstructions?: string | null; creatorNotes?: string | null; avatarAssetId?: string | null }) => {
+      if (body.avatarAssetId !== undefined) {
+        const character = await stores.characters.getById(brandId<CharacterId>(characterId));
+        if (character?.avatarAssetId && character.avatarAssetId !== body.avatarAssetId) cleanupAsset(character.avatarAssetId);
+      }
+      return sessionRuntime.updateCharacter(brandId<CharacterId>(characterId), { ...body, chatId: body.chatId != null ? brandId<ChatId>(body.chatId) : undefined });
+    },
+    updatePersona: async (personaId: string, body: { chatId?: string; name?: string; description?: string; pronouns?: string | null; avatarAssetId?: string | null }) => {
+      if (body.avatarAssetId !== undefined) {
+        const persona = await stores.personas.getById(personaId);
+        if (persona?.avatarAssetId && persona.avatarAssetId !== body.avatarAssetId) cleanupAsset(persona.avatarAssetId);
+      }
+      return sessionRuntime.updatePersona(personaId, { ...body, chatId: body.chatId != null ? brandId<ChatId>(body.chatId) : undefined });
+    },
     listPersonas: () => sessionRuntime.listPersonas(),
     setChatPersona: (chatId: string, personaId: string) => sessionRuntime.setChatPersona(brandId<ChatId>(chatId), personaId),
     setChatPromptPreset: (chatId: string, promptPresetId: string) => sessionRuntime.setChatPromptPreset(brandId<ChatId>(chatId), promptPresetId),
     createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) =>
       sessionRuntime.createPersona(body),
-    deletePersona: (personaId: string) => sessionRuntime.deletePersona(personaId),
+    deletePersona: async (personaId: string) => {
+      const persona = await stores.personas.getById(personaId);
+      if (persona?.avatarAssetId) cleanupAsset(persona.avatarAssetId);
+      await sessionRuntime.deletePersona(personaId);
+    },
     getPersonalLorebookStatus: (personaId: string) => sessionRuntime.getPersonalLorebookStatus(personaId),
     setPersonalLorebookEnabled: (personaId: string, enabled: boolean) => sessionRuntime.setPersonalLorebookEnabled(personaId, enabled),
     updateLorebook: (_lorebookId: string, _body: { chatId: string; lorebookRaw: string }) => {
@@ -271,14 +302,60 @@ async function ensureSeedData() {
     deleteBranch: (chatId: string, branchId: string) => chatRuntime.deleteBranch(chatId, branchId),
     archiveCharacter: (characterId: string) => sessionRuntime.archiveCharacter(characterId),
     unarchiveCharacter: (characterId: string) => sessionRuntime.unarchiveCharacter(characterId),
-    deleteCharacter: (characterId: string) => sessionRuntime.deleteCharacter(characterId),
+    deleteCharacter: async (characterId: string) => {
+      const character = await stores.characters.getById(brandId<CharacterId>(characterId));
+      if (character?.avatarAssetId) cleanupAsset(character.avatarAssetId);
+      await sessionRuntime.deleteCharacter(characterId);
+    },
     deleteChat: (chatId: string) => chatRuntime.deleteChat(chatId),
     renameChat: (chatId: string, title: string) => chatRuntime.renameChat(chatId, title),
     listPromptPresets: () => promptPresetService.listPromptPresets(),
     createPromptPreset: (body: any) => promptPresetService.createPromptPreset(body),
     updatePromptPreset: (presetId: string, body: any) => promptPresetService.updatePromptPreset(presetId, body),
     deletePromptPreset: (presetId: string) => promptPresetService.deletePromptPreset(presetId),
+    uploadAsset: async (file: File) => {
+      const mime = file.type;
+      if (!ALLOWED_MIMES.has(mime)) {
+        throw validation(`Unsupported image type: ${mime}. Allowed: jpeg, png, gif, webp.`);
+      }
+      const ext = MIME_TO_EXT[mime];
+      const assetId = `asset_${crypto.randomUUID().replace(/-/g, "")}`;
+      const fileName = `${assetId}.${ext}`;
+      const assetsDir = resolve(rootDir, "data", "assets");
+      const filePath = resolve(assetsDir, fileName);
+      const buffer = Buffer.from(await file.arrayBuffer());
+      await Bun.write(filePath, buffer);
+      return { assetId, url: `/api/assets/${assetId}` };
+    },
+    serveAsset: async (assetId: string) => {
+      const assetsDir = resolve(rootDir, "data", "assets");
+      // Prevent path traversal
+      if (assetId.includes("/") || assetId.includes("\\") || assetId.includes("..")) {
+        return null;
+      }
+      for (const ext of Object.keys(EXT_TO_MIME)) {
+        const filePath = resolve(assetsDir, `${assetId}.${ext}`);
+        try {
+          const bunFile = Bun.file(filePath);
+          if (await bunFile.exists()) {
+            return { body: Buffer.from(await bunFile.arrayBuffer()), contentType: EXT_TO_MIME[ext] };
+          }
+        } catch {
+          // try next extension
+        }
+      }
+      return null;
+    },
   };
+
+  function cleanupAsset(assetId: string | null) {
+    if (!assetId) return;
+    const assetsDir = resolve(rootDir, "data", "assets");
+    for (const ext of Object.keys(EXT_TO_MIME)) {
+      const filePath = resolve(assetsDir, `${assetId}.${ext}`);
+      unlink(filePath).catch(() => {});
+    }
+  }
 
   async function getRequiredProviderProfile(providerProfileId: string) {
     const profile = await providerProfileService.getProviderProfile(providerProfileId);
@@ -314,6 +391,10 @@ async function ensureSeedData() {
   }));
 
   app.use("*", async (c, next) => {
+    const contentType = c.req.header("content-type") ?? "";
+    if (contentType.includes("multipart/form-data")) {
+      return await next();
+    }
     const contentLength = c.req.header("content-length");
     if (contentLength && parseInt(contentLength) > 1024 * 1024) {
       return c.json({ error: "Request body too large" }, 413);

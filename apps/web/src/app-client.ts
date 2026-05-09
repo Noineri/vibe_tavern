@@ -212,6 +212,7 @@ export async function updatePersona(
     name: string;
     description: string;
     pronouns?: string | null;
+    avatarAssetId?: string | null;
   },
 ): Promise<AppSnapshot> {
   const response = await client.api.personas[":personaId"].$patch({ param: { personaId }, json: input });
