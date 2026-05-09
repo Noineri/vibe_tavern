@@ -1,62 +1,32 @@
-import { type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
-import type { ChatId, PromptPresetDto } from "@rp-platform/domain";
+import { type SetStateAction, useEffect, useRef, useState } from "react";
+import type { ChatId } from "@rp-platform/domain";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
 import {
   bootstrapApp,
   listPersonas,
-  listPromptPresets,
-  createPromptPreset,
-  updatePromptPreset,
-  deletePromptPreset,
-  setChatPromptPreset,
   summarizeChat,
   saveChatSummary,
   type AppSnapshot,
-  type PersonaRecord,
 } from "../app-client.js";
-import type {
-  AppMode,
-  CharacterTab,
-  ConnectionState,
-  SavedConnectionState,
-  ThemeMode,
-} from "../components/app-shell-types.js";
-import type { BuildTab } from "../components/BuildMode.js";
+import type { ConnectionState } from "../components/app-shell-types.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import { useCharacterImport } from "./use-character-import.js";
 import { useProviderProfiles } from "./use-provider-profiles.js";
 import { useChatController } from "./use-chat-controller.js";
 import { useCharacterController } from "./use-character-controller.js";
+import { usePresetController } from "./use-preset-controller.js";
+import { useDisplayHelpers } from "./use-display-helpers.js";
 import { useChatStore, useNavigationStore, useCharacterStore } from "../stores/index.js";
-
-function replaceUiMacros(
-  text: string,
-  context: { characterName: string; personaName?: string | null; personaDescription?: string | null },
-): string {
-  if (!text) return text;
-  const userName = context.personaName?.trim() || "User";
-  return text
-    .replace(/\{\{\s*char\s*\}\}/gi, context.characterName)
-    .replace(/\{\{\s*user\s*\}\}/gi, userName)
-    .replace(/\{\{\s*persona\s*\}\}/gi, context.personaDescription ?? "")
-    .replace(/<USER>/gi, userName)
-    .replace(/<BOT>/gi, context.characterName)
-    .replace(/<CHAR>/gi, context.characterName);
-}
-
-const STORAGE_KEY = "rp-platform.connection-settings";
-const THEME_STORAGE_KEY = "rp-platform.theme";
-const TWEAKS_STORAGE_KEY = "rp-platform.tweaks";
-
-interface TweaksSettings {
-  fontSize: number;
-  uiFontSize: number;
-  messageWidth: 'narrow' | 'medium' | 'wide';
-  lang: string;
-}
-
-const MESSAGE_WIDTH_MAP: Record<string, string> = { narrow: '680px', medium: '820px', wide: '960px' };
-const DEFAULT_TWEAKS: TweaksSettings = { fontSize: 17, uiFontSize: 16, messageWidth: 'medium', lang: 'en' };
+import {
+  readSavedTheme,
+  persistTheme,
+  readSavedConnectionState,
+  persistConnectionState,
+  persistTweaks,
+  readSavedTweaks,
+  type TweaksSettings,
+  MESSAGE_WIDTH_MAP,
+} from "../lib/local-storage.js";
 
 function createInitialConnectionState(): ConnectionState {
   const envDefaults = {
@@ -96,6 +66,7 @@ function createInitialConnectionState(): ConnectionState {
 }
 
 export function useRpPlatformApp() {
+  // --- Chat store subscriptions ---
   const activeChatId = useChatStore((s) => s.activeChatId);
   const selectedCharacterId = useChatStore((s) => s.selectedCharacterId);
   const snapshot = useChatStore((s) => s.snapshot);
@@ -110,6 +81,7 @@ export function useRpPlatformApp() {
   const setDraft = useChatStore((s) => s.setDraft);
   const setEditingDraft = useChatStore((s) => s.setEditingDraft);
   const setSelectedTraceId = useChatStore((s) => s.setSelectedTraceId);
+
   // --- Navigation store subscriptions ---
   const mode = useNavigationStore((s) => s.mode);
   const setMode = useNavigationStore((s) => s.setMode);
@@ -127,15 +99,13 @@ export function useRpPlatformApp() {
   const setIsPromptManagerOpen = useNavigationStore((s) => s.setIsPromptManagerOpen);
   const isPersonaModalOpen = useNavigationStore((s) => s.isPersonaModalOpen);
   const setIsPersonaModalOpen = useNavigationStore((s) => s.setIsPersonaModalOpen);
-  // --- Character store subscriptions (buildTab) ---
-  const buildTab = useCharacterStore((s) => s.buildTab);
-  const setBuildTab = useCharacterStore((s) => s.setBuildTab);
-  const [isCreateCharacterModalOpen, setCreateCharacterModalOpen] = useState(false);
-  const [isContextMemoryOpen, setContextMemoryOpen] = useState(false);
   const connection = useNavigationStore((s) => s.connection);
   const setConnection = useNavigationStore((s) => s.setConnection);
   const patchConnection = useNavigationStore((s) => s.patchConnection);
+
   // --- Character store subscriptions ---
+  const buildTab = useCharacterStore((s) => s.buildTab);
+  const setBuildTab = useCharacterStore((s) => s.setBuildTab);
   const isImportDragActive = useCharacterStore((s) => s.isImportDragActive);
   const setIsImportDragActive = useCharacterStore((s) => s.setIsImportDragActive);
   const importNotice = useCharacterStore((s) => s.importNotice);
@@ -152,42 +122,24 @@ export function useRpPlatformApp() {
   const setIsSavingCharacter = useCharacterStore((s) => s.setIsSavingCharacter);
   const characterSaveNotice = useCharacterStore((s) => s.characterSaveNotice);
   const setCharacterSaveNotice = useCharacterStore((s) => s.setCharacterSaveNotice);
-  const [tweaksSettings, setTweaksSettings] = useState<TweaksSettings>(() => readSavedTweaks());
-  const [tweaksOpen, setTweaksOpen] = useState(false);
-  const [avatarOpen, setAvatarOpen] = useState(false);
-  const { importFile, isImporting } = useCharacterImport();
-
   const personas = useCharacterStore((s) => s.personas);
   const setPersonas = useCharacterStore((s) => s.setPersonas);
   const promptPresets = useCharacterStore((s) => s.promptPresets);
-  const setPromptPresets = useCharacterStore((s) => s.setPromptPresets);
   const activePromptPresetId = useCharacterStore((s) => s.activePromptPresetId);
-  const setActivePromptPresetId = useCharacterStore((s) => s.setActivePromptPresetId);
+
+  // --- Local state (no store equivalent) ---
+  const [isCreateCharacterModalOpen, setCreateCharacterModalOpen] = useState(false);
+  const [isContextMemoryOpen, setContextMemoryOpen] = useState(false);
+  const [tweaksSettings, setTweaksSettings] = useState<TweaksSettings>(() => readSavedTweaks());
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [avatarOpen, setAvatarOpen] = useState(false);
   const [allCharacters, setAllCharacters] = useState<Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>>([]);
 
-  // --- Derived state ---
-
-  const activePromptTrace = useMemo(() => {
-    if (!snapshot) {
-      return null;
-    }
-
-    return (
-      snapshot.promptTraceHistory.find((trace) => trace.id === selectedTraceId) ??
-      snapshot.promptTrace ??
-      snapshot.promptTraceHistory[0] ??
-      null
-    );
-  }, [selectedTraceId, snapshot]);
-
-  const promptPayloadText = useMemo(
-    () => JSON.stringify(activePromptTrace?.finalPayload ?? {}, null, 2),
-    [activePromptTrace],
-  );
-  const canUseLiveApi = connection.status === "connected" && Boolean(connection.model);
+  // --- Display helpers (extracted) ---
+  const display = useDisplayHelpers(allCharacters);
+  const { importFile, isImporting } = useCharacterImport();
 
   // --- Provider hook ---
-
   const provider = useProviderProfiles({
     connection,
     patchConnection,
@@ -202,46 +154,17 @@ export function useRpPlatformApp() {
     setChatNotice: useChatStore.getState().setChatNotice,
   });
 
-  // --- Character/chat tabs ---
+  // --- Preset controller (extracted) ---
+  const preset = usePresetController();
 
-  // Keep allCharacters in sync with snapshot (updated on every chat switch, create, delete)
+  // --- Sync allCharacters from snapshot ---
   useEffect(() => {
     if (snapshot?.allCharacters) {
       setAllCharacters(snapshot.allCharacters);
     }
   }, [snapshot?.allCharacters]);
 
-  const characterTabs = useMemo(() => buildCharacterTabs(allCharacters, snapshot?.chats ?? []), [allCharacters, snapshot]);
-  const macroContext = useMemo(
-    () => snapshot ? {
-      characterName: snapshot.character.name,
-      personaName: snapshot.persona?.name ?? null,
-      personaDescription: snapshot.persona?.description ?? null,
-    } : null,
-    [snapshot],
-  );
-  const displayScenario = useMemo(
-    () => snapshot && macroContext ? replaceUiMacros(snapshot.character.scenario, macroContext) : "",
-    [macroContext, snapshot],
-  );
-  const displayMessages = useMemo(
-    () => snapshot && macroContext
-      ? snapshot.messages.map((message) => ({
-        ...message,
-        content: replaceUiMacros(message.content, macroContext),
-      }))
-      : [],
-    [macroContext, snapshot],
-  );
-  const displayPendingUserMessageContent = useMemo(
-    () => pendingUserMessageContent && macroContext
-      ? replaceUiMacros(pendingUserMessageContent, macroContext)
-      : pendingUserMessageContent,
-    [macroContext, pendingUserMessageContent],
-  );
-
   // --- Bootstrap: load persisted theme and connection into stores ---
-
   useEffect(() => {
     useNavigationStore.getState().setTheme(readSavedTheme());
     useNavigationStore.getState().setConnection(createInitialConnectionState());
@@ -280,7 +203,6 @@ export function useRpPlatformApp() {
     if (!editingMessageId || !snapshot) {
       return;
     }
-
     const stillExists = snapshot.messages.some((message) => message.id === editingMessageId);
     if (!stillExists) {
       useChatStore.getState().setEditingMessageId(null);
@@ -302,7 +224,7 @@ export function useRpPlatformApp() {
 
   useEffect(() => {
     if (snapshot?.activeChat.promptPresetId) {
-      setActivePromptPresetId(snapshot.activeChat.promptPresetId);
+      useCharacterStore.getState().setActivePromptPresetId(snapshot.activeChat.promptPresetId);
     }
   }, [snapshot?.activeChat.promptPresetId]);
 
@@ -371,66 +293,6 @@ export function useRpPlatformApp() {
     }
   }
 
-  async function loadPromptPresets(): Promise<void> {
-    try {
-      const list = await listPromptPresets();
-      setPromptPresets(list);
-      if (list.length > 0 && !list.find((p) => p.id === activePromptPresetId)) {
-        setActivePromptPresetId(list[0].id);
-      } else if (list.length === 0) {
-        setActivePromptPresetId(null);
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  async function handleSetActivePromptPresetId(presetId: string | null): Promise<void> {
-    setActivePromptPresetId(presetId);
-    const chatId = useChatStore.getState().activeChatId;
-    if (!chatId || !presetId) return;
-    try {
-      const nextSnapshot = await setChatPromptPreset(chatId, presetId);
-      snapshotRefresh(chatId, nextSnapshot);
-    } catch (error) {
-      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : "Failed to set prompt preset.");
-    }
-  }
-
-  async function handleCreatePromptPreset(input: { name: string; bindModel?: string; system?: string; jailbreak?: string; prefill?: string; authorsNote?: string; authorsNoteDepth?: number; summary?: string; tools?: string }): Promise<{ id: string } | null> {
-    try {
-      const created = await createPromptPreset(input);
-      await loadPromptPresets();
-      await handleSetActivePromptPresetId(created.id);
-      return { id: created.id };
-    } catch (error) {
-      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : "Failed to create preset.");
-      return null;
-    }
-  }
-
-  async function handleUpdatePromptPreset(presetId: string, patch: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">>): Promise<boolean> {
-    try {
-      const updated = await updatePromptPreset(presetId, patch);
-      useCharacterStore.getState().setPromptPresets(useCharacterStore.getState().promptPresets.map((p) => p.id === presetId ? updated : p));
-      return true;
-    } catch (error) {
-      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : "Failed to save preset.");
-      return false;
-    }
-  }
-
-  async function handleDeletePromptPreset(presetId: string): Promise<boolean> {
-    try {
-      await deletePromptPreset(presetId);
-      await loadPromptPresets();
-      return true;
-    } catch (error) {
-      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : "Failed to delete preset.");
-      return false;
-    }
-  }
-
   async function loadBootstrap(): Promise<void> {
     setIsLoading(true);
     setLoadError("");
@@ -448,38 +310,20 @@ export function useRpPlatformApp() {
     }
   }
 
-  function openConnectionPanel(): void {
-    setIsProviderModalOpen(true);
-  }
+  // --- Modal toggles ---
 
-  function closeConnectionPanel(): void {
-    setIsProviderModalOpen(false);
-  }
+  function openConnectionPanel(): void { setIsProviderModalOpen(true); }
+  function closeConnectionPanel(): void { setIsProviderModalOpen(false); }
+  function openPromptManager(): void { setIsPromptManagerOpen(true); void preset.loadPromptPresets(); }
+  function closePromptManager(): void { setIsPromptManagerOpen(false); }
+  function openPersonaModal(): void { setIsPersonaModalOpen(true); }
+  function closePersonaModal(): void { setIsPersonaModalOpen(false); }
+  function openContextMemory(): void { setContextMemoryOpen(true); }
+  function closeContextMemory(): void { setContextMemoryOpen(false); }
+  function openCreateCharacterModal(): void { setCreateCharacterModalOpen(true); }
+  function closeCreateCharacterModal(): void { setCreateCharacterModalOpen(false); }
 
-  function openPromptManager(): void {
-    setIsPromptManagerOpen(true);
-    void loadPromptPresets();
-  }
-
-  function closePromptManager(): void {
-    setIsPromptManagerOpen(false);
-  }
-
-  function openPersonaModal(): void {
-    setIsPersonaModalOpen(true);
-  }
-
-  function closePersonaModal(): void {
-    setIsPersonaModalOpen(false);
-  }
-
-  function openContextMemory(): void {
-    setContextMemoryOpen(true);
-  }
-
-  function closeContextMemory(): void {
-    setContextMemoryOpen(false);
-  }
+  // --- Chat summary handlers ---
 
   async function handleSummarizeChat(input: { providerProfileId: string; maxMessages: number }): Promise<string> {
     const chatId = useChatStore.getState().activeChatId;
@@ -497,17 +341,13 @@ export function useRpPlatformApp() {
     return result.summary;
   }
 
-  function openCreateCharacterModal(): void {
-    setCreateCharacterModalOpen(true);
-  }
-
-  function closeCreateCharacterModal(): void {
-    setCreateCharacterModalOpen(false);
-  }
+  // --- Tweak helpers ---
 
   function updateTweak<K extends keyof TweaksSettings>(key: K, value: TweaksSettings[K]): void {
     setTweaksSettings(prev => ({ ...prev, [key]: value }));
   }
+
+  // --- Render helpers ---
 
   function renderConnectionStatus(): string {
     if (connection.status === "connecting") {
@@ -526,10 +366,10 @@ export function useRpPlatformApp() {
     if (isSending) {
       return "Sending...";
     }
-    if (canUseLiveApi && draft.trim()) {
+    if (display.canUseLiveApi && draft.trim()) {
       return "Send message";
     }
-    if (!canUseLiveApi) {
+    if (!display.canUseLiveApi) {
       return "Model unavailable";
     }
     return "Type a message";
@@ -539,7 +379,7 @@ export function useRpPlatformApp() {
     if (connection.error) {
       return connection.error;
     }
-    if (canUseLiveApi) {
+    if (display.canUseLiveApi) {
       return "Model selected. The chat is using a saved local provider profile.";
     }
     return "Save or select a provider profile, connect it, then choose a model.";
@@ -566,8 +406,8 @@ export function useRpPlatformApp() {
     setSidebarCollapsed,
     selectedTraceId,
     setSelectedTraceId,
-    activePromptTrace,
-    promptPayloadText,
+    activePromptTrace: display.activePromptTrace,
+    promptPayloadText: display.promptPayloadText,
     isProviderModalOpen,
     openConnectionPanel,
     closeConnectionPanel,
@@ -597,17 +437,17 @@ export function useRpPlatformApp() {
     setEditingDraft,
     messageActionId,
     pendingUserMessageContent,
-    displayPendingUserMessageContent,
-    displayMessages,
-    displayScenario,
+    displayPendingUserMessageContent: display.displayPendingUserMessageContent,
+    displayMessages: display.displayMessages,
+    displayScenario: display.displayScenario,
     chatNotice,
     isSavingCharacter,
     characterSaveNotice,
     isImporting,
-    characterTabs,
+    characterTabs: display.characterTabs,
     canConnect: provider.canConnect,
     canRefreshModels: provider.canRefreshModels,
-    canUseLiveApi,
+    canUseLiveApi: display.canUseLiveApi,
     canSendViaActiveProfile: provider.canSendViaActiveProfile,
     activeProviderProfile: provider.activeProviderProfile,
     handleActivateProviderProfile: provider.handleActivateProviderProfile,
@@ -640,10 +480,10 @@ export function useRpPlatformApp() {
     handleSetPersonalLorebook: character.handleSetPersonalLorebook,
     promptPresets,
     activePromptPresetId,
-    setActivePromptPresetId: handleSetActivePromptPresetId,
-    handleCreatePromptPreset,
-    handleUpdatePromptPreset,
-    handleDeletePromptPreset,
+    setActivePromptPresetId: preset.handleSetActivePromptPresetId,
+    handleCreatePromptPreset: preset.handleCreatePromptPreset,
+    handleUpdatePromptPreset: preset.handleUpdatePromptPreset,
+    handleDeletePromptPreset: preset.handleDeletePromptPreset,
     handleFork: chat.handleFork,
     handleActivateBranch: chat.handleActivateBranch,
     handleDeleteActiveBranch: chat.handleDeleteActiveBranch,
@@ -684,88 +524,4 @@ export function useRpPlatformApp() {
     avatarOpen,
     setAvatarOpen,
   };
-}
-
-function buildCharacterTabs(
-  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>,
-  chats: Array<{ id: ChatId; characterId: string }>,
-): CharacterTab[] {
-  const chatByCharId = new Map<string, ChatId>();
-  for (const chat of chats) {
-    if (!chatByCharId.has(chat.characterId)) {
-      chatByCharId.set(chat.characterId, chat.id);
-    }
-  }
-
-  return allCharacters.map((char) => ({
-    id: char.id,
-    name: char.name,
-    subtitle: char.subtitle,
-    chatId: chatByCharId.get(char.id) ?? null,
-    avatarAssetId: char.avatarAssetId,
-  }));
-}
-
-function readSavedConnectionState(): SavedConnectionState | null {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-
-    return JSON.parse(raw) as SavedConnectionState;
-  } catch {
-    return null;
-  }
-}
-
-function persistConnectionState(state: ConnectionState): void {
-  try {
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        providerLabel: state.providerLabel,
-        baseUrl: state.baseUrl,
-        model: state.model,
-      }),
-    );
-  } catch {
-    // Ignore local persistence failures in the UI shell.
-  }
-}
-
-function readSavedTheme(): ThemeMode {
-  try {
-    const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
-    return raw === "light" ? "light" : "dark";
-  } catch {
-    return "dark";
-  }
-}
-
-function persistTheme(theme: ThemeMode): void {
-  try {
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-  } catch {
-    // Ignore theme persistence failures in the UI shell.
-  }
-}
-
-function readSavedTweaks(): TweaksSettings {
-  try {
-    const raw = window.localStorage.getItem(TWEAKS_STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_TWEAKS };
-    const parsed = JSON.parse(raw);
-    return { ...DEFAULT_TWEAKS, ...parsed };
-  } catch {
-    return { ...DEFAULT_TWEAKS };
-  }
-}
-
-function persistTweaks(settings: TweaksSettings): void {
-  try {
-    window.localStorage.setItem(TWEAKS_STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // Ignore tweaks persistence failures.
-  }
 }
