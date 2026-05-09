@@ -380,9 +380,10 @@ export function Sidebar(input: SidebarProps) {
                         <div
                           className="inline-flex cursor-pointer items-center gap-[3px] rounded font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3 transition-colors duration-100 hover:bg-border hover:text-t1 [&_svg]:h-2.5 [&_svg]:w-2.5"
                           style={{padding:'1px 4px'}}
+                          onMouseDown={(event) => event.stopPropagation()}
                           onClick={(event) => {
                             event.stopPropagation();
-                            setBranchPopId(branchPopOpen ? null : chat.id);
+                            setBranchPopId((current) => current === chat.id ? null : chat.id);
                             setChatMenuId(null);
                           }}
                           title="Chat branches"
