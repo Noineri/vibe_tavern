@@ -464,7 +464,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .cancel-btn:disabled{opacity:.45;cursor:not-allowed}
 
 ═══ End Input ═══ */
-/* ── Build Mode ── */
+/* ═══ Build Mode — ported to Tailwind in VP-W5-BUILD-MODE ═══
 .build-wrap{flex:1;display:flex;overflow:hidden}
 .build-nav{width:200px;min-width:200px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:8px 0}
 .build-nav-title{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);padding:8px 14px 6px;font-weight:500}
@@ -475,6 +475,11 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .build-placeholder{max-width:600px}
 .build-section-title{font-family:var(--font-body);font-size:22px;font-weight:500;color:var(--t1);margin-bottom:6px}
 .build-section-sub{font-size:13px;color:var(--t2);margin-bottom:28px;line-height:1.55}
+.build-advanced-title{font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;margin:24px 0 12px;border-bottom:1px solid var(--border);padding-bottom:6px}
+.build-depth-row{display:flex;gap:12px;align-items:flex-end}
+.build-depth-text{flex:1}.build-depth-number{width:80px;flex:none}.build-depth-role{width:120px;flex:none}
+═══ End Build Mode ═══ */
+/* ── Build Mode — shared classes still used by LorebookEditor ── */
 .build-field{margin-bottom:20px}
 .build-field label{display:block;font-size:11px;font-weight:500;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin-bottom:6px}
 .build-field textarea,.build-field input,.build-field select{
@@ -484,9 +489,6 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 }
 .build-field textarea:focus,.build-field input:focus,.build-field select:focus{border-color:var(--accent)}
 .build-field textarea{min-height:120px}
-.build-advanced-title{font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;margin:24px 0 12px;border-bottom:1px solid var(--border);padding-bottom:6px}
-.build-depth-row{display:flex;gap:12px;align-items:flex-end}
-.build-depth-text{flex:1}.build-depth-number{width:80px;flex:none}.build-depth-role{width:120px;flex:none}
 .build-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .build-tag{font-size:11px;background:var(--s3);color:var(--t2);border-radius:4px;padding:3px 9px;cursor:pointer;transition:background .1s}
 .build-tag:hover{background:var(--border2);color:var(--t1)}
@@ -686,10 +688,12 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .ws-btn--ghost:hover{color:var(--t1)}
 ═══ End WelcomeScreen ═══ */
 
+/* ═══ Alt-tab — ported to Tailwind in VP-W5-BUILD-MODE ═══
 .alt-tab{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:12px;border:1px solid var(--border);background:var(--s2);color:var(--t2)}
 .alt-tab.act{background:var(--accent-dim);border-color:var(--accent);color:var(--accent-t)}
 .alt-tab-x{font-size:10px;cursor:pointer;margin-left:2px}
 .alt-tab-add{display:inline-flex;align-items:center;justify-content:center;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:12px;border:1px dashed var(--border);background:transparent;color:var(--t3)}
+═══ End Alt-tab ═══ */
 /* ═══ Greeting swipe — ported to Tailwind in VP-W3-MESSAGE-BLOCK ═══
 .greeting-swipe{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--t3);margin-left:8px}
 .greeting-swipe-btn{cursor:pointer;color:var(--t2);font-size:13px}

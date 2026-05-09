@@ -1,7 +1,10 @@
-import type { ChangeEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { PromptTraceRecordDto } from "@rp-platform/domain";
-import { LorebookEditor } from "./LorebookEditor.js";
+import { Ic } from "./shared/icons";
+import { cn } from "../lib/cn";
+import { CharacterForm } from "./build/CharacterForm.js";
+import { getGatewayBaseUrl } from "../gateway-client.js";
 
 export interface BuildCharacterDraft {
   name: string;
@@ -23,16 +26,16 @@ export interface BuildCharacterDraft {
 }
 
 export type BuildTab = "character" | "lorebook" | "trace";
+type InternalBuildTab = "char" | "trace";
 
 interface BuildModeProps {
-  activeTab: BuildTab;
   characterId: string;
   characterName: string;
   description: string;
   firstMessage?: string | null;
   scenario: string;
   systemPrompt: string;
-  subtitle?: string;
+  subtitle?: string | null;
   mesExample: string | null;
   alternateGreetings: string[];
   postHistoryInstructions: string | null;
@@ -43,18 +46,31 @@ interface BuildModeProps {
   depthPromptRole?: string | null;
   extensions?: string | null;
   tags?: string[];
+  avatarAssetId?: string | null;
   promptTraceCount: number;
   activeTrace: PromptTraceRecordDto | null;
   promptPayloadText: string;
   isSaving: boolean;
   saveNotice: string;
-  importSurface: ReactNode;
-  onTabChange: (tab: BuildTab) => void;
+  /** @deprecated — import is now handled inside CharacterForm */
+  importSurface?: ReactNode;
+  /** @deprecated — tab state is now internal */
+  activeTab?: string;
+  /** @deprecated — tab state is now internal */
+  onTabChange?: (tab: string) => void;
   onSave: (draft: BuildCharacterDraft) => void;
+  onAvatarUpload?: (file: File) => void;
 }
 
 export function BuildMode(input: BuildModeProps) {
-  const [draft, setDraft] = useState<BuildCharacterDraft>({
+  const [active, setActive] = useState<InternalBuildTab>(input.activeTab === "trace" ? "trace" : "char");
+
+  useEffect(() => {
+    if (input.activeTab === "trace") setActive("trace");
+    if (input.activeTab === "character") setActive("char");
+  }, [input.activeTab]);
+
+  const [draft, setDraft] = useState<Record<string, any>>({
     name: input.characterName,
     description: input.description,
     firstMessage: input.firstMessage || "",
@@ -71,9 +87,10 @@ export function BuildMode(input: BuildModeProps) {
     depthPromptRole: input.depthPromptRole || "system",
     extensions: input.extensions || "",
     tags: input.tags || [],
+    _avatarPreview: null as string | null,
   });
-  const [altGreetIdx, setAltGreetIdx] = useState(0);
 
+  // Sync draft when input props change (character switch, server save, etc.)
   useEffect(() => {
     setDraft({
       name: input.characterName,
@@ -92,11 +109,18 @@ export function BuildMode(input: BuildModeProps) {
       depthPromptRole: input.depthPromptRole || "system",
       extensions: input.extensions || "",
       tags: input.tags || [],
+      _avatarPreview: null,
     });
-  }, [input.characterId, input.characterName, input.description, input.firstMessage, input.scenario, input.subtitle, input.systemPrompt, input.mesExample, input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes, input.characterBook, input.depthPrompt, input.depthPromptDepth, input.depthPromptRole, input.extensions, input.tags]);
+  }, [
+    input.characterId, input.characterName, input.description, input.firstMessage,
+    input.scenario, input.subtitle, input.systemPrompt, input.mesExample,
+    input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes,
+    input.characterBook, input.depthPrompt, input.depthPromptDepth,
+    input.depthPromptRole, input.extensions, input.tags,
+  ]);
 
-  const isDirty = useMemo(
-    () =>
+  const isDirty = useMemo(() => {
+    return (
       draft.name !== input.characterName ||
       draft.description !== input.description ||
       draft.firstMessage !== (input.firstMessage || "") ||
@@ -104,7 +128,7 @@ export function BuildMode(input: BuildModeProps) {
       draft.scenario !== input.scenario ||
       draft.personalitySummary !== (input.subtitle || "") ||
       draft.systemPrompt !== input.systemPrompt ||
-      draft.alternateGreetings.join("\n---\n") !== (input.alternateGreetings || []).join("\n---\n") ||
+      draft.alternateGreetings?.join("\n---\n") !== (input.alternateGreetings || []).join("\n---\n") ||
       draft.postHistoryInstructions !== (input.postHistoryInstructions || "") ||
       draft.creatorNotes !== (input.creatorNotes || "") ||
       draft.characterBook !== (input.characterBook || "") ||
@@ -112,12 +136,19 @@ export function BuildMode(input: BuildModeProps) {
       draft.depthPromptDepth !== (input.depthPromptDepth ?? 4) ||
       draft.depthPromptRole !== (input.depthPromptRole || "system") ||
       draft.extensions !== (input.extensions || "") ||
-      draft.tags.join("\n") !== (input.tags || []).join("\n"),
-    [draft, input.characterName, input.description, input.firstMessage, input.scenario, input.subtitle, input.systemPrompt, input.mesExample, input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes, input.characterBook, input.depthPrompt, input.depthPromptDepth, input.depthPromptRole, input.extensions, input.tags],
-  );
+      draft.tags?.join("\n") !== (input.tags || []).join("\n") ||
+      !!draft._avatarPreview
+    );
+  }, [
+    draft, input.characterName, input.description, input.firstMessage,
+    input.scenario, input.subtitle, input.systemPrompt, input.mesExample,
+    input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes,
+    input.characterBook, input.depthPrompt, input.depthPromptDepth,
+    input.depthPromptRole, input.extensions, input.tags,
+  ]);
 
-  function patchDraft<K extends keyof BuildCharacterDraft>(key: K, value: BuildCharacterDraft[K]): void {
-    setDraft((current) => ({ ...current, [key]: value }));
+  function patchDraft(key: string, value: any): void {
+    setDraft((current: Record<string, any>) => ({ ...current, [key]: value }));
   }
 
   function resetDraft(): void {
@@ -138,298 +169,126 @@ export function BuildMode(input: BuildModeProps) {
       depthPromptRole: input.depthPromptRole || "system",
       extensions: input.extensions || "",
       tags: input.tags || [],
+      _avatarPreview: null,
     });
   }
 
-  function updateTagDraft(value: string): void {
-    patchDraft("tags", value.split(",").map((tag) => tag.trim()).filter(Boolean));
+  function handleSave(): void {
+    input.onSave({
+      name: draft.name?.trim() || "",
+      description: draft.description,
+      firstMessage: draft.firstMessage,
+      mesExample: draft.mesExample,
+      scenario: draft.scenario,
+      personalitySummary: draft.personalitySummary,
+      systemPrompt: draft.systemPrompt,
+      alternateGreetings: draft.alternateGreetings || [],
+      postHistoryInstructions: draft.postHistoryInstructions,
+      creatorNotes: draft.creatorNotes,
+      characterBook: draft.characterBook,
+      depthPrompt: draft.depthPrompt,
+      depthPromptDepth: draft.depthPromptDepth ?? 4,
+      depthPromptRole: draft.depthPromptRole || "system",
+      extensions: draft.extensions,
+      tags: draft.tags || [],
+    });
   }
 
-  function renderCharacter(): ReactNode {
+  function handleAvatarUpload(file: File): void {
+    input.onAvatarUpload?.(file);
+  }
+
+  const avatarUrl = input.avatarAssetId
+    ? `${getGatewayBaseUrl()}/api/assets/${input.avatarAssetId}`
+    : undefined;
+
+  // Nav items — Phase 1: only Character + Trace
+  const navItems: Array<{ id: InternalBuildTab; icon: ReactNode; label: string }> = [
+    { id: "char", icon: <Ic.wrench />, label: "Character Card" },
+    { id: "trace", icon: <Ic.trace />, label: "Prompt Trace" },
+    // Phase 2: uncomment when Lorebook/Retrieval/MCP are implemented
+    // { id: "lore", icon: <Ic.book />, label: "Lorebook" },
+    // { id: "retrieval", icon: <Ic.search />, label: "Retrieval" },
+    // { id: "mcp", icon: <Ic.tool />, label: "MCP Servers" },
+  ];
+
+  function renderTraceContent(): ReactNode {
+    const trace = input.activeTrace;
     return (
-      <div className="build-placeholder">
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <div className="build-section-title">{draft.name || "Unnamed"}</div>
-          <button
-            className="api-save-btn"
-            style={{ height: 28, padding: "0 12px" }}
-            disabled={input.isSaving || !draft.name.trim() || !isDirty}
-            onClick={() =>
-              input.onSave({
-                name: draft.name.trim(),
-                description: draft.description,
-                firstMessage: draft.firstMessage,
-                mesExample: draft.mesExample,
-                scenario: draft.scenario,
-                personalitySummary: draft.personalitySummary,
-                systemPrompt: draft.systemPrompt,
-                alternateGreetings: draft.alternateGreetings,
-                postHistoryInstructions: draft.postHistoryInstructions,
-                creatorNotes: draft.creatorNotes,
-                characterBook: draft.characterBook,
-                depthPrompt: draft.depthPrompt,
-                depthPromptDepth: draft.depthPromptDepth,
-                depthPromptRole: draft.depthPromptRole,
-                extensions: draft.extensions,
-                tags: draft.tags,
-              })
-            }
-          >
-            {input.isSaving ? "Saving..." : "Save"}
-          </button>
-        </div>
-        <div className="build-section-sub">Character card - edit inline</div>
-        {input.importSurface}
-        <div className="build-field">
-          <label>Name</label>
-          <input
-            type="text"
-            value={draft.name}
-            disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => patchDraft("name", event.target.value)}
-          />
-        </div>
-        <div className="build-field">
-          <label>Description</label>
-          <textarea
-            value={draft.description}
-            disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("description", event.target.value)}
-          />
-        </div>
-        <div className="build-field">
-          <label>First Message (Greeting)</label>
-          <textarea
-            value={draft.firstMessage}
-            disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("firstMessage", event.target.value)}
-            placeholder="Первое сообщение персонажа..."
-          />
-        </div>
-        <div className="build-field">
-          <label>Alternate Greetings</label>
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
-            {draft.alternateGreetings.map((_, idx) => (
-              <span
-                key={idx}
-                className={`alt-tab${idx === altGreetIdx ? " act" : ""}`}
-                onClick={() => setAltGreetIdx(idx)}
-              >
-                Alt {idx + 1}
-                <span
-                  className="alt-tab-x"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const next = [...draft.alternateGreetings];
-                    next.splice(idx, 1);
-                    setDraft({ ...draft, alternateGreetings: next });
-                    if (altGreetIdx >= next.length) setAltGreetIdx(Math.max(0, next.length - 1));
-                  }}
-                >
-                  ✕
-                </span>
-              </span>
-            ))}
-            <span
-              className="alt-tab-add"
-              onClick={() => {
-                const next = [...draft.alternateGreetings, ""];
-                setDraft({ ...draft, alternateGreetings: next });
-                setAltGreetIdx(next.length - 1);
-              }}
+      <div className="max-w-[800px]">
+        <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+          <div className="font-body text-[22px] font-medium text-t1" style={{ marginBottom: 6 }}>
+            Prompt Trace
+          </div>
+          {trace && (
+            <div
+              className="rounded-full bg-s2 font-ui text-[13px] text-t2"
+              style={{ padding: "4px 10px" }}
             >
-              +
-            </span>
-          </div>
-          {draft.alternateGreetings.length > 0 && (
-            <textarea
-              value={draft.alternateGreetings[altGreetIdx] ?? ""}
-              disabled={input.isSaving}
-              onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
-                const next = [...draft.alternateGreetings];
-                next[altGreetIdx] = event.target.value;
-                setDraft({ ...draft, alternateGreetings: next });
-              }}
-              placeholder="Альтернативное приветствие..."
-            />
-          )}
-        </div>
-        <div className="build-field">
-          <label>Message Examples</label>
-          <textarea
-            value={draft.mesExample}
-            disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("mesExample", event.target.value)}
-            placeholder="<START>..."
-          />
-        </div>
-        <div className="build-field">
-          <label>Scenario</label>
-          <textarea
-            value={draft.scenario}
-            disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("scenario", event.target.value)}
-          />
-        </div>
-        <div className="build-field">
-          <label>Personality Summary</label>
-          <textarea
-            value={draft.personalitySummary}
-            disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("personalitySummary", event.target.value)}
-          />
-        </div>
-        <div className="build-advanced-title">Advanced Fields (V3)</div>
-        <div className="build-field">
-          <label>Post-History Instructions</label>
-          <textarea
-            value={draft.postHistoryInstructions}
-            disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("postHistoryInstructions", event.target.value)}
-            placeholder="Инструкции, добавляемые в конец истории (Jailbreak)..."
-          />
-        </div>
-        <div className="build-field">
-          <label>Creator Notes</label>
-          <textarea
-            value={draft.creatorNotes}
-            disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("creatorNotes", event.target.value)}
-          />
-        </div>
-        <div className="build-field">
-          <label>Character Book (JSON)</label>
-          <textarea
-            value={draft.characterBook}
-            disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("characterBook", event.target.value)}
-            placeholder='{"entries":[...]}'
-          />
-        </div>
-        <div className="build-depth-row">
-          <div className="build-field build-depth-text">
-            <label>Depth Prompt</label>
-            <textarea
-              value={draft.depthPrompt}
-              disabled={input.isSaving}
-              onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("depthPrompt", event.target.value)}
-              placeholder="Prompt injected at a specific depth..."
-            />
-          </div>
-          <div className="build-field build-depth-number">
-            <label>Depth</label>
-            <input
-              type="number"
-              min={0}
-              max={999}
-              value={draft.depthPromptDepth}
-              disabled={input.isSaving}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => patchDraft("depthPromptDepth", Number(event.target.value))}
-            />
-          </div>
-          <div className="build-field build-depth-role">
-            <label>Role</label>
-            <select
-              value={draft.depthPromptRole}
-              disabled={input.isSaving}
-              onChange={(event: ChangeEvent<HTMLSelectElement>) => patchDraft("depthPromptRole", event.target.value)}
-            >
-              <option value="system">system</option>
-              <option value="user">user</option>
-              <option value="assistant">assistant</option>
-            </select>
-          </div>
-        </div>
-        <div className="build-field">
-          <label>Extensions (JSON)</label>
-          <textarea
-            value={draft.extensions}
-            disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("extensions", event.target.value)}
-            placeholder='{"talkativeness":"0.5",...}'
-          />
-        </div>
-        <div className="build-field">
-          <label>System Prompt Override</label>
-          <textarea
-            value={draft.systemPrompt}
-            disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => patchDraft("systemPrompt", event.target.value)}
-            placeholder="Оставьте пустым для использования глобального промпта..."
-          />
-        </div>
-        <div className="build-field">
-          <label>Tags</label>
-          <input
-            type="text"
-            value={draft.tags.join(", ")}
-            disabled={input.isSaving}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => updateTagDraft(event.target.value)}
-            placeholder="tag, another tag"
-          />
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
-          <button className="api-cancel-btn" disabled={input.isSaving || !isDirty} onClick={resetDraft}>
-            Reset
-          </button>
-          <span className="build-section-sub" style={{ margin: 0 }}>
-            {input.saveNotice || (isDirty ? "Unsaved changes" : "Saved state")}
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  function renderLorebook(): ReactNode {
-    return (
-      <LorebookEditor charName={input.characterName} lorebookId={input.characterId} />
-    );
-  }
-
-  function renderTrace(): ReactNode {
-    return (
-      <div className="build-placeholder" style={{ maxWidth: 800 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <div className="build-section-title">Prompt Trace</div>
-          {input.activeTrace && (
-            <div className="tok-c ok" style={{ fontSize: 13, background: "var(--s2)", padding: "4px 10px", borderRadius: 20 }}>
-              Total: {input.activeTrace.tokenAccounting?.total ?? input.activeTrace.layers.reduce((sum, l) => sum + l.tokenCount, 0)} tokens
+              Total: {trace.tokenAccounting?.total ?? trace.layers.reduce((sum, l) => sum + l.tokenCount, 0)} tokens
             </div>
           )}
         </div>
-        <div className="build-section-sub" style={{ color: "var(--t3)" }}>
-          {input.activeTrace
-            ? <>Showing trace <span style={{ color: "var(--t2)" }}>{input.activeTrace.id}</span> &middot; {input.activeTrace.createdAt} &middot; model: {input.activeTrace.model} &middot; {input.activeTrace.latencyMs}ms</>
-            : <>No active trace.</>
-          } &middot; Recorded: {input.promptTraceCount}.
-          {input.activeTrace?.prefill && (
-            <div style={{ marginTop: 6, padding: "6px 10px", background: "var(--s2)", borderRadius: 6, border: "1px solid var(--border2)", fontSize: 12, fontFamily: "var(--font-body)" }}>
-              <strong style={{ color: "var(--t2)" }}>Prefill:</strong> <span style={{ color: "var(--t3)", whiteSpace: "pre-wrap" }}>{input.activeTrace.prefill}</span>
+        <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3 leading-[1.55]" style={{ marginBottom: 28 }}>
+          {trace ? (
+            <>
+              Showing trace{" "}
+              <span style={{ color: "var(--t2)" }}>{trace.id}</span> · {trace.createdAt} · model:{" "}
+              {trace.model} · {trace.latencyMs}ms
+            </>
+          ) : (
+            "No active trace."
+          )}{" "}
+          · Recorded: {input.promptTraceCount}.
+          {trace?.prefill && (
+            <div
+              style={{
+                marginTop: 6,
+                padding: "6px 10px",
+                background: "var(--s2)",
+                borderRadius: 6,
+                border: "1px solid var(--border2)",
+                fontSize: 12,
+                fontFamily: "var(--font-body)",
+              }}
+            >
+              <strong style={{ color: "var(--t2)" }}>Prefill:</strong>{" "}
+              <span style={{ color: "var(--t3)", whiteSpace: "pre-wrap" }}>{trace.prefill}</span>
             </div>
           )}
         </div>
 
-        {input.activeTrace ? (
-          <div className="trace-container">
-            {input.activeTrace.layers.map((layer, index) => (
-              <div className="trace-layer" key={layer.id}>
+        {trace ? (
+          <div className="flex flex-col gap-2">
+            {trace.layers.map((layer, index) => (
+              <div key={layer.id} className="overflow-hidden rounded-md border border-border bg-s2">
                 <div
-                  className={`trace-head ${layer.sourceType === "prompt_preset" ? "sys" : layer.sourceType.includes("memory") || layer.sourceType === "lore_entry" ? "rag" : "msg"}`}
+                  className={cn(
+                    "flex cursor-pointer items-center justify-between bg-surface font-ui text-xs text-t2 transition-colors hover:bg-s2 hover:text-t1",
+                    layer.sourceType === "prompt_preset" && "border-l-2 border-l-info",
+                    (layer.sourceType.includes("memory") || layer.sourceType === "lore_entry") && "border-l-2 border-l-success",
+                    !layer.sourceType.includes("memory") && layer.sourceType !== "lore_entry" && layer.sourceType !== "prompt_preset" && "border-l-2 border-l-danger",
+                  )}
+                  style={{ padding: "10px 14px" }}
                   onClick={(e) => {
                     const next = e.currentTarget.nextElementSibling as HTMLElement;
                     if (next) next.style.display = next.style.display === "none" ? "block" : "none";
                   }}
-                  style={{ cursor: "pointer", padding: "10px 14px", background: "var(--s2)", border: "1px solid var(--border)", borderRadius: 6, display: "flex", justifyContent: "space-between", marginBottom: 6 }}
                 >
                   <div>
-                    <strong>{index + 1}. {layer.sourceType}</strong>
+                    <strong>
+                      {index + 1}. {layer.sourceType}
+                    </strong>
                     <span style={{ color: "var(--t3)", marginLeft: 6 }}>{layer.sourceId}</span>
                   </div>
-                  <div className="trace-meta">
+                  <div className="flex gap-2 text-t3">
                     <span style={{ fontSize: 12, color: "var(--t2)" }}>{layer.tokenCount} tokens</span>
                   </div>
                 </div>
-                <div className="trace-body" style={{ display: "none", padding: "12px", background: "var(--bg)", border: "1px solid var(--border2)", borderRadius: 6, marginBottom: 12, whiteSpace: "pre-wrap", fontFamily: "monospace", fontSize: 12, color: "var(--t2)" }}>
+                <div
+                  className="border-t border-border bg-bg whitespace-pre-wrap font-mono text-[11px] text-t1"
+                  style={{ display: "none", padding: 12 }}
+                >
                   {layer.text}
                 </div>
               </div>
@@ -437,16 +296,31 @@ export function BuildMode(input: BuildModeProps) {
 
             <div style={{ marginTop: 20 }}>
               <button
-                className="api-test-btn idle"
+                className="inline-flex cursor-pointer items-center rounded-md border-0 bg-s3 font-ui text-xs font-medium text-t2 transition-colors hover:bg-border2 hover:text-t1"
+                style={{ padding: "8px 16px" }}
                 onClick={() => alert(input.promptPayloadText)}
-                style={{ padding: "8px 16px", borderRadius: 6, cursor: "pointer" }}
               >
                 View Raw JSON Payload
               </button>
             </div>
           </div>
         ) : (
-          <div style={{ marginTop: 20, height: 120, background: "var(--s2)", borderRadius: 8, border: "1px dashed var(--border2)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--t3)", fontSize: 13, fontFamily: "var(--font-body)", fontStyle: "italic" }}>
+          <div
+            style={{
+              marginTop: 20,
+              height: 120,
+              background: "var(--s2)",
+              borderRadius: 8,
+              border: "1px dashed var(--border2)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--t3)",
+              fontSize: 13,
+              fontFamily: "var(--font-body)",
+              fontStyle: "italic",
+            }}
+          >
             No traces recorded yet. Send a message to generate one.
           </div>
         )}
@@ -454,42 +328,53 @@ export function BuildMode(input: BuildModeProps) {
     );
   }
 
-  function renderTabContent(): ReactNode {
-    switch (input.activeTab) {
-      case "lorebook":
-        return renderLorebook();
-      case "trace":
-        return renderTrace();
-      case "character":
-      default:
-        return renderCharacter();
-    }
-  }
-
   return (
-    <div className="build-wrap">
-      <div className="build-nav">
-        <div className="build-nav-title">Editor</div>
-        <button
-          className={input.activeTab === "character" ? "build-nav-item" + " act" : "build-nav-item"}
-          onClick={() => input.onTabChange("character")}
+    <div className="flex flex-1 overflow-hidden">
+      {/* Nav sidebar */}
+      <div
+        className="flex min-w-[200px] flex-col border-r border-border bg-surface"
+        style={{ width: 200, padding: "8px 0" }}
+      >
+        <div
+          className={cn("font-ui text-[calc(var(--ui-fs)-5px)] font-medium uppercase tracking-[0.08em] text-t3")}
+          style={{ padding: "9px 15px 7px" }}
         >
-          Character Card
-        </button>
-        <button
-          className={input.activeTab === "lorebook" ? "build-nav-item" + " act" : "build-nav-item"}
-          onClick={() => input.onTabChange("lorebook")}
-        >
-          Lorebook
-        </button>
-        <button
-          className={input.activeTab === "trace" ? "build-nav-item" + " act" : "build-nav-item"}
-          onClick={() => input.onTabChange("trace")}
-        >
-          Prompt Trace
-        </button>
+          Editor
+        </div>
+        {navItems.map((n) => (
+          <div
+            key={n.id}
+            className={cn(
+              "flex items-center gap-2.5 cursor-pointer rounded mx-1 font-ui text-[calc(var(--ui-fs)-1px)] text-t2 transition-all hover:bg-s2 hover:text-t1",
+              active === n.id && "bg-accent-dim text-accent-t",
+            )}
+            style={{ padding: "8px 14px" }}
+            onClick={() => setActive(n.id)}
+          >
+            {n.icon}
+            <span>{n.label}</span>
+          </div>
+        ))}
       </div>
-      <div className="build-content">{renderTabContent()}</div>
+
+      {/* Content area */}
+      <div className="flex-1 overflow-y-auto" style={{ padding: "32px 40px" }}>
+        {active === "char" && (
+          <CharacterForm
+            draft={draft}
+            patchDraft={patchDraft}
+            setDraft={setDraft}
+            isDirty={isDirty}
+            isSaving={input.isSaving}
+            saveNotice={input.saveNotice}
+            avatarUrl={avatarUrl}
+            onSave={handleSave}
+            onReset={resetDraft}
+            onAvatarUpload={handleAvatarUpload}
+          />
+        )}
+        {active === "trace" && renderTraceContent()}
+      </div>
     </div>
   );
 }

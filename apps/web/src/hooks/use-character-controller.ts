@@ -50,6 +50,7 @@ export interface CharacterControllerDeps {
 
 export interface CharacterControllerActions {
   handleSaveCharacter: (draftInput: BuildCharacterDraft) => Promise<void>;
+  handleAvatarUpload: (file: File) => Promise<void>;
   handleSavePersona: (personaId: string, draftInput: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null }) => Promise<void>;
   handleSetChatPersona: (personaId: string) => Promise<void>;
   handleCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
@@ -139,6 +140,25 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       setCharacterSaveNotice("Character card saved.");
     } catch (error) {
       setCharacterSaveNotice(error instanceof Error ? error.message : "Could not save character.");
+    } finally {
+      setIsSavingCharacter(false);
+    }
+  }
+
+  async function handleAvatarUpload(file: File): Promise<void> {
+    const activeChatId = getActiveChatId();
+    const snapshot = getSnapshot();
+    if (!activeChatId || !snapshot) return;
+
+    setIsSavingCharacter(true);
+    setCharacterSaveNotice("");
+    try {
+      const asset = await uploadAsset(file);
+      const nextSnapshot = await updateCharacterAvatar(snapshot.character.id, activeChatId, asset.assetId);
+      setSnapshot(activeChatId, nextSnapshot);
+      setCharacterSaveNotice("Character avatar saved.");
+    } catch (error) {
+      setCharacterSaveNotice(error instanceof Error ? error.message : "Could not save character avatar.");
     } finally {
       setIsSavingCharacter(false);
     }
@@ -397,6 +417,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
 
   return {
     handleSaveCharacter,
+    handleAvatarUpload,
     handleSavePersona,
     handleSetChatPersona,
     handleCreatePersona,
