@@ -7,6 +7,7 @@ import { initials } from "./app-shell-helpers.js";
 import { Icons } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
 import { avatarUrl } from "../lib/avatar.js";
+import { CharacterImportModal, ChatImportModal } from "./ImportModals.js";
 
 interface SidebarProps {
   sidebarCollapsed: boolean;
@@ -18,6 +19,8 @@ interface SidebarProps {
   activeBranchId: ChatBranchId | null;
   personaName: string;
   personaAvatarAssetId: string | null;
+  isImporting: boolean;
+  importNotice: string;
   renamingChatId: ChatId | null;
   renameDraft: string;
   onToggleCollapsed: () => void;
@@ -61,7 +64,7 @@ export function Sidebar(input: SidebarProps) {
   const charMenuRef = useRef<HTMLDivElement | null>(null);
   const chatMenuRef = useRef<HTMLDivElement | null>(null);
   const branchPopRef = useRef<HTMLDivElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [importModal, setImportModal] = useState<"character" | "chat" | null>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent): void {
@@ -73,17 +76,6 @@ export function Sidebar(input: SidebarProps) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  function triggerImport(): void {
-    fileInputRef.current?.click();
-  }
-
-  function onFilePicked(event: React.ChangeEvent<HTMLInputElement>): void {
-    if (event.target.files && event.target.files.length > 0) {
-      input.onImportFiles(event.target.files);
-    }
-    event.target.value = "";
-  }
 
   function calcPopoverPos(triggerEl: HTMLElement): { top: number; right: number } {
     const rect = triggerEl.getBoundingClientRect();
@@ -177,19 +169,10 @@ export function Sidebar(input: SidebarProps) {
 
       {!input.sidebarCollapsed && (
         <>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".png,.json,.jsonl"
-            multiple
-            style={{ display: "none" }}
-            onChange={onFilePicked}
-          />
-
           <section className="border-b border-border" style={{padding:'6px 0'}}>
             <div className="flex items-center" style={{paddingRight:'10px'}}>
               <div className="text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ flex: 1, padding:'4px 13px 5px' }}>Characters</div>
-              <button className="iBtn" style={{ width: 20, height: 20 }} onClick={triggerImport} title="Import character (PNG/JSON)">
+              <button className="iBtn" style={{ width: 20, height: 20 }} onClick={() => setImportModal("character")} title="Import character (PNG/JSON)">
                 <Icons.Import />
               </button>
               <button className="iBtn" style={{ width: 20, height: 20 }} onClick={input.onOpenCreateCharacterModal} title="Create character">
@@ -306,7 +289,7 @@ export function Sidebar(input: SidebarProps) {
           <section className="flex-1 overflow-y-auto border-b-0" style={{ padding:'6px 0' }}>
             <div className="flex items-center" style={{paddingRight:'10px'}}>
               <div className="text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ flex: 1, padding:'4px 13px 5px' }}>Chats</div>
-              <button className="iBtn" style={{ width: 20, height: 20 }} onClick={triggerImport} title="Import chat (JSONL)">
+              <button className="iBtn" style={{ width: 20, height: 20 }} onClick={() => setImportModal("chat")} title="Import chat (JSONL)">
                 <Icons.Import />
               </button>
               <button className="iBtn" style={{ width: 20, height: 20 }} onClick={() => {
@@ -594,6 +577,23 @@ export function Sidebar(input: SidebarProps) {
             </div>
           </section>
         </>
+      )}
+      {importModal === "character" && (
+        <CharacterImportModal
+          isImporting={input.isImporting}
+          importNotice={input.importNotice}
+          onClose={() => setImportModal(null)}
+          onImportFiles={input.onImportFiles}
+        />
+      )}
+      {importModal === "chat" && (
+        <ChatImportModal
+          activeChatId={input.activeChatId}
+          isImporting={input.isImporting}
+          importNotice={input.importNotice}
+          onClose={() => setImportModal(null)}
+          onImportFiles={input.onImportFiles}
+        />
       )}
     </div>
   );

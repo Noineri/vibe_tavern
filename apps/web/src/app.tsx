@@ -199,6 +199,8 @@ export function App() {
         activeBranchId={snapshot?.activeBranch?.id ?? null}
         personaName={personaName}
         personaAvatarAssetId={snapshot?.persona?.avatarAssetId ?? null}
+        isImporting={app.isImporting}
+        importNotice={app.importNotice}
         onToggleCollapsed={() => app.setSidebarCollapsed(!app.sidebarCollapsed)}
         onSwitchChat={(chatId) => void app.handleSwitchChat(chatId)}
         onActivateBranch={(branchId) => void app.handleActivateBranch(branchId)}
