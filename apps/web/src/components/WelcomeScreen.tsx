@@ -13,8 +13,6 @@ export function WelcomeScreen({ onCreateCharacter, onImportFiles, onFreeChat }: 
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [firstMsg, setFirstMsg] = useState('');
-  const [scenario, setScenario] = useState('');
-  const [personalitySummary, setPersonalitySummary] = useState('');
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -28,8 +26,6 @@ export function WelcomeScreen({ onCreateCharacter, onImportFiles, onFreeChat }: 
         name: name.trim(),
         description: desc.trim() || undefined,
         firstMessage: firstMsg.trim() || undefined,
-        scenario: scenario.trim() || undefined,
-        personalitySummary: personalitySummary.trim() || undefined,
       });
     } finally {
       setBusy(false);
@@ -108,26 +104,6 @@ export function WelcomeScreen({ onCreateCharacter, onImportFiles, onFreeChat }: 
                 value={firstMsg}
                 onChange={(e) => setFirstMsg(e.target.value)}
                 rows={3}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="font-ui text-[0.8rem] font-semibold text-t2">Сценарий</span>
-              <textarea
-                className="w-full resize-y rounded-lg border border-border2 bg-s2 font-ui text-[0.9rem] text-t1 outline-none transition-colors focus:border-accent"
-                style={{padding:'10px 12px', minHeight:60}}
-                value={scenario}
-                onChange={(e) => setScenario(e.target.value)}
-                rows={3}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="font-ui text-[0.8rem] font-semibold text-t2">Личность</span>
-              <textarea
-                className="w-full resize-y rounded-lg border border-border2 bg-s2 font-ui text-[0.9rem] text-t1 outline-none transition-colors focus:border-accent"
-                style={{padding:'10px 12px', minHeight:60}}
-                value={personalitySummary}
-                onChange={(e) => setPersonalitySummary(e.target.value)}
-                rows={2}
               />
             </label>
             <div className="mt-1 flex items-center justify-between">

@@ -1,4 +1,5 @@
 import { BuildMode } from "./components/BuildMode.js";
+import { CreateCharacterModal } from "./components/CreateCharacterModal.js";
 import { ImportSurface } from "./components/ImportSurface.js";
 import { PersonaModal } from "./components/PersonaModal.js";
 import { PlayMode } from "./components/PlayMode.js";
@@ -165,6 +166,7 @@ export function App() {
         onImportFiles={(files) => void app.handleImportFiles(files)}
         onOpenPromptManager={app.openPromptManager}
         onOpenPersonaManager={app.openPersonaModal}
+        onOpenCreateCharacterModal={app.openCreateCharacterModal}
         onCreateChat={(characterId) => void app.onCreateChat(characterId)}
         onCloneChat={(chatId) => void app.onCloneChat(chatId)}
         onExportCharacter={(characterId) => void app.onExportCharacter(characterId)}
@@ -245,6 +247,17 @@ export function App() {
         onCreatePersona={app.handleCreatePersona}
         onDeletePersona={app.handleDeletePersona}
       />
+
+      {app.isCreateCharacterModalOpen && (
+        <CreateCharacterModal
+          onClose={app.closeCreateCharacterModal}
+          onSave={async (data) => {
+            await app.handleCreateCharacter(data);
+            app.closeCreateCharacterModal();
+            return null; // TODO: return characterId/chatId from handleCreateCharacter for avatar upload
+          }}
+        />
+      )}
 
       {app.confirmDestroy && (
         <DestructiveConfirmModal

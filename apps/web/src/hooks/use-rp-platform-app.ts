@@ -107,6 +107,7 @@ export function useRpPlatformApp() {
   const [isProviderModalOpen, setIsProviderModalOpen] = useState(false);
   const [isPromptManagerOpen, setPromptManagerOpen] = useState(false);
   const [isPersonaModalOpen, setPersonaModalOpen] = useState(false);
+  const [isCreateCharacterModalOpen, setCreateCharacterModalOpen] = useState(false);
   const [connection, setConnection] = useState<ConnectionState>(() => createInitialConnectionState());
   const [isImportDragActive, setIsImportDragActive] = useState(false);
   const [importNotice, setImportNotice] = useState("");
@@ -418,6 +419,14 @@ export function useRpPlatformApp() {
     setPersonaModalOpen(false);
   }
 
+  function openCreateCharacterModal(): void {
+    setCreateCharacterModalOpen(true);
+  }
+
+  function closeCreateCharacterModal(): void {
+    setCreateCharacterModalOpen(false);
+  }
+
   function renderConnectionStatus(): string {
     if (connection.status === "connecting") {
       return "connecting...";
@@ -486,6 +495,9 @@ export function useRpPlatformApp() {
     isPersonaModalOpen,
     openPersonaModal,
     closePersonaModal,
+    isCreateCharacterModalOpen,
+    openCreateCharacterModal,
+    closeCreateCharacterModal,
     connection,
     patchConnection,
     isImportDragActive,
