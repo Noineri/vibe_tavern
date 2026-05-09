@@ -64,7 +64,7 @@ export interface CharacterControllerActions {
   handleDeleteChat: (chatId: ChatId) => Promise<void>;
   handleRenameChat: (chatId: ChatId, title: string) => Promise<void>;
   handleCreateChat: (characterId?: string) => Promise<void>;
-  handleCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }) => Promise<void>;
+  handleCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }) => Promise<{ characterId: string; chatId: string } | null>;
   handleFreeChat: () => Promise<void>;
   handleCloneChat: (chatId: ChatId) => Promise<void>;
   handleExportCharacter: (characterId: string) => Promise<void>;
@@ -307,13 +307,19 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     }
   }
 
-  async function handleCreateCharacter(input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }): Promise<void> {
+  async function handleCreateCharacter(input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }): Promise<{ characterId: string; chatId: string } | null> {
     try {
       const result = await createCharacter(input);
       setIsFirstRun(false);
       setSnapshot(result.activeChatId, result.snapshot);
+      const characterId = result.snapshot?.character?.id;
+      if (characterId) {
+        return { characterId, chatId: result.activeChatId };
+      }
+      return null;
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : "Failed to create character.");
+      return null;
     }
   }
 
