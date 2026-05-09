@@ -132,7 +132,7 @@ export function AvatarPanel({ src, onClose, t = (k) => k }: AvatarPanelProps) {
         alt="Character avatar"
       />
       <button
-        className="absolute right-1.5 top-1.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-black/50 text-white opacity-0 shadow transition-opacity duration-150 hover:bg-black/70 group-hover:opacity-100"
+        className="absolute right-2 top-2 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white opacity-0 shadow transition-opacity duration-150 hover:bg-black/75 group-hover:opacity-100 [&_svg]:h-4 [&_svg]:w-4"
         onMouseDown={(event) => event.stopPropagation()}
         onClick={onClose}
         title="Close"
