@@ -329,6 +329,16 @@ export function Sidebar(input: SidebarProps) {
                 const chatMenuOpen = chatMenuId === chat.id;
                 const branchPopOpen = branchPopId === chat.id;
                 const branchCount = isActive ? input.branches.length : 0;
+                const commitRename = () => {
+                  const nextTitle = input.renameDraft.trim();
+                  const currentTitle = chat.title.trim();
+                  if (!nextTitle || nextTitle === currentTitle) {
+                    input.onRenameCancel();
+                    return;
+                  }
+                  input.onRenameChat(chat.id, nextTitle);
+                  input.onRenameCancel();
+                };
                 return (
                   <div
                     key={chat.id}
@@ -347,17 +357,13 @@ export function Sidebar(input: SidebarProps) {
                         autoFocus
                         onChange={(event) => input.onRenameDraftChange(event.target.value)}
                         onClick={(event) => event.stopPropagation()}
-                        onBlur={() => {
-                          if (input.renameDraft.trim()) {
-                            input.onRenameChat(chat.id, input.renameDraft.trim());
-                          } else {
-                            input.onRenameCancel();
-                          }
-                        }}
+                        onBlur={commitRename}
                         onKeyDown={(event) => {
-                          if (event.key === "Enter" && input.renameDraft.trim()) {
-                            input.onRenameChat(chat.id, input.renameDraft.trim());
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            commitRename();
                           } else if (event.key === "Escape") {
+                            event.preventDefault();
                             input.onRenameCancel();
                           }
                         }}
