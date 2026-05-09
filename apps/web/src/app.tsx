@@ -1,7 +1,6 @@
 import { BuildMode } from "./components/BuildMode.js";
 import { ContextMemoryModal } from "./components/ContextMemoryModal.js";
 import { CreateCharacterModal } from "./components/CreateCharacterModal.js";
-import { ImportSurface } from "./components/ImportSurface.js";
 import { PersonaModal } from "./components/PersonaModal.js";
 import { PlayMode } from "./components/PlayMode.js";
 import { PromptManagerModal } from "./components/PromptManagerModal.js";
@@ -16,18 +15,6 @@ import { getGatewayBaseUrl } from "./gateway-client.js";
 export function App() {
   const app = useRpPlatformApp();
   const isPlayMode = app.mode === "play";
-  const importSurface = (
-    <ImportSurface
-      isImportDragActive={app.isImportDragActive}
-      isImporting={app.isImporting}
-      importNotice={app.importNotice}
-      onDragOver={app.handleImportDragOver}
-      onDragLeave={app.handleImportDragLeave}
-      onDrop={app.handleImportDrop}
-      onFileChange={app.handleImportInputChange}
-    />
-  );
-
   if (app.isLoading) {
     return (
       <div className="flex h-screen overflow-hidden bg-bg text-t1 font-ui">
@@ -131,20 +118,28 @@ export function App() {
       characterId={snapshot.character.id}
       characterName={snapshot.character.name}
       description={snapshot.character.description}
+      firstMessage={snapshot.character.firstMessage}
       scenario={snapshot.character.scenario}
       systemPrompt={snapshot.character.systemPrompt}
+      subtitle={snapshot.character.subtitle}
       mesExample={snapshot.character.mesExample}
       alternateGreetings={snapshot.character.alternateGreetings}
       postHistoryInstructions={snapshot.character.postHistoryInstructions}
       creatorNotes={snapshot.character.creatorNotes}
+      characterBook={snapshot.character.characterBook}
+      depthPrompt={snapshot.character.depthPrompt}
+      depthPromptDepth={snapshot.character.depthPromptDepth}
+      depthPromptRole={snapshot.character.depthPromptRole}
+      extensions={snapshot.character.extensions}
+      tags={snapshot.character.tags}
+      avatarAssetId={snapshot.character.avatarAssetId}
       promptTraceCount={snapshot.promptTraceHistory.length}
       activeTrace={app.activePromptTrace}
       promptPayloadText={app.promptPayloadText}
       isSaving={app.isSavingCharacter}
       saveNotice={app.characterSaveNotice}
-      importSurface={importSurface}
-      onTabChange={app.setBuildTab}
       onSave={(draft) => void app.handleSaveCharacter(draft)}
+      onAvatarUpload={(file) => void app.handleAvatarUpload(file)}
     />
   );
   }

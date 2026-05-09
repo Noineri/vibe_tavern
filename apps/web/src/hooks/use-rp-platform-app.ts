@@ -577,6 +577,7 @@ export function useRpPlatformApp() {
     handleRefreshProviderModels: provider.handleRefreshProviderModels,
     handleSwitchChat: chat.handleSwitchChat,
     handleSaveCharacter: character.handleSaveCharacter,
+    handleAvatarUpload: character.handleAvatarUpload,
     handleSavePersona: character.handleSavePersona,
     handleSetChatPersona: character.handleSetChatPersona,
     handleCreatePersona: character.handleCreatePersona,
