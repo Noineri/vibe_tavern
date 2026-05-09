@@ -19,6 +19,7 @@ import {
   type AppSnapshot,
   type ChatGenerationStatus,
 } from "../app-client.js";
+import { useChatStore } from "../stores/chat-store.js";
 
 export interface ChatControllerDeps {
   // read state (getter functions — Zustand-compatible)
@@ -84,6 +85,60 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
   } = deps;
 
   const abortRef = useRef<AbortController | null>(null);
+  const streamRevealRef = useRef<{
+    target: string;
+    shown: string;
+    timer: ReturnType<typeof setTimeout> | null;
+    flushResolve: (() => void) | null;
+  }>({ target: "", shown: "", timer: null, flushResolve: null });
+
+  function clearStreamingReveal(): void {
+    const reveal = streamRevealRef.current;
+    if (reveal.timer) clearTimeout(reveal.timer);
+    reveal.target = "";
+    reveal.shown = "";
+    reveal.timer = null;
+    reveal.flushResolve?.();
+    reveal.flushResolve = null;
+    useChatStore.getState().setStreamingText("");
+  }
+
+  function scheduleStreamingReveal(): void {
+    const reveal = streamRevealRef.current;
+    if (reveal.timer) return;
+
+    const tick = () => {
+      const state = streamRevealRef.current;
+      const remaining = state.target.length - state.shown.length;
+      if (remaining <= 0) {
+        state.timer = null;
+        state.flushResolve?.();
+        state.flushResolve = null;
+        return;
+      }
+
+      const step = remaining > 240 ? 8 : remaining > 120 ? 5 : 3;
+      state.shown = state.target.slice(0, state.shown.length + step);
+      useChatStore.getState().setStreamingText(state.shown);
+      state.timer = setTimeout(tick, 24);
+    };
+
+    reveal.timer = setTimeout(tick, 16);
+  }
+
+  function pushStreamingDelta(delta: string): void {
+    streamRevealRef.current.target += delta;
+    scheduleStreamingReveal();
+  }
+
+  function waitForStreamingReveal(): Promise<void> {
+    const reveal = streamRevealRef.current;
+    if (reveal.shown.length >= reveal.target.length) return Promise.resolve();
+    return new Promise((resolve) => {
+      reveal.flushResolve = resolve;
+      scheduleStreamingReveal();
+    });
+  }
 
   const handleSend = useCallback(async (): Promise<void> => {
     const activeChatId = getActiveChatId();
@@ -134,8 +189,10 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
           onStatus: setGenerationStatus,
           onChunk: (delta) => {
             collected += delta;
+            pushStreamingDelta(delta);
           },
         });
+        await waitForStreamingReveal();
         setSnapshot(activeChatId, await fetchChat(activeChatId));
         void logClientSendDebug("web.hook.handleSend.stream-success", { activeChatId, replyLength: collected.length });
       } else {
@@ -162,6 +219,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       setPendingUserMessageContent(null);
       setIsSending(false);
       abortRef.current = null;
+      clearStreamingReveal();
     }
   }, []);
 
@@ -190,8 +248,10 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
           onStatus: setGenerationStatus,
           onChunk: (delta) => {
             collected += delta;
+            pushStreamingDelta(delta);
           },
         });
+        await waitForStreamingReveal();
         setSnapshot(activeChatId, await fetchChat(activeChatId));
         void logClientSendDebug("web.hook.handleResend.stream-success", { activeChatId, replyLength: collected.length });
       } else {
@@ -217,6 +277,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     } finally {
       setIsSending(false);
       abortRef.current = null;
+      clearStreamingReveal();
     }
   }, []);
 
@@ -304,8 +365,10 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
           onStatus: setGenerationStatus,
           onChunk: (delta) => {
             collected += delta;
+            pushStreamingDelta(delta);
           },
         });
+        await waitForStreamingReveal();
         setSnapshot(activeChatId, await fetchChat(activeChatId));
         void logClientSendDebug("web.hook.handleRegenerate.stream-success", { activeChatId, messageId, replyLength: collected.length });
       } else {
@@ -326,6 +389,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       setIsSending(false);
       setMessageActionId(null);
       abortRef.current = null;
+      clearStreamingReveal();
     }
   }
 
