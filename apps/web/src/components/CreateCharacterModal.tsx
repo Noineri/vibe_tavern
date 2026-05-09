@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 import { Ic } from './shared/icons';
 import { cn } from '../lib/cn';
-import { uploadAsset, updateCharacterAvatar } from '../app-client.js';
 
 interface CreateCharacterForm {
   name: string;
@@ -32,7 +31,7 @@ interface CreateCharacterModalProps {
     firstMessage?: string;
     scenario?: string;
     personalitySummary?: string;
-  }) => Promise<{ characterId: string; chatId: string } | null>;
+  }, avatarFile: File | null) => Promise<{ characterId: string; chatId: string } | null>;
 }
 
 export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalProps) {
@@ -97,23 +96,16 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
     if (!canSave) return;
     setBusy(true);
     try {
-      const result = await onSave({
-        name: form.name.trim(),
-        description: form.description.trim() || undefined,
-        firstMessage: form.firstMessage.trim() || undefined,
-        scenario: form.defaultScenario.trim() || undefined,
-        personalitySummary: form.personalitySummary.trim() || undefined,
-      });
-
-      // Upload avatar if selected
-      if (form.avatarFile && result?.characterId && result?.chatId) {
-        try {
-          const asset = await uploadAsset(form.avatarFile);
-          await updateCharacterAvatar(result.characterId, result.chatId, asset.assetId);
-        } catch (err) {
-          console.warn('Failed to upload avatar during character creation:', err);
-        }
-      }
+      await onSave(
+        {
+          name: form.name.trim(),
+          description: form.description.trim() || undefined,
+          firstMessage: form.firstMessage.trim() || undefined,
+          scenario: form.defaultScenario.trim() || undefined,
+          personalitySummary: form.personalitySummary.trim() || undefined,
+        },
+        form.avatarFile,
+      );
     } finally {
       setBusy(false);
     }

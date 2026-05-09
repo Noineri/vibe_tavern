@@ -251,8 +251,8 @@ export function App() {
       {app.isCreateCharacterModalOpen && (
         <CreateCharacterModal
           onClose={app.closeCreateCharacterModal}
-          onSave={async (data) => {
-            const result = await app.handleCreateCharacter(data);
+          onSave={async (data, avatarFile) => {
+            const result = await app.handleCreateCharacter(data, avatarFile);
             app.closeCreateCharacterModal();
             return result;
           }}
