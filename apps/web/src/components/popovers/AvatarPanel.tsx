@@ -20,6 +20,9 @@ export function AvatarPanel({ src, onClose, t = (k) => k }: AvatarPanelProps) {
   const dragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const frameRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef(1);
+  const targetZoomRef = useRef(1);
+  const zoomRafRef = useRef<number | null>(null);
 
   const clampFramePos = useCallback((next: { x: number; y: number }) => {
     const rect = frameRef.current?.getBoundingClientRect();
@@ -31,6 +34,27 @@ export function AvatarPanel({ src, onClose, t = (k) => k }: AvatarPanelProps) {
     };
   }, []);
 
+  const animateZoom = useCallback(function tick() {
+    const diff = targetZoomRef.current - zoomRef.current;
+    if (Math.abs(diff) < 0.001) {
+      zoomRef.current = targetZoomRef.current;
+      setZoom(targetZoomRef.current);
+      zoomRafRef.current = null;
+      return;
+    }
+
+    zoomRef.current += diff * 0.16;
+    setZoom(zoomRef.current);
+    zoomRafRef.current = window.requestAnimationFrame(tick);
+  }, []);
+
+  const setTargetZoom = useCallback((next: number) => {
+    targetZoomRef.current = Math.max(MIN_ZOOM, next);
+    if (zoomRafRef.current === null) {
+      zoomRafRef.current = window.requestAnimationFrame(animateZoom);
+    }
+  }, [animateZoom]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -38,6 +62,14 @@ export function AvatarPanel({ src, onClose, t = (k) => k }: AvatarPanelProps) {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
+
+  useEffect(() => {
+    return () => {
+      if (zoomRafRef.current !== null) {
+        window.cancelAnimationFrame(zoomRafRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const onResize = () => setPos((current) => clampFramePos(current));
@@ -76,7 +108,7 @@ export function AvatarPanel({ src, onClose, t = (k) => k }: AvatarPanelProps) {
     <div
       ref={frameRef}
       className={[
-        'group fixed z-[600] inline-block select-none overflow-visible rounded-md border border-border2/70 bg-bg/30 shadow-[0_10px_35px_rgba(0,0,0,0.35)]',
+        'group fixed z-[600] inline-block select-none overflow-visible rounded-md border border-border2/70 bg-bg/30 shadow-[0_10px_35px_rgba(0,0,0,0.35)] will-change-transform',
         isDragging ? 'cursor-grabbing' : 'cursor-grab',
       ].join(' ')}
       style={{
@@ -86,16 +118,16 @@ export function AvatarPanel({ src, onClose, t = (k) => k }: AvatarPanelProps) {
         transformOrigin: 'top left',
       }}
       onMouseDown={onMouseDown}
-      onDoubleClick={() => setZoom(1)}
+      onDoubleClick={() => setTargetZoom(1)}
       onWheel={(event) => {
         event.preventDefault();
-        setZoom((current) => Math.max(MIN_ZOOM, current * (1 - event.deltaY * 0.00045)));
+        setTargetZoom(targetZoomRef.current * (1 - event.deltaY * 0.0011));
       }}
       title={t('drag_scroll_zoom')}
     >
       <img
         src={src}
-        className="block w-[360px] max-w-[min(420px,80vw)] rounded-[5px] object-contain transition-transform duration-75 ease-out [-webkit-user-drag:none]"
+        className="block w-[360px] max-w-[min(420px,80vw)] rounded-[5px] object-contain [-webkit-user-drag:none]"
         draggable={false}
         alt="Character avatar"
       />
