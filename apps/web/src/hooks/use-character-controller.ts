@@ -17,7 +17,9 @@ import {
   setPersonalLorebookEnabled,
   unarchiveCharacter,
   updateCharacter,
+  updateCharacterAvatar,
   updatePersona,
+  uploadAsset,
   type AppSnapshot,
   type ImportJsonResponse,
   type PersonaRecord,
@@ -64,7 +66,7 @@ export interface CharacterControllerActions {
   handleDeleteChat: (chatId: ChatId) => Promise<void>;
   handleRenameChat: (chatId: ChatId, title: string) => Promise<void>;
   handleCreateChat: (characterId?: string) => Promise<void>;
-  handleCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }) => Promise<{ characterId: string; chatId: string } | null>;
+  handleCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }, avatarFile?: File | null) => Promise<{ characterId: string; chatId: string } | null>;
   handleFreeChat: () => Promise<void>;
   handleCloneChat: (chatId: ChatId) => Promise<void>;
   handleExportCharacter: (characterId: string) => Promise<void>;
@@ -307,12 +309,27 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     }
   }
 
-  async function handleCreateCharacter(input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }): Promise<{ characterId: string; chatId: string } | null> {
+  async function handleCreateCharacter(input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }, avatarFile?: File | null): Promise<{ characterId: string; chatId: string } | null> {
     try {
       const result = await createCharacter(input);
       setIsFirstRun(false);
-      setSnapshot(result.activeChatId, result.snapshot);
+
       const characterId = result.snapshot?.character?.id;
+
+      // Upload avatar if provided
+      if (avatarFile && characterId) {
+        try {
+          const asset = await uploadAsset(avatarFile);
+          const updatedSnapshot = await updateCharacterAvatar(characterId, result.activeChatId, asset.assetId);
+          setSnapshot(result.activeChatId, updatedSnapshot);
+        } catch (err) {
+          console.warn("Failed to upload avatar during character creation:", err);
+          setSnapshot(result.activeChatId, result.snapshot);
+        }
+      } else {
+        setSnapshot(result.activeChatId, result.snapshot);
+      }
+
       if (characterId) {
         return { characterId, chatId: result.activeChatId };
       }
