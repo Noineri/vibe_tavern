@@ -1,5 +1,4 @@
-import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatId, PromptPresetDto } from "@rp-platform/domain";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
 import {
@@ -28,7 +27,7 @@ import { useCharacterImport } from "./use-character-import.js";
 import { useProviderProfiles } from "./use-provider-profiles.js";
 import { useChatController } from "./use-chat-controller.js";
 import { useCharacterController } from "./use-character-controller.js";
-import { useChatStore } from "../stores/index.js";
+import { useChatStore, useNavigationStore, useCharacterStore } from "../stores/index.js";
 
 function replaceUiMacros(
   text: string,
@@ -111,39 +110,59 @@ export function useRpPlatformApp() {
   const setDraft = useChatStore((s) => s.setDraft);
   const setEditingDraft = useChatStore((s) => s.setEditingDraft);
   const setSelectedTraceId = useChatStore((s) => s.setSelectedTraceId);
-  const [mode, setMode] = useState<AppMode>("play");
-  const [theme, setTheme] = useState<ThemeMode>(() => readSavedTheme());
-  const [buildTab, setBuildTab] = useState<BuildTab>("character");
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [isProviderModalOpen, setIsProviderModalOpen] = useState(false);
-  const [isPromptManagerOpen, setPromptManagerOpen] = useState(false);
-  const [isPersonaModalOpen, setPersonaModalOpen] = useState(false);
+  // --- Navigation store subscriptions ---
+  const mode = useNavigationStore((s) => s.mode);
+  const setMode = useNavigationStore((s) => s.setMode);
+  const theme = useNavigationStore((s) => s.theme);
+  const setTheme = useNavigationStore((s) => s.setTheme);
+  const isLoading = useNavigationStore((s) => s.isLoading);
+  const setIsLoading = useNavigationStore((s) => s.setIsLoading);
+  const loadError = useNavigationStore((s) => s.loadError);
+  const setLoadError = useNavigationStore((s) => s.setLoadError);
+  const sidebarCollapsed = useNavigationStore((s) => s.sidebarCollapsed);
+  const setSidebarCollapsed = useNavigationStore((s) => s.setSidebarCollapsed);
+  const isProviderModalOpen = useNavigationStore((s) => s.isProviderModalOpen);
+  const setIsProviderModalOpen = useNavigationStore((s) => s.setIsProviderModalOpen);
+  const isPromptManagerOpen = useNavigationStore((s) => s.isPromptManagerOpen);
+  const setIsPromptManagerOpen = useNavigationStore((s) => s.setIsPromptManagerOpen);
+  const isPersonaModalOpen = useNavigationStore((s) => s.isPersonaModalOpen);
+  const setIsPersonaModalOpen = useNavigationStore((s) => s.setIsPersonaModalOpen);
+  // --- Character store subscriptions (buildTab) ---
+  const buildTab = useCharacterStore((s) => s.buildTab);
+  const setBuildTab = useCharacterStore((s) => s.setBuildTab);
   const [isCreateCharacterModalOpen, setCreateCharacterModalOpen] = useState(false);
   const [isContextMemoryOpen, setContextMemoryOpen] = useState(false);
-  const [connection, setConnection] = useState<ConnectionState>(() => createInitialConnectionState());
-  const [isImportDragActive, setIsImportDragActive] = useState(false);
-  const [importNotice, setImportNotice] = useState("");
-  const [isFirstRun, setIsFirstRun] = useState(false);
-  const [confirmDestroy, setConfirmDestroy] = useState<{
-    title: string;
-    body: ReactNode;
-    confirmLabel: string;
-    onConfirm: () => void;
-  } | null>(null);
-  const [renamingChatId, setRenamingChatId] = useState<ChatId | null>(null);
-  const [renameDraft, setRenameDraft] = useState("");
-  const [isSavingCharacter, setIsSavingCharacter] = useState(false);
-  const [characterSaveNotice, setCharacterSaveNotice] = useState("");
+  const connection = useNavigationStore((s) => s.connection);
+  const setConnection = useNavigationStore((s) => s.setConnection);
+  const patchConnection = useNavigationStore((s) => s.patchConnection);
+  // --- Character store subscriptions ---
+  const isImportDragActive = useCharacterStore((s) => s.isImportDragActive);
+  const setIsImportDragActive = useCharacterStore((s) => s.setIsImportDragActive);
+  const importNotice = useCharacterStore((s) => s.importNotice);
+  const setImportNotice = useCharacterStore((s) => s.setImportNotice);
+  const isFirstRun = useCharacterStore((s) => s.isFirstRun);
+  const setIsFirstRun = useCharacterStore((s) => s.setIsFirstRun);
+  const confirmDestroy = useCharacterStore((s) => s.confirmDestroy);
+  const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
+  const renamingChatId = useCharacterStore((s) => s.renamingChatId);
+  const setRenamingChatId = useCharacterStore((s) => s.setRenamingChatId);
+  const renameDraft = useCharacterStore((s) => s.renameDraft);
+  const setRenameDraft = useCharacterStore((s) => s.setRenameDraft);
+  const isSavingCharacter = useCharacterStore((s) => s.isSavingCharacter);
+  const setIsSavingCharacter = useCharacterStore((s) => s.setIsSavingCharacter);
+  const characterSaveNotice = useCharacterStore((s) => s.characterSaveNotice);
+  const setCharacterSaveNotice = useCharacterStore((s) => s.setCharacterSaveNotice);
   const [tweaksSettings, setTweaksSettings] = useState<TweaksSettings>(() => readSavedTweaks());
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const { importFile, isImporting } = useCharacterImport();
 
-  const [personas, setPersonas] = useState<PersonaRecord[]>([]);
-  const [promptPresets, setPromptPresets] = useState<PromptPresetDto[]>([]);
-  const [activePromptPresetId, setActivePromptPresetId] = useState<string | null>(null);
+  const personas = useCharacterStore((s) => s.personas);
+  const setPersonas = useCharacterStore((s) => s.setPersonas);
+  const promptPresets = useCharacterStore((s) => s.promptPresets);
+  const setPromptPresets = useCharacterStore((s) => s.setPromptPresets);
+  const activePromptPresetId = useCharacterStore((s) => s.activePromptPresetId);
+  const setActivePromptPresetId = useCharacterStore((s) => s.setActivePromptPresetId);
   const [allCharacters, setAllCharacters] = useState<Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>>([]);
 
   // --- Derived state ---
@@ -172,7 +191,14 @@ export function useRpPlatformApp() {
   const provider = useProviderProfiles({
     connection,
     patchConnection,
-    setConnection,
+    setConnection: (action: SetStateAction<ConnectionState>) => {
+      if (typeof action === "function") {
+        const next = action(useNavigationStore.getState().connection);
+        useNavigationStore.getState().setConnection(next);
+      } else {
+        useNavigationStore.getState().setConnection(action);
+      }
+    },
     setChatNotice: useChatStore.getState().setChatNotice,
   });
 
@@ -213,6 +239,13 @@ export function useRpPlatformApp() {
       : pendingUserMessageContent,
     [macroContext, pendingUserMessageContent],
   );
+
+  // --- Bootstrap: load persisted theme and connection into stores ---
+
+  useEffect(() => {
+    useNavigationStore.getState().setTheme(readSavedTheme());
+    useNavigationStore.getState().setConnection(createInitialConnectionState());
+  }, []);
 
   // --- Effects ---
 
@@ -322,7 +355,7 @@ export function useRpPlatformApp() {
     setImportNotice,
     setIsSavingCharacter,
     setCharacterSaveNotice,
-    setPersonas: (updater) => setPersonas((current) => updater(current)),
+    setPersonas: (updater) => useCharacterStore.getState().setPersonas(updater(useCharacterStore.getState().personas)),
     loadBootstrap,
     loadPersonas,
     importFile,
@@ -379,7 +412,7 @@ export function useRpPlatformApp() {
   async function handleUpdatePromptPreset(presetId: string, patch: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">>): Promise<boolean> {
     try {
       const updated = await updatePromptPreset(presetId, patch);
-      setPromptPresets((current) => current.map((p) => p.id === presetId ? updated : p));
+      useCharacterStore.getState().setPromptPresets(useCharacterStore.getState().promptPresets.map((p) => p.id === presetId ? updated : p));
       return true;
     } catch (error) {
       useChatStore.getState().setChatNotice(error instanceof Error ? error.message : "Failed to save preset.");
@@ -415,14 +448,6 @@ export function useRpPlatformApp() {
     }
   }
 
-  function patchConnection(patch: Partial<ConnectionState>): void {
-    setConnection((current) => ({
-      ...current,
-      ...patch,
-      status: patch.status ?? current.status,
-    }));
-  }
-
   function openConnectionPanel(): void {
     setIsProviderModalOpen(true);
   }
@@ -432,20 +457,20 @@ export function useRpPlatformApp() {
   }
 
   function openPromptManager(): void {
-    setPromptManagerOpen(true);
+    setIsPromptManagerOpen(true);
     void loadPromptPresets();
   }
 
   function closePromptManager(): void {
-    setPromptManagerOpen(false);
+    setIsPromptManagerOpen(false);
   }
 
   function openPersonaModal(): void {
-    setPersonaModalOpen(true);
+    setIsPersonaModalOpen(true);
   }
 
   function closePersonaModal(): void {
-    setPersonaModalOpen(false);
+    setIsPersonaModalOpen(false);
   }
 
   function openContextMemory(): void {
