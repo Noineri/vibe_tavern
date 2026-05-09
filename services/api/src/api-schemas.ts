@@ -66,6 +66,7 @@ export const updatePersonaSchema = z.object({
   chatId: z.string().optional(),
   name: z.string().optional(),
   description: z.string().optional(),
+  pronouns: z.string().nullable().optional(),
 });
 
 export const setPersonalLorebookSchema = z.object({

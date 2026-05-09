@@ -257,7 +257,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceType: PROMPT_LAYER_SOURCE_TYPE.persona,
         sourceId: context.persona.id,
         priority: PROMPT_LAYER_PRIORITY.persona,
-        text: PROMPT_FORMAT.personaBlock(context.persona.name, context.persona.description),
+        text: PROMPT_FORMAT.personaBlock(context.persona.name, context.persona.description, context.persona.pronouns),
       }),
     );
   }

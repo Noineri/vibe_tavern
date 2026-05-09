@@ -20,6 +20,8 @@ export interface PersonaRecord {
   id: string;
   name: string;
   description: string;
+  pronouns: string | null;
+  avatarAssetId: string | null;
 }
 
 export interface AppSnapshot {
@@ -59,6 +61,8 @@ export interface AppSnapshot {
     id: string;
     name: string;
     description: string;
+    pronouns: string | null;
+    avatarAssetId: string | null;
   } | null;
 }
 
@@ -207,6 +211,7 @@ export async function updatePersona(
     chatId?: ChatId;
     name: string;
     description: string;
+    pronouns?: string | null;
   },
 ): Promise<AppSnapshot> {
   const response = await client.api.personas[":personaId"].$patch({ param: { personaId }, json: input });
