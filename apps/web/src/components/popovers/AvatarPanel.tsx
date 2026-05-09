@@ -127,7 +127,7 @@ export function AvatarPanel({ src, onClose, t = (k) => k }: AvatarPanelProps) {
     >
       <img
         src={src}
-        className="block h-auto w-auto max-h-[min(720px,78vh)] max-w-[min(420px,80vw)] rounded-[5px] object-contain [-webkit-user-drag:none]"
+        className="block h-auto w-auto max-w-none rounded-[5px] object-contain [-webkit-user-drag:none]"
         draggable={false}
         alt="Character avatar"
       />
