@@ -252,9 +252,9 @@ export function App() {
         <CreateCharacterModal
           onClose={app.closeCreateCharacterModal}
           onSave={async (data) => {
-            await app.handleCreateCharacter(data);
+            const result = await app.handleCreateCharacter(data);
             app.closeCreateCharacterModal();
-            return null; // TODO: return characterId/chatId from handleCreateCharacter for avatar upload
+            return result;
           }}
         />
       )}
@@ -274,7 +274,7 @@ export function App() {
 
       {app.isFirstRun && (
         <WelcomeScreen
-          onCreateCharacter={(input) => app.handleCreateCharacter(input)}
+          onCreateCharacter={async (input) => { await app.handleCreateCharacter(input); }}
           onImportFiles={(files) => void app.handleImportFiles(files)}
           onFreeChat={() => app.handleFreeChat()}
         />
