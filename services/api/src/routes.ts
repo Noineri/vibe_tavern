@@ -62,6 +62,8 @@ export interface RuntimeApi {
   createPromptPreset: (body: unknown) => unknown;
   updatePromptPreset: (presetId: string, body: unknown) => unknown;
   deletePromptPreset: (presetId: string) => void;
+  uploadAsset: (file: File) => Promise<{ assetId: string; url: string }>;
+  serveAsset: (assetId: string) => Promise<{ body: Buffer; contentType: string } | null>;
 }
 
 export function createApiRouter(
@@ -340,6 +342,23 @@ export function createApiRouter(
     .patch("/api/providers/:providerId", zValidator("json", schemas.updateProviderProfileSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(await runtime.updateProviderProfile(c.req.param("providerId"), body));
+    })
+    .post("/api/assets/upload", async (c) => {
+      const body = await c.req.parseBody();
+      const file = body["file"];
+      if (!file || !(file instanceof File)) {
+        return c.json({ error: "No file provided. Use 'file' field in multipart form." }, 400);
+      }
+      const result = await runtime.uploadAsset(file);
+      return c.json(result, 201);
+    })
+    .get("/api/assets/:assetId", async (c) => {
+      const assetId = c.req.param("assetId");
+      const result = await runtime.serveAsset(assetId);
+      if (!result) {
+        return c.json({ error: "Asset not found" }, 404);
+      }
+      return c.body(result.body as any, 200, { "Content-Type": result.contentType, "Cache-Control": "public, max-age=31536000" });
     })
     .post("/api/providers/test", zValidator("json", schemas.testProviderDraftSchema), async (c) => {
       const body = c.req.valid("json");

@@ -60,6 +60,7 @@ export const updateCharacterSchema = z.object({
   alternateGreetings: z.array(z.string()).optional(),
   postHistoryInstructions: z.string().nullable().optional(),
   creatorNotes: z.string().nullable().optional(),
+  avatarAssetId: z.string().nullable().optional(),
 });
 
 export const updatePersonaSchema = z.object({
@@ -67,6 +68,7 @@ export const updatePersonaSchema = z.object({
   name: z.string().optional(),
   description: z.string().optional(),
   pronouns: z.string().nullable().optional(),
+  avatarAssetId: z.string().nullable().optional(),
 });
 
 export const setPersonalLorebookSchema = z.object({

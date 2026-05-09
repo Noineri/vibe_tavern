@@ -20,6 +20,7 @@ export type CharacterRecord = {
   extensions: Record<string, unknown>;
   tags: string[];
   subtitle: string;
+  avatarAssetId: string | null;
 };
 
 export type PersonaRecord = {
@@ -68,6 +69,7 @@ export function toCharacterRecord(
     extensions: character.extensions,
     tags: character.tags,
     subtitle: subtitleCandidate,
+    avatarAssetId: character.avatarAssetId,
   };
 }
 
