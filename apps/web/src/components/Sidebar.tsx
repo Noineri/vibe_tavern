@@ -28,6 +28,7 @@ interface SidebarProps {
   onImportFiles: (files: FileList | File[]) => void;
   onOpenPromptManager: () => void;
   onOpenPersonaManager: () => void;
+  onOpenCreateCharacterModal: () => void;
   onCreateChat: (characterId?: string) => void;
   onCloneChat: (chatId: ChatId) => void;
   onExportCharacter: (characterId: string) => void;
@@ -193,7 +194,7 @@ export function Sidebar(input: SidebarProps) {
               <button className="iBtn" style={{ width: 20, height: 20 }} onClick={triggerImport} title="Import character (PNG/JSON)">
                 <Icons.Import />
               </button>
-              <button className="iBtn" style={{ width: 20, height: 20, opacity: 0.45, cursor: "not-allowed" }} title={BACKEND_PENDING_TITLE} disabled>
+              <button className="iBtn" style={{ width: 20, height: 20 }} onClick={input.onOpenCreateCharacterModal} title="Create character">
                 <Icons.Plus />
               </button>
             </div>
