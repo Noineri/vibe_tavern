@@ -18,7 +18,6 @@ interface SidebarProps {
   activeBranchId: ChatBranchId | null;
   personaName: string;
   personaAvatarAssetId: string | null;
-  activePromptTraceId: string | null;
   renamingChatId: ChatId | null;
   renameDraft: string;
   onToggleCollapsed: () => void;
@@ -33,7 +32,6 @@ interface SidebarProps {
   onCloneChat: (chatId: ChatId) => void;
   onExportCharacter: (characterId: string) => void;
   onExportChatJsonl: (chatId: ChatId) => void;
-  onExportPromptTrace: (traceId: string) => void;
   onArchiveCharacter: (characterId: string) => void;
   onDeleteCharacter: (characterId: string) => void;
   onDeleteChat: (chatId: ChatId) => void;
@@ -454,33 +452,6 @@ export function Sidebar(input: SidebarProps) {
                           }}
                         >
                           <Icons.Download /> Export (JSONL)
-                        </div>
-                        <div
-                          className="flex cursor-pointer items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 opacity-45 cursor-not-allowed [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
-                          role="menuitem"
-                          aria-disabled="true"
-                          title="Markdown export is deferred; use JSONL export"
-                        >
-                          <Icons.Download /> Export Markdown
-                        </div>
-                        <div
-                          className={cn(
-                            'flex cursor-pointer items-center gap-2 text-[calc(var(--ui-fs)-2px)] transition-colors duration-100 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0',
-                            chat.id === input.activeChatId && input.activePromptTraceId
-                              ? 'text-t2 hover:bg-s2 hover:text-t1'
-                              : 'text-t2 opacity-45 cursor-not-allowed'
-                          )}
-                          role="menuitem"
-                          aria-disabled={chat.id !== input.activeChatId || !input.activePromptTraceId}
-                          title={chat.id !== input.activeChatId || !input.activePromptTraceId ? "No prompt trace available for this chat" : ""}
-                          onClick={() => {
-                            if (chat.id === input.activeChatId && input.activePromptTraceId) {
-                              setChatMenuId(null); setChatMenuPos(null);
-                              input.onExportPromptTrace(input.activePromptTraceId);
-                            }
-                          }}
-                        >
-                          <Icons.Download /> Export Prompt Trace
                         </div>
                         <div className="my-1 h-px bg-border" />
                         <div

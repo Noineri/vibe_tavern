@@ -199,7 +199,6 @@ export function App() {
         activeBranchId={snapshot?.activeBranch?.id ?? null}
         personaName={personaName}
         personaAvatarAssetId={snapshot?.persona?.avatarAssetId ?? null}
-        activePromptTraceId={app.activePromptTraceId}
         onToggleCollapsed={() => app.setSidebarCollapsed(!app.sidebarCollapsed)}
         onSwitchChat={(chatId) => void app.handleSwitchChat(chatId)}
         onActivateBranch={(branchId) => void app.handleActivateBranch(branchId)}
@@ -212,7 +211,6 @@ export function App() {
         onCloneChat={(chatId) => void app.onCloneChat(chatId)}
         onExportCharacter={(characterId) => void app.onExportCharacter(characterId)}
         onExportChatJsonl={(chatId) => void app.onExportChatJsonl(chatId)}
-        onExportPromptTrace={(traceId) => void app.onExportPromptTrace(traceId)}
         renamingChatId={app.renamingChatId}
         renameDraft={app.renameDraft}
         onArchiveCharacter={(characterId) => void app.handleArchiveCharacter(characterId)}
