@@ -50,7 +50,9 @@ export function useCharacterImport() {
         try {
           const characterId = result.snapshot?.character?.id;
           if (characterId) {
-            await updateCharacterAvatar(characterId, result.activeChatId, avatarAssetId);
+            const updatedSnapshot = await updateCharacterAvatar(characterId, result.activeChatId, avatarAssetId);
+            // Replace snapshot so the caller sees the avatar
+            result.snapshot = updatedSnapshot;
           }
         } catch (err) {
           console.warn("Failed to attach avatar to imported character:", err);

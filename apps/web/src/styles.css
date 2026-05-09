@@ -552,19 +552,21 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .api-hint a:hover{text-decoration:underline}
 .api-row{display:flex;gap:8px;align-items:flex-end}
 .api-row .api-field{flex:1;margin-bottom:0}
+.api-section-title{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin:18px 0 10px;padding-top:14px;border-top:1px solid var(--border)}
+.api-section-title:first-child{margin-top:0;border-top:none;padding-top:0}
+.api-foot{padding:14px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
+═══ End ported shared modal CSS ═══ */
+
+/* ── Shared button classes (used by BuildMode, LorebookEditor, save-btn) ── */
 .api-test-btn{height:34px;padding:0 14px;border-radius:6px;font-size:12px;font-weight:500;font-family:var(--font-ui);cursor:pointer;white-space:nowrap;flex-shrink:0;transition:filter .1s,background .1s}
 .api-test-btn.idle{background:var(--s3);color:var(--t2)}
 .api-test-btn.idle:hover{background:var(--border2);color:var(--t1)}
 .api-test-btn.ok{background:oklch(0.28 0.06 145);color:oklch(0.78 0.14 145)}
 .api-test-btn.err{background:oklch(0.22 0.06 25);color:oklch(0.72 0.18 25)}
-.api-section-title{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin:18px 0 10px;padding-top:14px;border-top:1px solid var(--border)}
-.api-section-title:first-child{margin-top:0;border-top:none;padding-top:0}
-.api-foot{padding:14px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
 .api-save-btn{height:32px;padding:0 18px;background:var(--accent);color:#fff;border-radius:6px;font-size:12.5px;font-weight:500;font-family:var(--font-ui);cursor:pointer;transition:filter .1s}
 .api-save-btn:hover{filter:brightness(1.1)}
 .api-cancel-btn{height:32px;padding:0 14px;background:transparent;color:var(--t3);border-radius:6px;font-size:12.5px;font-family:var(--font-ui);cursor:pointer;transition:color .15s}
 .api-cancel-btn:hover{color:var(--t1)}
-═══ End Shared modal CSS ═══ */
 
 /* ═══ Prompt Manager — ported to Tailwind in VP-W4-PROMPT-MANAGER ═══
 .pm-layout{display:flex;height:100%;margin:-20px;}
