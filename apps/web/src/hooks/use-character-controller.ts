@@ -34,6 +34,7 @@ export interface CharacterControllerDeps {
   getSnapshot: () => AppSnapshot | null;
   // write / mutate
   setSnapshot: (chatId: ChatId, next: AppSnapshot) => void;
+  patchSnapshot: (updater: (snapshot: AppSnapshot) => AppSnapshot) => void;
   setChatNotice: (notice: string) => void;
   setIsFirstRun: (first: boolean) => void;
   setMode: (mode: AppMode) => void;
@@ -96,6 +97,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     getActiveChatId,
     getSnapshot,
     setSnapshot,
+    patchSnapshot,
     setChatNotice,
     setIsFirstRun,
     setMode,
@@ -319,8 +321,32 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
   }
 
   async function handleRenameChat(chatId: ChatId, title: string): Promise<void> {
-    await renameChat(chatId, title);
-    await loadBootstrap();
+    const nextTitle = title.trim();
+    if (!nextTitle) return;
+
+    const snapshot = getSnapshot();
+    const chat = snapshot?.chats.find((item) => item.id === chatId);
+    const previousTitle = chat?.title ?? (snapshot?.activeChat.id === chatId ? snapshot.activeChat.title : null);
+
+    const applyTitle = (value: string) => {
+      patchSnapshot((current) => ({
+        ...current,
+        chats: current.chats.map((item) => item.id === chatId ? { ...item, title: value } : item),
+        activeChat: current.activeChat.id === chatId ? { ...current.activeChat, title: value } : current.activeChat,
+      }));
+    };
+
+    if (previousTitle === nextTitle) return;
+
+    if (snapshot) applyTitle(nextTitle);
+    try {
+      const result = await renameChat(chatId, nextTitle);
+      if (result.title !== nextTitle) applyTitle(result.title);
+      setChatNotice("");
+    } catch (error) {
+      if (previousTitle) applyTitle(previousTitle);
+      setChatNotice(error instanceof Error ? error.message : "Failed to rename chat.");
+    }
   }
 
   async function handleCreateChat(characterId?: string): Promise<void> {
