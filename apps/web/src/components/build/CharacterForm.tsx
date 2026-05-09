@@ -127,7 +127,7 @@ export function CharacterForm({
   const displayAvatar = avatarPreview || avatarUrl;
 
   return (
-    <div className="max-w-[600px]">
+    <div style={{maxWidth:600}}>
       {/* Header row: name + save + import */}
       <div className="mb-1.5 flex items-center justify-between">
         <div className="mb-1.5 font-body text-[22px] font-medium text-t1">
