@@ -311,6 +311,10 @@ export function useRpPlatformApp() {
     getActiveChatId: () => useChatStore.getState().activeChatId,
     getSnapshot: () => useChatStore.getState().snapshot,
     setSnapshot: snapshotRefresh,
+    patchSnapshot: (updater) => {
+      const current = useChatStore.getState().snapshot;
+      if (current) useChatStore.getState().setSnapshot(updater(current));
+    },
     setChatNotice: useChatStore.getState().setChatNotice,
     setIsFirstRun,
     setMode,
