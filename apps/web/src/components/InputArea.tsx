@@ -2,29 +2,46 @@ import { useEffect, useRef, useState } from "react";
 import type { InputAreaProps } from "./play-mode-types.js";
 import { PersonaQuickSwitch } from "./PersonaQuickSwitch.js";
 import { cn } from "../lib/cn.js";
+import { useTokenCount } from "../hooks/use-token-count.js";
 
 function bucketTokens(accounting: Record<string, number>): {
   system: number;
   character: number;
-  lore: number;
+  persona: number;
   summary: number;
   history: number;
 } {
   let system = 0;
   let character = 0;
-  let lore = 0;
+  let persona = 0;
   let summary = 0;
   let history = 0;
 
   for (const [key, value] of Object.entries(accounting)) {
-    if (key === "system_preset" || key === "character_system_prompt") system += value;
-    else if (key === "character" || key === "character_base") character += value;
-    else if (key.startsWith("lore_entry") || key.startsWith("lore_") || key.startsWith("retrieval_memory") || key.startsWith("retrieval_")) lore += value;
-    else if (key.startsWith("summary_memory") || key.startsWith("summary_")) summary += value;
-    else if (key === "chat_history" || key === "recent_history") history += value;
+    if (
+      key === "system_preset" ||
+      key === "character_system_prompt" ||
+      key === "post_history" ||
+      key === "authors_note" ||
+      key === "prompt_preset"
+    ) {
+      system += value;
+    } else if (key === "character" || key === "character_base" || key === "character_description" || key === "character_scenario") {
+      character += value;
+    } else if (key === "persona" || key === "user_persona") {
+      persona += value;
+    } else if (key.startsWith("summary_memory") || key.startsWith("summary_")) {
+      summary += value;
+    } else if (key === "chat_history" || key === "recent_history") {
+      history += value;
+    }
+    // lore/retrieval entries are part of system layer
+    else if (key.startsWith("lore_entry") || key.startsWith("lore_") || key.startsWith("retrieval_")) {
+      system += value;
+    }
   }
 
-  return { system, character, lore, summary, history };
+  return { system, character, persona, summary, history };
 }
 
 export function InputArea(input: InputAreaProps) {
@@ -32,9 +49,13 @@ export function InputArea(input: InputAreaProps) {
   const tokenPopRef = useRef<HTMLDivElement>(null);
 
   const buckets = bucketTokens(input.tokenAccounting);
-  const inputTokens = Math.ceil(input.draft.trim().length / 4);
-  const totalUsed = buckets.system + buckets.character + buckets.lore + buckets.summary + buckets.history + inputTokens;
-  const tokenState = totalUsed > 12000 ? "warn" : totalUsed > 6000 ? "mid" : "ok";
+  const inputTokens = useTokenCount(input.draft);
+  const totalUsed = buckets.system + buckets.character + buckets.persona + buckets.summary + buckets.history + inputTokens;
+  const contextSize = input.contextSize;
+  const maxTokens = input.maxTokens;
+  const availableBudget = Math.max(0, contextSize - maxTokens);
+  const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
+  const tokenState = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
 
   useEffect(() => {
     if (!tokenPopOpen) return;
@@ -85,7 +106,7 @@ export function InputArea(input: InputAreaProps) {
               )}
               onClick={() => setTokenPopOpen((open) => !open)}
             >
-              {totalUsed.toLocaleString()}
+              {totalUsed.toLocaleString()} / {contextSize > 0 ? contextSize.toLocaleString() : "∞"}
             </span>
             {tokenPopOpen && (
               <div
@@ -95,11 +116,12 @@ export function InputArea(input: InputAreaProps) {
                 <div className="mb-1.5 border-b border-border text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ paddingBottom: "6px" }}>Context Breakdown</div>
                 <div className="mb-1 flex justify-between text-xs text-t2"><span>System</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.system.toLocaleString()}</span></div>
                 <div className="mb-1 flex justify-between text-xs text-t2"><span>Character</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.character.toLocaleString()}</span></div>
-                <div className="mb-1 flex justify-between text-xs text-t2"><span>Lore (RAG)</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.lore.toLocaleString()}</span></div>
+                <div className="mb-1 flex justify-between text-xs text-t2"><span>Persona</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.persona.toLocaleString()}</span></div>
                 <div className="mb-1 flex justify-between text-xs text-t2"><span>Summary</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.summary.toLocaleString()}</span></div>
                 <div className="mb-1 flex justify-between text-xs text-t2"><span>History</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.history.toLocaleString()}</span></div>
                 <div className="mb-1.5 flex justify-between text-xs text-t2"><span>Current Input</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{inputTokens.toLocaleString()}</span></div>
-                <div className="mt-0.5 flex justify-between border-t border-border text-xs font-medium text-t1" style={{ paddingTop: "6px" }}><span>Total Used</span><span style={{ fontVariantNumeric: "tabular-nums" }}>{totalUsed.toLocaleString()}</span></div>
+                <div className="mb-1 flex justify-between border-t border-border text-xs text-t2" style={{ paddingTop: "6px" }}><span>Response Budget</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>-{maxTokens.toLocaleString()}</span></div>
+                <div className="mt-0.5 flex justify-between text-xs font-medium text-t1"><span>Total Available</span><span style={{ fontVariantNumeric: "tabular-nums" }}>{availableBudget.toLocaleString()}</span></div>
               </div>
             )}
           </div>
