@@ -296,25 +296,27 @@ export function CharacterForm({
         <TokenBadge text={draft.characterBook || ""} />
       </div>
 
-      {/* Depth Prompt row */}
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 12 }}>
-        <div style={{ ...s.fieldWrap, flex: 1 }}>
-          <label className={lblCls} style={s.label}>Depth Prompt</label>
-          <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.depthPrompt || ""} disabled={isSaving} onChange={(e) => patchDraft("depthPrompt", e.target.value)} placeholder="Prompt injected at a specific depth..." />
-          <TokenBadge text={draft.depthPrompt || ""} />
+      {/* Depth Prompt */}
+      <div style={s.fieldWrap}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <label className={lblCls} style={{ marginBottom: 0 }}>Depth Prompt</label>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">Depth</span>
+              <input type="number" className={inputCls} style={{ ...s.inputPadding, width: 56, textAlign: "center" }} min={0} max={999} value={draft.depthPromptDepth ?? 4} disabled={isSaving} onChange={(e) => patchDraft("depthPromptDepth", Number(e.target.value))} />
+            </div>
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">Role</span>
+              <select className={inputCls} style={{ ...s.inputPadding, width: 90 }} value={draft.depthPromptRole || "system"} disabled={isSaving} onChange={(e) => patchDraft("depthPromptRole", e.target.value)}>
+                <option value="system">system</option>
+                <option value="user">user</option>
+                <option value="assistant">assistant</option>
+              </select>
+            </div>
+          </div>
         </div>
-        <div style={{ ...s.fieldWrap, width: 80, flexShrink: 0 }}>
-          <label className={lblCls} style={s.label}>Depth</label>
-          <input type="number" className={inputCls} style={s.inputPadding} min={0} max={999} value={draft.depthPromptDepth ?? 4} disabled={isSaving} onChange={(e) => patchDraft("depthPromptDepth", Number(e.target.value))} />
-        </div>
-        <div style={{ ...s.fieldWrap, width: 110, flexShrink: 0 }}>
-          <label className={lblCls} style={s.label}>Role</label>
-          <select className={inputCls} style={s.inputPadding} value={draft.depthPromptRole || "system"} disabled={isSaving} onChange={(e) => patchDraft("depthPromptRole", e.target.value)}>
-            <option value="system">system</option>
-            <option value="user">user</option>
-            <option value="assistant">assistant</option>
-          </select>
-        </div>
+        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.depthPrompt || ""} disabled={isSaving} onChange={(e) => patchDraft("depthPrompt", e.target.value)} placeholder="Prompt injected at a specific depth..." />
+        <TokenBadge text={draft.depthPrompt || ""} />
       </div>
 
       {/* Extensions JSON */}
