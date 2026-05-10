@@ -161,6 +161,19 @@ export const cachedModels = sqliteTable('cached_models', {
   providerSlugUnique: uniqueIndex('idx_cached_models_provider_slug').on(table.providerProfileId, table.modelSlug),
 }));
 
+// ─── providerModelFavorites ───────────────────────────────────────────────────
+
+export const providerModelFavorites = sqliteTable('provider_model_favorites', {
+  id: text('id').primaryKey(),
+  providerProfileId: text('provider_profile_id').notNull().references(() => providerProfiles.id, { onDelete: 'cascade' }),
+  modelId: text('model_id').notNull(),
+  label: text('label'),
+  contextLength: integer('context_length'),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({
+  providerModelUnique: uniqueIndex('idx_provider_model_favorites_unique').on(table.providerProfileId, table.modelId),
+}));
+
 // ─── promptTraces ──────────────────────────────────────────────────────────────
 
 export const promptTraces = sqliteTable('prompt_traces', {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ProviderProfileRecord } from "../app-client.js";
+import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../app-client.js";
 import type { ProviderProbeResponse } from "@rp-platform/domain";
 import { PROVIDER_PRESETS } from "../provider-presets.js";
 import { Icons } from "./shared/icons.js";
@@ -62,6 +62,8 @@ interface ProviderModalProps {
   onTestChat: (profileId: string | null, baseUrl: string, apiKey: string, model: string, providerType?: string) => Promise<{ success: boolean; reply?: string; error?: string }>;
   onFetchModels: (baseUrl: string, apiKey?: string, useCache?: boolean, providerType?: string) => Promise<ModelOption[]>;
   onFetchModelsForProfile: (profileId: string) => Promise<ModelOption[]>;
+  favoriteModelsByProfile: Record<string, FavoriteProviderModelRecord[]>;
+  onToggleFavoriteModel: (profileId: string, model: ModelOption) => Promise<void>;
   onRefreshProfiles: () => Promise<void>;
 }
 
@@ -104,7 +106,8 @@ function getCapabilities(type: string): Capabilities {
 export function ProviderModal({
   isOpen, providerProfiles, activeProviderProfileId, onClose,
   onCreateProfile, onDuplicateProfile, onDeleteProfile, onActivateProfile,
-  onSaveProfile, onTestDraft, onTestProfile, onTestChat, onFetchModels, onFetchModelsForProfile, onRefreshProfiles,
+  onSaveProfile, onTestDraft, onTestProfile, onTestChat, onFetchModels, onFetchModelsForProfile,
+  favoriteModelsByProfile, onToggleFavoriteModel, onRefreshProfiles,
 }: ProviderModalProps) {
   // ── Selection state ──
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -374,8 +377,10 @@ export function ProviderModal({
                   <>
                     <ProviderModelSelector form={form} models={models} filteredModels={filteredModels}
                       fetching={fetching} fetchError={fetchError} modelSearch={modelSearch} modelListOpen={modelListOpen}
+                      favoriteModels={favoriteModelsByProfile[form.id] ?? []}
                       updateForm={autoSaveField} onFetchModels={handleFetchModels} setModelSearch={setModelSearch}
                       setModelListOpen={setModelListOpen} dropdownRef={dropdownRef}
+                      onToggleFavoriteModel={(model) => onToggleFavoriteModel(form.id, model)}
                       requiresAuthForModels={PROVIDER_PRESETS.find((p) => p.id === form.providerPreset)?.requiresAuthForModels ?? false}
                     />
 

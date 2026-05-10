@@ -7,6 +7,7 @@ import {
   type StoredProviderProfileRecord,
   type ClientProviderProfileRecord,
   type CachedProviderModelsRecord,
+  type FavoriteProviderModelRecord,
 } from "./session-runtime-dto.js";
 import { notFound } from "./errors.js";
 import { logSendDebug } from "./send-debug-log.js";
@@ -203,6 +204,50 @@ export async function getProviderProfile(deps: ProviderModuleDeps, id: string): 
 export async function getProviderProfileForClient(deps: ProviderModuleDeps, id: string): Promise<ClientProviderProfileRecord | null> {
   const profile = await getProviderProfile(deps, id);
   return profile ? toClientProviderProfile(profile) : null;
+}
+
+export async function listFavoriteProviderModels(deps: ProviderModuleDeps, providerProfileId: string): Promise<FavoriteProviderModelRecord[]> {
+  const profile = await deps.providers.getById(providerProfileId);
+  if (!profile) {
+    throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
+  }
+  const favorites = await deps.providers.listFavoriteModels(providerProfileId);
+  return favorites.map((favorite) => ({
+    id: favorite.id,
+    providerProfileId: favorite.providerProfileId,
+    modelId: favorite.modelId,
+    label: favorite.label,
+    contextLength: favorite.contextLength,
+    createdAt: favorite.createdAt,
+  }));
+}
+
+export async function addFavoriteProviderModel(
+  deps: ProviderModuleDeps,
+  providerProfileId: string,
+  model: { modelId: string; label?: string | null; contextLength?: number | null },
+): Promise<FavoriteProviderModelRecord> {
+  const profile = await deps.providers.getById(providerProfileId);
+  if (!profile) {
+    throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
+  }
+  const saved = await deps.providers.addFavoriteModel(providerProfileId, model);
+  return {
+    id: saved.id,
+    providerProfileId: saved.providerProfileId,
+    modelId: saved.modelId,
+    label: saved.label,
+    contextLength: saved.contextLength,
+    createdAt: saved.createdAt,
+  };
+}
+
+export async function removeFavoriteProviderModel(deps: ProviderModuleDeps, providerProfileId: string, modelId: string): Promise<void> {
+  const profile = await deps.providers.getById(providerProfileId);
+  if (!profile) {
+    throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
+  }
+  await deps.providers.removeFavoriteModel(providerProfileId, modelId);
 }
 
 export async function getCachedProviderModels(deps: ProviderModuleDeps, providerProfileId: string): Promise<CachedProviderModelsRecord | null> {

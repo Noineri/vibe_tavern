@@ -10,6 +10,7 @@ const inputCls =
 const inputPad = { padding: '0 13px' };
 
 interface ModelOption { id: string; label: string; contextLength?: number; }
+interface FavoriteModelOption { modelId: string; label: string | null; contextLength: number | null; }
 
 interface ProviderModelSelectorProps {
   form: FormState;
@@ -19,11 +20,13 @@ interface ProviderModelSelectorProps {
   fetchError: string | null;
   modelSearch: string;
   modelListOpen: boolean;
+  favoriteModels: FavoriteModelOption[];
   updateForm: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
   onFetchModels: () => void;
   setModelSearch: (v: string) => void;
   setModelListOpen: React.Dispatch<React.SetStateAction<boolean>>;
   dropdownRef: React.RefObject<HTMLDivElement | null>;
+  onToggleFavoriteModel: (model: ModelOption) => void;
   requiresAuthForModels?: boolean;
 }
 
@@ -35,13 +38,23 @@ export function ProviderModelSelector({
   fetchError,
   modelSearch,
   modelListOpen,
+  favoriteModels,
   updateForm,
   onFetchModels,
   setModelSearch,
   setModelListOpen,
   dropdownRef,
+  onToggleFavoriteModel,
   requiresAuthForModels,
 }: ProviderModelSelectorProps) {
+  const favoriteIds = new Set(favoriteModels.map((model) => model.modelId));
+  const sortedModels = [...filteredModels].sort((a, b) => {
+    const aFav = favoriteIds.has(a.id);
+    const bFav = favoriteIds.has(b.id);
+    if (aFav !== bFav) return aFav ? -1 : 1;
+    return a.label.localeCompare(b.label);
+  });
+
   return (
     <div style={{ marginBottom: 24, marginTop: 24 }}>
       <div
@@ -94,32 +107,48 @@ export function ProviderModelSelector({
                     className="max-h-[200px] overflow-y-auto bg-surface"
                     style={{ padding: 4 }}
                   >
-                    {filteredModels.map((m) => (
-                      <div
-                        key={m.id}
-                        onClick={() => {
-                          updateForm('model', m.id);
-                          setModelListOpen(false);
-                          setModelSearch('');
-                        }}
-                        className={cn(
-                          'cursor-pointer rounded font-ui text-[12px] transition-colors',
-                          m.id === form.model
-                            ? 'bg-accent-dim font-medium text-accent-t'
-                            : 'text-t2 hover:bg-s2 hover:text-t1'
-                        )}
-                        style={{ padding: '6px 10px' }}
-                      >
-                        {m.label}{' '}
-                        <span className="ml-1 text-t4 opacity-70">
-                          ({m.id})
-                          {m.contextLength != null && (
-                            <span className="ml-1 opacity-60">{(m.contextLength / 1000).toFixed(m.contextLength % 1000 === 0 ? 0 : 1)}k</span>
+                    {sortedModels.map((m) => {
+                      const isFavorite = favoriteIds.has(m.id);
+                      return (
+                        <div
+                          key={m.id}
+                          onClick={() => {
+                            updateForm('model', m.id);
+                            setModelListOpen(false);
+                            setModelSearch('');
+                          }}
+                          className={cn(
+                            'flex cursor-pointer items-center gap-2 rounded font-ui text-[12px] transition-colors',
+                            m.id === form.model
+                              ? 'bg-accent-dim font-medium text-accent-t'
+                              : 'text-t2 hover:bg-s2 hover:text-t1'
                           )}
-                        </span>
-                      </div>
-                    ))}
-                    {filteredModels.length === 0 && (
+                          style={{ padding: '6px 10px' }}
+                        >
+                          <button
+                            type="button"
+                            className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 transition-colors hover:bg-s3 hover:text-warning-text', isFavorite && 'text-warning-text')}
+                            title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onToggleFavoriteModel(m);
+                            }}
+                          >
+                            {isFavorite ? <Icons.StarFilled /> : <Icons.Star />}
+                          </button>
+                          <div className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                            {m.label}{' '}
+                            <span className="ml-1 text-t4 opacity-70">
+                              ({m.id})
+                              {m.contextLength != null && (
+                                <span className="ml-1 opacity-60">{(m.contextLength / 1000).toFixed(m.contextLength % 1000 === 0 ? 0 : 1)}k</span>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {sortedModels.length === 0 && (
                       <div
                         className="py-2 text-center font-ui text-[11px] text-t4"
                         style={{ padding: '6px 10px' }}

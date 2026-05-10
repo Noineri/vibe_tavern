@@ -50,6 +50,9 @@ export interface RuntimeApi {
   testProviderProfile: (providerProfileId: string) => Promise<unknown>;
   deleteProviderProfile: (providerProfileId: string) => void;
   fetchProviderModels: (providerProfileId: string) => Promise<{ models: unknown }>;
+  listFavoriteProviderModels: (providerProfileId: string) => unknown;
+  addFavoriteProviderModel: (providerProfileId: string, body: { modelId: string; label?: string | null; contextLength?: number | null }) => unknown;
+  removeFavoriteProviderModel: (providerProfileId: string, modelId: string) => unknown;
   fetchModelsByEndpoint: (baseUrl: string, apiKey?: string) => Promise<unknown>;
   importJson: (body: { fileName: string; jsonText: string; chatId?: string }) => unknown;
   forkBranch: (chatId: string) => unknown;
@@ -417,6 +420,16 @@ export function createApiRouter(
     })
     .post("/api/providers/:providerId/models", async (c) => {
       return c.json(await runtime.fetchProviderModels(c.req.param("providerId")));
+    })
+    .get("/api/providers/:providerId/model-favorites", async (c) => {
+      return c.json(await runtime.listFavoriteProviderModels(c.req.param("providerId")));
+    })
+    .post("/api/providers/:providerId/model-favorites", zValidator("json", schemas.favoriteProviderModelSchema), async (c) => {
+      return c.json(await runtime.addFavoriteProviderModel(c.req.param("providerId"), c.req.valid("json")), 201);
+    })
+    .delete("/api/providers/:providerId/model-favorites", zValidator("json", schemas.favoriteProviderModelSchema.pick({ modelId: true })), async (c) => {
+      await runtime.removeFavoriteProviderModel(c.req.param("providerId"), c.req.valid("json").modelId);
+      return c.json({ ok: true });
     })
     .post("/api/providers/:providerId/test", async (c) => {
       return c.json(await runtime.testProviderProfile(c.req.param("providerId")));

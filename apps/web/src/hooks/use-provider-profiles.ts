@@ -4,16 +4,20 @@ import { PROVIDER_TYPE } from "@rp-platform/domain";
 import {
   activateProviderProfile,
   deleteProviderProfile,
+  addFavoriteProviderModel,
   fetchModelsByEndpoint as fetchModelsByEndpointClient,
   fetchProviderProfile,
   fetchProviderProfileModels as fetchModelsForProviderProfile,
+  listFavoriteProviderModels,
   listProviderProfiles,
+  removeFavoriteProviderModel,
   saveProviderProfile,
   testProfileChat as testProfileChatClient,
   testProviderChat as testProviderChatClient,
   testProviderDraft,
   testProviderProfile,
   updateProviderProfile,
+  type FavoriteProviderModelRecord,
   type ProviderProfileRecord,
   type TestChatResponse,
 } from "../app-client.js";
@@ -33,6 +37,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
 
   const [providerProfiles, setProviderProfiles] = useState<ProviderProfileRecord[]>([]);
   const [selectedProviderProfileId, setSelectedProviderProfileId] = useState("");
+  const [favoriteModelsByProfile, setFavoriteModelsByProfile] = useState<Record<string, FavoriteProviderModelRecord[]>>({});
 
   const activeProviderProfile = useMemo(
     () => providerProfiles.find((profile) => profile.isActive) ?? null,
@@ -66,6 +71,12 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
       return providerProfiles[0]?.id ?? "";
     });
   }, [providerProfiles]);
+
+  useEffect(() => {
+    const profileId = connection.activeProviderProfileId || selectedProviderProfileId;
+    if (!profileId || favoriteModelsByProfile[profileId]) return;
+    void handleLoadFavoriteProviderModels(profileId);
+  }, [connection.activeProviderProfileId, selectedProviderProfileId, favoriteModelsByProfile]);
 
   async function handleConnect(): Promise<void> {
     if (!canConnect) {
@@ -384,6 +395,52 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     return response.models;
   }
 
+  async function handleLoadFavoriteProviderModels(providerProfileId: string): Promise<FavoriteProviderModelRecord[]> {
+    const favorites = await listFavoriteProviderModels(providerProfileId);
+    setFavoriteModelsByProfile((current) => ({ ...current, [providerProfileId]: favorites }));
+    return favorites;
+  }
+
+  async function handleToggleFavoriteProviderModel(
+    providerProfileId: string,
+    model: { id: string; label?: string | null; contextLength?: number | null },
+  ): Promise<void> {
+    const current = favoriteModelsByProfile[providerProfileId] ?? [];
+    const isFavorite = current.some((favorite) => favorite.modelId === model.id);
+    if (isFavorite) {
+      await removeFavoriteProviderModel(providerProfileId, model.id);
+      setFavoriteModelsByProfile((prev) => ({
+        ...prev,
+        [providerProfileId]: (prev[providerProfileId] ?? []).filter((favorite) => favorite.modelId !== model.id),
+      }));
+      return;
+    }
+    const saved = await addFavoriteProviderModel(providerProfileId, {
+      modelId: model.id,
+      label: model.label ?? model.id,
+      contextLength: model.contextLength ?? null,
+    });
+    setFavoriteModelsByProfile((prev) => ({
+      ...prev,
+      [providerProfileId]: [...(prev[providerProfileId] ?? []), saved],
+    }));
+  }
+
+  async function handleSelectFavoriteProviderModel(providerProfileId: string, modelId: string): Promise<void> {
+    const saved = await updateProviderProfile(providerProfileId, { defaultModel: modelId });
+    await loadProviderProfiles();
+    patchConnection({
+      providerLabel: saved.name,
+      baseUrl: normalizeOpenAiCompatibleBaseUrl(saved.endpoint),
+      apiKey: "",
+      model: saved.defaultModel ?? modelId,
+      activeProviderProfileId: saved.id,
+      hasStoredApiKey: saved.hasStoredApiKey,
+      status: "connected",
+      error: "",
+    });
+  }
+
   async function handleFetchModelsByEndpoint(
     baseUrl: string,
     apiKey?: string,
@@ -513,6 +570,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     providerProfiles,
     selectedProviderProfileId,
     setSelectedProviderProfileId,
+    favoriteModelsByProfile,
     activeProviderProfile,
     canRefreshModels,
     canConnect,
@@ -528,6 +586,9 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     handleTestProfileConnection,
     handleTestChat,
     handleFetchModelsForProfile,
+    handleLoadFavoriteProviderModels,
+    handleToggleFavoriteProviderModel,
+    handleSelectFavoriteProviderModel,
     handleFetchModelsByEndpoint,
     handleRefreshProfiles,
     handleSaveProviderProfileFromForm,

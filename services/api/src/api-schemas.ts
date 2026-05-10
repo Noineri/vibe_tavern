@@ -113,6 +113,12 @@ export const saveProviderDraftSchema = z.record(z.unknown());
 
 export const updateProviderProfileSchema = z.record(z.unknown());
 
+export const favoriteProviderModelSchema = z.object({
+  modelId: z.string().min(1),
+  label: z.string().nullable().optional(),
+  contextLength: z.number().int().nullable().optional(),
+});
+
 export const fetchModelsSchema = z.object({
   baseUrl: z.string().optional(),
   apiKey: z.string().optional(),

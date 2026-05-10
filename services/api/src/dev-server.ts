@@ -306,6 +306,11 @@ async function ensureSeedData() {
     fetchProviderModels: async (providerProfileId: string) => ({
       models: await providerOrchestrator.refreshProfileModels(await getRequiredProviderProfile(providerProfileId)),
     }),
+    listFavoriteProviderModels: (providerProfileId: string) => providerProfileService.listFavoriteProviderModels(providerProfileId),
+    addFavoriteProviderModel: (providerProfileId: string, body: { modelId: string; label?: string | null; contextLength?: number | null }) =>
+      providerProfileService.addFavoriteProviderModel(providerProfileId, body),
+    removeFavoriteProviderModel: (providerProfileId: string, modelId: string) =>
+      providerProfileService.removeFavoriteProviderModel(providerProfileId, modelId),
     fetchModelsByEndpoint: async (baseUrl: string, apiKey?: string, providerType?: string) => {
       const normalized = normalizeOpenAiCompatibleBaseUrl(baseUrl);
       const requiresAuth = providerType === "anthropic" || providerType === "google";

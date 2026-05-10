@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { InputAreaProps } from "./play-mode-types.js";
 import { PersonaQuickSwitch } from "./PersonaQuickSwitch.js";
+import { Icons } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
 import { useTokenCount } from "../hooks/use-token-count.js";
 
@@ -46,7 +47,9 @@ function bucketTokens(accounting: Record<string, number>): {
 
 export function InputArea(input: InputAreaProps) {
   const [tokenPopOpen, setTokenPopOpen] = useState(false);
+  const [modelDropOpen, setModelDropOpen] = useState(false);
   const tokenPopRef = useRef<HTMLDivElement>(null);
+  const modelDropRef = useRef<HTMLDivElement>(null);
 
   const buckets = bucketTokens(input.tokenAccounting);
   const inputTokens = useTokenCount(input.draft);
@@ -58,15 +61,18 @@ export function InputArea(input: InputAreaProps) {
   const tokenState = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
 
   useEffect(() => {
-    if (!tokenPopOpen) return;
+    if (!tokenPopOpen && !modelDropOpen) return;
     function handleClick(e: MouseEvent) {
       if (tokenPopRef.current && !tokenPopRef.current.contains(e.target as Node)) {
         setTokenPopOpen(false);
       }
+      if (modelDropRef.current && !modelDropRef.current.contains(e.target as Node)) {
+        setModelDropOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [tokenPopOpen]);
+  }, [tokenPopOpen, modelDropOpen]);
 
   const sendButtonText = input.canSend || !input.draft.trim() ? "Send" : input.sendLabel || "Unavailable";
 
@@ -91,7 +97,7 @@ export function InputArea(input: InputAreaProps) {
           rows={2}
         />
 
-        <div className="relative flex items-center gap-[7px]" style={{ padding: "6px 92px 9px 12px" }}>
+        <div className="relative flex items-center gap-[7px]" style={{ padding: "6px 135px 9px 12px" }}>
           <div className="speaker-row multi-persona" title="multi-persona">
             <span className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.06em] text-t3">Speak as</span>
           </div>
@@ -127,6 +133,43 @@ export function InputArea(input: InputAreaProps) {
           </div>
 
           <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-[5px]">
+            {!input.isSending && (
+              <div className="relative flex items-center" ref={modelDropRef}>
+                <button
+                  type="button"
+                  className={cn(
+                    "flex h-8 items-center justify-center rounded-[5px] bg-s2 px-2.5 text-warning-text transition-colors hover:bg-s3 hover:brightness-110",
+                    modelDropOpen ? "brightness-110" : "",
+                  )}
+                  onClick={() => setModelDropOpen((open) => !open)}
+                  title="Favorite models"
+                >
+                  <Icons.StarFilled />
+                </button>
+                {modelDropOpen && (
+                  <div className="absolute bottom-[calc(100%+8px)] right-0 z-[220] w-[260px] rounded-lg border border-border2 bg-surface py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
+                    <div className="mb-1 border-b border-border px-4 pb-2 pt-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">Favorite Models</div>
+                    {input.favoriteModels.length > 0 ? (
+                      input.favoriteModels.map((model) => (
+                        <div
+                          key={model.modelId}
+                          className="flex cursor-pointer items-center gap-2 px-4 py-1.5 font-ui text-[13px] text-t1 hover:bg-s2"
+                          onClick={() => {
+                            input.onSelectFavoriteModel(model.modelId);
+                            setModelDropOpen(false);
+                          }}
+                        >
+                          <div className="flex w-4 shrink-0 justify-center text-accent-t">{input.activeModelId === model.modelId && <Icons.Check />}</div>
+                          <div className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{model.label || model.modelId}</div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-4 py-2 font-ui text-[12px] text-t3">No favorite models yet. Star models in Provider Settings.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             {input.isSending ? (
               <button
                 className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
