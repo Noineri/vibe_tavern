@@ -100,6 +100,7 @@ export const updateLoreEntrySchema = z.record(z.unknown());
 export const testProviderDraftSchema = z.object({
   endpoint: z.string().optional(),
   apiKey: z.string().optional(),
+  providerType: z.string().optional(),
 });
 
 export const importJsonSchema = z.object({
@@ -122,6 +123,7 @@ export const testChatSchema = z.object({
   baseUrl: z.string().optional(),
   apiKey: z.string().optional(),
   model: z.string().optional(),
+  providerType: z.string().optional(),
 });
 
 export const testChatProfileSchema = z.object({

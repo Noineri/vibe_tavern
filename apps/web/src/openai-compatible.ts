@@ -1,6 +1,7 @@
 export interface OpenAiModelOption {
   id: string;
   label: string;
+  contextLength?: number;
 }
 
 export function normalizeOpenAiCompatibleBaseUrl(baseUrl: string): string {

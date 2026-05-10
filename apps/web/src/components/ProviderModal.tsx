@@ -5,7 +5,8 @@ import { PROVIDER_PRESETS } from "../provider-presets.js";
 import { Icons } from "./shared/icons.js";
 import {
   ProviderProfileList,
-  ProviderForm,
+  ProviderEditHeader,
+  ProviderViewHeader,
   ProviderModelSelector,
   ProviderCapabilityPanel,
   ProviderSamplerPanel,
@@ -13,7 +14,6 @@ import {
 import { useDirtyState } from "./shared/use-dirty-state.js";
 import { ConfirmCloseModal } from "./shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
-import { SaveButton } from "./shared/SaveBar.js";
 
 export interface FormState {
   id: string;
@@ -43,7 +43,9 @@ export interface FormState {
   streamResponse: boolean;
 }
 
-interface ModelOption { id: string; label: string; }
+interface ModelOption { id: string; label: string; contextLength?: number; }
+
+type HeaderMode = "edit" | "view";
 
 interface ProviderModalProps {
   isOpen: boolean;
@@ -55,9 +57,11 @@ interface ProviderModalProps {
   onDeleteProfile: (id: string) => Promise<void>;
   onActivateProfile: (id: string) => Promise<void>;
   onSaveProfile: (form: FormState) => Promise<ProviderProfileRecord | null>;
-  onTestDraft: (endpoint: string, apiKey: string) => Promise<ProviderProbeResponse>;
-  onTestChat: (profileId: string | null, baseUrl: string, apiKey: string, model: string) => Promise<{ success: boolean; reply?: string; error?: string }>;
-  onFetchModels: (baseUrl: string, apiKey?: string, useCache?: boolean) => Promise<ModelOption[]>;
+  onTestDraft: (endpoint: string, apiKey: string, providerType?: string) => Promise<ProviderProbeResponse>;
+  onTestProfile: (profileId: string) => Promise<ProviderProbeResponse>;
+  onTestChat: (profileId: string | null, baseUrl: string, apiKey: string, model: string, providerType?: string) => Promise<{ success: boolean; reply?: string; error?: string }>;
+  onFetchModels: (baseUrl: string, apiKey?: string, useCache?: boolean, providerType?: string) => Promise<ModelOption[]>;
+  onFetchModelsForProfile: (profileId: string) => Promise<ModelOption[]>;
   onRefreshProfiles: () => Promise<void>;
 }
 
@@ -100,37 +104,49 @@ function getCapabilities(type: string): Capabilities {
 export function ProviderModal({
   isOpen, providerProfiles, activeProviderProfileId, onClose,
   onCreateProfile, onDuplicateProfile, onDeleteProfile, onActivateProfile,
-  onSaveProfile, onTestDraft, onTestChat, onFetchModels, onRefreshProfiles,
+  onSaveProfile, onTestDraft, onTestProfile, onTestChat, onFetchModels, onFetchModelsForProfile, onRefreshProfiles,
 }: ProviderModalProps) {
+  // ── Selection state ──
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [testOk, setTestOk] = useState<boolean | null>(null);
   const [testing, setTesting] = useState(false);
+  const [testingChat, setTestingChat] = useState(false);
+  const [chatResult, setChatResult] = useState<{ reply?: string; error?: string } | null>(null);
   const [modelSearch, setModelSearch] = useState("");
   const [modelListOpen, setModelListOpen] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [profileSearch, setProfileSearch] = useState("");
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [testingChat, setTestingChat] = useState(false);
-  const [chatResult, setChatResult] = useState<{ reply?: string; error?: string } | null>(null);
   const { dirty, saveState, markDirty, triggerSave, reset } = useDirtyState();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const loadCached = async (baseUrl: string, apiKey?: string) => {
-    try { const c = await onFetchModels(baseUrl, apiKey, true); if (c.length > 0) setModels(c); } catch { /* ignore */ }
+  // ── Header mode: edit vs view ──
+  const [isNew, setIsNew] = useState(false);
+  const [headerMode, setHeaderMode] = useState<HeaderMode>("view");
+
+  // ── Auto-save flash indicator ──
+  const [autoSaveFlash, setAutoSaveFlash] = useState(false);
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Load cached models for a profile ──
+  const loadCached = async (profileId: string | null) => {
+    if (!profileId) return;
+    try { const c = await onFetchModelsForProfile(profileId); if (c.length > 0) setModels(c); } catch { /* ignore */ }
   };
 
+  // ── Init on open ──
   useEffect(() => {
     if (!isOpen) return;
     const target = activeProviderProfileId ?? providerProfiles[0]?.id ?? null;
     if (target) {
       const p = providerProfiles.find((pr) => pr.id === target);
-      if (p) { setEditingId(p.id); setForm(profileToForm(p)); if (p.endpoint) void loadCached(p.endpoint); }
+      if (p) { setEditingId(p.id); setForm(profileToForm(p)); void loadCached(p.id); }
     }
-    setTestOk(null); reset();
+    setTestOk(null); setHeaderMode("view"); setIsNew(false); reset();
   }, [isOpen]);
 
   useEffect(() => {
@@ -141,33 +157,62 @@ export function ProviderModal({
 
   if (!isOpen) return null;
 
+  // ── Form helpers ──
   const updateForm = <K extends keyof FormState>(k: K, v: FormState[K]) => { setForm((f) => f ? { ...f, [k]: v } : f); markDirty(); };
 
   const applyPreset = (presetId: string) => {
     const fmt = PROVIDER_PRESETS.find((f) => f.id === presetId);
     if (!fmt) return;
-    setForm((f) => f ? { ...f, providerPreset: fmt.id, type: fmt.type, baseUrl: fmt.baseUrl } : f);
+    setForm((f) => {
+      if (!f) return f;
+      // If provider type changed (e.g. anthropic → openai_compat),
+      // the stored API key is irrelevant — clear it so user enters a new one.
+      const typeChanged = f.type !== fmt.type;
+      return {
+        ...f,
+        providerPreset: fmt.id,
+        type: fmt.type,
+        baseUrl: fmt.baseUrl,
+        ...(typeChanged ? { apiKey: '', hasStoredApiKey: false } : {}),
+      };
+    });
     markDirty();
   };
 
-  const handleClose = () => dirty ? setConfirmClose(true) : onClose();
+  // Auto-save: persists a single field immediately (samplers, toggles, model).
+  const autoSaveField = <K extends keyof FormState>(k: K, v: FormState[K]) => {
+    setForm((f) => {
+      if (!f) return f;
+      const next = { ...f, [k]: v };
+      // Fire-and-forget save to backend
+      void onSaveProfile(next);
+      return next;
+    });
+    setAutoSaveFlash(true);
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => setAutoSaveFlash(false), 1200);
+  };
 
+  // ── Profile selection ──
   const handleSelect = (id: string) => {
     const p = providerProfiles.find((pr) => pr.id === id);
-    if (p) { setEditingId(p.id); setForm(profileToForm(p)); setTestOk(null); setModels([]); if (p.endpoint) void loadCached(p.endpoint); reset(); }
+    if (p) { setEditingId(p.id); setForm(profileToForm(p)); setTestOk(null); setModels([]); void loadCached(p.id); setHeaderMode("view"); setIsNew(false); reset(); }
   };
 
+  // ── Add new profile ──
   const handleAdd = async () => {
     const c = await onCreateProfile();
-    if (c) { setEditingId(c.id); setForm(profileToForm(c)); setModels([]); setTestOk(null); reset(); }
+    if (c) { setEditingId(c.id); setForm(profileToForm(c)); setModels([]); setTestOk(null); setIsNew(true); setHeaderMode("edit"); reset(); }
   };
 
+  // ── Duplicate ──
   const handleDuplicate = async () => {
     if (!editingId) return;
     const d = await onDuplicateProfile(editingId);
-    if (d) { setEditingId(d.id); setForm(profileToForm(d)); setModels([]); setTestOk(null); reset(); }
+    if (d) { setEditingId(d.id); setForm(profileToForm(d)); setModels([]); setTestOk(null); setIsNew(true); setHeaderMode("edit"); reset(); }
   };
 
+  // ── Delete ──
   const handleDelete = () => { if (providerProfiles.length > 1) setConfirmDelete(true); };
 
   const confirmDeleteAction = async () => {
@@ -175,55 +220,90 @@ export function ProviderModal({
     await onDeleteProfile(editingId);
     const next = providerProfiles.find((p) => p.id !== editingId);
     if (next) { setEditingId(next.id); setForm(profileToForm(next)); }
-    setConfirmDelete(false); reset();
+    setConfirmDelete(false); setHeaderMode("view"); setIsNew(false); reset();
   };
 
-  const handleSaveProfile = async () => {
+  // ── Save header (connection settings) ──
+  const handleSaveHeader = async () => {
     if (!form) return;
-    const saved = await onSaveProfile(form); if (saved) setForm(profileToForm(saved));
-    reset();
+    const saved = await onSaveProfile(form);
+    if (saved) setForm(profileToForm(saved));
+    setHeaderMode("view"); setIsNew(false); reset();
   };
 
-  const handleActivate = async () => { if (!editingId) return; await handleSaveProfile(); await onActivateProfile(editingId); onClose(); };
+  // ── Cancel editing (back to view) ──
+  const handleCancelEdit = () => {
+    const saved = providerProfiles.find((p) => p.id === editingId);
+    if (saved) setForm(profileToForm(saved));
+    setHeaderMode("view"); reset();
+  };
 
+  // ── Set active (no save needed) ──
+  const handleActivate = async () => {
+    if (!editingId) return;
+    await onActivateProfile(editingId);
+  };
+
+  // ── Close ──
+  const handleClose = () => dirty ? setConfirmClose(true) : onClose();
+
+  // ── Test connection ──
   const handleTestConnection = async () => {
     if (!form) return;
     setTesting(true); setTestOk(null);
     try {
-      const r = await onTestDraft(form.baseUrl, form.apiKey); setTestOk(r.success);
-      if (r.success && form.baseUrl.trim()) { const f = await onFetchModels(form.baseUrl.trim(), form.apiKey.trim() || undefined, true); if (f.length > 0) setModels(f); }
+      let r: ProviderProbeResponse;
+      if (editingId && !isNew) {
+        r = await onTestProfile(editingId);
+      } else {
+        const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
+        r = await onTestDraft(form.baseUrl, form.apiKey, preset?.type);
+      }
+      setTestOk(r.success);
     } catch { setTestOk(false); } finally { setTesting(false); }
   };
 
-  const handleTestChat = async () => {
-    if (!form || !form.baseUrl.trim() || !form.model.trim()) return;
-    setTestingChat(true); setChatResult(null);
-    try { setChatResult(await onTestChat(editingId, form.baseUrl.trim(), form.apiKey.trim(), form.model.trim())); }
-    catch (e) { setChatResult({ error: e instanceof Error ? e.message : "Request failed." }); }
-    finally { setTestingChat(false); }
-  };
-
+  // ── Fetch models ──
   const handleFetchModels = async () => {
     if (!form) return;
     const ep = form.baseUrl.trim();
     if (!ep) { setFetchError("Endpoint URL is required."); return; }
     setFetching(true); setFetchError(null);
     try {
-      const fetched = await onFetchModels(ep, form.apiKey.trim() || undefined, false);
+      let fetched: ModelOption[];
+      if (editingId && !isNew) {
+        fetched = await onFetchModelsForProfile(editingId);
+      } else {
+        const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
+        fetched = await onFetchModels(ep, form.apiKey.trim() || undefined, false, preset?.type);
+      }
       if (!fetched.length) setFetchError("No models returned. Check endpoint URL and API key.");
       setModels(fetched);
-      if (fetched.length && (!form.model || !fetched.find((m) => m.id === form.model))) updateForm("model", fetched[0].id);
+      if (fetched.length && (!form.model || !fetched.find((m) => m.id === form.model))) autoSaveField("model", fetched[0].id);
     } catch (e) { setModels([]); setFetchError(e instanceof Error ? e.message : "Failed to fetch models."); }
     finally { setFetching(false); }
   };
 
+  // ── Test chat ──
+  const handleTestChat = async () => {
+    if (!form || !form.baseUrl.trim() || !form.model.trim()) return;
+    setTestingChat(true); setChatResult(null);
+    const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
+    try { setChatResult(await onTestChat(editingId, form.baseUrl.trim(), form.apiKey.trim(), form.model.trim(), preset?.type)); }
+    catch (e) { setChatResult({ error: e instanceof Error ? e.message : "Request failed." }); }
+    finally { setTestingChat(false); }
+  };
+
+  // ── Derived ──
+  const isActive = activeProviderProfileId === editingId;
+  const showConfig = headerMode === "view" && !isNew;
+  const capabilities = form ? getCapabilities(form.type) : null;
   const filteredProfiles = profileSearch.trim()
     ? providerProfiles.filter((p) => p.name.toLowerCase().includes(profileSearch.toLowerCase()) || p.type.toLowerCase().includes(profileSearch.toLowerCase()))
     : providerProfiles;
   const filteredModels = modelSearch.trim()
     ? models.filter((m) => m.label.toLowerCase().includes(modelSearch.toLowerCase()) || m.id.toLowerCase().includes(modelSearch.toLowerCase()))
     : models;
-  const capabilities = form ? getCapabilities(form.type) : null;
 
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={(e) => e.target === e.currentTarget && handleClose()}>
@@ -239,33 +319,28 @@ export function ProviderModal({
       )}
 
       <div className="flex max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]" style={{ width: 860, height: 680 }}>
-        {/* HEADER */}
-        <div className="shrink-0 border-b border-border" style={{padding:'20px 24px 16px'}}>
+
+        {/* ═══ HEADER ═══ */}
+        <div className="shrink-0 border-b border-border" style={{ padding: "20px 24px 16px" }}>
           <div className="flex items-start justify-between">
             <div>
-              <div className="flex items-center gap-2 font-body text-[18px] font-semibold text-t1" style={{ marginBottom: 4 }}>
+              <div className="mb-1 flex items-center gap-2 font-body text-[18px] font-semibold text-t1">
                 Provider Settings
-                {dirty && <span className="h-2 w-2 rounded-full bg-accent" title="Unsaved changes" />}
               </div>
-              <div className="font-ui text-[13px] text-t3">Provider profiles for API connections (local and cloud).</div>
+              <div className="font-ui text-[13px] text-t3">Manage connections and generation parameters. Changes save automatically.</div>
             </div>
             <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1" onClick={handleClose}><Icons.Close /></div>
           </div>
-          {dirty && (
-            <div className="mt-3 flex items-center gap-2 rounded-md border border-border bg-s2 font-ui text-[12px] text-t2" style={{ padding: "5px 12px" }}>
-              <span className="shrink-0 text-accent-t"><Icons.Edit /></span>
-              Unsaved changes
-            </div>
-          )}
         </div>
 
-        {/* BODY */}
+        {/* ═══ BODY ═══ */}
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <ProviderProfileList
             filteredProfiles={filteredProfiles} editingId={editingId}
             activeProviderProfileId={activeProviderProfileId} profileSearch={profileSearch}
             onProfileSearchChange={setProfileSearch} onSelectProfile={handleSelect} onAddProfile={handleAdd}
           />
+
           <div className="flex-1 overflow-y-auto" style={{ padding: 24 }}>
             {!form ? (
               <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
@@ -273,49 +348,81 @@ export function ProviderModal({
               </div>
             ) : (
               <>
-                <ProviderForm form={form} editingId={editingId} providerProfiles={providerProfiles}
-                  updateForm={updateForm} applyPreset={applyPreset} testOk={testOk} testing={testing}
-                  testingChat={testingChat} chatResult={chatResult} onTest={handleTestConnection} onTestChat={handleTestChat}
-                />
-                <ProviderModelSelector form={form} models={models} filteredModels={filteredModels}
-                  fetching={fetching} fetchError={fetchError} modelSearch={modelSearch} modelListOpen={modelListOpen}
-                  updateForm={updateForm} onFetchModels={handleFetchModels} setModelSearch={setModelSearch}
-                  setModelListOpen={setModelListOpen} dropdownRef={dropdownRef}
-                />
-                <ProviderCapabilityPanel capabilities={capabilities} />
-                <ProviderSamplerPanel form={form} updateForm={updateForm} />
+                {/* ── EDIT HEADER MODE ── */}
+                {headerMode === "edit" && (
+                  <ProviderEditHeader
+                    form={form} editingId={editingId} providerProfiles={providerProfiles}
+                    updateForm={updateForm} applyPreset={applyPreset}
+                    testOk={testOk} testing={testing} onTest={handleTestConnection}
+                    onSave={() => void handleSaveHeader()}
+                    onCancel={!isNew ? handleCancelEdit : undefined}
+                    isNew={isNew}
+                  />
+                )}
+
+                {/* ── VIEW HEADER MODE ── */}
+                {headerMode === "view" && !isNew && (
+                  <ProviderViewHeader
+                    form={form} isActive={isActive}
+                    onEdit={() => setHeaderMode("edit")}
+                    onActivate={() => void handleActivate()}
+                  />
+                )}
+
+                {/* ── CONFIG SECTION (only after header saved) ── */}
+                {showConfig && (
+                  <>
+                    <ProviderModelSelector form={form} models={models} filteredModels={filteredModels}
+                      fetching={fetching} fetchError={fetchError} modelSearch={modelSearch} modelListOpen={modelListOpen}
+                      updateForm={autoSaveField} onFetchModels={handleFetchModels} setModelSearch={setModelSearch}
+                      setModelListOpen={setModelListOpen} dropdownRef={dropdownRef}
+                      requiresAuthForModels={PROVIDER_PRESETS.find((p) => p.id === form.providerPreset)?.requiresAuthForModels ?? false}
+                    />
+
+                    {/* Test Hi */}
+                    {form.model && (
+                      <div className="mb-4">
+                        <button onClick={() => void handleTestChat()} disabled={testingChat}
+                          className="rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50"
+                        >
+                          {testingChat ? "Sending..." : 'Test "Hi"'}
+                        </button>
+                        {chatResult?.reply && (
+                          <div className="mt-2">
+                            <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] text-success italic">&ldquo;{chatResult.reply.length > 200 ? chatResult.reply.slice(0, 200) + "..." : chatResult.reply}&rdquo;</span>
+                          </div>
+                        )}
+                        {chatResult?.error && (
+                          <div className="mt-2">
+                            <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"><Icons.Close /> {chatResult.error}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <ProviderCapabilityPanel capabilities={capabilities} />
+                    <ProviderSamplerPanel form={form} updateForm={autoSaveField} />
+                  </>
+                )}
               </>
             )}
           </div>
         </div>
 
-        {/* FOOTER */}
-        <div className="flex shrink-0 items-center justify-between border-t border-border" style={{padding:'16px 24px'}}>
+        {/* ═══ FOOTER ═══ */}
+        <div className="flex shrink-0 items-center justify-between border-t border-border" style={{ padding: "16px 24px" }}>
           <div className="flex gap-4">
-            <span
-              className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1"
-              onClick={() => void handleDuplicate()}
-            >
-              <Icons.Copy /> Duplicate Profile
+            <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>
+              <Icons.Copy /> Duplicate
             </span>
             {providerProfiles.length > 1 && (
-              <span
-                className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-danger/80 transition-colors hover:text-danger"
-                onClick={handleDelete}
-              >
-                <Icons.Trash /> Delete Profile
+              <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-danger/80 transition-colors hover:text-danger" onClick={handleDelete}>
+                <Icons.Trash /> Delete
               </span>
             )}
           </div>
-          <div className="flex items-center gap-3">
-            <SaveButton dirty={dirty} saveState={saveState} onClick={() => triggerSave(() => void handleSaveProfile())} label="Save Profile" />
-            <button
-              className="h-[37px] rounded-md bg-accent font-ui text-[13px] font-medium text-white shadow-lg shadow-accent/20 transition-all hover:bg-accent-t"
-              style={{paddingLeft:24, paddingRight:24}}
-              onClick={() => void handleActivate()}
-            >
-              Make Active
-            </button>
+          <div className="flex items-center gap-2 font-ui text-[12px] text-t3 transition-opacity duration-300" style={{ opacity: autoSaveFlash ? 1 : 0 }}>
+            <Icons.download /> Auto-save
           </div>
         </div>
       </div>

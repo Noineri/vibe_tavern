@@ -9,7 +9,7 @@ const inputCls =
   'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent';
 const inputPad = { padding: '0 13px' };
 
-interface ModelOption { id: string; label: string; }
+interface ModelOption { id: string; label: string; contextLength?: number; }
 
 interface ProviderModelSelectorProps {
   form: FormState;
@@ -24,6 +24,7 @@ interface ProviderModelSelectorProps {
   setModelSearch: (v: string) => void;
   setModelListOpen: React.Dispatch<React.SetStateAction<boolean>>;
   dropdownRef: React.RefObject<HTMLDivElement | null>;
+  requiresAuthForModels?: boolean;
 }
 
 export function ProviderModelSelector({
@@ -39,6 +40,7 @@ export function ProviderModelSelector({
   setModelSearch,
   setModelListOpen,
   dropdownRef,
+  requiresAuthForModels,
 }: ProviderModelSelectorProps) {
   return (
     <div style={{ marginBottom: 24, marginTop: 24 }}>
@@ -111,6 +113,9 @@ export function ProviderModelSelector({
                         {m.label}{' '}
                         <span className="ml-1 text-t4 opacity-70">
                           ({m.id})
+                          {m.contextLength != null && (
+                            <span className="ml-1 opacity-60">{(m.contextLength / 1000).toFixed(m.contextLength % 1000 === 0 ? 0 : 1)}k</span>
+                          )}
                         </span>
                       </div>
                     ))}
@@ -169,6 +174,14 @@ export function ProviderModelSelector({
           <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 font-ui text-[12px] text-danger" style={{ padding: '4px 10px' }}>
             <Icons.Close />
             {fetchError}
+          </span>
+        </div>
+      )}
+      {!fetchError && requiresAuthForModels && models.length === 0 && !fetching && (
+        <div style={{ marginTop: 12 }}>
+          <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 font-ui text-[12px] text-danger" style={{ padding: '4px 10px' }}>
+            <Icons.Close />
+            Enter an API key to load model list
           </span>
         </div>
       )}

@@ -24,7 +24,7 @@ export function logSendDebug(
 }
 
 function redactSecrets(key: string, value: unknown): unknown {
-	if (/api.?key|authorization|token|secret/i.test(key)) {
+	if (/api.?key|authorization|token|secret/i.test(key) && typeof value === "string") {
 		return value ? "[redacted]" : value;
 	}
 	return value;

@@ -6,13 +6,27 @@ export interface CompactionConfig {
 }
 
 /**
- * Roughly estimates the token footprint of a text string.
- * This is a placeholder for a real tokenizer (e.g. tiktoken/onnxruntime-web).
- * Usually, 1 token ≈ 4 characters in English.
+ * Injectable token counting function.
+ * Default: char length / 4 (rough heuristic).
+ * Call setTokenCountFn() from the server to replace with a real tokenizer.
  */
-export function estimateTokens(text: string): number {
+let tokenCountFn: (text: string) => number = (text: string) => {
   if (!text) return 0;
   return Math.ceil(text.length / 4);
+};
+
+/**
+ * Replace the token counting function with a real tokenizer.
+ */
+export function setTokenCountFn(fn: (text: string) => number): void {
+  tokenCountFn = fn;
+}
+
+/**
+ * Counts tokens using the injected tokenizer (or char-length heuristic as fallback).
+ */
+export function estimateTokens(text: string): number {
+  return tokenCountFn(text);
 }
 
 /**
