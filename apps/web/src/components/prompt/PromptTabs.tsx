@@ -1,5 +1,6 @@
 import { cn } from "../../lib/cn.js";
 import { PrefillField } from "./PrefillField.js";
+import { TokenCounter } from "../shared/TokenCounter.js";
 
 type TabId = "system" | "jailbreak" | "authorsNote" | "tools";
 
@@ -67,14 +68,17 @@ export function PromptTabs({
       {/* Tab content */}
       <div className="min-h-0 flex-1">
         {activeTab === "system" && (
-          <textarea
-            className={cn(textareaCls, "h-full")}
-            style={{ padding: "9px 13px" }}
-            value={draft?.system ?? ""}
-            onChange={(e) => onUpdateField("system", e.target.value)}
-            disabled={disabled}
-            placeholder="System prompt instructions..."
-          />
+          <div className="flex h-full flex-col">
+            <textarea
+              className={cn(textareaCls, "flex-1 min-h-0")}
+              style={{ padding: "9px 13px" }}
+              value={draft?.system ?? ""}
+              onChange={(e) => onUpdateField("system", e.target.value)}
+              disabled={disabled}
+              placeholder="System prompt instructions..."
+            />
+            <TokenCounter text={draft?.system ?? ""} />
+          </div>
         )}
 
         {activeTab === "jailbreak" && (
@@ -89,6 +93,7 @@ export function PromptTabs({
                 disabled={disabled}
                 placeholder="[Post-history instructions...]"
               />
+              <TokenCounter text={draft?.jailbreak ?? ""} />
             </div>
             <PrefillField
               prefill={draft?.prefill ?? ""}
@@ -111,6 +116,7 @@ export function PromptTabs({
                 disabled={disabled}
                 placeholder="Instructions injected near the end of context..."
               />
+              <TokenCounter text={draft?.authorsNote ?? ""} />
             </div>
             <div className="shrink-0">
               <label className={labelCls}>Insert Depth</label>
@@ -139,6 +145,7 @@ export function PromptTabs({
                 onChange={(e) => onUpdateField("summary", e.target.value)}
                 disabled={disabled}
               />
+              <TokenCounter text={draft?.summary ?? ""} />
             </div>
             <div className="flex flex-1 flex-col min-h-0">
               <label className={labelCls}>Tools</label>
@@ -149,6 +156,7 @@ export function PromptTabs({
                 onChange={(e) => onUpdateField("tools", e.target.value)}
                 disabled={disabled}
               />
+              <TokenCounter text={draft?.tools ?? ""} />
             </div>
           </div>
         )}

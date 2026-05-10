@@ -68,6 +68,8 @@ export interface InputAreaProps {
   activePersonaId: string | null;
   onSetPersona: (personaId: string) => void;
   tokenAccounting: Record<string, number>;
+  contextSize: number;
+  maxTokens: number;
   onCancel: () => void;
   onDraftChange: (value: string) => void;
   onSend: () => void;

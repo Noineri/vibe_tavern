@@ -145,6 +145,8 @@ export function App() {
         canSend: Boolean(app.draft.trim()) && !app.isSending && app.canUseLiveApi,
         notice: app.chatNotice,
         tokenAccounting: app.activePromptTrace?.tokenAccounting ?? {},
+        contextSize: app.activeProviderProfile?.contextBudget ?? 0,
+        maxTokens: app.activeProviderProfile?.maxTokens ?? 0,
         onCancel: app.handleCancelGeneration,
         onDraftChange: app.setDraft,
         onSend: () => void app.handleSend(),
