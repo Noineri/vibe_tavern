@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '../../lib/cn.js';
+import { useT } from '../../i18n/context.js';
 
 interface SaveBarProps {
   dirty: boolean;
@@ -7,16 +8,16 @@ interface SaveBarProps {
   onSave: () => void;
   onReset?: () => void;
   label?: string;
-  t?: (key: string) => string;
   className?: string;
 }
 
-export function SaveBar({ dirty, saveState, onSave, onReset, label, t = (k) => k, className }: SaveBarProps) {
+export function SaveBar({ dirty, saveState, onSave, onReset, label, className }: SaveBarProps) {
+  const { t } = useT();
   const isSaving = saveState === 'saving';
   const isSaved = saveState === 'saved';
   return (
     <div className={cn('flex items-center gap-2 text-[calc(var(--ui-fs)-3px)] text-t2 bg-s2 border border-border rounded-md px-3 py-1.5 mb-3', className)}>
-      {dirty && <span>{t('unsaved_changes') || 'Unsaved changes'}</span>}
+      {dirty && <span>{t('unsaved_changes')}</span>}
       <button
         className={cn(
           'h-[37px] px-[21px] bg-accent text-on-accent rounded-md text-[calc(var(--ui-fs)-2px)] font-medium font-ui cursor-pointer transition-filter hover:brightness-110',
@@ -40,10 +41,10 @@ interface SaveButtonProps {
   saveState: 'idle' | 'saving' | 'saved' | 'error';
   onClick: () => void;
   label?: string;
-  t?: (key: string) => string;
 }
 
-export function SaveButton({ dirty, saveState, onClick, label, t = (k) => k }: SaveButtonProps) {
+export function SaveButton({ dirty, saveState, onClick, label }: SaveButtonProps) {
+  const { t } = useT();
   const isSaving = saveState === 'saving';
   const isSaved = saveState === 'saved';
   return (

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProviderProbeResponse } from "@rp-platform/domain";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
+import { getT } from "../i18n/context.js";
 import {
   activateProviderProfile,
   deleteProviderProfile,
@@ -54,7 +55,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
       setConnection((current) => ({
         ...current,
         error:
-          error instanceof Error ? error.message : "Could not load saved provider profiles.",
+          error instanceof Error ? error.message : getT()("provider_load_failed"),
       }));
     }
   }
@@ -131,7 +132,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     } catch (error) {
       patchConnection({
         status: "error",
-        error: error instanceof Error ? error.message : "Could not save and connect provider profile.",
+        error: error instanceof Error ? error.message : getT()("provider_save_connect_failed"),
       });
     }
   }
@@ -172,7 +173,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     } catch (error) {
       patchConnection({
         status: "error",
-        error: error instanceof Error ? error.message : "Could not load saved profile.",
+        error: error instanceof Error ? error.message : getT()("provider_load_profile_failed"),
       });
     }
   }
@@ -184,7 +185,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     if (!name || !endpoint) {
       patchConnection({
         status: "error",
-        error: "Provider name and base URL are required to save a profile.",
+        error: getT()("provider_name_url_required"),
       });
       return;
     }
@@ -253,7 +254,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     } catch (error) {
       patchConnection({
         status: "error",
-        error: error instanceof Error ? error.message : "Could not save provider profile.",
+        error: error instanceof Error ? error.message : getT()("provider_save_failed"),
       });
     }
   }
@@ -279,7 +280,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     } catch (error) {
       patchConnection({
         status: "error",
-        error: error instanceof Error ? error.message : "Could not activate provider profile.",
+        error: error instanceof Error ? error.message : getT()("provider_activate_failed"),
       });
     }
   }
@@ -305,7 +306,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     } catch (error) {
       patchConnection({
         status: "error",
-        error: error instanceof Error ? error.message : "Could not delete provider profile.",
+        error: error instanceof Error ? error.message : getT()("provider_delete_failed"),
       });
     }
   }
@@ -313,7 +314,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
   async function handleCreateProviderProfile(): Promise<ProviderProfileRecord | null> {
     try {
       const saved = await saveProviderProfile({
-        name: "Новый профиль",
+        name: getT()("new_profile"),
         type: PROVIDER_TYPE.openaiCompat,
         endpoint: "",
         temperature: 0.9,
@@ -333,7 +334,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
       await loadProviderProfiles();
       return saved;
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to create provider profile.");
+      setChatNotice(error instanceof Error ? error.message : getT()("provider_create_failed"));
       return null;
     }
   }
@@ -364,7 +365,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
       await loadProviderProfiles();
       return saved;
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to duplicate provider profile.");
+      setChatNotice(error instanceof Error ? error.message : getT()("provider_duplicate_failed"));
       return null;
     }
   }
@@ -488,7 +489,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
       await loadProviderProfiles();
       return saved;
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Could not save provider profile.");
+      setChatNotice(error instanceof Error ? error.message : getT()("provider_save_failed"));
       return null;
     }
   }
@@ -516,10 +517,10 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
           : "";
         setChatNotice(`Connection verified.${countHint}`);
       } else {
-        setChatNotice(result.error ?? "Connection probe failed.");
+        setChatNotice(result.error ?? getT()("connection_probe_failed"));
       }
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Connection probe failed.");
+      setChatNotice(error instanceof Error ? error.message : getT()("connection_probe_failed"));
     }
   }
 
@@ -561,7 +562,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     } catch (error) {
       patchConnection({
         status: connection.activeProviderProfileId ? "connected" : "error",
-        error: error instanceof Error ? error.message : "Could not refresh model list.",
+        error: error instanceof Error ? error.message : getT()("provider_refresh_models_failed"),
       });
     }
   }

@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Icons } from '../shared/icons.js';
+import { useT } from '../../i18n/context.js';
 
 interface AvatarPanelProps {
   src: string;
   onClose: () => void;
-  t?: (key: string) => string;
 }
 
 const MIN_ZOOM = 0.2;
@@ -33,7 +33,8 @@ function getFitZoom(naturalWidth: number, naturalHeight: number): number {
   return Math.min(1, maxVisualWidth / naturalWidth, maxVisualHeight / naturalHeight);
 }
 
-export function AvatarPanel({ src, onClose, t = (k) => k }: AvatarPanelProps) {
+export function AvatarPanel({ src, onClose }: AvatarPanelProps) {
+  const { t } = useT();
   const [pos, setPos] = useState(() => getAttachedPosition());
   const [zoom, setZoom] = useState(1);
   const [isReady, setIsReady] = useState(false);
@@ -188,7 +189,7 @@ export function AvatarPanel({ src, onClose, t = (k) => k }: AvatarPanelProps) {
         src={src}
         className="block h-auto w-auto max-w-none rounded-[5px] object-contain [-webkit-user-drag:none]"
         draggable={false}
-        alt="Character avatar"
+        alt={t('character_avatar_alt')}
         onLoad={(event) => {
           const img = event.currentTarget;
           naturalSizeRef.current = { width: img.naturalWidth, height: img.naturalHeight };
@@ -201,7 +202,7 @@ export function AvatarPanel({ src, onClose, t = (k) => k }: AvatarPanelProps) {
         style={{ transform: `scale(${1 / zoom})`, transformOrigin: 'top right' }}
         onMouseDown={(event) => event.stopPropagation()}
         onClick={onClose}
-        title="Close"
+        title={t('close')}
       >
         <Icons.close />
       </button>

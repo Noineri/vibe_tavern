@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useT } from "../../i18n/context.js";
 
 interface DestructiveConfirmModalProps {
   title: string;
@@ -9,6 +10,7 @@ interface DestructiveConfirmModalProps {
 }
 
 export function DestructiveConfirmModal(input: DestructiveConfirmModalProps) {
+  const { t } = useT();
   return (
     <div className="fixed inset-0 z-[700] flex items-center justify-center bg-black/50" onClick={input.onCancel}>
       <div
@@ -28,14 +30,14 @@ export function DestructiveConfirmModal(input: DestructiveConfirmModalProps) {
             style={{ padding: "0 14px", border: "1px solid var(--border)" }}
             onClick={input.onCancel}
           >
-            Cancel
+            {t("cancel")}
           </button>
           <button
             className="h-8 cursor-pointer rounded-md border-0 font-ui text-[12.5px] font-medium text-white transition-[filter] duration-100 hover:brightness-110"
             style={{ padding: "0 18px", background: "oklch(0.4 0.15 25)" }}
             onClick={input.onConfirm}
           >
-            {input.confirmLabel || "Confirm"}
+            {input.confirmLabel || t("confirm")}
           </button>
         </div>
       </div>

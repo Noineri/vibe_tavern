@@ -1,4 +1,5 @@
 import type { ChangeEvent, DragEvent } from "react";
+import { useT } from "../i18n/context.js";
 
 interface ImportSurfaceProps {
   isImportDragActive: boolean;
@@ -11,6 +12,7 @@ interface ImportSurfaceProps {
 }
 
 export function ImportSurface(input: ImportSurfaceProps) {
+  const { t } = useT();
   return (
     <>
       <label
@@ -26,10 +28,10 @@ export function ImportSurface(input: ImportSurfaceProps) {
           onChange={input.onFileChange}
         />
         <div className="import-dropzone-title">
-          {input.isImporting ? "Importing file..." : "Drop PNG or JSON here or click to choose a file"}
+          {input.isImporting ? t("importing_file") : t("drop_png_json")}
         </div>
         <div className="import-dropzone-copy">
-          PNG or JSON character cards create a new chat. Lorebook JSON attaches to the current character.
+          {t("import_surface_desc")}
         </div>
       </label>
       {input.importNotice && <div className="import-notice">{input.importNotice}</div>}

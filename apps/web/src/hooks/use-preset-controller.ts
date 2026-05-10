@@ -1,4 +1,5 @@
 import type { PromptPresetDto } from "@rp-platform/domain";
+import { getT } from "../i18n/context.js";
 import {
   createPromptPreset,
   deletePromptPreset,
@@ -44,7 +45,7 @@ export function usePresetController(): PresetControllerActions {
       const nextSnapshot = await setChatPromptPreset(chatId, presetId);
       useChatStore.getState().setSnapshotForChat(chatId, nextSnapshot);
     } catch (error) {
-      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : "Failed to set prompt preset.");
+      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : getT()("preset_set_failed"));
     }
   }
 
@@ -55,7 +56,7 @@ export function usePresetController(): PresetControllerActions {
       await handleSetActivePromptPresetId(created.id);
       return { id: created.id };
     } catch (error) {
-      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : "Failed to create preset.");
+      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : getT()("preset_create_failed"));
       return null;
     }
   }
@@ -67,7 +68,7 @@ export function usePresetController(): PresetControllerActions {
       useCharacterStore.getState().setPromptPresets(current.map((p) => p.id === presetId ? updated : p));
       return true;
     } catch (error) {
-      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : "Failed to save preset.");
+      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : getT()("preset_save_failed"));
       return false;
     }
   }
@@ -78,7 +79,7 @@ export function usePresetController(): PresetControllerActions {
       await loadPresetsFromServer();
       return true;
     } catch (error) {
-      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : "Failed to delete preset.");
+      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : getT()("preset_delete_failed"));
       return false;
     }
   }

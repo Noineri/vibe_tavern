@@ -1,6 +1,7 @@
 import React from 'react';
 import { AvatarDisplay } from './AvatarDisplay.js';
 import type { AvatarAssetState } from './AvatarDisplay.js';
+import { useT } from '../../i18n/context.js';
 
 const CameraIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -12,16 +13,15 @@ const CameraIcon = () => (
 export function AvatarPicker({
   avatar,
   inputId,
-  t = (key) => key,
   onPick,
   onRemove,
 }: {
   avatar: AvatarAssetState;
   inputId: string;
-  t?: (key: string) => string;
   onPick(file: File): void;
   onRemove?: () => void;
 }) {
+  const { t } = useT();
   const showCamera = avatar.status === 'initials' || avatar.status === 'none';
 
   return (
@@ -53,7 +53,7 @@ export function AvatarPicker({
           type="button"
           className="absolute right-0.5 bottom-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-surface text-t4 opacity-0 transition-all hover:text-danger group-hover:opacity-100"
           onClick={e => { e.stopPropagation(); onRemove(); }}
-          title={t('remove')}
+          title={t('remove_avatar')}
         >
           <svg width="10" height="10" viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
         </button>

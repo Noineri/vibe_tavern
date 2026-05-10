@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Ic } from './shared/icons';
 import { cn } from '../lib/cn';
+import { useT } from '../i18n/context.js';
 
 interface CreateCharacterForm {
   name: string;
@@ -35,6 +36,7 @@ interface CreateCharacterModalProps {
 }
 
 export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalProps) {
+  const { t } = useT();
   const [form, setForm] = useState<CreateCharacterForm>({
     name: '',
     description: '',
@@ -119,8 +121,8 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center font-body text-[calc(var(--ui-fs)+4px)] font-medium text-t1">
-                Создать персонажа
-                {dirty && <span className="dirty-dot" title="Unsaved changes" />}
+                {t("create_character_manual")}
+                {dirty && <span className="dirty-dot" title={t("unsaved_changes_title")} />}
               </div>
             </div>
             <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={onClose}>
@@ -136,7 +138,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <div
               className="group relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t"
               onClick={() => avaInputRef.current?.click()}
-              title="Загрузить аватар"
+              title={t("upload_avatar")}
             >
               <input
                 ref={avaInputRef}
@@ -155,7 +157,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               )}
             </div>
             <div className="flex-1">
-              <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">Имя *</label>
+              <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ws_name_label")}</label>
               <input
                 type="text"
                 className="w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
@@ -169,7 +171,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
 
           {/* Description */}
           <div style={{marginBottom:20}}>
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">Описание</label>
+            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_desc_label")}</label>
             <textarea
               className="w-full min-h-[100px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
               style={{padding:'6px 10px'}}
@@ -180,19 +182,19 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
 
           {/* First Message */}
           <div style={{marginBottom:20}}>
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">Первое сообщение</label>
+            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ws_first_msg_label")}</label>
             <textarea
               className="w-full min-h-[120px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
               style={{padding:'6px 10px'}}
               value={form.firstMessage}
               onChange={e => patchForm({ firstMessage: e.target.value })}
-              placeholder="Первое сообщение персонажа..."
+              placeholder={t("first_message_placeholder")}
             />
           </div>
 
           {/* Alternate Greetings */}
           <div style={{marginBottom:20}}>
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">Альт. приветствия</label>
+            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("alternate_greetings")}</label>
             <div className="flex flex-wrap gap-1" style={{marginBottom:8}}>
               {form.alternateGreetings.map((_, idx) => (
                 <span
@@ -232,26 +234,26 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                   next[altGreetIdx] = e.target.value;
                   patchForm({ alternateGreetings: next });
                 }}
-                placeholder="Альтернативное приветствие..."
+                placeholder={t("alternate_greeting_placeholder")}
               />
             )}
           </div>
 
           {/* Mes Example */}
           <div style={{marginBottom:20}}>
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">Примеры диалогов</label>
+            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("dialog_examples")}</label>
             <textarea
               className="w-full min-h-[120px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
               style={{padding:'6px 10px'}}
               value={form.mesExample}
               onChange={e => patchForm({ mesExample: e.target.value })}
-              placeholder={'{{user}}: Привет!'}
+              placeholder={t("dialog_examples_placeholder")}
             />
           </div>
 
           {/* Scenario */}
           <div style={{marginBottom:20}}>
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">Сценарий</label>
+            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("scenario")}</label>
             <textarea
               className="w-full min-h-[100px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
               style={{padding:'6px 10px'}}
@@ -262,7 +264,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
 
           {/* Personality */}
           <div style={{marginBottom:20}}>
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">Личность</label>
+            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_personality_label")}</label>
             <textarea
               className="w-full min-h-[60px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
               style={{padding:'6px 10px'}}
@@ -272,35 +274,35 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           </div>
 
           {/* Advanced separator */}
-          <div className="border-b border-border font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t3" style={{marginTop:24, marginBottom:12, paddingBottom:6}}>Расширенные поля (V3)</div>
+          <div className="border-b border-border font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t3" style={{marginTop:24, marginBottom:12, paddingBottom:6}}>{t("advanced_fields_v3")}</div>
 
           {/* Post History Instructions */}
           <div style={{marginBottom:20}}>
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">Post-History Instructions</label>
+            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("post_history_instructions")}</label>
             <textarea
               className="w-full min-h-[60px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
               style={{padding:'6px 10px'}}
               value={form.postHistoryInstructions}
               onChange={e => patchForm({ postHistoryInstructions: e.target.value })}
-              placeholder="Инструкции, добавляемые в конец истории (Jailbreak)..."
+              placeholder={t("post_history_placeholder")}
             />
           </div>
 
           {/* Creator Notes */}
           <div style={{marginBottom:20}}>
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">Заметки создателя</label>
+            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("creator_notes")}</label>
             <textarea
               className="w-full min-h-[60px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
               style={{padding:'6px 10px'}}
               value={form.creatorNotes}
               onChange={e => patchForm({ creatorNotes: e.target.value })}
-              placeholder="Внутренние заметки (игнорируются моделью)..."
+              placeholder={t("creator_notes_placeholder")}
             />
           </div>
 
           {/* Character Book JSON */}
           <div style={{marginBottom:20}}>
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">Character Book (JSON)</label>
+            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("character_book_json")}</label>
             <textarea
               className="w-full min-h-[80px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
               style={{padding:'6px 10px'}}
@@ -313,17 +315,17 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           {/* Depth Prompt row */}
           <div className="flex gap-3 items-end">
             <div style={{marginBottom:20}} className="flex-1">
-              <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">Depth Prompt</label>
+              <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("depth_prompt")}</label>
               <textarea
                 className="w-full min-h-[60px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
                 style={{padding:'6px 10px'}}
                 value={form.depthPrompt}
                 onChange={e => patchForm({ depthPrompt: e.target.value })}
-                placeholder="Prompt injected at a specific depth..."
+                placeholder={t("depth_prompt_placeholder")}
               />
             </div>
             <div style={{marginBottom:20}} className="w-20 shrink-0">
-              <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">Depth</label>
+              <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("depth")}</label>
               <input
                 type="number"
                 className="w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
@@ -335,7 +337,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               />
             </div>
             <div style={{marginBottom:20}} className="w-[110px] shrink-0">
-              <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">Role</label>
+              <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("role")}</label>
               <select
                 className="w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
                 style={{padding:'6px 10px'}}
@@ -351,7 +353,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
 
           {/* Extensions JSON */}
           <div style={{marginBottom:20}}>
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">Extensions (JSON)</label>
+            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("extensions_json")}</label>
             <textarea
               className="w-full min-h-[60px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
               style={{padding:'6px 10px'}}
@@ -363,19 +365,19 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
 
           {/* System Prompt Override */}
           <div style={{marginBottom:20}}>
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">System Prompt Override</label>
+            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("system_prompt_override")}</label>
             <textarea
               className="w-full min-h-[80px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
               style={{padding:'6px 10px'}}
               value={form.systemPrompt}
               onChange={e => patchForm({ systemPrompt: e.target.value })}
-              placeholder="Оставьте пустым для использования глобального промпта..."
+              placeholder={t("system_prompt_override_placeholder")}
             />
           </div>
 
           {/* Tags */}
           <div style={{marginBottom:20}}>
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">Теги</label>
+            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_tags_label")}</label>
             <input
               type="text"
               className="w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
@@ -383,7 +385,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               value={tagInput}
               onChange={e => setTagInput(e.target.value)}
               onKeyDown={handleTagKey}
-              placeholder="Введите тег и нажмите Enter"
+              placeholder={t("tags_enter")}
             />
             <div className="flex flex-wrap gap-1.5 mt-1.5">
               {form.tags.map(tag => (
@@ -406,14 +408,14 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             style={{height:37, padding:'0 16px'}}
             onClick={onClose}
             disabled={busy}
-          >Отмена</button>
+          >{t("cancel")}</button>
           <button
             className="cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
             style={{height:37, padding:'0 18px'}}
             disabled={!canSave}
             onClick={handleSave}
           >
-            {busy ? 'Создание…' : 'Создать'}
+            {busy ? t("ws_creating") : t("ws_create_btn")}
           </button>
         </div>
       </div>

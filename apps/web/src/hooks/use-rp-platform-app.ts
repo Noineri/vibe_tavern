@@ -1,6 +1,7 @@
 import { type SetStateAction, useEffect, useRef, useState } from "react";
 import type { ChatId } from "@rp-platform/domain";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
+import { getT } from "../i18n/context.js";
 import {
   bootstrapApp,
   listPersonas,
@@ -304,7 +305,7 @@ export function useRpPlatformApp() {
       setAllCharacters(boot.allCharacters);
       setIsFirstRun(boot.isFirstRun || import.meta.env.VITE_FORCE_FIRST_RUN === 'true');
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Could not load application state.");
+      setLoadError(error instanceof Error ? error.message : getT()("could_not_load_app_state"));
     } finally {
       setIsLoading(false);
     }
@@ -351,28 +352,28 @@ export function useRpPlatformApp() {
 
   function renderConnectionStatus(): string {
     if (connection.status === "connecting") {
-      return "connecting...";
+      return getT()("connecting_status");
     }
     if (connection.status === "connected") {
-      return connection.model ? `connected - ${connection.model}` : "connected";
+      return connection.model ? `${getT()("connected_status")} - ${connection.model}` : getT()("connected_status");
     }
     if (connection.status === "error") {
-      return "error";
+      return getT()("error_status");
     }
-    return "not connected";
+    return getT()("not_connected_status");
   }
 
   function renderSendLabel(): string {
     if (isSending) {
-      return "Sending...";
+      return getT()("sending");
     }
     if (display.canUseLiveApi && draft.trim()) {
-      return "Send message";
+      return getT()("send_message");
     }
     if (!display.canUseLiveApi) {
-      return "Model unavailable";
+      return getT()("send_unavailable");
     }
-    return "Type a message";
+    return getT()("type_a_message");
   }
 
   function renderConnectionHint(): string {
@@ -380,9 +381,9 @@ export function useRpPlatformApp() {
       return connection.error;
     }
     if (display.canUseLiveApi) {
-      return "Model selected. The chat is using a saved local provider profile.";
+      return getT()("model_selected_local");
     }
-    return "Save or select a provider profile, connect it, then choose a model.";
+    return getT()("no_provider_profile_hint");
   }
 
   return {
