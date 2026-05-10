@@ -666,7 +666,7 @@ export async function deleteProviderProfile(providerProfileId: string): Promise<
 }
 
 export async function testProviderDraft(
-  input: { endpoint: string; apiKey: string },
+  input: { endpoint: string; apiKey: string; providerType?: string },
 ): Promise<ProviderProbeResponse> {
   const response = await client.api.providers.test.$post({ json: input });
   return unwrapRpc<ProviderProbeResponse>(response);
@@ -681,25 +681,27 @@ export async function testProviderProfile(
 
 export async function fetchProviderProfileModels(
   providerProfileId: string,
-): Promise<{ models: Array<{ id: string; label: string }> }> {
+): Promise<{ models: Array<{ id: string; label: string; contextLength?: number }> }> {
   const response = await client.api.providers[":providerId"].models.$post({ param: { providerId: providerProfileId } });
-  return unwrapRpc<{ models: Array<{ id: string; label: string }> }>(response);
+  return unwrapRpc<{ models: Array<{ id: string; label: string; contextLength?: number }> }>(response);
 }
 
 export async function fetchModelsByEndpoint(
   baseUrl: string,
   apiKey?: string,
-): Promise<{ models: Array<{ id: string; label: string }> }> {
-  const response = await client.api.providers["fetch-models"].$post({ json: { baseUrl, apiKey: apiKey ?? "" } });
-  return unwrapRpc<{ models: Array<{ id: string; label: string }> }>(response);
+  providerType?: string,
+): Promise<{ models: Array<{ id: string; label: string; contextLength?: number }> }> {
+  const response = await client.api.providers["fetch-models"].$post({ json: { baseUrl, apiKey: apiKey ?? "", providerType } });
+  return unwrapRpc<{ models: Array<{ id: string; label: string; contextLength?: number }> }>(response);
 }
 
 export async function testProviderChat(
   baseUrl: string,
   apiKey: string,
   model: string,
+  providerType?: string,
 ): Promise<TestChatResponse> {
-  const response = await client.api.providers["test-chat"].$post({ json: { baseUrl, apiKey, model } });
+  const response = await client.api.providers["test-chat"].$post({ json: { baseUrl, apiKey, model, providerType } });
   return unwrapRpc<TestChatResponse>(response);
 }
 

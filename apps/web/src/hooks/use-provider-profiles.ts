@@ -33,7 +33,6 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
 
   const [providerProfiles, setProviderProfiles] = useState<ProviderProfileRecord[]>([]);
   const [selectedProviderProfileId, setSelectedProviderProfileId] = useState("");
-  const modelsCache = useRef<Map<string, { models: Array<{ id: string; label: string }>; ts: number }>>(new Map());
 
   const activeProviderProfile = useMemo(
     () => providerProfiles.find((profile) => profile.isActive) ?? null,
@@ -359,8 +358,12 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     }
   }
 
-  async function handleTestDraftConnection(endpoint: string, apiKey: string): Promise<ProviderProbeResponse> {
-    return testProviderDraft({ endpoint, apiKey });
+  async function handleTestDraftConnection(endpoint: string, apiKey: string, providerType?: string): Promise<ProviderProbeResponse> {
+    return testProviderDraft({ endpoint, apiKey, providerType });
+  }
+
+  async function handleTestProfileConnection(providerProfileId: string): Promise<ProviderProbeResponse> {
+    return testProviderProfile(providerProfileId);
   }
 
   async function handleTestChat(
@@ -368,14 +371,15 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     baseUrl: string,
     apiKey: string,
     model: string,
+    providerType?: string,
   ): Promise<TestChatResponse> {
     if (profileId) {
       return testProfileChatClient(profileId, model);
     }
-    return testProviderChatClient(baseUrl, apiKey, model);
+    return testProviderChatClient(baseUrl, apiKey, model, providerType);
   }
 
-  async function handleFetchModelsForProfile(providerProfileId: string): Promise<Array<{ id: string; label: string }>> {
+  async function handleFetchModelsForProfile(providerProfileId: string): Promise<Array<{ id: string; label: string; contextLength?: number }>> {
     const response = await fetchModelsForProviderProfile(providerProfileId);
     return response.models;
   }
@@ -383,17 +387,10 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
   async function handleFetchModelsByEndpoint(
     baseUrl: string,
     apiKey?: string,
-    useCache = true,
-  ): Promise<Array<{ id: string; label: string }>> {
-    const cacheKey = `${baseUrl}::${apiKey ?? ""}`;
-    if (useCache) {
-      const cached = modelsCache.current.get(cacheKey);
-      if (cached && Date.now() - cached.ts < 5 * 60_000) {
-        return cached.models;
-      }
-    }
-    const response = await fetchModelsByEndpointClient(baseUrl, apiKey);
-    modelsCache.current.set(cacheKey, { models: response.models, ts: Date.now() });
+    _useCache?: boolean,
+    providerType?: string,
+  ): Promise<Array<{ id: string; label: string; contextLength?: number }>> {
+    const response = await fetchModelsByEndpointClient(baseUrl, apiKey, providerType);
     return response.models;
   }
 
@@ -528,6 +525,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     handleCreateProviderProfile,
     handleDuplicateProviderProfile,
     handleTestDraftConnection,
+    handleTestProfileConnection,
     handleTestChat,
     handleFetchModelsForProfile,
     handleFetchModelsByEndpoint,

@@ -45,6 +45,57 @@ export interface ProviderMappingResult {
 }
 
 // ---------------------------------------------------------------------------
+// Preset ID → ProviderType normalisation
+// ---------------------------------------------------------------------------
+
+/**
+ * Map preset IDs (e.g. "openai", "openrouter") to canonical ProviderType values.
+ *
+ * The DB stores whatever the frontend sends as `type`.  Older profiles may
+ * store the preset *ID* ("openai") instead of the canonical type
+ * ("openai_compat").  This table normalises both to a single ProviderType.
+ */
+const PRESET_TO_PROVIDER_TYPE: Record<string, ProviderType> = {
+  // Canonical types — self-mapping (anthropic="anthropic", google="google", etc.)
+  [PROVIDER_TYPE.openaiCompat]: PROVIDER_TYPE.openaiCompat,
+  [PROVIDER_TYPE.anthropic]:    PROVIDER_TYPE.anthropic,
+  [PROVIDER_TYPE.google]:       PROVIDER_TYPE.google,
+  [PROVIDER_TYPE.ollama]:       PROVIDER_TYPE.ollama,
+  [PROVIDER_TYPE.llamaCpp]:     PROVIDER_TYPE.llamaCpp,
+  [PROVIDER_TYPE.koboldCpp]:    PROVIDER_TYPE.koboldCpp,
+  // Preset IDs that differ from the canonical type
+  openai:       PROVIDER_TYPE.openaiCompat,
+  openrouter:   PROVIDER_TYPE.openaiCompat,
+  deepseek:     PROVIDER_TYPE.openaiCompat,
+  groq:         PROVIDER_TYPE.openaiCompat,
+  xai:          PROVIDER_TYPE.openaiCompat,
+  mistral:      PROVIDER_TYPE.openaiCompat,
+  fireworks:    PROVIDER_TYPE.openaiCompat,
+  perplexity:   PROVIDER_TYPE.openaiCompat,
+  moonshot:     PROVIDER_TYPE.openaiCompat,
+  ai21:         PROVIDER_TYPE.openaiCompat,
+  nanogpt:      PROVIDER_TYPE.openaiCompat,
+  chutes:       PROVIDER_TYPE.openaiCompat,
+  electronhub:  PROVIDER_TYPE.openaiCompat,
+  zai:          PROVIDER_TYPE.openaiCompat,
+  siliconflow:  PROVIDER_TYPE.openaiCompat,
+  togetherai:   PROVIDER_TYPE.openaiCompat,
+  pollinations: PROVIDER_TYPE.openaiCompat,
+  vllm:         PROVIDER_TYPE.openaiCompat,
+  ooba:         PROVIDER_TYPE.openaiCompat,
+  tabby:        PROVIDER_TYPE.openaiCompat,
+  aphrodite:    PROVIDER_TYPE.openaiCompat,
+};
+
+/**
+ * Normalise a raw profile type / preset ID into a canonical ProviderType.
+ * Falls back to openai_compat for unknown values.
+ */
+export function normalizeProviderType(raw: string): ProviderType {
+  return PRESET_TO_PROVIDER_TYPE[raw] ?? PROVIDER_TYPE.openaiCompat;
+}
+
+// ---------------------------------------------------------------------------
 // Mapper implementation
 // ---------------------------------------------------------------------------
 
@@ -58,10 +109,10 @@ export function mapProfileToSdkModel(
   profile: { type: string; endpoint: string; apiKey: string | null },
   model: string,
 ): ProviderMappingResult {
-  const providerType = profile.type as ProviderType;
+  const providerType = normalizeProviderType(profile.type);
   const capabilities = getProviderCapabilities(providerType);
 
-  switch (profile.type) {
+  switch (providerType) {
     // -- Native SDK support --------------------------------------------------
     case PROVIDER_TYPE.openaiCompat: {
       const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
@@ -90,7 +141,11 @@ export function mapProfileToSdkModel(
     case PROVIDER_TYPE.google: {
       const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
       const apiKey = profile.apiKey ?? "";
-      const provider = createGoogleGenerativeAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
+      // Google SDK defaults to https://generativelanguage.googleapis.com/v1beta.
+      // Only override baseURL if the user explicitly changed it (e.g. Vertex AI proxy).
+      const defaultGoogleBase = "https://generativelanguage.googleapis.com";
+      const googleBaseUrl = (!endpoint || endpoint === defaultGoogleBase) ? undefined : endpoint;
+      const provider = createGoogleGenerativeAI({ apiKey: apiKey || "not-needed", baseURL: googleBaseUrl });
       return {
         model: provider(model),
         sdkSupport: "native",

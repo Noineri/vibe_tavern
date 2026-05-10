@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import type { FormState } from '../ProviderModal.js';
 import { Icons } from '../shared/icons.js';
 import { cn } from '../../lib/cn.js';
-import { Toggle } from '../shared/Toggle.js';
 
 /* ── SamplerField sub-component ────────────────────────────────────── */
 
@@ -160,15 +159,25 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
         </div>
       </div>
 
-      {/* Reasoning toggle */}
-      <div className="rounded-lg border border-border2 bg-s2" style={{ marginTop: 24, padding: '12px 16px' }}>
-        <div className="flex items-center gap-3">
-          <Toggle checked={form.showReasoning || false} onChange={(v) => updateForm('showReasoning', v as FormState['showReasoning'])} className="!mb-0 !inline-flex" />
-          <div>
-            <div className="font-ui text-[13px] font-medium text-t1">
-              Show Reasoning
-            </div>
+      {/* Toggles: Streaming & Reasoning */}
+      <div className="mt-6 grid grid-cols-2 gap-4">
+        <div className="flex items-center gap-3 rounded-lg border border-border2 bg-s2 px-4 py-3">
+          <div
+            className={cn("relative h-5 w-9 rounded-full transition-colors", form.streamResponse !== false ? "bg-accent" : "bg-s3")}
+            onClick={() => updateForm('streamResponse', form.streamResponse === false)}
+          >
+            <div className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform", form.streamResponse !== false ? "translate-x-[18px]" : "translate-x-0.5")} />
           </div>
+          <div className="font-ui text-[13px] font-medium text-t1">Stream Response</div>
+        </div>
+        <div className="flex items-center gap-3 rounded-lg border border-border2 bg-s2 px-4 py-3">
+          <div
+            className={cn("relative h-5 w-9 rounded-full transition-colors", form.showReasoning ? "bg-accent" : "bg-s3")}
+            onClick={() => updateForm('showReasoning', !form.showReasoning)}
+          >
+            <div className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform", form.showReasoning ? "translate-x-[18px]" : "translate-x-0.5")} />
+          </div>
+          <div className="font-ui text-[13px] font-medium text-t1">Show Reasoning</div>
         </div>
       </div>
 

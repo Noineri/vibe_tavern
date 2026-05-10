@@ -12,16 +12,18 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@agnai/web-tokenizers": "^0.1.6-pre3",
+    "@ai-sdk/anthropic": "^1.2.9",
+    "@ai-sdk/google": "^1.2.12",
+    "@ai-sdk/openai": "^1.3.19",
     "@hono/zod-validator": "^0.4.2",
     "@rp-platform/db": "0.1.0",
     "@rp-platform/domain": "0.1.0",
     "@rp-platform/import-export": "0.1.0",
     "@rp-platform/prompt-pipeline": "0.1.0",
     "ai": "^4.3.16",
-    "@ai-sdk/anthropic": "^1.2.9",
-    "@ai-sdk/google": "^1.2.12",
-    "@ai-sdk/openai": "^1.3.19",
     "hono": "^4.7.10",
+    "js-tiktoken": "^1.0.21",
     "zod": "^3.24.4"
   },
   "devDependencies": {

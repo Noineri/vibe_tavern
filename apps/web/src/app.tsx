@@ -290,8 +290,10 @@ export function App() {
         onActivateProfile={app.handleActivateProviderProfile}
         onSaveProfile={app.handleSaveProviderProfileFromForm}
         onTestDraft={app.handleTestDraftConnection}
+        onTestProfile={app.handleTestProfileConnection}
         onTestChat={app.handleTestChat}
         onFetchModels={app.handleFetchModelsByEndpoint}
+        onFetchModelsForProfile={app.handleFetchModelsForProfile}
         onRefreshProfiles={async () => { await app.handleRefreshProfiles(); }}
       />
 

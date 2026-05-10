@@ -71,17 +71,17 @@ export interface RuntimeApi {
 export function createApiRouter(
   runtime: RuntimeApi,
   deps: {
-    getRequiredProviderProfile: (id: string) => Promise<{ endpoint: string; apiKey?: string | null }>;
+    getRequiredProviderProfile: (id: string) => Promise<{ endpoint: string; apiKey?: string | null; type?: string }>;
     sessionRuntime: {
       createCharacterFromScratch: (body: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }) => Promise<unknown>;
       createFreeChat: () => Promise<unknown>;
       getProviderProfile: (id: string) => Promise<{ endpoint: string; apiKey?: string | null } | null>;
     };
     providerOrchestrator: { refreshProfileModels: (profile: any) => Promise<unknown> };
-    listProviderModels: (opts: { baseUrl: string; apiKey: string; providerType?: string }) => Promise<unknown>;
+    listProviderModels: (opts: { baseUrl: string; apiKey: string; providerType?: string; requiresAuthForModels?: boolean }) => Promise<unknown>;
     normalizeOpenAiCompatibleBaseUrl: (url: string) => string;
-    probeProviderConnection: (opts: { baseUrl: string; apiKey: string }) => Promise<unknown>;
-    testProviderChat: (opts: { baseUrl: string; apiKey: string; model: string }) => Promise<unknown>;
+    probeProviderConnection: (opts: { baseUrl: string; apiKey: string; providerType?: string }) => Promise<unknown>;
+    testProviderChat: (opts: { baseUrl: string; apiKey: string; model: string; providerType?: string }) => Promise<unknown>;
   },
 ) {
   return new Hono()
@@ -375,7 +375,7 @@ export function createApiRouter(
     })
     .post("/api/providers/test", zValidator("json", schemas.testProviderDraftSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(await runtime.testProviderDraft(body as any));
+      return c.json(await runtime.testProviderDraft({ ...body, providerType: body.providerType } as any));
     })
     .post("/api/import/json", zValidator("json", schemas.importJsonSchema), async (c) => {
       const body = c.req.valid("json");
@@ -397,7 +397,8 @@ export function createApiRouter(
       }
       try {
         const normalized = deps.normalizeOpenAiCompatibleBaseUrl(baseUrl);
-        const models = await deps.listProviderModels({ baseUrl: normalized, apiKey: apiKey ?? "", providerType: body?.providerType });
+        const requiresAuth = body?.providerType === "anthropic" || body?.providerType === "google";
+        const models = await deps.listProviderModels({ baseUrl: normalized, apiKey: apiKey ?? "", providerType: body?.providerType, requiresAuthForModels: requiresAuth });
         return c.json({ models });
       } catch (err) {
         if (isDomainError(err)) throw err;
@@ -412,7 +413,7 @@ export function createApiRouter(
       if (!baseUrl || !model) {
         return c.json({ error: "baseUrl and model are required." }, 400);
       }
-      return c.json(await deps.testProviderChat({ baseUrl, apiKey, model }));
+      return c.json(await deps.testProviderChat({ baseUrl, apiKey, model, providerType: body?.providerType }));
     })
     .post("/api/providers/:providerId/models", async (c) => {
       return c.json(await runtime.fetchProviderModels(c.req.param("providerId")));
@@ -431,6 +432,7 @@ export function createApiRouter(
         baseUrl: profile.endpoint,
         apiKey: profile.apiKey ?? "",
         model,
+        providerType: profile.type,
       }));
     });
 }

@@ -17,6 +17,8 @@ import { createRuntimeStore } from "./session-runtime-store.js";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { unlink } from "node:fs/promises";
+import { warmupTokenizers, countTokens } from "./ai/tokenizer-service.js";
+import { setTokenCountFn } from "@rp-platform/prompt-pipeline";
 
 const rootDir = process.env.RP_PLATFORM_ROOT_DIR ?? resolve(import.meta.dir, '..', '..', '..');
 
@@ -81,6 +83,11 @@ async function ensureSeedData() {
 (async () => {
   await ensureSeedData();
   console.log("[bootstrap] Seed data ensured.");
+
+  // Warm up tokenizers and inject into prompt pipeline
+  await warmupTokenizers();
+  setTokenCountFn(countTokens);
+  console.log("[bootstrap] Tokenizers ready.");
 
   // 8. Wire stores into services
   const providerProfileService = new ProviderProfileService(stores.providers);
@@ -282,16 +289,17 @@ async function ensureSeedData() {
     updateProviderProfile: (providerProfileId: string, body: unknown) =>
       providerProfileService.updateProviderProfile(providerProfileId, body as any),
     saveProviderDraft: async (body: unknown) => providerProfileService.saveProviderProfile(body as any),
-    testProviderDraft: async (body: { endpoint?: string; apiKey?: string } | null) => {
+    testProviderDraft: async (body: { endpoint?: string; apiKey?: string; providerType?: string } | null) => {
       const endpoint = (body?.endpoint ?? "").trim();
       const apiKey = (body?.apiKey ?? "").trim();
-      return probeProviderConnection({ baseUrl: endpoint, apiKey });
+      return probeProviderConnection({ baseUrl: endpoint, apiKey, providerType: body?.providerType });
     },
     testProviderProfile: async (providerProfileId: string) => {
       const profile = await getRequiredProviderProfile(providerProfileId);
       return probeProviderConnection({
         baseUrl: profile.endpoint,
         apiKey: profile.apiKey ?? "",
+        providerType: profile.type,
       });
     },
     deleteProviderProfile: (providerProfileId: string) => providerProfileService.deleteProviderProfile(providerProfileId),
@@ -300,7 +308,8 @@ async function ensureSeedData() {
     }),
     fetchModelsByEndpoint: async (baseUrl: string, apiKey?: string, providerType?: string) => {
       const normalized = normalizeOpenAiCompatibleBaseUrl(baseUrl);
-      return listProviderModels({ baseUrl: normalized, apiKey: apiKey ?? "", providerType });
+      const requiresAuth = providerType === "anthropic" || providerType === "google";
+      return listProviderModels({ baseUrl: normalized, apiKey: apiKey ?? "", providerType, requiresAuthForModels: requiresAuth });
     },
     importJson: (body: { fileName: string; jsonText: string; chatId?: string }) => sessionRuntime.importJson(body),
     forkBranch: (chatId: string) => chatRuntime.forkBranch(brandId<ChatId>(chatId)),
@@ -378,7 +387,7 @@ async function ensureSeedData() {
       createFreeChat: () => sessionRuntime.createFreeChat(),
       getProviderProfile: async (id) => {
         const p = await providerProfileService.getProviderProfile(id);
-        return p ? { endpoint: p.endpoint, apiKey: p.apiKey } : null;
+        return p ? { endpoint: p.endpoint, apiKey: p.apiKey, type: p.type } : null;
       },
     },
     providerOrchestrator,

@@ -1,3 +1,5 @@
+import { normalizeProviderType } from "./ai/provider-profile-mapper.js";
+
 export interface ProviderConnectionInput {
 	apiKey: string;
 	baseUrl: string;
@@ -19,6 +21,7 @@ export interface ProviderConnectionInput {
 export interface ProviderModelOption {
 	id: string;
 	label: string;
+	contextLength?: number;
 }
 
 const PROBE_TIMEOUT_MS = 5_000;
@@ -35,6 +38,8 @@ interface OpenAiModelRecord {
 	id?: string;
 	name?: string;
 	owned_by?: string;
+	category?: string;
+	context_length?: number;
 }
 
 interface OpenAiModelsResponse {
@@ -64,6 +69,22 @@ export function normalizeOpenAiCompatibleBaseUrl(baseUrl: string): string {
 }
 
 export async function probeProviderConnection(input: {
+	baseUrl: string;
+	apiKey: string;
+	providerType?: string;
+}): Promise<ProviderProbeResult> {
+	const providerType = normalizeProviderType(input.providerType ?? "openai_compat");
+	switch (providerType) {
+		case "google":
+			return probeGoogleConnection(input);
+		case "anthropic":
+			return probeAnthropicConnection(input);
+		default:
+			return probeOpenAiCompatibleConnection(input);
+	}
+}
+
+async function probeOpenAiCompatibleConnection(input: {
 	baseUrl: string;
 	apiKey: string;
 }): Promise<ProviderProbeResult> {
@@ -106,6 +127,7 @@ export async function probeProviderConnection(input: {
 		} catch {
 			modelCount = undefined;
 		}
+
 		return { success: true, modelCount };
 	}
 
@@ -127,6 +149,122 @@ export async function probeProviderConnection(input: {
 	};
 }
 
+async function probeGoogleConnection(input: {
+	baseUrl: string;
+	apiKey: string;
+}): Promise<ProviderProbeResult> {
+	const baseUrl = (input.baseUrl || "").replace(/\/+$/, "");
+	if (!baseUrl) {
+		return { success: false, error: "Provider endpoint is required." };
+	}
+	const parsed = tryParseUrl(baseUrl);
+	if (!parsed) {
+		return { success: false, error: "Provider endpoint is invalid." };
+	}
+	if (!/^https?:$/.test(parsed.protocol)) {
+		return { success: false, error: "Provider endpoint must use http or https." };
+	}
+
+	const url = `${baseUrl}/v1beta/models?key=${input.apiKey}`;
+	let response: Response;
+	try {
+		response = await fetch(url, {
+			method: "GET",
+			headers: { Accept: "application/json" },
+			signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+		});
+	} catch (error) {
+		return {
+			success: false,
+			error: `Network error during probe: ${error instanceof Error ? error.message : String(error)}`,
+		};
+	}
+
+	if (response.ok) {
+		let modelCount: number | undefined;
+		try {
+			const payload = (await response.json()) as { models?: unknown[] };
+			modelCount = Array.isArray(payload.models) ? payload.models.length : undefined;
+		} catch {
+			modelCount = undefined;
+		}
+		return { success: true, modelCount };
+	}
+
+	if (response.status === 400 || response.status === 401 || response.status === 403) {
+		return {
+			success: false,
+			error: `Authentication rejected (${response.status} ${response.statusText}).`,
+		};
+	}
+	if (response.status === 404) {
+		return { success: false, error: "Provider does not expose a /models endpoint." };
+	}
+	return { success: false, error: `Probe failed: ${response.status} ${response.statusText}` };
+}
+
+async function probeAnthropicConnection(input: {
+	baseUrl: string;
+	apiKey: string;
+}): Promise<ProviderProbeResult> {
+	const baseUrl = (input.baseUrl || "").replace(/\/+$/, "");
+	if (!baseUrl) {
+		return { success: false, error: "Provider endpoint is required." };
+	}
+	const parsed = tryParseUrl(baseUrl);
+	if (!parsed) {
+		return { success: false, error: "Provider endpoint is invalid." };
+	}
+	if (!/^https?:$/.test(parsed.protocol)) {
+		return { success: false, error: "Provider endpoint must use http or https." };
+	}
+
+	const url = `${baseUrl}/models`;
+	const headers: Record<string, string> = {
+		Accept: "application/json",
+		"anthropic-version": "2023-06-01",
+	};
+	if (input.apiKey) {
+		headers["x-api-key"] = input.apiKey;
+	}
+
+	let response: Response;
+	try {
+		response = await fetch(url, {
+			method: "GET",
+			headers,
+			signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+		});
+	} catch (error) {
+		return {
+			success: false,
+			error: `Network error during probe: ${error instanceof Error ? error.message : String(error)}`,
+		};
+	}
+
+	if (response.ok) {
+		let modelCount: number | undefined;
+		try {
+			const payload = (await response.json()) as { data?: unknown[] };
+			modelCount = Array.isArray(payload.data) ? payload.data.length : undefined;
+		} catch {
+			modelCount = undefined;
+		}
+		return { success: true, modelCount };
+	}
+
+	if (response.status === 401 || response.status === 403) {
+		return {
+			success: false,
+			error: `Authentication rejected (${response.status} ${response.statusText}).`,
+		};
+	}
+	if (response.status === 404) {
+		return { success: false, error: "Provider does not expose a /models endpoint." };
+	}
+	return { success: false, error: `Probe failed: ${response.status} ${response.statusText}` };
+}
+
 export interface TestChatResult {
 	success: boolean;
 	reply?: string;
@@ -134,6 +272,20 @@ export interface TestChatResult {
 }
 
 export async function testProviderChat(
+	input: ProviderConnectionInput & { providerType?: string },
+): Promise<TestChatResult> {
+	const providerType = normalizeProviderType(input.providerType ?? "openai_compat");
+	switch (providerType) {
+		case "google":
+			return testGoogleChat(input);
+		case "anthropic":
+			return testAnthropicChat(input);
+		default:
+			return testOpenAiCompatChat(input);
+	}
+}
+
+async function testOpenAiCompatChat(
 	input: ProviderConnectionInput,
 ): Promise<TestChatResult> {
 	const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
@@ -167,8 +319,131 @@ export async function testProviderChat(
 			};
 		}
 
-		const payload = (await response.json()) as OpenAiChatCompletionResponse;
-		const content = extractChoiceContent(payload.choices?.[0]);
+		const payload = (await response.json()) as OpenAiChatCompletionResponse & {
+			choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }>; reasoning_content?: string | null } }>;
+		};
+		const choice = payload.choices?.[0];
+		const content = extractChoiceContent(choice, { skipReasoning: true });
+		if (!content && choice?.message?.reasoning_content) {
+			return { success: true, reply: "(reasoning only, no visible output)" };
+		}
+		return { success: true, reply: content || "(empty response)" };
+	} catch (error) {
+		clearTimeout(timer);
+		const msg = error instanceof Error ? error.message : "Unknown error";
+		if (
+			error instanceof Error &&
+			(error.name === "TimeoutError" || /aborted/i.test(error.message))
+		) {
+			return {
+				success: false,
+				error: `Timed out after ${Math.floor(TEST_CHAT_TIMEOUT_MS / 1000)}s.`,
+			};
+		}
+		return { success: false, error: msg };
+	}
+}
+
+async function testGoogleChat(
+	input: ProviderConnectionInput,
+): Promise<TestChatResult> {
+	const baseUrl = (input.baseUrl || "").replace(/\/+$/, "");
+	if (!baseUrl)
+		return { success: false, error: "Provider endpoint is required." };
+	if (!input.model) return { success: false, error: "Model is required." };
+
+	const url = `${baseUrl}/v1beta/models/${input.model}:generateContent?key=${input.apiKey}`;
+
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), TEST_CHAT_TIMEOUT_MS);
+
+	try {
+		const response = await fetch(url, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				contents: [{ parts: [{ text: "Hi" }] }],
+				generationConfig: { maxOutputTokens: 64, temperature: 0.7 },
+			}),
+			signal: controller.signal,
+		});
+		clearTimeout(timer);
+
+		if (!response.ok) {
+			const errorText = await response.text().catch(() => "");
+			return {
+				success: false,
+				error: `${response.status} ${response.statusText}${errorText ? `: ${errorText.slice(0, 200)}` : ""}`,
+			};
+		}
+
+		const payload = (await response.json()) as {
+			candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+		};
+		const content = payload.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+		return { success: true, reply: content || "(empty response)" };
+	} catch (error) {
+		clearTimeout(timer);
+		const msg = error instanceof Error ? error.message : "Unknown error";
+		if (
+			error instanceof Error &&
+			(error.name === "TimeoutError" || /aborted/i.test(error.message))
+		) {
+			return {
+				success: false,
+				error: `Timed out after ${Math.floor(TEST_CHAT_TIMEOUT_MS / 1000)}s.`,
+			};
+		}
+		return { success: false, error: msg };
+	}
+}
+
+async function testAnthropicChat(
+	input: ProviderConnectionInput,
+): Promise<TestChatResult> {
+	const baseUrl = (input.baseUrl || "").replace(/\/+$/, "");
+	if (!baseUrl)
+		return { success: false, error: "Provider endpoint is required." };
+	if (!input.model) return { success: false, error: "Model is required." };
+
+	const url = `${baseUrl}/messages`;
+
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), TEST_CHAT_TIMEOUT_MS);
+
+	try {
+		const response = await fetch(url, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				"anthropic-version": "2023-06-01",
+				...(input.apiKey ? { "x-api-key": input.apiKey } : {}),
+			},
+			body: JSON.stringify({
+				model: input.model,
+				max_tokens: 64,
+				messages: [{ role: "user", content: "Hi" }],
+			}),
+			signal: controller.signal,
+		});
+		clearTimeout(timer);
+
+		if (!response.ok) {
+			const errorText = await response.text().catch(() => "");
+			return {
+				success: false,
+				error: `${response.status} ${response.statusText}${errorText ? `: ${errorText.slice(0, 200)}` : ""}`,
+			};
+		}
+
+		const payload = (await response.json()) as {
+			content?: Array<{ type?: string; text?: string }>;
+		};
+		const textBlock = payload.content?.find((c) => c.type === "text");
+		const content = textBlock?.text?.trim() ?? "";
+		if (!content && payload.content?.some((c) => c.type === "thinking")) {
+			return { success: true, reply: "(reasoning only, no visible output)" };
+		}
 		return { success: true, reply: content || "(empty response)" };
 	} catch (error) {
 		clearTimeout(timer);
@@ -187,9 +462,13 @@ export async function testProviderChat(
 }
 
 export async function listProviderModels(
-	input: Omit<ProviderConnectionInput, "model"> & { providerType?: string },
+	input: Omit<ProviderConnectionInput, "model"> & { providerType?: string; requiresAuthForModels?: boolean },
 ): Promise<ProviderModelOption[]> {
-	const providerType = input.providerType ?? "openai_compat";
+	const providerType = normalizeProviderType(input.providerType ?? "openai_compat");
+
+	if (input.requiresAuthForModels && !input.apiKey) {
+		throw new Error("API key required to fetch models for this provider.");
+	}
 
 	switch (providerType) {
 		case "anthropic":
@@ -207,7 +486,14 @@ async function listOpenAiCompatModels(
 	input: Omit<ProviderConnectionInput, "model">,
 ): Promise<ProviderModelOption[]> {
 	const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
-	const url = buildModelsUrl(baseUrl);
+	const isNanoGpt = /nano-gpt\.com/.test(baseUrl);
+
+	// NanoGPT: use subscription-only endpoint with detailed info
+	// Other providers: standard /models
+	const url = isNanoGpt
+		? `${baseUrl.replace(/\/v1$/, "")}/subscription/v1/models?detailed=true`
+		: buildModelsUrl(baseUrl);
+
 	let response: Response;
 
 	const controller = new AbortController();
@@ -244,10 +530,19 @@ async function listOpenAiCompatModels(
 				return null;
 			}
 
-			return {
+			// Use display name from detailed response, or just id (skip owned_by for NanoGPT)
+			if (isNanoGpt) {
+				const opt: ProviderModelOption = { id, label: record.name || id };
+				if (record.context_length) opt.contextLength = record.context_length;
+				return opt;
+			}
+
+			const opt: ProviderModelOption = {
 				id,
 				label: record.owned_by ? `${id} - ${record.owned_by}` : id,
 			};
+			if (record.context_length) opt.contextLength = record.context_length;
+			return opt;
 		})
 		.filter((record): record is ProviderModelOption => Boolean(record))
 		.sort((left, right) => left.id.localeCompare(right.id));
@@ -290,14 +585,59 @@ async function listAnthropicModels(
 }
 
 async function listGoogleModels(
-	_input: Omit<ProviderConnectionInput, "model">,
+	input: Omit<ProviderConnectionInput, "model">,
 ): Promise<ProviderModelOption[]> {
-	return [
-		{ id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-		{ id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-		{ id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-		{ id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite" },
-	].sort((a, b) => a.id.localeCompare(b.id));
+	const baseUrl = (input.baseUrl || "").replace(/\/+$/, "");
+	const apiKey = input.apiKey;
+	const url = `${baseUrl}/v1beta/models?key=${apiKey}`;
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), MODEL_LIST_TIMEOUT_MS);
+
+	let response: Response;
+	try {
+		response = await fetch(url, {
+			method: "GET",
+			headers: { Accept: "application/json" },
+			signal: controller.signal,
+		});
+		clearTimeout(timer);
+	} catch (error) {
+		clearTimeout(timer);
+		throw wrapProviderNetworkError(error, { operation: "Google model list", timeoutMs: MODEL_LIST_TIMEOUT_MS });
+	}
+
+	if (!response.ok) {
+		throw new Error(`Google model list failed: ${response.status} ${response.statusText}`);
+	}
+
+	interface GoogleModel {
+		name: string;
+		displayName?: string;
+		supportedGenerationMethods?: string[];
+		inputTokenLimit?: number;
+	}
+	const payload = (await response.json()) as { models?: GoogleModel[] };
+	const records = Array.isArray(payload.models) ? payload.models : [];
+
+	// Only keep text/chat models — filter out embedding, image, video, audio models.
+	// Gemini text models expose "generateContent"; TTS models expose "generateAnswer" or nothing useful.
+	const CHAT_METHODS = new Set(["generateContent", "generateMessage"]);
+
+	return records
+		.filter((r) => {
+			const methods = r.supportedGenerationMethods;
+			if (!Array.isArray(methods) || methods.length === 0) return false;
+			return methods.some((m) => CHAT_METHODS.has(m));
+		})
+		.map((r) => {
+			const id = r.name.replace(/^models\//, "").trim();
+			if (!id) return null;
+			const opt: ProviderModelOption = { id, label: r.displayName ?? id };
+			if (r.inputTokenLimit) opt.contextLength = r.inputTokenLimit;
+			return opt;
+		})
+		.filter((r): r is ProviderModelOption => r !== null)
+		.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 async function listOllamaModels(
@@ -367,10 +707,12 @@ function extractChoiceContent(
 		| {
 				message?: {
 					content?: string | Array<{ type?: string; text?: string }>;
+					reasoning_content?: string | null;
 				};
 				text?: string;
 		  }
 		| undefined,
+		options?: { skipReasoning?: boolean },
 ): string {
 	if (!choice) {
 		return "";
@@ -382,6 +724,10 @@ function extractChoiceContent(
 
 	if (Array.isArray(choice.message?.content)) {
 		return choice.message.content
+			.filter((part) => {
+				if (options?.skipReasoning && (part.type === "thinking" || part.type === "reasoning")) return false;
+				return true;
+			})
 			.map((part) => (part.type === "text" ? (part.text ?? "") : ""))
 			.join("")
 			.trim();

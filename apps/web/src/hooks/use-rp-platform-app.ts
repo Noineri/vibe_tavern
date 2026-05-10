@@ -454,6 +454,7 @@ export function useRpPlatformApp() {
     handleCreateProviderProfile: provider.handleCreateProviderProfile,
     handleDuplicateProviderProfile: provider.handleDuplicateProviderProfile,
     handleTestDraftConnection: provider.handleTestDraftConnection,
+    handleTestProfileConnection: provider.handleTestProfileConnection,
     handleTestChat: provider.handleTestChat,
     handleFetchModelsForProfile: provider.handleFetchModelsForProfile,
     handleFetchModelsByEndpoint: provider.handleFetchModelsByEndpoint,
