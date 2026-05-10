@@ -171,7 +171,6 @@ export function CharacterForm({
       )}
 
       <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t2" style={{ marginBottom: 28, lineHeight: 1.55 }}>
-        Character card — edit inline
       </div>
 
       {/* Avatar + Name */}
