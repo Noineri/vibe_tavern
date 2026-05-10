@@ -6,7 +6,7 @@ import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { Icons } from "./shared/icons.js";
 import { SaveButton } from "./shared/SaveBar.js";
 import { useDirtyState } from "./shared/use-dirty-state.js";
-import { PresetList, PresetHeader, PromptTabs } from "./prompt/index.js";
+import { PresetList, PromptFields } from "./prompt/index.js";
 
 type DraftData = {
   name: string;
@@ -52,19 +52,11 @@ const emptyDraft: DraftData = {
 };
 
 export function PromptManagerModal(input: PromptManagerModalProps) {
-  const [activeTab, setActiveTab] = useState<"system" | "jailbreak" | "authorsNote" | "tools">("system");
   const [draft, setDraft] = useState<DraftData>({ ...emptyDraft });
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   const dirtyState = useDirtyState();
   const activePreset = input.presets.find((p) => p.id === input.activePresetId) ?? null;
-
-  // Resolve bindModel id → provider name for sidebar display
-  const resolveBindName = (bindModel: string): string => {
-    if (!bindModel) return "";
-    const profile = input.providerProfiles?.find((p) => p.id === bindModel);
-    return profile?.name ?? bindModel;
-  };
 
   useEffect(() => {
     if (activePreset) {
@@ -108,11 +100,31 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   };
 
   const handleDuplicate = () => {
-    void input.onCreate({ ...draft, name: `${draft.name} (copy)` });
+    void input.onCreate({ ...draft, name: `${draft.name || "Preset"} (copy)` });
   };
 
-  const handleAdd = () => {
-    void input.onCreate({ name: "New preset" });
+  const handleAdd = (name: string) => {
+    void input.onCreate({
+      name,
+      bindModel: "",
+      system: "",
+      jailbreak: "",
+      prefill: "",
+      authorsNote: "",
+      authorsNoteDepth: 4,
+      summary: "",
+      tools: "",
+    }).then((created) => {
+      if (created?.id) input.setActivePresetId(created.id);
+    });
+  };
+
+  const handleRename = (presetId: string, newName: string) => {
+    void input.onUpdate(presetId, { name: newName }).then((ok) => {
+      if (ok && presetId === input.activePresetId) {
+        setDraft((current) => ({ ...current, name: newName }));
+      }
+    });
   };
 
   const handleConfirmDelete = () => {
@@ -151,10 +163,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       )}
 
       <div
-        className="flex max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] w-[760px] h-[580px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]"
+        className="flex max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] w-[880px] h-[760px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]"
         onClick={(event) => event.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex shrink-0 items-start justify-between border-b border-border pt-[18px] px-5 pb-[14px]">
           <div>
             <div className="font-body mb-0.5 text-[calc(var(--ui-fs)+4px)] font-medium text-t1">
@@ -178,37 +189,21 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           </div>
         </div>
 
-        {/* Body: sidebar + main */}
         <div className="flex min-h-0 flex-1">
           <PresetList
-            presets={input.presets.map((p) => ({
-              id: p.id,
-              name: p.name,
-              bindModel: resolveBindName(p.bindModel),
-            }))}
+            presets={input.presets.map((p) => ({ id: p.id, name: p.name }))}
             activePresetId={input.activePresetId}
             onSelect={(id) => input.setActivePresetId(id)}
             onAdd={handleAdd}
+            onRename={handleRename}
           />
-          <div className="flex flex-1 flex-col overflow-y-auto p-5">
-            <PresetHeader
-              name={draft.name}
-              bindModel={draft.bindModel}
-              disabled={!activePreset}
-              onUpdateField={(key, value) => updateDraft(key, value)}
-              providerProfiles={input.providerProfiles}
-            />
-            <PromptTabs
-              activeTab={activeTab}
-              setActiveTab={setActiveTab}
-              draft={activePreset ? draft : null}
-              onUpdateField={updateDraft}
-              prefillSupported={input.prefillSupported}
-            />
-          </div>
+          <PromptFields
+            draft={activePreset ? draft : null}
+            onUpdateField={updateDraft}
+            prefillSupported={input.prefillSupported}
+          />
         </div>
 
-        {/* Footer */}
         <div className="flex shrink-0 items-center gap-2.5 border-t border-border py-3.5 px-5">
           <span
             className={cn(
