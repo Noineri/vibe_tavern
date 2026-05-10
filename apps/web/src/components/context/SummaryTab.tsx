@@ -1,5 +1,6 @@
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
+import { TokenCounter } from "../shared/TokenCounter.js";
 
 const textareaCls = "w-full rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent resize-none";
 const labelCls = "mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3";
@@ -95,6 +96,7 @@ export function SummaryTab({
             disabled={disabled}
             onChange={e => onSummaryTextChange(e.target.value)}
           />
+          <TokenCounter text={summaryText} />
         </div>
 
         <div className="shrink-0 mt-4">

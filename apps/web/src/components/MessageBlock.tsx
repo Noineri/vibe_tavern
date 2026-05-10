@@ -6,6 +6,7 @@ import { initials } from "./app-shell-helpers.js";
 import { useChatStore } from "../stores/chat-store.js";
 import type { MessageBlockProps } from "./play-mode-types.js";
 import { Icons } from "./shared/icons.js";
+import { useTokenCount } from "../hooks/use-token-count.js";
 
 export function MessageBlock(input: MessageBlockProps) {
   const streamingText = useChatStore((s) => s.streamingText);
@@ -33,6 +34,7 @@ export function MessageBlock(input: MessageBlockProps) {
   const regenLabel = "regen";
   const deleteLabel = "delete";
   const createdLabel = formatMessageTime(input.message.createdAt);
+  const messageTokens = useTokenCount(displayContent);
 
   return (
     <div className="relative" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'0 auto', paddingLeft:28, paddingRight:28}}>
@@ -139,8 +141,9 @@ export function MessageBlock(input: MessageBlockProps) {
         )}
 
         {!input.isEditing && !isGenerating && createdLabel && (
-          <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t3/50">
+          <div className="mt-1 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-4px)] text-t3/50">
             {createdLabel}
+            <span className="tabular-nums">{messageTokens} tokens</span>
           </div>
         )}
 

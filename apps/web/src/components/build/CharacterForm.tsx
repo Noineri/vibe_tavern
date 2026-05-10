@@ -3,6 +3,7 @@ import { Ic } from "../shared/icons";
 import { cn } from "../../lib/cn";
 import { CharacterImportModal } from "../ImportModals.js";
 import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader";
+import { useTokenCount } from "../../hooks/use-token-count.js";
 
 export interface CharacterFormProps {
   draft: Record<string, any>;
@@ -55,6 +56,12 @@ const s = {
 const inputCls = "w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent";
 const textareaCls = inputCls;
 const monoCls = inputCls + " font-mono text-xs";
+
+/** Small inline token badge for character form fields */
+function TokenBadge({ text }: { text: string }) {
+  const count = useTokenCount(text);
+  return <span className="flex justify-end font-ui text-[11px] tabular-nums text-t3">{count.toLocaleString()} tokens</span>;
+}
 
 export function CharacterForm({
   draft, patchDraft, setDraft, isDirty, isSaving, saveNotice, avatarUrl, onSave, onReset, onAvatarUpload,
@@ -120,6 +127,14 @@ export function CharacterForm({
   const displayAvatar = avatarPreview || avatarUrl;
   const lblCls = "block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3";
 
+  // Total character tokens (all text fields)
+  const charTotal = useTokenCount([
+    draft.description, draft.firstMessage, draft.mesExample, draft.scenario,
+    draft.personalitySummary, draft.postHistoryInstructions, draft.creatorNotes,
+    draft.systemPrompt, draft.depthPrompt,
+    ...(draft.alternateGreetings || []),
+  ].filter(Boolean).join("\n"));
+
   return (
     <div style={{ maxWidth: 600 }}>
       {/* Header row */}
@@ -128,6 +143,7 @@ export function CharacterForm({
           {draft.name || "Unnamed"}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="font-ui text-[11px] tabular-nums text-t3">{charTotal.toLocaleString()} tokens</span>
           <button
             className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
             style={{ height: 28, width: 28 }}
@@ -184,12 +200,14 @@ export function CharacterForm({
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>Description</label>
         <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 100 }} value={draft.description || ""} disabled={isSaving} onChange={(e) => patchDraft("description", e.target.value)} />
+        <TokenBadge text={draft.description || ""} />
       </div>
 
       {/* First Message */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>First Message (Greeting)</label>
         <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 120 }} value={draft.firstMessage || ""} disabled={isSaving} onChange={(e) => patchDraft("firstMessage", e.target.value)} placeholder="Character's first message..." />
+        <TokenBadge text={draft.firstMessage || ""} />
       </div>
 
       {/* Alternate Greetings */}
@@ -236,18 +254,21 @@ export function CharacterForm({
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>Message Examples</label>
         <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 120 }} value={draft.mesExample || ""} disabled={isSaving} onChange={(e) => patchDraft("mesExample", e.target.value)} placeholder="<START>..." />
+        <TokenBadge text={draft.mesExample || ""} />
       </div>
 
       {/* Scenario */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>Scenario</label>
         <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 100 }} value={draft.scenario || ""} disabled={isSaving} onChange={(e) => patchDraft("scenario", e.target.value)} />
+        <TokenBadge text={draft.scenario || ""} />
       </div>
 
       {/* Personality Summary */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>Personality Summary</label>
         <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.personalitySummary || ""} disabled={isSaving} onChange={(e) => patchDraft("personalitySummary", e.target.value)} />
+        <TokenBadge text={draft.personalitySummary || ""} />
       </div>
 
       {/* Advanced separator */}
@@ -259,18 +280,21 @@ export function CharacterForm({
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>Post-History Instructions</label>
         <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.postHistoryInstructions || ""} disabled={isSaving} onChange={(e) => patchDraft("postHistoryInstructions", e.target.value)} placeholder="Instructions appended to the end of chat history (Jailbreak)..." />
+        <TokenBadge text={draft.postHistoryInstructions || ""} />
       </div>
 
       {/* Creator Notes */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>Creator Notes</label>
         <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.creatorNotes || ""} disabled={isSaving} onChange={(e) => patchDraft("creatorNotes", e.target.value)} placeholder="Internal creator notes..." />
+        <TokenBadge text={draft.creatorNotes || ""} />
       </div>
 
       {/* Character Book JSON */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>Character Book (JSON)</label>
         <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 80 }} value={draft.characterBook || ""} disabled={isSaving} onChange={(e) => patchDraft("characterBook", e.target.value)} placeholder='{"entries":[...]}'  />
+        <TokenBadge text={draft.characterBook || ""} />
       </div>
 
       {/* Depth Prompt row */}
@@ -278,6 +302,7 @@ export function CharacterForm({
         <div style={{ ...s.fieldWrap, flex: 1 }}>
           <label className={lblCls} style={s.label}>Depth Prompt</label>
           <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.depthPrompt || ""} disabled={isSaving} onChange={(e) => patchDraft("depthPrompt", e.target.value)} placeholder="Prompt injected at a specific depth..." />
+          <TokenBadge text={draft.depthPrompt || ""} />
         </div>
         <div style={{ ...s.fieldWrap, width: 80, flexShrink: 0 }}>
           <label className={lblCls} style={s.label}>Depth</label>
@@ -297,12 +322,14 @@ export function CharacterForm({
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>Extensions (JSON)</label>
         <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.extensions || ""} disabled={isSaving} onChange={(e) => patchDraft("extensions", e.target.value)} placeholder='{"talkativeness":"0.5",...}' />
+        <TokenBadge text={draft.extensions || ""} />
       </div>
 
       {/* System Prompt Override */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>System Prompt Override</label>
         <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 80 }} value={draft.systemPrompt || ""} disabled={isSaving} onChange={(e) => patchDraft("systemPrompt", e.target.value)} placeholder="Leave empty to use the global prompt..." />
+        <TokenBadge text={draft.systemPrompt || ""} />
       </div>
 
       {/* Tags */}

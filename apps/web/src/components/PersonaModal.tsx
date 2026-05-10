@@ -5,6 +5,7 @@ import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { cn } from "../lib/cn.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { uploadAsset } from "../app-client.js";
+import { useTokenCount } from "../hooks/use-token-count.js";
 
 interface PersonaListItem {
   id: string;
@@ -24,6 +25,16 @@ interface PersonaModalProps {
   onSetActive: (personaId: string) => void;
   onCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
   onDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
+}
+
+function PersonaTokenBadge({ text }: { text: string }) {
+  const count = useTokenCount(text);
+  return <span className="flex justify-end font-ui text-[11px] tabular-nums text-t3 mb-3">{count.toLocaleString()} tokens</span>;
+}
+
+function PersonaPreviewBadge({ text }: { text: string }) {
+  const count = useTokenCount(text);
+  return <span className="font-ui text-[11px] tabular-nums text-t3">{count.toLocaleString()} tokens</span>;
 }
 
 export function PersonaModal(input: PersonaModalProps) {
@@ -254,12 +265,13 @@ export function PersonaModal(input: PersonaModalProps) {
                         </div>
                       </div>
                       <textarea
-                        className="mb-3 w-full min-h-[60px] rounded border border-border bg-s2 py-2 px-2.5 font-ui text-xs text-t1 outline-none transition-colors focus:border-accent"
+                        className="mb-1 w-full min-h-[60px] rounded border border-border bg-s2 py-2 px-2.5 font-ui text-xs text-t1 outline-none transition-colors focus:border-accent"
                         style={{ resize: "vertical" }}
                         value={editDescription}
                         onChange={(e) => setEditDescription(e.target.value)}
                         placeholder="Description"
                       />
+                      <PersonaTokenBadge text={editDescription} />
                       <div className="flex gap-2">
                         <button
                           className="h-[34px] cursor-pointer rounded-md bg-accent py-0 px-[18px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110"
@@ -289,7 +301,10 @@ export function PersonaModal(input: PersonaModalProps) {
                         }
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="font-ui mb-[3px] text-[length:var(--ui-fs)] font-medium text-t1">{persona.name}</div>
+                        <div className="flex items-start justify-between">
+                          <div className="font-ui mb-[3px] text-[length:var(--ui-fs)] font-medium text-t1">{persona.name}</div>
+                          <PersonaPreviewBadge text={persona.description} />
+                        </div>
                         {resolvePronounsDisplay(persona) && (
                           <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{resolvePronounsDisplay(persona)}</div>
                         )}
