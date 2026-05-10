@@ -10,12 +10,16 @@ import {
   getProviderProfileForClient,
   getCachedProviderModels,
   setCachedProviderModels,
+  listFavoriteProviderModels,
+  addFavoriteProviderModel,
+  removeFavoriteProviderModel,
   type ProviderModuleDeps,
 } from "./session-runtime-provider.js";
 import type {
   StoredProviderProfileRecord,
   ClientProviderProfileRecord,
   CachedProviderModelsRecord,
+  FavoriteProviderModelRecord,
 } from "./session-runtime-dto.js";
 
 /**
@@ -105,6 +109,21 @@ export class ProviderProfileService {
     models: Array<{ id: string; label: string }>,
   ): Promise<CachedProviderModelsRecord> {
     return setCachedProviderModels(this.deps, providerProfileId, models);
+  }
+
+  async listFavoriteProviderModels(providerProfileId: string): Promise<FavoriteProviderModelRecord[]> {
+    return listFavoriteProviderModels(this.deps, providerProfileId);
+  }
+
+  async addFavoriteProviderModel(
+    providerProfileId: string,
+    model: { modelId: string; label?: string | null; contextLength?: number | null },
+  ): Promise<FavoriteProviderModelRecord> {
+    return addFavoriteProviderModel(this.deps, providerProfileId, model);
+  }
+
+  async removeFavoriteProviderModel(providerProfileId: string, modelId: string): Promise<void> {
+    return removeFavoriteProviderModel(this.deps, providerProfileId, modelId);
   }
 
   /**

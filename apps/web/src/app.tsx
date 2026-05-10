@@ -147,6 +147,11 @@ export function App() {
         tokenAccounting: app.activePromptTrace?.tokenAccounting ?? {},
         contextSize: app.activeProviderProfile?.contextBudget ?? 0,
         maxTokens: app.activeProviderProfile?.maxTokens ?? 0,
+        favoriteModels: app.activeProviderProfile ? (app.favoriteModelsByProfile[app.activeProviderProfile.id] ?? []) : [],
+        activeModelId: app.activeProviderProfile?.defaultModel ?? app.connection.model ?? null,
+        onSelectFavoriteModel: (modelId) => {
+          if (app.activeProviderProfile) void app.handleSelectFavoriteProviderModel(app.activeProviderProfile.id, modelId);
+        },
         onCancel: app.handleCancelGeneration,
         onDraftChange: app.setDraft,
         onSend: () => void app.handleSend(),
@@ -300,6 +305,8 @@ export function App() {
         onTestChat={app.handleTestChat}
         onFetchModels={app.handleFetchModelsByEndpoint}
         onFetchModelsForProfile={app.handleFetchModelsForProfile}
+        favoriteModelsByProfile={app.favoriteModelsByProfile}
+        onToggleFavoriteModel={app.handleToggleFavoriteProviderModel}
         onRefreshProfiles={async () => { await app.handleRefreshProfiles(); }}
       />
 

@@ -132,6 +132,15 @@ export interface TestChatResponse {
   error?: string;
 }
 
+export interface FavoriteProviderModelRecord {
+  id: string;
+  providerProfileId: string;
+  modelId: string;
+  label: string | null;
+  contextLength: number | null;
+  createdAt: string;
+}
+
 export type ChatGenerationStatus =
   | "idle"
   | "preparing"
@@ -684,6 +693,24 @@ export async function fetchProviderProfileModels(
 ): Promise<{ models: Array<{ id: string; label: string; contextLength?: number }> }> {
   const response = await client.api.providers[":providerId"].models.$post({ param: { providerId: providerProfileId } });
   return unwrapRpc<{ models: Array<{ id: string; label: string; contextLength?: number }> }>(response);
+}
+
+export async function listFavoriteProviderModels(providerProfileId: string): Promise<FavoriteProviderModelRecord[]> {
+  const response = await client.api.providers[":providerId"]["model-favorites"].$get({ param: { providerId: providerProfileId } });
+  return unwrapRpc<FavoriteProviderModelRecord[]>(response);
+}
+
+export async function addFavoriteProviderModel(
+  providerProfileId: string,
+  model: { modelId: string; label?: string | null; contextLength?: number | null },
+): Promise<FavoriteProviderModelRecord> {
+  const response = await client.api.providers[":providerId"]["model-favorites"].$post({ param: { providerId: providerProfileId }, json: model });
+  return unwrapRpc<FavoriteProviderModelRecord>(response);
+}
+
+export async function removeFavoriteProviderModel(providerProfileId: string, modelId: string): Promise<{ ok: true }> {
+  const response = await client.api.providers[":providerId"]["model-favorites"].$delete({ param: { providerId: providerProfileId }, json: { modelId } });
+  return unwrapRpc<{ ok: true }>(response);
 }
 
 export async function fetchModelsByEndpoint(

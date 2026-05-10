@@ -61,6 +61,15 @@ export interface CachedProviderModelsRecord {
   cachedAt: string;
 }
 
+export interface FavoriteProviderModelRecord {
+  id: string;
+  providerProfileId: string;
+  modelId: string;
+  label: string | null;
+  contextLength: number | null;
+  createdAt: string;
+}
+
 export interface MessageDto extends Message {
   variants: MessageVariant[];
   selectedVariantIndex: number | null;

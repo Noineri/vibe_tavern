@@ -1,5 +1,5 @@
 import type { ChatBranch, ChatBranchId } from "@rp-platform/domain";
-import type { AppMessage } from "../app-client.js";
+import type { AppMessage, FavoriteProviderModelRecord } from "../app-client.js";
 
 export interface MessageBlockProps {
   message: AppMessage;
@@ -70,6 +70,9 @@ export interface InputAreaProps {
   tokenAccounting: Record<string, number>;
   contextSize: number;
   maxTokens: number;
+  favoriteModels: FavoriteProviderModelRecord[];
+  activeModelId: string | null;
+  onSelectFavoriteModel: (modelId: string) => void;
   onCancel: () => void;
   onDraftChange: (value: string) => void;
   onSend: () => void;

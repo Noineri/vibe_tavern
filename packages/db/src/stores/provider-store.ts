@@ -1,5 +1,5 @@
-import { eq } from 'drizzle-orm';
-import { providerProfiles, cachedModels } from '../db-schema.js';
+import { and, eq } from 'drizzle-orm';
+import { providerProfiles, cachedModels, providerModelFavorites } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 
@@ -41,6 +41,15 @@ export interface CachedModel {
   fetchedAt: string;
 }
 
+export interface FavoriteModel {
+  id: string;
+  providerProfileId: string;
+  modelId: string;
+  label: string | null;
+  contextLength: number | null;
+  createdAt: string;
+}
+
 // ─── Input types ──────────────────────────────────────────────────────────────
 
 export interface CreateProviderData {
@@ -72,6 +81,12 @@ export interface CachedModelData {
   modelName: string;
   contextLength?: number | null;
   capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean };
+}
+
+export interface FavoriteModelData {
+  modelId: string;
+  label?: string | null;
+  contextLength?: number | null;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -262,6 +277,64 @@ export class ProviderStore {
     return rows.map((row) => this.mapCachedModelRow(row));
   }
 
+  // ─── Favorite models ───────────────────────────────────────────────────────
+
+  async listFavoriteModels(providerId: string): Promise<FavoriteModel[]> {
+    const rows = await this.db
+      .select()
+      .from(providerModelFavorites)
+      .where(eq(providerModelFavorites.providerProfileId, providerId))
+      .all();
+    return rows.map((row) => this.mapFavoriteModelRow(row));
+  }
+
+  async addFavoriteModel(providerId: string, model: FavoriteModelData): Promise<FavoriteModel> {
+    const now = this.clock.now();
+    const existing = await this.db
+      .select()
+      .from(providerModelFavorites)
+      .where(and(
+        eq(providerModelFavorites.providerProfileId, providerId),
+        eq(providerModelFavorites.modelId, model.modelId),
+      ))
+      .get();
+
+    if (existing) {
+      const [row] = await this.db
+        .update(providerModelFavorites)
+        .set({
+          label: model.label ?? existing.label,
+          contextLength: model.contextLength ?? existing.contextLength,
+        })
+        .where(eq(providerModelFavorites.id, existing.id))
+        .returning();
+      return this.mapFavoriteModelRow(row!);
+    }
+
+    const [row] = await this.db
+      .insert(providerModelFavorites)
+      .values({
+        id: this.idGen.next('fm'),
+        providerProfileId: providerId,
+        modelId: model.modelId,
+        label: model.label ?? null,
+        contextLength: model.contextLength ?? null,
+        createdAt: now,
+      })
+      .returning();
+    return this.mapFavoriteModelRow(row!);
+  }
+
+  async removeFavoriteModel(providerId: string, modelId: string): Promise<void> {
+    await this.db
+      .delete(providerModelFavorites)
+      .where(and(
+        eq(providerModelFavorites.providerProfileId, providerId),
+        eq(providerModelFavorites.modelId, modelId),
+      ))
+      .run();
+  }
+
   // ─── Row mappers ───────────────────────────────────────────────────────────
 
   private mapRow(row: typeof providerProfiles.$inferSelect): ProviderProfile {
@@ -301,6 +374,17 @@ export class ProviderStore {
       contextLength: row.contextLength,
       capabilities: JSON.parse(row.capabilitiesJson),
       fetchedAt: row.fetchedAt,
+    };
+  }
+
+  private mapFavoriteModelRow(row: typeof providerModelFavorites.$inferSelect): FavoriteModel {
+    return {
+      id: row.id,
+      providerProfileId: row.providerProfileId,
+      modelId: row.modelId,
+      label: row.label,
+      contextLength: row.contextLength,
+      createdAt: row.createdAt,
     };
   }
 }
