@@ -17,7 +17,7 @@ import { createRuntimeStore } from "./session-runtime-store.js";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { unlink } from "node:fs/promises";
-import { warmupTokenizers, countTokens } from "./ai/tokenizer-service.js";
+import { warmupTokenizers, countTokensDefault } from "./ai/tokenizer-service.js";
 import { setTokenCountFn } from "@rp-platform/prompt-pipeline";
 
 const rootDir = process.env.RP_PLATFORM_ROOT_DIR ?? resolve(import.meta.dir, '..', '..', '..');
@@ -86,7 +86,7 @@ async function ensureSeedData() {
 
   // Warm up tokenizers and inject into prompt pipeline
   await warmupTokenizers();
-  setTokenCountFn(countTokens);
+  setTokenCountFn(countTokensDefault);
   console.log("[bootstrap] Tokenizers ready.");
 
   // 8. Wire stores into services

@@ -143,6 +143,20 @@ export function countTokens(text: string, model?: string): number {
 }
 
 /**
+ * Count tokens using cl100k_base (GPT-4 class tokenizer).
+ * Good universal default for prompt pipeline — much more accurate than
+ * byte estimation for all languages, even for non-OpenAI models.
+ */
+export function countTokensDefault(text: string): number {
+	if (!text) return 0;
+	try {
+		return getTiktoken("cl100k_base").encode(text).length;
+	} catch {
+		return guesstimate(text);
+	}
+}
+
+/**
  * Pre-load all web-tokenizer models so countTokens() can stay synchronous.
  * Call once at server startup.
  */
