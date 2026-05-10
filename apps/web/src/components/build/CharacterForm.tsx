@@ -303,11 +303,11 @@ export function CharacterForm({
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">Depth</span>
-              <input type="number" className={inputCls} style={{ ...s.inputPadding, width: 56, textAlign: "center" }} min={0} max={999} value={draft.depthPromptDepth ?? 4} disabled={isSaving} onChange={(e) => patchDraft("depthPromptDepth", Number(e.target.value))} />
+              <input type="number" className={inputCls} style={{ padding: "2px 6px", width: 56, height: 24, textAlign: "center", fontSize: 11 }} min={0} max={999} value={draft.depthPromptDepth ?? 4} disabled={isSaving} onChange={(e) => patchDraft("depthPromptDepth", Number(e.target.value))} />
             </div>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">Role</span>
-              <select className={inputCls} style={{ ...s.inputPadding, width: 90 }} value={draft.depthPromptRole || "system"} disabled={isSaving} onChange={(e) => patchDraft("depthPromptRole", e.target.value)}>
+              <select className={inputCls} style={{ padding: "2px 6px", width: 82, height: 24, fontSize: 11 }} value={draft.depthPromptRole || "system"} disabled={isSaving} onChange={(e) => patchDraft("depthPromptRole", e.target.value)}>
                 <option value="system">system</option>
                 <option value="user">user</option>
                 <option value="assistant">assistant</option>
