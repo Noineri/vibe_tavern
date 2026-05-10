@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type { AppMode, ThemeMode } from "./app-shell-types.js";
 import { initials } from "./app-shell-helpers.js";
 import { Icons } from "./shared/icons.js";
@@ -21,6 +22,9 @@ interface TopBarProps {
   characterAvatar?: string;
   characterInit?: string;
   activePresetName?: string;
+  promptPresets?: Array<{ id: string; name: string }>;
+  activePromptPresetId?: string | null;
+  setActivePresetId?: (id: string | null) => void;
   onOpenAvatar?: () => void;
   onOpenContextMemory?: () => void;
   onToggleTweaks?: () => void;
@@ -29,11 +33,24 @@ interface TopBarProps {
 
 export function TopBar(input: TopBarProps) {
   const t = (key: string) => key;
-  const activePresetName = input.activePresetName ?? 'Default';
+  const activePresetName = input.activePresetName ?? input.promptPresets?.find((p) => p.id === input.activePromptPresetId)?.name ?? "Default";
   const setAvatarOpen = input.onOpenAvatar ?? (() => { /* TODO: wire avatar panel */ });
   const setContextModalOpen = input.onOpenContextMemory ?? (() => { /* TODO: wire context memory modal */ });
   const setTweaksOpen = input.onToggleTweaks ?? (() => { /* TODO: wire tweaks panel */ });
   const tweaksOpen = input.tweaksOpen ?? false;
+
+  const [presetDropOpen, setPresetDropOpen] = useState(false);
+  const presetDropRef = useRef<HTMLDivElement>(null);
+  const canSwitchPresets = !!input.promptPresets?.length && !!input.setActivePresetId;
+
+  useEffect(() => {
+    if (!presetDropOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (presetDropRef.current && !presetDropRef.current.contains(e.target as Node)) setPresetDropOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [presetDropOpen]);
 
   return (
     <div className="sticky top-0 z-50 flex h-[60px] shrink-0 items-center gap-3.5 border-b border-border bg-surface" style={{padding:'0 22px'}}>
@@ -63,9 +80,43 @@ export function TopBar(input: TopBarProps) {
           <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-medium text-t1">{input.providerLabel}</span>
           <span className="text-t3">·</span>
           <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-t2">{input.providerModelLabel || '—'}</span>
-          <span className="text-border2">|</span>
-          <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-accent-t font-medium text-[calc(var(--ui-fs)-4px)] uppercase leading-tight">{activePresetName}</span>
-          <Icons.Caret direction="d" />
+        </div>
+
+        <span className="text-border2">|</span>
+
+        <div ref={presetDropRef} className="relative">
+          <div
+            className={cn(
+              "flex items-center gap-1 rounded px-1.5 py-[3px] font-ui text-[calc(var(--ui-fs)-4px)] font-medium uppercase leading-tight text-accent-t transition-colors",
+              canSwitchPresets ? "cursor-pointer hover:bg-accent-dim" : "cursor-default"
+            )}
+            onClick={() => canSwitchPresets && setPresetDropOpen((v) => !v)}
+            title="Prompt preset"
+          >
+            <span className="max-w-[120px] overflow-hidden text-ellipsis whitespace-nowrap">{activePresetName}</span>
+            {canSwitchPresets && (
+              <span className={cn("text-t3 transition-transform", presetDropOpen && "rotate-90")}><Icons.Caret direction="d" /></span>
+            )}
+          </div>
+          {presetDropOpen && input.promptPresets && input.setActivePresetId && (
+            <div className="absolute left-0 top-full z-50 mt-1 min-w-[180px] overflow-hidden rounded-lg border border-border bg-surface shadow-[0_12px_36px_rgba(0,0,0,.45)]">
+              {input.promptPresets.map((preset) => (
+                <div
+                  key={preset.id}
+                  className={cn(
+                    "cursor-pointer truncate px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] transition-colors hover:bg-s2",
+                    preset.id === input.activePromptPresetId ? "bg-accent-dim text-accent-t" : "text-t2"
+                  )}
+                  onClick={() => {
+                    input.setActivePresetId?.(preset.id);
+                    setPresetDropOpen(false);
+                  }}
+                >
+                  {preset.name}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 min-w-2"/>

@@ -5,7 +5,7 @@ interface PrefillFieldProps {
   prefillSupported?: boolean;
 }
 
-const textareaCls = "w-full rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent resize-none";
+const textareaCls = "w-full rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent resize-none disabled:opacity-60";
 
 export function PrefillField({ prefill, onUpdate, disabled, prefillSupported }: PrefillFieldProps) {
   return (
@@ -25,7 +25,7 @@ export function PrefillField({ prefill, onUpdate, disabled, prefillSupported }: 
       </div>
       <textarea
         className={textareaCls}
-        style={{ padding: "9px 13px", minHeight: 120 }}
+        style={{ padding: "9px 13px", minHeight: 60 }}
         value={prefill}
         onChange={(e) => onUpdate(e.target.value)}
         disabled={disabled}

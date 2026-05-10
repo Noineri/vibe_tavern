@@ -249,6 +249,10 @@ export function App() {
           onOpenAvatar={() => app.setAvatarOpen(true)}
           onToggleTweaks={() => app.setTweaksOpen(!app.tweaksOpen)}
           tweaksOpen={app.tweaksOpen}
+          activePresetName={app.promptPresets.find((p) => p.id === app.activePromptPresetId)?.name ?? "Default"}
+          promptPresets={app.promptPresets.map((p) => ({ id: p.id, name: p.name }))}
+          activePromptPresetId={app.activePromptPresetId}
+          setActivePresetId={app.setActivePromptPresetId}
         />
 
         {shellSurface}

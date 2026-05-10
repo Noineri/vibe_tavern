@@ -1,88 +1,173 @@
-import { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { EmptyState } from "../shared/empty-state.js";
 
 interface PresetListProps {
-  presets: Array<{ id: string; name: string; bindModel: string }>;
+  presets: Array<{ id: string; name: string }>;
   activePresetId: string | null;
   onSelect: (id: string) => void;
-  onAdd: () => void;
+  onAdd: (name: string) => void;
+  onRename: (id: string, newName: string) => void;
 }
 
-export function PresetList({ presets, activePresetId, onSelect, onAdd }: PresetListProps) {
+export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename }: PresetListProps) {
   const [search, setSearch] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const editInputRef = useRef<HTMLInputElement>(null);
+  const newInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (editingId) editInputRef.current?.focus(); }, [editingId]);
+  useEffect(() => { if (isCreating) newInputRef.current?.focus(); }, [isCreating]);
 
   const filtered = search.trim()
     ? presets.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
     : presets;
 
+  const startEditing = (preset: { id: string; name: string }, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingId(preset.id);
+    setEditName(preset.name);
+  };
+
+  const saveEdit = () => {
+    if (editingId && editName.trim()) onRename(editingId, editName.trim());
+    setEditingId(null);
+    setEditName("");
+  };
+
+  const saveNew = () => {
+    if (newName.trim()) onAdd(newName.trim());
+    setIsCreating(false);
+    setNewName("");
+  };
+
+  const handleEditKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") saveEdit();
+    if (e.key === "Escape") { setEditingId(null); setEditName(""); }
+  };
+
+  const handleNewKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") saveNew();
+    if (e.key === "Escape") { setIsCreating(false); setNewName(""); }
+  };
+
   return (
-    <div className="flex flex-col border-r border-border bg-surface" style={{ width: 180, padding: "10px 0" }}>
-      <div
-        className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3"
-        style={{ padding: "4px 13px 5px" }}
-      >
-        Presets
-      </div>
-      <div
-        className="flex items-center gap-1.5 rounded-md border border-border bg-s2"
-        style={{ padding: "6px 9px", margin: "0 10px 6px" }}
-      >
-        <Icons.Search />
-        <input
-          className="min-w-0 flex-1 border-0 bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t4"
-          placeholder="Search presets..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
-      {filtered.length === 0 ? (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 8px" }}>
-          <EmptyState
-            icon={<Icons.Terminal />}
-            title={presets.length === 0 ? "No presets" : "No matches"}
-            sub={presets.length === 0 ? "Create a preset to start configuring prompts." : "Try a different search."}
+    <div className="flex w-[240px] shrink-0 flex-col border-r border-border bg-surface" style={{ padding: "10px 0" }}>
+      <div className="shrink-0" style={{ padding: "0 13px" }}>
+        <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ padding: "4px 0 5px" }}>
+          Presets
+        </div>
+        <div className="mb-2 flex items-center gap-1.5 rounded-md border border-border bg-s2" style={{ padding: "6px 9px" }} title="Search presets">
+          <Icons.Search />
+          <input
+            className="min-w-0 flex-1 border-0 bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t4"
+            placeholder="Search presets..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-      ) : (
-        <div style={{ flex: 1, overflowY: "auto" }}>
-          {filtered.map((p) => (
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {filtered.length === 0 && !isCreating ? (
+          <div className="flex h-full items-center justify-center" style={{ padding: "0 8px" }}>
+            <EmptyState
+              icon={<Icons.Terminal />}
+              title={presets.length === 0 ? "No presets" : "No matches"}
+              sub={presets.length === 0 ? "Create a preset to start configuring prompts." : "Try a different search."}
+            />
+          </div>
+        ) : filtered.map((p) => {
+          const isActive = activePresetId === p.id;
+          const isEditing = editingId === p.id;
+
+          if (isEditing) {
+            return (
+              <div key={p.id} className="border-l-2 border-transparent" style={{ padding: "8px 12px" }}>
+                <div className="relative flex items-center">
+                  <input
+                    ref={editInputRef}
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={handleEditKeyDown}
+                    onBlur={saveEdit}
+                    className="w-full rounded border border-accent bg-surface px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none"
+                  />
+                  <button
+                    onMouseDown={(e) => { e.preventDefault(); saveEdit(); }}
+                    className="absolute right-2 text-success transition-colors hover:text-green-400"
+                    type="button"
+                  >
+                    <Icons.Check />
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          return (
             <div
               key={p.id}
-              className={cn(
-                "cursor-pointer overflow-hidden whitespace-nowrap border-l-[3px] text-ellipsis transition-colors hover:bg-s2",
-                activePresetId === p.id
-                  ? "border-l-accent bg-accent-dim text-accent-t"
-                  : "border-l-transparent text-t2"
-              )}
               onClick={() => onSelect(p.id)}
-              style={{ padding: "8px 14px", fontSize: "12.5px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}
+              className={cn(
+                "group flex cursor-pointer items-center justify-between border-l-2 transition-colors",
+                isActive ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2"
+              )}
+              style={{ padding: "10px 16px" }}
             >
-              <span
-                className="min-w-0 shrink cursor-default overflow-hidden text-ellipsis whitespace-nowrap"
-                title={p.name}
-              >
+              <span className={cn("truncate pr-2 font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isActive ? "text-accent-t" : "text-t2")} title={p.name}>
                 {p.name}
               </span>
-              <span
-                className={cn(
-                  "shrink-0 font-ui text-[9px] uppercase tracking-[0.04em]",
-                  p.bindModel ? "text-t3" : "text-accent-t"
-                )}
+              <button
+                onClick={(e) => startEditing(p, e)}
+                className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100", isActive ? "text-accent" : "text-t4 hover:text-t1")}
+                type="button"
+                title="Rename preset"
               >
-                {p.bindModel ? `→ ${p.bindModel}` : "Global"}
-              </span>
+                <Icons.Edit />
+              </button>
             </div>
-          ))}
-        </div>
-      )}
-      <div
-        className="cursor-pointer border border-dashed border-border2 font-ui text-[calc(var(--ui-fs)-3px)] text-center text-t3 transition-all hover:border-border hover:text-t1"
-        style={{ margin: "10px 14px", padding: 6 }}
-        onClick={onAdd}
-      >
-        + New preset
+          );
+        })}
+
+        {isCreating && (
+          <div className="border-l-2 border-transparent" style={{ padding: "8px 12px" }}>
+            <div className="relative flex items-center">
+              <input
+                ref={newInputRef}
+                type="text"
+                placeholder="Name..."
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={handleNewKeyDown}
+                onBlur={() => { if (!newName.trim()) setIsCreating(false); else saveNew(); }}
+                className="w-full rounded border border-border bg-s2 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none focus:border-border2"
+              />
+              <button
+                onMouseDown={(e) => { e.preventDefault(); saveNew(); }}
+                className="absolute right-2 text-success transition-colors hover:text-green-400"
+                type="button"
+              >
+                <Icons.Check />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="shrink-0 border-t border-border" style={{ padding: "12px 12px 0" }}>
+        <button
+          onClick={() => setIsCreating(true)}
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
+          type="button"
+        >
+          <Icons.Plus /> New preset
+        </button>
       </div>
     </div>
   );
