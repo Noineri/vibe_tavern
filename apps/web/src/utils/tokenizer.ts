@@ -16,6 +16,6 @@ export function getTokenizer(): Tiktoken {
 }
 
 export function countTokens(text: string): number {
-	if (!text) return 0;
+	if (!text || typeof text !== "string") return 0;
 	return getTokenizer().encode(text).length;
 }
