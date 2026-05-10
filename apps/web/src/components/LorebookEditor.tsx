@@ -1,4 +1,5 @@
 import { useState, useEffect, type KeyboardEvent } from "react";
+import { useT } from "../i18n/context.js";
 import { Icons as Ic } from "./shared/icons.js";
 import {
   listLoreEntries,
@@ -44,6 +45,7 @@ function toLocal(e: LoreEntryRecord): LocalEntry {
 }
 
 export function LorebookEditor({ charName, lorebookId }: { charName: string; lorebookId: string }) {
+  const { t } = useT();
   const [entries, setEntries] = useState<LocalEntry[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState("");
@@ -84,7 +86,7 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
   async function handleAddEntry(): Promise<void> {
     try {
       const serverEntry = await createLoreEntry(lorebookId, {
-        title: "New entry",
+        title: t("new_lore_entry"),
         content: "",
         keys: [],
         secondaryKeys: [],
@@ -135,15 +137,15 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
 
   async function runTest(): Promise<void> {
     if (!testText.trim()) {
-      setTestResult({ ok: false, msg: "Enter test text." });
+      setTestResult({ ok: false, msg: t("test_enter_text") });
       return;
     }
     if (!active) {
-      setTestResult({ ok: false, msg: "Select an entry first." });
+      setTestResult({ ok: false, msg: t("test_select_entry") });
       return;
     }
     if (!active.enabled) {
-      setTestResult({ ok: false, msg: "Entry is disabled, so it will not activate." });
+      setTestResult({ ok: false, msg: t("test_disabled") });
       return;
     }
     try {
@@ -152,18 +154,19 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
       if (hit) {
         setTestResult({
           ok: true,
-          msg: `Activated! Will be inserted (${active.position}, depth ${active.depth}). Total activated: ${result.activatedIds.length}/${result.totalEntries}.`,
+          msg: t("test_hit"),
         });
       } else {
         setTestResult({
           ok: false,
-          msg: `Not activated. Keys/logic did not match. Total activated: ${result.activatedIds.length}/${result.totalEntries}.`,
+          msg: t("test_miss"),
         });
       }
     } catch (error) {
+      const errStr = error instanceof Error ? error.message : String(error);
       setTestResult({
         ok: false,
-        msg: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
+        msg: `${t("request_failed")} ${errStr}`,
       });
     }
   }
@@ -172,9 +175,9 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
     <div className="lore-layout">
       <div className="lore-sidebar">
         <div className="lore-sidebar-head">
-          <span className="lore-sidebar-title">World Info ({entries.length})</span>
+          <span className="lore-sidebar-title">{t("world_info_count")} ({entries.length})</span>
           <div style={{ display: "flex", gap: 4 }}>
-            <div className="iBtn" style={{ width: 24, height: 24 }} title="New entry" onClick={handleAddEntry}>
+            <div className="iBtn" style={{ width: 24, height: 24 }} title={t("new_lore_entry")} onClick={handleAddEntry}>
               <Ic.Plus />
             </div>
           </div>
@@ -189,8 +192,8 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                 setTestResult(null);
               }}
             >
-              <div className="lore-item-title">{e.title || "Untitled"}</div>
-              <div className="lore-item-keys">{e.keys.length > 0 ? e.keys.join(", ") : "no keys"}</div>
+              <div className="lore-item-title">{e.title || t("untitled")}</div>
+              <div className="lore-item-keys">{e.keys.length > 0 ? e.keys.join(", ") : t("no_keys")}</div>
             </div>
           ))}
         </div>
@@ -200,16 +203,16 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
         {active ? (
           <div style={{ maxWidth: 860 }}>
             <div className="lore-scope">
-              <Ic.Book /> Character Lorebook: {charName}
+              <Ic.Book /> {t("character_lorebook")} {charName}
             </div>
 
             <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
               <div className="build-field" style={{ flex: 1, marginBottom: 0 }}>
-                <label>Entry title</label>
+                <label>{t("entry_title_label")}</label>
                 <input type="text" value={active.title} onChange={(e) => updateAct("title", e.target.value)} />
               </div>
               <div className="build-field" style={{ width: 140, marginBottom: 0 }}>
-                <label>Status</label>
+                <label>{t("status_label")}</label>
                 <div
                   style={{
                     height: 40,
@@ -230,7 +233,7 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                     <div className="tgl-sl"></div>
                   </label>
                   <span style={{ fontSize: 13, color: active.enabled ? "var(--t1)" : "var(--t3)" }}>
-                    {active.enabled ? "Enabled" : "Disabled"}
+                    {active.enabled ? t("enabled") : t("disabled")}
                   </span>
                 </div>
               </div>
@@ -238,13 +241,13 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
 
             <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
               <div className="build-field" style={{ flex: 1, marginBottom: 0 }}>
-                <label>Primary Keys (activation keys, press Enter)</label>
+                <label>{t("primary_keys_label")}</label>
                 <input
                   type="text"
                   value={keyInput}
                   onChange={(e) => setKeyInput(e.target.value)}
                   onKeyDown={(e) => handleKeyAdd(e, "keys")}
-                  placeholder="Word or phrase..."
+                  placeholder={t("key_phrase_placeholder")}
                 />
                 <div className="build-tags">
                   {active.keys.map((k) => (
@@ -255,13 +258,13 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                 </div>
               </div>
               <div className="build-field" style={{ flex: 1, marginBottom: 0 }}>
-                <label>Secondary Keys</label>
+                <label>{t("secondary_keys_label")}</label>
                 <input
                   type="text"
                   value={secKeyInput}
                   onChange={(e) => setSecKeyInput(e.target.value)}
                   onKeyDown={(e) => handleKeyAdd(e, "secondaryKeys")}
-                  placeholder="Additional condition..."
+                  placeholder={t("secondary_key_placeholder")}
                 />
                 <div className="build-tags">
                   {active.secondaryKeys.map((k) => (
@@ -275,7 +278,7 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
 
             <div className="lore-grid">
               <div className="build-field">
-                <label>Logic</label>
+                <label>{t("logic_label")}</label>
                 <select
                   value={active.logic}
                   onChange={(e) => updateAct("logic", e.target.value)}
@@ -298,7 +301,7 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                 </select>
               </div>
               <div className="build-field">
-                <label>Position</label>
+                <label>{t("position_label")}</label>
                 <select
                   value={active.position}
                   onChange={(e) => updateAct("position", e.target.value)}
@@ -321,7 +324,7 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                 </select>
               </div>
               <div className="build-field">
-                <label>Depth</label>
+                <label>{t("depth")}</label>
                 <input
                   type="number"
                   min={0}
@@ -331,7 +334,7 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                 />
               </div>
               <div className="build-field">
-                <label>Priority</label>
+                <label>{t("priority_label")}</label>
                 <input
                   type="number"
                   min={0}
@@ -341,56 +344,56 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                 />
               </div>
               <div className="build-field">
-                <label>Sticky Win</label>
+                <label>{t("sticky_win_label")}</label>
                 <input
                   type="number"
                   min={0}
                   value={active.sticky}
                   onChange={(e) => updateAct("sticky", parseInt(e.target.value))}
                   style={{ height: 38, padding: "0 10px" }}
-                  title="How many turns the entry stays in context after activation"
+                  title={t("sticky_win_hint")}
                 />
               </div>
               <div className="build-field">
-                <label>Cooldown</label>
+                <label>{t("cooldown_label")}</label>
                 <input
                   type="number"
                   min={0}
                   value={active.cooldown}
                   onChange={(e) => updateAct("cooldown", parseInt(e.target.value))}
                   style={{ height: 38, padding: "0 10px" }}
-                  title="Block activation for N turns"
+                  title={t("cooldown_hint")}
                 />
               </div>
               <div className="build-field">
-                <label>Delay</label>
+                <label>{t("delay_label")}</label>
                 <input
                   type="number"
                   min={0}
                   value={active.delay}
                   onChange={(e) => updateAct("delay", parseInt(e.target.value))}
                   style={{ height: 38, padding: "0 10px" }}
-                  title="Delay before insertion"
+                  title={t("delay_hint")}
                 />
               </div>
             </div>
 
             <div className="build-field">
-              <label>Content</label>
+              <label>{t("lore_content_label")}</label>
               <textarea
                 value={active.content}
                 onChange={(e) => updateAct("content", e.target.value)}
                 style={{ minHeight: 180, lineHeight: 1.6 }}
-                placeholder="Describe a fact, location, or rule..."
+                placeholder={t("lore_content_placeholder")}
               />
             </div>
 
             <div className="lore-test-box">
               <div style={{ fontSize: 13, fontWeight: 500, color: "var(--t1)", marginBottom: 8 }}>
-                Activation Test (Preview)
+                {t("activation_test")}
               </div>
               <div style={{ fontSize: 12, color: "var(--t3)", marginBottom: 12 }}>
-                Check whether the keys of this entry would activate on a specific chat text.
+                {t("activation_test_desc")}
               </div>
               <div style={{ display: "flex", gap: 10 }}>
                 <input
@@ -398,7 +401,7 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                   value={testText}
                   onChange={(e) => setTestText(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && runTest()}
-                  placeholder="Enter a test message..."
+                  placeholder={t("test_message_placeholder")}
                   style={{
                     flex: 1,
                     height: 36,
@@ -411,7 +414,7 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                   }}
                 />
                 <button className="api-test-btn idle" style={{ height: 36 }} onClick={runTest}>
-                  Test
+                  {t("check_btn")}
                 </button>
               </div>
               {testResult && (
@@ -428,13 +431,13 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                 onClick={handleDeleteEntry}
                 style={{ color: "var(--danger, #e55)" }}
               >
-                Delete Entry
+                {t("delete_lore_confirm")}
               </button>
             </div>
           </div>
         ) : (
           <div style={{ color: "var(--t3)", fontSize: 14, textAlign: "center", marginTop: 100 }}>
-            Select an entry or create a new one
+            {t("select_or_create")}
           </div>
         )}
       </div>

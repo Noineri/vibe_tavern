@@ -1,8 +1,9 @@
+import { useT } from "../../i18n/context.js";
+
 export function ContextFooter({
   topTab,
   onClose,
   disabled,
-  t = (k) => k,
   contextWindow,
   onSaveSummary,
   isSaving = false,
@@ -10,11 +11,11 @@ export function ContextFooter({
   topTab: string;
   onClose: () => void;
   disabled: boolean;
-  t?: (key: string) => string;
   contextWindow: { used: number; limit: number };
   onSaveSummary?: () => void;
   isSaving?: boolean;
 }) {
+  const { t } = useT();
   const pct = contextWindow.limit > 0 ? Math.min(100, Math.round((contextWindow.used / contextWindow.limit) * 100)) : 0;
 
   return (
@@ -32,7 +33,7 @@ export function ContextFooter({
           </div>
           <div className="flex gap-2">
             <button className="h-[37px] cursor-pointer rounded-md bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" style={{padding:'0 16px'}} onClick={onClose}>
-              {t('cancel_btn')}
+              {t('close')}
             </button>
           </div>
         </>
@@ -49,7 +50,7 @@ export function ContextFooter({
               {isSaving ? t('saving_btn') : t('save_summary_btn')}
             </button>
             <button className="h-[37px] cursor-pointer rounded-md bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" style={{padding:'0 16px'}} onClick={onClose}>
-              {t('cancel_btn')}
+              {t('close')}
             </button>
           </div>
         </>

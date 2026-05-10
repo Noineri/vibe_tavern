@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../../i18n/context.js';
 import type { FormState } from '../ProviderModal.js';
 import { Icons } from '../shared/icons.js';
 import { cn } from '../../lib/cn.js';
@@ -47,6 +48,7 @@ export function ProviderModelSelector({
   onToggleFavoriteModel,
   requiresAuthForModels,
 }: ProviderModelSelectorProps) {
+  const { t } = useT();
   const favoriteIds = new Set(favoriteModels.map((model) => model.modelId));
   const sortedModels = [...filteredModels].sort((a, b) => {
     const aFav = favoriteIds.has(a.id);
@@ -65,11 +67,11 @@ export function ProviderModelSelector({
           borderBottom: '1px solid var(--border2)',
         }}
       >
-        Model
+        {t("model_label")}
       </div>
       <div className="flex items-end gap-3">
         <div className="flex-1" style={{ marginBottom: 0 }} ref={dropdownRef}>
-          <label className={labelCls} style={{ marginBottom: 7 }}>Selected Model</label>
+          <label className={labelCls} style={{ marginBottom: 7 }}>{t("selected_model_label")}</label>
           {models.length > 0 ? (
             <div className="relative">
               <button
@@ -81,7 +83,7 @@ export function ProviderModelSelector({
                 <span className="overflow-hidden text-ellipsis whitespace-nowrap">
                   {models.find((m) => m.id === form.model)?.label ||
                     form.model ||
-                    'Select model...'}
+                    t("select_model")}
                 </span>
                 <span className="text-t3">
                   <Icons.Caret direction="d" />
@@ -95,7 +97,7 @@ export function ProviderModelSelector({
                   >
                     <input
                       type="text"
-                      placeholder="Search models..."
+                      placeholder={t("search_models")}
                       value={modelSearch}
                       onChange={(e) => setModelSearch(e.target.value)}
                       autoFocus
@@ -128,7 +130,7 @@ export function ProviderModelSelector({
                           <button
                             type="button"
                             className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 transition-colors hover:bg-s3 hover:text-warning-text', isFavorite && 'text-warning-text')}
-                            title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                            title={isFavorite ? t("remove_from_favorites") : t("add_to_favorites")}
                             onClick={(event) => {
                               event.stopPropagation();
                               onToggleFavoriteModel(m);
@@ -153,7 +155,7 @@ export function ProviderModelSelector({
                         className="py-2 text-center font-ui text-[11px] text-t4"
                         style={{ padding: '6px 10px' }}
                       >
-                        No models found
+                        {t("no_models_found")}
                       </div>
                     )}
                   </div>
@@ -161,7 +163,7 @@ export function ProviderModelSelector({
               )}
               {!models.find((m) => m.id === form.model) && form.model && (
                 <div className="font-ui text-[12px] font-medium text-accent" style={{ marginTop: 8 }}>
-                  Custom model: {form.model}
+                  {t("custom_model").replace("{name}", form.model)}
                 </div>
               )}
             </div>
@@ -170,7 +172,7 @@ export function ProviderModelSelector({
               type="text"
               value={form.model}
               onChange={(e) => updateForm('model', e.target.value)}
-              placeholder="Model ID (e.g. gpt-4o)"
+              placeholder={t("custom_model_id_placeholder")}
               className={inputCls}
               style={inputPad}
             />
@@ -193,7 +195,7 @@ export function ProviderModelSelector({
             </>
           ) : (
             <>
-              <Icons.Regen /> Refresh Models
+              <Icons.Regen /> {t("refresh_models")}
             </>
           )}
         </button>
@@ -210,7 +212,7 @@ export function ProviderModelSelector({
         <div style={{ marginTop: 12 }}>
           <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 font-ui text-[12px] text-danger" style={{ padding: '4px 10px' }}>
             <Icons.Close />
-            Enter an API key to load model list
+            {t("enter_api_key_for_models")}
           </span>
         </div>
       )}

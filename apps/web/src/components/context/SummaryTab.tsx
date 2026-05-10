@@ -1,6 +1,7 @@
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
+import { useT } from "../../i18n/context.js";
 
 const textareaCls = "w-full rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent resize-none";
 const labelCls = "mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3";
@@ -31,7 +32,6 @@ export function SummaryTab({
   onDeleteSummary,
   disabled,
   error,
-  t = (k) => k,
 }: {
   summaryText: string;
   onSummaryTextChange: (v: string) => void;
@@ -49,8 +49,8 @@ export function SummaryTab({
   onDeleteSummary: (id: string) => void;
   disabled?: boolean;
   error?: string;
-  t?: (k: string) => string;
 }) {
+  const { t } = useT();
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
       <div className="flex w-[180px] shrink-0 flex-col border-r border-border" style={{padding:'10px 0'}}>

@@ -1,5 +1,6 @@
 import type { ChangeEvent, DragEvent } from "react";
 import type { ChatId } from "@rp-platform/domain";
+import { getT } from "../i18n/context.js";
 import {
   archiveCharacter,
   cloneChat,
@@ -139,9 +140,9 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
         tags: draftInput.tags,
       });
       setSnapshot(activeChatId, nextSnapshot);
-      setCharacterSaveNotice("Character card saved.");
+      setCharacterSaveNotice(getT()("char_card_saved"));
     } catch (error) {
-      setCharacterSaveNotice(error instanceof Error ? error.message : "Could not save character.");
+      setCharacterSaveNotice(error instanceof Error ? error.message : getT()("char_save_failed"));
     } finally {
       setIsSavingCharacter(false);
     }
@@ -158,9 +159,9 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       const asset = await uploadAsset(file);
       const nextSnapshot = await updateCharacterAvatar(snapshot.character.id, activeChatId, asset.assetId);
       setSnapshot(activeChatId, nextSnapshot);
-      setCharacterSaveNotice("Character avatar saved.");
+      setCharacterSaveNotice(getT()("char_avatar_saved"));
     } catch (error) {
-      setCharacterSaveNotice(error instanceof Error ? error.message : "Could not save character avatar.");
+      setCharacterSaveNotice(error instanceof Error ? error.message : getT()("char_avatar_save_failed"));
     } finally {
       setIsSavingCharacter(false);
     }
@@ -186,9 +187,9 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       setPersonas((current) => current.map((persona) => persona.id === personaId ? updatedPersona : persona));
       setSnapshot(activeChatId, nextSnapshot);
       await loadPersonas();
-      setCharacterSaveNotice("Persona saved.");
+      setCharacterSaveNotice(getT()("persona_saved"));
     } catch (error) {
-      setCharacterSaveNotice(error instanceof Error ? error.message : "Could not save persona.");
+      setCharacterSaveNotice(error instanceof Error ? error.message : getT()("persona_save_failed"));
     } finally {
       setIsSavingCharacter(false);
     }
@@ -204,7 +205,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     try {
       setSnapshot(activeChatId, await setChatPersona(activeChatId, personaId));
     } catch (err) {
-      setChatNotice(err instanceof Error ? err.message : "Failed to switch persona.");
+      setChatNotice(err instanceof Error ? err.message : getT()("persona_switch_failed"));
     }
   }
 
@@ -219,7 +220,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       await loadPersonas();
       return { id: created.id };
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to create persona.");
+      setChatNotice(error instanceof Error ? error.message : getT()("persona_create_failed"));
       return null;
     }
   }
@@ -230,7 +231,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       await loadPersonas();
       return { ok: true };
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : "Failed to delete persona." };
+      return { ok: false, error: error instanceof Error ? error.message : getT()("persona_delete_failed") };
     }
   }
 
@@ -238,7 +239,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     try {
       return await setPersonalLorebookEnabled(personaId, enabled);
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to update personal lorebook.");
+      setChatNotice(error instanceof Error ? error.message : getT()("failed_to_update_lorebook"));
       return null;
     }
   }
@@ -257,20 +258,20 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       if (imported.imported.kind === "character") {
         setMode("play");
         setImportNotice(
-          `Imported character: ${imported.imported.name}${formatImportWarnings(imported.imported.warningCount)}`,
+          `${getT()("imported_character").replace("{name}", imported.imported.name)}${formatImportWarnings(imported.imported.warningCount)}`,
         );
       } else if (imported.imported.kind === "chat") {
         setMode("play");
         setImportNotice(
-          `Imported chat: ${imported.imported.name}${formatImportWarnings(imported.imported.warningCount)}`,
+          `${getT()("imported_chat").replace("{name}", imported.imported.name)}${formatImportWarnings(imported.imported.warningCount)}`,
         );
       } else {
         setImportNotice(
-          `Attached lorebook: ${imported.imported.name} -> ${imported.imported.attachedToCharacterName ?? "current character"}${formatImportWarnings(imported.imported.warningCount)}`,
+          `${getT()("attached_lorebook").replace("{name}", imported.imported.name).replace("{char}", imported.imported.attachedToCharacterName ?? "current character")}${formatImportWarnings(imported.imported.warningCount)}`,
         );
       }
     } catch (error) {
-      setImportNotice(error instanceof Error ? error.message : "Import failed.");
+      setImportNotice(error instanceof Error ? error.message : getT()("import_failed_notice"));
     } finally {
       setIsImportDragActive(false);
     }
@@ -345,7 +346,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       setChatNotice("");
     } catch (error) {
       if (previousTitle) applyTitle(previousTitle);
-      setChatNotice(error instanceof Error ? error.message : "Failed to rename chat.");
+      setChatNotice(error instanceof Error ? error.message : getT()("chat_rename_failed"));
     }
   }
 
@@ -356,7 +357,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       const next = await createChat(resolvedId);
       setSnapshot(next.activeChat.id, next);
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to create chat.");
+      setChatNotice(error instanceof Error ? error.message : getT()("chat_create_failed"));
     }
   }
 
@@ -386,7 +387,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       }
       return null;
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to create character.");
+      setChatNotice(error instanceof Error ? error.message : getT()("failed_to_create_character"));
       return null;
     }
   }
@@ -397,7 +398,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       setIsFirstRun(false);
       setSnapshot(next.activeChat.id, next);
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to create free chat.");
+      setChatNotice(error instanceof Error ? error.message : getT()("failed_to_create_free_chat"));
     }
   }
 
@@ -406,7 +407,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       const next = await cloneChat(chatId);
       setSnapshot(next.activeChat.id, next);
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to clone chat.");
+      setChatNotice(error instanceof Error ? error.message : getT()("failed_to_clone_chat"));
     }
   }
 
@@ -417,7 +418,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
       downloadTextFile(`${safeName}.chara_card_v3.json`, JSON.stringify(data, null, 2), "application/json");
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to export character.");
+      setChatNotice(error instanceof Error ? error.message : getT()("failed_to_export_character"));
     }
   }
 
@@ -428,7 +429,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       const safeTitle = (chatItem?.title ?? "chat").replace(/[^a-zA-Z0-9_-]/g, "_");
       downloadTextFile(`${safeTitle}.jsonl`, text, "application/x-ndjson");
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to export chat.");
+      setChatNotice(error instanceof Error ? error.message : getT()("failed_to_export_chat"));
     }
   }
 
@@ -437,7 +438,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       const data = await exportPromptTrace(traceId);
       downloadTextFile(`prompt-trace-${traceId}.json`, JSON.stringify(data, null, 2), "application/json");
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Failed to export prompt trace.");
+      setChatNotice(error instanceof Error ? error.message : getT()("failed_to_export_trace"));
     }
   }
 

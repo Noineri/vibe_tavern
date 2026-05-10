@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import type { ChatId } from "@rp-platform/domain";
 import { importJson, uploadAsset, updateCharacterAvatar } from "../app-client.js";
 import { extractPngMetadata, parseCharacterMetadata } from "../lib/png-reader.js";
+import { getT } from "../i18n/context.js";
 
 export interface CharacterImportOptions {
   chatId?: ChatId;
@@ -38,7 +39,7 @@ export function useCharacterImport() {
         const text = await file.text();
         payload = JSON.parse(text);
       } else {
-        throw new Error("Unsupported file type. Please upload a PNG character card, JSON file, or SillyTavern JSONL chat.");
+        throw new Error(getT()("import_unsupported_type"));
       }
 
       const result = await importJson({
@@ -64,7 +65,7 @@ export function useCharacterImport() {
       return result;
     } catch (err: unknown) {
       console.error("Import error:", err);
-      const message = err instanceof Error ? err.message : "Failed to import character";
+      const message = err instanceof Error ? err.message : getT()("import_character_failed");
       throw new Error(message);
     } finally {
       setIsImporting(false);

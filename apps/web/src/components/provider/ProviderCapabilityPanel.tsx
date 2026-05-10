@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../../i18n/context.js';
 import { Icons } from '../shared/icons.js';
 import { cn } from '../../lib/cn.js';
 
@@ -15,14 +16,15 @@ interface ProviderCapabilityPanelProps {
 }
 
 export function ProviderCapabilityPanel({ capabilities }: ProviderCapabilityPanelProps) {
+  const { t } = useT();
   if (!capabilities) return null;
 
   const items = [
-    { label: 'Non-streaming', on: capabilities.nonStreamGeneration },
-    { label: 'Streaming', on: capabilities.streaming },
-    { label: 'Abort', on: capabilities.abortSignal },
-    { label: 'Prefill', on: capabilities.prefill },
-    { label: 'SDK', on: capabilities.sdkSupport !== 'unsupported' },
+    { label: t('cap_non_streaming'), on: capabilities.nonStreamGeneration },
+    { label: t('cap_streaming'), on: capabilities.streaming },
+    { label: t('cap_abort'), on: capabilities.abortSignal },
+    { label: t('cap_prefill'), on: capabilities.prefill },
+    { label: t('cap_sdk'), on: capabilities.sdkSupport !== 'unsupported' },
   ];
 
   return (
@@ -31,7 +33,7 @@ export function ProviderCapabilityPanel({ capabilities }: ProviderCapabilityPane
         className="font-ui text-[12px] font-medium uppercase tracking-wider text-t3"
         style={{ marginBottom: 12 }}
       >
-        Capabilities
+        {t("capabilities")}
       </div>
       <div className="flex flex-wrap gap-2">
         {items.map((it) => (

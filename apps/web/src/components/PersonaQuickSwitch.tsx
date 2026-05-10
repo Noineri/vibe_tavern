@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Icons } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
+import { useT } from "../i18n/context.js";
 
 interface Props {
   personas: Array<{ id: string; name: string; description: string }>;
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Props) {
+  const { t } = useT();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -29,7 +31,7 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
   if (!activePersona) {
     return (
       <div className="flex shrink-0 cursor-default items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim text-xs font-medium text-accent-t" style={{ padding: '3px 9px' }}>
-        <span>No Persona</span>
+        <span>{t("no_persona")}</span>
       </div>
     );
   }
@@ -46,7 +48,7 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
       </button>
       {isOpen && (
         <div className="absolute bottom-[calc(100%+8px)] z-[220] left-0 w-[220px] rounded-lg border border-border2 bg-surface shadow-[0_12px_28px_rgba(0,0,0,0.45)]" style={{padding:'8px 0'}}>
-          <div className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1" style={{padding:'4px 16px 8px'}}>Switch Persona</div>
+          <div className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1" style={{padding:'4px 16px 8px'}}>{t("persona_selection")}</div>
           {personas.map(p => (
             <button
               key={p.id}
