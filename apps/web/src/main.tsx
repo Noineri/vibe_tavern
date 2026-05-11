@@ -1,8 +1,18 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./app.js";
 import { LocaleProvider, type Locale } from "./i18n/context.js";
 import "./styles.css";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+    },
+  },
+});
 
 function detectLocale(): Locale {
   // 1. Explicit user choice (saved in TweaksPanel) takes priority
@@ -26,8 +36,10 @@ const initialLocale = detectLocale();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <LocaleProvider initialLocale={initialLocale}>
-      <App />
-    </LocaleProvider>
+    <QueryClientProvider client={queryClient}>
+      <LocaleProvider initialLocale={initialLocale}>
+        <App />
+      </LocaleProvider>
+    </QueryClientProvider>
   </React.StrictMode>,
 );
