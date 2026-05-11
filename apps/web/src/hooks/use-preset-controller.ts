@@ -7,7 +7,9 @@ import {
   setChatPromptPreset,
   updatePromptPreset,
 } from "../app-client.js";
-import { useChatStore, useCharacterStore } from "../stores/index.js";
+import { useQueryClient } from "@tanstack/react-query";
+import { useChatStore } from "../stores/index.js";
+import { bootstrapKeys } from "../queries/query-keys.js";
 
 export interface PresetControllerDeps {
   loadPromptPresets: () => Promise<PromptPresetDto[]>;
@@ -21,24 +23,20 @@ export interface PresetControllerActions {
   handleDeletePromptPreset: (presetId: string) => Promise<boolean>;
 }
 
-async function loadPresetsFromServer(): Promise<PromptPresetDto[]> {
-  const list = await listPromptPresets();
-  useCharacterStore.getState().setPromptPresets(list);
+export function usePresetController(): PresetControllerActions {
+  const qc = useQueryClient();
 
-  const currentId = useCharacterStore.getState().activePromptPresetId;
-  if (list.length > 0 && !list.find((p) => p.id === currentId)) {
-    useCharacterStore.getState().setActivePromptPresetId(list[0].id);
-  } else if (list.length === 0) {
-    useCharacterStore.getState().setActivePromptPresetId(null);
+  function writePromptPresetsToBootstrap(list: PromptPresetDto[]): void {
+    qc.setQueryData(bootstrapKeys.snapshot(), (current: unknown) => current ? { ...current as object, promptPresets: list } : current);
   }
 
-  return list;
-}
-
-export function usePresetController(): PresetControllerActions {
+  async function loadPresetsFromServer(): Promise<PromptPresetDto[]> {
+    const list = await listPromptPresets();
+    writePromptPresetsToBootstrap(list);
+    return list;
+  }
 
   async function handleSetActivePromptPresetId(presetId: string | null): Promise<void> {
-    useCharacterStore.getState().setActivePromptPresetId(presetId);
     const chatId = useChatStore.getState().activeChatId;
     if (!chatId || !presetId) return;
     try {
@@ -63,9 +61,8 @@ export function usePresetController(): PresetControllerActions {
 
   async function handleUpdatePromptPreset(presetId: string, patch: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">>): Promise<boolean> {
     try {
-      const updated = await updatePromptPreset(presetId, patch);
-      const current = useCharacterStore.getState().promptPresets;
-      useCharacterStore.getState().setPromptPresets(current.map((p) => p.id === presetId ? updated : p));
+      await updatePromptPreset(presetId, patch);
+      await loadPresetsFromServer();
       return true;
     } catch (error) {
       useChatStore.getState().setChatNotice(error instanceof Error ? error.message : getT()("preset_save_failed"));
