@@ -3,8 +3,6 @@ import type { ProviderProbeResponse } from "@rp-platform/domain";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
 import {
-  fetchProviderProfile,
-  fetchProviderProfileModels as fetchModelsForProviderProfile,
   type FavoriteProviderModelRecord,
   type ProviderProfileRecord,
   type TestChatResponse,
@@ -16,6 +14,8 @@ import {
   providerKeys,
   useProviderProfilesQuery,
   useFavoriteModelsQuery,
+  useFetchProviderProfileFromCache,
+  useFetchProviderModelsFromCache,
   useSaveProviderProfileMutation,
   useUpdateProviderProfileMutation,
   useDeleteProviderProfileMutation,
@@ -40,6 +40,8 @@ export interface ProviderProfilesDeps {
 export function useProviderProfiles(deps: ProviderProfilesDeps) {
   const { connection, patchConnection, setConnection, setChatNotice } = deps;
   const qc = useQueryClient();
+  const getProviderProfileFromCache = useFetchProviderProfileFromCache();
+  const getProviderModelsFromCache = useFetchProviderModelsFromCache();
 
   // --- TQ Queries (server data — no useState) ---
   const profilesQuery = useProviderProfilesQuery();
@@ -230,7 +232,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     }
 
     try {
-      const profile = await fetchProviderProfile(selectedProviderProfileId);
+      const profile = await getProviderProfileFromCache(selectedProviderProfileId);
       patchConnection({
         providerLabel: profile.name,
         baseUrl: normalizeOpenAiCompatibleBaseUrl(profile.endpoint),
@@ -356,7 +358,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     try {
       await activateProfileMut.mutateAsync(providerProfileId);
       await qc.invalidateQueries({ queryKey: providerKeys.list() });
-      const profile = await fetchProviderProfile(providerProfileId);
+      const profile = await getProviderProfileFromCache(providerProfileId);
       patchConnection({
         providerLabel: profile.name,
         baseUrl: normalizeOpenAiCompatibleBaseUrl(profile.endpoint),
@@ -482,7 +484,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
   }
 
   async function handleFetchModelsForProfile(providerProfileId: string): Promise<Array<{ id: string; label: string; contextLength?: number }>> {
-    const response = await fetchModelsForProviderProfile(providerProfileId);
+    const response = await getProviderModelsFromCache(providerProfileId);
     return response.models;
   }
 
@@ -627,8 +629,8 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
 
     try {
       const [profile, response] = await Promise.all([
-        fetchProviderProfile(providerProfileId),
-        fetchModelsForProviderProfile(providerProfileId),
+        getProviderProfileFromCache(providerProfileId),
+        getProviderModelsFromCache(providerProfileId),
       ]);
       const models = response.models;
       setConnection((current) => ({

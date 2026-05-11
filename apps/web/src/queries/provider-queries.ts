@@ -58,6 +58,22 @@ export function useProviderModelsQuery(profileId: string | null) {
   });
 }
 
+export function useFetchProviderProfileFromCache() {
+  const qc = useQueryClient();
+  return (id: string) => qc.fetchQuery({
+    queryKey: providerKeys.detail(id),
+    queryFn: () => fetchProviderProfile(id),
+  });
+}
+
+export function useFetchProviderModelsFromCache() {
+  const qc = useQueryClient();
+  return (id: string) => qc.fetchQuery({
+    queryKey: providerKeys.models(id),
+    queryFn: () => fetchProviderProfileModels(id),
+  });
+}
+
 export function useFavoriteModelsQuery(profileId: string | null) {
   return useQuery({
     queryKey: providerKeys.favorites(profileId ?? ""),

@@ -3,6 +3,8 @@ export { providerKeys, chatKeys, characterKeys, personaKeys, bootstrapKeys } fro
 export {
   useProviderProfilesQuery,
   useProviderModelsQuery,
+  useFetchProviderProfileFromCache,
+  useFetchProviderModelsFromCache,
   useFavoriteModelsQuery,
   useSaveProviderProfileMutation,
   useUpdateProviderProfileMutation,
