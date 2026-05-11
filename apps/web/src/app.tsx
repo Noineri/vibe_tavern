@@ -1,12 +1,14 @@
 import { useRpPlatformApp } from "./hooks/use-rp-platform-app.js";
 import { useT } from "./i18n/context.js";
 import { AppShellProvider, AppShell } from "./components/AppShell.js";
+import { useRefetchBootstrap } from "./queries/bootstrap-queries.js";
 
 export { useAppActions } from "./components/AppShell.js";
 
 export function App() {
   const { t } = useT();
   const app = useRpPlatformApp();
+  const refetchBootstrap = useRefetchBootstrap();
 
   if (app.isLoading) {
     return (
@@ -25,7 +27,7 @@ export function App() {
           <div style={{ display: "grid", gap: 12, maxWidth: 420, padding: 24 }}>
             <div className="build-section-title">{t("bootstrap_failed")}</div>
             <div className="build-section-sub">{app.loadError}</div>
-            <button className="api-save-btn" onClick={() => void app.loadBootstrap()}>
+            <button className="api-save-btn" onClick={() => void refetchBootstrap()}>
               {t("retry")}
             </button>
           </div>
