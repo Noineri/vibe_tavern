@@ -7,6 +7,7 @@ import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { Icons } from "./shared/icons.js";
 import { SaveButton } from "./shared/SaveBar.js";
 import { useDirtyState } from "./shared/use-dirty-state.js";
+import { useNavigationStore } from "../stores/navigation-store.js";
 import { PresetList, PromptFields } from "./prompt/index.js";
 
 type DraftData = {
@@ -22,8 +23,6 @@ type DraftData = {
 };
 
 interface PromptManagerModalProps {
-  isOpen: boolean;
-  onClose: () => void;
   presets: PromptPresetDto[];
   activePresetId: string | null;
   setActivePresetId: (id: string | null) => void;
@@ -53,6 +52,9 @@ const emptyDraft: DraftData = {
 };
 
 export function PromptManagerModal(input: PromptManagerModalProps) {
+  const isOpen = useNavigationStore((s) => s.isPromptManagerOpen);
+  const setIsOpen = useNavigationStore((s) => s.setIsPromptManagerOpen);
+  const onClose = () => setIsOpen(false);
   const { t } = useT();
   const [draft, setDraft] = useState<DraftData>({ ...emptyDraft });
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -84,13 +86,13 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     dirtyState.markDirty();
   }
 
-  if (!input.isOpen) return null;
+  if (!isOpen) return null;
 
   const handleClose = () => {
     if (dirtyState.dirty) {
       setConfirmCloseOpen(true);
     } else {
-      input.onClose();
+      onClose();
     }
   };
 
@@ -146,7 +148,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           onConfirm={() => {
             dirtyState.reset();
             setConfirmCloseOpen(false);
-            input.onClose();
+            onClose();
           }}
         />
       )}

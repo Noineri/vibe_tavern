@@ -9,54 +9,42 @@ import { cn } from "../lib/cn.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { CharacterImportModal, ChatImportModal } from "./ImportModals.js";
 import { useT } from "../i18n/context.js";
+import { useAppActions } from "./AppShell.js";
+import { useNavigationStore, useChatStore, useCharacterStore } from "../stores/index.js";
+import { buildCharacterTabs } from "../lib/character-tabs.js";
+import { useMemo } from "react";
 
-interface SidebarProps {
-  sidebarCollapsed: boolean;
-  activeChatId: ChatId | null;
-  selectedCharacterId: string | null;
-  characterTabs: CharacterTab[];
-  chats: ChatListItem[];
-  branches: ChatBranch[];
-  activeBranchId: ChatBranchId | null;
-  personaName: string;
-  personaAvatarAssetId: string | null;
-  isImporting: boolean;
-  importNotice: string;
-  renamingChatId: ChatId | null;
-  renameDraft: string;
-  onToggleCollapsed: () => void;
-  onSwitchChat: (chatId: ChatId) => void;
-  onActivateBranch: (branchId: ChatBranchId) => void;
-  onFork: () => void;
-  onImportFiles: (files: FileList | File[]) => void;
-  onOpenPromptManager: () => void;
-  onOpenPersonaManager: () => void;
-  onOpenCreateCharacterModal: () => void;
-  onCreateChat: (characterId?: string) => void;
-  onCloneChat: (chatId: ChatId) => void;
-  onExportCharacter: (characterId: string) => void;
-  onExportChatJsonl: (chatId: ChatId) => void;
-  onArchiveCharacter: (characterId: string) => void;
-  onDeleteCharacter: (characterId: string) => void;
-  onDeleteChat: (chatId: ChatId) => void;
-  onRenameChat: (chatId: ChatId, title: string) => void;
-  onRenameStart: (chatId: ChatId, currentTitle: string) => void;
-  onRenameDraftChange: (draft: string) => void;
-  onRenameCancel: () => void;
-  onRequestDestructiveConfirm: (config: {
-    title: string;
-    body: import("react").ReactNode;
-    confirmLabel: string;
-    onConfirm: () => void;
-  }) => void;
-  onDeleteActiveBranch: () => void;
-  onSelectCharacter: (characterId: string) => void;
-}
-
-const BACKEND_PENDING_TITLE = "Backend pending — see BACKEND_BACKLOG B8";
-
-export function Sidebar(input: SidebarProps) {
+export function Sidebar() {
   const { t } = useT();
+  const actions = useAppActions();
+
+  // --- Store subscriptions ---
+  const sidebarCollapsed = useNavigationStore((s) => s.sidebarCollapsed);
+  const activeChatId = useChatStore((s) => s.activeChatId);
+  const selectedCharacterId = useChatStore((s) => s.selectedCharacterId);
+  const snapshot = useChatStore((s) => s.snapshot);
+  const renamingChatId = useCharacterStore((s) => s.renamingChatId);
+  const renameDraft = useCharacterStore((s) => s.renameDraft);
+
+  // --- Derived from stores ---
+  const chats = snapshot?.chats ?? [];
+  const branches = snapshot?.branches ?? [];
+  const activeBranchId = snapshot?.activeBranch?.id ?? null;
+  const personaName = snapshot?.persona?.name ?? t("no_persona");
+  const personaAvatarAssetId = snapshot?.persona?.avatarAssetId ?? null;
+
+  const characterTabs = useMemo(
+    () => buildCharacterTabs(actions.allCharacters, chats),
+    [actions.allCharacters, chats],
+  );
+
+  // --- Store actions ---
+  const setSidebarCollapsed = useNavigationStore((s) => s.setSidebarCollapsed);
+  const setRenamingChatId = useCharacterStore((s) => s.setRenamingChatId);
+  const setRenameDraft = useCharacterStore((s) => s.setRenameDraft);
+  const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
+
+  // --- Local UI state ---
   const [charMenuId, setCharMenuId] = useState<string | null>(null);
   const [chatMenuId, setChatMenuId] = useState<ChatId | null>(null);
   const [branchPopId, setBranchPopId] = useState<ChatId | null>(null);
@@ -89,32 +77,32 @@ export function Sidebar(input: SidebarProps) {
 
   return (
     <div className={cn(
-      input.sidebarCollapsed ? 'w-[54px] min-w-[54px]' : 'w-[var(--sw)] min-w-[var(--sw)]',
+      sidebarCollapsed ? 'w-[54px] min-w-[54px]' : 'w-[var(--sw)] min-w-[var(--sw)]',
       'shrink-0 overflow-hidden border-r border-border bg-surface flex flex-col transition-all duration-[180ms] ease-out'
     )}>
-      <div className="flex h-[60px] shrink-0 items-center gap-2.5 border-b border-border" style={{ justifyContent: input.sidebarCollapsed ? 'center' : undefined, padding: input.sidebarCollapsed ? '0 6px' : '0 12px' }}>
-        {!input.sidebarCollapsed && (
+      <div className="flex h-[60px] shrink-0 items-center gap-2.5 border-b border-border" style={{ justifyContent: sidebarCollapsed ? 'center' : undefined, padding: sidebarCollapsed ? '0 6px' : '0 12px' }}>
+        {!sidebarCollapsed && (
           <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[5px] bg-accent font-body text-[calc(var(--ui-fs)-1px)] font-medium italic text-on-accent">r</div>
         )}
-        {!input.sidebarCollapsed && (
+        {!sidebarCollapsed && (
           <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap font-body text-[length:var(--ui-fs)] font-medium tracking-[-0.01em] text-t1">{t("app_name")}</span>
         )}
         <button
           className="iBtn"
-          aria-label={input.sidebarCollapsed ? t("sidebar_expand") : t("sidebar_collapse")}
-          title={input.sidebarCollapsed ? t("sidebar_expand") : t("sidebar_collapse")}
-          onClick={input.onToggleCollapsed}
+          aria-label={sidebarCollapsed ? t("sidebar_expand") : t("sidebar_collapse")}
+          title={sidebarCollapsed ? t("sidebar_expand") : t("sidebar_collapse")}
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
         >
-          <Icons.Caret direction={input.sidebarCollapsed ? "r" : "l"} />
+          <Icons.Caret direction={sidebarCollapsed ? "r" : "l"} />
         </button>
       </div>
 
-      {input.sidebarCollapsed && (
+      {sidebarCollapsed && (
         <div className="flex min-h-0 flex-1 flex-col items-center">
           <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto" style={{padding:'8px 0'}}>
-            {input.characterTabs.map((character) => {
-              const isActive = character.chatId === input.activeChatId
-                || (!character.chatId && character.id === input.selectedCharacterId);
+            {characterTabs.map((character) => {
+              const isActive = character.chatId === activeChatId
+                || (!character.chatId && character.id === selectedCharacterId);
               return (
                 <div
                   key={character.id}
@@ -124,9 +112,9 @@ export function Sidebar(input: SidebarProps) {
                   )}
                   onClick={() => {
                     if (character.chatId) {
-                      input.onSwitchChat(character.chatId);
+                      void actions.handleSwitchChat(character.chatId);
                     } else {
-                      input.onSelectCharacter(character.id);
+                      useChatStore.getState().setSelectedCharacterId(character.id);
                     }
                   }}
                   title={character.name}
@@ -140,16 +128,16 @@ export function Sidebar(input: SidebarProps) {
 
             <div className="my-1 h-px w-8 shrink-0 bg-border" />
 
-            {input.chats.map((chat) => {
+            {chats.map((chat) => {
               const initial = (chat.title || '?').trim().charAt(0).toUpperCase() || '?';
               return (
                 <div
                   key={chat.id}
                   className={cn(
                     'flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full font-ui text-xs font-medium transition-all duration-150 hover:rounded-xl hover:bg-s2',
-                    chat.id === input.activeChatId ? 'rounded-xl bg-accent text-on-accent' : 'bg-s3 text-t2'
+                    chat.id === activeChatId ? 'rounded-xl bg-accent text-on-accent' : 'bg-s3 text-t2'
                   )}
-                  onClick={() => input.onSwitchChat(chat.id)}
+                  onClick={() => void actions.handleSwitchChat(chat.id)}
                   title={chat.title}
                 >
                   {initial}
@@ -161,15 +149,15 @@ export function Sidebar(input: SidebarProps) {
           <div className="h-px w-8 shrink-0 bg-border" />
 
           <div className="flex shrink-0 flex-col items-center gap-1" style={{padding:'8px 0'}}>
-            <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={input.onOpenPromptManager} title={t("sidebar_prompt_manager")}><Icons.Terminal /></div>
-            <div className="flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={input.onOpenPersonaManager} title={input.personaName}>
-              {initials(input.personaName)}
+            <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={actions.openPromptManager} title={t("sidebar_prompt_manager")}><Icons.Terminal /></div>
+            <div className="flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={actions.openPersonaModal} title={personaName}>
+              {initials(personaName)}
             </div>
           </div>
         </div>
       )}
 
-      {!input.sidebarCollapsed && (
+      {!sidebarCollapsed && (
         <>
           <section className="border-b border-border" style={{padding:'6px 0'}}>
             <div className="flex items-center" style={{paddingRight:'10px'}}>
@@ -177,18 +165,18 @@ export function Sidebar(input: SidebarProps) {
               <button className="iBtn" style={{ width: 20, height: 20 }} onClick={() => setImportModal("character")} title={t("sidebar_import_character")}>
                 <Icons.Import />
               </button>
-              <button className="iBtn" style={{ width: 20, height: 20 }} onClick={input.onOpenCreateCharacterModal} title={t("sidebar_create_character")}>
+              <button className="iBtn" style={{ width: 20, height: 20 }} onClick={actions.openCreateCharacterModal} title={t("sidebar_create_character")}>
                 <Icons.Plus />
               </button>
             </div>
-            {input.characterTabs.length === 0 ? (
+            {characterTabs.length === 0 ? (
               <div className="text-center text-t3 text-xs leading-relaxed" style={{padding:'20px 14px'}}>
                 {t("sidebar_no_characters")}
               </div>
             ) : (
-              input.characterTabs.map((character) => {
-                const isActive = character.chatId === input.activeChatId
-                  || (!character.chatId && character.id === input.selectedCharacterId);
+              characterTabs.map((character) => {
+                const isActive = character.chatId === activeChatId
+                  || (!character.chatId && character.id === selectedCharacterId);
                 const menuOpen = charMenuId === character.id;
                 return (
                   <div
@@ -200,9 +188,9 @@ export function Sidebar(input: SidebarProps) {
                     style={{ position: "relative", zIndex: menuOpen ? 100 : 1, padding: '6px 10px' }}
                     onClick={() => {
                       if (character.chatId) {
-                        input.onSwitchChat(character.chatId);
+                        void actions.handleSwitchChat(character.chatId);
                       } else {
-                        input.onSelectCharacter(character.id);
+                        useChatStore.getState().setSelectedCharacterId(character.id);
                       }
                     }}
                   >
@@ -246,7 +234,7 @@ export function Sidebar(input: SidebarProps) {
                           style={{ padding: '7px 12px' }}
                           onClick={() => {
                             setCharMenuId(null); setCharMenuPos(null);
-                            input.onExportCharacter(character.id);
+                            actions.onExportCharacter(character.id);
                           }}
                         >
                           <Icons.Download /> {t("sidebar_export")}
@@ -257,7 +245,7 @@ export function Sidebar(input: SidebarProps) {
                           style={{ padding: '7px 12px' }}
                           onClick={() => {
                             setCharMenuId(null); setCharMenuPos(null);
-                            input.onArchiveCharacter(character.id);
+                            actions.handleArchiveCharacter(character.id);
                           }}
                         >
                           <Icons.Book /> {t("sidebar_archive")}
@@ -269,11 +257,11 @@ export function Sidebar(input: SidebarProps) {
                           style={{ padding: '7px 12px' }}
                           onClick={() => {
                             setCharMenuId(null); setCharMenuPos(null);
-                            input.onRequestDestructiveConfirm({
+                            setConfirmDestroy({
                               title: t("sidebar_delete_character"),
                               body: <>{t("sidebar_are_you_sure")} <b>{character.name}</b></>,
                               confirmLabel: t("delete"),
-                              onConfirm: () => input.onDeleteCharacter(character.id),
+                              onConfirm: () => actions.handleDeleteCharacter(character.id),
                             });
                           }}
                         >
@@ -295,32 +283,32 @@ export function Sidebar(input: SidebarProps) {
                 <Icons.Import />
               </button>
               <button className="iBtn" style={{ width: 20, height: 20 }} onClick={() => {
-                const activeTab = input.characterTabs.find((tab) => tab.chatId === input.activeChatId);
-                const charId = activeTab?.id ?? input.selectedCharacterId;
-                input.onCreateChat(charId ?? undefined);
+                const activeTab = characterTabs.find((tab) => tab.chatId === activeChatId);
+                const charId = activeTab?.id ?? selectedCharacterId;
+                void actions.onCreateChat(charId ?? undefined);
               }} title={t("sidebar_new_chat_active_char")}>
                 <Icons.Plus />
               </button>
             </div>
-            {input.chats.length === 0 ? (
+            {chats.length === 0 ? (
               <div className="text-center text-t3 text-xs leading-relaxed" style={{padding:'20px 14px'}}>
                 {t("sidebar_send_a_message")}
               </div>
             ) : (
-              input.chats.map((chat) => {
-                const isActive = chat.id === input.activeChatId;
+              chats.map((chat) => {
+                const isActive = chat.id === activeChatId;
                 const chatMenuOpen = chatMenuId === chat.id;
                 const branchPopOpen = branchPopId === chat.id;
-                const branchCount = isActive ? input.branches.length : 0;
+                const branchCount = isActive ? branches.length : 0;
                 const commitRename = () => {
-                  const nextTitle = input.renameDraft.trim();
+                  const nextTitle = renameDraft.trim();
                   const currentTitle = chat.title.trim();
                   if (!nextTitle || nextTitle === currentTitle) {
-                    input.onRenameCancel();
+                    setRenamingChatId(null);
                     return;
                   }
-                  input.onRenameChat(chat.id, nextTitle);
-                  input.onRenameCancel();
+                  void actions.handleRenameChat(chat.id, nextTitle);
+                  setRenamingChatId(null);
                 };
                 return (
                   <div
@@ -330,15 +318,15 @@ export function Sidebar(input: SidebarProps) {
                       isActive && 'bg-accent-dim'
                     )}
                     style={{ position: "relative", zIndex: chatMenuOpen || branchPopOpen ? 100 : 1, cursor: "pointer", padding: '6px 10px' }}
-                    onClick={() => input.onSwitchChat(chat.id)}
+                    onClick={() => void actions.handleSwitchChat(chat.id)}
                   >
-                    {input.renamingChatId === chat.id ? (
+                    {renamingChatId === chat.id ? (
                       <input
                         className="mb-px w-full rounded border border-accent bg-bg font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none"
                         style={{ padding: '2px 5px' }}
-                        value={input.renameDraft}
+                        value={renameDraft}
                         autoFocus
-                        onChange={(event) => input.onRenameDraftChange(event.target.value)}
+                        onChange={(event) => setRenameDraft(event.target.value)}
                         onClick={(event) => event.stopPropagation()}
                         onBlur={commitRename}
                         onKeyDown={(event) => {
@@ -347,7 +335,7 @@ export function Sidebar(input: SidebarProps) {
                             commitRename();
                           } else if (event.key === "Escape") {
                             event.preventDefault();
-                            input.onRenameCancel();
+                            setRenamingChatId(null);
                           }
                         }}
                       />
@@ -412,7 +400,8 @@ export function Sidebar(input: SidebarProps) {
                           style={{ padding: '7px 12px' }}
                           onClick={() => {
                             setChatMenuId(null); setChatMenuPos(null);
-                            input.onRenameStart(chat.id, chat.title);
+                            setRenamingChatId(chat.id);
+                            setRenameDraft(chat.title);
                           }}
                         >
                           <Icons.Edit /> {t("sidebar_rename")}
@@ -423,7 +412,7 @@ export function Sidebar(input: SidebarProps) {
                           style={{ padding: '7px 12px' }}
                           onClick={() => {
                             setChatMenuId(null); setChatMenuPos(null);
-                            input.onCloneChat(chat.id);
+                            void actions.onCloneChat(chat.id);
                           }}
                         >
                           <Icons.Copy /> {t("sidebar_clone_chat")}
@@ -434,7 +423,7 @@ export function Sidebar(input: SidebarProps) {
                           style={{ padding: '7px 12px' }}
                           onClick={() => {
                             setChatMenuId(null); setChatMenuPos(null);
-                            input.onExportChatJsonl(chat.id);
+                            actions.onExportChatJsonl(chat.id);
                           }}
                         >
                           <Icons.Download /> {t("sidebar_export_jsonl")}
@@ -446,11 +435,11 @@ export function Sidebar(input: SidebarProps) {
                           style={{ padding: '7px 12px' }}
                           onClick={() => {
                             setChatMenuId(null); setChatMenuPos(null);
-                            input.onRequestDestructiveConfirm({
+                            setConfirmDestroy({
                               title: t("sidebar_delete_chat"),
                               body: <>{t("sidebar_are_you_sure")} <b>{chat.title}</b></>,
                               confirmLabel: t("delete"),
-                              onConfirm: () => input.onDeleteChat(chat.id),
+                              onConfirm: () => actions.handleDeleteChat(chat.id),
                             });
                           }}
                         >
@@ -465,8 +454,8 @@ export function Sidebar(input: SidebarProps) {
                         <div className="mb-1 text-[9px] font-medium uppercase tracking-[0.05em] text-t3" style={{paddingLeft:'4px'}}>
                           {t("sidebar_timeline_branches")}
                         </div>
-                        {input.branches.map((branch) => {
-                          const isActiveBranch = branch.id === input.activeBranchId;
+                        {branches.map((branch) => {
+                          const isActiveBranch = branch.id === activeBranchId;
                           return (
                             <div
                               key={branch.id}
@@ -477,7 +466,7 @@ export function Sidebar(input: SidebarProps) {
                               style={{ paddingTop: 5, paddingBottom: 5 }}
                               onClick={(event) => {
                                 event.stopPropagation();
-                                input.onActivateBranch(branch.id);
+                                void actions.handleActivateBranch(branch.id);
                               }}
                             >
                               <div className={cn(
@@ -497,16 +486,16 @@ export function Sidebar(input: SidebarProps) {
                           tabIndex={0}
                           onClick={(event) => {
                             event.stopPropagation();
-                            input.onFork();
+                            void actions.handleFork();
                           }}
-                          onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.stopPropagation(); input.onFork(); } }}
+                          onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.stopPropagation(); void actions.handleFork(); } }}
                         >
                           {t("sidebar_fork_from_here")}
                         </div>
                         {(() => {
-                          const rootBranch = input.branches.find((b) => b.parentBranchId === null);
-                          const activeIsRoot = rootBranch != null && input.activeBranchId === rootBranch.id;
-                          const canAct = !activeIsRoot && input.branches.length > 1;
+                          const rootBranch = branches.find((b) => b.parentBranchId === null);
+                          const activeIsRoot = rootBranch != null && activeBranchId === rootBranch.id;
+                          const canAct = !activeIsRoot && branches.length > 1;
                           return (
                             <div className={cn(
                               'cursor-pointer rounded border-t border-border text-center text-[calc(var(--ui-fs)-3px)] italic text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1',
@@ -518,14 +507,14 @@ export function Sidebar(input: SidebarProps) {
                               onClick={(event) => {
                                 if (!canAct) return;
                                 event.stopPropagation();
-                                input.onRequestDestructiveConfirm({
+                                setConfirmDestroy({
                                   title: t("sidebar_delete_branch"),
                                   body: t("sidebar_delete_branch_body"),
                                   confirmLabel: t("sidebar_delete_branch"),
-                                  onConfirm: () => input.onDeleteActiveBranch(),
+                                  onConfirm: () => void actions.handleDeleteActiveBranch(),
                                 });
                               }}
-                              onKeyDown={(event) => { if (canAct && (event.key === "Enter" || event.key === " ")) { event.stopPropagation(); input.onRequestDestructiveConfirm({ title: t("sidebar_delete_branch"), body: t("sidebar_delete_branch_body"), confirmLabel: t("sidebar_delete_branch"), onConfirm: () => input.onDeleteActiveBranch(), }); } }}
+                              onKeyDown={(event) => { if (canAct && (event.key === "Enter" || event.key === " ")) { event.stopPropagation(); setConfirmDestroy({ title: t("sidebar_delete_branch"), body: t("sidebar_delete_branch_body"), confirmLabel: t("sidebar_delete_branch"), onConfirm: () => void actions.handleDeleteActiveBranch(), }); } }}
                             >
                               {t("sidebar_delete_branch")}
                             </div>
@@ -545,11 +534,11 @@ export function Sidebar(input: SidebarProps) {
               style={{ padding: '6px 10px' }}
               role="button"
               tabIndex={0}
-              onClick={input.onOpenPromptManager}
+              onClick={actions.openPromptManager}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
-                  input.onOpenPromptManager();
+                  actions.openPromptManager();
                 }
               }}
             >
@@ -563,16 +552,16 @@ export function Sidebar(input: SidebarProps) {
               style={{ padding: '6px 10px' }}
               role="button"
               tabIndex={0}
-              onClick={input.onOpenPersonaManager}
+              onClick={actions.openPersonaModal}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
-                  input.onOpenPersonaManager();
+                  actions.openPersonaModal();
                 }
               }}
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">{input.personaAvatarAssetId ? <img src={avatarUrl(input.personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(input.personaName)}</span>
-              <span>{input.personaName}</span>
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">{personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(personaName)}</span>
+              <span>{personaName}</span>
               <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">
                 {t("sidebar_your_persona")}
               </span>
@@ -582,19 +571,19 @@ export function Sidebar(input: SidebarProps) {
       )}
       {importModal === "character" && (
         <CharacterImportModal
-          isImporting={input.isImporting}
-          importNotice={input.importNotice}
+          isImporting={actions.isImporting}
+          importNotice={actions.importNotice}
           onClose={() => setImportModal(null)}
-          onImportFiles={input.onImportFiles}
+          onImportFiles={(files) => void actions.handleImportFiles(files)}
         />
       )}
       {importModal === "chat" && (
         <ChatImportModal
-          activeChatId={input.activeChatId}
-          isImporting={input.isImporting}
-          importNotice={input.importNotice}
+          activeChatId={activeChatId}
+          isImporting={actions.isImporting}
+          importNotice={actions.importNotice}
           onClose={() => setImportModal(null)}
-          onImportFiles={input.onImportFiles}
+          onImportFiles={(files) => void actions.handleImportFiles(files)}
         />
       )}
     </div>

@@ -7,6 +7,7 @@ import { avatarUrl } from "../lib/avatar.js";
 import { uploadAsset } from "../app-client.js";
 import { useTokenCount } from "../hooks/use-token-count.js";
 import { useT } from "../i18n/context.js";
+import { useNavigationStore } from "../stores/navigation-store.js";
 
 interface PersonaListItem {
   id: string;
@@ -17,11 +18,9 @@ interface PersonaListItem {
 }
 
 interface PersonaModalProps {
-  isOpen: boolean;
   personas: PersonaListItem[];
   activePersonaId: string | null;
   isSaving: boolean;
-  onClose: () => void;
   onSaveEdit: (personaId: string, draft: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null }) => void;
   onSetActive: (personaId: string) => void;
   onCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
@@ -40,6 +39,9 @@ function PersonaPreviewBadge({ text }: { text: string }) {
 
 export function PersonaModal(input: PersonaModalProps) {
   const { t } = useT();
+  const isOpen = useNavigationStore((s) => s.isPersonaModalOpen);
+  const setIsOpen = useNavigationStore((s) => s.setIsPersonaModalOpen);
+  const onClose = () => setIsOpen(false);
   const [selectedId, setSelectedId] = useState<string | null>(input.activePersonaId);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -53,7 +55,7 @@ export function PersonaModal(input: PersonaModalProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string>("");
 
-  if (!input.isOpen) return null;
+  if (!isOpen) return null;
 
   const isEditing = editingId !== null;
   const isLastPersona = input.personas.length <= 1;
@@ -86,7 +88,7 @@ export function PersonaModal(input: PersonaModalProps) {
   function setActiveAndClose(): void {
     const persona = input.personas.find((p) => p.id === selectedId) || input.personas[0];
     if (persona) input.onSetActive(persona.id);
-    input.onClose();
+    onClose();
   }
 
   function handleDelete(personaId: string): void {
@@ -104,7 +106,7 @@ export function PersonaModal(input: PersonaModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={(e) => e.target === e.currentTarget && input.onClose()}>
+    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={(e) => e.target === e.currentTarget && onClose()}>
       {confirmDeleteId && (
         <DestructiveConfirmModal
           title={t("delete_persona_title")}
@@ -144,7 +146,7 @@ export function PersonaModal(input: PersonaModalProps) {
               <div className="font-body mb-0.5 text-[calc(var(--ui-fs)+4px)] font-medium text-t1">{t("persona_manager_title")}</div>
               <div className="font-ui mb-3.5 text-[calc(var(--ui-fs)-2px)] text-t3">{t("persona_manager_sub")}</div>
             </div>
-            <div className="flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={input.onClose}>
+            <div className="flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={onClose}>
               <Icons.Close />
             </div>
           </div>
@@ -374,7 +376,7 @@ export function PersonaModal(input: PersonaModalProps) {
 
         {/* Footer */}
         <div className="flex shrink-0 items-center gap-2.5 border-t border-border" style={{ padding: "14px 20px" }}>
-          <button className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={input.onClose}>
+          <button className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={onClose}>
             {t("close")}
           </button>
           <button
