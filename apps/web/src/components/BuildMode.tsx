@@ -135,7 +135,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
     const trace = activeTrace;
     const totalTokens = trace ? (trace.tokenAccounting?.total ?? trace.layers.reduce((sum, l) => sum + l.tokenCount, 0)) : 0;
     return (
-      <div className="max-w-[800px]">
+      <div>
         <div className="mb-1.5 flex items-center justify-between">
           <div className="mb-1.5 font-body text-[22px] font-medium text-t1">
             {t("build_prompt_trace")}
@@ -252,7 +252,8 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
       </div>
 
       {/* Content area */}
-      <div className="flex-1 overflow-y-auto px-10 py-8">
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-4xl px-10 py-8">
         {active === "char" && (
           <CharacterForm
             form={form}
@@ -267,6 +268,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
           />
         )}
         {active === "trace" && renderTraceContent()}
+        </div>
       </div>
     </div>
   );
