@@ -7,7 +7,6 @@ import { cn } from "../lib/cn";
 import { CharacterForm } from "./build/CharacterForm.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { useT } from "../i18n/context.js";
-import { useChatStore } from "../stores/chat-store.js";
 import { useCharacterStore } from "../stores/character-store.js";
 import { useAppActions } from "./AppShell.js";
 
@@ -37,7 +36,7 @@ export function BuildMode() {
   const { t } = useT();
   const app = useAppActions();
 
-  const snapshot = useChatStore((s) => s.snapshot);
+  const snapshot = app.snapshot;
   const character = snapshot?.character;
   const isSaving = useCharacterStore((s) => s.isSavingCharacter);
   const saveNotice = useCharacterStore((s) => s.characterSaveNotice);

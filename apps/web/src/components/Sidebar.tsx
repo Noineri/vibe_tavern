@@ -22,7 +22,7 @@ export function Sidebar() {
   const sidebarCollapsed = useNavigationStore((s) => s.sidebarCollapsed);
   const activeChatId = useChatStore((s) => s.activeChatId);
   const selectedCharacterId = useChatStore((s) => s.selectedCharacterId);
-  const snapshot = useChatStore((s) => s.snapshot);
+  const snapshot = actions.snapshot;
   const renamingChatId = useCharacterStore((s) => s.renamingChatId);
   const renameDraft = useCharacterStore((s) => s.renameDraft);
 

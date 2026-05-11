@@ -9,7 +9,7 @@ import {
 } from "../app-client.js";
 import { useQueryClient } from "@tanstack/react-query";
 import { useChatStore } from "../stores/index.js";
-import { bootstrapKeys } from "../queries/query-keys.js";
+import { bootstrapKeys, chatKeys } from "../queries/query-keys.js";
 
 export interface PresetControllerDeps {
   loadPromptPresets: () => Promise<PromptPresetDto[]>;
@@ -41,7 +41,7 @@ export function usePresetController(): PresetControllerActions {
     if (!chatId || !presetId) return;
     try {
       const nextSnapshot = await setChatPromptPreset(chatId, presetId);
-      useChatStore.getState().setSnapshotForChat(chatId, nextSnapshot);
+      qc.setQueryData(chatKeys.snapshot(chatId), nextSnapshot);
     } catch (error) {
       useChatStore.getState().setChatNotice(error instanceof Error ? error.message : getT()("preset_set_failed"));
     }

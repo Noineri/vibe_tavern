@@ -3,7 +3,6 @@ import type { AppMessage } from "../app-client.js";
 import { Markdown } from "../lib/markdown.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { MessageBlock } from "./MessageBlock.js";
-import { useDisplayHelpers } from "../hooks/use-display-helpers.js";
 import { useAppActions } from "./AppShell.js";
 import { useT } from "../i18n/context.js";
 
@@ -14,18 +13,16 @@ export function MessageList() {
   const endRef = useRef<HTMLDivElement | null>(null);
   const [greetingIndex, setGreetingIndex] = useState(0);
 
-  const snapshot = useChatStore((s) => s.snapshot);
+  const snapshot = app.snapshot;
   const editingMessageId = useChatStore((s) => s.editingMessageId);
   const editingDraft = useChatStore((s) => s.editingDraft);
   const isSending = useChatStore((s) => s.isSending);
   const messageActionId = useChatStore((s) => s.messageActionId);
   const streamingText = useChatStore((s) => s.streamingText);
 
-  const display = useDisplayHelpers([]);
-
-  const messages = display.displayMessages;
-  const pendingUserMessageContent = display.displayPendingUserMessageContent;
-  const alternateGreetings = display.displayAlternateGreetings;
+  const messages = app.displayMessages;
+  const pendingUserMessageContent = app.displayPendingUserMessageContent;
+  const alternateGreetings = app.displayAlternateGreetings;
 
   const characterName = snapshot?.character.name ?? "";
   const characterAvatarAssetId = snapshot?.character.avatarAssetId ?? null;

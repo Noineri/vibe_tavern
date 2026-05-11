@@ -4,7 +4,7 @@
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { bootstrapApp, listPersonas } from "../app-client.js";
-import { bootstrapKeys, personaKeys } from "./query-keys.js";
+import { bootstrapKeys, chatKeys, personaKeys } from "./query-keys.js";
 import { useChatStore } from "../stores/index.js";
 
 // ---------------------------------------------------------------------------
@@ -12,14 +12,16 @@ import { useChatStore } from "../stores/index.js";
 // ---------------------------------------------------------------------------
 
 export function useBootstrapQuery() {
+  const qc = useQueryClient();
   return useQuery({
     queryKey: bootstrapKeys.snapshot(),
     queryFn: async () => {
       const boot = await bootstrapApp();
 
-      // Write to stores — same logic as old loadBootstrap()
+      if (boot.initialChatId && boot.snapshot) {
+        qc.setQueryData(chatKeys.snapshot(boot.initialChatId), boot.snapshot);
+      }
       useChatStore.getState().setActiveChatId(boot.initialChatId);
-      useChatStore.getState().setSnapshot(boot.snapshot);
 
       return boot;
     },

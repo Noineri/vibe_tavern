@@ -58,7 +58,7 @@ export function InputArea() {
 
   const draft = useChatStore((s) => s.draft);
   const isSending = useChatStore((s) => s.isSending);
-  const snapshot = useChatStore((s) => s.snapshot);
+  const snapshot = app.snapshot;
   const personas = usePersonasQuery().data ?? [];
 
   const characterName = snapshot?.character.name ?? "";

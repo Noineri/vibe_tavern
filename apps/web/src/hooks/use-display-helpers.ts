@@ -30,8 +30,8 @@ function deriveActivePromptTrace(
 
 export function useDisplayHelpers(
   allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>,
+  snapshot: AppSnapshot | null,
 ): DisplayHelpers {
-  const snapshot = useChatStore((s) => s.snapshot);
   const selectedTraceId = useChatStore((s) => s.selectedTraceId);
   const pendingUserMessageContent = useChatStore((s) => s.pendingUserMessageContent);
   const connection = useNavigationStore((s) => s.connection);

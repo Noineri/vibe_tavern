@@ -4,7 +4,7 @@ import { MemBadge } from "./popovers/MemBadge.js";
 import { cn } from "../lib/cn.js";
 import { useT } from "../i18n/context.js";
 import { useAppActions } from "./AppShell.js";
-import { useNavigationStore, useChatStore } from "../stores/index.js";
+import { useNavigationStore } from "../stores/index.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { useBootstrapQuery } from "../queries/bootstrap-queries.js";
 
@@ -16,7 +16,7 @@ export function TopBar() {
   const mode = useNavigationStore((s) => s.mode);
   const theme = useNavigationStore((s) => s.theme);
   const connection = useNavigationStore((s) => s.connection);
-  const snapshot = useChatStore((s) => s.snapshot);
+  const snapshot = actions.snapshot;
   const promptPresets = useBootstrapQuery().data?.promptPresets ?? [];
   const activePromptPresetId = snapshot?.activeChat.promptPresetId ?? null;
 

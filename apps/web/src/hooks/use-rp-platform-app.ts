@@ -1,4 +1,5 @@
 import { type SetStateAction, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ChatId } from "@rp-platform/domain";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
@@ -18,6 +19,8 @@ import { usePresetController } from "./use-preset-controller.js";
 import { useDisplayHelpers } from "./use-display-helpers.js";
 import { useChatStore, useNavigationStore, useCharacterStore } from "../stores/index.js";
 import { useBootstrapQuery, usePersonasQuery } from "../queries/bootstrap-queries.js";
+import { useChatSnapshot } from "../queries/chat-queries.js";
+import { chatKeys } from "../queries/query-keys.js";
 import {
   readSavedTheme,
   persistTheme,
@@ -68,9 +71,11 @@ function createInitialConnectionState(): ConnectionState {
 
 export function useRpPlatformApp() {
   // --- Chat store subscriptions ---
+  const qc = useQueryClient();
   const activeChatId = useChatStore((s) => s.activeChatId);
   const selectedCharacterId = useChatStore((s) => s.selectedCharacterId);
-  const snapshot = useChatStore((s) => s.snapshot);
+  const snapshotQuery = useChatSnapshot(activeChatId);
+  const snapshot = snapshotQuery.data ?? null;
   const draft = useChatStore((s) => s.draft);
   const isSending = useChatStore((s) => s.isSending);
   const selectedTraceId = useChatStore((s) => s.selectedTraceId);
@@ -140,7 +145,7 @@ export function useRpPlatformApp() {
     : "";
 
   // --- Display helpers (extracted) ---
-  const display = useDisplayHelpers(allCharacters);
+  const display = useDisplayHelpers(allCharacters, snapshot);
   const { importFile, isImporting } = useCharacterImport();
 
   // --- Provider hook ---
@@ -214,18 +219,25 @@ export function useRpPlatformApp() {
   streamResponseRef.current = provider.activeProviderProfile?.streamResponse ?? connection.streamResponse;
 
   function snapshotRefresh(chatId: ChatId, next: AppSnapshot): void {
-    useChatStore.getState().setSnapshotForChat(chatId, next);
+    qc.setQueryData(chatKeys.snapshot(chatId), next);
+    if (useChatStore.getState().activeChatId !== chatId) {
+      useChatStore.getState().setActiveChatId(chatId);
+    }
+  }
+
+  function getCachedSnapshot(): AppSnapshot | null {
+    const id = useChatStore.getState().activeChatId;
+    return id ? (qc.getQueryData<AppSnapshot>(chatKeys.snapshot(id)) ?? null) : null;
   }
 
   const chat = useChatController({
     getActiveChatId: () => useChatStore.getState().activeChatId,
-    getSnapshot: () => useChatStore.getState().snapshot,
+    getSnapshot: getCachedSnapshot,
     getDraft: () => useChatStore.getState().draft,
     getIsSending: () => useChatStore.getState().isSending,
     getCanSendViaActiveProfile: () => canSendViaActiveProfileRef.current,
     getEditingDraft: () => useChatStore.getState().editingDraft,
     getEditingMessageId: () => useChatStore.getState().editingMessageId,
-    setSnapshot: (chatId, next) => useChatStore.getState().setSnapshotForChat(chatId, next),
     setDraft: useChatStore.getState().setDraft,
     setIsSending: useChatStore.getState().setIsSending,
     setChatNotice: useChatStore.getState().setChatNotice,
@@ -242,11 +254,12 @@ export function useRpPlatformApp() {
 
   const character = useCharacterController({
     getActiveChatId: () => useChatStore.getState().activeChatId,
-    getSnapshot: () => useChatStore.getState().snapshot,
-    setSnapshot: snapshotRefresh,
+    getSnapshot: getCachedSnapshot,
+    writeSnapshot: snapshotRefresh,
     patchSnapshot: (updater) => {
-      const current = useChatStore.getState().snapshot;
-      if (current) useChatStore.getState().setSnapshot(updater(current));
+      const id = useChatStore.getState().activeChatId;
+      const current = id ? qc.getQueryData<AppSnapshot>(chatKeys.snapshot(id)) : null;
+      if (id && current) qc.setQueryData(chatKeys.snapshot(id), updater(current));
     },
     setChatNotice: useChatStore.getState().setChatNotice,
     setMode,
