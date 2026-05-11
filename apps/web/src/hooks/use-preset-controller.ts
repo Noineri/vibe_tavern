@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import type { PromptPresetDto } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
 import {
@@ -39,7 +40,7 @@ export function usePresetController(): PresetControllerActions {
     try {
       await setChatPromptPresetMut.mutateAsync({ chatId, presetId });
     } catch (error) {
-      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : getT()("preset_set_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("preset_set_failed"));
     }
   }
 
@@ -49,7 +50,7 @@ export function usePresetController(): PresetControllerActions {
       await handleSetActivePromptPresetId(created.id);
       return { id: created.id };
     } catch (error) {
-      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : getT()("preset_create_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("preset_create_failed"));
       return null;
     }
   }
@@ -59,7 +60,7 @@ export function usePresetController(): PresetControllerActions {
       await updatePromptPresetMut.mutateAsync({ presetId, patch });
       return true;
     } catch (error) {
-      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : getT()("preset_save_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("preset_save_failed"));
       return false;
     }
   }
@@ -69,7 +70,7 @@ export function usePresetController(): PresetControllerActions {
       await deletePromptPresetMut.mutateAsync(presetId);
       return true;
     } catch (error) {
-      useChatStore.getState().setChatNotice(error instanceof Error ? error.message : getT()("preset_delete_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("preset_delete_failed"));
       return false;
     }
   }

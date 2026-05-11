@@ -1,5 +1,6 @@
 import { useCallback, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
 import {
@@ -41,7 +42,6 @@ export interface ChatControllerDeps {
   refreshChatSnapshot: (chatId: ChatId) => Promise<AppSnapshot>;
   setDraft: (draft: string) => void;
   setIsSending: (sending: boolean) => void;
-  setChatNotice: (notice: string) => void;
   setPendingUserMessageContent: (content: string | null) => void;
   setMessageActionId: (id: string | null) => void;
   setEditingMessageId: (id: string | null) => void;
@@ -80,7 +80,6 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     refreshChatSnapshot,
     setDraft,
     setIsSending,
-    setChatNotice,
     setPendingUserMessageContent,
     setMessageActionId,
     setEditingMessageId,
@@ -192,9 +191,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       void logClientSendDebug("web.hook.handleSend.blocked.provider", {
         activeChatId,
       });
-      setChatNotice(
-        getT()("message_unavailable_no_provider"),
-      );
+      toast.error(getT()("message_unavailable_no_provider"));
       return;
     }
 
@@ -203,7 +200,6 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
 
     setDraft("");
     setPendingUserMessageContent(trimmed);
-    setChatNotice("");
     setIsSending(true);
 
     try {
@@ -233,7 +229,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleSend.cancelled", { activeChatId });
         await refreshChatSnapshotCache(activeChatId);
-        setChatNotice(getT()("generation_cancelled"));
+        toast.info(getT()("generation_cancelled"));
         return;
       }
       void logClientSendDebug("web.hook.handleSend.error", {
@@ -241,7 +237,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         message: error instanceof Error ? error.message : String(error),
       });
       await refreshChatSnapshotCache(activeChatId);
-      setChatNotice(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
+      toast.error(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
     } finally {
       setPendingUserMessageContent(null);
       setIsSending(false);
@@ -255,9 +251,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     if (!activeChatId) return;
 
     if (!getCanSendViaActiveProfile()) {
-      setChatNotice(
-        getT()("resend_unavailable_no_provider"),
-      );
+      toast.error(getT()("resend_unavailable_no_provider"));
       return;
     }
 
@@ -265,7 +259,6 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     abortRef.current = controller;
 
     setIsSending(true);
-    setChatNotice("");
     try {
       if (getStreamResponse()) {
         void logClientSendDebug("web.hook.handleResend.stream-request", { activeChatId, generationStatus: getGenerationStatus() });
@@ -291,7 +284,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleResend.cancelled", { activeChatId });
         await refreshChatSnapshotCache(activeChatId);
-        setChatNotice(getT()("generation_cancelled"));
+        toast.info(getT()("generation_cancelled"));
         return;
       }
       void logClientSendDebug("web.hook.handleResend.error", {
@@ -299,7 +292,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         message: error instanceof Error ? error.message : String(error),
       });
       await refreshChatSnapshotCache(activeChatId);
-      setChatNotice(error instanceof Error && error.message ? error.message : getT()("resend_failed"));
+      toast.error(error instanceof Error && error.message ? error.message : getT()("resend_failed"));
     } finally {
       setIsSending(false);
       abortRef.current = null;
@@ -310,7 +303,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
   const handleCancelGeneration = useCallback((): void => {
     abortRef.current?.abort();
     abortRef.current = null;
-    setChatNotice(getT()("cancelling_generation"));
+    toast.info(getT()("cancelling_generation"));
   }, []);
 
   async function handleSwitchChat(chatId: ChatId): Promise<void> {
@@ -343,7 +336,6 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       await editMessageMut.mutateAsync({ chatId: activeChatId, messageId, content: trimmed });
       setEditingMessageId(null);
       setEditingDraft("");
-      setChatNotice("");
     } finally {
       setMessageActionId(null);
     }
@@ -360,7 +352,6 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         setEditingMessageId(null);
         setEditingDraft("");
       }
-      setChatNotice("");
     } finally {
       setMessageActionId(null);
     }
@@ -371,9 +362,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     if (!activeChatId) return;
 
     if (!getCanSendViaActiveProfile()) {
-      setChatNotice(
-        getT()("regen_unavailable_no_provider"),
-      );
+      toast.error(getT()("regen_unavailable_no_provider"));
       return;
     }
 
@@ -382,7 +371,6 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
 
     setIsSending(true);
     setMessageActionId(messageId);
-    setChatNotice("");
     try {
       if (getStreamResponse()) {
         void logClientSendDebug("web.hook.handleRegenerate.stream-request", { activeChatId, messageId, generationStatus: getGenerationStatus() });
@@ -408,11 +396,11 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleRegenerate.cancelled", { activeChatId, messageId });
         await refreshChatSnapshotCache(activeChatId);
-        setChatNotice(getT()("generation_cancelled"));
+        toast.info(getT()("generation_cancelled"));
         return;
       }
       await refreshChatSnapshotCache(activeChatId);
-      setChatNotice(error instanceof Error ? error.message : getT()("regen_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("regen_failed"));
     } finally {
       setIsSending(false);
       setMessageActionId(null);
@@ -450,14 +438,14 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     const activeBranch = snapshot.activeBranch;
     const rootBranch = snapshot.branches.find((b) => b.parentBranchId === null);
     if (!rootBranch || activeBranch.id === rootBranch.id) {
-      setChatNotice(getT()("cannot_delete_main_branch"));
+      toast.error(getT()("cannot_delete_main_branch"));
       return;
     }
 
     try {
       await deleteBranchMut.mutateAsync({ chatId: activeChatId, branchId: activeBranch.id });
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : getT()("branch_delete_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("branch_delete_failed"));
     }
   }
 

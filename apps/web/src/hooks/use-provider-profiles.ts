@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import type { ProviderProbeResponse } from "@rp-platform/domain";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
@@ -34,11 +35,10 @@ export interface ProviderProfilesDeps {
   connection: ConnectionState;
   patchConnection: (patch: Partial<ConnectionState>) => void;
   setConnection: React.Dispatch<React.SetStateAction<ConnectionState>>;
-  setChatNotice: (notice: string) => void;
 }
 
 export function useProviderProfiles(deps: ProviderProfilesDeps) {
-  const { connection, patchConnection, setConnection, setChatNotice } = deps;
+  const { connection, patchConnection, setConnection } = deps;
   const qc = useQueryClient();
   const getProviderProfileFromCache = useFetchProviderProfileFromCache();
   const getProviderModelsFromCache = useFetchProviderModelsFromCache();
@@ -426,7 +426,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
       await qc.invalidateQueries({ queryKey: providerKeys.list() });
       return saved;
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : getT()("provider_create_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("provider_create_failed"));
       return null;
     }
   }
@@ -457,7 +457,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
       await qc.invalidateQueries({ queryKey: providerKeys.list() });
       return saved;
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : getT()("provider_duplicate_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("provider_duplicate_failed"));
       return null;
     }
   }
@@ -580,7 +580,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
       await qc.invalidateQueries({ queryKey: providerKeys.list() });
       return saved;
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : getT()("provider_save_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("provider_save_failed"));
       return null;
     }
   }
@@ -598,7 +598,7 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
       return;
     }
 
-    setChatNotice("");
+    
 
     try {
       const result = await testProfileMut.mutateAsync(providerProfileId);
@@ -606,12 +606,12 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
         const countHint = typeof result.modelCount === "number"
           ? ` Provider advertises ${result.modelCount} models — press Refresh models to load them.`
           : "";
-        setChatNotice(`Connection verified.${countHint}`);
+        toast.success(`Connection verified.${countHint}`);
       } else {
-        setChatNotice(result.error ?? getT()("connection_probe_failed"));
+        toast.error(result.error ?? getT()("connection_probe_failed"));
       }
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : getT()("connection_probe_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("connection_probe_failed"));
     }
   }
 

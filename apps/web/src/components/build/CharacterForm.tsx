@@ -14,11 +14,10 @@ export interface CharacterFormProps {
   setAvatarPreview: (url: string | null) => void;
   isDirty: boolean;
   isSaving: boolean;
-  saveNotice: string;
   avatarUrl?: string;
   onSave: () => void;
   onReset: () => void;
-  onAvatarUpload: (file: File) => void;
+  onAvatarUpload: (file: File) => Promise<void> | void;
 
 }
 
@@ -70,7 +69,7 @@ function TokenBadge({ text }: { text: string }) {
 }
 
 export function CharacterForm({
-  form, avatarPreview, setAvatarPreview, isDirty, isSaving, saveNotice, avatarUrl, onSave, onReset, onAvatarUpload,
+  form, avatarPreview, setAvatarPreview, isDirty, isSaving, avatarUrl, onSave, onReset, onAvatarUpload,
 }: CharacterFormProps) {
   const { t } = useT();
   const { register, formState: { errors }, watch, setValue, handleSubmit } = form;
@@ -380,13 +379,12 @@ export function CharacterForm({
       {/* Footer */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
         <button className="cursor-pointer rounded-md bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" style={{ height: 28, padding: "0 12px" }} disabled={isSaving || !isDirty} onClick={onReset}>{t("reset")}</button>
-        <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{saveNotice || (isDirty ? t("unsaved_changes") : t("saved_state"))}</span>
+        <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{isDirty ? t("unsaved_changes") : t("saved_state")}</span>
       </div>
 
       {importModalOpen && (
         <CharacterImportModal
           isImporting={false}
-          importNotice={importError}
           onClose={() => setImportModalOpen(false)}
           onImportFiles={handleImportFiles}
         />
