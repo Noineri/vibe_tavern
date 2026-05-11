@@ -1,32 +1,18 @@
 /**
  * TanStack Query hooks for persona CRUD operations.
- * Replaces manual loadPersonas() calls with useQuery + targeted invalidation.
+ * Replaces manual loadPersonas() calls with targeted invalidation.
  */
 import {
   useMutation,
-  useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import {
   createPersona,
   deletePersona,
-  listPersonas,
   updatePersona,
-  type PersonaRecord,
 } from "../app-client.js";
 import type { ChatId } from "@rp-platform/domain";
 import { personaKeys } from "./query-keys.js";
-
-// ---------------------------------------------------------------------------
-// Read hooks
-// ---------------------------------------------------------------------------
-
-export function usePersonaList() {
-  return useQuery({
-    queryKey: personaKeys.list(),
-    queryFn: () => listPersonas(),
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Mutation hooks

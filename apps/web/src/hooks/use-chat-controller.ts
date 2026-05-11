@@ -160,12 +160,12 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     });
   }
 
-  /** Invalidate chat snapshot cache + update Zustand store from the refetch. */
+  /** Refetch chat snapshot cache + update Zustand store from the same result. */
   async function invalidateChatSnapshot(chatId: ChatId): Promise<void> {
-    await qc.invalidateQueries({ queryKey: chatKeys.snapshot(chatId) });
-    // After invalidation, refetch and push into Zustand store
-    // to bridge the gap until TQ4 migrates the store away.
-    const fresh = await refreshChatSnapshot(chatId);
+    const fresh = await qc.fetchQuery({
+      queryKey: chatKeys.snapshot(chatId),
+      queryFn: () => refreshChatSnapshot(chatId),
+    });
     setSnapshot(chatId, fresh);
   }
 

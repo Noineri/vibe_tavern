@@ -5,8 +5,6 @@ import type { AppMode, ThemeMode } from "../components/app-shell-types.js";
 export interface NavigationState {
   mode: AppMode;
   theme: ThemeMode;
-  isLoading: boolean;
-  loadError: string;
   sidebarCollapsed: boolean;
   isProviderModalOpen: boolean;
   isPromptManagerOpen: boolean;
@@ -17,8 +15,6 @@ export interface NavigationState {
 export interface NavigationActions {
   setMode: (mode: AppMode) => void;
   setTheme: (theme: ThemeMode) => void;
-  setIsLoading: (loading: boolean) => void;
-  setLoadError: (error: string) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setIsProviderModalOpen: (open: boolean) => void;
   setIsPromptManagerOpen: (open: boolean) => void;
@@ -32,8 +28,6 @@ export type NavigationStore = NavigationState & NavigationActions;
 export const useNavigationStore = create<NavigationStore>()((set) => ({
   mode: "play",
   theme: "dark",
-  isLoading: true,
-  loadError: "",
   sidebarCollapsed: false,
   isProviderModalOpen: false,
   isPromptManagerOpen: false,
@@ -67,8 +61,6 @@ export const useNavigationStore = create<NavigationStore>()((set) => ({
 
   setMode: (mode) => set({ mode }),
   setTheme: (theme) => set({ theme }),
-  setIsLoading: (loading) => set({ isLoading: loading }),
-  setLoadError: (error) => set({ loadError: error }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setIsProviderModalOpen: (open) => set({ isProviderModalOpen: open }),
   setIsPromptManagerOpen: (open) => set({ isPromptManagerOpen: open }),
