@@ -43,6 +43,9 @@ function parseCardToDraft(raw: unknown): Partial<BuildCharacterDraft> {
   return result;
 }
 
+/* ── shared style constants for padding (Tailwind v4 numeric spacing bugs) ── */
+const inputPad = { padding: "6px 10px" } as React.CSSProperties;
+
 const inputCls = "w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent";
 const textareaCls = inputCls;
 const monoCls = inputCls + " font-mono text-xs";
@@ -151,7 +154,8 @@ export function CharacterForm({
         <div className="flex items-center gap-2">
           <span className="font-ui text-[11px] tabular-nums text-t3">{charTotal.toLocaleString()} {t("tokens_label")}</span>
           <button
-            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
+            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
+            style={{ height: 28, width: 28 }}
             title={t("char_import_to_draft")}
             onClick={() => setImportModalOpen(true)}
             disabled={isSaving}
@@ -159,7 +163,8 @@ export function CharacterForm({
             {Ic.import()}
           </button>
           <button
-            className="h-7 cursor-pointer rounded-md border-0 bg-accent px-3.5 font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
+            className="cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
+            style={{ height: 28, padding: "0 14px" }}
             disabled={!canSave || !isDirty}
             onClick={onSave}
           >
@@ -201,21 +206,21 @@ export function CharacterForm({
         </div>
         <div className="flex-1">
           <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
-          <input type="text" className={inputCls + " px-2.5 py-1.5"} disabled={isSaving} {...register("name")} />
+          <input type="text" className={inputCls} style={inputPad} disabled={isSaving} {...register("name")} />
         </div>
       </div>
 
       {/* Description */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("char_desc_label")}</label>
-        <textarea className={textareaCls + " min-h-[100px] px-2.5 py-1.5"} disabled={isSaving} {...register("description")} />
+        <textarea className={textareaCls} style={{ ...inputPad, minHeight: 100 }} disabled={isSaving} {...register("description")} />
         <TokenBadge text={description || ""} />
       </div>
 
       {/* First Message */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("first_message_greeting")}</label>
-        <textarea className={textareaCls + " min-h-[120px] px-2.5 py-1.5"} disabled={isSaving} placeholder={t("first_message_placeholder")} {...register("firstMessage")} />
+        <textarea className={textareaCls} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} placeholder={t("first_message_placeholder")} {...register("firstMessage")} />
         <TokenBadge text={firstMessage || ""} />
       </div>
 
@@ -251,7 +256,7 @@ export function CharacterForm({
           >+</span>
         </div>
         {alternateGreetings.length > 0 && (
-          <textarea className={textareaCls + " min-h-[120px] px-2.5 py-1.5"} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
+          <textarea className={textareaCls} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
             const next = [...alternateGreetings]; next[altGreetIdx] = e.target.value;
             setValue("alternateGreetings", next, { shouldDirty: true });
           }} placeholder={t("alternate_greeting_placeholder")} />
@@ -261,21 +266,21 @@ export function CharacterForm({
       {/* Message Examples */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("dialog_examples")}</label>
-        <textarea className={monoCls + " min-h-[120px] px-2.5 py-1.5"} disabled={isSaving} placeholder="<START>..." {...register("mesExample")} />
+        <textarea className={monoCls} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} placeholder="<START>..." {...register("mesExample")} />
         <TokenBadge text={mesExample || ""} />
       </div>
 
       {/* Scenario */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("scenario")}</label>
-        <textarea className={textareaCls + " min-h-[100px] px-2.5 py-1.5"} disabled={isSaving} {...register("scenario")} />
+        <textarea className={textareaCls} style={{ ...inputPad, minHeight: 100 }} disabled={isSaving} {...register("scenario")} />
         <TokenBadge text={scenario || ""} />
       </div>
 
       {/* Personality Summary */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("char_personality_label")}</label>
-        <textarea className={textareaCls + " min-h-[60px] px-2.5 py-1.5"} disabled={isSaving} {...register("personalitySummary")} />
+        <textarea className={textareaCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} {...register("personalitySummary")} />
         <TokenBadge text={personalitySummary || ""} />
       </div>
 
@@ -287,14 +292,14 @@ export function CharacterForm({
       {/* Post-History Instructions */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("post_history_instructions")}</label>
-        <textarea className={monoCls + " min-h-[60px] px-2.5 py-1.5"} disabled={isSaving} placeholder={t("post_history_placeholder")} {...register("postHistoryInstructions")} />
+        <textarea className={monoCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("post_history_placeholder")} {...register("postHistoryInstructions")} />
         <TokenBadge text={postHistoryInstructions || ""} />
       </div>
 
       {/* Creator Notes */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("creator_notes")}</label>
-        <textarea className={textareaCls + " min-h-[60px] px-2.5 py-1.5"} disabled={isSaving} placeholder={t("creator_notes_placeholder")} {...register("creatorNotes")} />
+        <textarea className={textareaCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("creator_notes_placeholder")} {...register("creatorNotes")} />
         <TokenBadge text={creatorNotes || ""} />
       </div>
 
@@ -305,11 +310,11 @@ export function CharacterForm({
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1">
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
-              <input type="number" className={inputCls + " h-6 w-14 px-1.5 text-center text-[11px]"} min={0} max={999} disabled={isSaving} value={depthPromptDepth ?? 4} onChange={(e) => setValue("depthPromptDepth", Number(e.target.value), { shouldDirty: true })} />
+              <input type="number" className="h-6 w-14 rounded-md border border-border bg-s2 px-1.5 text-center text-[11px] font-ui text-t1 outline-none focus:border-accent" min={0} max={999} disabled={isSaving} value={depthPromptDepth ?? 4} onChange={(e) => setValue("depthPromptDepth", Number(e.target.value), { shouldDirty: true })} />
             </div>
             <div className="flex items-center gap-1">
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("role")}</span>
-              <select className={inputCls + " h-6 w-[82px] px-1.5 text-[11px]"} value={depthPromptRole || "system"} disabled={isSaving} onChange={(e) => setValue("depthPromptRole", e.target.value, { shouldDirty: true })}>
+              <select className="h-6 w-[82px] rounded-md border border-border bg-s2 px-1.5 text-[11px] font-ui text-t1 outline-none focus:border-accent" value={depthPromptRole || "system"} disabled={isSaving} onChange={(e) => setValue("depthPromptRole", e.target.value, { shouldDirty: true })}>
                 <option value="system">system</option>
                 <option value="user">user</option>
                 <option value="assistant">assistant</option>
@@ -317,21 +322,21 @@ export function CharacterForm({
             </div>
           </div>
         </div>
-        <textarea className={monoCls + " min-h-[60px] px-2.5 py-1.5"} disabled={isSaving} placeholder={t("depth_prompt_placeholder")} {...register("depthPrompt")} />
+        <textarea className={monoCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("depth_prompt_placeholder")} {...register("depthPrompt")} />
         <TokenBadge text={depthPrompt || ""} />
       </div>
 
       {/* System Prompt Override */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("system_prompt_override")}</label>
-        <textarea className={monoCls + " min-h-[80px] px-2.5 py-1.5"} disabled={isSaving} placeholder={t("system_prompt_override_placeholder")} {...register("systemPrompt")} />
+        <textarea className={monoCls} style={{ ...inputPad, minHeight: 80 }} disabled={isSaving} placeholder={t("system_prompt_override_placeholder")} {...register("systemPrompt")} />
         <TokenBadge text={systemPrompt || ""} />
       </div>
 
       {/* Tags */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("char_tags_label")}</label>
-        <input type="text" className={inputCls + " px-2.5 py-1.5"} value={tagInput} disabled={isSaving} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagKey} placeholder={t("tags_enter")} />
+        <input type="text" className={inputCls} style={inputPad} value={tagInput} disabled={isSaving} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagKey} placeholder={t("tags_enter")} />
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {tags.map((tag: string) => (
             <span key={tag} className="cursor-pointer rounded bg-accent-dim px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => toggleTag(tag)}>
