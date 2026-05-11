@@ -1,5 +1,5 @@
-import { type StoreContainer, createFileStore } from "@rp-platform/db";
-import type { PromptTraceRecordDto } from "@rp-platform/domain";
+import { type PromptPreset, type StoreContainer, createFileStore } from "@rp-platform/db";
+import type { PromptPresetDto, PromptTraceRecordDto } from "@rp-platform/domain";
 import {
 	brandId,
 	type CharacterId,
@@ -83,6 +83,7 @@ export interface BootstrapState {
 	snapshot: SessionSnapshot | null;
 	isFirstRun: boolean;
 	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
+	promptPresets: PromptPresetDto[];
 }
 
 export interface ImportResult {
@@ -218,9 +219,10 @@ export class SessionRuntime {
 
 	async getBootstrapState(): Promise<BootstrapState> {
 		const initialChatId = this.chatOrder[0] ?? null;
-		const [userChars, allChats] = await Promise.all([
+		const [userChars, allChats, promptPresets] = await Promise.all([
 			this.stores.characters.listAll(),
 			this.stores.chats.listAll(),
+			this.stores.presets.listAll(),
 		]);
 		return {
 			initialChatId,
@@ -232,6 +234,7 @@ export class SessionRuntime {
 				subtitle: c.tags.length > 0 ? c.tags[0] : '',
 				avatarAssetId: c.avatarAssetId,
 			})),
+			promptPresets: promptPresets.map((preset) => this.toPromptPresetDto(preset)),
 		};
 	}
 
@@ -280,6 +283,23 @@ export class SessionRuntime {
 	): Promise<PromptTraceRecordDto[]> {
 		const traces = await this.stores.chats.getTracesByChat(chatId, branchId);
 		return traces.slice(0, limit).map(mapPromptTraceRecord);
+	}
+
+	private toPromptPresetDto(preset: PromptPreset): PromptPresetDto {
+		return {
+			id: preset.id,
+			name: preset.name,
+			bindModel: preset.bindProviderPresetId ?? "",
+			system: preset.systemPrompt,
+			jailbreak: preset.postHistoryInstructions,
+			prefill: preset.assistantPrefix,
+			authorsNote: preset.authorsNote,
+			authorsNoteDepth: preset.authorsNoteDepth,
+			summary: preset.summaryPrompt,
+			tools: preset.toolsPrompt,
+			createdAt: preset.createdAt,
+			updatedAt: preset.updatedAt,
+		};
 	}
 
 	async assembleSummaryPrompt(input: {

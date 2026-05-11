@@ -166,6 +166,7 @@ export async function bootstrapApp(): Promise<{
   snapshot: AppSnapshot | null;
   isFirstRun: boolean;
   allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
+  promptPresets: PromptPresetDto[];
 }> {
   const response = await client.api.bootstrap.$get();
   const data = await unwrapRpc<{
@@ -173,6 +174,7 @@ export async function bootstrapApp(): Promise<{
     snapshot: AppSnapshot | null;
     isFirstRun?: boolean;
     allCharacters?: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
+    promptPresets?: PromptPresetDto[];
   }>(response);
 
   return {
@@ -180,6 +182,7 @@ export async function bootstrapApp(): Promise<{
     snapshot: data.snapshot ? normalizeSnapshot(data.snapshot) : null,
     isFirstRun: data.isFirstRun ?? false,
     allCharacters: data.allCharacters ?? [],
+    promptPresets: data.promptPresets ?? [],
   };
 }
 
