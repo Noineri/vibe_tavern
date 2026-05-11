@@ -27,17 +27,17 @@ export function TweaksPanel({ settings, setSetting }: TweaksPanelProps) {
       <div className="flex items-center justify-between gap-3 py-2">
         <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_font_size")}</span>
         <select className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none" style={{paddingLeft:'7px',paddingRight:'7px'}} value={settings.fontSize} onChange={e => setSetting('fontSize', parseInt(e.target.value))}>
-          <option value={17}>{t("tweaks_narrow")}</option>
+          <option value={17}>{t("tweaks_small")}</option>
           <option value={18}>{t("tweaks_medium")}</option>
-          <option value={19}>{t("tweaks_wide")}</option>
+          <option value={19}>{t("tweaks_large")}</option>
         </select>
       </div>
       <div className="flex items-center justify-between gap-3 py-2">
         <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_ui_font_size")}</span>
         <select className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none" style={{paddingLeft:'7px',paddingRight:'7px'}} value={settings.uiFontSize} onChange={e => setSetting('uiFontSize', parseInt(e.target.value))}>
-          <option value={16}>{t("tweaks_narrow")}</option>
+          <option value={16}>{t("tweaks_small")}</option>
           <option value={17}>{t("tweaks_medium")}</option>
-          <option value={18}>{t("tweaks_wide")}</option>
+          <option value={18}>{t("tweaks_large")}</option>
         </select>
       </div>
       <div className="flex items-center justify-between gap-3 py-2">
