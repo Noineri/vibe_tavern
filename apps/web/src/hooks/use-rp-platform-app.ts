@@ -81,7 +81,6 @@ export function useRpPlatformApp() {
   const editingDraft = useChatStore((s) => s.editingDraft);
   const messageActionId = useChatStore((s) => s.messageActionId);
   const pendingUserMessageContent = useChatStore((s) => s.pendingUserMessageContent);
-  const chatNotice = useChatStore((s) => s.chatNotice);
   const setDraft = useChatStore((s) => s.setDraft);
   const setEditingDraft = useChatStore((s) => s.setEditingDraft);
   const setSelectedTraceId = useChatStore((s) => s.setSelectedTraceId);
@@ -108,8 +107,6 @@ export function useRpPlatformApp() {
   const setBuildTab = useCharacterStore((s) => s.setBuildTab);
   const isImportDragActive = useCharacterStore((s) => s.isImportDragActive);
   const setIsImportDragActive = useCharacterStore((s) => s.setIsImportDragActive);
-  const importNotice = useCharacterStore((s) => s.importNotice);
-  const setImportNotice = useCharacterStore((s) => s.setImportNotice);
   const confirmDestroy = useCharacterStore((s) => s.confirmDestroy);
   const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
   const renamingChatId = useCharacterStore((s) => s.renamingChatId);
@@ -118,8 +115,6 @@ export function useRpPlatformApp() {
   const setRenameDraft = useCharacterStore((s) => s.setRenameDraft);
   const isSavingCharacter = useCharacterStore((s) => s.isSavingCharacter);
   const setIsSavingCharacter = useCharacterStore((s) => s.setIsSavingCharacter);
-  const characterSaveNotice = useCharacterStore((s) => s.characterSaveNotice);
-  const setCharacterSaveNotice = useCharacterStore((s) => s.setCharacterSaveNotice);
 
   // --- Local state (no store equivalent) ---
   const [isCreateCharacterModalOpen, setCreateCharacterModalOpen] = useState(false);
@@ -158,7 +153,6 @@ export function useRpPlatformApp() {
         useNavigationStore.getState().setConnection(action);
       }
     },
-    setChatNotice: useChatStore.getState().setChatNotice,
   });
 
   // --- Preset controller (extracted) ---
@@ -200,14 +194,6 @@ export function useRpPlatformApp() {
     }
   }, [snapshot?.promptTrace?.id, snapshot?.promptTraceHistory, editingMessageId, snapshot]);
 
-  useEffect(() => {
-    setCharacterSaveNotice("");
-  }, [snapshot?.character.id]);
-
-  useEffect(() => {
-    useChatStore.getState().setChatNotice("");
-  }, [activeChatId]);
-
   // --- Controllers ---
 
   const summarizeChatMut = useSummarizeChatMutation();
@@ -241,7 +227,6 @@ export function useRpPlatformApp() {
     getEditingMessageId: () => useChatStore.getState().editingMessageId,
     setDraft: useChatStore.getState().setDraft,
     setIsSending: useChatStore.getState().setIsSending,
-    setChatNotice: useChatStore.getState().setChatNotice,
     setPendingUserMessageContent: useChatStore.getState().setPendingUserMessageContent,
     setMessageActionId: useChatStore.getState().setMessageActionId,
     setEditingMessageId: useChatStore.getState().setEditingMessageId,
@@ -262,11 +247,8 @@ export function useRpPlatformApp() {
       const current = id ? qc.getQueryData<AppSnapshot>(chatKeys.snapshot(id)) : null;
       if (id && current) qc.setQueryData(chatKeys.snapshot(id), updater(current));
     },
-    setChatNotice: useChatStore.getState().setChatNotice,
     setMode,
     setIsImportDragActive,
-    setImportNotice,
-    setCharacterSaveNotice,
     importFile,
   });
 
@@ -385,7 +367,6 @@ export function useRpPlatformApp() {
     connection,
     patchConnection,
     isImportDragActive,
-    importNotice,
     providerProfiles: provider.providerProfiles,
     selectedProviderProfileId: provider.selectedProviderProfileId,
     setSelectedProviderProfileId: provider.setSelectedProviderProfileId,
@@ -399,9 +380,7 @@ export function useRpPlatformApp() {
     displayAlternateGreetings: display.displayAlternateGreetings,
     displayMessages: display.displayMessages,
     displayScenario: display.displayScenario,
-    chatNotice,
     isSavingCharacter: character.isSavingCharacter,
-    characterSaveNotice,
     isImporting,
     characterTabs: display.characterTabs,
     canConnect: provider.canConnect,

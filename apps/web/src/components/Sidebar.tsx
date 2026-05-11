@@ -572,7 +572,6 @@ export function Sidebar() {
       {importModal === "character" && (
         <CharacterImportModal
           isImporting={actions.isImporting}
-          importNotice={actions.importNotice}
           onClose={() => setImportModal(null)}
           onImportFiles={(files) => void actions.handleImportFiles(files)}
         />
@@ -581,7 +580,6 @@ export function Sidebar() {
         <ChatImportModal
           activeChatId={activeChatId}
           isImporting={actions.isImporting}
-          importNotice={actions.importNotice}
           onClose={() => setImportModal(null)}
           onImportFiles={(files) => void actions.handleImportFiles(files)}
         />

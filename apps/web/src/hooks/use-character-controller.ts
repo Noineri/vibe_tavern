@@ -1,5 +1,6 @@
 import type { ChangeEvent, DragEvent } from "react";
 import type { ChatId } from "@rp-platform/domain";
+import { toast } from "sonner";
 import { getT } from "../i18n/context.js";
 import {
   setPersonalLorebookEnabled,
@@ -40,11 +41,8 @@ export interface CharacterControllerDeps {
   // write / mutate
   writeSnapshot: (chatId: ChatId, next: AppSnapshot) => void;
   patchSnapshot: (updater: (snapshot: AppSnapshot) => AppSnapshot) => void;
-  setChatNotice: (notice: string) => void;
   setMode: (mode: AppMode) => void;
   setIsImportDragActive: (active: boolean) => void;
-  setImportNotice: (notice: string) => void;
-  setCharacterSaveNotice: (notice: string) => void;
   // action callbacks
   importFile: (file: File, options?: CharacterImportOptions) => Promise<ImportJsonResponse>;
 }
@@ -100,11 +98,8 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     getSnapshot,
     writeSnapshot,
     patchSnapshot,
-    setChatNotice,
     setMode,
     setIsImportDragActive,
-    setImportNotice,
-    setCharacterSaveNotice,
     importFile,
   } = deps;
 
@@ -140,7 +135,6 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     const snapshot = getSnapshot();
     if (!activeChatId || !snapshot) return;
 
-    setCharacterSaveNotice("");
     try {
       const nextSnapshot = await saveCharacterMut.mutateAsync({
         characterId: snapshot.character.id,
@@ -165,9 +159,10 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
         },
       });
       writeSnapshot(activeChatId, nextSnapshot);
-      setCharacterSaveNotice(getT()("char_card_saved"));
+      toast.success(getT()("char_card_saved"));
     } catch (error) {
-      setCharacterSaveNotice(error instanceof Error ? error.message : getT()("char_save_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("char_save_failed"));
+      throw error;
     }
   }
 
@@ -176,7 +171,6 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     const snapshot = getSnapshot();
     if (!activeChatId || !snapshot) return;
 
-    setCharacterSaveNotice("");
     try {
       const nextSnapshot = await avatarUploadMut.mutateAsync({
         file,
@@ -184,9 +178,10 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
         chatId: activeChatId,
       });
       writeSnapshot(activeChatId, nextSnapshot);
-      setCharacterSaveNotice(getT()("char_avatar_saved"));
+      toast.success(getT()("char_avatar_saved"));
     } catch (error) {
-      setCharacterSaveNotice(error instanceof Error ? error.message : getT()("char_avatar_save_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("char_avatar_save_failed"));
+      throw error;
     }
   }
 
@@ -194,7 +189,6 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
 
-    setCharacterSaveNotice("");
     try {
       const nextSnapshot = await updatePersonaMut.mutateAsync({
         personaId,
@@ -208,9 +202,10 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       });
       void qc.invalidateQueries({ queryKey: personaKeys.list() });
       writeSnapshot(activeChatId, nextSnapshot);
-      setCharacterSaveNotice(getT()("persona_saved"));
+      toast.success(getT()("persona_saved"));
     } catch (error) {
-      setCharacterSaveNotice(error instanceof Error ? error.message : getT()("persona_save_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("persona_save_failed"));
+      throw error;
     }
   }
 
@@ -224,7 +219,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     try {
       writeSnapshot(activeChatId, await setChatPersonaMut.mutateAsync({ chatId: activeChatId, personaId }));
     } catch (err) {
-      setChatNotice(err instanceof Error ? err.message : getT()("persona_switch_failed"));
+      toast.error(err instanceof Error ? err.message : getT()("persona_switch_failed"));
     }
   }
 
@@ -238,7 +233,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       void qc.invalidateQueries({ queryKey: personaKeys.list() });
       return { id: created.id };
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : getT()("persona_create_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("persona_create_failed"));
       return null;
     }
   }
@@ -257,7 +252,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     try {
       return await setPersonalLorebookEnabled(personaId, enabled);
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : getT()("failed_to_update_lorebook"));
+      toast.error(error instanceof Error ? error.message : getT()("failed_to_update_lorebook"));
       return null;
     }
   }
@@ -266,7 +261,6 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     const firstFile = Array.from(files)[0];
     if (!firstFile) return;
 
-    setImportNotice("");
     try {
       const imported = await importFile(firstFile, { chatId: getActiveChatId() ?? undefined });
 
@@ -275,21 +269,15 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
 
       if (imported.imported.kind === "character") {
         setMode("play");
-        setImportNotice(
-          `${getT()("imported_character").replace("{name}", imported.imported.name)}${formatImportWarnings(imported.imported.warningCount)}`,
-        );
+        toast.success(`${getT()("imported_character").replace("{name}", imported.imported.name)}${formatImportWarnings(imported.imported.warningCount)}`);
       } else if (imported.imported.kind === "chat") {
         setMode("play");
-        setImportNotice(
-          `${getT()("imported_chat").replace("{name}", imported.imported.name)}${formatImportWarnings(imported.imported.warningCount)}`,
-        );
+        toast.success(`${getT()("imported_chat").replace("{name}", imported.imported.name)}${formatImportWarnings(imported.imported.warningCount)}`);
       } else {
-        setImportNotice(
-          `${getT()("attached_lorebook").replace("{name}", imported.imported.name).replace("{char}", imported.imported.attachedToCharacterName ?? "current character")}${formatImportWarnings(imported.imported.warningCount)}`,
-        );
+        toast.success(`${getT()("attached_lorebook").replace("{name}", imported.imported.name).replace("{char}", imported.imported.attachedToCharacterName ?? "current character")}${formatImportWarnings(imported.imported.warningCount)}`);
       }
     } catch (error) {
-      setImportNotice(error instanceof Error ? error.message : getT()("import_failed_notice"));
+      toast.error(error instanceof Error ? error.message : getT()("import_failed_notice"));
     } finally {
       setIsImportDragActive(false);
     }
@@ -357,10 +345,10 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     try {
       const result = await renameChatMut.mutateAsync({ chatId, title: nextTitle });
       if (result.title !== nextTitle) applyTitle(result.title);
-      setChatNotice("");
+
     } catch (error) {
       if (previousTitle) applyTitle(previousTitle);
-      setChatNotice(error instanceof Error ? error.message : getT()("chat_rename_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("chat_rename_failed"));
     }
   }
 
@@ -371,7 +359,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       const next = await createChatMut.mutateAsync({ characterId: resolvedId });
       writeSnapshot(next.activeChat.id, next);
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : getT()("chat_create_failed"));
+      toast.error(error instanceof Error ? error.message : getT()("chat_create_failed"));
     }
   }
 
@@ -401,7 +389,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       }
       return null;
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : getT()("failed_to_create_character"));
+      toast.error(error instanceof Error ? error.message : getT()("failed_to_create_character"));
       return null;
     }
   }
@@ -411,7 +399,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       const next = await createChatMut.mutateAsync({});
       writeSnapshot(next.activeChat.id, next);
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : getT()("failed_to_create_free_chat"));
+      toast.error(error instanceof Error ? error.message : getT()("failed_to_create_free_chat"));
     }
   }
 
@@ -420,7 +408,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       const next = await cloneChatMut.mutateAsync(chatId);
       writeSnapshot(next.activeChat.id, next);
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : getT()("failed_to_clone_chat"));
+      toast.error(error instanceof Error ? error.message : getT()("failed_to_clone_chat"));
     }
   }
 
@@ -431,7 +419,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
       downloadTextFile(`${safeName}.chara_card_v3.json`, JSON.stringify(data, null, 2), "application/json");
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : getT()("failed_to_export_character"));
+      toast.error(error instanceof Error ? error.message : getT()("failed_to_export_character"));
     }
   }
 
@@ -442,7 +430,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       const safeTitle = (chatItem?.title ?? "chat").replace(/[^a-zA-Z0-9_-]/g, "_");
       downloadTextFile(`${safeTitle}.jsonl`, text, "application/x-ndjson");
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : getT()("failed_to_export_chat"));
+      toast.error(error instanceof Error ? error.message : getT()("failed_to_export_chat"));
     }
   }
 
@@ -451,7 +439,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       const data = await exportPromptTraceMut.mutateAsync(traceId);
       downloadTextFile(`prompt-trace-${traceId}.json`, JSON.stringify(data, null, 2), "application/json");
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : getT()("failed_to_export_trace"));
+      toast.error(error instanceof Error ? error.message : getT()("failed_to_export_trace"));
     }
   }
 

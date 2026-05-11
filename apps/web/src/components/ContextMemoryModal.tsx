@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import type { ChatId } from "@rp-platform/domain";
 import { Icons } from "./shared/icons.js";
 import { SummaryTab, ContextFooter } from "./context/index.js";
@@ -36,7 +37,6 @@ export function ContextMemoryModal({
   const [selectedProviderId, setSelectedProviderId] = useState(providers.find((p) => p.isActive)?.id ?? providers[0]?.id ?? '');
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState("");
 
   useEffect(() => {
     if (isOpen) setSummaryText(currentSummary);
@@ -57,14 +57,13 @@ export function ContextMemoryModal({
   if (!isOpen) return null;
 
   const handleSummarize = async () => {
-    setError("");
     const selected = providers.find((p) => p.id === selectedProviderId);
     if (!selected) {
-      setError(t("select_provider_error"));
+      toast.error(t("select_provider_error"));
       return;
     }
     if (!selected.defaultModel) {
-      setError(t("no_default_model"));
+      toast.error(t("no_default_model"));
       return;
     }
     setIsSummarizing(true);
@@ -72,20 +71,19 @@ export function ContextMemoryModal({
       const summary = await onSummarize({ providerProfileId: selectedProviderId, maxMessages: msgCount });
       setSummaryText(summary);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("summarization_failed"));
+      toast.error(err instanceof Error ? err.message : t("summarization_failed"));
     } finally {
       setIsSummarizing(false);
     }
   };
 
   const handleSave = async () => {
-    setError("");
     setIsSaving(true);
     try {
       const summary = await onSaveSummary(summaryText);
       setSummaryText(summary);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("summary_save_failed"));
+      toast.error(err instanceof Error ? err.message : t("summary_save_failed"));
     } finally {
       setIsSaving(false);
     }
@@ -123,7 +121,7 @@ export function ContextMemoryModal({
           onSelectSummary={() => setSummaryText(currentSummary)}
           onDeleteSummary={() => setSummaryText('')}
           disabled={isDisabled}
-          error={error}
+          error=""
         />
 
         <ContextFooter

@@ -4,7 +4,6 @@ import { useT } from "../i18n/context.js";
 interface ImportSurfaceProps {
   isImportDragActive: boolean;
   isImporting: boolean;
-  importNotice: string;
   onDragOver: (event: DragEvent<HTMLLabelElement>) => void;
   onDragLeave: () => void;
   onDrop: (event: DragEvent<HTMLLabelElement>) => void;
@@ -34,7 +33,6 @@ export function ImportSurface(input: ImportSurfaceProps) {
           {t("import_surface_desc")}
         </div>
       </label>
-      {input.importNotice && <div className="import-notice">{input.importNotice}</div>}
     </>
   );
 }

@@ -1,5 +1,6 @@
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import type { ChatId } from "@rp-platform/domain";
 import { extractPngMetadata, parseCharacterMetadata } from "../lib/png-reader.js";
 import { cn } from "../lib/cn.js";
@@ -8,7 +9,6 @@ import { useT, getT } from "../i18n/context.js";
 
 interface ImportModalCommonProps {
   isImporting: boolean;
-  importNotice: string;
   onClose: () => void;
   onImportFiles: (files: File[]) => void;
 }
@@ -34,7 +34,6 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
   const { t } = useT();
   const [drag, setDrag] = useState(false);
   const [parsing, setParsing] = useState(false);
-  const [error, setError] = useState("");
   const [preview, setPreview] = useState<CharacterPreview | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -45,7 +44,6 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
   async function processFile(file?: File | null): Promise<void> {
     if (!file) return;
     setParsing(true);
-    setError("");
     setPreview((current) => {
       if (current?.avatarUrl) URL.revokeObjectURL(current.avatarUrl);
       return null;
@@ -58,7 +56,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
       const data = normalizeCharacterPreview(raw, file);
       setPreview({ ...data, file, avatarUrl: lowerName.endsWith(".png") || file.type === "image/png" ? URL.createObjectURL(file) : null });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("import_error_read_card"));
+      toast.error(err instanceof Error ? err.message : t("import_error_read_card"));
     } finally {
       setParsing(false);
     }
@@ -73,7 +71,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
   return (
     <ImportModalFrame title={t("character_import_title")} subtitle={t("character_import_sub")} onClose={input.onClose}>
       <div className="flex-1 overflow-y-auto p-5">
-        {!preview && !parsing && !error && (
+        {!preview && !parsing && (
           <Dropzone
             drag={drag}
             setDrag={setDrag}
@@ -85,8 +83,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
           />
         )}
         {parsing && <BusyLine label={t("analyzing_metadata")} />}
-        {error && <ErrorCard error={error} onRetry={() => setError("")} />}
-        {preview && !parsing && !error && (
+        {preview && !parsing && (
           <div>
             <div className="flex gap-4 rounded-lg border border-border bg-s2 p-4">
               {preview.avatarUrl ? (
@@ -105,7 +102,6 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
             <div className="mt-3 font-ui text-xs text-t3">{t("ready_to_import").replace("{name}", preview.file.name)}</div>
           </div>
         )}
-        {input.importNotice && <div className="mt-3 rounded-md bg-s2 px-3 py-2 font-ui text-xs text-t2">{input.importNotice}</div>}
       </div>
       <ModalFooter onClose={input.onClose} confirmLabel={t("add_to_library")} disabled={!preview || input.isImporting} busy={input.isImporting} onConfirm={confirm} />
     </ImportModalFrame>
@@ -116,21 +112,19 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
   const { t } = useT();
   const [drag, setDrag] = useState(false);
   const [parsing, setParsing] = useState(false);
-  const [error, setError] = useState("");
   const [preview, setPreview] = useState<ChatPreview | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   async function processFile(file?: File | null): Promise<void> {
     if (!file) return;
     setParsing(true);
-    setError("");
     setPreview(null);
     try {
       const lowerName = file.name.toLowerCase();
       if (!lowerName.endsWith(".jsonl")) throw new Error(t("import_invalid_format"));
       setPreview(parseChatPreview(file, await file.text()));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("import_error_read_chat"));
+      toast.error(err instanceof Error ? err.message : t("import_error_read_chat"));
     } finally {
       setParsing(false);
     }
@@ -145,7 +139,7 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
   return (
     <ImportModalFrame title={t("chat_import_title")} subtitle={t("chat_import_sub")} onClose={input.onClose}>
       <div className="flex-1 overflow-y-auto p-5">
-        {!preview && !parsing && !error && (
+        {!preview && !parsing && (
           <Dropzone
             drag={drag}
             setDrag={setDrag}
@@ -157,8 +151,7 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
           />
         )}
         {parsing && <BusyLine label={t("reading_chat_history")} />}
-        {error && <ErrorCard error={error} onRetry={() => setError("")} />}
-        {preview && !parsing && !error && (
+        {preview && !parsing && (
           <div>
             <div className="mb-3 flex items-center justify-between rounded-lg border border-border bg-s2 px-4 py-3">
               <div>
@@ -178,7 +171,6 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
             <div className="mt-2 font-ui text-xs text-t3">{t("showing_parsed_messages").replace("{n}", String(preview.messages.length))}</div>
           </div>
         )}
-        {input.importNotice && <div className="mt-3 rounded-md bg-s2 px-3 py-2 font-ui text-xs text-t2">{input.importNotice}</div>}
       </div>
       <ModalFooter onClose={input.onClose} confirmLabel={t("confirm_import")} disabled={!preview || input.isImporting} busy={input.isImporting} onConfirm={confirm} />
     </ImportModalFrame>
@@ -232,11 +224,6 @@ function Dropzone(props: {
 
 function BusyLine(props: { label: string }) {
   return <div className="flex items-center gap-2 font-ui text-t2"><span className="inline-flex items-center gap-[3px]"><span className="h-1 w-1 rounded-full bg-accent animate-genp"/><span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/><span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/></span>{props.label}</div>;
-}
-
-function ErrorCard(props: { error: string; onRetry: () => void }) {
-  const { t } = useT();
-  return <div className="rounded-lg border border-danger bg-danger-dim p-4 font-ui text-[13px] leading-relaxed text-danger-text"><div className="mb-1 font-medium">{t("import_error")}</div>{props.error}<button className="mt-3 block h-[34px] rounded-md bg-s3 px-3.5 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={props.onRetry}>{t("try_again")}</button></div>;
 }
 
 function ModalFooter(props: { onClose: () => void; onConfirm: () => void; confirmLabel: string; disabled: boolean; busy: boolean }) {

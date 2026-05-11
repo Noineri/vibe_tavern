@@ -25,7 +25,6 @@ export function BuildMode() {
   const snapshot = app.snapshot;
   const character = snapshot?.character;
   const isSaving = useCharacterStore((s) => s.isSavingCharacter);
-  const saveNotice = useCharacterStore((s) => s.characterSaveNotice);
   const buildTab = useCharacterStore((s) => s.buildTab);
 
   const activeTrace = app.activePromptTrace;
@@ -37,7 +36,6 @@ export function BuildMode() {
   return <BuildModeInner
     character={character}
     isSaving={isSaving}
-    saveNotice={saveNotice}
     buildTab={buildTab}
     activeTrace={activeTrace}
     promptPayloadText={promptPayloadText}
@@ -72,17 +70,16 @@ function characterDefaults(character: AppSnapshot["character"]): BuildCharacterD
 interface BuildModeInnerProps {
   character: AppSnapshot["character"];
   isSaving: boolean;
-  saveNotice: string;
   buildTab: BuildTab;
   activeTrace: PromptTraceRecordDto | null;
   promptPayloadText: string;
   promptTraceCount: number;
-  onSave: (draft: BuildCharacterDraft) => void;
-  onAvatarUpload: (file: File) => void;
+  onSave: (draft: BuildCharacterDraft) => Promise<void> | void;
+  onAvatarUpload: (file: File) => Promise<void> | void;
   t: (key: string) => string;
 }
 
-function BuildModeInner({ character, isSaving, saveNotice, buildTab, activeTrace, promptPayloadText, promptTraceCount, onSave, onAvatarUpload, t }: BuildModeInnerProps) {
+function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, onSave, onAvatarUpload, t }: BuildModeInnerProps) {
   const [active, setActive] = useState<InternalBuildTab>(buildTab === "trace" ? "trace" : "char");
 
   useEffect(() => {
@@ -110,8 +107,10 @@ function BuildModeInner({ character, isSaving, saveNotice, buildTab, activeTrace
   const isDirty = form.formState.isDirty || !!avatarPreview;
 
   function handleSave(): void {
-    form.handleSubmit((data) => {
-      onSave(data);
+    void form.handleSubmit(async (data) => {
+      await onSave(data);
+      form.reset(characterDefaults(character));
+      setAvatarPreview(null);
     })();
   }
 
@@ -120,19 +119,8 @@ function BuildModeInner({ character, isSaving, saveNotice, buildTab, activeTrace
     setAvatarPreview(null);
   }
 
-  const prevNoticeRef = useRef(saveNotice);
-  useEffect(() => {
-    if (prevNoticeRef.current !== saveNotice && saveNotice === "Character card saved.") {
-      prevNoticeRef.current = saveNotice;
-      form.reset(characterDefaults(character));
-      setAvatarPreview(null);
-    } else {
-      prevNoticeRef.current = saveNotice;
-    }
-  }, [saveNotice]);
-
   function handleAvatarUpload(file: File): void {
-    onAvatarUpload(file);
+    void Promise.resolve(onAvatarUpload(file)).then(() => setAvatarPreview(null));
   }
 
   const avatarUrl = character.avatarAssetId
@@ -300,7 +288,6 @@ function BuildModeInner({ character, isSaving, saveNotice, buildTab, activeTrace
             setAvatarPreview={setAvatarPreview}
             isDirty={isDirty}
             isSaving={isSaving}
-            saveNotice={saveNotice}
             avatarUrl={avatarUrl}
             onSave={handleSave}
             onReset={resetDraft}

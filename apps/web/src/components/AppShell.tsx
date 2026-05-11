@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { Toaster } from "sonner";
 import { useRpPlatformApp } from "../hooks/use-rp-platform-app.js";
 import { useT } from "../i18n/context.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
@@ -141,6 +142,10 @@ export function AppShell() {
 
       <ShellDestructiveConfirmModal />
       <WelcomeScreen />
+      <Toaster
+        position="bottom-right"
+        toastOptions={{ style: { background: "var(--s2)", color: "var(--t1)", border: "1px solid var(--border)" } }}
+      />
     </div>
   );
 }
