@@ -159,12 +159,11 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     });
   }
 
-  /** Refetch chat snapshot cache from the canonical query source. */
-  async function invalidateChatSnapshot(chatId: ChatId): Promise<void> {
-    await qc.fetchQuery({
-      queryKey: chatKeys.snapshot(chatId),
-      queryFn: () => refreshChatSnapshot(chatId),
-    });
+  /** Refetch chat snapshot cache from the canonical source, bypassing TQ staleTime. */
+  async function refreshChatSnapshotCache(chatId: ChatId): Promise<AppSnapshot> {
+    const snapshot = await refreshChatSnapshot(chatId);
+    qc.setQueryData(chatKeys.snapshot(chatId), snapshot);
+    return snapshot;
   }
 
   const handleSend = useCallback(async (): Promise<void> => {
@@ -220,7 +219,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
           },
         });
         await waitForStreamingReveal();
-        await invalidateChatSnapshot(activeChatId);
+        await refreshChatSnapshotCache(activeChatId);
         void logClientSendDebug("web.hook.handleSend.stream-success", { activeChatId, replyLength: collected.length });
       } else {
         void logClientSendDebug("web.hook.handleSend.request", { activeChatId });
@@ -233,7 +232,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     } catch (error) {
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleSend.cancelled", { activeChatId });
-        await invalidateChatSnapshot(activeChatId);
+        await refreshChatSnapshotCache(activeChatId);
         setChatNotice(getT()("generation_cancelled"));
         return;
       }
@@ -241,7 +240,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         activeChatId,
         message: error instanceof Error ? error.message : String(error),
       });
-      await invalidateChatSnapshot(activeChatId);
+      await refreshChatSnapshotCache(activeChatId);
       setChatNotice(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
     } finally {
       setPendingUserMessageContent(null);
@@ -280,7 +279,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
           },
         });
         await waitForStreamingReveal();
-        await invalidateChatSnapshot(activeChatId);
+        await refreshChatSnapshotCache(activeChatId);
         void logClientSendDebug("web.hook.handleResend.stream-success", { activeChatId, replyLength: collected.length });
       } else {
         void logClientSendDebug("web.hook.handleResend.request", { activeChatId });
@@ -291,7 +290,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     } catch (error) {
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleResend.cancelled", { activeChatId });
-        await invalidateChatSnapshot(activeChatId);
+        await refreshChatSnapshotCache(activeChatId);
         setChatNotice(getT()("generation_cancelled"));
         return;
       }
@@ -299,7 +298,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         activeChatId,
         message: error instanceof Error ? error.message : String(error),
       });
-      await invalidateChatSnapshot(activeChatId);
+      await refreshChatSnapshotCache(activeChatId);
       setChatNotice(error instanceof Error && error.message ? error.message : getT()("resend_failed"));
     } finally {
       setIsSending(false);
@@ -397,7 +396,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
           },
         });
         await waitForStreamingReveal();
-        await invalidateChatSnapshot(activeChatId);
+        await refreshChatSnapshotCache(activeChatId);
         void logClientSendDebug("web.hook.handleRegenerate.stream-success", { activeChatId, messageId, replyLength: collected.length });
       } else {
         const nextSnapshot = await regenMessageMut.mutateAsync(
@@ -408,11 +407,11 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     } catch (error) {
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleRegenerate.cancelled", { activeChatId, messageId });
-        await invalidateChatSnapshot(activeChatId);
+        await refreshChatSnapshotCache(activeChatId);
         setChatNotice(getT()("generation_cancelled"));
         return;
       }
-      await invalidateChatSnapshot(activeChatId);
+      await refreshChatSnapshotCache(activeChatId);
       setChatNotice(error instanceof Error ? error.message : getT()("regen_failed"));
     } finally {
       setIsSending(false);

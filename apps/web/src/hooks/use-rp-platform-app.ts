@@ -1,4 +1,4 @@
-import { type SetStateAction, useEffect, useRef, useState } from "react";
+import { type SetStateAction, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ChatId } from "@rp-platform/domain";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
@@ -164,8 +164,8 @@ export function useRpPlatformApp() {
   // --- Preset controller (extracted) ---
   const preset = usePresetController();
 
-  // --- Bootstrap: load persisted theme and connection into stores ---
-  useEffect(() => {
+  // --- Bootstrap: load persisted theme and local connection defaults before provider hydration effects ---
+  useLayoutEffect(() => {
     useNavigationStore.getState().setTheme(readSavedTheme());
     useNavigationStore.getState().setConnection(createInitialConnectionState());
   }, []);

@@ -42,7 +42,7 @@ export function LocaleProvider({ children, initialLocale }: {
   useEffect(() => {
     let cancelled = false;
     setReady(false);
-    setStrings({});
+    // Keep previous strings until new ones load — avoids flash of raw keys
     import(`./locales/${locale}.json`)
       .then((mod) => {
         if (!cancelled) {

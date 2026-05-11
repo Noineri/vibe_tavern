@@ -60,7 +60,7 @@
   "topbar_memory": "Memory",
   "topbar_prompt_preset": "Prompt preset",
   "topbar_build_mode": "Build",
-  "topbar_play_mode": "Play",
+  "topbar_play_mode": "Return to Game",
   "topbar_default": "Default",
   "topbar_interface_settings": "Interface settings",
 
@@ -467,6 +467,8 @@
   "tweaks_narrow": "Narrow",
   "tweaks_medium": "Medium",
   "tweaks_wide": "Wide",
+  "tweaks_small": "Small",
+  "tweaks_large": "Large",
   "tweaks_dark_theme": "Dark theme",
 
   "back": "← Back",
