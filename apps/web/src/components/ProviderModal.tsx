@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useT } from "../i18n/context.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../app-client.js";
 import type { ProviderProbeResponse } from "@rp-platform/domain";
 import { PROVIDER_PRESETS } from "../provider-presets.js";
@@ -109,6 +110,8 @@ export function ProviderModal({
   onSaveProfile, onTestDraft, onTestProfile, onTestChat, onFetchModels, onFetchModelsForProfile,
   favoriteModelsByProfile, onToggleFavoriteModel, onRefreshProfiles,
 }: ProviderModalProps) {
+  const { t } = useT();
+
   // ── Selection state ──
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
@@ -270,7 +273,7 @@ export function ProviderModal({
   const handleFetchModels = async () => {
     if (!form) return;
     const ep = form.baseUrl.trim();
-    if (!ep) { setFetchError("Endpoint URL is required."); return; }
+    if (!ep) { setFetchError(t("endpoint_url_required")); return; }
     setFetching(true); setFetchError(null);
     try {
       let fetched: ModelOption[];
@@ -280,10 +283,10 @@ export function ProviderModal({
         const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
         fetched = await onFetchModels(ep, form.apiKey.trim() || undefined, false, preset?.type);
       }
-      if (!fetched.length) setFetchError("No models returned. Check endpoint URL and API key.");
+      if (!fetched.length) setFetchError(t("no_models_returned"));
       setModels(fetched);
       if (fetched.length && (!form.model || !fetched.find((m) => m.id === form.model))) autoSaveField("model", fetched[0].id);
-    } catch (e) { setModels([]); setFetchError(e instanceof Error ? e.message : "Failed to fetch models."); }
+    } catch (e) { setModels([]); setFetchError(e instanceof Error ? e.message : t("failed_to_fetch_models")); }
     finally { setFetching(false); }
   };
 
@@ -293,7 +296,7 @@ export function ProviderModal({
     setTestingChat(true); setChatResult(null);
     const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
     try { setChatResult(await onTestChat(editingId, form.baseUrl.trim(), form.apiKey.trim(), form.model.trim(), preset?.type)); }
-    catch (e) { setChatResult({ error: e instanceof Error ? e.message : "Request failed." }); }
+    catch (e) { setChatResult({ error: e instanceof Error ? e.message : t("request_failed") }); }
     finally { setTestingChat(false); }
   };
 
@@ -313,9 +316,9 @@ export function ProviderModal({
       {confirmClose && <ConfirmCloseModal onCancel={() => setConfirmClose(false)} onConfirm={() => { reset(); onClose(); }} />}
       {confirmDelete && (
         <DestructiveConfirmModal
-          title="Delete Profile"
-          body={<>Delete profile <b>{form?.name}</b>? This cannot be undone.</>}
-          confirmLabel="Delete Profile"
+          title={t("delete_provider_title")}
+          body={<>Delete profile <b>{form?.name}</b>? {t("delete_provider_body")}</>}
+          confirmLabel={t("delete_btn")}
           onConfirm={() => void confirmDeleteAction()}
           onCancel={() => setConfirmDelete(false)}
         />
@@ -328,9 +331,9 @@ export function ProviderModal({
           <div className="flex items-start justify-between">
             <div>
               <div className="mb-1 flex items-center gap-2 font-body text-[18px] font-semibold text-t1">
-                Provider Settings
+                {t("provider_settings_title")}
               </div>
-              <div className="font-ui text-[13px] text-t3">Manage connections and generation parameters. Changes save automatically.</div>
+              <div className="font-ui text-[13px] text-t3">{t("provider_settings_desc")}</div>
             </div>
             <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1" onClick={handleClose}><Icons.Close /></div>
           </div>
@@ -347,7 +350,7 @@ export function ProviderModal({
           <div className="flex-1 overflow-y-auto" style={{ padding: 24 }}>
             {!form ? (
               <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
-                Select a profile or create a new one.
+                {t("provider_select_profile")}
               </div>
             ) : (
               <>
@@ -390,7 +393,7 @@ export function ProviderModal({
                         <button onClick={() => void handleTestChat()} disabled={testingChat}
                           className="rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50"
                         >
-                          {testingChat ? "Sending..." : 'Test "Hi"'}
+                          {testingChat ? t("sending") : t("test_hi_btn")}
                         </button>
                         {chatResult?.reply && (
                           <div className="mt-2">
@@ -418,16 +421,16 @@ export function ProviderModal({
         <div className="flex shrink-0 items-center justify-between border-t border-border" style={{ padding: "16px 24px" }}>
           <div className="flex gap-4">
             <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>
-              <Icons.Copy /> Duplicate
+              <Icons.Copy /> {t("duplicate")}
             </span>
             {providerProfiles.length > 1 && (
               <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-danger/80 transition-colors hover:text-danger" onClick={handleDelete}>
-                <Icons.Trash /> Delete
+                <Icons.Trash /> {t("delete")}
               </span>
             )}
           </div>
           <div className="flex items-center gap-2 font-ui text-[12px] text-t3 transition-opacity duration-300" style={{ opacity: autoSaveFlash ? 1 : 0 }}>
-            <Icons.download /> Auto-save
+            <Icons.download /> {t("autosaving")}
           </div>
         </div>
       </div>

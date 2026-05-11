@@ -1,9 +1,12 @@
+import { useT } from "../../i18n/context.js";
+
 interface ConfirmCloseModalProps {
   onConfirm: () => void;
   onCancel: () => void;
 }
 
 export function ConfirmCloseModal(input: ConfirmCloseModalProps) {
+  const { t } = useT();
   return (
     <div className="fixed inset-0 z-[700] flex items-center justify-center bg-black/50" onClick={input.onCancel}>
       <div
@@ -12,10 +15,10 @@ export function ConfirmCloseModal(input: ConfirmCloseModalProps) {
         onClick={(event) => event.stopPropagation()}
       >
         <div style={{ fontSize: 16, fontWeight: 500, color: "var(--t1)", marginBottom: 8 }}>
-          Unsaved changes
+          {t("unsaved_changes_title")}
         </div>
         <div style={{ fontSize: 13, color: "var(--t3)", lineHeight: 1.55, marginBottom: 24 }}>
-          Closing now will discard your changes.
+          {t("close_without_saving_body")}
         </div>
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
           <button
@@ -23,14 +26,14 @@ export function ConfirmCloseModal(input: ConfirmCloseModalProps) {
             style={{ padding: "0 14px", border: "1px solid var(--border)" }}
             onClick={input.onCancel}
           >
-            Keep editing
+            {t("keep_editing")}
           </button>
           <button
             className="h-8 cursor-pointer rounded-md border-0 font-ui text-[12.5px] font-medium text-white transition-[filter] duration-100 hover:brightness-110"
             style={{ padding: "0 18px", background: "oklch(0.38 0.14 25)" }}
             onClick={input.onConfirm}
           >
-            Close without saving
+            {t("close_without_saving")}
           </button>
         </div>
       </div>

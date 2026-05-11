@@ -13,15 +13,17 @@ import { TweaksPanel } from "./components/popovers/TweaksPanel.js";
 import { AvatarPanel } from "./components/popovers/AvatarPanel.js";
 import { useRpPlatformApp } from "./hooks/use-rp-platform-app.js";
 import { getGatewayBaseUrl } from "./gateway-client.js";
+import { useT } from "./i18n/context.js";
 
 export function App() {
+  const { t, setLocale } = useT();
   const app = useRpPlatformApp();
   const isPlayMode = app.mode === "play";
   if (app.isLoading) {
     return (
       <div className="flex h-screen overflow-hidden bg-bg text-t1 font-ui">
         <main className="flex min-w-0 flex-1 flex-col items-center justify-center overflow-hidden">
-          <div className="font-body text-[12.5px] italic text-t3">Loading Claw Tavern...</div>
+          <div className="font-body text-[12.5px] italic text-t3">{t("loading_app")}</div>
         </main>
       </div>
     );
@@ -32,10 +34,10 @@ export function App() {
       <div className="flex h-screen overflow-hidden bg-bg text-t1 font-ui">
         <main className="flex min-w-0 flex-1 flex-col items-center justify-center overflow-hidden">
           <div style={{ display: "grid", gap: 12, maxWidth: 420, padding: 24 }}>
-            <div className="build-section-title">Bootstrap failed</div>
+            <div className="build-section-title">{t("bootstrap_failed")}</div>
             <div className="build-section-sub">{app.loadError}</div>
             <button className="api-save-btn" onClick={() => void app.loadBootstrap()}>
-              Retry
+              {t("retry")}
             </button>
           </div>
         </main>
@@ -45,7 +47,7 @@ export function App() {
 
   const snapshot = app.snapshot;
   const activeChatId = app.activeChatId ?? snapshot?.activeChat.id ?? null;
-  const personaName = snapshot?.persona?.name ?? "No persona";
+  const personaName = snapshot?.persona?.name ?? t("no_persona");
   const providerConnected = app.connection.status === "connected";
   const contextUsed = app.activePromptTrace?.tokenAccounting?.total ?? 0;
   const contextLimit = app.activeProviderProfile?.contextBudget ?? 0;
@@ -53,23 +55,6 @@ export function App() {
   const openPromptTrace = () => {
     app.setMode("build");
     app.setBuildTab("trace");
-  };
-
-  const tweaksT = (key: string): string => {
-    const map: Record<string, string> = {
-      settings_interface: "Interface",
-      twDark: "Dark theme",
-      twFontSize: "Font size",
-      twUiFontSize: "UI font size",
-      twSmall: "Small",
-      twMedium: "Medium",
-      twLarge: "Large",
-      twWidth: "Message width",
-      twNarrow: "Narrow",
-      twWide: "Wide",
-      twLang: "Language",
-    };
-    return map[key] ?? key;
   };
 
   const tweaksPanelSettings = {
@@ -89,6 +74,7 @@ export function App() {
       app.updateTweak(key, value as 'narrow' | 'medium' | 'wide');
     } else if (key === 'lang') {
       app.updateTweak(key, value as string);
+      setLocale(value as 'en' | 'ru');
     }
   };
 
@@ -101,7 +87,7 @@ export function App() {
   if (!snapshot) {
     shellSurface = (
       <div style={{ alignItems: "center", display: "flex", flex: 1, justifyContent: "center" }}>
-        <div className="scene-note">{app.isFirstRun ? "" : "Select a character and start a new chat"}</div>
+        <div className="scene-note">{app.isFirstRun ? "" : t("select_character_start_chat")}</div>
       </div>
     );
   } else if (isPlayMode) {
@@ -241,8 +227,8 @@ export function App() {
           characterSubtitle={snapshot?.character.subtitle ?? ""}
           activatedLoreCount={app.activePromptTrace?.activatedLoreEntries.length ?? 0}
           retrievedMemoryCount={app.activePromptTrace?.retrievedMemories.length ?? 0}
-          providerLabel={app.activeProviderProfile?.name || "No provider"}
-          providerModelLabel={app.activeProviderProfile?.defaultModel || app.connection.model || "No model selected"}
+          providerLabel={app.activeProviderProfile?.name || t("no_provider")}
+          providerModelLabel={app.activeProviderProfile?.defaultModel || app.connection.model || t("no_model_selected")}
           providerConnected={providerConnected}
           mode={app.mode}
           theme={app.theme}
@@ -254,7 +240,7 @@ export function App() {
           onOpenAvatar={() => app.setAvatarOpen(true)}
           onToggleTweaks={() => app.setTweaksOpen(!app.tweaksOpen)}
           tweaksOpen={app.tweaksOpen}
-          activePresetName={app.promptPresets.find((p) => p.id === app.activePromptPresetId)?.name ?? "Default"}
+          activePresetName={app.promptPresets.find((p) => p.id === app.activePromptPresetId)?.name ?? t("topbar_default")}
           promptPresets={app.promptPresets.map((p) => ({ id: p.id, name: p.name }))}
           activePromptPresetId={app.activePromptPresetId}
           setActivePresetId={app.setActivePromptPresetId}
@@ -267,7 +253,6 @@ export function App() {
         <TweaksPanel
           settings={tweaksPanelSettings}
           setSetting={handleSetTweak}
-          t={tweaksT}
         />
       )}
 

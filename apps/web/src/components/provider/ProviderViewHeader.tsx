@@ -1,4 +1,5 @@
 import type { FormState } from '../ProviderModal.js';
+import { useT } from '../../i18n/context.js';
 import { PROVIDER_PRESETS } from '../../provider-presets.js';
 import { Icons } from '../shared/icons.js';
 
@@ -10,6 +11,7 @@ interface ProviderViewHeaderProps {
 }
 
 export function ProviderViewHeader({ form, isActive, onEdit, onActivate }: ProviderViewHeaderProps) {
+  const { t } = useT();
   const preset = PROVIDER_PRESETS.find((p) => p.id === form.providerPreset);
   const presetLabel = preset?.label ?? form.type;
   const hasKey = form.hasStoredApiKey || Boolean(form.apiKey);
@@ -24,16 +26,16 @@ export function ProviderViewHeader({ form, isActive, onEdit, onActivate }: Provi
             <span className="h-1 w-1 rounded-full bg-t4" />
             {hasKey ? (
               <span className="flex items-center gap-1.5 text-success">
-                <Icons.Check /> API Key stored
+                <Icons.Check /> {t("api_key_saved")}
               </span>
             ) : (
               <span className="flex items-center gap-1.5 text-warning">
-                <Icons.Alert /> No API key
+                <Icons.Alert /> {t("no_api_key")}
               </span>
             )}
           </div>
           <button onClick={onEdit} className="mt-3 flex items-center gap-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:text-accent">
-            <Icons.Edit /> Edit settings
+            <Icons.Edit /> {t("edit_settings_btn")}
           </button>
         </div>
         <button
@@ -41,7 +43,7 @@ export function ProviderViewHeader({ form, isActive, onEdit, onActivate }: Provi
           className="h-[34px] rounded-md border border-accent bg-accent-dim px-4 font-ui text-[13px] font-medium text-accent-t transition-colors hover:bg-accent hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
           disabled={isActive}
         >
-          {isActive ? '✓ Active' : 'Set Active'}
+          {isActive ? t("provider_active") : t("make_active")}
         </button>
       </div>
     </div>

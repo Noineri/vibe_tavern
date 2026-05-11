@@ -4,6 +4,7 @@ import { initials } from "./app-shell-helpers.js";
 import { Icons } from "./shared/icons.js";
 import { MemBadge } from "./popovers/MemBadge.js";
 import { cn } from "../lib/cn.js";
+import { useT } from "../i18n/context.js";
 
 interface TopBarProps {
   characterName: string;
@@ -32,8 +33,8 @@ interface TopBarProps {
 }
 
 export function TopBar(input: TopBarProps) {
-  const t = (key: string) => key;
-  const activePresetName = input.activePresetName ?? input.promptPresets?.find((p) => p.id === input.activePromptPresetId)?.name ?? "Default";
+  const { t } = useT();
+  const activePresetName = input.activePresetName ?? input.promptPresets?.find((p) => p.id === input.activePromptPresetId)?.name ?? t("topbar_default");
   const setAvatarOpen = input.onOpenAvatar ?? (() => { /* TODO: wire avatar panel */ });
   const setContextModalOpen = input.onOpenContextMemory ?? (() => { /* TODO: wire context memory modal */ });
   const setTweaksOpen = input.onToggleTweaks ?? (() => { /* TODO: wire tweaks panel */ });
@@ -69,13 +70,13 @@ export function TopBar(input: TopBarProps) {
 
       <div className="flex min-w-0 shrink items-center gap-[5px] flex-1 overflow-visible">
         {input.mode === 'play' && (
-          <MemBadge label="Memory" onClick={() => setContextModalOpen()} />
+          <MemBadge label={t("topbar_memory")} onClick={() => setContextModalOpen()} />
         )}
 
         <div className="flex min-h-8 min-w-0 max-w-[min(520px,60vw)] flex-[0_1_auto] cursor-pointer items-center gap-1.5 overflow-hidden whitespace-nowrap rounded border border-transparent bg-transparent px-2 font-ui text-[calc(var(--ui-fs)-4px)] leading-tight text-t2 transition-colors duration-150 hover:border-border hover:bg-s2 hover:text-t1"
           style={{padding:'3px 8px'}}
           onClick={input.onOpenProviderSettings}
-          title={t("provider_settings_tooltip")}>
+          title={t("provider_settings_title")}>
           <div className={cn("h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-300", input.providerConnected ? "bg-success" : "bg-t4")}/>
           <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-medium text-t1">{input.providerLabel}</span>
           <span className="text-t3">·</span>
@@ -91,7 +92,7 @@ export function TopBar(input: TopBarProps) {
               canSwitchPresets ? "cursor-pointer hover:bg-accent-dim" : "cursor-default"
             )}
             onClick={() => canSwitchPresets && setPresetDropOpen((v) => !v)}
-            title="Prompt preset"
+            title={t("topbar_prompt_preset")}
           >
             <span className="max-w-[120px] overflow-hidden text-ellipsis whitespace-nowrap">{activePresetName}</span>
             {canSwitchPresets && (
@@ -125,12 +126,12 @@ export function TopBar(input: TopBarProps) {
           style={{padding:'4px 12px'}}
           tabIndex={0}
           onClick={input.onToggleMode}>
-          {input.mode === 'play' ? t("build") : t("play")}
+          {input.mode === 'play' ? t("topbar_build_mode") : t("topbar_play_mode")}
         </div>
 
         <div className={cn("flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t1", tweaksOpen && "bg-accent-dim text-accent-t")}
           tabIndex={0}
-          title={t("interface_settings_tooltip")}
+          title={t("topbar_interface_settings")}
           onClick={() => setTweaksOpen()}>
           <Icons.Settings />
         </div>

@@ -4,8 +4,10 @@ import { Markdown } from "../lib/markdown.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { MessageBlock } from "./MessageBlock.js";
 import type { MessageListProps } from "./play-mode-types.js";
+import { useT } from "../i18n/context.js";
 
 export function MessageList(input: MessageListProps) {
+  const { t } = useT();
   const msgsRef = useRef<HTMLDivElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const [greetingIndex, setGreetingIndex] = useState(0);
@@ -100,7 +102,7 @@ export function MessageList(input: MessageListProps) {
             <div className="relative group" style={{paddingTop:10,paddingBottom:10}}>
               <div className="flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3" style={{marginBottom:'5px'}}>
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3">Y</span>
-                <span>You</span>
+                <span>{t("message_user_label")}</span>
               </div>
               <div className="my-0.5 rounded-md bg-user-bg" style={{padding:'13px 16px'}}>
                 <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 opacity-88 [&_em]:italic [&_em]:text-t2">
@@ -112,7 +114,7 @@ export function MessageList(input: MessageListProps) {
           <div style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'8px auto 6px', paddingLeft:28, paddingRight:28}}>
             <div className="h-px bg-border opacity-40"/>
           </div>
-          <div className="relative" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'0 auto', paddingLeft:28, paddingRight:28}} aria-label="Generating response">
+          <div className="relative" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'0 auto', paddingLeft:28, paddingRight:28}} aria-label={t("generating_response")}>
             <div className="relative group" style={{paddingTop:10,paddingBottom:10}}>
               <div className="flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85" style={{marginBottom:'5px'}}>
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3">
@@ -131,7 +133,7 @@ export function MessageList(input: MessageListProps) {
           <div style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'8px auto 6px', paddingLeft:28, paddingRight:28}}>
             <div className="h-px bg-border opacity-40"/>
           </div>
-          <div className="relative" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'0 auto', paddingLeft:28, paddingRight:28}} aria-label="Generating response">
+          <div className="relative" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'0 auto', paddingLeft:28, paddingRight:28}} aria-label={t("generating_response")}>
             <div className="relative group" style={{paddingTop:10,paddingBottom:10}}>
               <div className="flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85" style={{marginBottom:'5px'}}>
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3">

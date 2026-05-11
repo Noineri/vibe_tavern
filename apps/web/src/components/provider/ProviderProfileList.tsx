@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../../i18n/context.js';
 import type { ProviderProfileRecord } from '../../app-client.js';
 import { TYPE_LABELS } from '../../provider-presets.js';
 import { Icons } from '../shared/icons.js';
@@ -23,6 +24,7 @@ export function ProviderProfileList({
   onSelectProfile,
   onAddProfile,
 }: ProviderProfileListProps) {
+  const { t } = useT();
   return (
     <div
       className="flex shrink-0 flex-col border-r border-border bg-surface"
@@ -42,7 +44,7 @@ export function ProviderProfileList({
         <Icons.Search />
         <input
           className="min-w-0 flex-1 border-0 bg-transparent font-ui text-[13px] text-t1 outline-none placeholder:text-t4"
-          placeholder="Search profiles..."
+          placeholder={t("search_profiles")}
           value={profileSearch}
           onChange={(e) => onProfileSearchChange(e.target.value)}
         />
@@ -95,7 +97,7 @@ export function ProviderProfileList({
         style={{ margin: '12px 12px 0', padding: '8px 0' }}
         onClick={() => void onAddProfile()}
       >
-        + New Profile
+        {t("new_profile_btn")}
       </div>
     </div>
   );

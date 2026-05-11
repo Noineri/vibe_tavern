@@ -4,6 +4,7 @@ import { Icons } from "./shared/icons.js";
 import { SummaryTab, ContextFooter } from "./context/index.js";
 import type { SavedSummary } from "./context/SummaryTab.js";
 import { cn } from "../lib/cn.js";
+import { useT } from "../i18n/context.js";
 
 interface ContextMemoryModalProps {
   isOpen: boolean;
@@ -28,7 +29,7 @@ export function ContextMemoryModal({
   onSummarize,
   onSaveSummary,
 }: ContextMemoryModalProps) {
-  const t = (key: string) => LABELS[key] ?? key;
+  const { t } = useT();
   const [topTab, setTopTab] = useState<'summary' | 'memory'>('summary');
   const [summaryText, setSummaryText] = useState(currentSummary);
   const [msgCount, setMsgCount] = useState(Math.min(Math.max(messageCount || 10, 1), 200));
@@ -59,11 +60,11 @@ export function ContextMemoryModal({
     setError("");
     const selected = providers.find((p) => p.id === selectedProviderId);
     if (!selected) {
-      setError("Select a provider profile.");
+      setError(t("select_provider_error"));
       return;
     }
     if (!selected.defaultModel) {
-      setError("Selected provider has no default model.");
+      setError(t("no_default_model"));
       return;
     }
     setIsSummarizing(true);
@@ -71,7 +72,7 @@ export function ContextMemoryModal({
       const summary = await onSummarize({ providerProfileId: selectedProviderId, maxMessages: msgCount });
       setSummaryText(summary);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Summarization failed.");
+      setError(err instanceof Error ? err.message : t("summarization_failed"));
     } finally {
       setIsSummarizing(false);
     }
@@ -84,7 +85,7 @@ export function ContextMemoryModal({
       const summary = await onSaveSummary(summaryText);
       setSummaryText(summary);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Summary save failed.");
+      setError(err instanceof Error ? err.message : t("summary_save_failed"));
     } finally {
       setIsSaving(false);
     }
@@ -96,8 +97,8 @@ export function ContextMemoryModal({
         <div className="shrink-0 border-b border-border" style={{padding:'18px 20px 0'}}>
           <div className="flex items-start justify-between" style={{paddingBottom:12}}>
             <div>
-              <div className="font-body mb-0.5 text-[calc(var(--ui-fs)+4px)] font-medium text-t1">{t("scenario_memory_title")}</div>
-              <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("scenario_memory_sub")}</div>
+              <div className="font-body mb-0.5 text-[calc(var(--ui-fs)+4px)] font-medium text-t1">{t("context_memory_title")}</div>
+              <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("context_memory_sub")}</div>
             </div>
             <div className="flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={onClose}><Icons.Close /></div>
           </div>
@@ -123,14 +124,12 @@ export function ContextMemoryModal({
           onDeleteSummary={() => setSummaryText('')}
           disabled={isDisabled}
           error={error}
-          t={t}
         />
 
         <ContextFooter
           topTab={topTab}
           onClose={onClose}
           disabled={isDisabled}
-          t={t}
           contextWindow={contextWindow}
           onSaveSummary={handleSave}
           isSaving={isSaving}
@@ -140,22 +139,4 @@ export function ContextMemoryModal({
   );
 }
 
-const LABELS: Record<string, string> = {
-  scenario_memory_title: "Memory",
-  scenario_memory_sub: "Summarize older chat history so the model can remember it later.",
-  memory_v1_tab: "Memory 1.0",
-  saved_summaries_label: "Saved summaries",
-  no_saved_summaries: "No saved summaries yet",
-  delete_summary: "Delete summary",
-  summary_text_label: "Summary text",
-  summary_placeholder: "Conversation summary...",
-  msg_to_summarize_label: "Messages to summarize",
-  msg_to_summarize_hint: "Number of recent user and character messages sent to the summarizer.",
-  summarize_provider_label: "Provider",
-  summarizing_btn: "Summarizing...",
-  summarize_btn: "Summarize",
-  saving_btn: "Saving...",
-  save_summary_btn: "Save summary",
-  cancel_btn: "Close",
-  memory_context_window_label: "Context window",
-};
+

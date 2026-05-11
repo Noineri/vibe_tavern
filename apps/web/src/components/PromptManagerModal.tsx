@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PromptPresetDto } from "@rp-platform/domain";
 import { cn } from "../lib/cn.js";
+import { useT } from "../i18n/context.js";
 import { ConfirmCloseModal } from "./shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { Icons } from "./shared/icons.js";
@@ -52,6 +53,7 @@ const emptyDraft: DraftData = {
 };
 
 export function PromptManagerModal(input: PromptManagerModalProps) {
+  const { t } = useT();
   const [draft, setDraft] = useState<DraftData>({ ...emptyDraft });
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
@@ -100,7 +102,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   };
 
   const handleDuplicate = () => {
-    void input.onCreate({ ...draft, name: `${draft.name || "Preset"} (copy)` });
+    void input.onCreate({ ...draft, name: `${draft.name || t("presets")} (copy)` });
   };
 
   const handleAdd = (name: string) => {
@@ -150,13 +152,13 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       )}
       {confirmDeleteOpen && (
         <DestructiveConfirmModal
-          title="Delete preset"
+          title={t("delete_preset_title")}
           body={
             <>
-              Are you sure? The preset <b>{activePreset?.name || "Unnamed"}</b> will be permanently deleted.
+              {t("delete_preset_body").replace("{name}", activePreset?.name || t("unnamed"))}
             </>
           }
-          confirmLabel="Delete preset"
+          confirmLabel={t("delete_preset")}
           onConfirm={handleConfirmDelete}
           onCancel={() => setConfirmDeleteOpen(false)}
         />
@@ -169,16 +171,16 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         <div className="flex shrink-0 items-start justify-between border-b border-border pt-[18px] px-5 pb-[14px]">
           <div>
             <div className="font-body mb-0.5 text-[calc(var(--ui-fs)+4px)] font-medium text-t1">
-              Prompt Manager
+              {t("prompt_manager_title")}
               {dirtyState.dirty && (
                 <span
                   className="ml-1.5 inline-block h-[7px] w-[7px] shrink-0 rounded-full bg-accent align-middle"
-                  title="Unsaved changes"
+                  title={t("unsaved_changes_title")}
                 />
               )}
             </div>
             <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
-              System, post-history, and summary/tools instructions per preset.
+              {t("prompt_manager_sub")}
             </div>
           </div>
           <div
@@ -212,14 +214,14 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             )}
             onClick={activePreset ? handleDuplicate : undefined}
           >
-            <Icons.Copy /> Duplicate preset
+            <Icons.Copy /> {t("duplicate_preset")}
           </span>
           {activePreset && input.presets.length > 1 && (
             <span
               className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
               onClick={() => setConfirmDeleteOpen(true)}
             >
-              <Icons.Trash /> Delete preset
+              <Icons.Trash /> {t("delete_preset")}
             </span>
           )}
           <div className="ml-auto flex items-center gap-2.5">
@@ -227,13 +229,13 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1"
               onClick={handleClose}
             >
-              Close
+              {t("close")}
             </button>
             <SaveButton
               dirty={dirtyState.dirty}
               saveState={dirtyState.saveState}
               onClick={handleSave}
-              label="Save"
+              label={t("save")}
             />
           </div>
         </div>
