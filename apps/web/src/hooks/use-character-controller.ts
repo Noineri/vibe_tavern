@@ -2,11 +2,6 @@ import type { ChangeEvent, DragEvent } from "react";
 import type { ChatId } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
 import {
-  cloneChat,
-  createChat,
-  deleteChat,
-  renameChat,
-  setChatPersona,
   setPersonalLorebookEnabled,
   uploadAsset,
   updateCharacterAvatar,
@@ -29,6 +24,11 @@ import {
   useCreatePersonaMutation,
   useUpdatePersonaMutation,
   useDeletePersonaMutation,
+  useSetChatPersonaMutation,
+  useCreateChatMutation,
+  useCloneChatMutation,
+  useDeleteChatMutation as useDeleteChatTqMutation,
+  useRenameChatMutation,
 } from "../queries/index.js";
 import { useQueryClient } from "@tanstack/react-query";
 import { bootstrapKeys, personaKeys } from "../queries/query-keys.js";
@@ -121,6 +121,11 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
   const createPersonaMut = useCreatePersonaMutation();
   const updatePersonaMut = useUpdatePersonaMutation();
   const deletePersonaMut = useDeletePersonaMutation();
+  const setChatPersonaMut = useSetChatPersonaMutation();
+  const createChatMut = useCreateChatMutation();
+  const cloneChatMut = useCloneChatMutation();
+  const deleteChatMut = useDeleteChatTqMutation();
+  const renameChatMut = useRenameChatMutation();
   const qc = useQueryClient();
 
   // Sync mutation pending state → store isSavingCharacter
@@ -217,7 +222,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     const currentPersonaId = getSnapshot()?.persona?.id ?? null;
     if (currentPersonaId === personaId) return;
     try {
-      setSnapshot(activeChatId, await setChatPersona(activeChatId, personaId));
+      setSnapshot(activeChatId, await setChatPersonaMut.mutateAsync({ chatId: activeChatId, personaId }));
     } catch (err) {
       setChatNotice(err instanceof Error ? err.message : getT()("persona_switch_failed"));
     }
@@ -327,8 +332,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
   }
 
   async function handleDeleteChat(chatId: ChatId): Promise<void> {
-    await deleteChat(chatId);
-    void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
+    await deleteChatMut.mutateAsync(chatId);
   }
 
   async function handleRenameChat(chatId: ChatId, title: string): Promise<void> {
@@ -351,7 +355,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
 
     if (snapshot) applyTitle(nextTitle);
     try {
-      const result = await renameChat(chatId, nextTitle);
+      const result = await renameChatMut.mutateAsync({ chatId, title: nextTitle });
       if (result.title !== nextTitle) applyTitle(result.title);
       setChatNotice("");
     } catch (error) {
@@ -364,7 +368,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     const resolvedId = characterId ?? getSnapshot()?.character.id;
     if (!resolvedId) return;
     try {
-      const next = await createChat(resolvedId);
+      const next = await createChatMut.mutateAsync({ characterId: resolvedId });
       setSnapshot(next.activeChat.id, next);
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : getT()("chat_create_failed"));
@@ -404,9 +408,8 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
 
   async function handleFreeChat(): Promise<void> {
     try {
-      const next = await createChat();
+      const next = await createChatMut.mutateAsync({});
       setSnapshot(next.activeChat.id, next);
-      void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : getT()("failed_to_create_free_chat"));
     }
@@ -414,7 +417,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
 
   async function handleCloneChat(chatId: ChatId): Promise<void> {
     try {
-      const next = await cloneChat(chatId);
+      const next = await cloneChatMut.mutateAsync(chatId);
       setSnapshot(next.activeChat.id, next);
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : getT()("failed_to_clone_chat"));

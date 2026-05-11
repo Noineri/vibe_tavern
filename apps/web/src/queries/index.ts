@@ -40,6 +40,11 @@ export {
 } from "./bootstrap-queries.js";
 export {
   useChatSnapshot,
+  useSetChatPersonaMutation,
+  useCreateChatMutation,
+  useCloneChatMutation,
+  useDeleteChatMutation,
+  useRenameChatMutation,
   useSendMessageMutation,
   useRegenerateMessageMutation,
   useEditMessageMutation,

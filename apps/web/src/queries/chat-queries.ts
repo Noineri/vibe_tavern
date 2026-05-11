@@ -11,17 +11,22 @@ import {
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
 import {
   activateBranch,
+  cloneChat,
+  createChat,
   deleteBranch,
+  deleteChat,
   deleteChatMessage,
   editChatMessage,
   fetchChat,
   forkBranch,
   regenerateChatMessage,
+  renameChat,
   selectMessageVariant,
   sendChatMessage,
+  setChatPersona,
   type AppSnapshot,
 } from "../app-client.js";
-import { chatKeys } from "./query-keys.js";
+import { bootstrapKeys, chatKeys } from "./query-keys.js";
 
 // ---------------------------------------------------------------------------
 // Query hooks
@@ -38,6 +43,66 @@ export function useChatSnapshot(chatId: ChatId | null) {
 // ---------------------------------------------------------------------------
 // Mutation hooks — simple mutations
 // ---------------------------------------------------------------------------
+
+/** Set the active persona for a chat. Returns new snapshot. */
+export function useSetChatPersonaMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { chatId: ChatId; personaId: string }) =>
+      setChatPersona(args.chatId, args.personaId),
+    onSuccess: (snapshot: AppSnapshot) => {
+      qc.setQueryData(chatKeys.snapshot(snapshot.activeChat.id), snapshot);
+      void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
+    },
+  });
+}
+
+/** Create a chat, optionally for a character. Returns new snapshot. */
+export function useCreateChatMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { characterId?: string }) => createChat(args.characterId),
+    onSuccess: (snapshot: AppSnapshot) => {
+      qc.setQueryData(chatKeys.snapshot(snapshot.activeChat.id), snapshot);
+      void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
+    },
+  });
+}
+
+/** Clone a chat. Returns new snapshot. */
+export function useCloneChatMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (chatId: ChatId) => cloneChat(chatId),
+    onSuccess: (snapshot: AppSnapshot) => {
+      qc.setQueryData(chatKeys.snapshot(snapshot.activeChat.id), snapshot);
+      void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
+    },
+  });
+}
+
+/** Delete a chat. */
+export function useDeleteChatMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (chatId: ChatId) => deleteChat(chatId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
+    },
+  });
+}
+
+/** Rename a chat. */
+export function useRenameChatMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { chatId: ChatId; title: string }) =>
+      renameChat(args.chatId, args.title),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
+    },
+  });
+}
 
 /** Send a message (non-streaming path). Returns new snapshot. */
 export function useSendMessageMutation() {
