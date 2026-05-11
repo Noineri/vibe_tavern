@@ -8,6 +8,9 @@
     ],
     "baseUrl": ".",
     "paths": {
+      "@rp-platform/api-contracts": [
+        "../../packages/api-contracts/src/index.ts"
+      ],
       "@rp-platform/db": [
         "../../packages/db/src/index.ts"
       ],
