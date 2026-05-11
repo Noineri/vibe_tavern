@@ -3,42 +3,59 @@ import type { AppMessage } from "../app-client.js";
 import { Markdown } from "../lib/markdown.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { MessageBlock } from "./MessageBlock.js";
-import type { MessageListProps } from "./play-mode-types.js";
+import { useDisplayHelpers } from "../hooks/use-display-helpers.js";
+import { useAppActions } from "./AppShell.js";
 import { useT } from "../i18n/context.js";
 
-export function MessageList(input: MessageListProps) {
+export function MessageList() {
   const { t } = useT();
+  const app = useAppActions();
   const msgsRef = useRef<HTMLDivElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const [greetingIndex, setGreetingIndex] = useState(0);
+
+  const snapshot = useChatStore((s) => s.snapshot);
+  const editingMessageId = useChatStore((s) => s.editingMessageId);
+  const editingDraft = useChatStore((s) => s.editingDraft);
+  const isSending = useChatStore((s) => s.isSending);
+  const messageActionId = useChatStore((s) => s.messageActionId);
+  const streamingText = useChatStore((s) => s.streamingText);
+
+  const display = useDisplayHelpers([]);
+
+  const messages = display.displayMessages;
+  const pendingUserMessageContent = display.displayPendingUserMessageContent;
+  const alternateGreetings = display.displayAlternateGreetings;
+
+  const characterName = snapshot?.character.name ?? "";
+  const characterAvatarAssetId = snapshot?.character.avatarAssetId ?? null;
+  const personaAvatarAssetId = snapshot?.persona?.avatarAssetId ?? null;
+
   const firstCharMsgId = useMemo(() => {
-    for (const msg of input.messages) {
+    for (const msg of messages) {
       if (msg.role === "assistant") return msg.id;
     }
     return null;
-  }, [input.messages]);
+  }, [messages]);
   const firstCharMsg = useMemo(
-    () => input.messages.find((message) => message.id === firstCharMsgId) ?? null,
-    [firstCharMsgId, input.messages],
+    () => messages.find((message) => message.id === firstCharMsgId) ?? null,
+    [firstCharMsgId, messages],
   );
-  const alternateGreetings = input.alternateGreetings ?? [];
   const greetingOptions = firstCharMsg && alternateGreetings.length > 0
     ? [firstCharMsg.content, ...alternateGreetings]
     : undefined;
 
-  const streamingText = useChatStore((s) => s.streamingText);
-
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [input.messages.length, input.pendingUserMessageContent, streamingText]);
+  }, [messages.length, pendingUserMessageContent, streamingText]);
 
   return (
     <div className="flex-1 overflow-y-auto scroll-smooth" style={{paddingBottom:12,paddingTop:28}} ref={msgsRef}>
       {/* TODO: VP-W4+ — EmptyState component for no active chat */}
       {/* TODO: VP-W4+ — EmptyState component for empty chat */}
 
-      {input.messages.map((message, index) => {
-        const previous = index > 0 ? input.messages[index - 1] : null;
+      {messages.map((message, index) => {
+        const previous = index > 0 ? messages[index - 1] : null;
         const showSeparator =
           previous !== null &&
           !isBreakoutRole(previous.role) &&
@@ -53,47 +70,47 @@ export function MessageList(input: MessageListProps) {
             )}
             <MessageBlock
               message={message}
-              characterName={input.characterName}
-              isEditing={input.editingMessageId === message.id}
+              characterName={characterName}
+              isEditing={editingMessageId === message.id}
               isGenerating={
                 message.id !== firstCharMsgId &&
                 message.role === "assistant" &&
-                input.isSending &&
-                isLastAssistantMessage(input.messages, message.id)
+                isSending &&
+                isLastAssistantMessage(messages, message.id)
               }
-              editingDraft={input.editingDraft}
-              isBusy={input.isSending || input.messageActionId === message.id}
-              canBranch={isLastMessage(input.messages, message.id)}
-              canRegenerate={message.id !== firstCharMsgId && isLastAssistantMessage(input.messages, message.id)}
-              canResend={isLastMessage(input.messages, message.id) && message.role === "user" && !input.pendingUserMessageContent}
-              canSwitchVariant={isLastMessage(input.messages, message.id)}
+              editingDraft={editingDraft}
+              isBusy={isSending || messageActionId === message.id}
+              canBranch={isLastMessage(messages, message.id)}
+              canRegenerate={message.id !== firstCharMsgId && isLastAssistantMessage(messages, message.id)}
+              canResend={isLastMessage(messages, message.id) && message.role === "user" && !pendingUserMessageContent}
+              canSwitchVariant={isLastMessage(messages, message.id)}
               greetingOptions={message.id === firstCharMsgId ? greetingOptions : undefined}
               greetingIndex={message.id === firstCharMsgId ? greetingIndex : 0}
               onGreetingIndexChange={setGreetingIndex}
-              onBranch={input.onFork}
-              onStartEdit={() => input.onStartEdit(message)}
-              onEditingDraftChange={input.onEditingDraftChange}
-              onCancelEdit={input.onCancelEdit}
-              onSaveEdit={() => input.onSaveEdit(message.id)}
-              onDelete={() => input.onDelete(message.id)}
-              onRegenerate={() => input.onRegenerate(message.id)}
-              onResend={() => input.onResend()}
+              onBranch={() => void app.handleFork()}
+              onStartEdit={() => app.handleStartEdit(message)}
+              onEditingDraftChange={app.setEditingDraft}
+              onCancelEdit={app.handleCancelEdit}
+              onSaveEdit={() => void app.handleSaveMessageEdit(message.id)}
+              onDelete={() => void app.handleDeleteMessage(message.id)}
+              onRegenerate={() => void app.handleRegenerateMessage(message.id)}
+              onResend={() => { void app.handleResend(); }}
               onSelectPreviousVariant={() =>
-                input.onSelectVariant(message.id, (message.selectedVariantIndex ?? 0) - 1)
+                app.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) - 1)
               }
               onSelectNextVariant={() =>
-                input.onSelectVariant(message.id, (message.selectedVariantIndex ?? 0) + 1)
+                app.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) + 1)
               }
-              characterAvatarAssetId={input.characterAvatarAssetId}
-              personaAvatarAssetId={input.personaAvatarAssetId}
+              characterAvatarAssetId={characterAvatarAssetId}
+              personaAvatarAssetId={personaAvatarAssetId}
             />
           </Fragment>
         );
       })}
 
-      {input.pendingUserMessageContent && (
+      {pendingUserMessageContent && (
         <>
-          {input.messages.length > 0 && (
+          {messages.length > 0 && (
             <div style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'8px auto 6px', paddingLeft:28, paddingRight:28}}>
               <div className="h-px bg-border opacity-40"/>
             </div>
@@ -106,7 +123,7 @@ export function MessageList(input: MessageListProps) {
               </div>
               <div className="my-0.5 rounded-md bg-user-bg" style={{padding:'13px 16px'}}>
                 <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 opacity-88 [&_em]:italic [&_em]:text-t2">
-                  <Markdown text={input.pendingUserMessageContent} />
+                  <Markdown text={pendingUserMessageContent} />
                 </div>
               </div>
             </div>
@@ -118,17 +135,17 @@ export function MessageList(input: MessageListProps) {
             <div className="relative group" style={{paddingTop:10,paddingBottom:10}}>
               <div className="flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85" style={{marginBottom:'5px'}}>
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3">
-                  {input.characterName.slice(0, 1).toUpperCase()}
+                  {characterName.slice(0, 1).toUpperCase()}
                 </span>
-                <span>{input.characterName}</span>
+                <span>{characterName}</span>
               </div>
-              <StreamingContent characterName={input.characterName} />
+              <StreamingContent characterName={characterName} />
             </div>
           </div>
         </>
       )}
 
-      {!input.pendingUserMessageContent && input.isSending && input.messages.length > 0 && input.messages[input.messages.length - 1].role === "user" && (
+      {!pendingUserMessageContent && isSending && messages.length > 0 && messages[messages.length - 1].role === "user" && (
         <>
           <div style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'8px auto 6px', paddingLeft:28, paddingRight:28}}>
             <div className="h-px bg-border opacity-40"/>
@@ -137,11 +154,11 @@ export function MessageList(input: MessageListProps) {
             <div className="relative group" style={{paddingTop:10,paddingBottom:10}}>
               <div className="flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85" style={{marginBottom:'5px'}}>
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3">
-                  {input.characterName.slice(0, 1).toUpperCase()}
+                  {characterName.slice(0, 1).toUpperCase()}
                 </span>
-                <span>{input.characterName}</span>
+                <span>{characterName}</span>
               </div>
-              <StreamingContent characterName={input.characterName} />
+              <StreamingContent characterName={characterName} />
             </div>
           </div>
         </>
