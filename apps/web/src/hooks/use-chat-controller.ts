@@ -1,26 +1,30 @@
 import { useCallback, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
 import {
-  activateBranch,
-  deleteBranch,
-  deleteChatMessage,
-  editChatMessage,
-  fetchChat,
-  forkBranch,
-  logClientSendDebug,
-  regenerateChatMessage,
-  regenerateChatMessageStream,
-  selectMessageVariant,
-  sendChatMessage,
-  sendChatMessageStream,
   generateReply,
   generateReplyStream,
+  logClientSendDebug,
+  regenerateChatMessageStream,
+  sendChatMessageStream,
   type AppMessage,
   type AppSnapshot,
   type ChatGenerationStatus,
 } from "../app-client.js";
 import { useChatStore } from "../stores/chat-store.js";
+import { chatKeys } from "../queries/query-keys.js";
+import {
+  useEditMessageMutation,
+  useDeleteMessageMutation,
+  useSwitchChatMutation,
+  useSelectVariantMutation,
+  useForkMutation,
+  useActivateBranchMutation,
+  useDeleteBranchMutation,
+  useSendMessageMutation,
+  useRegenerateMessageMutation,
+} from "../queries/chat-queries.js";
 
 export interface ChatControllerDeps {
   // read state (getter functions — Zustand-compatible)
@@ -34,6 +38,7 @@ export interface ChatControllerDeps {
   getGenerationStatus: () => ChatGenerationStatus;
   getStreamResponse: () => boolean;
   // write / mutate
+  refreshChatSnapshot: (chatId: ChatId) => Promise<AppSnapshot>;
   setSnapshot: (chatId: ChatId, next: AppSnapshot) => void;
   setDraft: (draft: string) => void;
   setIsSending: (sending: boolean) => void;
@@ -73,6 +78,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     getEditingMessageId,
     getGenerationStatus,
     getStreamResponse,
+    refreshChatSnapshot,
     setSnapshot,
     setDraft,
     setIsSending,
@@ -84,6 +90,19 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     setSelectedTraceId,
     setGenerationStatus,
   } = deps;
+
+  const qc = useQueryClient();
+
+  // TQ mutation hooks
+  const sendMessageMut = useSendMessageMutation();
+  const regenMessageMut = useRegenerateMessageMutation();
+  const editMessageMut = useEditMessageMutation();
+  const deleteMessageMut = useDeleteMessageMutation();
+  const switchChatMut = useSwitchChatMutation();
+  const selectVariantMut = useSelectVariantMutation();
+  const forkMut = useForkMutation();
+  const activateBranchMut = useActivateBranchMutation();
+  const deleteBranchMut = useDeleteBranchMutation();
 
   const abortRef = useRef<AbortController | null>(null);
   const streamRevealRef = useRef<{
@@ -141,6 +160,15 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     });
   }
 
+  /** Invalidate chat snapshot cache + update Zustand store from the refetch. */
+  async function invalidateChatSnapshot(chatId: ChatId): Promise<void> {
+    await qc.invalidateQueries({ queryKey: chatKeys.snapshot(chatId) });
+    // After invalidation, refetch and push into Zustand store
+    // to bridge the gap until TQ4 migrates the store away.
+    const fresh = await refreshChatSnapshot(chatId);
+    setSnapshot(chatId, fresh);
+  }
+
   const handleSend = useCallback(async (): Promise<void> => {
     const activeChatId = getActiveChatId();
     const draft = getDraft();
@@ -194,11 +222,13 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
           },
         });
         await waitForStreamingReveal();
-        setSnapshot(activeChatId, await fetchChat(activeChatId));
+        await invalidateChatSnapshot(activeChatId);
         void logClientSendDebug("web.hook.handleSend.stream-success", { activeChatId, replyLength: collected.length });
       } else {
         void logClientSendDebug("web.hook.handleSend.request", { activeChatId });
-        const nextSnapshot = await sendChatMessage(activeChatId, { content: trimmed }, { signal: controller.signal });
+        const nextSnapshot = await sendMessageMut.mutateAsync(
+          { chatId: activeChatId, content: trimmed, signal: controller.signal },
+        );
         setSnapshot(activeChatId, nextSnapshot);
         setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
         void logClientSendDebug("web.hook.handleSend.success", { activeChatId });
@@ -206,7 +236,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     } catch (error) {
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleSend.cancelled", { activeChatId });
-        setSnapshot(activeChatId, await fetchChat(activeChatId));
+        await invalidateChatSnapshot(activeChatId);
         setChatNotice(getT()("generation_cancelled"));
         return;
       }
@@ -214,7 +244,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         activeChatId,
         message: error instanceof Error ? error.message : String(error),
       });
-      setSnapshot(activeChatId, await fetchChat(activeChatId));
+      await invalidateChatSnapshot(activeChatId);
       setChatNotice(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
     } finally {
       setPendingUserMessageContent(null);
@@ -222,7 +252,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       abortRef.current = null;
       clearStreamingReveal();
     }
-  }, []);
+  }, [sendMessageMut]);
 
   const handleResend = useCallback(async (): Promise<void> => {
     const activeChatId = getActiveChatId();
@@ -253,7 +283,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
           },
         });
         await waitForStreamingReveal();
-        setSnapshot(activeChatId, await fetchChat(activeChatId));
+        await invalidateChatSnapshot(activeChatId);
         void logClientSendDebug("web.hook.handleResend.stream-success", { activeChatId, replyLength: collected.length });
       } else {
         void logClientSendDebug("web.hook.handleResend.request", { activeChatId });
@@ -265,7 +295,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     } catch (error) {
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleResend.cancelled", { activeChatId });
-        setSnapshot(activeChatId, await fetchChat(activeChatId));
+        await invalidateChatSnapshot(activeChatId);
         setChatNotice(getT()("generation_cancelled"));
         return;
       }
@@ -273,7 +303,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         activeChatId,
         message: error instanceof Error ? error.message : String(error),
       });
-      setSnapshot(activeChatId, await fetchChat(activeChatId));
+      await invalidateChatSnapshot(activeChatId);
       setChatNotice(error instanceof Error && error.message ? error.message : getT()("resend_failed"));
     } finally {
       setIsSending(false);
@@ -292,7 +322,8 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     // No-op when switching to the same active chat — avoids unnecessary re-fetch
     // that would discard in-memory state like variant selection.
     if (chatId === getActiveChatId()) return;
-    setSnapshot(chatId, await fetchChat(chatId));
+    const snapshot = await switchChatMut.mutateAsync(chatId);
+    setSnapshot(chatId, snapshot);
   }
 
   function handleStartEdit(message: AppMessage): void {
@@ -314,7 +345,8 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
 
     setMessageActionId(messageId);
     try {
-      setSnapshot(activeChatId, await editChatMessage(activeChatId, messageId, trimmed));
+      const snapshot = await editMessageMut.mutateAsync({ chatId: activeChatId, messageId, content: trimmed });
+      setSnapshot(activeChatId, snapshot);
       setEditingMessageId(null);
       setEditingDraft("");
       setChatNotice("");
@@ -329,7 +361,8 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
 
     setMessageActionId(messageId);
     try {
-      setSnapshot(activeChatId, await deleteChatMessage(activeChatId, messageId));
+      const snapshot = await deleteMessageMut.mutateAsync({ chatId: activeChatId, messageId });
+      setSnapshot(activeChatId, snapshot);
       if (getEditingMessageId() === messageId) {
         setEditingMessageId(null);
         setEditingDraft("");
@@ -370,21 +403,23 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
           },
         });
         await waitForStreamingReveal();
-        setSnapshot(activeChatId, await fetchChat(activeChatId));
+        await invalidateChatSnapshot(activeChatId);
         void logClientSendDebug("web.hook.handleRegenerate.stream-success", { activeChatId, messageId, replyLength: collected.length });
       } else {
-        const nextSnapshot = await regenerateChatMessage(activeChatId, messageId, { signal: controller.signal });
+        const nextSnapshot = await regenMessageMut.mutateAsync(
+          { chatId: activeChatId, messageId, signal: controller.signal },
+        );
         setSnapshot(activeChatId, nextSnapshot);
         setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
       }
     } catch (error) {
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleRegenerate.cancelled", { activeChatId, messageId });
-        setSnapshot(activeChatId, await fetchChat(activeChatId));
+        await invalidateChatSnapshot(activeChatId);
         setChatNotice(getT()("generation_cancelled"));
         return;
       }
-      setSnapshot(activeChatId, await fetchChat(activeChatId));
+      await invalidateChatSnapshot(activeChatId);
       setChatNotice(error instanceof Error ? error.message : getT()("regen_failed"));
     } finally {
       setIsSending(false);
@@ -398,21 +433,24 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     const activeChatId = getActiveChatId();
     if (!activeChatId || variantIndex < 0) return;
 
-    setSnapshot(activeChatId, await selectMessageVariant(activeChatId, messageId, variantIndex));
+    const snapshot = await selectVariantMut.mutateAsync({ chatId: activeChatId, messageId, variantIndex });
+    setSnapshot(activeChatId, snapshot);
   }
 
   async function handleFork(): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
 
-    setSnapshot(activeChatId, await forkBranch(activeChatId));
+    const snapshot = await forkMut.mutateAsync(activeChatId);
+    setSnapshot(activeChatId, snapshot);
   }
 
   async function handleActivateBranch(branchId: ChatBranchId): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
 
-    setSnapshot(activeChatId, await activateBranch(activeChatId, branchId));
+    const snapshot = await activateBranchMut.mutateAsync({ chatId: activeChatId, branchId });
+    setSnapshot(activeChatId, snapshot);
   }
 
   async function handleDeleteActiveBranch(): Promise<void> {
@@ -428,7 +466,8 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     }
 
     try {
-      setSnapshot(activeChatId, await deleteBranch(activeChatId, activeBranch.id));
+      const result = await deleteBranchMut.mutateAsync({ chatId: activeChatId, branchId: activeBranch.id });
+      setSnapshot(activeChatId, result);
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : getT()("branch_delete_failed"));
     }

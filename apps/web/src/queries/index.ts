@@ -33,3 +33,15 @@ export {
   useUpdatePersonaMutation,
   useDeletePersonaMutation,
 } from "./persona-queries.js";
+export {
+  useChatSnapshot,
+  useSendMessageMutation,
+  useRegenerateMessageMutation,
+  useEditMessageMutation,
+  useDeleteMessageMutation,
+  useSwitchChatMutation,
+  useSelectVariantMutation,
+  useForkMutation,
+  useActivateBranchMutation,
+  useDeleteBranchMutation,
+} from "./chat-queries.js";
