@@ -9,6 +9,7 @@ import { logSendDebug } from "./send-debug-log.js";
 export interface SummarizeChatInput {
   chatId: string;
   providerProfileId: string;
+  model?: string;
   maxMessages: number;
   signal?: AbortSignal;
 }
@@ -38,9 +39,9 @@ export class ChatSummaryService {
     if (!profile.apiKey?.trim()) {
       throw validation("Selected provider has no saved API key.");
     }
-    const model = profile.defaultModel?.trim();
+    const model = input.model?.trim() || profile.defaultModel?.trim();
     if (!model) {
-      throw validation("Selected provider has no default model.");
+      throw validation("Select a model for summarization.");
     }
 
     const chatId = brandId<ChatId>(input.chatId);

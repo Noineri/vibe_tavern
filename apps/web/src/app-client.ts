@@ -50,11 +50,9 @@ export interface AppSnapshot {
     alternateGreetings: string[];
     postHistoryInstructions: string | null;
     creatorNotes: string | null;
-    characterBook: string | null;
     depthPrompt: string | null;
     depthPromptDepth: number | null;
     depthPromptRole: string | null;
-    extensions: string | null;
     tags: string[];
     avatarAssetId: string | null;
   };
@@ -206,11 +204,9 @@ export async function updateCharacter(
     alternateGreetings: string[];
     postHistoryInstructions: string | null;
     creatorNotes: string | null;
-    characterBook: string | null;
     depthPrompt: string | null;
     depthPromptDepth: number | null;
     depthPromptRole: string | null;
-    extensions: string | null;
     tags: string[];
   },
 ): Promise<AppSnapshot> {
@@ -333,7 +329,7 @@ export async function sendChatMessage(
 
 export async function summarizeChat(
   chatId: ChatId,
-  input: { providerProfileId: string; maxMessages: number },
+  input: { providerProfileId: string; model?: string; maxMessages: number },
   options?: { signal?: AbortSignal },
 ): Promise<{ summary: string; snapshot: AppSnapshot }> {
   const response = await client.api.chats[":chatId"].summary.$post(
@@ -929,11 +925,9 @@ function normalizeSnapshot(snapshot: AppSnapshot): AppSnapshot {
         : [],
       postHistoryInstructions: snapshot.character.postHistoryInstructions ?? null,
       creatorNotes: snapshot.character.creatorNotes ?? null,
-      characterBook: snapshot.character.characterBook ?? null,
       depthPrompt: snapshot.character.depthPrompt ?? null,
       depthPromptDepth: snapshot.character.depthPromptDepth ?? null,
       depthPromptRole: snapshot.character.depthPromptRole ?? null,
-      extensions: snapshot.character.extensions ?? null,
       tags: Array.isArray(snapshot.character.tags) ? snapshot.character.tags : [],
     },
     chats: Array.isArray(snapshot.chats) ? snapshot.chats : [],

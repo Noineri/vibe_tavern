@@ -50,6 +50,12 @@ export function ProviderModelSelector({
 }: ProviderModelSelectorProps) {
   const { t } = useT();
   const favoriteIds = new Set(favoriteModels.map((model) => model.modelId));
+  const selectedModel = models.find((model) => model.id === form.model);
+  const formatContext = (contextLength?: number) => {
+    if (contextLength == null || !Number.isFinite(contextLength)) return null;
+    if (contextLength >= 1000) return `${(contextLength / 1000).toFixed(contextLength % 1000 === 0 ? 0 : 1)}k ctx`;
+    return `${contextLength} ctx`;
+  };
   const sortedModels = [...filteredModels].sort((a, b) => {
     const aFav = favoriteIds.has(a.id);
     const bFav = favoriteIds.has(b.id);
@@ -80,10 +86,11 @@ export function ProviderModelSelector({
                 className="flex w-full items-center justify-between rounded-md border border-border bg-s2 font-ui text-[13px] text-t1 transition-colors hover:border-accent"
                 style={{ padding: '7px 12px' }}
               >
-                <span className="overflow-hidden text-ellipsis whitespace-nowrap">
-                  {models.find((m) => m.id === form.model)?.label ||
-                    form.model ||
-                    t("select_model")}
+                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">
+                  {selectedModel?.label || form.model || t("select_model")}
+                  {formatContext(selectedModel?.contextLength) && (
+                    <span className="ml-2 text-[11px] font-medium text-t2">{formatContext(selectedModel?.contextLength)}</span>
+                  )}
                 </span>
                 <span className="text-t3">
                   <Icons.Caret direction="d" />
@@ -138,14 +145,22 @@ export function ProviderModelSelector({
                           >
                             {isFavorite ? <Icons.StarFilled /> : <Icons.Star />}
                           </button>
-                          <div className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-                            {m.label}{' '}
-                            <span className="ml-1 text-t4 opacity-70">
-                              ({m.id})
-                              {m.contextLength != null && (
-                                <span className="ml-1 opacity-60">{(m.contextLength / 1000).toFixed(m.contextLength % 1000 === 0 ? 0 : 1)}k</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-t1">
+                                {m.label || m.id}
+                              </span>
+                              {formatContext(m.contextLength) && (
+                                <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 text-[10px] font-medium text-t2">
+                                  {formatContext(m.contextLength)}
+                                </span>
                               )}
-                            </span>
+                            </div>
+                            {m.label && m.label !== m.id && (
+                              <div className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-t4">
+                                {m.id}
+                              </div>
+                            )}
                           </div>
                         </div>
                       );

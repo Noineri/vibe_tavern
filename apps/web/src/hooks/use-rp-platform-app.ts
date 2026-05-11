@@ -267,7 +267,7 @@ export function useRpPlatformApp() {
 
   // --- Chat summary handlers ---
 
-  async function handleSummarizeChat(input: { providerProfileId: string; maxMessages: number }): Promise<string> {
+  async function handleSummarizeChat(input: { providerProfileId: string; model?: string; maxMessages: number }): Promise<string> {
     const chatId = useChatStore.getState().activeChatId;
     if (!chatId) throw new Error("No active chat.");
     const result = await summarizeChatMut.mutateAsync({ chatId, input });

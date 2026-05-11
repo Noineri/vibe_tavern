@@ -150,11 +150,9 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
           alternateGreetings: draftInput.alternateGreetings,
           postHistoryInstructions: draftInput.postHistoryInstructions,
           creatorNotes: draftInput.creatorNotes,
-          characterBook: draftInput.characterBook,
           depthPrompt: draftInput.depthPrompt,
           depthPromptDepth: draftInput.depthPromptDepth,
           depthPromptRole: draftInput.depthPromptRole,
-          extensions: draftInput.extensions,
           tags: draftInput.tags,
         },
       });
