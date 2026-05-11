@@ -217,6 +217,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             draft={activePreset ? draft : null}
             onUpdateField={updateDraft}
             prefillSupported={input.prefillSupported}
+            resetKey={activePreset?.id ?? null}
           />
         </div>
 

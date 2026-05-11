@@ -32,11 +32,9 @@ export const buildCharacterDraftSchema = z.object({
   alternateGreetings: z.array(z.string()),
   postHistoryInstructions: z.string(),
   creatorNotes: z.string(),
-  characterBook: z.string().nullable(),
   depthPrompt: z.string(),
   depthPromptDepth: z.number(),
   depthPromptRole: z.string(),
-  extensions: z.string(),
   tags: z.array(z.string()),
 });
 

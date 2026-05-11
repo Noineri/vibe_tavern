@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useLayoutEffect, useRef } from "react";
 import { cn } from "../../lib/cn.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
 import { PrefillField } from "./PrefillField.js";
@@ -18,24 +18,92 @@ interface PromptFieldsProps {
   draft: DraftData | null;
   onUpdateField: (key: keyof DraftData, value: string | number) => void;
   prefillSupported?: boolean;
+  resetKey?: string | null;
 }
 
 const textareaCls = "w-full rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent resize-none overflow-hidden disabled:opacity-60";
 const labelCls = "mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3";
 const labelAccentCls = "mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-accent";
 
-const autoResize = (e: React.FormEvent<HTMLTextAreaElement>) => {
-  const ta = e.currentTarget;
-  ta.style.height = "inherit";
-  ta.style.height = `${ta.scrollHeight}px`;
-};
+type TextDraftKey = Exclude<keyof DraftData, "authorsNoteDepth">;
 
-const triggerResize = (el: HTMLTextAreaElement | null) => {
-  if (el && el.value) {
-    el.style.height = "inherit";
-    el.style.height = `${el.scrollHeight}px`;
+function findScrollParent(el: HTMLElement): HTMLElement | null {
+  let parent = el.parentElement;
+  while (parent) {
+    const style = window.getComputedStyle(parent);
+    if (/(auto|scroll)/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight) return parent;
+    parent = parent.parentElement;
   }
-};
+  return null;
+}
+
+function resizeTextarea(el: HTMLTextAreaElement, allowShrink: boolean): void {
+  const scrollParent = findScrollParent(el);
+  const scrollTop = scrollParent?.scrollTop ?? 0;
+
+  if (allowShrink) el.style.height = "auto";
+
+  const minHeight = Number.parseFloat(window.getComputedStyle(el).minHeight) || 0;
+  const nextHeight = Math.max(el.scrollHeight, minHeight);
+  const currentHeight = el.getBoundingClientRect().height;
+
+  if (allowShrink || nextHeight > currentHeight) {
+    el.style.height = `${nextHeight}px`;
+  }
+
+  // While typing in a long field, avoid browser scroll anchoring reacting to
+  // textarea shrink-grow recalculation and making the modal jump.
+  if (!allowShrink && scrollParent) scrollParent.scrollTop = scrollTop;
+}
+
+function AutoResizeTextarea({
+  fieldKey,
+  value,
+  placeholder,
+  minHeight,
+  disabled,
+  resetKey,
+  onChange,
+}: {
+  fieldKey: TextDraftKey;
+  value: string;
+  placeholder: string;
+  minHeight: number;
+  disabled: boolean;
+  resetKey?: string | null;
+  onChange: (value: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  const prevResetKeyRef = useRef(resetKey);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const resetChanged = prevResetKeyRef.current !== resetKey;
+    prevResetKeyRef.current = resetKey;
+    const isActive = document.activeElement === el;
+
+    resizeTextarea(el, resetChanged || !isActive);
+    if (resetChanged) el.scrollTop = 0;
+  }, [value, resetKey, minHeight]);
+
+  return (
+    <textarea
+      key={`${resetKey ?? "none"}:${fieldKey}`}
+      ref={ref}
+      className={textareaCls}
+      style={{ padding: "9px 13px", minHeight }}
+      value={value}
+      onChange={(e) => {
+        onChange(e.target.value);
+        resizeTextarea(e.currentTarget, false);
+      }}
+      placeholder={placeholder}
+      disabled={disabled}
+    />
+  );
+}
 
 function FieldSection({ label, labelClassName, token, children }: {
   label: string;
@@ -52,22 +120,21 @@ function FieldSection({ label, labelClassName, token, children }: {
   );
 }
 
-export function PromptFields({ draft, onUpdateField, prefillSupported }: PromptFieldsProps) {
+export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey }: PromptFieldsProps) {
   const { t } = useT();
   const disabled = !draft;
 
-  const ta = useCallback((key: keyof DraftData, placeholder: string, minH = 100) => (
-    <textarea
-      ref={triggerResize}
-      className={textareaCls}
-      style={{ padding: "9px 13px", minHeight: minH }}
+  const ta = useCallback((key: TextDraftKey, placeholder: string, minH = 100) => (
+    <AutoResizeTextarea
+      fieldKey={key}
       value={String(draft?.[key] ?? "")}
-      onChange={(e) => { onUpdateField(key, e.target.value); autoResize(e); }}
-      onInput={autoResize}
       placeholder={placeholder}
+      minHeight={minH}
       disabled={disabled}
+      resetKey={resetKey}
+      onChange={(value) => onUpdateField(key, value)}
     />
-  ), [draft, disabled, onUpdateField]);
+  ), [draft, disabled, onUpdateField, resetKey]);
 
   return (
     <div className="flex flex-1 flex-col gap-6 overflow-y-auto scroll-smooth" style={{ padding: 20 }}>

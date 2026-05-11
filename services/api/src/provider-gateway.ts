@@ -40,6 +40,8 @@ interface OpenAiModelRecord {
 	owned_by?: string;
 	category?: string;
 	context_length?: number;
+	context_length_total?: number;
+	top_provider?: { context_length?: number };
 }
 
 interface OpenAiModelsResponse {
@@ -539,13 +541,14 @@ async function listOpenAiCompatModels(
 
 			const opt: ProviderModelOption = {
 				id,
-				label: record.owned_by ? `${id} - ${record.owned_by}` : id,
+				label: (record.name ?? "").trim() || id,
 			};
-			if (record.context_length) opt.contextLength = record.context_length;
+			const contextLength = record.context_length ?? record.context_length_total ?? record.top_provider?.context_length;
+			if (contextLength) opt.contextLength = contextLength;
 			return opt;
 		})
 		.filter((record): record is ProviderModelOption => Boolean(record))
-		.sort((left, right) => left.id.localeCompare(right.id));
+		.sort((left, right) => left.label.localeCompare(right.label));
 }
 
 async function listAnthropicModels(
@@ -619,12 +622,28 @@ async function listGoogleModels(
 	const payload = (await response.json()) as { models?: GoogleModel[] };
 	const records = Array.isArray(payload.models) ? payload.models : [];
 
-	// Only keep text/chat models — filter out embedding, image, video, audio models.
-	// Gemini text models expose "generateContent"; TTS models expose "generateAnswer" or nothing useful.
+	// Only keep text/chat models. Some non-chat Google models (image/music/TTS)
+	// still expose generateContent, so method filtering alone is not enough.
 	const CHAT_METHODS = new Set(["generateContent", "generateMessage"]);
+	const NON_CHAT_MODEL_PATTERNS = [
+		/image/i,
+		/imagen/i,
+		/nano[-\s]?banana/i,
+		/lyria/i,
+		/veo/i,
+		/tts/i,
+		/native[-\s]?audio/i,
+		/embedding/i,
+		/aqa$/i,
+	];
 
 	return records
 		.filter((r) => {
+			const id = r.name.replace(/^models\//, "").trim();
+			const label = r.displayName ?? id;
+			const searchable = `${id} ${label}`;
+			if (NON_CHAT_MODEL_PATTERNS.some((pattern) => pattern.test(searchable))) return false;
+
 			const methods = r.supportedGenerationMethods;
 			if (!Array.isArray(methods) || methods.length === 0) return false;
 			return methods.some((m) => CHAT_METHODS.has(m));

@@ -17,11 +17,9 @@ const createCharacterFormSchema = z.object({
   postHistoryInstructions: z.string(),
   creatorNotes: z.string(),
   systemPrompt: z.string(),
-  characterBook: z.string(),
   depthPrompt: z.string(),
   depthPromptDepth: z.number(),
   depthPromptRole: z.string(),
-  extensions: z.string(),
   tags: z.array(z.string()),
   avatarFile: z.unknown().nullable().optional(),
   avatarPreview: z.string().nullable().optional(),
@@ -58,11 +56,9 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
       tags: [],
       avatarFile: null,
       avatarPreview: null,
-      characterBook: '',
       depthPrompt: '',
       depthPromptDepth: 4,
       depthPromptRole: 'system',
-      extensions: '',
     },
   });
 
@@ -84,11 +80,9 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   const postHistoryInstructions = watch('postHistoryInstructions');
   const creatorNotes = watch('creatorNotes');
   const systemPrompt = watch('systemPrompt');
-  const characterBook = watch('characterBook');
   const depthPrompt = watch('depthPrompt');
   const depthPromptDepth = watch('depthPromptDepth');
   const depthPromptRole = watch('depthPromptRole');
-  const extensions = watch('extensions');
   const tags = watch('tags') || [];
   const avatarPreview = watch('avatarPreview') as string | null;
   const avatarFile = watch('avatarFile') as File | null;
@@ -320,17 +314,6 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             />
           </div>
 
-          {/* Character Book JSON */}
-          <div style={{marginBottom:20}}>
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("character_book_json")}</label>
-            <textarea
-              className="w-full min-h-[80px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-              style={{padding:'6px 10px'}}
-              {...register('characterBook')}
-              placeholder='{"entries":[...]}'
-            />
-          </div>
-
           {/* Depth Prompt row */}
           <div className="flex gap-3 items-end">
             <div style={{marginBottom:20}} className="flex-1">
@@ -367,17 +350,6 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                 <option value="assistant">assistant</option>
               </select>
             </div>
-          </div>
-
-          {/* Extensions JSON */}
-          <div style={{marginBottom:20}}>
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("extensions_json")}</label>
-            <textarea
-              className="w-full min-h-[60px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-              style={{padding:'6px 10px'}}
-              {...register('extensions')}
-              placeholder='{"talkativeness":"0.5",...}'
-            />
           </div>
 
           {/* System Prompt Override */}

@@ -93,11 +93,18 @@ export function AppShell() {
       <ContextMemoryModal
         isOpen={app.isContextMemoryOpen} onClose={app.closeContextMemory}
         activeChatId={activeChatId}
-        providers={app.providerProfiles.map(p => ({ id: p.id, name: p.name, defaultModel: p.defaultModel, hasStoredApiKey: p.hasStoredApiKey, isActive: p.isActive }))}
+        providers={app.providerProfiles.map(p => ({
+          id: p.id,
+          name: p.name,
+          defaultModel: p.defaultModel,
+          hasStoredApiKey: p.hasStoredApiKey,
+          isActive: p.isActive,
+        }))}
         contextWindow={{ used: contextUsed, limit: contextLimit }}
         currentSummary={snapshot?.activeChat.summary ?? ""}
         messageCount={snapshot?.messages.length ?? 0}
         onSummarize={app.handleSummarizeChat} onSaveSummary={app.handleSaveChatSummary}
+        onFetchModelsForProfile={app.handleFetchModelsForProfile}
       />
 
       <ProviderModal

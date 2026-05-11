@@ -58,11 +58,9 @@ function characterDefaults(character: AppSnapshot["character"]): BuildCharacterD
     alternateGreetings: character.alternateGreetings || [],
     postHistoryInstructions: character.postHistoryInstructions || "",
     creatorNotes: character.creatorNotes || "",
-    characterBook: character.characterBook || "",
     depthPrompt: character.depthPrompt || "",
     depthPromptDepth: character.depthPromptDepth ?? 4,
     depthPromptRole: character.depthPromptRole || "system",
-    extensions: character.extensions || "",
     tags: character.tags || [],
   };
 }

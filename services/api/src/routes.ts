@@ -22,7 +22,7 @@ export interface RuntimeApi {
   deleteMessage: (chatId: string, messageId: string) => unknown;
   sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<unknown>;
   sendMessageStream: (chatId: string, body: { content: string }, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
-  summarizeChat: (chatId: string, body: { providerProfileId: string; maxMessages: number }, signal?: AbortSignal) => Promise<unknown>;
+  summarizeChat: (chatId: string, body: { providerProfileId: string; model?: string; maxMessages: number }, signal?: AbortSignal) => Promise<unknown>;
   saveChatSummary: (chatId: string, body: { summary: string }) => Promise<unknown>;
   generateReply: (chatId: string, signal?: AbortSignal) => Promise<unknown>;
   generateReplyStream: (chatId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
@@ -221,7 +221,7 @@ export function createApiRouter(
     .post("/api/chats/:chatId/summary", zValidator("json", schemas.summarizeChatSchema), async (c) => {
       const chatId = c.req.param("chatId");
       const body = c.req.valid("json");
-      logSendDebug("api.route.summary.post", { chatId, providerProfileId: body.providerProfileId, maxMessages: body.maxMessages });
+      logSendDebug("api.route.summary.post", { chatId, providerProfileId: body.providerProfileId, model: body.model ?? null, maxMessages: body.maxMessages });
       return c.json(await runtime.summarizeChat(chatId, body, c.req.raw.signal));
     })
     .put("/api/chats/:chatId/summary", zValidator("json", schemas.saveChatSummarySchema), async (c) => {

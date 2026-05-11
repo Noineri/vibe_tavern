@@ -40,12 +40,6 @@ function parseCardToDraft(raw: unknown): Partial<BuildCharacterDraft> {
   if (d.depth_prompt_role) result.depthPromptRole = String(d.depth_prompt_role);
   if (Array.isArray(d.alternate_greetings)) result.alternateGreetings = (d.alternate_greetings as string[]).map(String);
   if (Array.isArray(d.tags)) result.tags = (d.tags as string[]).map(String);
-  if (d.extensions && typeof d.extensions === "object") {
-    try { result.extensions = JSON.stringify(d.extensions); } catch {}
-  }
-  if (d.character_book && typeof d.character_book === "object") {
-    try { result.characterBook = JSON.stringify(d.character_book); } catch {}
-  }
   return result;
 }
 
@@ -90,11 +84,9 @@ export function CharacterForm({
   const alternateGreetings = watch("alternateGreetings") || [];
   const postHistoryInstructions = watch("postHistoryInstructions");
   const creatorNotes = watch("creatorNotes");
-  const characterBook = watch("characterBook");
   const depthPrompt = watch("depthPrompt");
   const depthPromptDepth = watch("depthPromptDepth");
   const depthPromptRole = watch("depthPromptRole");
-  const extensions = watch("extensions");
   const tags = watch("tags") || [];
 
   const canSave = !isSaving && (name || "").trim();
@@ -319,13 +311,6 @@ export function CharacterForm({
         <TokenBadge text={creatorNotes || ""} />
       </div>
 
-      {/* Character Book JSON */}
-      <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>{t("character_book_json")}</label>
-        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 80 }} disabled={isSaving} placeholder='{"entries":[...]}' {...register("characterBook")} />
-        <TokenBadge text={characterBook || ""} />
-      </div>
-
       {/* Depth Prompt */}
       <div style={s.fieldWrap}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
@@ -347,13 +332,6 @@ export function CharacterForm({
         </div>
         <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} disabled={isSaving} placeholder={t("depth_prompt_placeholder")} {...register("depthPrompt")} />
         <TokenBadge text={depthPrompt || ""} />
-      </div>
-
-      {/* Extensions JSON */}
-      <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>{t("extensions_json")}</label>
-        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} disabled={isSaving} placeholder='{"talkativeness":"0.5",...}' {...register("extensions")} />
-        <TokenBadge text={extensions || ""} />
       </div>
 
       {/* System Prompt Override */}

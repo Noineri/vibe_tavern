@@ -15,8 +15,9 @@ interface ContextMemoryModalProps {
   contextWindow: { used: number; limit: number };
   currentSummary: string;
   messageCount: number;
-  onSummarize: (input: { providerProfileId: string; maxMessages: number }) => Promise<string>;
+  onSummarize: (input: { providerProfileId: string; model?: string; maxMessages: number }) => Promise<string>;
   onSaveSummary: (summary: string) => Promise<string>;
+  onFetchModelsForProfile: (providerProfileId: string) => Promise<Array<{ id: string; label: string; contextLength?: number }>>;
 }
 
 export function ContextMemoryModal({
@@ -29,27 +30,66 @@ export function ContextMemoryModal({
   messageCount,
   onSummarize,
   onSaveSummary,
+  onFetchModelsForProfile,
 }: ContextMemoryModalProps) {
   const { t } = useT();
   const [topTab, setTopTab] = useState<'summary' | 'memory'>('summary');
   const [summaryText, setSummaryText] = useState(currentSummary);
+  const [activeSummaryId, setActiveSummaryId] = useState<string | null>(currentSummary.trim() ? 'chat-summary' : null);
   const [msgCount, setMsgCount] = useState(Math.min(Math.max(messageCount || 10, 1), 200));
   const [selectedProviderId, setSelectedProviderId] = useState(providers.find((p) => p.isActive)?.id ?? providers[0]?.id ?? '');
+  const [selectedModel, setSelectedModel] = useState(providers.find((p) => p.isActive)?.defaultModel ?? providers[0]?.defaultModel ?? '');
+  const [providerModels, setProviderModels] = useState<Array<{ id: string; label: string; contextLength?: number }>>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    if (isOpen) setSummaryText(currentSummary);
+    if (!isOpen) return;
+    setSummaryText(currentSummary);
+    setActiveSummaryId(currentSummary.trim() ? 'chat-summary' : null);
   }, [currentSummary, isOpen]);
 
   useEffect(() => {
     if (!selectedProviderId || !providers.some((p) => p.id === selectedProviderId)) {
-      setSelectedProviderId(providers.find((p) => p.isActive)?.id ?? providers[0]?.id ?? '');
+      const nextProvider = providers.find((p) => p.isActive) ?? providers[0];
+      setSelectedProviderId(nextProvider?.id ?? '');
+      setSelectedModel(nextProvider?.defaultModel ?? '');
     }
   }, [providers, selectedProviderId]);
 
+  useEffect(() => {
+    if (!isOpen || !selectedProviderId) {
+      setProviderModels([]);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingModels(true);
+    void onFetchModelsForProfile(selectedProviderId)
+      .then((models) => {
+        if (cancelled) return;
+        setProviderModels(models.map((model) => ({ id: model.id, label: model.label || model.id, contextLength: model.contextLength })));
+        const currentStillExists = models.some((model) => model.id === selectedModel);
+        const defaultModel = providers.find((p) => p.id === selectedProviderId)?.defaultModel ?? '';
+        const nextModel = (defaultModel && models.some((model) => model.id === defaultModel) ? defaultModel : models[0]?.id) ?? '';
+        if (!currentStillExists) setSelectedModel(nextModel);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setProviderModels([]);
+          toast.error(err instanceof Error ? err.message : t("models_load_failed"));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingModels(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [isOpen, selectedProviderId, onFetchModelsForProfile]);
+
   const isDisabled = activeChatId === null;
-  const providerOptions = providers.map(p => ({ id: p.id, name: p.name }));
+  const providerOptions = providers.map(p => ({ id: p.id, name: p.name, defaultModel: p.defaultModel ?? '' }));
   const savedSummaries = useMemo<SavedSummary[]>(() => currentSummary.trim()
     ? [{ id: 'chat-summary', label: 'Current summary', text: currentSummary, turn: messageCount, timestamp: 'saved' }]
     : [], [currentSummary, messageCount]);
@@ -62,14 +102,15 @@ export function ContextMemoryModal({
       toast.error(t("select_provider_error"));
       return;
     }
-    if (!selected.defaultModel) {
+    if (!selectedModel.trim()) {
       toast.error(t("no_default_model"));
       return;
     }
     setIsSummarizing(true);
     try {
-      const summary = await onSummarize({ providerProfileId: selectedProviderId, maxMessages: msgCount });
+      const summary = await onSummarize({ providerProfileId: selectedProviderId, model: selectedModel.trim() || undefined, maxMessages: msgCount });
       setSummaryText(summary);
+      setActiveSummaryId('chat-summary');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("summarization_failed"));
     } finally {
@@ -82,6 +123,7 @@ export function ContextMemoryModal({
     try {
       const summary = await onSaveSummary(summaryText);
       setSummaryText(summary);
+      setActiveSummaryId(summary.trim() ? 'chat-summary' : null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("summary_save_failed"));
     } finally {
@@ -91,7 +133,7 @@ export function ContextMemoryModal({
 
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="flex h-[min(85vh,660px)] max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[720px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">
+      <div className="flex h-[min(85vh,680px)] max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[820px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">
         <div className="shrink-0 border-b border-border" style={{padding:'18px 20px 0'}}>
           <div className="flex items-start justify-between" style={{paddingBottom:12}}>
             <div>
@@ -112,14 +154,31 @@ export function ContextMemoryModal({
           onMsgCountChange={setMsgCount}
           maxMsgCount={200}
           selectedProviderId={selectedProviderId}
-          onProviderChange={setSelectedProviderId}
+          selectedModel={selectedModel}
+          onProviderChange={(id) => {
+            setSelectedProviderId(id);
+            setSelectedModel('');
+            setProviderModels([]);
+          }}
+          onModelChange={setSelectedModel}
           providers={providerOptions}
+          models={providerModels}
+          isLoadingModels={isLoadingModels}
           onSummarize={handleSummarize}
           isSummarizing={isSummarizing}
           savedSummaries={savedSummaries}
-          activeSummaryId={currentSummary.trim() ? 'chat-summary' : null}
-          onSelectSummary={() => setSummaryText(currentSummary)}
-          onDeleteSummary={() => setSummaryText('')}
+          activeSummaryId={activeSummaryId}
+          onSelectSummary={() => { setSummaryText(currentSummary); setActiveSummaryId('chat-summary'); }}
+          onDeleteSummary={async () => {
+            try {
+              const summary = await onSaveSummary('');
+              setSummaryText(summary);
+              setActiveSummaryId(null);
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : t("summary_save_failed"));
+            }
+          }}
+          onNewSummary={() => { setSummaryText(''); setActiveSummaryId(null); }}
           disabled={isDisabled}
           error=""
         />

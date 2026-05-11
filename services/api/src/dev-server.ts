@@ -207,8 +207,8 @@ async function ensureSeedData() {
         signal,
       });
     },
-    summarizeChat: (chatId: string, body: { providerProfileId: string; maxMessages: number }, signal?: AbortSignal) =>
-      chatSummaryService.summarizeChat({ chatId, providerProfileId: body.providerProfileId, maxMessages: body.maxMessages, signal }),
+    summarizeChat: (chatId: string, body: { providerProfileId: string; model?: string; maxMessages: number }, signal?: AbortSignal) =>
+      chatSummaryService.summarizeChat({ chatId, providerProfileId: body.providerProfileId, model: body.model, maxMessages: body.maxMessages, signal }),
     saveChatSummary: (chatId: string, body: { summary: string }) =>
       chatSummaryService.saveChatSummary({ chatId, summary: body.summary }),
     generateReply: async (chatId: string, signal?: AbortSignal) => {
