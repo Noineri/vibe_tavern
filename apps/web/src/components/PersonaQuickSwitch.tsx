@@ -30,7 +30,7 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
 
   if (!activePersona) {
     return (
-      <div className="flex shrink-0 cursor-default items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim text-xs font-medium text-accent-t" style={{ padding: '3px 9px' }}>
+      <div className="flex shrink-0 cursor-default items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim px-[9px] py-[3px] text-xs font-medium text-accent-t">
         <span>{t("no_persona")}</span>
       </div>
     );
@@ -39,21 +39,19 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
   return (
     <div className="relative" ref={containerRef}>
       <button
-        className="flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim text-xs font-medium text-accent-t"
-        style={{padding:'3px 9px'}}
+        className="flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim px-[9px] py-[3px] text-xs font-medium text-accent-t"
         onClick={() => setIsOpen(!isOpen)}
       >
         <span>{activePersona.name.split(' ')[0]}</span>
         <Icons.Caret direction={isOpen ? "u" : "d"} />
       </button>
       {isOpen && (
-        <div className="absolute bottom-[calc(100%+8px)] z-[220] left-0 w-[220px] rounded-lg border border-border2 bg-surface shadow-[0_12px_28px_rgba(0,0,0,0.45)]" style={{padding:'8px 0'}}>
-          <div className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1" style={{padding:'4px 16px 8px'}}>{t("persona_selection")}</div>
+        <div className="absolute bottom-[calc(100%+8px)] z-[220] left-0 w-[220px] rounded-lg border border-border2 bg-surface py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
+          <div className="mb-1 border-b border-border px-4 pt-1 pb-2 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("persona_selection")}</div>
           {personas.map(p => (
             <button
               key={p.id}
-              className={cn("flex w-full cursor-pointer items-center gap-2 text-left text-[13px] text-t1 hover:bg-s2", p.id === activePersonaId && "bg-accent-dim")}
-              style={{padding:'6px 16px'}}
+              className={cn("flex w-full cursor-pointer items-center gap-2 text-left text-[13px] text-t1 hover:bg-s2 px-4 py-1.5", p.id === activePersonaId && "bg-accent-dim")}
               onClick={() => { onSelect(p.id); setIsOpen(false); }}
             >
               <div className="w-4 shrink-0 flex justify-center text-accent-t">{p.id === activePersonaId && <Icons.Check />}</div>

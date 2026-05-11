@@ -6,6 +6,9 @@ import { MessageBlock } from "./MessageBlock.js";
 import { useAppActions } from "./AppShell.js";
 import { useT } from "../i18n/context.js";
 
+const msgWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7";
+const sepWrap = msgWrap + " my-[6px] mt-2";
+
 export function MessageList() {
   const { t } = useT();
   const app = useAppActions();
@@ -47,7 +50,7 @@ export function MessageList() {
   }, [messages.length, pendingUserMessageContent, streamingText]);
 
   return (
-    <div className="flex-1 overflow-y-auto scroll-smooth" style={{paddingBottom:12,paddingTop:28}} ref={msgsRef}>
+    <div className="flex-1 overflow-y-auto scroll-smooth pt-7 pb-3" ref={msgsRef}>
       {/* TODO: VP-W4+ — EmptyState component for no active chat */}
       {/* TODO: VP-W4+ — EmptyState component for empty chat */}
 
@@ -61,7 +64,7 @@ export function MessageList() {
         return (
           <Fragment key={message.id}>
             {showSeparator && (
-              <div style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'8px auto 6px', paddingLeft:28, paddingRight:28}}>
+              <div className={sepWrap}>
                 <div className="h-px bg-border opacity-40"/>
               </div>
             )}
@@ -108,29 +111,29 @@ export function MessageList() {
       {pendingUserMessageContent && (
         <>
           {messages.length > 0 && (
-            <div style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'8px auto 6px', paddingLeft:28, paddingRight:28}}>
+            <div className={sepWrap}>
               <div className="h-px bg-border opacity-40"/>
             </div>
           )}
-          <div className="relative" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'0 auto', paddingLeft:28, paddingRight:28}}>
-            <div className="relative group" style={{paddingTop:10,paddingBottom:10}}>
-              <div className="flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3" style={{marginBottom:'5px'}}>
+          <div className={msgWrap}>
+            <div className="relative group py-2.5">
+              <div className="mb-[5px] flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3">Y</span>
                 <span>{t("message_user_label")}</span>
               </div>
-              <div className="my-0.5 rounded-md bg-user-bg" style={{padding:'13px 16px'}}>
+              <div className="my-0.5 rounded-md bg-user-bg px-4 py-[13px]">
                 <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 opacity-88 [&_em]:italic [&_em]:text-t2">
                   <Markdown text={pendingUserMessageContent} />
                 </div>
               </div>
             </div>
           </div>
-          <div style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'8px auto 6px', paddingLeft:28, paddingRight:28}}>
+          <div className={sepWrap}>
             <div className="h-px bg-border opacity-40"/>
           </div>
-          <div className="relative" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'0 auto', paddingLeft:28, paddingRight:28}} aria-label={t("generating_response")}>
-            <div className="relative group" style={{paddingTop:10,paddingBottom:10}}>
-              <div className="flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85" style={{marginBottom:'5px'}}>
+          <div className={msgWrap} aria-label={t("generating_response")}>
+            <div className="relative group py-2.5">
+              <div className="mb-[5px] flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3">
                   {characterName.slice(0, 1).toUpperCase()}
                 </span>
@@ -144,12 +147,12 @@ export function MessageList() {
 
       {!pendingUserMessageContent && isSending && messages.length > 0 && messages[messages.length - 1].role === "user" && (
         <>
-          <div style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'8px auto 6px', paddingLeft:28, paddingRight:28}}>
+          <div className={sepWrap}>
             <div className="h-px bg-border opacity-40"/>
           </div>
-          <div className="relative" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'0 auto', paddingLeft:28, paddingRight:28}} aria-label={t("generating_response")}>
-            <div className="relative group" style={{paddingTop:10,paddingBottom:10}}>
-              <div className="flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85" style={{marginBottom:'5px'}}>
+          <div className={msgWrap} aria-label={t("generating_response")}>
+            <div className="relative group py-2.5">
+              <div className="mb-[5px] flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3">
                   {characterName.slice(0, 1).toUpperCase()}
                 </span>
@@ -165,7 +168,7 @@ export function MessageList() {
       {/* TODO: VP-W4+ — scroll-to-bottom button
           Maket structure:
           <div className="sticky bottom-2 z-20 flex justify-center pointer-events-none">
-            <div className="pointer-events-auto inline-flex items-center gap-1.5 rounded-2xl border border-border bg-surface px-3.5 py-1.5 text-[calc(var(--ui-fs)-3px)] text-t2 shadow-[0_4px_16px_rgba(0,0,0,.25)] transition-opacity duration-200 cursor-pointer" style={{padding:'5px 14px'}} onClick={scrollHandler}>
+            <div className="pointer-events-auto inline-flex items-center gap-1.5 rounded-2xl border border-border bg-surface px-3.5 py-1.5 text-[calc(var(--ui-fs)-3px)] text-t2 shadow-[0_4px_16px_rgba(0,0,0,.25)] transition-opacity duration-200 cursor-pointer" onClick={scrollHandler}>
               <span>↓</span> Scroll to latest
             </div>
           </div>

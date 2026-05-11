@@ -136,24 +136,23 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
     const totalTokens = trace ? (trace.tokenAccounting?.total ?? trace.layers.reduce((sum, l) => sum + l.tokenCount, 0)) : 0;
     return (
       <div className="max-w-[800px]">
-        <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-          <div className="font-body text-[22px] font-medium text-t1" style={{ marginBottom: 6 }}>
+        <div className="mb-1.5 flex items-center justify-between">
+          <div className="mb-1.5 font-body text-[22px] font-medium text-t1">
             {t("build_prompt_trace")}
           </div>
           {trace && (
             <div
-              className="rounded-full bg-s2 font-ui text-[13px] text-t2"
-              style={{ padding: "4px 10px" }}
+              className="rounded-full bg-s2 px-2.5 py-1 font-ui text-[13px] text-t2"
             >
               {t("trace_total_tokens").replace("{n}", String(totalTokens))}
             </div>
           )}
         </div>
-        <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3 leading-[1.55]" style={{ marginBottom: 28 }}>
+        <div className="mb-7 font-ui text-[calc(var(--ui-fs)-1px)] text-t3 leading-[1.55]">
           {trace ? (
             <>
               {t("trace_showing").replace("{n}", String(trace.id))}{" "}
-              <span style={{ color: "var(--t2)" }}>{trace.id}</span> · {trace.createdAt} · model:{" "}
+              <span className="text-t2">{trace.id}</span> · {trace.createdAt} · model:{" "}
               {trace.model} · {trace.latencyMs}ms
             </>
           ) : (
@@ -162,18 +161,10 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
           · {t("trace_recorded_count").replace("{n}", String(promptTraceCount))}.
           {trace?.prefill && (
             <div
-              style={{
-                marginTop: 6,
-                padding: "6px 10px",
-                background: "var(--s2)",
-                borderRadius: 6,
-                border: "1px solid var(--border2)",
-                fontSize: 12,
-                fontFamily: "var(--font-body)",
-              }}
+              className="mt-1.5 rounded-[6px] border border-border2 bg-s2 px-2.5 py-1.5 font-body text-xs"
             >
-              <strong style={{ color: "var(--t2)" }}>{t("trace_prefill_label")}</strong>{" "}
-              <span style={{ color: "var(--t3)", whiteSpace: "pre-wrap" }}>{trace.prefill}</span>
+              <strong className="text-t2">{t("trace_prefill_label")}</strong>{" "}
+              <span className="whitespace-pre-wrap text-t3">{trace.prefill}</span>
             </div>
           )}
         </div>
@@ -184,12 +175,11 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
               <div key={layer.id} className="overflow-hidden rounded-md border border-border bg-s2">
                 <div
                   className={cn(
-                    "flex cursor-pointer items-center justify-between bg-surface font-ui text-xs text-t2 transition-colors hover:bg-s2 hover:text-t1",
+                    "flex cursor-pointer items-center justify-between bg-surface px-3.5 py-2.5 font-ui text-xs text-t2 transition-colors hover:bg-s2 hover:text-t1",
                     layer.sourceType === "prompt_preset" && "border-l-2 border-l-info",
                     (layer.sourceType.includes("memory") || layer.sourceType === "lore_entry") && "border-l-2 border-l-success",
                     !layer.sourceType.includes("memory") && layer.sourceType !== "lore_entry" && layer.sourceType !== "prompt_preset" && "border-l-2 border-l-danger",
                   )}
-                  style={{ padding: "10px 14px" }}
                   onClick={(e) => {
                     const next = e.currentTarget.nextElementSibling as HTMLElement;
                     if (next) next.style.display = next.style.display === "none" ? "block" : "none";
@@ -199,25 +189,25 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
                     <strong>
                       {index + 1}. {layer.sourceType}
                     </strong>
-                    <span style={{ color: "var(--t3)", marginLeft: 6 }}>{layer.sourceId}</span>
+                    <span className="ml-1.5 text-t3">{layer.sourceId}</span>
                   </div>
                   <div className="flex gap-2 text-t3">
-                    <span style={{ fontSize: 12, color: "var(--t2)" }}>{layer.tokenCount} {t("tokens_label")}</span>
+                    <span className="text-xs text-t2">{layer.tokenCount} {t("tokens_label")}</span>
                   </div>
                 </div>
+                {/* DYNAMIC: display toggled by JS click handler above */}
                 <div
-                  className="border-t border-border bg-bg whitespace-pre-wrap font-mono text-[11px] text-t1"
-                  style={{ display: "none", padding: 12 }}
+                  className="border-t border-border bg-bg p-3 whitespace-pre-wrap font-mono text-[11px] text-t1"
+                  style={{ display: "none" }}
                 >
                   {layer.text}
                 </div>
               </div>
             ))}
 
-            <div style={{ marginTop: 20 }}>
+            <div className="mt-5">
               <button
-                className="inline-flex cursor-pointer items-center rounded-md border-0 bg-s3 font-ui text-xs font-medium text-t2 transition-colors hover:bg-border2 hover:text-t1"
-                style={{ padding: "8px 16px" }}
+                className="inline-flex cursor-pointer items-center rounded-md border-0 bg-s3 px-4 py-2 font-ui text-xs font-medium text-t2 transition-colors hover:bg-border2 hover:text-t1"
                 onClick={() => alert(promptPayloadText)}
               >
                 {t("view_raw_json")}
@@ -226,20 +216,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
           </div>
         ) : (
           <div
-            style={{
-              marginTop: 20,
-              height: 120,
-              background: "var(--s2)",
-              borderRadius: 8,
-              border: "1px dashed var(--border2)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "var(--t3)",
-              fontSize: 13,
-              fontFamily: "var(--font-body)",
-              fontStyle: "italic",
-            }}
+            className="mt-5 flex h-[120px] items-center justify-center rounded-lg border border-dashed border-border2 bg-s2 font-body text-[13px] italic text-t3"
           >
           {t("trace_no_traces_yet")}
           </div>
@@ -252,12 +229,10 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
     <div className="flex flex-1 overflow-hidden">
       {/* Nav sidebar */}
       <div
-        className="flex min-w-[200px] flex-col border-r border-border bg-surface"
-        style={{ width: 200, padding: "8px 0" }}
+        className="flex w-[200px] min-w-[200px] flex-col border-r border-border bg-surface py-2"
       >
         <div
-          className={cn("font-ui text-[calc(var(--ui-fs)-5px)] font-medium uppercase tracking-[0.08em] text-t3")}
-          style={{ padding: "9px 15px 7px" }}
+          className={cn("font-ui text-[calc(var(--ui-fs)-5px)] font-medium uppercase tracking-[0.08em] text-t3 pt-[9px] px-[15px] pb-[7px]")}
         >
           {t("editor")}
         </div>
@@ -265,10 +240,9 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
           <div
             key={n.id}
             className={cn(
-              "flex items-center gap-2.5 cursor-pointer rounded mx-1 font-ui text-[calc(var(--ui-fs)-1px)] text-t2 transition-all hover:bg-s2 hover:text-t1",
+              "mx-1 flex cursor-pointer items-center gap-2.5 rounded px-3.5 py-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2 transition-all hover:bg-s2 hover:text-t1",
               active === n.id && "bg-accent-dim text-accent-t",
             )}
-            style={{ padding: "8px 14px" }}
             onClick={() => setActive(n.id)}
           >
             {n.icon}
@@ -278,7 +252,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
       </div>
 
       {/* Content area */}
-      <div className="flex-1 overflow-y-auto" style={{ padding: "32px 40px" }}>
+      <div className="flex-1 overflow-y-auto px-10 py-8">
         {active === "char" && (
           <CharacterForm
             form={form}

@@ -6,10 +6,8 @@ import { Icons } from '../shared/icons.js';
 import { cn } from '../../lib/cn.js';
 
 const labelCls = 'block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3';
-const inputCls = 'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent';
-const selectCls = 'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent';
-const inputPad = { padding: '0 13px' };
-const selectPad = { padding: '0 34px 0 13px' };
+const inputCls = 'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent px-[13px]';
+const selectCls = 'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent pl-[13px] pr-[34px]';
 
 interface ProviderEditHeaderProps {
   form: FormState;
@@ -55,19 +53,19 @@ export function ProviderEditHeader({
 
       {/* Row 1: profile name + preset group */}
       <div className="grid grid-cols-2 gap-4">
-        <div style={{ marginBottom: 16 }}>
-          <label className={labelCls} style={{ marginBottom: 7 }}>{t("profile_name")}</label>
-          <input type="text" value={form.name} onChange={(e) => updateForm('name', e.target.value)} placeholder={t("profile_name_placeholder")} className={inputCls} style={inputPad} />
+        <div className="mb-4">
+          <label className={labelCls + " mb-[7px]"}>{t("profile_name")}</label>
+          <input type="text" value={form.name} onChange={(e) => updateForm('name', e.target.value)} placeholder={t("profile_name_placeholder")} className={inputCls} />
           {duplicateNameWarning && (
-            <div className="flex items-center gap-1 text-[11px] text-warning" style={{ marginTop: 4 }}>
+            <div className="mt-1 flex items-center gap-1 text-[11px] text-warning">
               <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Alert /></span>
               {t("profile_name_exists")}
             </div>
           )}
         </div>
-        <div style={{ marginBottom: 16 }}>
-          <label className={labelCls} style={{ marginBottom: 7 }}>{t("provider_preset_label")}</label>
-          <select value={presetGroup ?? ''} onChange={(e) => { const g = e.target.value; if (!g) { updateForm('providerPreset', ''); } else { const first = PROVIDER_PRESETS.find((f) => f.group === g); if (first) applyPreset(first.id); } }} className={selectCls} style={selectPad}>
+        <div className="mb-4">
+          <label className={labelCls + " mb-[7px]"}>{t("provider_preset_label")}</label>
+          <select value={presetGroup ?? ''} onChange={(e) => { const g = e.target.value; if (!g) { updateForm('providerPreset', ''); } else { const first = PROVIDER_PRESETS.find((f) => f.group === g); if (first) applyPreset(first.id); } }} className={selectCls}>
             <option value="">{t("custom")}</option>
             {PRESET_GROUPS.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
           </select>
@@ -76,29 +74,29 @@ export function ProviderEditHeader({
 
       {/* Row 2: API format + preset endpoint */}
       <div className="grid grid-cols-2 gap-4">
-        <div style={{ marginBottom: 16 }}>
-          <label className={labelCls} style={{ marginBottom: 7 }}>{t("api_format_label")}</label>
-          <select value={form.providerPreset || ''} onChange={(e) => { const val = e.target.value; if (val) applyPreset(val); }} className={selectCls} style={selectPad}>
+        <div className="mb-4">
+          <label className={labelCls + " mb-[7px]"}>{t("api_format_label")}</label>
+          <select value={form.providerPreset || ''} onChange={(e) => { const val = e.target.value; if (val) applyPreset(val); }} className={selectCls}>
             <option value="">{t("custom")}</option>
             {filteredPresets.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
           </select>
         </div>
-        <div style={{ marginBottom: 16 }}>
-          <label className={labelCls} style={{ marginBottom: 7 }}>{t("preset_endpoint_label")}</label>
-          <input type="text" value={presetEndpoint || t("custom")} readOnly className={cn(inputCls, '!cursor-not-allowed !opacity-60')} style={inputPad} />
+        <div className="mb-4">
+          <label className={labelCls + " mb-[7px]"}>{t("preset_endpoint_label")}</label>
+          <input type="text" value={presetEndpoint || t("custom")} readOnly className={cn(inputCls, '!cursor-not-allowed !opacity-60')} />
         </div>
       </div>
 
       {/* Custom endpoint */}
-      <div style={{ marginBottom: 16 }}>
-        <label className={labelCls} style={{ marginBottom: 7 }}>{t("custom_endpoint_label")}</label>
-        <input type="text" value={form.baseUrl} onChange={(e) => updateForm('baseUrl', e.target.value)} placeholder="https://api.openai.com/v1" className={inputCls} style={inputPad} />
+      <div className="mb-4">
+        <label className={labelCls + " mb-[7px]"}>{t("custom_endpoint_label")}</label>
+        <input type="text" value={form.baseUrl} onChange={(e) => updateForm('baseUrl', e.target.value)} placeholder="https://api.openai.com/v1" className={inputCls} />
       </div>
 
       {/* API key */}
-      <div style={{ marginBottom: 16 }}>
-        <label className={labelCls} style={{ marginBottom: 7 }}>{t("api_key_label")}</label>
-        <input type="password" value={form.apiKey} onChange={(e) => updateForm('apiKey', e.target.value)} placeholder={form.hasStoredApiKey ? t("api_key_stored") : t("api_key_placeholder")} className={cn(inputCls, 'font-mono tracking-[0.05em]')} style={inputPad} />
+      <div className="mb-4">
+        <label className={labelCls + " mb-[7px]"}>{t("api_key_label")}</label>
+        <input type="password" value={form.apiKey} onChange={(e) => updateForm('apiKey', e.target.value)} placeholder={form.hasStoredApiKey ? t("api_key_stored") : t("api_key_placeholder")} className={cn(inputCls, 'font-mono tracking-[0.05em]')} />
       </div>
 
       {/* Test connection + Save */}

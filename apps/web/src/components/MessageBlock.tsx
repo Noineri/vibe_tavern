@@ -39,12 +39,12 @@ export function MessageBlock(input: MessageBlockProps) {
   const messageTokens = useTokenCount(displayContent);
 
   return (
-    <div className="relative" style={{maxWidth:'min(calc(var(--mw) + 160px), calc(100vw - var(--sw) - 64px))', margin:'0 auto', paddingLeft:28, paddingRight:28}}>
-      <div className="relative group" style={{paddingTop:10,paddingBottom:10}}>
+    <div className="relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))] px-7">
+      <div className="relative group py-2.5">
         <div className={isUser
-          ? "flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3"
-          : "flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85"
-        } style={{marginBottom:'5px'}}>
+          ? "mb-[5px] flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3"
+          : "mb-[5px] flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85"
+        }>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
             {isUser
               ? (input.personaAvatarAssetId
@@ -91,8 +91,7 @@ export function MessageBlock(input: MessageBlockProps) {
         {input.isEditing ? (
           <>
             <textarea
-              className="min-h-[140px] w-full resize-y rounded-md border border-accent bg-s2 font-body text-[length:var(--mfs)] leading-[1.82] text-t1 outline-none"
-              style={{padding:'12px 14px'}}
+              className="min-h-[140px] w-full resize-y rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.82] text-t1 outline-none"
               value={input.editingDraft}
               onChange={e => input.onEditingDraftChange(e.target.value)}
               onKeyDown={e => { if (e.key === 'Escape') input.onCancelEdit(); }}
@@ -100,21 +99,19 @@ export function MessageBlock(input: MessageBlockProps) {
             />
             <div className="mt-1.5 flex gap-1.5">
               <button
-                className="cursor-pointer rounded-[5px] bg-accent font-ui text-xs font-medium text-on-accent transition-all duration-100 hover:brightness-110"
-                style={{padding:'5px 12px'}}
+                className="cursor-pointer rounded-[5px] bg-accent px-3 py-[5px] font-ui text-xs font-medium text-on-accent transition-all duration-100 hover:brightness-110"
                 disabled={input.isBusy}
                 onClick={input.onSaveEdit}
               >{t("save_edit")}</button>
               <button
-                className="cursor-pointer rounded-[5px] bg-s2 font-ui text-xs font-medium text-t2 transition-all duration-100 hover:bg-s3"
-                style={{padding:'5px 12px'}}
+                className="cursor-pointer rounded-[5px] bg-s2 px-3 py-[5px] font-ui text-xs font-medium text-t2 transition-all duration-100 hover:bg-s3"
                 disabled={input.isBusy}
                 onClick={input.onCancelEdit}
               >{t("cancel_edit")}</button>
             </div>
           </>
         ) : isUser ? (
-          <div className="my-0.5 rounded-md bg-user-bg" style={{padding:'13px 16px'}}>
+          <div className="my-0.5 rounded-md bg-user-bg px-4 py-[13px]">
             <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 opacity-88 [&_em]:italic [&_em]:text-t2">
               <Markdown text={renderContent} />
             </div>
@@ -152,44 +149,38 @@ export function MessageBlock(input: MessageBlockProps) {
         {!input.isEditing && !isGenerating && (
           <div className="relative flex items-center gap-px mt-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
             <span
-              className={cn('flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all duration-150 hover:bg-s2 hover:text-t2', copied && 'translate-y-[-1px] bg-success-dim text-success-text')}
-              style={{padding:'3px 7px'}}
+              className={cn('flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all duration-150 hover:bg-s2 hover:text-t2', copied && 'translate-y-[-1px] bg-success-dim text-success-text')}
               onClick={() => { if (input.isBusy) return; void navigator.clipboard?.writeText(displayContent); setCopied(true); setTimeout(() => setCopied(false), 1000); }}
               title={copyLabel}
             >{copied ? <Icons.Check /> : <Icons.Copy />}{copied ? t("copied") : copyLabel}</span>
             <span
-              className="flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-              style={{padding:'3px 7px'}}
+              className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
               onClick={() => { if (!input.isBusy) input.onStartEdit(); }}
               title={editLabel}
             ><Icons.Edit />{editLabel}</span>
             {input.canResend && (
               <span
-                className="flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-                style={{padding:'3px 7px'}}
+                className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
                 onClick={() => { if (!input.isBusy) input.onResend(); }}
                 title={t("resend")}
               ><Icons.Regen />{t("resend")}</span>
             )}
             {input.canBranch && (
               <span
-                className="flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-                style={{padding:'3px 7px'}}
+                className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
                 onClick={() => { if (!input.isBusy) input.onBranch(); }}
                 title={branchLabel}
               ><Icons.Branch />{branchLabel}</span>
             )}
             {input.canRegenerate && (
               <span
-                className="flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-                style={{padding:'3px 7px'}}
+                className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
                 onClick={() => { if (!input.isBusy) input.onRegenerate(); }}
                 title={regenLabel}
               ><Icons.Regen />{regenLabel}</span>
             )}
             <span
-              className="absolute right-0 flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-              style={{padding:'3px 7px'}}
+              className="absolute right-0 flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
               onClick={() => { if (!input.isBusy) input.onDelete(); }}
               title={deleteLabel}
             ><Icons.Trash /></span>

@@ -92,8 +92,8 @@ function AutoResizeTextarea({
     <textarea
       key={`${resetKey ?? "none"}:${fieldKey}`}
       ref={ref}
-      className={textareaCls}
-      style={{ padding: "9px 13px", minHeight }}
+      className={cn(textareaCls, "px-[13px] py-[9px]")}
+      style={{ minHeight }}
       value={value}
       onChange={(e) => {
         onChange(e.target.value);
@@ -137,7 +137,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey 
   ), [draft, disabled, onUpdateField, resetKey]);
 
   return (
-    <div className="flex flex-1 flex-col gap-6 overflow-y-auto scroll-smooth" style={{ padding: 20 }}>
+    <div className="flex flex-1 flex-col gap-6 overflow-y-auto scroll-smooth p-5">
       <FieldSection label={t("system_prompt")} labelClassName={labelAccentCls} token={draft?.system ?? ""}>
         {ta("system", t("system_prompt_placeholder"), 240)}
       </FieldSection>
@@ -155,7 +155,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey 
 
       <div>
         <div className="mb-[7px] flex items-center justify-between">
-          <label className={labelCls} style={{ marginBottom: 0 }}>{t("authors_note_label")}</label>
+          <label className={labelCls + " mb-0"}>{t("authors_note_label")}</label>
           <div className="flex items-center gap-2">
             <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{t("insert_depth_label")}</label>
             <input

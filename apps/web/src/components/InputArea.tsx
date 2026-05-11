@@ -98,13 +98,12 @@ export function InputArea() {
 
   return (
     <div
-      className="relative z-10 shrink-0 border-t border-border bg-surface transition-opacity duration-200"
-      style={{ padding: "10px 16px 14px", opacity: canSend || isSending || draft.trim() ? 1 : 0.82 }}
+      className="relative z-10 shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3.5 transition-opacity duration-200"
+      style={{ opacity: canSend || isSending || draft.trim() ? 1 : 0.82 }}
     >
       <div className="rounded-lg border border-border bg-bg transition-colors duration-150 focus-within:border-border2">
         <textarea
-          className="max-h-40 min-h-[55px] w-full resize-none border-0 bg-transparent font-body text-[16.5px] leading-[1.65] text-t1 outline-none placeholder:text-t4"
-          style={{ padding: "13px 16px 8px" }}
+          className="max-h-40 min-h-[55px] w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[16.5px] leading-[1.65] text-t1 outline-none placeholder:text-t4"
           placeholder={t("placeholder")}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
@@ -117,7 +116,7 @@ export function InputArea() {
           rows={2}
         />
 
-        <div className="relative flex items-center gap-[7px]" style={{ padding: "6px 135px 9px 12px" }}>
+        <div className="relative flex items-center gap-[7px] pt-1.5 pb-[9px] pl-3 pr-[135px]">
           <div className="speaker-row multi-persona" title={t("multi_persona_tooltip")}>
             <span className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.06em] text-t3">{t("speak_as")}</span>
           </div>
@@ -136,18 +135,17 @@ export function InputArea() {
             </span>
             {tokenPopOpen && (
               <div
-                className="absolute bottom-[calc(100%+8px)] left-1/2 z-[220] w-[220px] -translate-x-1/2 rounded-lg border border-border2 bg-surface shadow-[0_12px_28px_rgba(0,0,0,0.45)]"
-                style={{ padding: "10px 14px" }}
+                className="absolute bottom-[calc(100%+8px)] left-1/2 z-[220] w-[220px] -translate-x-1/2 rounded-lg border border-border2 bg-surface px-3.5 py-2.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)]"
               >
-                <div className="mb-1.5 border-b border-border text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ paddingBottom: "6px" }}>{t("context_breakdown")}</div>
-                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_system")}</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.system.toLocaleString()}</span></div>
-                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_character")}</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.character.toLocaleString()}</span></div>
-                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_persona")}</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.persona.toLocaleString()}</span></div>
-                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_summary")}</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.summary.toLocaleString()}</span></div>
-                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_history")}</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.history.toLocaleString()}</span></div>
-                <div className="mb-1.5 flex justify-between text-xs text-t2"><span>{t("context_current_input")}</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{inputTokens.toLocaleString()}</span></div>
-                <div className="mb-1 flex justify-between border-t border-border text-xs text-t2" style={{ paddingTop: "6px" }}><span>{t("context_response_budget")}</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>-{maxTokens.toLocaleString()}</span></div>
-                <div className="mt-0.5 flex justify-between text-xs font-medium text-t1"><span>{t("context_total_available")}</span><span style={{ fontVariantNumeric: "tabular-nums" }}>{availableBudget.toLocaleString()}</span></div>
+                <div className="mb-1.5 border-b border-border pb-1.5 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("context_breakdown")}</div>
+                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_system")}</span><span className="tabular-nums text-t1">{buckets.system.toLocaleString()}</span></div>
+                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_character")}</span><span className="tabular-nums text-t1">{buckets.character.toLocaleString()}</span></div>
+                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_persona")}</span><span className="tabular-nums text-t1">{buckets.persona.toLocaleString()}</span></div>
+                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_summary")}</span><span className="tabular-nums text-t1">{buckets.summary.toLocaleString()}</span></div>
+                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_history")}</span><span className="tabular-nums text-t1">{buckets.history.toLocaleString()}</span></div>
+                <div className="mb-1.5 flex justify-between text-xs text-t2"><span>{t("context_current_input")}</span><span className="tabular-nums text-t1">{inputTokens.toLocaleString()}</span></div>
+                <div className="mb-1 flex justify-between border-t border-border pt-1.5 text-xs text-t2"><span>{t("context_response_budget")}</span><span className="tabular-nums text-t1">-{maxTokens.toLocaleString()}</span></div>
+                <div className="mt-0.5 flex justify-between text-xs font-medium text-t1"><span>{t("context_total_available")}</span><span className="tabular-nums">{availableBudget.toLocaleString()}</span></div>
               </div>
             )}
           </div>
@@ -192,16 +190,14 @@ export function InputArea() {
             )}
             {isSending ? (
               <button
-                className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
-                style={{ padding: "0 14px" }}
+                className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface px-3.5 font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
                 onClick={app.handleCancelGeneration}
               >
                 {t("cancel")}
               </button>
             ) : (
               <button
-                className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[5px] bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all duration-150 hover:brightness-110 disabled:cursor-default disabled:opacity-45 disabled:filter-none"
-                style={{ padding: "0 16px", background: "var(--accent)", color: "var(--on-accent)", borderRadius: 5 }}
+                className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[5px] bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all duration-150 hover:brightness-110 disabled:cursor-default disabled:opacity-45 disabled:filter-none"
                 disabled={!canSend}
                 onClick={() => void app.handleSend()}
                 aria-label={sendLabel}

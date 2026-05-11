@@ -356,10 +356,10 @@ export function ProviderModal({
         />
       )}
 
-      <div className="flex max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]" style={{ width: 860, height: 680 }}>
+      <div className="flex max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[680px] w-[860px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">
 
         {/* ═══ HEADER ═══ */}
-        <div className="shrink-0 border-b border-border" style={{ padding: "20px 24px 16px" }}>
+        <div className="shrink-0 border-b border-border px-6 pt-5 pb-4">
           <div className="flex items-start justify-between">
             <div>
               <div className="mb-1 flex items-center gap-2 font-body text-[18px] font-semibold text-t1">
@@ -379,7 +379,7 @@ export function ProviderModal({
             onProfileSearchChange={setProfileSearch} onSelectProfile={handleSelect} onAddProfile={handleAdd}
           />
 
-          <div className="flex-1 overflow-y-auto" style={{ padding: 24 }}>
+          <div className="flex-1 overflow-y-auto p-6">
             {!form ? (
               <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
                 {t("provider_select_profile")}
@@ -450,7 +450,7 @@ export function ProviderModal({
         </div>
 
         {/* ═══ FOOTER ═══ */}
-        <div className="flex shrink-0 items-center justify-between border-t border-border" style={{ padding: "16px 24px" }}>
+        <div className="flex shrink-0 items-center justify-between border-t border-border px-6 py-4">
           <div className="flex gap-4">
             <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>
               <Icons.Copy /> {t("duplicate")}

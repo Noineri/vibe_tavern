@@ -69,7 +69,7 @@ export function AppShell() {
 
   if (!snapshot) {
     shellSurface = (
-      <div style={{ alignItems: "center", display: "flex", flex: 1, justifyContent: "center" }}>
+      <div className="flex flex-1 items-center justify-center">
         <div className="scene-note">{app.isFirstRun ? "" : t("select_character_start_chat")}</div>
       </div>
     );

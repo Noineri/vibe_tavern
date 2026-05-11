@@ -143,7 +143,7 @@ export function PersonaModal(input: PersonaModalProps) {
           body={
             <>
               {t("delete_persona_body").replace("{name}", input.personas.find((p) => p.id === deleteConfirm.id)?.name ?? "Untitled")}
-              {deleteConfirm.error && <div style={{ marginTop: 8, color: "oklch(0.6 0.15 25)" }}>{deleteConfirm.error}</div>}
+              {deleteConfirm.error && <div className="mt-2 text-[oklch(0.6_0.15_25)]">{deleteConfirm.error}</div>}
             </>
           }
           confirmLabel={t("delete")}
@@ -167,7 +167,7 @@ export function PersonaModal(input: PersonaModalProps) {
         onClick={(event) => event.stopPropagation()}
       >
         {/* Header */}
-        <div className="shrink-0" style={{ padding: "18px 20px 0" }}>
+        <div className="shrink-0 px-5 pt-[18px]">
           <div className="flex items-start justify-between">
             <div>
               <div className="font-body mb-0.5 text-[calc(var(--ui-fs)+4px)] font-medium text-t1">{t("persona_manager_title")}</div>
@@ -180,7 +180,7 @@ export function PersonaModal(input: PersonaModalProps) {
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
+        <div className="flex-1 overflow-y-auto p-5">
           <div className="mb-4 flex flex-col gap-2">
             {input.personas.length === 0 && (
               <EmptyState
@@ -298,8 +298,7 @@ export function PersonaModal(input: PersonaModalProps) {
                         </div>
                       </div>
                       <textarea
-                        className="mb-1 w-full min-h-[60px] rounded border border-border bg-s2 py-2 px-2.5 font-ui text-xs text-t1 outline-none transition-colors focus:border-accent"
-                        style={{ resize: "vertical" }}
+                        className="mb-1 w-full min-h-[60px] resize-y rounded border border-border bg-s2 py-2 px-2.5 font-ui text-xs text-t1 outline-none transition-colors focus:border-accent"
                         {...form.register("description")}
                         placeholder={t("persona_desc_placeholder")}
                       />
@@ -352,10 +351,9 @@ export function PersonaModal(input: PersonaModalProps) {
                             <Icons.Edit /> {t("persona_edit")}
                           </div>
                           <div
-                            className="mt-2 flex cursor-pointer items-center gap-1 rounded py-[3px] px-[7px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:bg-s2 hover:text-t2"
+                            className="mt-2 flex cursor-not-allowed items-center gap-1 rounded py-[3px] px-[7px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 opacity-45 transition-all hover:bg-s2 hover:text-t2"
                             role="button"
                             tabIndex={0}
-                            style={{ opacity: 0.45, cursor: "not-allowed" }}
                             title={t("duplicate_not_implemented")}
                             onClick={(e) => e.stopPropagation()}
                           >
@@ -401,13 +399,13 @@ export function PersonaModal(input: PersonaModalProps) {
               <Icons.Plus /> <span className="ml-1">{t("create_new_persona")}</span>
             </div>
             {deleteConfirm && deleteConfirm.error && (
-              <div className="font-ui text-[calc(var(--ui-fs)-3px)] mt-1" style={{ color: "oklch(0.6 0.15 25)" }}>{deleteConfirm.error}</div>
+              <div className="font-ui text-[calc(var(--ui-fs)-3px)] mt-1 text-[oklch(0.6_0.15_25)]">{deleteConfirm.error}</div>
             )}
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex shrink-0 items-center gap-2.5 border-t border-border" style={{ padding: "14px 20px" }}>
+        <div className="flex shrink-0 items-center gap-2.5 border-t border-border px-5 py-[14px]">
           <button className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={onClose}>
             {t("close")}
           </button>

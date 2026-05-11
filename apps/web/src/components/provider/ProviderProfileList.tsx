@@ -27,19 +27,16 @@ export function ProviderProfileList({
   const { t } = useT();
   return (
     <div
-      className="flex shrink-0 flex-col border-r border-border bg-surface"
-      style={{ width: 220, padding: '20px 0 10px' }}
+      className="flex w-[220px] shrink-0 flex-col border-r border-border bg-surface pt-5 pb-2.5"
     >
       <div
-        className="font-ui text-[12px] font-medium uppercase tracking-[0.05em] text-t3"
-        style={{ padding: '0 16px', marginBottom: 6 }}
+        className="mb-1.5 px-4 font-ui text-[12px] font-medium uppercase tracking-[0.05em] text-t3"
       >
         Profiles
       </div>
 
       <div
-        className="flex items-center gap-2 rounded-md border border-border bg-s2"
-        style={{ padding: '6px 10px', margin: '0 12px 12px' }}
+        className="mx-3 mb-3 flex items-center gap-2 rounded-md border border-border bg-s2 px-2.5 py-1.5"
       >
         <Icons.Search />
         <input
@@ -55,12 +52,11 @@ export function ProviderProfileList({
           <div
             key={p.id}
             className={cn(
-              'cursor-pointer overflow-hidden whitespace-nowrap border-l-[3px] text-ellipsis transition-colors hover:bg-s2',
+              'cursor-pointer overflow-hidden whitespace-nowrap border-l-[3px] text-ellipsis px-4 py-2.5 transition-colors hover:bg-s2',
               editingId === p.id
                 ? 'border-l-accent bg-accent-dim text-accent-t'
                 : 'border-l-transparent text-t2'
             )}
-            style={{ padding: '10px 16px' }}
             onClick={() => onSelectProfile(p.id)}
           >
             <div className="flex items-center gap-3">
@@ -93,8 +89,7 @@ export function ProviderProfileList({
         ))}
       </div>
       <div
-        className="cursor-pointer rounded-md border border-dashed border-border2 text-center font-ui text-[12px] font-medium text-t3 transition-colors hover:border-border hover:text-t1 hover:bg-s2"
-        style={{ margin: '12px 12px 0', padding: '8px 0' }}
+        className="mx-3 mt-3 cursor-pointer rounded-md border border-dashed border-border2 py-2 text-center font-ui text-[12px] font-medium text-t3 transition-colors hover:border-border hover:text-t1 hover:bg-s2"
         onClick={() => void onAddProfile()}
       >
         {t("new_profile_btn")}
