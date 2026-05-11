@@ -17,6 +17,9 @@ export default defineConfig({
       ),
       "@rp-platform/prompt-pipeline": fileURLToPath(
         new URL("../../packages/prompt-pipeline/src/index.ts", import.meta.url),
+      ),
+      "@rp-platform/api-contracts": fileURLToPath(
+        new URL("../../packages/api-contracts/src/index.ts", import.meta.url),
       )
     }
   },

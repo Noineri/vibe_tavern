@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useT } from "../i18n/context.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../app-client.js";
 import type { ProviderProbeResponse } from "@rp-platform/domain";
+import { saveProviderDraftSchema } from "@rp-platform/api-contracts";
 import { PROVIDER_PRESETS } from "../provider-presets.js";
 import { Icons } from "./shared/icons.js";
 import {
@@ -12,7 +13,6 @@ import {
   ProviderCapabilityPanel,
   ProviderSamplerPanel,
 } from "./provider/index.js";
-import { useDirtyState } from "./shared/use-dirty-state.js";
 import { ConfirmCloseModal } from "./shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { useNavigationStore } from "../stores/navigation-store.js";
@@ -82,6 +82,31 @@ function profileToForm(p: ProviderProfileRecord): FormState {
   };
 }
 
+function toProviderDraft(form: FormState) {
+  return {
+    id: form.id,
+    name: form.name,
+    type: form.type,
+    endpoint: form.baseUrl,
+    apiKey: form.apiKey || null,
+    defaultModel: form.model || null,
+    contextBudget: form.contextBudget || null,
+    temperature: form.temperature,
+    topP: form.topP,
+    minP: form.minP,
+    topK: form.topK,
+    typicalP: form.typicalP,
+    repPen: form.repPen,
+    freqPen: form.freqPen,
+    presPen: form.presPen,
+    maxTokens: form.maxTokens,
+    stopSeq: form.stopSeq,
+    seed: form.seed,
+    reasoningEffort: form.reasoningEffort,
+    streamResponse: form.streamResponse,
+  };
+}
+
 interface Capabilities {
   nonStreamGeneration: boolean;
   abortSignal: boolean;
@@ -129,7 +154,7 @@ export function ProviderModal({
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [profileSearch, setProfileSearch] = useState("");
-  const { dirty, saveState, markDirty, triggerSave, reset } = useDirtyState();
+  const [dirty, setDirty] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // ── Header mode: edit vs view ──
@@ -154,7 +179,7 @@ export function ProviderModal({
       const p = providerProfiles.find((pr) => pr.id === target);
       if (p) { setEditingId(p.id); setForm(profileToForm(p)); void loadCached(p.id); }
     }
-    setTestOk(null); setHeaderMode("view"); setIsNew(false); reset();
+    setTestOk(null); setHeaderMode("view"); setIsNew(false); setDirty(false);
   }, [isOpen]);
 
   useEffect(() => {
@@ -166,7 +191,7 @@ export function ProviderModal({
   if (!isOpen) return null;
 
   // ── Form helpers ──
-  const updateForm = <K extends keyof FormState>(k: K, v: FormState[K]) => { setForm((f) => f ? { ...f, [k]: v } : f); markDirty(); };
+  const updateForm = <K extends keyof FormState>(k: K, v: FormState[K]) => { setForm((f) => f ? { ...f, [k]: v } : f); setDirty(true); };
 
   const applyPreset = (presetId: string) => {
     const fmt = PROVIDER_PRESETS.find((f) => f.id === presetId);
@@ -184,7 +209,7 @@ export function ProviderModal({
         ...(typeChanged ? { apiKey: '', hasStoredApiKey: false } : {}),
       };
     });
-    markDirty();
+    setDirty(true);
   };
 
   // Auto-save: persists a single field immediately (samplers, toggles, model).
@@ -192,8 +217,11 @@ export function ProviderModal({
     setForm((f) => {
       if (!f) return f;
       const next = { ...f, [k]: v };
-      // Fire-and-forget save to backend
-      void onSaveProfile(next);
+      const parsed = saveProviderDraftSchema.safeParse(toProviderDraft(next));
+      if (parsed.success) {
+        // Fire-and-forget save to backend
+        void onSaveProfile(next);
+      }
       return next;
     });
     setAutoSaveFlash(true);
@@ -204,20 +232,20 @@ export function ProviderModal({
   // ── Profile selection ──
   const handleSelect = (id: string) => {
     const p = providerProfiles.find((pr) => pr.id === id);
-    if (p) { setEditingId(p.id); setForm(profileToForm(p)); setTestOk(null); setModels([]); void loadCached(p.id); setHeaderMode("view"); setIsNew(false); reset(); }
+    if (p) { setEditingId(p.id); setForm(profileToForm(p)); setTestOk(null); setModels([]); void loadCached(p.id); setHeaderMode("view"); setIsNew(false); setDirty(false); }
   };
 
   // ── Add new profile ──
   const handleAdd = async () => {
     const c = await onCreateProfile();
-    if (c) { setEditingId(c.id); setForm(profileToForm(c)); setModels([]); setTestOk(null); setIsNew(true); setHeaderMode("edit"); reset(); }
+    if (c) { setEditingId(c.id); setForm(profileToForm(c)); setModels([]); setTestOk(null); setIsNew(true); setHeaderMode("edit"); setDirty(false); }
   };
 
   // ── Duplicate ──
   const handleDuplicate = async () => {
     if (!editingId) return;
     const d = await onDuplicateProfile(editingId);
-    if (d) { setEditingId(d.id); setForm(profileToForm(d)); setModels([]); setTestOk(null); setIsNew(true); setHeaderMode("edit"); reset(); }
+    if (d) { setEditingId(d.id); setForm(profileToForm(d)); setModels([]); setTestOk(null); setIsNew(true); setHeaderMode("edit"); setDirty(false); }
   };
 
   // ── Delete ──
@@ -228,22 +256,24 @@ export function ProviderModal({
     await onDeleteProfile(editingId);
     const next = providerProfiles.find((p) => p.id !== editingId);
     if (next) { setEditingId(next.id); setForm(profileToForm(next)); }
-    setConfirmDelete(false); setHeaderMode("view"); setIsNew(false); reset();
+    setConfirmDelete(false); setHeaderMode("view"); setIsNew(false); setDirty(false);
   };
 
   // ── Save header (connection settings) ──
   const handleSaveHeader = async () => {
     if (!form) return;
+    const parsed = saveProviderDraftSchema.safeParse(toProviderDraft(form));
+    if (!parsed.success) return;
     const saved = await onSaveProfile(form);
     if (saved) setForm(profileToForm(saved));
-    setHeaderMode("view"); setIsNew(false); reset();
+    setHeaderMode("view"); setIsNew(false); setDirty(false);
   };
 
   // ── Cancel editing (back to view) ──
   const handleCancelEdit = () => {
     const saved = providerProfiles.find((p) => p.id === editingId);
     if (saved) setForm(profileToForm(saved));
-    setHeaderMode("view"); reset();
+    setHeaderMode("view"); setDirty(false);
   };
 
   // ── Set active (no save needed) ──
@@ -315,7 +345,7 @@ export function ProviderModal({
 
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={(e) => e.target === e.currentTarget && handleClose()}>
-      {confirmClose && <ConfirmCloseModal onCancel={() => setConfirmClose(false)} onConfirm={() => { reset(); onClose(); }} />}
+      {confirmClose && <ConfirmCloseModal onCancel={() => setConfirmClose(false)} onConfirm={() => { setDirty(false); onClose(); }} />}
       {confirmDelete && (
         <DestructiveConfirmModal
           title={t("delete_provider_title")}

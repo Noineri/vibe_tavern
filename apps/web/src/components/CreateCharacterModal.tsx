@@ -1,28 +1,33 @@
 import { useRef, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { Ic } from './shared/icons';
 import { cn } from '../lib/cn';
 import { useT } from '../i18n/context.js';
 
-interface CreateCharacterForm {
-  name: string;
-  description: string;
-  firstMessage: string;
-  mesExample: string;
-  defaultScenario: string;
-  personalitySummary: string;
-  alternateGreetings: string[];
-  postHistoryInstructions: string;
-  creatorNotes: string;
-  systemPrompt: string;
-  characterBook: string;
-  depthPrompt: string;
-  depthPromptDepth: number;
-  depthPromptRole: string;
-  extensions: string;
-  tags: string[];
-  avatarFile: File | null;
-  avatarPreview: string | null;
-}
+const createCharacterFormSchema = z.object({
+  name: z.string().min(1),
+  description: z.string(),
+  firstMessage: z.string(),
+  mesExample: z.string(),
+  defaultScenario: z.string(),
+  personalitySummary: z.string(),
+  alternateGreetings: z.array(z.string()),
+  postHistoryInstructions: z.string(),
+  creatorNotes: z.string(),
+  systemPrompt: z.string(),
+  characterBook: z.string(),
+  depthPrompt: z.string(),
+  depthPromptDepth: z.number(),
+  depthPromptRole: z.string(),
+  extensions: z.string(),
+  tags: z.array(z.string()),
+  avatarFile: z.unknown().nullable().optional(),
+  avatarPreview: z.string().nullable().optional(),
+});
+
+type CreateCharacterFormData = z.infer<typeof createCharacterFormSchema>;
 
 interface CreateCharacterModalProps {
   onClose: () => void;
@@ -37,38 +42,63 @@ interface CreateCharacterModalProps {
 
 export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalProps) {
   const { t } = useT();
-  const [form, setForm] = useState<CreateCharacterForm>({
-    name: '',
-    description: '',
-    personalitySummary: '',
-    mesExample: '',
-    defaultScenario: '',
-    firstMessage: '',
-    alternateGreetings: [],
-    postHistoryInstructions: '',
-    creatorNotes: '',
-    systemPrompt: '',
-    tags: [],
-    avatarFile: null,
-    avatarPreview: null,
-    characterBook: '',
-    depthPrompt: '',
-    depthPromptDepth: 4,
-    depthPromptRole: 'system',
-    extensions: '',
+  const form = useForm<CreateCharacterFormData>({
+    resolver: zodResolver(createCharacterFormSchema),
+    defaultValues: {
+      name: '',
+      description: '',
+      personalitySummary: '',
+      mesExample: '',
+      defaultScenario: '',
+      firstMessage: '',
+      alternateGreetings: [],
+      postHistoryInstructions: '',
+      creatorNotes: '',
+      systemPrompt: '',
+      tags: [],
+      avatarFile: null,
+      avatarPreview: null,
+      characterBook: '',
+      depthPrompt: '',
+      depthPromptDepth: 4,
+      depthPromptRole: 'system',
+      extensions: '',
+    },
   });
 
-  const [busy, setBusy] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const { register, formState: { errors, isSubmitting, isDirty }, watch, setValue, handleSubmit } = form;
+  const busy = isSubmitting;
+  const dirty = isDirty;
+
   const [altGreetIdx, setAltGreetIdx] = useState(0);
   const [tagInput, setTagInput] = useState('');
   const avaInputRef = useRef<HTMLInputElement>(null);
 
-  const canSave = form.name.trim().length > 0 && !busy;
+  const name = watch('name');
+  const description = watch('description');
+  const firstMessage = watch('firstMessage');
+  const mesExample = watch('mesExample');
+  const defaultScenario = watch('defaultScenario');
+  const personalitySummary = watch('personalitySummary');
+  const alternateGreetings = watch('alternateGreetings') || [];
+  const postHistoryInstructions = watch('postHistoryInstructions');
+  const creatorNotes = watch('creatorNotes');
+  const systemPrompt = watch('systemPrompt');
+  const characterBook = watch('characterBook');
+  const depthPrompt = watch('depthPrompt');
+  const depthPromptDepth = watch('depthPromptDepth');
+  const depthPromptRole = watch('depthPromptRole');
+  const extensions = watch('extensions');
+  const tags = watch('tags') || [];
+  const avatarPreview = watch('avatarPreview') as string | null;
+  const avatarFile = watch('avatarFile') as File | null;
 
-  function patchForm(patch: Partial<CreateCharacterForm>) {
-    setForm(prev => ({ ...prev, ...patch }));
-    setDirty(true);
+  const canSave = (name || '').trim().length > 0 && !busy;
+
+  function patchForm(patch: Partial<CreateCharacterFormData>) {
+    for (const [key, value] of Object.entries(patch)) {
+      setValue(key as keyof CreateCharacterFormData, value, { shouldDirty: true });
+    }
   }
 
   function handleAvatarPick(files: FileList | null) {
@@ -80,15 +110,15 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
     });
   }
 
-  function removeTag(t: string) {
-    patchForm({ tags: form.tags.filter(tag => tag !== t) });
+  function removeTag(tag: string) {
+    patchForm({ tags: tags.filter((t: string) => t !== tag) });
   }
 
   function handleTagKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter' && tagInput.trim()) {
       e.preventDefault();
-      if (!form.tags.includes(tagInput.trim())) {
-        patchForm({ tags: [...form.tags, tagInput.trim()] });
+      if (!tags.includes(tagInput.trim())) {
+        patchForm({ tags: [...tags, tagInput.trim()] });
       }
       setTagInput('');
     }
@@ -96,21 +126,16 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
 
   async function handleSave() {
     if (!canSave) return;
-    setBusy(true);
-    try {
-      await onSave(
-        {
-          name: form.name.trim(),
-          description: form.description.trim() || undefined,
-          firstMessage: form.firstMessage.trim() || undefined,
-          scenario: form.defaultScenario.trim() || undefined,
-          personalitySummary: form.personalitySummary.trim() || undefined,
-        },
-        form.avatarFile,
-      );
-    } finally {
-      setBusy(false);
-    }
+    await onSave(
+      {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        firstMessage: firstMessage.trim() || undefined,
+        scenario: defaultScenario.trim() || undefined,
+        personalitySummary: personalitySummary.trim() || undefined,
+      },
+      avatarFile,
+    );
   }
 
   return (
@@ -147,9 +172,9 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                 accept="image/*"
                 onChange={e => handleAvatarPick(e.target.files)}
               />
-              {form.avatarPreview ? (
+              {avatarPreview ? (
                 <>
-                  <img src={form.avatarPreview} alt="" className="h-full w-full object-cover" />
+                  <img src={avatarPreview} alt="" className="h-full w-full object-cover" />
                   <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100">{Ic.edit()}</div>
                 </>
               ) : (
@@ -162,10 +187,12 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                 type="text"
                 className="w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
                 style={{padding:'6px 10px'}}
-                value={form.name}
-                onChange={e => patchForm({ name: e.target.value })}
+                {...register('name')}
                 autoFocus
               />
+              {errors.name && (
+                <div className="text-[11px] text-red-400 mt-0.5">{errors.name.message}</div>
+              )}
             </div>
           </div>
 
@@ -175,8 +202,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <textarea
               className="w-full min-h-[100px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
               style={{padding:'6px 10px'}}
-              value={form.description}
-              onChange={e => patchForm({ description: e.target.value })}
+              {...register('description')}
             />
           </div>
 
@@ -186,9 +212,8 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <textarea
               className="w-full min-h-[120px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
               style={{padding:'6px 10px'}}
-              value={form.firstMessage}
-              onChange={e => patchForm({ firstMessage: e.target.value })}
               placeholder={t("first_message_placeholder")}
+              {...register('firstMessage')}
             />
           </div>
 
@@ -196,7 +221,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           <div style={{marginBottom:20}}>
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("alternate_greetings")}</label>
             <div className="flex flex-wrap gap-1" style={{marginBottom:8}}>
-              {form.alternateGreetings.map((_, idx) => (
+              {alternateGreetings.map((_: string, idx: number) => (
                 <span
                   key={idx}
                   className={cn(
@@ -208,9 +233,9 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                   Alt {idx + 1}
                   <span className="ml-0.5 cursor-pointer text-[10px]" onClick={e => {
                     e.stopPropagation();
-                    const next = [...form.alternateGreetings];
+                    const next = [...alternateGreetings];
                     next.splice(idx, 1);
-                    patchForm({ alternateGreetings: next });
+                    setValue('alternateGreetings', next, { shouldDirty: true });
                     if (altGreetIdx >= next.length) setAltGreetIdx(Math.max(0, next.length - 1));
                   }}>✕</span>
                 </span>
@@ -218,21 +243,21 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               <span
                 className="inline-flex items-center justify-center rounded border border-dashed border-border bg-transparent px-2.5 py-0.5 font-ui text-xs text-t3 cursor-pointer"
                 onClick={() => {
-                  const next = [...form.alternateGreetings, ''];
-                  patchForm({ alternateGreetings: next });
+                  const next = [...alternateGreetings, ''];
+                  setValue('alternateGreetings', next, { shouldDirty: true });
                   setAltGreetIdx(next.length - 1);
                 }}
               >+</span>
             </div>
-            {form.alternateGreetings.length > 0 && (
+            {alternateGreetings.length > 0 && (
               <textarea
                 className="w-full min-h-[120px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
                 style={{padding:'6px 10px'}}
-                value={form.alternateGreetings[altGreetIdx] || ''}
+                value={alternateGreetings[altGreetIdx] || ''}
                 onChange={e => {
-                  const next = [...form.alternateGreetings];
+                  const next = [...alternateGreetings];
                   next[altGreetIdx] = e.target.value;
-                  patchForm({ alternateGreetings: next });
+                  setValue('alternateGreetings', next, { shouldDirty: true });
                 }}
                 placeholder={t("alternate_greeting_placeholder")}
               />
@@ -245,8 +270,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <textarea
               className="w-full min-h-[120px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
               style={{padding:'6px 10px'}}
-              value={form.mesExample}
-              onChange={e => patchForm({ mesExample: e.target.value })}
+              {...register('mesExample')}
               placeholder={t("dialog_examples_placeholder")}
             />
           </div>
@@ -257,8 +281,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <textarea
               className="w-full min-h-[100px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
               style={{padding:'6px 10px'}}
-              value={form.defaultScenario}
-              onChange={e => patchForm({ defaultScenario: e.target.value })}
+              {...register('defaultScenario')}
             />
           </div>
 
@@ -268,8 +291,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <textarea
               className="w-full min-h-[60px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
               style={{padding:'6px 10px'}}
-              value={form.personalitySummary}
-              onChange={e => patchForm({ personalitySummary: e.target.value })}
+              {...register('personalitySummary')}
             />
           </div>
 
@@ -282,8 +304,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <textarea
               className="w-full min-h-[60px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
               style={{padding:'6px 10px'}}
-              value={form.postHistoryInstructions}
-              onChange={e => patchForm({ postHistoryInstructions: e.target.value })}
+              {...register('postHistoryInstructions')}
               placeholder={t("post_history_placeholder")}
             />
           </div>
@@ -294,8 +315,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <textarea
               className="w-full min-h-[60px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
               style={{padding:'6px 10px'}}
-              value={form.creatorNotes}
-              onChange={e => patchForm({ creatorNotes: e.target.value })}
+              {...register('creatorNotes')}
               placeholder={t("creator_notes_placeholder")}
             />
           </div>
@@ -306,8 +326,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <textarea
               className="w-full min-h-[80px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
               style={{padding:'6px 10px'}}
-              value={form.characterBook}
-              onChange={e => patchForm({ characterBook: e.target.value })}
+              {...register('characterBook')}
               placeholder='{"entries":[...]}'
             />
           </div>
@@ -319,8 +338,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               <textarea
                 className="w-full min-h-[60px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
                 style={{padding:'6px 10px'}}
-                value={form.depthPrompt}
-                onChange={e => patchForm({ depthPrompt: e.target.value })}
+                {...register('depthPrompt')}
                 placeholder={t("depth_prompt_placeholder")}
               />
             </div>
@@ -332,8 +350,8 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                 style={{padding:'6px 10px'}}
                 min={0}
                 max={999}
-                value={form.depthPromptDepth}
-                onChange={e => patchForm({ depthPromptDepth: Number(e.target.value) })}
+                value={depthPromptDepth}
+                onChange={e => setValue('depthPromptDepth', Number(e.target.value), { shouldDirty: true })}
               />
             </div>
             <div style={{marginBottom:20}} className="w-[110px] shrink-0">
@@ -341,8 +359,8 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               <select
                 className="w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
                 style={{padding:'6px 10px'}}
-                value={form.depthPromptRole}
-                onChange={e => patchForm({ depthPromptRole: e.target.value })}
+                value={depthPromptRole}
+                onChange={e => setValue('depthPromptRole', e.target.value, { shouldDirty: true })}
               >
                 <option value="system">system</option>
                 <option value="user">user</option>
@@ -357,8 +375,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <textarea
               className="w-full min-h-[60px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
               style={{padding:'6px 10px'}}
-              value={form.extensions}
-              onChange={e => patchForm({ extensions: e.target.value })}
+              {...register('extensions')}
               placeholder='{"talkativeness":"0.5",...}'
             />
           </div>
@@ -369,8 +386,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <textarea
               className="w-full min-h-[80px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
               style={{padding:'6px 10px'}}
-              value={form.systemPrompt}
-              onChange={e => patchForm({ systemPrompt: e.target.value })}
+              {...register('systemPrompt')}
               placeholder={t("system_prompt_override_placeholder")}
             />
           </div>
@@ -388,7 +404,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               placeholder={t("tags_enter")}
             />
             <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {form.tags.map(tag => (
+              {tags.map((tag: string) => (
                 <span
                   key={tag}
                   className="cursor-pointer rounded bg-accent-dim px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1"
