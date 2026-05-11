@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft } from "@rp-platform/api-contracts";
 import { Ic } from "../shared/icons";
@@ -46,9 +46,63 @@ function parseCardToDraft(raw: unknown): Partial<BuildCharacterDraft> {
 /* ── shared style constants for padding (Tailwind v4 numeric spacing bugs) ── */
 const inputPad = { padding: "6px 10px" } as React.CSSProperties;
 
-const inputCls = "w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent";
-const textareaCls = inputCls;
+const inputCls = "w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent resize-none overflow-hidden";
 const monoCls = inputCls + " font-mono text-xs";
+
+/** Auto-resize textarea to fit content */
+function resizeTextarea(el: HTMLTextAreaElement, allowShrink: boolean): void {
+  if (allowShrink) el.style.height = "auto";
+  const min = parseFloat(getComputedStyle(el).minHeight) || 0;
+  const next = Math.max(el.scrollHeight, min);
+  if (allowShrink || next > el.getBoundingClientRect().height) {
+    el.style.height = `${next}px`;
+  }
+}
+
+/** Shared auto-resize textarea that works with react-hook-form register() */
+function AutoTextarea({
+  className,
+  style,
+  disabled,
+  placeholder,
+  register,
+  value,
+  onChange,
+}: {
+  className: string;
+  style: React.CSSProperties;
+  disabled: boolean;
+  placeholder?: string;
+  register?: ReturnType<UseFormReturn<BuildCharacterDraft>["register"]>;
+  value?: string;
+  onChange?: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    resizeTextarea(el, true);
+  });
+
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    resizeTextarea(e.currentTarget, false);
+    register?.onChange?.(e);
+    onChange?.(e);
+  }, [register, onChange]);
+
+  return (
+    <textarea
+      {...(register ? { ...register, onChange: handleChange, ref: (el) => { register.ref(el); ref.current = el; } } : {})}
+      className={className}
+      style={style}
+      disabled={disabled}
+      placeholder={placeholder}
+      value={value}
+      onChange={value !== undefined ? (e) => { onChange?.(e); resizeTextarea(e.currentTarget, false); } : undefined}
+    />
+  );
+}
 
 /** Small inline token badge for character form fields */
 function TokenBadge({ text }: { text: string }) {
@@ -213,14 +267,14 @@ export function CharacterForm({
       {/* Description */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("char_desc_label")}</label>
-        <textarea className={textareaCls} style={{ ...inputPad, minHeight: 100 }} disabled={isSaving} {...register("description")} />
+        <AutoTextarea className={inputCls} style={{ ...inputPad, minHeight: 100 }} disabled={isSaving} register={register("description")} />
         <TokenBadge text={description || ""} />
       </div>
 
       {/* First Message */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("first_message_greeting")}</label>
-        <textarea className={textareaCls} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} placeholder={t("first_message_placeholder")} {...register("firstMessage")} />
+        <AutoTextarea className={inputCls} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} placeholder={t("first_message_placeholder")} register={register("firstMessage")} />
         <TokenBadge text={firstMessage || ""} />
       </div>
 
@@ -256,7 +310,7 @@ export function CharacterForm({
           >+</span>
         </div>
         {alternateGreetings.length > 0 && (
-          <textarea className={textareaCls} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
+          <AutoTextarea className={inputCls} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
             const next = [...alternateGreetings]; next[altGreetIdx] = e.target.value;
             setValue("alternateGreetings", next, { shouldDirty: true });
           }} placeholder={t("alternate_greeting_placeholder")} />
@@ -266,21 +320,21 @@ export function CharacterForm({
       {/* Message Examples */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("dialog_examples")}</label>
-        <textarea className={monoCls} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} placeholder="<START>..." {...register("mesExample")} />
+        <AutoTextarea className={monoCls} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} placeholder="<START>..." register={register("mesExample")} />
         <TokenBadge text={mesExample || ""} />
       </div>
 
       {/* Scenario */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("scenario")}</label>
-        <textarea className={textareaCls} style={{ ...inputPad, minHeight: 100 }} disabled={isSaving} {...register("scenario")} />
+        <AutoTextarea className={inputCls} style={{ ...inputPad, minHeight: 100 }} disabled={isSaving} register={register("scenario")} />
         <TokenBadge text={scenario || ""} />
       </div>
 
       {/* Personality Summary */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("char_personality_label")}</label>
-        <textarea className={textareaCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} {...register("personalitySummary")} />
+        <AutoTextarea className={inputCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} register={register("personalitySummary")} />
         <TokenBadge text={personalitySummary || ""} />
       </div>
 
@@ -292,14 +346,14 @@ export function CharacterForm({
       {/* Post-History Instructions */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("post_history_instructions")}</label>
-        <textarea className={monoCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("post_history_placeholder")} {...register("postHistoryInstructions")} />
+        <AutoTextarea className={monoCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("post_history_placeholder")} register={register("postHistoryInstructions")} />
         <TokenBadge text={postHistoryInstructions || ""} />
       </div>
 
       {/* Creator Notes */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("creator_notes")}</label>
-        <textarea className={textareaCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("creator_notes_placeholder")} {...register("creatorNotes")} />
+        <AutoTextarea className={inputCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("creator_notes_placeholder")} register={register("creatorNotes")} />
         <TokenBadge text={creatorNotes || ""} />
       </div>
 
@@ -322,14 +376,14 @@ export function CharacterForm({
             </div>
           </div>
         </div>
-        <textarea className={monoCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("depth_prompt_placeholder")} {...register("depthPrompt")} />
+        <AutoTextarea className={monoCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("depth_prompt_placeholder")} register={register("depthPrompt")} />
         <TokenBadge text={depthPrompt || ""} />
       </div>
 
       {/* System Prompt Override */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("system_prompt_override")}</label>
-        <textarea className={monoCls} style={{ ...inputPad, minHeight: 80 }} disabled={isSaving} placeholder={t("system_prompt_override_placeholder")} {...register("systemPrompt")} />
+        <AutoTextarea className={monoCls} style={{ ...inputPad, minHeight: 80 }} disabled={isSaving} placeholder={t("system_prompt_override_placeholder")} register={register("systemPrompt")} />
         <TokenBadge text={systemPrompt || ""} />
       </div>
 
