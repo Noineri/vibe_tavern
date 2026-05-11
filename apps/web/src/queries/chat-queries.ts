@@ -19,6 +19,9 @@ import {
   editChatMessage,
   fetchChat,
   forkBranch,
+  generateReply,
+  saveChatSummary,
+  summarizeChat,
   regenerateChatMessage,
   renameChat,
   selectMessageVariant,
@@ -34,7 +37,7 @@ import { bootstrapKeys, chatKeys } from "./query-keys.js";
 
 export function useChatSnapshot(chatId: ChatId | null) {
   return useQuery({
-    queryKey: chatKeys.snapshot(chatId ?? ("" as ChatId)),
+    queryKey: chatId ? chatKeys.snapshot(chatId) : chatKeys.none(),
     queryFn: () => fetchChat(chatId!),
     enabled: Boolean(chatId),
   });
@@ -111,8 +114,6 @@ export function useSendMessageMutation() {
     mutationFn: (args: { chatId: ChatId; content: string; signal?: AbortSignal }) =>
       sendChatMessage(args.chatId, { content: args.content }, { signal: args.signal }),
     onSuccess: (snapshot: AppSnapshot, variables) => {
-      void qc.invalidateQueries({ queryKey: chatKeys.snapshot(variables.chatId) });
-      // Also write directly to cache so downstream reads are instant
       qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
     },
   });
@@ -125,7 +126,6 @@ export function useRegenerateMessageMutation() {
     mutationFn: (args: { chatId: ChatId; messageId: string; signal?: AbortSignal }) =>
       regenerateChatMessage(args.chatId, args.messageId, { signal: args.signal }),
     onSuccess: (snapshot: AppSnapshot, variables) => {
-      void qc.invalidateQueries({ queryKey: chatKeys.snapshot(variables.chatId) });
       qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
     },
   });
@@ -138,7 +138,6 @@ export function useEditMessageMutation() {
     mutationFn: (args: { chatId: ChatId; messageId: string; content: string }) =>
       editChatMessage(args.chatId, args.messageId, args.content),
     onSuccess: (snapshot: AppSnapshot, variables) => {
-      void qc.invalidateQueries({ queryKey: chatKeys.snapshot(variables.chatId) });
       qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
     },
   });
@@ -151,7 +150,6 @@ export function useDeleteMessageMutation() {
     mutationFn: (args: { chatId: ChatId; messageId: string }) =>
       deleteChatMessage(args.chatId, args.messageId),
     onSuccess: (snapshot: AppSnapshot, variables) => {
-      void qc.invalidateQueries({ queryKey: chatKeys.snapshot(variables.chatId) });
       qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
     },
   });
@@ -163,7 +161,6 @@ export function useSwitchChatMutation() {
   return useMutation({
     mutationFn: (chatId: ChatId) => fetchChat(chatId),
     onSuccess: (snapshot: AppSnapshot, chatId) => {
-      void qc.invalidateQueries({ queryKey: chatKeys.snapshot(chatId) });
       qc.setQueryData(chatKeys.snapshot(chatId), snapshot);
     },
   });
@@ -176,7 +173,6 @@ export function useSelectVariantMutation() {
     mutationFn: (args: { chatId: ChatId; messageId: string; variantIndex: number }) =>
       selectMessageVariant(args.chatId, args.messageId, args.variantIndex),
     onSuccess: (snapshot: AppSnapshot, variables) => {
-      void qc.invalidateQueries({ queryKey: chatKeys.snapshot(variables.chatId) });
       qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
     },
   });
@@ -188,7 +184,6 @@ export function useForkMutation() {
   return useMutation({
     mutationFn: (chatId: ChatId) => forkBranch(chatId),
     onSuccess: (snapshot: AppSnapshot, chatId) => {
-      void qc.invalidateQueries({ queryKey: chatKeys.snapshot(chatId) });
       qc.setQueryData(chatKeys.snapshot(chatId), snapshot);
     },
   });
@@ -201,7 +196,6 @@ export function useActivateBranchMutation() {
     mutationFn: (args: { chatId: ChatId; branchId: ChatBranchId }) =>
       activateBranch(args.chatId, args.branchId),
     onSuccess: (snapshot: AppSnapshot, variables) => {
-      void qc.invalidateQueries({ queryKey: chatKeys.snapshot(variables.chatId) });
       qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
     },
   });
@@ -214,8 +208,44 @@ export function useDeleteBranchMutation() {
     mutationFn: (args: { chatId: ChatId; branchId: ChatBranchId }) =>
       deleteBranch(args.chatId, args.branchId),
     onSuccess: (snapshot: AppSnapshot, variables) => {
-      void qc.invalidateQueries({ queryKey: chatKeys.snapshot(variables.chatId) });
       qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
+    },
+  });
+}
+
+
+/** Generate a reply without sending a new user message (non-streaming resend path). */
+export function useGenerateReplyMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { chatId: ChatId; signal?: AbortSignal }) =>
+      generateReply(args.chatId, { signal: args.signal }),
+    onSuccess: (snapshot: AppSnapshot, variables) => {
+      qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
+    },
+  });
+}
+
+/** Summarize a chat. Returns summary text and the updated snapshot. */
+export function useSummarizeChatMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { chatId: ChatId; input: Parameters<typeof summarizeChat>[1] }) =>
+      summarizeChat(args.chatId, args.input),
+    onSuccess: (result, variables) => {
+      qc.setQueryData(chatKeys.snapshot(variables.chatId), result.snapshot);
+    },
+  });
+}
+
+/** Save a chat summary. Returns summary text and the updated snapshot. */
+export function useSaveChatSummaryMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { chatId: ChatId; summary: string }) =>
+      saveChatSummary(args.chatId, args.summary),
+    onSuccess: (result, variables) => {
+      qc.setQueryData(chatKeys.snapshot(variables.chatId), result.snapshot);
     },
   });
 }

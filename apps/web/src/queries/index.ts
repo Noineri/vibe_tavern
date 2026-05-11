@@ -41,6 +41,13 @@ export {
   useRefetchBootstrap,
 } from "./bootstrap-queries.js";
 export {
+  useLoadPromptPresetsMutation,
+  useCreatePromptPresetMutation,
+  useUpdatePromptPresetMutation,
+  useDeletePromptPresetMutation,
+  useSetChatPromptPresetMutation,
+} from "./preset-queries.js";
+export {
   useChatSnapshot,
   useSetChatPersonaMutation,
   useCreateChatMutation,
@@ -49,6 +56,9 @@ export {
   useRenameChatMutation,
   useSendMessageMutation,
   useRegenerateMessageMutation,
+  useGenerateReplyMutation,
+  useSummarizeChatMutation,
+  useSaveChatSummaryMutation,
   useEditMessageMutation,
   useDeleteMessageMutation,
   useSwitchChatMutation,
