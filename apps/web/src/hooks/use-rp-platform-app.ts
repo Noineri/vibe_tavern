@@ -3,9 +3,7 @@ import type { ChatId } from "@rp-platform/domain";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
 import {
-  bootstrapApp,
   fetchChat,
-  listPersonas,
   summarizeChat,
   saveChatSummary,
   type AppSnapshot,
@@ -19,6 +17,7 @@ import { useCharacterController } from "./use-character-controller.js";
 import { usePresetController } from "./use-preset-controller.js";
 import { useDisplayHelpers } from "./use-display-helpers.js";
 import { useChatStore, useNavigationStore, useCharacterStore } from "../stores/index.js";
+import { useBootstrapQuery, usePersonasQuery } from "../queries/bootstrap-queries.js";
 import {
   readSavedTheme,
   persistTheme,
@@ -89,10 +88,6 @@ export function useRpPlatformApp() {
   const setMode = useNavigationStore((s) => s.setMode);
   const theme = useNavigationStore((s) => s.theme);
   const setTheme = useNavigationStore((s) => s.setTheme);
-  const isLoading = useNavigationStore((s) => s.isLoading);
-  const setIsLoading = useNavigationStore((s) => s.setIsLoading);
-  const loadError = useNavigationStore((s) => s.loadError);
-  const setLoadError = useNavigationStore((s) => s.setLoadError);
   const sidebarCollapsed = useNavigationStore((s) => s.sidebarCollapsed);
   const setSidebarCollapsed = useNavigationStore((s) => s.setSidebarCollapsed);
   const isProviderModalOpen = useNavigationStore((s) => s.isProviderModalOpen);
@@ -113,7 +108,6 @@ export function useRpPlatformApp() {
   const importNotice = useCharacterStore((s) => s.importNotice);
   const setImportNotice = useCharacterStore((s) => s.setImportNotice);
   const isFirstRun = useCharacterStore((s) => s.isFirstRun);
-  const setIsFirstRun = useCharacterStore((s) => s.setIsFirstRun);
   const confirmDestroy = useCharacterStore((s) => s.confirmDestroy);
   const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
   const renamingChatId = useCharacterStore((s) => s.renamingChatId);
@@ -135,7 +129,16 @@ export function useRpPlatformApp() {
   const [tweaksSettings, setTweaksSettings] = useState<TweaksSettings>(() => readSavedTweaks());
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
-  const [allCharacters, setAllCharacters] = useState<Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>>([]);
+
+  // --- Bootstrap + personas queries ---
+  const bootstrapQuery = useBootstrapQuery();
+  void usePersonasQuery();
+
+  const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
+  const isLoading = bootstrapQuery.status === "pending";
+  const loadError = bootstrapQuery.status === "error"
+    ? (bootstrapQuery.error instanceof Error ? bootstrapQuery.error.message : getT()("could_not_load_app_state"))
+    : "";
 
   // --- Display helpers (extracted) ---
   const display = useDisplayHelpers(allCharacters);
@@ -159,13 +162,6 @@ export function useRpPlatformApp() {
   // --- Preset controller (extracted) ---
   const preset = usePresetController();
 
-  // --- Sync allCharacters from snapshot ---
-  useEffect(() => {
-    if (snapshot?.allCharacters) {
-      setAllCharacters(snapshot.allCharacters);
-    }
-  }, [snapshot?.allCharacters]);
-
   // --- Bootstrap: load persisted theme and connection into stores ---
   useEffect(() => {
     useNavigationStore.getState().setTheme(readSavedTheme());
@@ -184,24 +180,14 @@ export function useRpPlatformApp() {
     root.style.setProperty('--ui-fs', `${tweaksSettings.uiFontSize}px`);
     root.style.setProperty('--mw', MESSAGE_WIDTH_MAP[tweaksSettings.messageWidth]);
     persistTweaks(tweaksSettings);
-  }, [tweaksSettings]);
-
-  useEffect(() => {
-    document.documentElement.classList.toggle("light", theme === "light");
+    root.classList.toggle("light", theme === "light");
     persistTheme(theme);
-  }, [theme]);
-
-  useEffect(() => {
-    void loadBootstrap();
-  }, []);
+  }, [tweaksSettings, theme]);
 
   useEffect(() => {
     setSelectedTraceId(
       snapshot?.promptTrace?.id ?? snapshot?.promptTraceHistory[0]?.id ?? null,
     );
-  }, [snapshot?.promptTrace?.id, snapshot?.promptTraceHistory]);
-
-  useEffect(() => {
     if (!editingMessageId || !snapshot) {
       return;
     }
@@ -210,25 +196,18 @@ export function useRpPlatformApp() {
       useChatStore.getState().setEditingMessageId(null);
       setEditingDraft("");
     }
-  }, [editingMessageId, snapshot]);
+  }, [snapshot?.promptTrace?.id, snapshot?.promptTraceHistory, editingMessageId, snapshot]);
 
   useEffect(() => {
     setCharacterSaveNotice("");
-  }, [snapshot?.character.id]);
+    if (snapshot?.activeChat.promptPresetId) {
+      useCharacterStore.getState().setActivePromptPresetId(snapshot.activeChat.promptPresetId);
+    }
+  }, [snapshot?.character.id, snapshot?.activeChat.promptPresetId]);
 
   useEffect(() => {
     useChatStore.getState().setChatNotice("");
   }, [activeChatId]);
-
-  useEffect(() => {
-    void loadPersonas();
-  }, []);
-
-  useEffect(() => {
-    if (snapshot?.activeChat.promptPresetId) {
-      useCharacterStore.getState().setActivePromptPresetId(snapshot.activeChat.promptPresetId);
-    }
-  }, [snapshot?.activeChat.promptPresetId]);
 
   // --- Controllers ---
 
@@ -274,7 +253,7 @@ export function useRpPlatformApp() {
       if (current) useChatStore.getState().setSnapshot(updater(current));
     },
     setChatNotice: useChatStore.getState().setChatNotice,
-    setIsFirstRun,
+    setIsFirstRun: useCharacterStore.getState().setIsFirstRun,
     setMode,
     setIsImportDragActive,
     setImportNotice,
@@ -282,37 +261,6 @@ export function useRpPlatformApp() {
     setPersonas: (updater) => useCharacterStore.getState().setPersonas(updater(useCharacterStore.getState().personas)),
     importFile,
   });
-
-  // --- Internal functions ---
-
-  async function loadPersonas(): Promise<void> {
-    try {
-      setPersonas(await listPersonas());
-    } catch {
-      // ignore
-    }
-  }
-
-  async function loadBootstrap(): Promise<void> {
-    setIsLoading(true);
-    setLoadError("");
-
-    try {
-      const boot = await bootstrapApp();
-      useChatStore.getState().setActiveChatId(boot.initialChatId);
-      useChatStore.getState().setSnapshot(boot.snapshot);
-      useCharacterStore.getState().setPromptPresets(boot.promptPresets);
-      useCharacterStore.getState().setActivePromptPresetId(
-        boot.snapshot?.activeChat.promptPresetId ?? null,
-      );
-      setAllCharacters(boot.allCharacters);
-      setIsFirstRun(boot.isFirstRun || import.meta.env.VITE_FORCE_FIRST_RUN === 'true');
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : getT()("could_not_load_app_state"));
-    } finally {
-      setIsLoading(false);
-    }
-  }
 
   // --- Modal toggles ---
 
@@ -405,7 +353,6 @@ export function useRpPlatformApp() {
     isSending,
     isLoading,
     loadError,
-    loadBootstrap,
     sidebarCollapsed,
     setSidebarCollapsed,
     selectedTraceId,

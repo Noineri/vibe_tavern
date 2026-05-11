@@ -1,4 +1,5 @@
 export { providerKeys, chatKeys, characterKeys, personaKeys, bootstrapKeys } from "./query-keys.js";
+// provider queries re-exported for convenience — used by provider controller
 export {
   useProviderProfilesQuery,
   useProviderModelsQuery,
@@ -33,6 +34,11 @@ export {
   useUpdatePersonaMutation,
   useDeletePersonaMutation,
 } from "./persona-queries.js";
+export {
+  useBootstrapQuery,
+  usePersonasQuery,
+  useRefetchBootstrap,
+} from "./bootstrap-queries.js";
 export {
   useChatSnapshot,
   useSendMessageMutation,
