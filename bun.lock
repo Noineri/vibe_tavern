@@ -21,6 +21,7 @@
       "name": "@rp-platform/web",
       "version": "0.1.0",
       "dependencies": {
+        "@hookform/resolvers": "^5.2.2",
         "@rp-platform/api": "0.1.0",
         "@rp-platform/db": "0.1.0",
         "@rp-platform/domain": "0.1.0",
@@ -30,6 +31,8 @@
         "js-tiktoken": "^1.0.21",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
+        "react-hook-form": "^7.75.0",
+        "zod": "^3.24.4",
         "zustand": "^5.0.5",
       },
       "devDependencies": {
@@ -39,6 +42,17 @@
         "autoprefixer": "^10.5.0",
         "tailwindcss": "^4",
         "vite": "^8.0.9",
+      },
+    },
+    "packages/api-contracts": {
+      "name": "@rp-platform/api-contracts",
+      "version": "0.1.0",
+      "dependencies": {
+        "@rp-platform/domain": "0.1.0",
+        "zod": "^3.24.4",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.3.13",
       },
     },
     "packages/db": {
@@ -89,6 +103,7 @@
         "@ai-sdk/google": "^1.2.12",
         "@ai-sdk/openai": "^1.3.19",
         "@hono/zod-validator": "^0.4.2",
+        "@rp-platform/api-contracts": "0.1.0",
         "@rp-platform/db": "0.1.0",
         "@rp-platform/domain": "0.1.0",
         "@rp-platform/import-export": "0.1.0",
@@ -188,6 +203,8 @@
 
     "@hono/zod-validator": ["@hono/zod-validator@0.4.3", "", { "peerDependencies": { "hono": ">=3.9.0", "zod": "^3.19.1" } }, "sha512-xIgMYXDyJ4Hj6ekm9T9Y27s080Nl9NXHcJkOvkXPhubOLj8hZkOL8pDnnXfvCf5xEE8Q4oMFenQUZZREUY2gqQ=="],
 
+    "@hookform/resolvers": ["@hookform/resolvers@5.2.2", "", { "dependencies": { "@standard-schema/utils": "^0.3.0" }, "peerDependencies": { "react-hook-form": "^7.55.0" } }, "sha512-A/IxlMLShx3KjV/HeTcTfaMxdwy690+L/ZADoeaTltLx+CVuzkeVIPuybK3jrRfw7YZnmdKsVVHAlEPIAEUNlA=="],
+
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 
     "@jridgewell/remapping": ["@jridgewell/remapping@2.3.5", "", { "dependencies": { "@jridgewell/gen-mapping": "^0.3.5", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-LI9u/+laYG4Ds1TDKSJW2YPrIlcVYOwi2fUC6xB43lueCjgxV4lffOCZCtYFiH6TNOX+tQKXx97T4IKHbhyHEQ=="],
@@ -238,6 +255,8 @@
 
     "@rp-platform/api": ["@rp-platform/api@workspace:services/api"],
 
+    "@rp-platform/api-contracts": ["@rp-platform/api-contracts@workspace:packages/api-contracts"],
+
     "@rp-platform/db": ["@rp-platform/db@workspace:packages/db"],
 
     "@rp-platform/domain": ["@rp-platform/domain@workspace:packages/domain"],
@@ -247,6 +266,8 @@
     "@rp-platform/prompt-pipeline": ["@rp-platform/prompt-pipeline@workspace:packages/prompt-pipeline"],
 
     "@rp-platform/web": ["@rp-platform/web@workspace:apps/web"],
+
+    "@standard-schema/utils": ["@standard-schema/utils@0.3.0", "", {}, "sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g=="],
 
     "@tailwindcss/node": ["@tailwindcss/node@4.2.4", "", { "dependencies": { "@jridgewell/remapping": "^2.3.5", "enhanced-resolve": "^5.19.0", "jiti": "^2.6.1", "lightningcss": "1.32.0", "magic-string": "^0.30.21", "source-map-js": "^1.2.1", "tailwindcss": "4.2.4" } }, "sha512-Ai7+yQPxz3ddrDQzFfBKdHEVBg0w3Zl83jnjuwxnZOsnH9pGn93QHQtpU0p/8rYWxvbFZHneni6p1BSLK4DkGA=="],
 
@@ -449,6 +470,8 @@
     "react": ["react@19.2.5", "", {}, "sha512-llUJLzz1zTUBrskt2pwZgLq59AemifIftw4aB7JxOqf1HY2FDaGDxgwpAPVzHU1kdWabH7FauP4i1oEeer2WCA=="],
 
     "react-dom": ["react-dom@19.2.5", "", { "dependencies": { "scheduler": "^0.27.0" }, "peerDependencies": { "react": "^19.2.5" } }, "sha512-J5bAZz+DXMMwW/wV3xzKke59Af6CHY7G4uYLN1OvBcKEsWOs4pQExj86BBKamxl/Ik5bx9whOrvBlSDfWzgSag=="],
+
+    "react-hook-form": ["react-hook-form@7.75.0", "", { "peerDependencies": { "react": "^16.8.0 || ^17 || ^18 || ^19" } }, "sha512-Ovv94H+0p3sJ7B9B5QxPuCP1u8V/cHuVGyH55cSwodYDtoJwK+fqk3vjfIgSX59I2U/bU4z0nRJ9HMLpNiWEmw=="],
 
     "readable-stream": ["readable-stream@3.6.2", "", { "dependencies": { "inherits": "^2.0.3", "string_decoder": "^1.1.1", "util-deprecate": "^1.0.1" } }, "sha512-9u/sniCrY3D5WdsERHzHE4G2YCXqoG5FTHUiCC4SIbr6XcLZBY05ya9EKjYek9O5xOAwjGq+1JdGBAS7Q9ScoA=="],
 

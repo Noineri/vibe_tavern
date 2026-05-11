@@ -6,9 +6,10 @@ import { ConfirmCloseModal } from "./shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { Icons } from "./shared/icons.js";
 import { SaveButton } from "./shared/SaveBar.js";
-import { useDirtyState } from "./shared/use-dirty-state.js";
 import { useNavigationStore } from "../stores/navigation-store.js";
 import { PresetList, PromptFields } from "./prompt/index.js";
+
+type SaveState = "idle" | "saving" | "saved" | "error";
 
 type DraftData = {
   name: string;
@@ -59,7 +60,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [draft, setDraft] = useState<DraftData>({ ...emptyDraft });
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
-  const dirtyState = useDirtyState();
+  const [dirty, setDirty] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
   const activePreset = input.presets.find((p) => p.id === input.activePresetId) ?? null;
 
   useEffect(() => {
@@ -78,18 +80,20 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     } else {
       setDraft({ ...emptyDraft });
     }
-    dirtyState.reset();
+    setDirty(false);
+    setSaveState("idle");
   }, [activePreset?.id]);
 
   function updateDraft<K extends keyof DraftData>(key: K, value: DraftData[K]): void {
     setDraft((current) => ({ ...current, [key]: value }));
-    dirtyState.markDirty();
+    setDirty(true);
+    setSaveState("idle");
   }
 
   if (!isOpen) return null;
 
   const handleClose = () => {
-    if (dirtyState.dirty) {
+    if (dirty) {
       setConfirmCloseOpen(true);
     } else {
       onClose();
@@ -97,9 +101,16 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   };
 
   const handleSave = () => {
-    if (!input.activePresetId) return;
-    dirtyState.triggerSave(() => {
-      void input.onUpdate(input.activePresetId!, draft);
+    if (!input.activePresetId || !dirty) return;
+    setSaveState("saving");
+    void input.onUpdate(input.activePresetId, draft).then((ok) => {
+      if (!ok) {
+        setSaveState("error");
+        return;
+      }
+      setDirty(false);
+      setSaveState("saved");
+      setTimeout(() => setSaveState("idle"), 2200);
     });
   };
 
@@ -146,7 +157,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         <ConfirmCloseModal
           onCancel={() => setConfirmCloseOpen(false)}
           onConfirm={() => {
-            dirtyState.reset();
+            setDirty(false);
+            setSaveState("idle");
             setConfirmCloseOpen(false);
             onClose();
           }}
@@ -174,7 +186,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           <div>
             <div className="font-body mb-0.5 text-[calc(var(--ui-fs)+4px)] font-medium text-t1">
               {t("prompt_manager_title")}
-              {dirtyState.dirty && (
+              {dirty && (
                 <span
                   className="ml-1.5 inline-block h-[7px] w-[7px] shrink-0 rounded-full bg-accent align-middle"
                   title={t("unsaved_changes_title")}
@@ -234,8 +246,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               {t("close")}
             </button>
             <SaveButton
-              dirty={dirtyState.dirty}
-              saveState={dirtyState.saveState}
+              dirty={dirty}
+              saveState={saveState}
               onClick={handleSave}
               label={t("save")}
             />

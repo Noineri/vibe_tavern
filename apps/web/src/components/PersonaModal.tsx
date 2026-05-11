@@ -1,4 +1,7 @@
 import { useState, useRef } from "react";
+import { useForm } from "react-hook-form";
+// No zodResolver — form has extra UI fields (pronounsCustom, avatarPreview) not in the schema.
+// Validation is handled manually (name.trim() check).
 import { Icons } from "./shared/icons.js";
 import { EmptyState } from "./shared/empty-state.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
@@ -27,6 +30,15 @@ interface PersonaModalProps {
   onDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
+type PersonaFormData = {
+  name: string;
+  description: string;
+  pronouns: string | null;
+  pronounsCustom: string;
+  avatarAssetId: string | null;
+  avatarPreview: string | null;
+};
+
 function PersonaTokenBadge({ text }: { text: string }) {
   const count = useTokenCount(text);
   return <span className="flex justify-end font-ui text-[11px] tabular-nums text-t3 mb-3">{count.toLocaleString()} tokens</span>;
@@ -44,16 +56,20 @@ export function PersonaModal(input: PersonaModalProps) {
   const onClose = () => setIsOpen(false);
   const [selectedId, setSelectedId] = useState<string | null>(input.activePersonaId);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-  const [editPronouns, setEditPronouns] = useState("");
-  const [editPronounsCustom, setEditPronounsCustom] = useState("");
-  const [editAvatarAssetId, setEditAvatarAssetId] = useState<string | null>(null);
-  const [editAvatarPreview, setEditAvatarPreview] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string>("");
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; error: string } | null>(null);
+
+  const form = useForm<PersonaFormData>({
+    defaultValues: {
+      name: "",
+      description: "",
+      pronouns: null,
+      pronounsCustom: "",
+      avatarAssetId: null,
+      avatarPreview: null,
+    },
+  });
 
   if (!isOpen) return null;
 
@@ -62,21 +78,28 @@ export function PersonaModal(input: PersonaModalProps) {
 
   function startEdit(persona: PersonaListItem): void {
     setEditingId(persona.id);
-    setEditName(persona.name);
-    setEditDescription(persona.description);
-    const raw = persona.pronouns ?? "";
-    setEditPronouns(raw);
-    setEditPronounsCustom("");
-    setEditAvatarAssetId(persona.avatarAssetId);
-    setEditAvatarPreview(null);
+    form.reset({
+      name: persona.name,
+      description: persona.description,
+      pronouns: persona.pronouns ?? "",
+      pronounsCustom: "",
+      avatarAssetId: persona.avatarAssetId,
+      avatarPreview: null,
+    });
   }
 
   function commitEdit(): void {
-    if (!editingId || !editName.trim()) return;
-    const resolved = editPronouns === "custom"
-      ? (editPronounsCustom.trim() || null)
-      : (editPronouns || null);
-    input.onSaveEdit(editingId, { name: editName.trim(), description: editDescription, pronouns: resolved, avatarAssetId: editAvatarAssetId });
+    if (!editingId) return;
+    const name = form.getValues("name");
+    const description = form.getValues("description");
+    const pronouns = form.getValues("pronouns");
+    const pronounsCustom = form.getValues("pronounsCustom");
+    const avatarAssetId = form.getValues("avatarAssetId");
+    if (!name.trim()) return;
+    const resolved = pronouns === "custom"
+      ? (pronounsCustom.trim() || null)
+      : (pronouns || null);
+    input.onSaveEdit(editingId, { name: name.trim(), description, pronouns: resolved, avatarAssetId });
     setSelectedId(editingId);
     setEditingId(null);
   }
@@ -93,11 +116,10 @@ export function PersonaModal(input: PersonaModalProps) {
 
   function handleDelete(personaId: string): void {
     if (isLastPersona) {
-      setDeleteError(t("cannot_delete_last_persona"));
+      setDeleteConfirm({ id: personaId, error: t("cannot_delete_last_persona") });
       return;
     }
-    setConfirmDeleteId(personaId);
-    setDeleteError("");
+    setDeleteConfirm({ id: personaId, error: "" });
   }
 
   function resolvePronounsDisplay(persona: PersonaListItem): string | null {
@@ -105,33 +127,38 @@ export function PersonaModal(input: PersonaModalProps) {
     return persona.pronouns;
   }
 
+  const editName = form.watch("name");
+  const editDescription = form.watch("description");
+  const editPronouns = form.watch("pronouns");
+  const editPronounsCustom = form.watch("pronounsCustom");
+  const editAvatarAssetId = form.watch("avatarAssetId");
+  const editAvatarPreview = form.watch("avatarPreview");
+  const { errors } = form.formState;
+
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      {confirmDeleteId && (
+      {deleteConfirm && (
         <DestructiveConfirmModal
           title={t("delete_persona_title")}
           body={
             <>
-              {t("delete_persona_body").replace("{name}", input.personas.find((p) => p.id === confirmDeleteId)?.name ?? "Untitled")}
-              {deleteError && <div style={{ marginTop: 8, color: "oklch(0.6 0.15 25)" }}>{deleteError}</div>}
+              {t("delete_persona_body").replace("{name}", input.personas.find((p) => p.id === deleteConfirm.id)?.name ?? "Untitled")}
+              {deleteConfirm.error && <div style={{ marginTop: 8, color: "oklch(0.6 0.15 25)" }}>{deleteConfirm.error}</div>}
             </>
           }
           confirmLabel={t("delete")}
           onConfirm={async () => {
-            const id = confirmDeleteId;
-            if (!id) return;
+            const id = deleteConfirm.id;
             const result = await input.onDeletePersona(id);
             if (result.ok) {
-              setConfirmDeleteId(null);
-              setDeleteError("");
+              setDeleteConfirm(null);
               if (selectedId === id) setSelectedId(null);
             } else {
-              setDeleteError(result.error ?? t("delete_failed"));
+              setDeleteConfirm({ id, error: result.error ?? t("delete_failed") });
             }
           }}
           onCancel={() => {
-            setConfirmDeleteId(null);
-            setDeleteError("");
+            setDeleteConfirm(null);
           }}
         />
       )}
@@ -198,12 +225,12 @@ export function PersonaModal(input: PersonaModalProps) {
                               setAvatarUploading(true);
                               try {
                                 const preview = URL.createObjectURL(file);
-                                setEditAvatarPreview(preview);
+                                form.setValue("avatarPreview", preview);
                                 const result = await uploadAsset(file);
-                                setEditAvatarAssetId(result.assetId);
+                                form.setValue("avatarAssetId", result.assetId, { shouldDirty: true });
                               } catch {
-                                setEditAvatarPreview(null);
-                                setEditAvatarAssetId(null);
+                                form.setValue("avatarPreview", null);
+                                form.setValue("avatarAssetId", null);
                               } finally {
                                 setAvatarUploading(false);
                               }
@@ -221,8 +248,8 @@ export function PersonaModal(input: PersonaModalProps) {
                                 className="absolute right-0.5 bottom-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-surface text-t4 opacity-0 transition-all hover:text-danger group-hover:opacity-100"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setEditAvatarAssetId(null);
-                                  setEditAvatarPreview(null);
+                                  form.setValue("avatarAssetId", null, { shouldDirty: true });
+                                  form.setValue("avatarPreview", null);
                                   if (avatarInputRef.current) avatarInputRef.current.value = "";
                                 }}
                                 title={t("remove_avatar")}
@@ -242,14 +269,16 @@ export function PersonaModal(input: PersonaModalProps) {
                         <div className="flex-1">
                           <input
                             className="w-full rounded border border-border bg-s2 py-2 px-2.5 font-ui text-sm text-t1 outline-none transition-colors focus:border-accent"
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
+                            {...form.register("name")}
                             placeholder={t("persona_name_placeholder")}
                           />
+                          {errors.name && (
+                            <div className="text-[11px] text-red-400 mt-0.5">{errors.name.message}</div>
+                          )}
                           <select
                             className="mt-2 w-full rounded border border-border bg-s2 py-2 px-2.5 font-ui text-sm text-t1 outline-none transition-colors focus:border-accent"
                             value={editPronouns || ""}
-                            onChange={(e) => setEditPronouns(e.target.value)}
+                            onChange={(e) => form.setValue("pronouns", e.target.value, { shouldDirty: true })}
                           >
                             <option value="">{t("pronouns_none")}</option>
                             <option value="he/him">he/him</option>
@@ -262,7 +291,7 @@ export function PersonaModal(input: PersonaModalProps) {
                             <input
                               className="mt-1 w-full rounded border border-border bg-s2 py-2 px-2.5 font-ui text-sm text-t1 outline-none transition-colors focus:border-accent"
                               value={editPronounsCustom}
-                              onChange={(e) => setEditPronounsCustom(e.target.value)}
+                              onChange={(e) => form.setValue("pronounsCustom", e.target.value, { shouldDirty: true })}
                               placeholder={t("pronouns_custom_placeholder")}
                             />
                           )}
@@ -271,15 +300,14 @@ export function PersonaModal(input: PersonaModalProps) {
                       <textarea
                         className="mb-1 w-full min-h-[60px] rounded border border-border bg-s2 py-2 px-2.5 font-ui text-xs text-t1 outline-none transition-colors focus:border-accent"
                         style={{ resize: "vertical" }}
-                        value={editDescription}
-                        onChange={(e) => setEditDescription(e.target.value)}
+                        {...form.register("description")}
                         placeholder={t("persona_desc_placeholder")}
                       />
                       <PersonaTokenBadge text={editDescription} />
                       <div className="flex gap-2">
                         <button
                           className="h-[34px] cursor-pointer rounded-md bg-accent py-0 px-[18px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110"
-                          disabled={input.isSaving || !editName.trim()}
+                          disabled={input.isSaving || !(editName || "").trim()}
                           onClick={commitEdit}
                         >
                           {input.isSaving ? t("saving") : t("save")}
@@ -359,17 +387,21 @@ export function PersonaModal(input: PersonaModalProps) {
                 if (created) {
                   setSelectedId(created.id);
                   setEditingId(created.id);
-                  setEditName(t("new_persona_default"));
-                  setEditDescription("");
-                  setEditPronouns("");
-                  setEditPronounsCustom("");
+                  form.reset({
+                    name: t("new_persona_default"),
+                    description: "",
+                    pronouns: "",
+                    pronounsCustom: "",
+                    avatarAssetId: null,
+                    avatarPreview: null,
+                  });
                 }
               }}
             >
               <Icons.Plus /> <span className="ml-1">{t("create_new_persona")}</span>
             </div>
-            {deleteError && !confirmDeleteId && (
-              <div className="font-ui text-[calc(var(--ui-fs)-3px)] mt-1" style={{ color: "oklch(0.6 0.15 25)" }}>{deleteError}</div>
+            {deleteConfirm && deleteConfirm.error && (
+              <div className="font-ui text-[calc(var(--ui-fs)-3px)] mt-1" style={{ color: "oklch(0.6 0.15 25)" }}>{deleteConfirm.error}</div>
             )}
           </div>
         </div>

@@ -1,6 +1,7 @@
 import type { FC, CSSProperties } from "react";
-import type { SaveState } from "./use-dirty-state.js";
 import { Icons } from "./icons.js";
+
+type SaveState = "idle" | "saving" | "saved" | "error";
 import { useT } from "../../i18n/context.js";
 
 interface SaveBtnProps {

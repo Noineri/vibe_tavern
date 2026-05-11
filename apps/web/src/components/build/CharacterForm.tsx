@@ -1,4 +1,6 @@
 import { useRef, useState } from "react";
+import type { UseFormReturn } from "react-hook-form";
+import type { BuildCharacterDraft } from "@rp-platform/api-contracts";
 import { Ic } from "../shared/icons";
 import { cn } from "../../lib/cn";
 import { CharacterImportModal } from "../ImportModals.js";
@@ -7,9 +9,9 @@ import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useT } from "../../i18n/context.js";
 
 export interface CharacterFormProps {
-  draft: Record<string, any>;
-  patchDraft: (key: string, value: any) => void;
-  setDraft: (draft: Record<string, any>) => void;
+  form: UseFormReturn<BuildCharacterDraft>;
+  avatarPreview: string | null;
+  setAvatarPreview: (url: string | null) => void;
   isDirty: boolean;
   isSaving: boolean;
   saveNotice: string;
@@ -17,31 +19,33 @@ export interface CharacterFormProps {
   onSave: () => void;
   onReset: () => void;
   onAvatarUpload: (file: File) => void;
+
 }
 
-function parseCardToDraft(raw: unknown): Record<string, any> {
+function parseCardToDraft(raw: unknown): Partial<BuildCharacterDraft> {
   if (!raw || typeof raw !== "object") return {};
-  const data = (raw as any).data && typeof (raw as any).data === "object" ? (raw as any).data : raw;
-  const result: Record<string, any> = {};
-  if (data.name) result.name = String(data.name);
-  if (data.description) result.description = String(data.description);
-  if (data.first_mes) result.firstMessage = String(data.first_mes);
-  if (data.mes_example) result.mesExample = String(data.mes_example);
-  if (data.scenario) result.scenario = String(data.scenario);
-  if (data.personality) result.personalitySummary = String(data.personality);
-  if (data.system_prompt) result.systemPrompt = String(data.system_prompt);
-  if (data.post_history_instructions) result.postHistoryInstructions = String(data.post_history_instructions);
-  if (data.creator_notes) result.creatorNotes = String(data.creator_notes);
-  if (data.depth_prompt) result.depthPrompt = String(data.depth_prompt);
-  if (typeof data.depth_prompt_depth === "number") result.depthPromptDepth = data.depth_prompt_depth;
-  if (data.depth_prompt_role) result.depthPromptRole = String(data.depth_prompt_role);
-  if (Array.isArray(data.alternate_greetings)) result.alternateGreetings = data.alternate_greetings.map(String);
-  if (Array.isArray(data.tags)) result.tags = data.tags.map(String);
-  if (data.extensions && typeof data.extensions === "object") {
-    try { result.extensions = JSON.stringify(data.extensions); } catch {}
+  const data = (raw as Record<string, unknown>).data && typeof (raw as Record<string, unknown>).data === "object" ? (raw as Record<string, unknown>).data : raw;
+  const d = data as Record<string, unknown>;
+  const result: Partial<BuildCharacterDraft> = {};
+  if (d.name) result.name = String(d.name);
+  if (d.description) result.description = String(d.description);
+  if (d.first_mes) result.firstMessage = String(d.first_mes);
+  if (d.mes_example) result.mesExample = String(d.mes_example);
+  if (d.scenario) result.scenario = String(d.scenario);
+  if (d.personality) result.personalitySummary = String(d.personality);
+  if (d.system_prompt) result.systemPrompt = String(d.system_prompt);
+  if (d.post_history_instructions) result.postHistoryInstructions = String(d.post_history_instructions);
+  if (d.creator_notes) result.creatorNotes = String(d.creator_notes);
+  if (d.depth_prompt) result.depthPrompt = String(d.depth_prompt);
+  if (typeof d.depth_prompt_depth === "number") result.depthPromptDepth = d.depth_prompt_depth;
+  if (d.depth_prompt_role) result.depthPromptRole = String(d.depth_prompt_role);
+  if (Array.isArray(d.alternate_greetings)) result.alternateGreetings = (d.alternate_greetings as string[]).map(String);
+  if (Array.isArray(d.tags)) result.tags = (d.tags as string[]).map(String);
+  if (d.extensions && typeof d.extensions === "object") {
+    try { result.extensions = JSON.stringify(d.extensions); } catch {}
   }
-  if (data.character_book && typeof data.character_book === "object") {
-    try { result.characterBook = JSON.stringify(data.character_book); } catch {}
+  if (d.character_book && typeof d.character_book === "object") {
+    try { result.characterBook = JSON.stringify(d.character_book); } catch {}
   }
   return result;
 }
@@ -66,22 +70,40 @@ function TokenBadge({ text }: { text: string }) {
 }
 
 export function CharacterForm({
-  draft, patchDraft, setDraft, isDirty, isSaving, saveNotice, avatarUrl, onSave, onReset, onAvatarUpload,
+  form, avatarPreview, setAvatarPreview, isDirty, isSaving, saveNotice, avatarUrl, onSave, onReset, onAvatarUpload,
 }: CharacterFormProps) {
   const { t } = useT();
+  const { register, formState: { errors }, watch, setValue, handleSubmit } = form;
+
   const [altGreetIdx, setAltGreetIdx] = useState(0);
   const [tagInput, setTagInput] = useState("");
   const [importError, setImportError] = useState("");
   const [importModalOpen, setImportModalOpen] = useState(false);
   const avaInputRef = useRef<HTMLInputElement>(null);
 
-  const avatarPreview = draft._avatarPreview as string | null;
-  const canSave = !isSaving && draft.name?.trim();
+  const name = watch("name");
+  const description = watch("description");
+  const firstMessage = watch("firstMessage");
+  const mesExample = watch("mesExample");
+  const scenario = watch("scenario");
+  const personalitySummary = watch("personalitySummary");
+  const systemPrompt = watch("systemPrompt");
+  const alternateGreetings = watch("alternateGreetings") || [];
+  const postHistoryInstructions = watch("postHistoryInstructions");
+  const creatorNotes = watch("creatorNotes");
+  const characterBook = watch("characterBook");
+  const depthPrompt = watch("depthPrompt");
+  const depthPromptDepth = watch("depthPromptDepth");
+  const depthPromptRole = watch("depthPromptRole");
+  const extensions = watch("extensions");
+  const tags = watch("tags") || [];
+
+  const canSave = !isSaving && (name || "").trim();
 
   function handleAvatarPick(files: FileList | null) {
     if (!files || files.length === 0) return;
     const file = files[0];
-    patchDraft("_avatarPreview", URL.createObjectURL(file));
+    setAvatarPreview(URL.createObjectURL(file));
     onAvatarUpload(file);
   }
 
@@ -104,7 +126,7 @@ export function CharacterForm({
         }
         const merged = parseCardToDraft(raw);
         if (Object.keys(merged).length === 0) throw new Error(t("import_error_no_data"));
-        setDraft({ ...draft, ...merged });
+        form.reset({ ...form.getValues(), ...merged } as BuildCharacterDraft);
         setImportModalOpen(false);
       } catch (err) {
         setImportError(err instanceof Error ? err.message : t("import_failed"));
@@ -113,16 +135,14 @@ export function CharacterForm({
   }
 
   function toggleTag(tag: string) {
-    const tags: string[] = draft.tags || [];
     const newTags = tags.includes(tag) ? tags.filter((t: string) => t !== tag) : [...tags, tag];
-    patchDraft("tags", newTags);
+    setValue("tags", newTags, { shouldDirty: true });
   }
 
   function handleTagKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" && tagInput.trim()) {
       e.preventDefault();
-      const tags: string[] = draft.tags || [];
-      if (!tags.includes(tagInput.trim())) patchDraft("tags", [...tags, tagInput.trim()]);
+      if (!tags.includes(tagInput.trim())) setValue("tags", [...tags, tagInput.trim()], { shouldDirty: true });
       setTagInput("");
     }
   }
@@ -132,10 +152,10 @@ export function CharacterForm({
 
   // Total character tokens (all text fields)
   const charTotal = useTokenCount([
-    draft.description, draft.firstMessage, draft.mesExample, draft.scenario,
-    draft.personalitySummary, draft.postHistoryInstructions, draft.creatorNotes,
-    draft.systemPrompt, draft.depthPrompt,
-    ...(draft.alternateGreetings || []),
+    description, firstMessage, mesExample, scenario,
+    personalitySummary, postHistoryInstructions, creatorNotes,
+    systemPrompt, depthPrompt,
+    ...alternateGreetings,
   ].filter(Boolean).join("\n"));
 
   return (
@@ -143,7 +163,7 @@ export function CharacterForm({
       {/* Header row */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
         <div className="font-body text-[22px] font-medium text-t1" style={{ marginBottom: 6 }}>
-          {draft.name || t("unnamed")}
+          {name || t("unnamed")}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span className="font-ui text-[11px] tabular-nums text-t3">{charTotal.toLocaleString()} {t("tokens_label")}</span>
@@ -173,6 +193,13 @@ export function CharacterForm({
         </div>
       )}
 
+      {/* Validation error for name */}
+      {errors.name && (
+        <div className="rounded-md border border-border2 bg-s2 font-ui text-xs text-red-400" style={{ marginBottom: 12, padding: "6px 12px" }}>
+          {errors.name.message}
+        </div>
+      )}
+
       <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t2" style={{ marginBottom: 28, lineHeight: 1.55 }}>
       </div>
 
@@ -194,29 +221,29 @@ export function CharacterForm({
         </div>
         <div style={{ flex: 1 }}>
           <label className={lblCls} style={s.label}>{t("char_name_label")}</label>
-          <input type="text" className={inputCls} style={s.inputPadding} value={draft.name || ""} disabled={isSaving} onChange={(e) => patchDraft("name", e.target.value)} />
+          <input type="text" className={inputCls} style={s.inputPadding} disabled={isSaving} {...register("name")} />
         </div>
       </div>
 
       {/* Description */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>{t("char_desc_label")}</label>
-        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 100 }} value={draft.description || ""} disabled={isSaving} onChange={(e) => patchDraft("description", e.target.value)} />
-        <TokenBadge text={draft.description || ""} />
+        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 100 }} disabled={isSaving} {...register("description")} />
+        <TokenBadge text={description || ""} />
       </div>
 
       {/* First Message */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>{t("first_message_greeting")}</label>
-        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 120 }} value={draft.firstMessage || ""} disabled={isSaving} onChange={(e) => patchDraft("firstMessage", e.target.value)} placeholder={t("first_message_placeholder")} />
-        <TokenBadge text={draft.firstMessage || ""} />
+        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 120 }} disabled={isSaving} placeholder={t("first_message_placeholder")} {...register("firstMessage")} />
+        <TokenBadge text={firstMessage || ""} />
       </div>
 
       {/* Alternate Greetings */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>{t("alternate_greetings")}</label>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-          {(draft.alternateGreetings || []).map((_: any, idx: number) => (
+          {alternateGreetings.map((_: string, idx: number) => (
             <span
               key={idx}
               className={cn(
@@ -229,8 +256,8 @@ export function CharacterForm({
               Alt {idx + 1}
               <span style={{ marginLeft: 2, fontSize: 10 }} className="cursor-pointer" onClick={(e) => {
                 e.stopPropagation();
-                const next = [...(draft.alternateGreetings || [])]; next.splice(idx, 1);
-                patchDraft("alternateGreetings", next);
+                const next = [...alternateGreetings]; next.splice(idx, 1);
+                setValue("alternateGreetings", next, { shouldDirty: true });
                 if (altGreetIdx >= next.length) setAltGreetIdx(Math.max(0, next.length - 1));
               }}>✕</span>
             </span>
@@ -239,15 +266,16 @@ export function CharacterForm({
             className="inline-flex items-center justify-center rounded border border-dashed border-border bg-transparent font-ui text-xs text-t3 cursor-pointer"
             style={{ padding: "2px 10px" }}
             onClick={() => {
-              const next = [...(draft.alternateGreetings || []), ""];
-              patchDraft("alternateGreetings", next);
+              const next = [...alternateGreetings, ""];
+              setValue("alternateGreetings", next, { shouldDirty: true });
               setAltGreetIdx(next.length - 1);
             }}
           >+</span>
         </div>
-        {(draft.alternateGreetings || []).length > 0 && (
-          <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 120 }} value={(draft.alternateGreetings || [])[altGreetIdx] || ""} disabled={isSaving} onChange={(e) => {
-            const next = [...(draft.alternateGreetings || [])]; next[altGreetIdx] = e.target.value; patchDraft("alternateGreetings", next);
+        {alternateGreetings.length > 0 && (
+          <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 120 }} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
+            const next = [...alternateGreetings]; next[altGreetIdx] = e.target.value;
+            setValue("alternateGreetings", next, { shouldDirty: true });
           }} placeholder={t("alternate_greeting_placeholder")} />
         )}
       </div>
@@ -255,22 +283,22 @@ export function CharacterForm({
       {/* Message Examples */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>{t("dialog_examples")}</label>
-        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 120 }} value={draft.mesExample || ""} disabled={isSaving} onChange={(e) => patchDraft("mesExample", e.target.value)} placeholder="<START>..." />
-        <TokenBadge text={draft.mesExample || ""} />
+        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 120 }} disabled={isSaving} placeholder="<START>..." {...register("mesExample")} />
+        <TokenBadge text={mesExample || ""} />
       </div>
 
       {/* Scenario */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>{t("scenario")}</label>
-        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 100 }} value={draft.scenario || ""} disabled={isSaving} onChange={(e) => patchDraft("scenario", e.target.value)} />
-        <TokenBadge text={draft.scenario || ""} />
+        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 100 }} disabled={isSaving} {...register("scenario")} />
+        <TokenBadge text={scenario || ""} />
       </div>
 
       {/* Personality Summary */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>{t("char_personality_label")}</label>
-        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.personalitySummary || ""} disabled={isSaving} onChange={(e) => patchDraft("personalitySummary", e.target.value)} />
-        <TokenBadge text={draft.personalitySummary || ""} />
+        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 60 }} disabled={isSaving} {...register("personalitySummary")} />
+        <TokenBadge text={personalitySummary || ""} />
       </div>
 
       {/* Advanced separator */}
@@ -281,22 +309,22 @@ export function CharacterForm({
       {/* Post-History Instructions */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>{t("post_history_instructions")}</label>
-        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.postHistoryInstructions || ""} disabled={isSaving} onChange={(e) => patchDraft("postHistoryInstructions", e.target.value)} placeholder={t("post_history_placeholder")} />
-        <TokenBadge text={draft.postHistoryInstructions || ""} />
+        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} disabled={isSaving} placeholder={t("post_history_placeholder")} {...register("postHistoryInstructions")} />
+        <TokenBadge text={postHistoryInstructions || ""} />
       </div>
 
       {/* Creator Notes */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>{t("creator_notes")}</label>
-        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.creatorNotes || ""} disabled={isSaving} onChange={(e) => patchDraft("creatorNotes", e.target.value)} placeholder={t("creator_notes_placeholder")} />
-        <TokenBadge text={draft.creatorNotes || ""} />
+        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 60 }} disabled={isSaving} placeholder={t("creator_notes_placeholder")} {...register("creatorNotes")} />
+        <TokenBadge text={creatorNotes || ""} />
       </div>
 
       {/* Character Book JSON */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>{t("character_book_json")}</label>
-        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 80 }} value={draft.characterBook || ""} disabled={isSaving} onChange={(e) => patchDraft("characterBook", e.target.value)} placeholder='{"entries":[...]}'  />
-        <TokenBadge text={draft.characterBook || ""} />
+        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 80 }} disabled={isSaving} placeholder='{"entries":[...]}' {...register("characterBook")} />
+        <TokenBadge text={characterBook || ""} />
       </div>
 
       {/* Depth Prompt */}
@@ -306,11 +334,11 @@ export function CharacterForm({
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
-              <input type="number" className={inputCls} style={{ padding: "2px 6px", width: 56, height: 24, textAlign: "center", fontSize: 11 }} min={0} max={999} value={draft.depthPromptDepth ?? 4} disabled={isSaving} onChange={(e) => patchDraft("depthPromptDepth", Number(e.target.value))} />
+              <input type="number" className={inputCls} style={{ padding: "2px 6px", width: 56, height: 24, textAlign: "center", fontSize: 11 }} min={0} max={999} disabled={isSaving} value={depthPromptDepth ?? 4} onChange={(e) => setValue("depthPromptDepth", Number(e.target.value), { shouldDirty: true })} />
             </div>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("role")}</span>
-              <select className={inputCls} style={{ padding: "2px 6px", width: 82, height: 24, fontSize: 11 }} value={draft.depthPromptRole || "system"} disabled={isSaving} onChange={(e) => patchDraft("depthPromptRole", e.target.value)}>
+              <select className={inputCls} style={{ padding: "2px 6px", width: 82, height: 24, fontSize: 11 }} value={depthPromptRole || "system"} disabled={isSaving} onChange={(e) => setValue("depthPromptRole", e.target.value, { shouldDirty: true })}>
                 <option value="system">system</option>
                 <option value="user">user</option>
                 <option value="assistant">assistant</option>
@@ -318,22 +346,22 @@ export function CharacterForm({
             </div>
           </div>
         </div>
-        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.depthPrompt || ""} disabled={isSaving} onChange={(e) => patchDraft("depthPrompt", e.target.value)} placeholder={t("depth_prompt_placeholder")} />
-        <TokenBadge text={draft.depthPrompt || ""} />
+        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} disabled={isSaving} placeholder={t("depth_prompt_placeholder")} {...register("depthPrompt")} />
+        <TokenBadge text={depthPrompt || ""} />
       </div>
 
       {/* Extensions JSON */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>{t("extensions_json")}</label>
-        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.extensions || ""} disabled={isSaving} onChange={(e) => patchDraft("extensions", e.target.value)} placeholder='{"talkativeness":"0.5",...}' />
-        <TokenBadge text={draft.extensions || ""} />
+        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} disabled={isSaving} placeholder='{"talkativeness":"0.5",...}' {...register("extensions")} />
+        <TokenBadge text={extensions || ""} />
       </div>
 
       {/* System Prompt Override */}
       <div style={s.fieldWrap}>
         <label className={lblCls} style={s.label}>{t("system_prompt_override")}</label>
-        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 80 }} value={draft.systemPrompt || ""} disabled={isSaving} onChange={(e) => patchDraft("systemPrompt", e.target.value)} placeholder={t("system_prompt_override_placeholder")} />
-        <TokenBadge text={draft.systemPrompt || ""} />
+        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 80 }} disabled={isSaving} placeholder={t("system_prompt_override_placeholder")} {...register("systemPrompt")} />
+        <TokenBadge text={systemPrompt || ""} />
       </div>
 
       {/* Tags */}
@@ -341,7 +369,7 @@ export function CharacterForm({
         <label className={lblCls} style={s.label}>{t("char_tags_label")}</label>
         <input type="text" className={inputCls} style={s.inputPadding} value={tagInput} disabled={isSaving} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagKey} placeholder={t("tags_enter")} />
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-          {(draft.tags || []).map((tag: string) => (
+          {tags.map((tag: string) => (
             <span key={tag} className="cursor-pointer rounded bg-accent-dim font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" style={{ padding: "4px 10px" }} onClick={() => toggleTag(tag)}>
               {tag} ✕
             </span>
