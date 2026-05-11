@@ -2,6 +2,7 @@
  * TanStack Query key factories.
  * Each domain gets its own key namespace for type-safe invalidation.
  */
+import type { ChatId } from "@rp-platform/domain";
 
 export const providerKeys = {
   all: () => ["providers"] as const,
@@ -11,9 +12,11 @@ export const providerKeys = {
   favorites: (id: string) => ["providers", "favorites", id] as const,
 };
 
-// Placeholder factories — filled in TQ3-TQ4
+// Chat key factory — TQ3
 export const chatKeys = {
   all: () => ["chat"] as const,
+  snapshot: (chatId: ChatId) => ["chat", "snapshot", chatId] as const,
+  branches: (chatId: ChatId) => ["chat", "branches", chatId] as const,
 };
 
 export const characterKeys = {

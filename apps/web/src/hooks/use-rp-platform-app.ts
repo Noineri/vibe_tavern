@@ -4,6 +4,7 @@ import { PROVIDER_TYPE } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
 import {
   bootstrapApp,
+  fetchChat,
   listPersonas,
   summarizeChat,
   saveChatSummary,
@@ -261,6 +262,7 @@ export function useRpPlatformApp() {
     getGenerationStatus: () => useChatStore.getState().generationStatus,
     getStreamResponse: () => streamResponseRef.current,
     setGenerationStatus: useChatStore.getState().setGenerationStatus,
+    refreshChatSnapshot: (chatId) => fetchChat(chatId),
   });
 
   const character = useCharacterController({
