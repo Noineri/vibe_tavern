@@ -15,6 +15,7 @@ import {
 import { useDirtyState } from "./shared/use-dirty-state.js";
 import { ConfirmCloseModal } from "./shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
+import { useNavigationStore } from "../stores/navigation-store.js";
 
 export interface FormState {
   id: string;
@@ -49,10 +50,8 @@ interface ModelOption { id: string; label: string; contextLength?: number; }
 type HeaderMode = "edit" | "view";
 
 interface ProviderModalProps {
-  isOpen: boolean;
   providerProfiles: ProviderProfileRecord[];
   activeProviderProfileId: string | null;
-  onClose: () => void;
   onCreateProfile: () => Promise<ProviderProfileRecord | null>;
   onDuplicateProfile: (id: string) => Promise<ProviderProfileRecord | null>;
   onDeleteProfile: (id: string) => Promise<void>;
@@ -105,11 +104,14 @@ function getCapabilities(type: string): Capabilities {
 }
 
 export function ProviderModal({
-  isOpen, providerProfiles, activeProviderProfileId, onClose,
+  providerProfiles, activeProviderProfileId,
   onCreateProfile, onDuplicateProfile, onDeleteProfile, onActivateProfile,
   onSaveProfile, onTestDraft, onTestProfile, onTestChat, onFetchModels, onFetchModelsForProfile,
   favoriteModelsByProfile, onToggleFavoriteModel, onRefreshProfiles,
 }: ProviderModalProps) {
+  const isOpen = useNavigationStore((s) => s.isProviderModalOpen);
+  const setIsOpen = useNavigationStore((s) => s.setIsProviderModalOpen);
+  const onClose = () => setIsOpen(false);
   const { t } = useT();
 
   // ── Selection state ──

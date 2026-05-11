@@ -2,6 +2,8 @@ import { useRef, useState } from 'react';
 import { Ic } from './shared/icons';
 import { cn } from '../lib/cn';
 import { useT } from '../i18n/context.js';
+import { useAppActions } from './AppShell.js';
+import { useCharacterStore } from '../stores/character-store.js';
 
 interface WelcomeScreenProps {
   onCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }) => Promise<void>;
@@ -9,8 +11,10 @@ interface WelcomeScreenProps {
   onFreeChat: () => Promise<void>;
 }
 
-export function WelcomeScreen({ onCreateCharacter, onImportFiles, onFreeChat }: WelcomeScreenProps) {
+export function WelcomeScreen() {
   const { t } = useT();
+  const actions = useAppActions();
+  const isFirstRun = useCharacterStore((s) => s.isFirstRun);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
@@ -24,7 +28,7 @@ export function WelcomeScreen({ onCreateCharacter, onImportFiles, onFreeChat }: 
     if (!canCreate) return;
     setBusy(true);
     try {
-      await onCreateCharacter({
+      await actions.handleCreateCharacter({
         name: name.trim(),
         description: desc.trim() || undefined,
         firstMessage: firstMsg.trim() || undefined,
@@ -38,13 +42,15 @@ export function WelcomeScreen({ onCreateCharacter, onImportFiles, onFreeChat }: 
     if (busy) return;
     setBusy(true);
     try {
-      await onFreeChat();
+      await actions.handleFreeChat();
     } finally {
       setBusy(false);
     }
   };
 
   const cardBase = "flex flex-col items-center gap-1.5 rounded-[10px] border border-border2 bg-s2 text-center text-t1 transition-all hover:border-accent hover:bg-surface";
+
+  if (!isFirstRun) return null;
 
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]">
@@ -124,7 +130,7 @@ export function WelcomeScreen({ onCreateCharacter, onImportFiles, onFreeChat }: 
           className="hidden"
           onChange={(e) => {
             if (e.target.files && e.target.files.length > 0) {
-              onImportFiles(e.target.files);
+              actions.handleImportFiles(e.target.files);
             }
           }}
         />
