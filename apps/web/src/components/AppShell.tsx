@@ -42,7 +42,6 @@ export function AppShell() {
   const snapshot = app.snapshot;
   const isPlayMode = app.mode === "play";
   const activeChatId = app.activeChatId ?? snapshot?.activeChat.id ?? null;
-  const personaName = snapshot?.persona?.name ?? t("no_persona");
   const contextUsed = app.activePromptTrace?.tokenAccounting?.total ?? 0;
   const contextLimit = app.activeProviderProfile?.contextBudget ?? 0;
 
@@ -74,72 +73,9 @@ export function AppShell() {
       </div>
     );
   } else if (isPlayMode) {
-    shellSurface = (
-      <PlayMode
-        messageList={{
-          characterName: snapshot.character.name,
-          scenario: app.displayScenario,
-          branches: snapshot.branches,
-          activeBranchId: snapshot.activeBranch.id,
-          messages: app.displayMessages,
-          pendingUserMessageContent: app.displayPendingUserMessageContent,
-          editingMessageId: app.editingMessageId,
-          editingDraft: app.editingDraft,
-          isSending: app.isSending,
-          messageActionId: app.messageActionId,
-          onActivateBranch: (branchId) => void app.handleActivateBranch(branchId),
-          onFork: () => void app.handleFork(),
-          onStartEdit: app.handleStartEdit,
-          onEditingDraftChange: app.setEditingDraft,
-          onCancelEdit: app.handleCancelEdit,
-          onSaveEdit: (messageId) => void app.handleSaveMessageEdit(messageId),
-          onDelete: (messageId) => void app.handleDeleteMessage(messageId),
-          onRegenerate: (messageId) => void app.handleRegenerateMessage(messageId),
-          onResend: () => { void app.handleResend(); },
-          onSelectVariant: (messageId, variantIndex) => void app.handleSelectMessageVariant(messageId, variantIndex),
-          alternateGreetings: app.displayAlternateGreetings,
-          characterAvatarAssetId: snapshot.character.avatarAssetId ?? null,
-          personaAvatarAssetId: snapshot.persona?.avatarAssetId ?? null,
-        }}
-        inputArea={{
-          characterName: snapshot.character.name, personaName, draft: app.draft,
-          tokenCount: app.draft.trim().length, sendLabel: app.renderSendLabel(),
-          isSending: app.isSending,
-          canSend: Boolean(app.draft.trim()) && !app.isSending && app.canUseLiveApi,
-          notice: app.chatNotice,
-          tokenAccounting: app.activePromptTrace?.tokenAccounting ?? {},
-          contextSize: app.activeProviderProfile?.contextBudget ?? 0,
-          maxTokens: app.activeProviderProfile?.maxTokens ?? 0,
-          favoriteModels: app.activeProviderProfile ? (app.favoriteModelsByProfile[app.activeProviderProfile.id] ?? []) : [],
-          activeModelId: app.activeProviderProfile?.defaultModel ?? app.connection.model ?? null,
-          onSelectFavoriteModel: (modelId) => { if (app.activeProviderProfile) void app.handleSelectFavoriteProviderModel(app.activeProviderProfile.id, modelId); },
-          onCancel: app.handleCancelGeneration, onDraftChange: app.setDraft,
-          onSend: () => void app.handleSend(), personas: app.personas,
-          activePersonaId: app.snapshot?.persona?.id ?? null,
-          onSetPersona: app.handleSetChatPersona,
-        }}
-      />
-    );
+    shellSurface = <PlayMode />;
   } else {
-    shellSurface = (
-      <BuildMode
-        activeTab={app.buildTab} characterId={snapshot.character.id}
-        characterName={snapshot.character.name} description={snapshot.character.description}
-        firstMessage={snapshot.character.firstMessage} scenario={snapshot.character.scenario}
-        systemPrompt={snapshot.character.systemPrompt} subtitle={snapshot.character.subtitle}
-        mesExample={snapshot.character.mesExample} alternateGreetings={snapshot.character.alternateGreetings}
-        postHistoryInstructions={snapshot.character.postHistoryInstructions}
-        creatorNotes={snapshot.character.creatorNotes} characterBook={snapshot.character.characterBook}
-        depthPrompt={snapshot.character.depthPrompt} depthPromptDepth={snapshot.character.depthPromptDepth}
-        depthPromptRole={snapshot.character.depthPromptRole} extensions={snapshot.character.extensions}
-        tags={snapshot.character.tags} avatarAssetId={snapshot.character.avatarAssetId}
-        promptTraceCount={snapshot.promptTraceHistory.length} activeTrace={app.activePromptTrace}
-        promptPayloadText={app.promptPayloadText} isSaving={app.isSavingCharacter}
-        saveNotice={app.characterSaveNotice}
-        onSave={(draft) => void app.handleSaveCharacter(draft)}
-        onAvatarUpload={(file) => void app.handleAvatarUpload(file)}
-      />
-    );
+    shellSurface = <BuildMode />;
   }
 
   return (

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import type { InputAreaProps } from "./play-mode-types.js";
 import { PersonaQuickSwitch } from "./PersonaQuickSwitch.js";
 import { Icons } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
 import { useTokenCount } from "../hooks/use-token-count.js";
 import { useT } from "../i18n/context.js";
+import { useChatStore } from "../stores/chat-store.js";
+import { useCharacterStore } from "../stores/character-store.js";
+import { useAppActions } from "./AppShell.js";
 
 function bucketTokens(accounting: Record<string, number>): {
   system: number;
@@ -46,18 +48,34 @@ function bucketTokens(accounting: Record<string, number>): {
   return { system, character, persona, summary, history };
 }
 
-export function InputArea(input: InputAreaProps) {
+export function InputArea() {
   const { t } = useT();
+  const app = useAppActions();
   const [tokenPopOpen, setTokenPopOpen] = useState(false);
   const [modelDropOpen, setModelDropOpen] = useState(false);
   const tokenPopRef = useRef<HTMLDivElement>(null);
   const modelDropRef = useRef<HTMLDivElement>(null);
 
-  const buckets = bucketTokens(input.tokenAccounting);
-  const inputTokens = useTokenCount(input.draft);
+  const draft = useChatStore((s) => s.draft);
+  const isSending = useChatStore((s) => s.isSending);
+  const snapshot = useChatStore((s) => s.snapshot);
+  const personas = useCharacterStore((s) => s.personas);
+
+  const characterName = snapshot?.character.name ?? "";
+  const personaName = snapshot?.persona?.name ?? t("no_persona");
+  const activePersonaId = snapshot?.persona?.id ?? null;
+  const tokenAccounting = app.activePromptTrace?.tokenAccounting ?? {};
+  const contextSize = app.activeProviderProfile?.contextBudget ?? 0;
+  const maxTokens = app.activeProviderProfile?.maxTokens ?? 0;
+  const favoriteModels = app.activeProviderProfile ? (app.favoriteModelsByProfile[app.activeProviderProfile.id] ?? []) : [];
+  const activeModelId = app.activeProviderProfile?.defaultModel ?? app.connection.model ?? null;
+  const sendLabel = app.renderSendLabel();
+  const canSend = Boolean(draft.trim()) && !isSending && app.canUseLiveApi;
+  const setDraft = useChatStore((s) => s.setDraft);
+
+  const buckets = bucketTokens(tokenAccounting);
+  const inputTokens = useTokenCount(draft);
   const totalUsed = buckets.system + buckets.character + buckets.persona + buckets.summary + buckets.history + inputTokens;
-  const contextSize = input.contextSize;
-  const maxTokens = input.maxTokens;
   const availableBudget = Math.max(0, contextSize - maxTokens);
   const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
   const tokenState = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
@@ -76,24 +94,24 @@ export function InputArea(input: InputAreaProps) {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [tokenPopOpen, modelDropOpen]);
 
-  const sendButtonText = input.canSend || !input.draft.trim() ? t("send") : input.sendLabel || t("send_unavailable");
+  const sendButtonText = canSend || !draft.trim() ? t("send") : sendLabel || t("send_unavailable");
 
   return (
     <div
       className="relative z-10 shrink-0 border-t border-border bg-surface transition-opacity duration-200"
-      style={{ padding: "10px 16px 14px", opacity: input.canSend || input.isSending || input.draft.trim() ? 1 : 0.82 }}
+      style={{ padding: "10px 16px 14px", opacity: canSend || isSending || draft.trim() ? 1 : 0.82 }}
     >
       <div className="rounded-lg border border-border bg-bg transition-colors duration-150 focus-within:border-border2">
         <textarea
           className="max-h-40 min-h-[55px] w-full resize-none border-0 bg-transparent font-body text-[16.5px] leading-[1.65] text-t1 outline-none placeholder:text-t4"
           style={{ padding: "13px 16px 8px" }}
           placeholder={t("placeholder")}
-          value={input.draft}
-          onChange={(event) => input.onDraftChange(event.target.value)}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
-              if (input.canSend) input.onSend();
+              if (canSend) void app.handleSend();
             }
           }}
           rows={2}
@@ -103,7 +121,7 @@ export function InputArea(input: InputAreaProps) {
           <div className="speaker-row multi-persona" title={t("multi_persona_tooltip")}>
             <span className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.06em] text-t3">{t("speak_as")}</span>
           </div>
-          <PersonaQuickSwitch personas={input.personas} activePersonaId={input.activePersonaId} onSelect={input.onSetPersona} />
+          <PersonaQuickSwitch personas={personas} activePersonaId={activePersonaId} onSelect={app.handleSetChatPersona} />
           <div className="mx-0.5 h-3.5 w-px shrink-0 bg-border" />
 
           <div className="relative" ref={tokenPopRef}>
@@ -135,7 +153,7 @@ export function InputArea(input: InputAreaProps) {
           </div>
 
           <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-[5px]">
-            {!input.isSending && (
+            {!isSending && (
               <div className="relative flex items-center" ref={modelDropRef}>
                 <button
                   type="button"
@@ -151,17 +169,17 @@ export function InputArea(input: InputAreaProps) {
                 {modelDropOpen && (
                   <div className="absolute bottom-[calc(100%+8px)] right-0 z-[220] w-[260px] rounded-lg border border-border2 bg-surface py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
                     <div className="mb-1 border-b border-border px-4 pb-2 pt-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("starred_models")}</div>
-                    {input.favoriteModels.length > 0 ? (
-                      input.favoriteModels.map((model) => (
+                    {favoriteModels.length > 0 ? (
+                      favoriteModels.map((model) => (
                         <div
                           key={model.modelId}
                           className="flex cursor-pointer items-center gap-2 px-4 py-1.5 font-ui text-[13px] text-t1 hover:bg-s2"
                           onClick={() => {
-                            input.onSelectFavoriteModel(model.modelId);
+                            if (app.activeProviderProfile) void app.handleSelectFavoriteProviderModel(app.activeProviderProfile.id, model.modelId);
                             setModelDropOpen(false);
                           }}
                         >
-                          <div className="flex w-4 shrink-0 justify-center text-accent-t">{input.activeModelId === model.modelId && <Icons.Check />}</div>
+                          <div className="flex w-4 shrink-0 justify-center text-accent-t">{activeModelId === model.modelId && <Icons.Check />}</div>
                           <div className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{model.label || model.modelId}</div>
                         </div>
                       ))
@@ -172,11 +190,11 @@ export function InputArea(input: InputAreaProps) {
                 )}
               </div>
             )}
-            {input.isSending ? (
+            {isSending ? (
               <button
                 className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
                 style={{ padding: "0 14px" }}
-                onClick={input.onCancel}
+                onClick={app.handleCancelGeneration}
               >
                 {t("cancel")}
               </button>
@@ -184,10 +202,10 @@ export function InputArea(input: InputAreaProps) {
               <button
                 className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[5px] bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all duration-150 hover:brightness-110 disabled:cursor-default disabled:opacity-45 disabled:filter-none"
                 style={{ padding: "0 16px", background: "var(--accent)", color: "var(--on-accent)", borderRadius: 5 }}
-                disabled={!input.canSend}
-                onClick={input.onSend}
-                aria-label={input.sendLabel}
-                title={input.sendLabel}
+                disabled={!canSend}
+                onClick={() => void app.handleSend()}
+                aria-label={sendLabel}
+                title={sendLabel}
               >
                 {sendButtonText}
               </button>

@@ -1,11 +1,15 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PromptTraceRecordDto } from "@rp-platform/domain";
+import type { AppSnapshot } from "../app-client.js";
 import { Ic } from "./shared/icons";
 import { cn } from "../lib/cn";
 import { CharacterForm } from "./build/CharacterForm.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { useT } from "../i18n/context.js";
+import { useChatStore } from "../stores/chat-store.js";
+import { useCharacterStore } from "../stores/character-store.js";
+import { useAppActions } from "./AppShell.js";
 
 export interface BuildCharacterDraft {
   name: string;
@@ -29,124 +33,129 @@ export interface BuildCharacterDraft {
 export type BuildTab = "character" | "lorebook" | "trace";
 type InternalBuildTab = "char" | "trace";
 
-interface BuildModeProps {
-  characterId: string;
-  characterName: string;
-  description: string;
-  firstMessage?: string | null;
-  scenario: string;
-  systemPrompt: string;
-  subtitle?: string | null;
-  mesExample: string | null;
-  alternateGreetings: string[];
-  postHistoryInstructions: string | null;
-  creatorNotes: string | null;
-  characterBook?: string | null;
-  depthPrompt?: string | null;
-  depthPromptDepth?: number | null;
-  depthPromptRole?: string | null;
-  extensions?: string | null;
-  tags?: string[];
-  avatarAssetId?: string | null;
-  promptTraceCount: number;
-  activeTrace: PromptTraceRecordDto | null;
-  promptPayloadText: string;
-  isSaving: boolean;
-  saveNotice: string;
-  /** @deprecated — import is now handled inside CharacterForm */
-  importSurface?: ReactNode;
-  /** @deprecated — tab state is now internal */
-  activeTab?: string;
-  /** @deprecated — tab state is now internal */
-  onTabChange?: (tab: string) => void;
-  onSave: (draft: BuildCharacterDraft) => void;
-  onAvatarUpload?: (file: File) => void;
+export function BuildMode() {
+  const { t } = useT();
+  const app = useAppActions();
+
+  const snapshot = useChatStore((s) => s.snapshot);
+  const character = snapshot?.character;
+  const isSaving = useCharacterStore((s) => s.isSavingCharacter);
+  const saveNotice = useCharacterStore((s) => s.characterSaveNotice);
+  const buildTab = useCharacterStore((s) => s.buildTab);
+
+  const activeTrace = app.activePromptTrace;
+  const promptPayloadText = app.promptPayloadText;
+  const promptTraceCount = snapshot?.promptTraceHistory.length ?? 0;
+
+  if (!snapshot || !character) return null;
+
+  return <BuildModeInner
+    character={character}
+    isSaving={isSaving}
+    saveNotice={saveNotice}
+    buildTab={buildTab}
+    activeTrace={activeTrace}
+    promptPayloadText={promptPayloadText}
+    promptTraceCount={promptTraceCount}
+    onSave={app.handleSaveCharacter}
+    onAvatarUpload={app.handleAvatarUpload}
+    t={t}
+  />;
 }
 
-export function BuildMode(input: BuildModeProps) {
-  const { t } = useT();
-  const [active, setActive] = useState<InternalBuildTab>(input.activeTab === "trace" ? "trace" : "char");
+interface BuildModeInnerProps {
+  character: AppSnapshot["character"];
+  isSaving: boolean;
+  saveNotice: string;
+  buildTab: BuildTab;
+  activeTrace: PromptTraceRecordDto | null;
+  promptPayloadText: string;
+  promptTraceCount: number;
+  onSave: (draft: BuildCharacterDraft) => void;
+  onAvatarUpload: (file: File) => void;
+  t: (key: string) => string;
+}
+
+function BuildModeInner({ character, isSaving, saveNotice, buildTab, activeTrace, promptPayloadText, promptTraceCount, onSave, onAvatarUpload, t }: BuildModeInnerProps) {
+  const [active, setActive] = useState<InternalBuildTab>(buildTab === "trace" ? "trace" : "char");
 
   useEffect(() => {
-    if (input.activeTab === "trace") setActive("trace");
-    if (input.activeTab === "character") setActive("char");
-  }, [input.activeTab]);
+    if (buildTab === "trace") setActive("trace");
+    if (buildTab === "character") setActive("char");
+  }, [buildTab]);
 
   const [draft, setDraft] = useState<Record<string, any>>({
-    name: input.characterName,
-    description: input.description,
-    firstMessage: input.firstMessage || "",
-    mesExample: input.mesExample || "",
-    scenario: input.scenario,
-    personalitySummary: input.subtitle || "",
-    systemPrompt: input.systemPrompt,
-    alternateGreetings: input.alternateGreetings || [],
-    postHistoryInstructions: input.postHistoryInstructions || "",
-    creatorNotes: input.creatorNotes || "",
-    characterBook: input.characterBook || "",
-    depthPrompt: input.depthPrompt || "",
-    depthPromptDepth: input.depthPromptDepth ?? 4,
-    depthPromptRole: input.depthPromptRole || "system",
-    extensions: input.extensions || "",
-    tags: input.tags || [],
+    name: character.name,
+    description: character.description,
+    firstMessage: character.firstMessage || "",
+    mesExample: character.mesExample || "",
+    scenario: character.scenario,
+    personalitySummary: character.subtitle || "",
+    systemPrompt: character.systemPrompt,
+    alternateGreetings: character.alternateGreetings || [],
+    postHistoryInstructions: character.postHistoryInstructions || "",
+    creatorNotes: character.creatorNotes || "",
+    characterBook: character.characterBook || "",
+    depthPrompt: character.depthPrompt || "",
+    depthPromptDepth: character.depthPromptDepth ?? 4,
+    depthPromptRole: character.depthPromptRole || "system",
+    extensions: character.extensions || "",
+    tags: character.tags || [],
     _avatarPreview: null as string | null,
   });
 
-  // Sync draft only when the character itself changes (different character or
-  // server confirmed a save). Do NOT react to individual field prop changes —
-  // that would overwrite the user's local edits on every parent re-render.
-  const prevCharIdRef = useRef(input.characterId);
+  const prevCharIdRef = useRef(character.id);
   useEffect(() => {
-    if (prevCharIdRef.current !== input.characterId) {
-      prevCharIdRef.current = input.characterId;
+    if (prevCharIdRef.current !== character.id) {
+      prevCharIdRef.current = character.id;
       setDraft({
-        name: input.characterName,
-        description: input.description,
-        firstMessage: input.firstMessage || "",
-        mesExample: input.mesExample || "",
-        scenario: input.scenario,
-        personalitySummary: input.subtitle || "",
-        systemPrompt: input.systemPrompt,
-        alternateGreetings: input.alternateGreetings || [],
-        postHistoryInstructions: input.postHistoryInstructions || "",
-        creatorNotes: input.creatorNotes || "",
-        characterBook: input.characterBook || "",
-        depthPrompt: input.depthPrompt || "",
-        depthPromptDepth: input.depthPromptDepth ?? 4,
-        depthPromptRole: input.depthPromptRole || "system",
-        extensions: input.extensions || "",
-        tags: input.tags || [],
+        name: character.name,
+        description: character.description,
+        firstMessage: character.firstMessage || "",
+        mesExample: character.mesExample || "",
+        scenario: character.scenario,
+        personalitySummary: character.subtitle || "",
+        systemPrompt: character.systemPrompt,
+        alternateGreetings: character.alternateGreetings || [],
+        postHistoryInstructions: character.postHistoryInstructions || "",
+        creatorNotes: character.creatorNotes || "",
+        characterBook: character.characterBook || "",
+        depthPrompt: character.depthPrompt || "",
+        depthPromptDepth: character.depthPromptDepth ?? 4,
+        depthPromptRole: character.depthPromptRole || "system",
+        extensions: character.extensions || "",
+        tags: character.tags || [],
         _avatarPreview: null,
       });
     }
-  }, [input.characterId]);
+  }, [character.id]);
 
   const isDirty = useMemo(() => {
     return (
-      draft.name !== input.characterName ||
-      draft.description !== input.description ||
-      draft.firstMessage !== (input.firstMessage || "") ||
-      draft.mesExample !== (input.mesExample || "") ||
-      draft.scenario !== input.scenario ||
-      draft.personalitySummary !== (input.subtitle || "") ||
-      draft.systemPrompt !== input.systemPrompt ||
-      draft.alternateGreetings?.join("\n---\n") !== (input.alternateGreetings || []).join("\n---\n") ||
-      draft.postHistoryInstructions !== (input.postHistoryInstructions || "") ||
-      draft.creatorNotes !== (input.creatorNotes || "") ||
-      draft.characterBook !== (input.characterBook || "") ||
-      draft.depthPrompt !== (input.depthPrompt || "") ||
-      draft.depthPromptDepth !== (input.depthPromptDepth ?? 4) ||
-      draft.depthPromptRole !== (input.depthPromptRole || "system") ||
-      draft.extensions !== (input.extensions || "") ||
-      draft.tags?.join("\n") !== (input.tags || []).join("\n") ||
+      draft.name !== character.name ||
+      draft.description !== character.description ||
+      draft.firstMessage !== (character.firstMessage || "") ||
+      draft.mesExample !== (character.mesExample || "") ||
+      draft.scenario !== character.scenario ||
+      draft.personalitySummary !== (character.subtitle || "") ||
+      draft.systemPrompt !== character.systemPrompt ||
+      draft.alternateGreetings?.join("\n---\n") !== (character.alternateGreetings || []).join("\n---\n") ||
+      draft.postHistoryInstructions !== (character.postHistoryInstructions || "") ||
+      draft.creatorNotes !== (character.creatorNotes || "") ||
+      draft.characterBook !== (character.characterBook || "") ||
+      draft.depthPrompt !== (character.depthPrompt || "") ||
+      draft.depthPromptDepth !== (character.depthPromptDepth ?? 4) ||
+      draft.depthPromptRole !== (character.depthPromptRole || "system") ||
+      draft.extensions !== (character.extensions || "") ||
+      draft.tags?.join("\n") !== (character.tags || []).join("\n") ||
       !!draft._avatarPreview
     );
   }, [
-    draft, input.characterName, input.description, input.firstMessage,
-    input.scenario, input.subtitle, input.systemPrompt, input.mesExample,
-    input.alternateGreetings, input.postHistoryInstructions, input.creatorNotes,
-    input.characterBook, input.depthPrompt, input.depthPromptDepth,
-    input.depthPromptRole, input.extensions, input.tags,
+    draft, character.name, character.description, character.firstMessage,
+    character.scenario, character.subtitle, character.systemPrompt, character.mesExample,
+    character.alternateGreetings, character.postHistoryInstructions, character.creatorNotes,
+    character.characterBook, character.depthPrompt, character.depthPromptDepth,
+    character.depthPromptRole, character.extensions, character.tags,
   ]);
 
   function patchDraft(key: string, value: any): void {
@@ -155,28 +164,28 @@ export function BuildMode(input: BuildModeProps) {
 
   function resetDraft(): void {
     setDraft({
-      name: input.characterName,
-      description: input.description,
-      firstMessage: input.firstMessage || "",
-      mesExample: input.mesExample || "",
-      scenario: input.scenario,
-      personalitySummary: input.subtitle || "",
-      systemPrompt: input.systemPrompt,
-      alternateGreetings: input.alternateGreetings || [],
-      postHistoryInstructions: input.postHistoryInstructions || "",
-      creatorNotes: input.creatorNotes || "",
-      characterBook: input.characterBook || "",
-      depthPrompt: input.depthPrompt || "",
-      depthPromptDepth: input.depthPromptDepth ?? 4,
-      depthPromptRole: input.depthPromptRole || "system",
-      extensions: input.extensions || "",
-      tags: input.tags || [],
+      name: character.name,
+      description: character.description,
+      firstMessage: character.firstMessage || "",
+      mesExample: character.mesExample || "",
+      scenario: character.scenario,
+      personalitySummary: character.subtitle || "",
+      systemPrompt: character.systemPrompt,
+      alternateGreetings: character.alternateGreetings || [],
+      postHistoryInstructions: character.postHistoryInstructions || "",
+      creatorNotes: character.creatorNotes || "",
+      characterBook: character.characterBook || "",
+      depthPrompt: character.depthPrompt || "",
+      depthPromptDepth: character.depthPromptDepth ?? 4,
+      depthPromptRole: character.depthPromptRole || "system",
+      extensions: character.extensions || "",
+      tags: character.tags || [],
       _avatarPreview: null,
     });
   }
 
   function handleSave(): void {
-    input.onSave({
+    onSave({
       name: draft.name?.trim() || "",
       description: draft.description,
       firstMessage: draft.firstMessage,
@@ -196,42 +205,40 @@ export function BuildMode(input: BuildModeProps) {
     });
   }
 
-  // After a successful save, the snapshot updates → props change.
-  // Sync draft from the new server state so isDirty resets to false.
-  const prevNoticeRef = useRef(input.saveNotice);
+  const prevNoticeRef = useRef(saveNotice);
   useEffect(() => {
-    if (prevNoticeRef.current !== input.saveNotice && input.saveNotice === "Character card saved.") {
-      prevNoticeRef.current = input.saveNotice;
+    if (prevNoticeRef.current !== saveNotice && saveNotice === "Character card saved.") {
+      prevNoticeRef.current = saveNotice;
       setDraft({
-        name: input.characterName,
-        description: input.description,
-        firstMessage: input.firstMessage || "",
-        mesExample: input.mesExample || "",
-        scenario: input.scenario,
-        personalitySummary: input.subtitle || "",
-        systemPrompt: input.systemPrompt,
-        alternateGreetings: input.alternateGreetings || [],
-        postHistoryInstructions: input.postHistoryInstructions || "",
-        creatorNotes: input.creatorNotes || "",
-        characterBook: input.characterBook || "",
-        depthPrompt: input.depthPrompt || "",
-        depthPromptDepth: input.depthPromptDepth ?? 4,
-        depthPromptRole: input.depthPromptRole || "system",
-        extensions: input.extensions || "",
-        tags: input.tags || [],
+        name: character.name,
+        description: character.description,
+        firstMessage: character.firstMessage || "",
+        mesExample: character.mesExample || "",
+        scenario: character.scenario,
+        personalitySummary: character.subtitle || "",
+        systemPrompt: character.systemPrompt,
+        alternateGreetings: character.alternateGreetings || [],
+        postHistoryInstructions: character.postHistoryInstructions || "",
+        creatorNotes: character.creatorNotes || "",
+        characterBook: character.characterBook || "",
+        depthPrompt: character.depthPrompt || "",
+        depthPromptDepth: character.depthPromptDepth ?? 4,
+        depthPromptRole: character.depthPromptRole || "system",
+        extensions: character.extensions || "",
+        tags: character.tags || [],
         _avatarPreview: null,
       });
     } else {
-      prevNoticeRef.current = input.saveNotice;
+      prevNoticeRef.current = saveNotice;
     }
-  }, [input.saveNotice]);
+  }, [saveNotice]);
 
   function handleAvatarUpload(file: File): void {
-    input.onAvatarUpload?.(file);
+    onAvatarUpload(file);
   }
 
-  const avatarUrl = input.avatarAssetId
-    ? `${getGatewayBaseUrl()}/api/assets/${input.avatarAssetId}`
+  const avatarUrl = character.avatarAssetId
+    ? `${getGatewayBaseUrl()}/api/assets/${character.avatarAssetId}`
     : undefined;
 
   // Nav items — Phase 1: only Character + Trace
@@ -245,7 +252,7 @@ export function BuildMode(input: BuildModeProps) {
   ];
 
   function renderTraceContent(): ReactNode {
-    const trace = input.activeTrace;
+    const trace = activeTrace;
     const totalTokens = trace ? (trace.tokenAccounting?.total ?? trace.layers.reduce((sum, l) => sum + l.tokenCount, 0)) : 0;
     return (
       <div className="max-w-[800px]">
@@ -272,7 +279,7 @@ export function BuildMode(input: BuildModeProps) {
           ) : (
             t("trace_no_active")
           )}{" "}
-          · {t("trace_recorded_count").replace("{n}", String(input.promptTraceCount))}.
+          · {t("trace_recorded_count").replace("{n}", String(promptTraceCount))}.
           {trace?.prefill && (
             <div
               style={{
@@ -331,7 +338,7 @@ export function BuildMode(input: BuildModeProps) {
               <button
                 className="inline-flex cursor-pointer items-center rounded-md border-0 bg-s3 font-ui text-xs font-medium text-t2 transition-colors hover:bg-border2 hover:text-t1"
                 style={{ padding: "8px 16px" }}
-                onClick={() => alert(input.promptPayloadText)}
+                onClick={() => alert(promptPayloadText)}
               >
                 {t("view_raw_json")}
               </button>
@@ -398,8 +405,8 @@ export function BuildMode(input: BuildModeProps) {
             patchDraft={patchDraft}
             setDraft={setDraft}
             isDirty={isDirty}
-            isSaving={input.isSaving}
-            saveNotice={input.saveNotice}
+            isSaving={isSaving}
+            saveNotice={saveNotice}
             avatarUrl={avatarUrl}
             onSave={handleSave}
             onReset={resetDraft}
