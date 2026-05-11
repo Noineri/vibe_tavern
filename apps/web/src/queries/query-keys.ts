@@ -11,19 +11,21 @@ export const providerKeys = {
   favorites: (id: string) => ["providers", "favorites", id] as const,
 };
 
-// Placeholder factories — filled in TQ2-TQ4
+// Placeholder factories — filled in TQ3-TQ4
 export const chatKeys = {
   all: () => ["chat"] as const,
 };
 
 export const characterKeys = {
-  all: () => ["character"] as const,
+  all: () => ["characters"] as const,
 };
 
 export const personaKeys = {
-  all: () => ["persona"] as const,
+  all: () => ["personas"] as const,
+  list: () => ["personas", "list"] as const,
 };
 
 export const bootstrapKeys = {
   all: () => ["bootstrap"] as const,
+  snapshot: () => ["bootstrap", "snapshot"] as const,
 };

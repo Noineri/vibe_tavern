@@ -276,11 +276,8 @@ export function useRpPlatformApp() {
     setMode,
     setIsImportDragActive,
     setImportNotice,
-    setIsSavingCharacter,
     setCharacterSaveNotice,
     setPersonas: (updater) => useCharacterStore.getState().setPersonas(updater(useCharacterStore.getState().personas)),
-    loadBootstrap,
-    loadPersonas,
     importFile,
   });
 
@@ -448,7 +445,7 @@ export function useRpPlatformApp() {
     displayMessages: display.displayMessages,
     displayScenario: display.displayScenario,
     chatNotice,
-    isSavingCharacter,
+    isSavingCharacter: character.isSavingCharacter,
     characterSaveNotice,
     isImporting,
     characterTabs: display.characterTabs,
