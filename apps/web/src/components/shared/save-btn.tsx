@@ -26,12 +26,12 @@ export const SaveBtn: FC<SaveBtnProps> = ({ dirty, saveState, onClick, label, st
       style={style}
     >
       {isSaving ? (
-        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span className="gen-cur" style={{ display: "inline-flex" }}><span /><span /><span /></span>
+        <span className="flex items-center gap-1.5">
+          <span className="gen-cur inline-flex"><span /><span /><span /></span>
           {t("saving")}
         </span>
       ) : isSaved ? (
-        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><Icons.Check /> {t("saved")}</span>
+        <span className="flex items-center gap-[5px]"><Icons.Check /> {t("saved")}</span>
       ) : (
         label || t("save")
       )}

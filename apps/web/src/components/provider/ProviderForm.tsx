@@ -10,11 +10,9 @@ import { Toggle } from '../shared/Toggle.js';
 const labelCls =
   'block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3';
 const inputCls =
-  'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent';
+  'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent px-[13px]';
 const selectCls =
-  'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent';
-const inputPad = { padding: '0 13px' };
-const selectPad = { padding: '0 34px 0 13px' };
+  'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent pl-[13px] pr-[34px]';
 const pwCls = 'font-mono tracking-[0.05em]';
 
 interface ProviderFormProps {
@@ -65,25 +63,24 @@ export function ProviderForm({
     <>
       {/* Row 1: profile name + provider preset */}
       <div className="grid grid-cols-2 gap-4">
-        <div style={{ marginBottom: 16 }}>
-          <label className={labelCls} style={{ marginBottom: 7 }}>{t("profile_name")}</label>
+        <div className="mb-4">
+          <label className={labelCls + " mb-[7px]"}>{t("profile_name")}</label>
           <input
             type="text"
             value={form.name}
             onChange={(e) => updateForm('name', e.target.value)}
             placeholder={t("profile_name_placeholder")}
             className={inputCls}
-            style={inputPad}
           />
           {duplicateNameWarning && (
-            <div className="flex items-center gap-1 text-[11px] text-warning" style={{ marginTop: 4 }}>
+            <div className="mt-1 flex items-center gap-1 text-[11px] text-warning">
               <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Alert /></span>
               {t("profile_name_exists")}
             </div>
           )}
         </div>
-        <div style={{ marginBottom: 16 }}>
-          <label className={labelCls} style={{ marginBottom: 7 }}>{t("provider_preset_label")}</label>
+        <div className="mb-4">
+          <label className={labelCls + " mb-[7px]"}>{t("provider_preset_label")}</label>
           <select
             value={presetGroup ?? ''}
             onChange={(e) => {
@@ -96,7 +93,6 @@ export function ProviderForm({
               }
             }}
             className={selectCls}
-            style={selectPad}
           >
             <option value="">{t("custom")}</option>
             {PRESET_GROUPS.map((g) => (
@@ -110,8 +106,8 @@ export function ProviderForm({
 
       {/* Row 2: API format + preset endpoint */}
       <div className="grid grid-cols-2 gap-4">
-        <div style={{ marginBottom: 16 }}>
-          <label className={labelCls} style={{ marginBottom: 7 }}>{t("api_format_label")}</label>
+        <div className="mb-4">
+          <label className={labelCls + " mb-[7px]"}>{t("api_format_label")}</label>
           <select
             value={form.providerPreset || ''}
             onChange={(e) => {
@@ -119,7 +115,6 @@ export function ProviderForm({
               if (val) applyPreset(val);
             }}
             className={selectCls}
-            style={selectPad}
           >
             <option value="">{t("custom")}</option>
             {filteredPresets.map((f) => (
@@ -129,40 +124,38 @@ export function ProviderForm({
             ))}
           </select>
         </div>
-        <div style={{ marginBottom: 16 }}>
-          <label className={labelCls} style={{ marginBottom: 7 }}>{t("preset_endpoint_label")}</label>
+        <div className="mb-4">
+          <label className={labelCls + " mb-[7px]"}>{t("preset_endpoint_label")}</label>
           <input
             type="text"
             value={presetEndpoint || t("custom")}
             readOnly
             className={cn(inputCls, '!cursor-not-allowed !opacity-60')}
-            style={inputPad}
           />
         </div>
       </div>
 
       {/* Custom endpoint */}
-      <div style={{ marginBottom: 16 }}>
-        <label className={labelCls} style={{ marginBottom: 7 }}>{t("custom_endpoint_label")}</label>
+      <div className="mb-4">
+        <label className={labelCls + " mb-[7px]"}>{t("custom_endpoint_label")}</label>
         <input
           type="text"
           value={form.baseUrl}
           onChange={(e) => updateForm('baseUrl', e.target.value)}
           placeholder="https://api.openai.com/v1"
           className={inputCls}
-          style={inputPad}
         />
       </div>
 
       {/* Stream toggle card */}
-      <div className="rounded-lg border border-border2 bg-s2" style={{ marginTop: 8, marginBottom: 16, padding: '12px 16px' }}>
+      <div className="mt-2 mb-4 rounded-lg border border-border2 bg-s2 px-4 py-3">
         <div className="flex items-center gap-3">
           <Toggle checked={form.streamResponse !== false} onChange={(v) => updateForm('streamResponse', v as FormState['streamResponse'])} className="!mb-0 !inline-flex" />
           <div>
             <div className="font-ui text-[13px] font-medium text-t1">
               {t("stream_response")}
             </div>
-            <div className="text-[calc(var(--ui-fs)-3px)] text-t3" style={{ marginTop: 2, lineHeight: 1.5 }}>
+            <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
               {t("stream_response_hint")}
             </div>
           </div>
@@ -170,20 +163,19 @@ export function ProviderForm({
       </div>
 
       {/* API key */}
-      <div style={{ marginBottom: 16 }}>
-        <label className={labelCls} style={{ marginBottom: 7 }}>{t("api_key_label")}</label>
+      <div className="mb-4">
+        <label className={labelCls + " mb-[7px]"}>{t("api_key_label")}</label>
         <input
           type="password"
           value={form.apiKey}
           onChange={(e) => updateForm('apiKey', e.target.value)}
           placeholder={form.hasStoredApiKey ? t("api_key_stored") : t("api_key_placeholder")}
           className={cn(inputCls, pwCls)}
-          style={inputPad}
         />
       </div>
 
       {/* Test connection card */}
-      <div className="rounded-lg border border-border bg-surface" style={{ marginTop: 16, marginBottom: 16, padding: 16 }}>
+      <div className="my-4 rounded-lg border border-border bg-surface p-4">
         {!form.apiKey && !form.hasStoredApiKey ? (
           <div className="flex items-center gap-2 font-ui text-[13px] text-t3">
             <span className="h-2 w-2 rounded-full bg-t4" />
@@ -199,22 +191,20 @@ export function ProviderForm({
             <div className="flex gap-3">
               <button
                 className={cn(
-                  'rounded-md border font-ui text-[13px] font-medium transition-colors',
+                  'rounded-md border font-ui text-[13px] font-medium transition-colors px-4 py-1.5',
                   testOk === true
                     ? 'border-success/30 bg-success/10 text-success'
                     : testOk === false
                       ? 'border-danger/30 bg-danger/10 text-danger'
                       : 'border-border bg-s2 text-t2 hover:border-border2 hover:text-t1'
                 )}
-                style={{ padding: '6px 16px' }}
                 onClick={() => void onTest()}
                 disabled={testing}
               >
                 {testing ? t("testing") : t("test_connection")}
               </button>
               <button
-                className="rounded-md border border-border bg-s2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50"
-                style={{ padding: '6px 16px' }}
+                className="rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50"
                 onClick={() => void onTestChat()}
                 disabled={testingChat}
               >
@@ -222,25 +212,25 @@ export function ProviderForm({
               </button>
             </div>
             {testOk === true && (
-              <div style={{ marginTop: 12 }}>
-                <span className="inline-flex items-center gap-1.5 rounded bg-success/10 font-ui text-[12px] text-success" style={{ padding: '4px 10px' }}>
+              <div className="mt-3">
+                <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] text-success">
                   <Icons.Check />
                   {t("connection_successful")}
                 </span>
               </div>
             )}
             {testOk === false && (
-              <div style={{ marginTop: 12 }}>
-                <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 font-ui text-[12px] text-danger" style={{ padding: '4px 10px' }}>
+              <div className="mt-3">
+                <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger">
                   <Icons.Close />
                   {t("connection_failed")}
                 </span>
               </div>
             )}
             {chatResult && (
-              <div style={{ marginTop: 12 }}>
+              <div className="mt-3">
                 {chatResult.reply && (
-                  <span className="inline-flex items-center gap-1.5 rounded bg-success/10 font-ui text-[12px] text-success italic" style={{ padding: '4px 10px' }}>
+                  <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] text-success italic">
                     &ldquo;
                     {chatResult.reply.length > 200
                       ? chatResult.reply.slice(0, 200) + '...'
@@ -249,7 +239,7 @@ export function ProviderForm({
                   </span>
                 )}
                 {chatResult.error && (
-                  <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 font-ui text-[12px] text-danger" style={{ padding: '4px 10px' }}>
+                  <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger">
                     <Icons.Close />
                     {chatResult.error}
                   </span>

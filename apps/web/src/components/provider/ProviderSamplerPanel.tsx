@@ -37,8 +37,8 @@ function SamplerField({
     onChange(v);
   };
   return (
-    <div className="flex flex-col justify-end" style={{ marginBottom: 0 }}>
-      <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3" style={{ marginBottom: 7 }}>
+    <div className="mb-0 flex flex-col justify-end">
+      <label className="mb-[7px] font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
         {label}
       </label>
       <div className="flex items-center gap-2">
@@ -49,8 +49,7 @@ function SamplerField({
           step={step}
           value={val}
           onChange={handleNumChange}
-          className="!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent"
-          style={{ padding: 0 }}
+          className="!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0"
         />
         <input
           type="number"
@@ -59,8 +58,7 @@ function SamplerField({
           step={step}
           value={val}
           onChange={handleNumChange}
-          className="!h-[30px] !w-[58px] shrink-0 rounded border border-border bg-s2 text-center font-ui text-[12px] text-t1 outline-none transition-colors focus:border-accent"
-          style={{ padding: 0 }}
+          className="!h-[30px] !w-[58px] shrink-0 rounded border border-border bg-s2 p-0 text-center font-ui text-[12px] text-t1 outline-none transition-colors focus:border-accent"
         />
       </div>
     </div>
@@ -70,11 +68,9 @@ function SamplerField({
 /* ── ProviderSamplerPanel ───────────────────────────────────────────── */
 
 const selectCls =
-  'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent';
-const selectPad = { padding: '0 34px 0 13px' };
+  'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent pl-[13px] pr-[34px]';
 const textInputCls =
-  'h-[38px] w-full rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent';
-const textInputPad = { padding: '0 12px' };
+  'h-[38px] w-full rounded-md border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent';
 
 interface ProviderSamplerPanelProps {
   form: FormState;
@@ -86,16 +82,16 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
   const [advOpen, setAdvOpen] = useState(false);
 
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div className="mb-4">
       {/* ── Basic settings ── */}
-      <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-semibold uppercase tracking-[0.05em] text-t3" style={{ marginTop: 20, marginLeft: 0, marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid var(--border2)' }}>
+      <div className="mt-5 ml-0 mb-3 pb-2 border-b border-border2 font-ui text-[calc(var(--ui-fs)-2px)] font-semibold uppercase tracking-[0.05em] text-t3">
         {t("sampler_basic_settings")}
       </div>
 
       <div className="grid grid-cols-2 gap-x-6 gap-y-4">
         {/* Max tokens */}
         <div>
-          <label className="block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3" style={{ marginBottom: 7 }}>
+          <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
             {t("sampler_max_context")}
           </label>
           <input
@@ -107,13 +103,12 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
               updateForm('maxTokens', parseInt(e.target.value) || 500)
             }
             className={textInputCls}
-            style={textInputPad}
           />
         </div>
 
         {/* Context budget */}
         <div>
-          <label className="block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3" style={{ marginBottom: 7 }}>
+          <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
             {t("context_length")}
           </label>
           <input
@@ -129,7 +124,6 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
             }
             placeholder={t("context_auto")}
             className={textInputCls}
-            style={textInputPad}
           />
         </div>
 
@@ -145,14 +139,13 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
 
         {/* Reasoning effort */}
         <div>
-          <label className="block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3" style={{ marginBottom: 7 }}>
+          <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
             {t("reasoning_effort")}
           </label>
           <select
             value={form.reasoningEffort}
             onChange={(e) => updateForm('reasoningEffort', e.target.value)}
             className={selectCls}
-            style={selectPad}
           >
             <option value="low">{t("effort_low")}</option>
             <option value="medium">{t("effort_medium")}</option>
@@ -184,15 +177,14 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
       </div>
 
       {/* ── Advanced (accordion) ── */}
-      <div className="overflow-hidden rounded-lg border border-border2" style={{ marginTop: 16 }}>
+      <div className="mt-4 overflow-hidden rounded-lg border border-border2">
         <button
           type="button"
           onClick={() => setAdvOpen(!advOpen)}
           className={cn(
-            'flex w-full items-center justify-between bg-s2 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)] focus:outline-none',
+            'flex w-full items-center justify-between bg-s2 p-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)] focus:outline-none',
             advOpen && '!rounded-b-none'
           )}
-          style={{ padding: 12 }}
         >
           <span>{t("samplers_advanced")}</span>
           <span className={cn('transition-transform', advOpen && 'rotate-180')}>
@@ -201,7 +193,7 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
         </button>
 
         {advOpen && (
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-border2 bg-surface" style={{ padding: 16 }}>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-border2 bg-surface p-4">
             <SamplerField
               label={t("sampler_freq_penalty")}
               min={-2}
@@ -262,8 +254,8 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
             <div /> {/* spacer */}
 
             {/* Stop Sequences */}
-            <div className="col-span-2" style={{ marginTop: 8 }}>
-              <label className="block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3" style={{ marginBottom: 7 }}>
+            <div className="col-span-2 mt-2">
+              <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
                 {t("stop_seqs_label")}
               </label>
               <input
@@ -272,13 +264,12 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
                 onChange={(e) => updateForm('stopSeq', e.target.value)}
                 placeholder={t("stop_seqs_placeholder")}
                 className={textInputCls}
-                style={textInputPad}
               />
             </div>
 
             {/* Logit Bias */}
             <div className="col-span-2">
-              <label className="block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3" style={{ marginBottom: 7 }}>
+              <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
                 {t("logit_bias_label")}
               </label>
               <input
@@ -287,7 +278,6 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
                 onChange={(e) => updateForm('logitBias', e.target.value)}
                 placeholder='{"50256": -100}'
                 className={textInputCls}
-                style={textInputPad}
               />
             </div>
           </div>

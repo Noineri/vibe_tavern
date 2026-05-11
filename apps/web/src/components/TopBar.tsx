@@ -53,7 +53,7 @@ export function TopBar() {
   const setTheme = useNavigationStore((s) => s.setTheme);
 
   return (
-    <div className="sticky top-0 z-50 flex h-[60px] shrink-0 items-center gap-3.5 border-b border-border bg-surface" style={{padding:'0 22px'}}>
+    <div className="sticky top-0 z-50 flex h-[60px] shrink-0 items-center gap-3.5 border-b border-border bg-surface px-[22px]">
       <div className="flex min-w-[90px] max-w-[220px] flex-none items-center gap-2.5">
         <div className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border-[1.5px] border-transparent bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t2 transition-opacity duration-150 hover:border-accent hover:opacity-85 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top"
           onClick={() => actions.setAvatarOpen(true)}>
@@ -72,8 +72,7 @@ export function TopBar() {
           <MemBadge label={t("topbar_memory")} onClick={() => actions.openContextMemory()} />
         )}
 
-        <div className="flex min-h-8 min-w-0 max-w-[min(520px,60vw)] flex-[0_1_auto] cursor-pointer items-center gap-1.5 overflow-hidden whitespace-nowrap rounded border border-transparent bg-transparent px-2 font-ui text-[calc(var(--ui-fs)-4px)] leading-tight text-t2 transition-colors duration-150 hover:border-border hover:bg-s2 hover:text-t1"
-          style={{padding:'3px 8px'}}
+        <div className="flex min-h-8 min-w-0 max-w-[min(520px,60vw)] flex-[0_1_auto] cursor-pointer items-center gap-1.5 overflow-hidden whitespace-nowrap rounded border border-transparent bg-transparent px-2 py-[3px] font-ui text-[calc(var(--ui-fs)-4px)] leading-tight text-t2 transition-colors duration-150 hover:border-border hover:bg-s2 hover:text-t1"
           onClick={() => actions.openConnectionPanel()}
           title={t("provider_settings_title")}>
           <div className={cn(
@@ -124,8 +123,7 @@ export function TopBar() {
 
         <div className="flex-1 min-w-2"/>
 
-        <div className="cursor-pointer rounded-full bg-accent-dim text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-accent-t transition-colors duration-150 hover:bg-accent-hover"
-          style={{padding:'4px 12px'}}
+        <div className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-accent-t transition-colors duration-150 hover:bg-accent-hover"
           tabIndex={0}
           onClick={() => setMode(mode === 'play' ? 'build' : 'play')}>
           {mode === 'play' ? t("topbar_build_mode") : t("topbar_play_mode")}

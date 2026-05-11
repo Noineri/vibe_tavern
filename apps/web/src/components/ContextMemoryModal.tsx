@@ -134,8 +134,8 @@ export function ContextMemoryModal({
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="flex h-[min(85vh,680px)] max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[820px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">
-        <div className="shrink-0 border-b border-border" style={{padding:'18px 20px 0'}}>
-          <div className="flex items-start justify-between" style={{paddingBottom:12}}>
+        <div className="shrink-0 border-b border-border px-5 pt-[18px]">
+          <div className="flex items-start justify-between pb-3">
             <div>
               <div className="font-body mb-0.5 text-[calc(var(--ui-fs)+4px)] font-medium text-t1">{t("context_memory_title")}</div>
               <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("context_memory_sub")}</div>
@@ -143,7 +143,7 @@ export function ContextMemoryModal({
             <div className="flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={onClose}><Icons.Close /></div>
           </div>
           <div className="flex gap-0 mt-1">
-            <div className={cn("cursor-pointer border-b-2 border-b-transparent font-ui text-xs font-medium text-t3 transition-all select-none hover:text-t2", topTab === 'summary' && "border-b-accent text-accent-t")} style={{padding:'8px 16px'}} onClick={() => setTopTab('summary')}>{t("memory_v1_tab")}</div>
+            <div className={cn("cursor-pointer border-b-2 border-b-transparent px-4 py-2 font-ui text-xs font-medium text-t3 transition-all select-none hover:text-t2", topTab === 'summary' && "border-b-accent text-accent-t")} onClick={() => setTopTab('summary')}>{t("memory_v1_tab")}</div>
           </div>
         </div>
 

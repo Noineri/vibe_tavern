@@ -27,8 +27,7 @@ export function PrefillField({ prefill, onUpdate, disabled, prefillSupported }: 
         )}
       </div>
       <textarea
-        className={textareaCls}
-        style={{ padding: "9px 13px", minHeight: 60 }}
+        className={textareaCls + " px-[13px] py-[9px] min-h-[60px]"}
         value={prefill}
         onChange={(e) => onUpdate(e.target.value)}
         disabled={disabled}

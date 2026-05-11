@@ -43,14 +43,6 @@ function parseCardToDraft(raw: unknown): Partial<BuildCharacterDraft> {
   return result;
 }
 
-/* ── shared inline style objects (avoids Tailwind v4 numeric spacing bugs) ── */
-const s = {
-  fieldWrap: { marginBottom: 20 } as React.CSSProperties,
-  label: { marginBottom: 6, display: "block" } as React.CSSProperties,
-  inputPadding: { padding: "6px 10px" } as React.CSSProperties,
-  sectionGap: { marginTop: 24, marginBottom: 12, paddingBottom: 6 } as React.CSSProperties,
-};
-
 const inputCls = "w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent";
 const textareaCls = inputCls;
 const monoCls = inputCls + " font-mono text-xs";
@@ -150,17 +142,16 @@ export function CharacterForm({
   ].filter(Boolean).join("\n"));
 
   return (
-    <div style={{ maxWidth: 600 }}>
+    <div className="max-w-[600px]">
       {/* Header row */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-        <div className="font-body text-[22px] font-medium text-t1" style={{ marginBottom: 6 }}>
+      <div className="mb-1.5 flex items-center justify-between">
+        <div className="mb-1.5 font-body text-[22px] font-medium text-t1">
           {name || t("unnamed")}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="flex items-center gap-2">
           <span className="font-ui text-[11px] tabular-nums text-t3">{charTotal.toLocaleString()} {t("tokens_label")}</span>
           <button
-            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
-            style={{ height: 28, width: 28 }}
+            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
             title={t("char_import_to_draft")}
             onClick={() => setImportModalOpen(true)}
             disabled={isSaving}
@@ -168,8 +159,7 @@ export function CharacterForm({
             {Ic.import()}
           </button>
           <button
-            className="cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
-            style={{ height: 28, padding: "0 14px" }}
+            className="h-7 cursor-pointer rounded-md border-0 bg-accent px-3.5 font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
             disabled={!canSave || !isDirty}
             onClick={onSave}
           >
@@ -179,26 +169,25 @@ export function CharacterForm({
       </div>
 
       {importError && (
-        <div className="rounded-md border border-border2 bg-s2 font-ui text-xs text-red-400" style={{ marginBottom: 12, padding: "6px 12px" }}>
+        <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-red-400">
           {importError}
         </div>
       )}
 
       {/* Validation error for name */}
       {errors.name && (
-        <div className="rounded-md border border-border2 bg-s2 font-ui text-xs text-red-400" style={{ marginBottom: 12, padding: "6px 12px" }}>
+        <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-red-400">
           {errors.name.message}
         </div>
       )}
 
-      <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t2" style={{ marginBottom: 28, lineHeight: 1.55 }}>
+      <div className="mb-7 font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.55] text-t2">
       </div>
 
       {/* Avatar + Name */}
-      <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
+      <div className="mb-5 flex gap-4">
         <div
-          className="group relative flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t"
-          style={{ height: 64, width: 64 }}
+          className="group relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t"
           onClick={() => avaInputRef.current?.click()}
           title={t("change_avatar")}
         >
@@ -210,42 +199,41 @@ export function CharacterForm({
             </>
           ) : <Ic.plus />}
         </div>
-        <div style={{ flex: 1 }}>
-          <label className={lblCls} style={s.label}>{t("char_name_label")}</label>
-          <input type="text" className={inputCls} style={s.inputPadding} disabled={isSaving} {...register("name")} />
+        <div className="flex-1">
+          <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
+          <input type="text" className={inputCls + " px-2.5 py-1.5"} disabled={isSaving} {...register("name")} />
         </div>
       </div>
 
       {/* Description */}
-      <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>{t("char_desc_label")}</label>
-        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 100 }} disabled={isSaving} {...register("description")} />
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("char_desc_label")}</label>
+        <textarea className={textareaCls + " min-h-[100px] px-2.5 py-1.5"} disabled={isSaving} {...register("description")} />
         <TokenBadge text={description || ""} />
       </div>
 
       {/* First Message */}
-      <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>{t("first_message_greeting")}</label>
-        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 120 }} disabled={isSaving} placeholder={t("first_message_placeholder")} {...register("firstMessage")} />
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("first_message_greeting")}</label>
+        <textarea className={textareaCls + " min-h-[120px] px-2.5 py-1.5"} disabled={isSaving} placeholder={t("first_message_placeholder")} {...register("firstMessage")} />
         <TokenBadge text={firstMessage || ""} />
       </div>
 
       {/* Alternate Greetings */}
-      <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>{t("alternate_greetings")}</label>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("alternate_greetings")}</label>
+        <div className="mb-2 flex flex-wrap gap-1">
           {alternateGreetings.map((_: string, idx: number) => (
             <span
               key={idx}
               className={cn(
-                "inline-flex items-center rounded border border-border bg-s2 font-ui text-xs text-t2 cursor-pointer transition-all",
+                "inline-flex items-center gap-1 rounded border border-border bg-s2 px-2.5 py-[2px] font-ui text-xs text-t2 cursor-pointer transition-all",
                 idx === altGreetIdx && "border-accent bg-accent-dim text-accent-t",
               )}
-              style={{ padding: "2px 10px", gap: 4 }}
               onClick={() => setAltGreetIdx(idx)}
             >
               Alt {idx + 1}
-              <span style={{ marginLeft: 2, fontSize: 10 }} className="cursor-pointer" onClick={(e) => {
+              <span className="ml-0.5 cursor-pointer text-[10px]" onClick={(e) => {
                 e.stopPropagation();
                 const next = [...alternateGreetings]; next.splice(idx, 1);
                 setValue("alternateGreetings", next, { shouldDirty: true });
@@ -254,8 +242,7 @@ export function CharacterForm({
             </span>
           ))}
           <span
-            className="inline-flex items-center justify-center rounded border border-dashed border-border bg-transparent font-ui text-xs text-t3 cursor-pointer"
-            style={{ padding: "2px 10px" }}
+            className="inline-flex items-center justify-center rounded border border-dashed border-border bg-transparent px-2.5 py-[2px] font-ui text-xs text-t3 cursor-pointer"
             onClick={() => {
               const next = [...alternateGreetings, ""];
               setValue("alternateGreetings", next, { shouldDirty: true });
@@ -264,7 +251,7 @@ export function CharacterForm({
           >+</span>
         </div>
         {alternateGreetings.length > 0 && (
-          <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 120 }} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
+          <textarea className={textareaCls + " min-h-[120px] px-2.5 py-1.5"} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
             const next = [...alternateGreetings]; next[altGreetIdx] = e.target.value;
             setValue("alternateGreetings", next, { shouldDirty: true });
           }} placeholder={t("alternate_greeting_placeholder")} />
@@ -272,57 +259,57 @@ export function CharacterForm({
       </div>
 
       {/* Message Examples */}
-      <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>{t("dialog_examples")}</label>
-        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 120 }} disabled={isSaving} placeholder="<START>..." {...register("mesExample")} />
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("dialog_examples")}</label>
+        <textarea className={monoCls + " min-h-[120px] px-2.5 py-1.5"} disabled={isSaving} placeholder="<START>..." {...register("mesExample")} />
         <TokenBadge text={mesExample || ""} />
       </div>
 
       {/* Scenario */}
-      <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>{t("scenario")}</label>
-        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 100 }} disabled={isSaving} {...register("scenario")} />
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("scenario")}</label>
+        <textarea className={textareaCls + " min-h-[100px] px-2.5 py-1.5"} disabled={isSaving} {...register("scenario")} />
         <TokenBadge text={scenario || ""} />
       </div>
 
       {/* Personality Summary */}
-      <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>{t("char_personality_label")}</label>
-        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 60 }} disabled={isSaving} {...register("personalitySummary")} />
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("char_personality_label")}</label>
+        <textarea className={textareaCls + " min-h-[60px] px-2.5 py-1.5"} disabled={isSaving} {...register("personalitySummary")} />
         <TokenBadge text={personalitySummary || ""} />
       </div>
 
       {/* Advanced separator */}
-      <div className="border-b border-border font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t3" style={s.sectionGap}>
+      <div className="border-b border-border font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t3 mt-6 mb-3 pb-1.5">
         Advanced Fields (V3)
       </div>
 
       {/* Post-History Instructions */}
-      <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>{t("post_history_instructions")}</label>
-        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} disabled={isSaving} placeholder={t("post_history_placeholder")} {...register("postHistoryInstructions")} />
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("post_history_instructions")}</label>
+        <textarea className={monoCls + " min-h-[60px] px-2.5 py-1.5"} disabled={isSaving} placeholder={t("post_history_placeholder")} {...register("postHistoryInstructions")} />
         <TokenBadge text={postHistoryInstructions || ""} />
       </div>
 
       {/* Creator Notes */}
-      <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>{t("creator_notes")}</label>
-        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 60 }} disabled={isSaving} placeholder={t("creator_notes_placeholder")} {...register("creatorNotes")} />
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("creator_notes")}</label>
+        <textarea className={textareaCls + " min-h-[60px] px-2.5 py-1.5"} disabled={isSaving} placeholder={t("creator_notes_placeholder")} {...register("creatorNotes")} />
         <TokenBadge text={creatorNotes || ""} />
       </div>
 
       {/* Depth Prompt */}
-      <div style={s.fieldWrap}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <label className={lblCls} style={{ marginBottom: 0 }}>{t("depth_prompt")}</label>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+      <div className="mb-5">
+        <div className="mb-1.5 flex items-center justify-between">
+          <label className={lblCls}>{t("depth_prompt")}</label>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
-              <input type="number" className={inputCls} style={{ padding: "2px 6px", width: 56, height: 24, textAlign: "center", fontSize: 11 }} min={0} max={999} disabled={isSaving} value={depthPromptDepth ?? 4} onChange={(e) => setValue("depthPromptDepth", Number(e.target.value), { shouldDirty: true })} />
+              <input type="number" className={inputCls + " h-6 w-14 px-1.5 text-center text-[11px]"} min={0} max={999} disabled={isSaving} value={depthPromptDepth ?? 4} onChange={(e) => setValue("depthPromptDepth", Number(e.target.value), { shouldDirty: true })} />
             </div>
-            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+            <div className="flex items-center gap-1">
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("role")}</span>
-              <select className={inputCls} style={{ padding: "2px 6px", width: 82, height: 24, fontSize: 11 }} value={depthPromptRole || "system"} disabled={isSaving} onChange={(e) => setValue("depthPromptRole", e.target.value, { shouldDirty: true })}>
+              <select className={inputCls + " h-6 w-[82px] px-1.5 text-[11px]"} value={depthPromptRole || "system"} disabled={isSaving} onChange={(e) => setValue("depthPromptRole", e.target.value, { shouldDirty: true })}>
                 <option value="system">system</option>
                 <option value="user">user</option>
                 <option value="assistant">assistant</option>
@@ -330,24 +317,24 @@ export function CharacterForm({
             </div>
           </div>
         </div>
-        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} disabled={isSaving} placeholder={t("depth_prompt_placeholder")} {...register("depthPrompt")} />
+        <textarea className={monoCls + " min-h-[60px] px-2.5 py-1.5"} disabled={isSaving} placeholder={t("depth_prompt_placeholder")} {...register("depthPrompt")} />
         <TokenBadge text={depthPrompt || ""} />
       </div>
 
       {/* System Prompt Override */}
-      <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>{t("system_prompt_override")}</label>
-        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 80 }} disabled={isSaving} placeholder={t("system_prompt_override_placeholder")} {...register("systemPrompt")} />
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("system_prompt_override")}</label>
+        <textarea className={monoCls + " min-h-[80px] px-2.5 py-1.5"} disabled={isSaving} placeholder={t("system_prompt_override_placeholder")} {...register("systemPrompt")} />
         <TokenBadge text={systemPrompt || ""} />
       </div>
 
       {/* Tags */}
-      <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>{t("char_tags_label")}</label>
-        <input type="text" className={inputCls} style={s.inputPadding} value={tagInput} disabled={isSaving} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagKey} placeholder={t("tags_enter")} />
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("char_tags_label")}</label>
+        <input type="text" className={inputCls + " px-2.5 py-1.5"} value={tagInput} disabled={isSaving} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagKey} placeholder={t("tags_enter")} />
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
           {tags.map((tag: string) => (
-            <span key={tag} className="cursor-pointer rounded bg-accent-dim font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" style={{ padding: "4px 10px" }} onClick={() => toggleTag(tag)}>
+            <span key={tag} className="cursor-pointer rounded bg-accent-dim px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => toggleTag(tag)}>
               {tag} ✕
             </span>
           ))}
@@ -355,8 +342,8 @@ export function CharacterForm({
       </div>
 
       {/* Footer */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
-        <button className="cursor-pointer rounded-md bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" style={{ height: 28, padding: "0 12px" }} disabled={isSaving || !isDirty} onClick={onReset}>{t("reset")}</button>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button className="h-7 cursor-pointer rounded-md bg-transparent px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" disabled={isSaving || !isDirty} onClick={onReset}>{t("reset")}</button>
         <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{isDirty ? t("unsaved_changes") : t("saved_state")}</span>
       </div>
 

@@ -58,12 +58,12 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename 
   };
 
   return (
-    <div className="flex w-[240px] shrink-0 flex-col border-r border-border bg-surface" style={{ padding: "10px 0" }}>
-      <div className="shrink-0" style={{ padding: "0 13px" }}>
-        <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ padding: "4px 0 5px" }}>
+    <div className="flex w-[240px] shrink-0 flex-col border-r border-border bg-surface py-2.5">
+      <div className="shrink-0 px-[13px]">
+        <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3 pt-1 pb-[5px]">
           {t("presets")}
         </div>
-        <div className="mb-2 flex items-center gap-1.5 rounded-md border border-border bg-s2" style={{ padding: "6px 9px" }} title={t("search_presets")}>
+        <div className="mb-2 flex items-center gap-1.5 rounded-md border border-border bg-s2 px-[9px] py-1.5" title={t("search_presets")}>
           <Icons.Search />
           <input
             className="min-w-0 flex-1 border-0 bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t4"
@@ -76,7 +76,7 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename 
 
       <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 && !isCreating ? (
-          <div className="flex h-full items-center justify-center" style={{ padding: "0 8px" }}>
+          <div className="flex h-full items-center justify-center px-2">
             <EmptyState
               icon={<Icons.Terminal />}
               title={presets.length === 0 ? t("no_presets") : t("no_preset_matches")}
@@ -89,7 +89,7 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename 
 
           if (isEditing) {
             return (
-              <div key={p.id} className="border-l-2 border-transparent" style={{ padding: "8px 12px" }}>
+              <div key={p.id} className="border-l-2 border-transparent px-3 py-2">
                 <div className="relative flex items-center">
                   <input
                     ref={editInputRef}
@@ -117,10 +117,9 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename 
               key={p.id}
               onClick={() => onSelect(p.id)}
               className={cn(
-                "group flex cursor-pointer items-center justify-between border-l-2 transition-colors",
+                "group flex cursor-pointer items-center justify-between border-l-2 px-4 py-2.5 transition-colors",
                 isActive ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2"
               )}
-              style={{ padding: "10px 16px" }}
             >
               <span className={cn("truncate pr-2 font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isActive ? "text-accent-t" : "text-t2")} title={p.name}>
                 {p.name}
@@ -138,7 +137,7 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename 
         })}
 
         {isCreating && (
-          <div className="border-l-2 border-transparent" style={{ padding: "8px 12px" }}>
+          <div className="border-l-2 border-transparent px-3 py-2">
             <div className="relative flex items-center">
               <input
                 ref={newInputRef}
@@ -162,7 +161,7 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename 
         )}
       </div>
 
-      <div className="shrink-0 border-t border-border" style={{ padding: "12px 12px 0" }}>
+      <div className="shrink-0 border-t border-border px-3 pt-3">
         <button
           onClick={() => setIsCreating(true)}
           className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"

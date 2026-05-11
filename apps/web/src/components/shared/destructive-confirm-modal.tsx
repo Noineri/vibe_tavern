@@ -16,27 +16,24 @@ export function DestructiveConfirmModal(input: DestructiveConfirmModalProps) {
   return (
     <div className="fixed inset-0 z-[700] flex items-center justify-center bg-black/50" onClick={input.onCancel}>
       <div
-        className="w-[320px] rounded-lg border border-border bg-surface p-5 shadow-xl"
-        style={{ width: 380, padding: 28, textAlign: "center" }}
+        className="w-[380px] rounded-lg border border-border bg-surface p-7 text-center shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div style={{ fontSize: 16, fontWeight: 500, color: "var(--t1)", marginBottom: 8 }}>
+        <div className="mb-2 text-base font-medium text-t1">
           {input.title}
         </div>
-        <div style={{ fontSize: 13, color: "var(--t3)", lineHeight: 1.55, marginBottom: 24 }}>
+        <div className="mb-6 text-[13px] leading-[1.55] text-t3">
           {input.body}
         </div>
-        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+        <div className="flex justify-center gap-2.5">
           <button
-            className="h-8 cursor-pointer rounded-md border-0 bg-transparent font-ui text-[12.5px] text-t3 transition-colors duration-150 hover:text-t1"
-            style={{ padding: "0 14px", border: "1px solid var(--border)" }}
+            className="h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[12.5px] text-t3 transition-colors duration-150 hover:text-t1"
             onClick={input.onCancel}
           >
             {t("cancel")}
           </button>
           <button
-            className="h-8 cursor-pointer rounded-md border-0 font-ui text-[12.5px] font-medium text-white transition-[filter] duration-100 hover:brightness-110"
-            style={{ padding: "0 18px", background: "oklch(0.4 0.15 25)" }}
+            className="h-8 cursor-pointer rounded-md border-0 bg-[oklch(0.4_0.15_25)] px-[18px] font-ui text-[12.5px] font-medium text-white transition-[filter] duration-100 hover:brightness-110"
             onClick={input.onConfirm}
           >
             {input.confirmLabel || t("confirm")}
@@ -58,27 +55,24 @@ export function ShellDestructiveConfirmModal() {
   return (
     <div className="fixed inset-0 z-[700] flex items-center justify-center bg-black/50" onClick={() => setConfirmDestroy(null)}>
       <div
-        className="w-[320px] rounded-lg border border-border bg-surface p-5 shadow-xl"
-        style={{ width: 380, padding: 28, textAlign: "center" }}
+        className="w-[380px] rounded-lg border border-border bg-surface p-7 text-center shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div style={{ fontSize: 16, fontWeight: 500, color: "var(--t1)", marginBottom: 8 }}>
+        <div className="mb-2 text-base font-medium text-t1">
           {confirmDestroy.title}
         </div>
-        <div style={{ fontSize: 13, color: "var(--t3)", lineHeight: 1.55, marginBottom: 24 }}>
+        <div className="mb-6 text-[13px] leading-[1.55] text-t3">
           {confirmDestroy.body}
         </div>
-        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+        <div className="flex justify-center gap-2.5">
           <button
-            className="h-8 cursor-pointer rounded-md border-0 bg-transparent font-ui text-[12.5px] text-t3 transition-colors duration-150 hover:text-t1"
-            style={{ padding: "0 14px", border: "1px solid var(--border)" }}
+            className="h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[12.5px] text-t3 transition-colors duration-150 hover:text-t1"
             onClick={() => setConfirmDestroy(null)}
           >
             {t("cancel")}
           </button>
           <button
-            className="h-8 cursor-pointer rounded-md border-0 font-ui text-[12.5px] font-medium text-white transition-[filter] duration-100 hover:brightness-110"
-            style={{ padding: "0 18px", background: "oklch(0.4 0.15 25)" }}
+            className="h-8 cursor-pointer rounded-md border-0 bg-[oklch(0.4_0.15_25)] px-[18px] font-ui text-[12.5px] font-medium text-white transition-[filter] duration-100 hover:brightness-110"
             onClick={() => {
               confirmDestroy!.onConfirm();
               setConfirmDestroy(null);

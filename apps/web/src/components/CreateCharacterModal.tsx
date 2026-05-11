@@ -136,7 +136,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="flex max-h-[90vh] w-[600px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">
         {/* Header */}
-        <div className="shrink-0 border-b border-border" style={{padding:'18px 20px 16px'}}>
+        <div className="shrink-0 border-b border-border px-5 pt-[18px] pb-4">
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center font-body text-[calc(var(--ui-fs)+4px)] font-medium text-t1">
@@ -151,9 +151,9 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto" style={{padding:20}}>
+        <div className="flex-1 overflow-y-auto p-5">
           {/* Avatar + Name row */}
-          <div className="flex gap-4" style={{marginBottom:20}}>
+          <div className="flex gap-4 mb-5">
             <div
               className="group relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t"
               onClick={() => avaInputRef.current?.click()}
@@ -179,8 +179,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ws_name_label")}</label>
               <input
                 type="text"
-                className="w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
-                style={{padding:'6px 10px'}}
+                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
                 {...register('name')}
                 autoFocus
               />
@@ -191,30 +190,28 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           </div>
 
           {/* Description */}
-          <div style={{marginBottom:20}}>
+          <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_desc_label")}</label>
             <textarea
-              className="w-full min-h-[100px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
-              style={{padding:'6px 10px'}}
+              className="w-full min-h-[100px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
               {...register('description')}
             />
           </div>
 
           {/* First Message */}
-          <div style={{marginBottom:20}}>
+          <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ws_first_msg_label")}</label>
             <textarea
-              className="w-full min-h-[120px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
-              style={{padding:'6px 10px'}}
+              className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
               placeholder={t("first_message_placeholder")}
               {...register('firstMessage')}
             />
           </div>
 
           {/* Alternate Greetings */}
-          <div style={{marginBottom:20}}>
+          <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("alternate_greetings")}</label>
-            <div className="flex flex-wrap gap-1" style={{marginBottom:8}}>
+            <div className="flex flex-wrap gap-1 mb-2">
               {alternateGreetings.map((_: string, idx: number) => (
                 <span
                   key={idx}
@@ -245,8 +242,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             </div>
             {alternateGreetings.length > 0 && (
               <textarea
-                className="w-full min-h-[120px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
-                style={{padding:'6px 10px'}}
+                className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
                 value={alternateGreetings[altGreetIdx] || ''}
                 onChange={e => {
                   const next = [...alternateGreetings];
@@ -259,56 +255,51 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           </div>
 
           {/* Mes Example */}
-          <div style={{marginBottom:20}}>
+          <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("dialog_examples")}</label>
             <textarea
-              className="w-full min-h-[120px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-              style={{padding:'6px 10px'}}
+              className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
               {...register('mesExample')}
               placeholder={t("dialog_examples_placeholder")}
             />
           </div>
 
           {/* Scenario */}
-          <div style={{marginBottom:20}}>
+          <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("scenario")}</label>
             <textarea
-              className="w-full min-h-[100px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
-              style={{padding:'6px 10px'}}
+              className="w-full min-h-[100px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
               {...register('defaultScenario')}
             />
           </div>
 
           {/* Personality */}
-          <div style={{marginBottom:20}}>
+          <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_personality_label")}</label>
             <textarea
-              className="w-full min-h-[60px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
-              style={{padding:'6px 10px'}}
+              className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
               {...register('personalitySummary')}
             />
           </div>
 
           {/* Advanced separator */}
-          <div className="border-b border-border font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t3" style={{marginTop:24, marginBottom:12, paddingBottom:6}}>{t("advanced_fields_v3")}</div>
+          <div className="border-b border-border font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t3 mt-6 mb-3 pb-1.5">{t("advanced_fields_v3")}</div>
 
           {/* Post History Instructions */}
-          <div style={{marginBottom:20}}>
+          <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("post_history_instructions")}</label>
             <textarea
-              className="w-full min-h-[60px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-              style={{padding:'6px 10px'}}
+              className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
               {...register('postHistoryInstructions')}
               placeholder={t("post_history_placeholder")}
             />
           </div>
 
           {/* Creator Notes */}
-          <div style={{marginBottom:20}}>
+          <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("creator_notes")}</label>
             <textarea
-              className="w-full min-h-[60px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
-              style={{padding:'6px 10px'}}
+              className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
               {...register('creatorNotes')}
               placeholder={t("creator_notes_placeholder")}
             />
@@ -316,32 +307,29 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
 
           {/* Depth Prompt row */}
           <div className="flex gap-3 items-end">
-            <div style={{marginBottom:20}} className="flex-1">
+            <div className="mb-5 flex-1">
               <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("depth_prompt")}</label>
               <textarea
-                className="w-full min-h-[60px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-                style={{padding:'6px 10px'}}
+                className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
                 {...register('depthPrompt')}
                 placeholder={t("depth_prompt_placeholder")}
               />
             </div>
-            <div style={{marginBottom:20}} className="w-20 shrink-0">
+            <div className="mb-5 w-20 shrink-0">
               <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("depth")}</label>
               <input
                 type="number"
-                className="w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
-                style={{padding:'6px 10px'}}
+                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
                 min={0}
                 max={999}
                 value={depthPromptDepth}
                 onChange={e => setValue('depthPromptDepth', Number(e.target.value), { shouldDirty: true })}
               />
             </div>
-            <div style={{marginBottom:20}} className="w-[110px] shrink-0">
+            <div className="mb-5 w-[110px] shrink-0">
               <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("role")}</label>
               <select
-                className="w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
-                style={{padding:'6px 10px'}}
+                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
                 value={depthPromptRole}
                 onChange={e => setValue('depthPromptRole', e.target.value, { shouldDirty: true })}
               >
@@ -353,23 +341,21 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           </div>
 
           {/* System Prompt Override */}
-          <div style={{marginBottom:20}}>
+          <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("system_prompt_override")}</label>
             <textarea
-              className="w-full min-h-[80px] rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-              style={{padding:'6px 10px'}}
+              className="w-full min-h-[80px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
               {...register('systemPrompt')}
               placeholder={t("system_prompt_override_placeholder")}
             />
           </div>
 
           {/* Tags */}
-          <div style={{marginBottom:20}}>
+          <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_tags_label")}</label>
             <input
               type="text"
-              className="w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent"
-              style={{padding:'6px 10px'}}
+              className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
               value={tagInput}
               onChange={e => setTagInput(e.target.value)}
               onKeyDown={handleTagKey}
@@ -390,16 +376,14 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
         </div>
 
         {/* Footer */}
-        <div className="flex shrink-0 items-center gap-2.5 border-t border-border" style={{padding:'14px 20px'}}>
+        <div className="flex shrink-0 items-center gap-2.5 border-t border-border px-5 py-[14px]">
           <button
-            className="ml-auto cursor-pointer rounded-md bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
-            style={{height:37, padding:'0 16px'}}
+            className="ml-auto h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
             onClick={onClose}
             disabled={busy}
           >{t("cancel")}</button>
           <button
-            className="cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
-            style={{height:37, padding:'0 18px'}}
+            className="h-[37px] px-[18px] cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
             disabled={!canSave}
             onClick={handleSave}
           >
