@@ -38,7 +38,7 @@ export interface CharacterControllerDeps {
   getActiveChatId: () => ChatId | null;
   getSnapshot: () => AppSnapshot | null;
   // write / mutate
-  setSnapshot: (chatId: ChatId, next: AppSnapshot) => void;
+  writeSnapshot: (chatId: ChatId, next: AppSnapshot) => void;
   patchSnapshot: (updater: (snapshot: AppSnapshot) => AppSnapshot) => void;
   setChatNotice: (notice: string) => void;
   setMode: (mode: AppMode) => void;
@@ -98,7 +98,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
   const {
     getActiveChatId,
     getSnapshot,
-    setSnapshot,
+    writeSnapshot,
     patchSnapshot,
     setChatNotice,
     setMode,
@@ -164,7 +164,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
           tags: draftInput.tags,
         },
       });
-      setSnapshot(activeChatId, nextSnapshot);
+      writeSnapshot(activeChatId, nextSnapshot);
       setCharacterSaveNotice(getT()("char_card_saved"));
     } catch (error) {
       setCharacterSaveNotice(error instanceof Error ? error.message : getT()("char_save_failed"));
@@ -183,7 +183,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
         characterId: snapshot.character.id,
         chatId: activeChatId,
       });
-      setSnapshot(activeChatId, nextSnapshot);
+      writeSnapshot(activeChatId, nextSnapshot);
       setCharacterSaveNotice(getT()("char_avatar_saved"));
     } catch (error) {
       setCharacterSaveNotice(error instanceof Error ? error.message : getT()("char_avatar_save_failed"));
@@ -207,7 +207,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
         },
       });
       void qc.invalidateQueries({ queryKey: personaKeys.list() });
-      setSnapshot(activeChatId, nextSnapshot);
+      writeSnapshot(activeChatId, nextSnapshot);
       setCharacterSaveNotice(getT()("persona_saved"));
     } catch (error) {
       setCharacterSaveNotice(error instanceof Error ? error.message : getT()("persona_save_failed"));
@@ -222,7 +222,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     const currentPersonaId = getSnapshot()?.persona?.id ?? null;
     if (currentPersonaId === personaId) return;
     try {
-      setSnapshot(activeChatId, await setChatPersonaMut.mutateAsync({ chatId: activeChatId, personaId }));
+      writeSnapshot(activeChatId, await setChatPersonaMut.mutateAsync({ chatId: activeChatId, personaId }));
     } catch (err) {
       setChatNotice(err instanceof Error ? err.message : getT()("persona_switch_failed"));
     }
@@ -270,7 +270,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     try {
       const imported = await importFile(firstFile, { chatId: getActiveChatId() ?? undefined });
 
-      setSnapshot(imported.activeChatId, imported.snapshot);
+      writeSnapshot(imported.activeChatId, imported.snapshot);
       void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
 
       if (imported.imported.kind === "character") {
@@ -369,7 +369,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     if (!resolvedId) return;
     try {
       const next = await createChatMut.mutateAsync({ characterId: resolvedId });
-      setSnapshot(next.activeChat.id, next);
+      writeSnapshot(next.activeChat.id, next);
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : getT()("chat_create_failed"));
     }
@@ -386,13 +386,13 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
         try {
           const asset = await uploadAsset(avatarFile);
           const updatedSnapshot = await updateCharacterAvatar(characterId, result.activeChatId, asset.assetId);
-          setSnapshot(result.activeChatId, updatedSnapshot);
+          writeSnapshot(result.activeChatId, updatedSnapshot);
         } catch (err) {
           console.warn("Failed to upload avatar during character creation:", err);
-          setSnapshot(result.activeChatId, result.snapshot);
+          writeSnapshot(result.activeChatId, result.snapshot);
         }
       } else {
-        setSnapshot(result.activeChatId, result.snapshot);
+        writeSnapshot(result.activeChatId, result.snapshot);
       }
 
       void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
@@ -409,7 +409,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
   async function handleFreeChat(): Promise<void> {
     try {
       const next = await createChatMut.mutateAsync({});
-      setSnapshot(next.activeChat.id, next);
+      writeSnapshot(next.activeChat.id, next);
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : getT()("failed_to_create_free_chat"));
     }
@@ -418,7 +418,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
   async function handleCloneChat(chatId: ChatId): Promise<void> {
     try {
       const next = await cloneChatMut.mutateAsync(chatId);
-      setSnapshot(next.activeChat.id, next);
+      writeSnapshot(next.activeChat.id, next);
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : getT()("failed_to_clone_chat"));
     }

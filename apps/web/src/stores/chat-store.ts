@@ -1,11 +1,9 @@
 import { create } from "zustand";
 import type { ChatId } from "@rp-platform/domain";
-import type { AppSnapshot } from "../app-client.js";
 
 export interface ChatState {
   activeChatId: ChatId | null;
   selectedCharacterId: string | null;
-  snapshot: AppSnapshot | null;
   draft: string;
   isSending: boolean;
   generationStatus: import("../app-client.js").ChatGenerationStatus;
@@ -21,8 +19,6 @@ export interface ChatState {
 export interface ChatActions {
   setActiveChatId: (id: ChatId | null) => void;
   setSelectedCharacterId: (id: string | null) => void;
-  setSnapshot: (snapshot: AppSnapshot | null) => void;
-  setSnapshotForChat: (chatId: ChatId, snapshot: AppSnapshot) => void;
   setDraft: (draft: string) => void;
   setIsSending: (sending: boolean) => void;
   setSelectedTraceId: (id: string | null) => void;
@@ -40,7 +36,6 @@ export type ChatStore = ChatState & ChatActions;
 export const useChatStore = create<ChatStore>()((set) => ({
   activeChatId: null,
   selectedCharacterId: null,
-  snapshot: null,
   draft: "",
   isSending: false,
   generationStatus: "idle" as import("../app-client.js").ChatGenerationStatus,
@@ -54,8 +49,6 @@ export const useChatStore = create<ChatStore>()((set) => ({
 
   setActiveChatId: (id) => set({ activeChatId: id, selectedCharacterId: null }),
   setSelectedCharacterId: (id) => set({ selectedCharacterId: id }),
-  setSnapshot: (snapshot) => set({ snapshot }),
-  setSnapshotForChat: (chatId, snapshot) => set({ activeChatId: chatId, snapshot }),
   setDraft: (draft) => set({ draft }),
   setIsSending: (sending) => set({ isSending: sending }),
   setSelectedTraceId: (id) => set({ selectedTraceId: id }),

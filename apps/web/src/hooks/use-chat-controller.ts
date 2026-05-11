@@ -39,7 +39,6 @@ export interface ChatControllerDeps {
   getStreamResponse: () => boolean;
   // write / mutate
   refreshChatSnapshot: (chatId: ChatId) => Promise<AppSnapshot>;
-  setSnapshot: (chatId: ChatId, next: AppSnapshot) => void;
   setDraft: (draft: string) => void;
   setIsSending: (sending: boolean) => void;
   setChatNotice: (notice: string) => void;
@@ -79,7 +78,6 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     getGenerationStatus,
     getStreamResponse,
     refreshChatSnapshot,
-    setSnapshot,
     setDraft,
     setIsSending,
     setChatNotice,
@@ -160,13 +158,16 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     });
   }
 
-  /** Refetch chat snapshot cache + update Zustand store from the same result. */
+  /** Refetch chat snapshot cache from the canonical query source. */
   async function invalidateChatSnapshot(chatId: ChatId): Promise<void> {
-    const fresh = await qc.fetchQuery({
+    await qc.fetchQuery({
       queryKey: chatKeys.snapshot(chatId),
       queryFn: () => refreshChatSnapshot(chatId),
     });
-    setSnapshot(chatId, fresh);
+  }
+
+  function writeSnapshot(chatId: ChatId, snapshot: AppSnapshot): void {
+    qc.setQueryData(chatKeys.snapshot(chatId), snapshot);
   }
 
   const handleSend = useCallback(async (): Promise<void> => {
@@ -229,7 +230,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         const nextSnapshot = await sendMessageMut.mutateAsync(
           { chatId: activeChatId, content: trimmed, signal: controller.signal },
         );
-        setSnapshot(activeChatId, nextSnapshot);
+        writeSnapshot(activeChatId, nextSnapshot);
         setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
         void logClientSendDebug("web.hook.handleSend.success", { activeChatId });
       }
@@ -288,7 +289,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       } else {
         void logClientSendDebug("web.hook.handleResend.request", { activeChatId });
         const nextSnapshot = await generateReply(activeChatId, { signal: controller.signal });
-        setSnapshot(activeChatId, nextSnapshot);
+        writeSnapshot(activeChatId, nextSnapshot);
         setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
         void logClientSendDebug("web.hook.handleResend.success", { activeChatId });
       }
@@ -323,7 +324,8 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     // that would discard in-memory state like variant selection.
     if (chatId === getActiveChatId()) return;
     const snapshot = await switchChatMut.mutateAsync(chatId);
-    setSnapshot(chatId, snapshot);
+    writeSnapshot(chatId, snapshot);
+    useChatStore.getState().setActiveChatId(chatId);
   }
 
   function handleStartEdit(message: AppMessage): void {
@@ -346,7 +348,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     setMessageActionId(messageId);
     try {
       const snapshot = await editMessageMut.mutateAsync({ chatId: activeChatId, messageId, content: trimmed });
-      setSnapshot(activeChatId, snapshot);
+      writeSnapshot(activeChatId, snapshot);
       setEditingMessageId(null);
       setEditingDraft("");
       setChatNotice("");
@@ -362,7 +364,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     setMessageActionId(messageId);
     try {
       const snapshot = await deleteMessageMut.mutateAsync({ chatId: activeChatId, messageId });
-      setSnapshot(activeChatId, snapshot);
+      writeSnapshot(activeChatId, snapshot);
       if (getEditingMessageId() === messageId) {
         setEditingMessageId(null);
         setEditingDraft("");
@@ -409,7 +411,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         const nextSnapshot = await regenMessageMut.mutateAsync(
           { chatId: activeChatId, messageId, signal: controller.signal },
         );
-        setSnapshot(activeChatId, nextSnapshot);
+        writeSnapshot(activeChatId, nextSnapshot);
         setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
       }
     } catch (error) {
@@ -434,7 +436,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     if (!activeChatId || variantIndex < 0) return;
 
     const snapshot = await selectVariantMut.mutateAsync({ chatId: activeChatId, messageId, variantIndex });
-    setSnapshot(activeChatId, snapshot);
+    writeSnapshot(activeChatId, snapshot);
   }
 
   async function handleFork(): Promise<void> {
@@ -442,7 +444,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     if (!activeChatId) return;
 
     const snapshot = await forkMut.mutateAsync(activeChatId);
-    setSnapshot(activeChatId, snapshot);
+    writeSnapshot(activeChatId, snapshot);
   }
 
   async function handleActivateBranch(branchId: ChatBranchId): Promise<void> {
@@ -450,7 +452,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     if (!activeChatId) return;
 
     const snapshot = await activateBranchMut.mutateAsync({ chatId: activeChatId, branchId });
-    setSnapshot(activeChatId, snapshot);
+    writeSnapshot(activeChatId, snapshot);
   }
 
   async function handleDeleteActiveBranch(): Promise<void> {
@@ -467,7 +469,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
 
     try {
       const result = await deleteBranchMut.mutateAsync({ chatId: activeChatId, branchId: activeBranch.id });
-      setSnapshot(activeChatId, result);
+      writeSnapshot(activeChatId, result);
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : getT()("branch_delete_failed"));
     }
