@@ -1,19 +1,18 @@
-import { useState, useCallback } from "react";
+import { useCallback } from "react";
 import type { ChatId } from "@rp-platform/domain";
-import { importJson, uploadAsset, updateCharacterAvatar } from "../app-client.js";
+import { uploadAsset, updateCharacterAvatar } from "../app-client.js";
 import { extractPngMetadata, parseCharacterMetadata } from "../lib/png-reader.js";
 import { getT } from "../i18n/context.js";
+import { useImportCharacterMutation } from "../queries/index.js";
 
 export interface CharacterImportOptions {
   chatId?: ChatId;
 }
 
 export function useCharacterImport() {
-  const [isImporting, setIsImporting] = useState(false);
+  const importMut = useImportCharacterMutation();
 
   const importFile = useCallback(async (file: File, options?: CharacterImportOptions) => {
-    setIsImporting(true);
-
     try {
       let payload: unknown;
       const lowerName = file.name.toLowerCase();
@@ -42,7 +41,7 @@ export function useCharacterImport() {
         throw new Error(getT()("import_unsupported_type"));
       }
 
-      const result = await importJson({
+      const result = await importMut.mutateAsync({
         fileName: file.name,
         jsonText: typeof payload === "string" ? payload : JSON.stringify(payload),
         chatId: options?.chatId,
@@ -67,13 +66,11 @@ export function useCharacterImport() {
       console.error("Import error:", err);
       const message = err instanceof Error ? err.message : getT()("import_character_failed");
       throw new Error(message);
-    } finally {
-      setIsImporting(false);
     }
-  }, []);
+  }, [importMut]);
 
   return {
     importFile,
-    isImporting,
+    isImporting: importMut.isPending,
   };
 }

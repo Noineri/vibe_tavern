@@ -2,25 +2,14 @@ import type { ChangeEvent, DragEvent } from "react";
 import type { ChatId } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
 import {
-  archiveCharacter,
   cloneChat,
-  createCharacter,
   createChat,
-  createPersona,
-  deleteCharacter,
   deleteChat,
-  deletePersona,
-  exportCharacter,
-  exportChatJsonl,
-  exportPromptTrace,
   renameChat,
   setChatPersona,
   setPersonalLorebookEnabled,
-  unarchiveCharacter,
-  updateCharacter,
-  updateCharacterAvatar,
-  updatePersona,
   uploadAsset,
+  updateCharacterAvatar,
   type AppSnapshot,
   type ImportJsonResponse,
   type PersonaRecord,
@@ -28,6 +17,22 @@ import {
 import type { AppMode } from "../components/app-shell-types.js";
 import type { BuildCharacterDraft } from "../components/BuildMode.js";
 import type { CharacterImportOptions } from "./use-character-import.js";
+import {
+  useSaveCharacterMutation,
+  useCreateCharacterMutation,
+  useArchiveCharacterMutation,
+  useUnarchiveCharacterMutation,
+  useDeleteCharacterMutation,
+  useAvatarUploadMutation,
+  useExportCharacterMutation,
+  useExportChatJsonlMutation,
+  useExportPromptTraceMutation,
+  useCreatePersonaMutation,
+  useUpdatePersonaMutation,
+  useDeletePersonaMutation,
+} from "../queries/index.js";
+import { useQueryClient } from "@tanstack/react-query";
+import { bootstrapKeys } from "../queries/query-keys.js";
 
 export interface CharacterControllerDeps {
   // read state (getter functions — Zustand-compatible)
@@ -41,12 +46,9 @@ export interface CharacterControllerDeps {
   setMode: (mode: AppMode) => void;
   setIsImportDragActive: (active: boolean) => void;
   setImportNotice: (notice: string) => void;
-  setIsSavingCharacter: (saving: boolean) => void;
   setCharacterSaveNotice: (notice: string) => void;
   setPersonas: (updater: (personas: PersonaRecord[]) => PersonaRecord[]) => void;
   // action callbacks
-  loadBootstrap: () => Promise<void>;
-  loadPersonas: () => Promise<void>;
   importFile: (file: File, options?: CharacterImportOptions) => Promise<ImportJsonResponse>;
 }
 
@@ -75,6 +77,8 @@ export interface CharacterControllerActions {
   handleExportCharacter: (characterId: string) => Promise<void>;
   handleExportChatJsonl: (chatId: ChatId) => Promise<void>;
   handleExportPromptTrace: (traceId: string) => Promise<void>;
+  /** Derived from TQ mutation pending state — wire to store isSavingCharacter */
+  isSavingCharacter: boolean;
 }
 
 function formatImportWarnings(count: number): string {
@@ -104,47 +108,66 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     setMode,
     setIsImportDragActive,
     setImportNotice,
-    setIsSavingCharacter,
     setCharacterSaveNotice,
     setPersonas,
-    loadBootstrap,
-    loadPersonas,
     importFile,
   } = deps;
+
+  // --- TQ mutations ---
+  const saveCharacterMut = useSaveCharacterMutation();
+  const createCharacterMut = useCreateCharacterMutation();
+  const archiveCharacterMut = useArchiveCharacterMutation();
+  const unarchiveCharacterMut = useUnarchiveCharacterMutation();
+  const deleteCharacterMut = useDeleteCharacterMutation();
+  const avatarUploadMut = useAvatarUploadMutation();
+  const exportCharacterMut = useExportCharacterMutation();
+  const exportChatJsonlMut = useExportChatJsonlMutation();
+  const exportPromptTraceMut = useExportPromptTraceMutation();
+  const createPersonaMut = useCreatePersonaMutation();
+  const updatePersonaMut = useUpdatePersonaMutation();
+  const deletePersonaMut = useDeletePersonaMutation();
+  const qc = useQueryClient();
+
+  // Sync mutation pending state → store isSavingCharacter
+  const isSavingCharacter =
+    saveCharacterMut.isPending ||
+    avatarUploadMut.isPending ||
+    updatePersonaMut.isPending ||
+    createCharacterMut.isPending;
 
   async function handleSaveCharacter(draftInput: BuildCharacterDraft): Promise<void> {
     const activeChatId = getActiveChatId();
     const snapshot = getSnapshot();
     if (!activeChatId || !snapshot) return;
 
-    setIsSavingCharacter(true);
     setCharacterSaveNotice("");
     try {
-      const nextSnapshot = await updateCharacter(snapshot.character.id, {
-        chatId: activeChatId,
-        name: draftInput.name,
-        description: draftInput.description,
-        subtitle: draftInput.personalitySummary,
-        firstMessage: draftInput.firstMessage,
-        scenario: draftInput.scenario,
-        systemPrompt: draftInput.systemPrompt,
-        mesExample: draftInput.mesExample,
-        alternateGreetings: draftInput.alternateGreetings,
-        postHistoryInstructions: draftInput.postHistoryInstructions,
-        creatorNotes: draftInput.creatorNotes,
-        characterBook: draftInput.characterBook,
-        depthPrompt: draftInput.depthPrompt,
-        depthPromptDepth: draftInput.depthPromptDepth,
-        depthPromptRole: draftInput.depthPromptRole,
-        extensions: draftInput.extensions,
-        tags: draftInput.tags,
+      const nextSnapshot = await saveCharacterMut.mutateAsync({
+        characterId: snapshot.character.id,
+        patch: {
+          chatId: activeChatId,
+          name: draftInput.name,
+          description: draftInput.description,
+          subtitle: draftInput.personalitySummary,
+          firstMessage: draftInput.firstMessage,
+          scenario: draftInput.scenario,
+          systemPrompt: draftInput.systemPrompt,
+          mesExample: draftInput.mesExample,
+          alternateGreetings: draftInput.alternateGreetings,
+          postHistoryInstructions: draftInput.postHistoryInstructions,
+          creatorNotes: draftInput.creatorNotes,
+          characterBook: draftInput.characterBook,
+          depthPrompt: draftInput.depthPrompt,
+          depthPromptDepth: draftInput.depthPromptDepth,
+          depthPromptRole: draftInput.depthPromptRole,
+          extensions: draftInput.extensions,
+          tags: draftInput.tags,
+        },
       });
       setSnapshot(activeChatId, nextSnapshot);
       setCharacterSaveNotice(getT()("char_card_saved"));
     } catch (error) {
       setCharacterSaveNotice(error instanceof Error ? error.message : getT()("char_save_failed"));
-    } finally {
-      setIsSavingCharacter(false);
     }
   }
 
@@ -153,17 +176,17 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     const snapshot = getSnapshot();
     if (!activeChatId || !snapshot) return;
 
-    setIsSavingCharacter(true);
     setCharacterSaveNotice("");
     try {
-      const asset = await uploadAsset(file);
-      const nextSnapshot = await updateCharacterAvatar(snapshot.character.id, activeChatId, asset.assetId);
+      const nextSnapshot = await avatarUploadMut.mutateAsync({
+        file,
+        characterId: snapshot.character.id,
+        chatId: activeChatId,
+      });
       setSnapshot(activeChatId, nextSnapshot);
       setCharacterSaveNotice(getT()("char_avatar_saved"));
     } catch (error) {
       setCharacterSaveNotice(error instanceof Error ? error.message : getT()("char_avatar_save_failed"));
-    } finally {
-      setIsSavingCharacter(false);
     }
   }
 
@@ -171,27 +194,26 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
 
-    setIsSavingCharacter(true);
     setCharacterSaveNotice("");
     try {
-      const nextSnapshot = await updatePersona(personaId, {
-        chatId: activeChatId,
-        name: draftInput.name,
-        description: draftInput.description,
-        pronouns: draftInput.pronouns,
-        avatarAssetId: draftInput.avatarAssetId,
+      const nextSnapshot = await updatePersonaMut.mutateAsync({
+        personaId,
+        patch: {
+          chatId: activeChatId,
+          name: draftInput.name,
+          description: draftInput.description,
+          pronouns: draftInput.pronouns,
+          avatarAssetId: draftInput.avatarAssetId,
+        },
       });
       const updatedPersona = nextSnapshot.persona?.id === personaId
         ? nextSnapshot.persona
         : { id: personaId, name: draftInput.name.trim(), description: draftInput.description, pronouns: draftInput.pronouns ?? null, avatarAssetId: draftInput.avatarAssetId ?? null };
       setPersonas((current) => current.map((persona) => persona.id === personaId ? updatedPersona : persona));
       setSnapshot(activeChatId, nextSnapshot);
-      await loadPersonas();
       setCharacterSaveNotice(getT()("persona_saved"));
     } catch (error) {
       setCharacterSaveNotice(error instanceof Error ? error.message : getT()("persona_save_failed"));
-    } finally {
-      setIsSavingCharacter(false);
     }
   }
 
@@ -211,13 +233,12 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
 
   async function handleCreatePersona(input: { name: string; description: string; pronouns?: string | null }): Promise<{ id: string } | null> {
     try {
-      const created = await createPersona({
+      const created = await createPersonaMut.mutateAsync({
         name: input.name.trim(),
         description: input.description.trim(),
         pronouns: input.pronouns,
       });
       setPersonas((current) => current.some((persona) => persona.id === created.id) ? current : [...current, created]);
-      await loadPersonas();
       return { id: created.id };
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : getT()("persona_create_failed"));
@@ -227,8 +248,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
 
   async function handleDeletePersona(personaId: string): Promise<{ ok: boolean; error?: string }> {
     try {
-      await deletePersona(personaId);
-      await loadPersonas();
+      await deletePersonaMut.mutateAsync(personaId);
       return { ok: true };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : getT()("persona_delete_failed") };
@@ -302,23 +322,20 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
   }
 
   async function handleArchiveCharacter(characterId: string): Promise<void> {
-    await archiveCharacter(characterId);
-    await loadBootstrap();
+    await archiveCharacterMut.mutateAsync(characterId);
   }
 
   async function handleUnarchiveCharacter(characterId: string): Promise<void> {
-    await unarchiveCharacter(characterId);
-    await loadBootstrap();
+    await unarchiveCharacterMut.mutateAsync(characterId);
   }
 
   async function handleDeleteCharacter(characterId: string): Promise<void> {
-    await deleteCharacter(characterId);
-    await loadBootstrap();
+    await deleteCharacterMut.mutateAsync(characterId);
   }
 
   async function handleDeleteChat(chatId: ChatId): Promise<void> {
     await deleteChat(chatId);
-    await loadBootstrap();
+    void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
   }
 
   async function handleRenameChat(chatId: ChatId, title: string): Promise<void> {
@@ -363,7 +380,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
 
   async function handleCreateCharacter(input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }, avatarFile?: File | null): Promise<{ characterId: string; chatId: string } | null> {
     try {
-      const result = await createCharacter(input);
+      const result = await createCharacterMut.mutateAsync(input);
       setIsFirstRun(false);
 
       const characterId = result.snapshot?.character?.id;
@@ -413,7 +430,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
 
   async function handleExportCharacter(characterId: string): Promise<void> {
     try {
-      const data = await exportCharacter(characterId);
+      const data = await exportCharacterMut.mutateAsync(characterId);
       const name = getSnapshot()?.character.name ?? "character";
       const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
       downloadTextFile(`${safeName}.chara_card_v3.json`, JSON.stringify(data, null, 2), "application/json");
@@ -424,7 +441,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
 
   async function handleExportChatJsonl(chatId: ChatId): Promise<void> {
     try {
-      const text = await exportChatJsonl(chatId);
+      const text = await exportChatJsonlMut.mutateAsync(chatId);
       const chatItem = getSnapshot()?.chats.find((c) => c.id === chatId);
       const safeTitle = (chatItem?.title ?? "chat").replace(/[^a-zA-Z0-9_-]/g, "_");
       downloadTextFile(`${safeTitle}.jsonl`, text, "application/x-ndjson");
@@ -435,7 +452,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
 
   async function handleExportPromptTrace(traceId: string): Promise<void> {
     try {
-      const data = await exportPromptTrace(traceId);
+      const data = await exportPromptTraceMut.mutateAsync(traceId);
       downloadTextFile(`prompt-trace-${traceId}.json`, JSON.stringify(data, null, 2), "application/json");
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : getT()("failed_to_export_trace"));
@@ -467,5 +484,6 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     handleExportCharacter,
     handleExportChatJsonl,
     handleExportPromptTrace,
+    isSavingCharacter,
   };
 }
