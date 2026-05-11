@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { AppMode, ThemeMode } from "./app-shell-types.js";
+import type { AppMode, ConnectionStatus, ThemeMode } from "./app-shell-types.js";
 import { initials } from "./app-shell-helpers.js";
 import { Icons } from "./shared/icons.js";
 import { MemBadge } from "./popovers/MemBadge.js";
@@ -14,6 +14,7 @@ interface TopBarProps {
   providerLabel: string;
   providerModelLabel: string;
   providerConnected: boolean;
+  providerStatus: ConnectionStatus;
   mode: AppMode;
   theme: ThemeMode;
   onOpenProviderSettings: () => void;
@@ -77,7 +78,10 @@ export function TopBar(input: TopBarProps) {
           style={{padding:'3px 8px'}}
           onClick={input.onOpenProviderSettings}
           title={t("provider_settings_title")}>
-          <div className={cn("h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-300", input.providerConnected ? "bg-success" : "bg-t4")}/>
+          <div className={cn(
+            "h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-300",
+            input.providerStatus === "error" ? "bg-danger" : input.providerConnected ? "bg-success" : "bg-t4",
+          )}/>
           <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-medium text-t1">{input.providerLabel}</span>
           <span className="text-t3">·</span>
           <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-t2">{input.providerModelLabel || '—'}</span>

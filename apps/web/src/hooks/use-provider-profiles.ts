@@ -44,19 +44,84 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
     () => providerProfiles.find((profile) => profile.isActive) ?? null,
     [providerProfiles],
   );
+  const startupProbeProfileIdsRef = useRef(new Set<string>());
   const canRefreshModels = Boolean(connection.activeProviderProfileId || selectedProviderProfileId);
   const canConnect = Boolean(connection.providerLabel.trim() && connection.baseUrl.trim());
   const canSendViaActiveProfile = activeProviderProfile !== null && Boolean(activeProviderProfile.defaultModel);
 
   async function loadProviderProfiles(): Promise<void> {
     try {
-      setProviderProfiles(await listProviderProfiles());
+      const profiles = await listProviderProfiles();
+      setProviderProfiles(profiles);
+      hydrateActiveProviderProfile(profiles);
     } catch (error) {
       setConnection((current) => ({
         ...current,
         error:
           error instanceof Error ? error.message : getT()("provider_load_failed"),
       }));
+    }
+  }
+
+  function hydrateActiveProviderProfile(profiles: ProviderProfileRecord[]): void {
+    const activeProfile = profiles.find((profile) => profile.isActive);
+    if (!activeProfile) return;
+
+    patchConnection({
+      providerLabel: activeProfile.name,
+      baseUrl: normalizeOpenAiCompatibleBaseUrl(activeProfile.endpoint),
+      apiKey: "",
+      model: activeProfile.defaultModel ?? "",
+      activeProviderProfileId: activeProfile.id,
+      hasStoredApiKey: activeProfile.hasStoredApiKey,
+      models: [],
+      status: activeProfile.defaultModel ? "connected" : "idle",
+      error: "",
+      providerType: activeProfile.type || PROVIDER_TYPE.openaiCompat,
+      providerPreset: "",
+      temperature: activeProfile.temperature ?? 0.9,
+      topP: activeProfile.topP ?? 1.0,
+      minP: activeProfile.minP ?? 0.05,
+      topK: activeProfile.topK ?? 40,
+      typicalP: activeProfile.typicalP ?? 1.0,
+      repPen: activeProfile.repPen ?? 1.1,
+      freqPen: activeProfile.freqPen ?? 0.0,
+      presPen: activeProfile.presPen ?? 0.0,
+      maxTokens: activeProfile.maxTokens ?? 8192,
+      stopSeq: activeProfile.stopSeq ?? "",
+      seed: activeProfile.seed ?? null,
+      reasoningEffort: activeProfile.reasoningEffort ?? "medium",
+      streamResponse: activeProfile.streamResponse ?? true,
+    });
+
+    if (!activeProfile.defaultModel || startupProbeProfileIdsRef.current.has(activeProfile.id)) return;
+    startupProbeProfileIdsRef.current.add(activeProfile.id);
+    void probeHydratedProviderProfile(activeProfile.id);
+  }
+
+  async function probeHydratedProviderProfile(providerProfileId: string): Promise<void> {
+    try {
+      const result = await testProviderProfile(providerProfileId);
+      setConnection((current) => {
+        if (current.activeProviderProfileId !== providerProfileId) return current;
+        if (result.success) {
+          return { ...current, status: "connected", error: "" };
+        }
+        return {
+          ...current,
+          status: "error",
+          error: result.error ?? getT()("connection_probe_failed"),
+        };
+      });
+    } catch (error) {
+      setConnection((current) => {
+        if (current.activeProviderProfileId !== providerProfileId) return current;
+        return {
+          ...current,
+          status: "error",
+          error: error instanceof Error ? error.message : getT()("connection_probe_failed"),
+        };
+      });
     }
   }
 
