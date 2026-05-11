@@ -29,7 +29,6 @@ export {
   useExportPromptTraceMutation,
 } from "./character-queries.js";
 export {
-  usePersonaList,
   useCreatePersonaMutation,
   useUpdatePersonaMutation,
   useDeletePersonaMutation,
