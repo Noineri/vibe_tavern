@@ -1,6 +1,7 @@
 import type { FC, CSSProperties } from "react";
 import type { SaveState } from "./use-dirty-state.js";
 import { Icons } from "./icons.js";
+import { useT } from "../../i18n/context.js";
 
 interface SaveBtnProps {
   dirty: boolean;
@@ -11,7 +12,8 @@ interface SaveBtnProps {
   disabled?: boolean;
 }
 
-export const SaveBtn: FC<SaveBtnProps> = ({ dirty, saveState, onClick, label = "Save", style, disabled = false }) => {
+export const SaveBtn: FC<SaveBtnProps> = ({ dirty, saveState, onClick, label, style, disabled = false }) => {
+  const { t } = useT();
   const isSaving = saveState === "saving";
   const isSaved = saveState === "saved";
 
@@ -25,12 +27,12 @@ export const SaveBtn: FC<SaveBtnProps> = ({ dirty, saveState, onClick, label = "
       {isSaving ? (
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span className="gen-cur" style={{ display: "inline-flex" }}><span /><span /><span /></span>
-          Saving…
+          {t("saving")}
         </span>
       ) : isSaved ? (
-        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><Icons.Check /> Saved</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><Icons.Check /> {t("saved")}</span>
       ) : (
-        label
+        label || t("save")
       )}
     </button>
   );

@@ -7,8 +7,10 @@ import { useChatStore } from "../stores/chat-store.js";
 import type { MessageBlockProps } from "./play-mode-types.js";
 import { Icons } from "./shared/icons.js";
 import { useTokenCount } from "../hooks/use-token-count.js";
+import { useT } from "../i18n/context.js";
 
 export function MessageBlock(input: MessageBlockProps) {
+  const { t } = useT();
   const streamingText = useChatStore((s) => s.streamingText);
   const [copied, setCopied] = useState(false);
   const isUser = input.message.role === "user";
@@ -28,11 +30,11 @@ export function MessageBlock(input: MessageBlockProps) {
   // When streaming, show streamed text instead of stale server content
   const showStreaming = isGenerating && streamingText;
   const renderContent = showStreaming ? streamingText : displayContent;
-  const copyLabel = "copy";
-  const editLabel = "edit";
-  const branchLabel = "branch";
-  const regenLabel = "regen";
-  const deleteLabel = "delete";
+  const copyLabel = t("copy");
+  const editLabel = t("edit");
+  const branchLabel = t("branch");
+  const regenLabel = t("regen");
+  const deleteLabel = t("delete");
   const createdLabel = formatMessageTime(input.message.createdAt);
   const messageTokens = useTokenCount(displayContent);
 
@@ -53,7 +55,7 @@ export function MessageBlock(input: MessageBlockProps) {
                 : initials(input.characterName))
             }
           </div>
-          <span>{isUser ? "You" : input.characterName}</span>
+          <span>{isUser ? t("message_user_label") : input.characterName}</span>
           {greetingActive && (
             <span className="ml-auto flex items-center gap-1 text-[calc(var(--ui-fs)-3px)] text-t3">
               <button
@@ -61,7 +63,7 @@ export function MessageBlock(input: MessageBlockProps) {
                 disabled={!canSwitch || greetIdx <= 0}
                 onClick={() => input.onGreetingIndexChange(Math.max(0, greetIdx - 1))}
               >◀</button>
-              Greeting {greetIdx + 1}/{greetingOptions!.length}
+              {t("greeting_counter").replace("{n}", String(greetIdx + 1)).replace("{total}", String(greetingOptions!.length))}
               <button
                 className="cursor-pointer text-t3 transition-colors duration-100 hover:text-accent"
                 disabled={!canSwitch || greetIdx >= greetingOptions!.length - 1}
@@ -102,13 +104,13 @@ export function MessageBlock(input: MessageBlockProps) {
                 style={{padding:'5px 12px'}}
                 disabled={input.isBusy}
                 onClick={input.onSaveEdit}
-              >Save</button>
+              >{t("save_edit")}</button>
               <button
                 className="cursor-pointer rounded-[5px] bg-s2 font-ui text-xs font-medium text-t2 transition-all duration-100 hover:bg-s3"
                 style={{padding:'5px 12px'}}
                 disabled={input.isBusy}
                 onClick={input.onCancelEdit}
-              >Cancel</button>
+              >{t("cancel_edit")}</button>
             </div>
           </>
         ) : isUser ? (
@@ -119,7 +121,7 @@ export function MessageBlock(input: MessageBlockProps) {
           </div>
         ) : isGenerating && !renderContent?.trim() ? (
           <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
-            <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label="Generating response">
+            <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
               <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
               <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
               <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
@@ -131,7 +133,7 @@ export function MessageBlock(input: MessageBlockProps) {
               <Markdown text={renderContent} />
             </div>
             {isGenerating && (
-              <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label="Generating response">
+              <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
                 <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
                 <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
                 <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
@@ -143,7 +145,7 @@ export function MessageBlock(input: MessageBlockProps) {
         {!input.isEditing && !isGenerating && createdLabel && (
           <div className="mt-1 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-4px)] text-t3/50">
             {createdLabel}
-            <span className="tabular-nums">{messageTokens} tokens</span>
+            <span className="tabular-nums">{messageTokens} {t("tokens_label")}</span>
           </div>
         )}
 
@@ -154,7 +156,7 @@ export function MessageBlock(input: MessageBlockProps) {
               style={{padding:'3px 7px'}}
               onClick={() => { if (input.isBusy) return; void navigator.clipboard?.writeText(displayContent); setCopied(true); setTimeout(() => setCopied(false), 1000); }}
               title={copyLabel}
-            >{copied ? <Icons.Check /> : <Icons.Copy />}{copied ? "copied" : copyLabel}</span>
+            >{copied ? <Icons.Check /> : <Icons.Copy />}{copied ? t("copied") : copyLabel}</span>
             <span
               className="flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
               style={{padding:'3px 7px'}}
@@ -166,8 +168,8 @@ export function MessageBlock(input: MessageBlockProps) {
                 className="flex cursor-pointer items-center gap-1 rounded font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
                 style={{padding:'3px 7px'}}
                 onClick={() => { if (!input.isBusy) input.onResend(); }}
-                title="resend"
-              ><Icons.Regen />resend</span>
+                title={t("resend")}
+              ><Icons.Regen />{t("resend")}</span>
             )}
             {input.canBranch && (
               <span

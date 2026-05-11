@@ -5,6 +5,7 @@ import { Ic } from "./shared/icons";
 import { cn } from "../lib/cn";
 import { CharacterForm } from "./build/CharacterForm.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
+import { useT } from "../i18n/context.js";
 
 export interface BuildCharacterDraft {
   name: string;
@@ -63,6 +64,7 @@ interface BuildModeProps {
 }
 
 export function BuildMode(input: BuildModeProps) {
+  const { t } = useT();
   const [active, setActive] = useState<InternalBuildTab>(input.activeTab === "trace" ? "trace" : "char");
 
   useEffect(() => {
@@ -234,8 +236,8 @@ export function BuildMode(input: BuildModeProps) {
 
   // Nav items — Phase 1: only Character + Trace
   const navItems: Array<{ id: InternalBuildTab; icon: ReactNode; label: string }> = [
-    { id: "char", icon: <Ic.wrench />, label: "Character Card" },
-    { id: "trace", icon: <Ic.trace />, label: "Prompt Trace" },
+    { id: "char", icon: <Ic.wrench />, label: t("build_char_card") },
+    { id: "trace", icon: <Ic.trace />, label: t("build_prompt_trace") },
     // Phase 2: uncomment when Lorebook/Retrieval/MCP are implemented
     // { id: "lore", icon: <Ic.book />, label: "Lorebook" },
     // { id: "retrieval", icon: <Ic.search />, label: "Retrieval" },
@@ -244,32 +246,33 @@ export function BuildMode(input: BuildModeProps) {
 
   function renderTraceContent(): ReactNode {
     const trace = input.activeTrace;
+    const totalTokens = trace ? (trace.tokenAccounting?.total ?? trace.layers.reduce((sum, l) => sum + l.tokenCount, 0)) : 0;
     return (
       <div className="max-w-[800px]">
         <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
           <div className="font-body text-[22px] font-medium text-t1" style={{ marginBottom: 6 }}>
-            Prompt Trace
+            {t("build_prompt_trace")}
           </div>
           {trace && (
             <div
               className="rounded-full bg-s2 font-ui text-[13px] text-t2"
               style={{ padding: "4px 10px" }}
             >
-              Total: {trace.tokenAccounting?.total ?? trace.layers.reduce((sum, l) => sum + l.tokenCount, 0)} tokens
+              {t("trace_total_tokens").replace("{n}", String(totalTokens))}
             </div>
           )}
         </div>
         <div className="font-ui text-[calc(var(--ui-fs)-1px)] text-t3 leading-[1.55]" style={{ marginBottom: 28 }}>
           {trace ? (
             <>
-              Showing trace{" "}
+              {t("trace_showing").replace("{n}", String(trace.id))}{" "}
               <span style={{ color: "var(--t2)" }}>{trace.id}</span> · {trace.createdAt} · model:{" "}
               {trace.model} · {trace.latencyMs}ms
             </>
           ) : (
-            "No active trace."
+            t("trace_no_active")
           )}{" "}
-          · Recorded: {input.promptTraceCount}.
+          · {t("trace_recorded_count").replace("{n}", String(input.promptTraceCount))}.
           {trace?.prefill && (
             <div
               style={{
@@ -282,7 +285,7 @@ export function BuildMode(input: BuildModeProps) {
                 fontFamily: "var(--font-body)",
               }}
             >
-              <strong style={{ color: "var(--t2)" }}>Prefill:</strong>{" "}
+              <strong style={{ color: "var(--t2)" }}>{t("trace_prefill_label")}</strong>{" "}
               <span style={{ color: "var(--t3)", whiteSpace: "pre-wrap" }}>{trace.prefill}</span>
             </div>
           )}
@@ -312,7 +315,7 @@ export function BuildMode(input: BuildModeProps) {
                     <span style={{ color: "var(--t3)", marginLeft: 6 }}>{layer.sourceId}</span>
                   </div>
                   <div className="flex gap-2 text-t3">
-                    <span style={{ fontSize: 12, color: "var(--t2)" }}>{layer.tokenCount} tokens</span>
+                    <span style={{ fontSize: 12, color: "var(--t2)" }}>{layer.tokenCount} {t("tokens_label")}</span>
                   </div>
                 </div>
                 <div
@@ -330,7 +333,7 @@ export function BuildMode(input: BuildModeProps) {
                 style={{ padding: "8px 16px" }}
                 onClick={() => alert(input.promptPayloadText)}
               >
-                View Raw JSON Payload
+                {t("view_raw_json")}
               </button>
             </div>
           </div>
@@ -351,7 +354,7 @@ export function BuildMode(input: BuildModeProps) {
               fontStyle: "italic",
             }}
           >
-            No traces recorded yet. Send a message to generate one.
+          {t("trace_no_traces_yet")}
           </div>
         )}
       </div>
@@ -369,7 +372,7 @@ export function BuildMode(input: BuildModeProps) {
           className={cn("font-ui text-[calc(var(--ui-fs)-5px)] font-medium uppercase tracking-[0.08em] text-t3")}
           style={{ padding: "9px 15px 7px" }}
         >
-          Editor
+          {t("editor")}
         </div>
         {navItems.map((n) => (
           <div

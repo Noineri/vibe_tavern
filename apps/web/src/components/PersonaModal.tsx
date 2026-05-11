@@ -6,6 +6,7 @@ import { cn } from "../lib/cn.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { uploadAsset } from "../app-client.js";
 import { useTokenCount } from "../hooks/use-token-count.js";
+import { useT } from "../i18n/context.js";
 
 interface PersonaListItem {
   id: string;
@@ -38,6 +39,7 @@ function PersonaPreviewBadge({ text }: { text: string }) {
 }
 
 export function PersonaModal(input: PersonaModalProps) {
+  const { t } = useT();
   const [selectedId, setSelectedId] = useState<string | null>(input.activePersonaId);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -89,7 +91,7 @@ export function PersonaModal(input: PersonaModalProps) {
 
   function handleDelete(personaId: string): void {
     if (isLastPersona) {
-      setDeleteError("You cannot delete the last persona.");
+      setDeleteError(t("cannot_delete_last_persona"));
       return;
     }
     setConfirmDeleteId(personaId);
@@ -105,14 +107,14 @@ export function PersonaModal(input: PersonaModalProps) {
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={(e) => e.target === e.currentTarget && input.onClose()}>
       {confirmDeleteId && (
         <DestructiveConfirmModal
-          title="Delete persona?"
+          title={t("delete_persona_title")}
           body={
             <>
-              Are you sure? Persona <b>{input.personas.find((p) => p.id === confirmDeleteId)?.name ?? "Untitled"}</b> will be deleted permanently.
+              {t("delete_persona_body").replace("{name}", input.personas.find((p) => p.id === confirmDeleteId)?.name ?? "Untitled")}
               {deleteError && <div style={{ marginTop: 8, color: "oklch(0.6 0.15 25)" }}>{deleteError}</div>}
             </>
           }
-          confirmLabel="Delete"
+          confirmLabel={t("delete")}
           onConfirm={async () => {
             const id = confirmDeleteId;
             if (!id) return;
@@ -122,7 +124,7 @@ export function PersonaModal(input: PersonaModalProps) {
               setDeleteError("");
               if (selectedId === id) setSelectedId(null);
             } else {
-              setDeleteError(result.error ?? "Delete failed.");
+              setDeleteError(result.error ?? t("delete_failed"));
             }
           }}
           onCancel={() => {
@@ -139,8 +141,8 @@ export function PersonaModal(input: PersonaModalProps) {
         <div className="shrink-0" style={{ padding: "18px 20px 0" }}>
           <div className="flex items-start justify-between">
             <div>
-              <div className="font-body mb-0.5 text-[calc(var(--ui-fs)+4px)] font-medium text-t1">Persona Manager</div>
-              <div className="font-ui mb-3.5 text-[calc(var(--ui-fs)-2px)] text-t3">Whose voice are you using in chat?</div>
+              <div className="font-body mb-0.5 text-[calc(var(--ui-fs)+4px)] font-medium text-t1">{t("persona_manager_title")}</div>
+              <div className="font-ui mb-3.5 text-[calc(var(--ui-fs)-2px)] text-t3">{t("persona_manager_sub")}</div>
             </div>
             <div className="flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={input.onClose}>
               <Icons.Close />
@@ -154,8 +156,8 @@ export function PersonaModal(input: PersonaModalProps) {
             {input.personas.length === 0 && (
               <EmptyState
                 icon={<Icons.User />}
-                title="No personas"
-                sub="Create one to get started."
+                title={t("no_personas")}
+                sub={t("create_first_persona")}
               />
             )}
             {input.personas.map((persona) => {
@@ -181,7 +183,7 @@ export function PersonaModal(input: PersonaModalProps) {
                             avatarUploading && "pointer-events-none opacity-60"
                           )}
                           onClick={() => !avatarUploading && avatarInputRef.current?.click()}
-                          title="Upload avatar"
+                          title={t("upload_avatar")}
                         >
                           <input
                             type="file"
@@ -221,7 +223,7 @@ export function PersonaModal(input: PersonaModalProps) {
                                   setEditAvatarPreview(null);
                                   if (avatarInputRef.current) avatarInputRef.current.value = "";
                                 }}
-                                title="Remove avatar"
+                                title={t("remove_avatar")}
                               >
                                 <svg width="10" height="10" viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
                               </button>
@@ -240,26 +242,26 @@ export function PersonaModal(input: PersonaModalProps) {
                             className="w-full rounded border border-border bg-s2 py-2 px-2.5 font-ui text-sm text-t1 outline-none transition-colors focus:border-accent"
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
-                            placeholder="Name"
+                            placeholder={t("persona_name_placeholder")}
                           />
                           <select
                             className="mt-2 w-full rounded border border-border bg-s2 py-2 px-2.5 font-ui text-sm text-t1 outline-none transition-colors focus:border-accent"
                             value={editPronouns || ""}
                             onChange={(e) => setEditPronouns(e.target.value)}
                           >
-                            <option value="">None</option>
+                            <option value="">{t("pronouns_none")}</option>
                             <option value="he/him">he/him</option>
                             <option value="she/her">she/her</option>
                             <option value="they/them">they/them</option>
                             <option value="it/its">it/its</option>
-                            <option value="custom">Custom…</option>
+                            <option value="custom">{t("pronouns_custom")}</option>
                           </select>
                           {editPronouns === "custom" && (
                             <input
                               className="mt-1 w-full rounded border border-border bg-s2 py-2 px-2.5 font-ui text-sm text-t1 outline-none transition-colors focus:border-accent"
                               value={editPronounsCustom}
                               onChange={(e) => setEditPronounsCustom(e.target.value)}
-                              placeholder="Custom pronouns"
+                              placeholder={t("pronouns_custom_placeholder")}
                             />
                           )}
                         </div>
@@ -269,7 +271,7 @@ export function PersonaModal(input: PersonaModalProps) {
                         style={{ resize: "vertical" }}
                         value={editDescription}
                         onChange={(e) => setEditDescription(e.target.value)}
-                        placeholder="Description"
+                        placeholder={t("persona_desc_placeholder")}
                       />
                       <PersonaTokenBadge text={editDescription} />
                       <div className="flex gap-2">
@@ -278,13 +280,13 @@ export function PersonaModal(input: PersonaModalProps) {
                           disabled={input.isSaving || !editName.trim()}
                           onClick={commitEdit}
                         >
-                          {input.isSaving ? "Saving..." : "Save"}
+                          {input.isSaving ? t("saving") : t("save")}
                         </button>
                         <button
                           className="h-[34px] cursor-pointer rounded-md bg-transparent py-0 px-3.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
                           onClick={cancelEdit}
                         >
-                          Cancel
+                          {t("cancel")}
                         </button>
                       </div>
                     </div>
@@ -317,28 +319,28 @@ export function PersonaModal(input: PersonaModalProps) {
                             onClick={(e) => { e.stopPropagation(); startEdit(persona); }}
                             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); startEdit(persona); } }}
                           >
-                            <Icons.Edit /> Edit
+                            <Icons.Edit /> {t("persona_edit")}
                           </div>
                           <div
                             className="mt-2 flex cursor-pointer items-center gap-1 rounded py-[3px] px-[7px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:bg-s2 hover:text-t2"
                             role="button"
                             tabIndex={0}
                             style={{ opacity: 0.45, cursor: "not-allowed" }}
-                            title="Duplicate not yet implemented"
+                            title={t("duplicate_not_implemented")}
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <Icons.Copy /> Duplicate
+                            <Icons.Copy /> {t("persona_duplicate")}
                           </div>
                           <div
                             className="mt-2 flex cursor-pointer items-center gap-1 rounded py-[3px] px-[7px] font-ui text-[calc(var(--ui-fs)-3px)] transition-all hover:bg-s2"
                             role="button"
                             tabIndex={0}
                             style={{ color: isLastPersona ? "var(--t3)" : "oklch(0.6 0.15 25)", cursor: isLastPersona ? "not-allowed" : "pointer", opacity: isLastPersona ? 0.6 : 1 }}
-                            title={isLastPersona ? "You cannot delete the last persona." : "Delete persona"}
+                            title={isLastPersona ? t("cannot_delete_last_persona") : t("delete_persona_title")}
                             onClick={(e) => { e.stopPropagation(); handleDelete(persona.id); }}
                             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); handleDelete(persona.id); } }}
                           >
-                            <Icons.Trash /> Delete
+                            <Icons.Trash /> {t("delete")}
                           </div>
                         </div>
                       </div>
@@ -351,18 +353,18 @@ export function PersonaModal(input: PersonaModalProps) {
             <div
               className="flex items-center justify-center rounded-lg border border-dashed border-border2 p-2.5 font-ui text-xs text-t2 transition-all hover:bg-s2 hover:text-t1 hover:border-border cursor-pointer"
               onClick={async () => {
-                const created = await input.onCreatePersona({ name: "New persona", description: "" });
+                const created = await input.onCreatePersona({ name: t("new_persona_default"), description: "" });
                 if (created) {
                   setSelectedId(created.id);
                   setEditingId(created.id);
-                  setEditName("New persona");
+                  setEditName(t("new_persona_default"));
                   setEditDescription("");
                   setEditPronouns("");
                   setEditPronounsCustom("");
                 }
               }}
             >
-              <Icons.Plus /> <span className="ml-1">Create new persona</span>
+              <Icons.Plus /> <span className="ml-1">{t("create_new_persona")}</span>
             </div>
             {deleteError && !confirmDeleteId && (
               <div className="font-ui text-[calc(var(--ui-fs)-3px)] mt-1" style={{ color: "oklch(0.6 0.15 25)" }}>{deleteError}</div>
@@ -373,14 +375,14 @@ export function PersonaModal(input: PersonaModalProps) {
         {/* Footer */}
         <div className="flex shrink-0 items-center gap-2.5 border-t border-border" style={{ padding: "14px 20px" }}>
           <button className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={input.onClose}>
-            Close
+            {t("close")}
           </button>
           <button
             className="h-[37px] cursor-pointer rounded-md bg-accent py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110"
             disabled={!selectedId || isEditing}
             onClick={setActiveAndClose}
           >
-            Set as active
+            {t("select_as_active")}
           </button>
         </div>
       </div>

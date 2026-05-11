@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { EmptyState } from "../shared/empty-state.js";
+import { useT } from "../../i18n/context.js";
 
 interface PresetListProps {
   presets: Array<{ id: string; name: string }>;
@@ -12,6 +13,7 @@ interface PresetListProps {
 }
 
 export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename }: PresetListProps) {
+  const { t } = useT();
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -59,13 +61,13 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename 
     <div className="flex w-[240px] shrink-0 flex-col border-r border-border bg-surface" style={{ padding: "10px 0" }}>
       <div className="shrink-0" style={{ padding: "0 13px" }}>
         <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ padding: "4px 0 5px" }}>
-          Presets
+          {t("presets")}
         </div>
-        <div className="mb-2 flex items-center gap-1.5 rounded-md border border-border bg-s2" style={{ padding: "6px 9px" }} title="Search presets">
+        <div className="mb-2 flex items-center gap-1.5 rounded-md border border-border bg-s2" style={{ padding: "6px 9px" }} title={t("search_presets")}>
           <Icons.Search />
           <input
             className="min-w-0 flex-1 border-0 bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t4"
-            placeholder="Search presets..."
+            placeholder={t("search_presets")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -77,8 +79,8 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename 
           <div className="flex h-full items-center justify-center" style={{ padding: "0 8px" }}>
             <EmptyState
               icon={<Icons.Terminal />}
-              title={presets.length === 0 ? "No presets" : "No matches"}
-              sub={presets.length === 0 ? "Create a preset to start configuring prompts." : "Try a different search."}
+              title={presets.length === 0 ? t("no_presets") : t("no_preset_matches")}
+              sub={presets.length === 0 ? t("no_presets_sub") : t("no_preset_matches_sub")}
             />
           </div>
         ) : filtered.map((p) => {
@@ -127,7 +129,7 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename 
                 onClick={(e) => startEditing(p, e)}
                 className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100", isActive ? "text-accent" : "text-t4 hover:text-t1")}
                 type="button"
-                title="Rename preset"
+                title={t("rename")}
               >
                 <Icons.Edit />
               </button>
@@ -141,7 +143,7 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename 
               <input
                 ref={newInputRef}
                 type="text"
-                placeholder="Name..."
+                placeholder={t("new_preset_name_placeholder")}
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={handleNewKeyDown}
@@ -166,7 +168,7 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename 
           className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
           type="button"
         >
-          <Icons.Plus /> New preset
+          <Icons.Plus /> {t("new_preset_btn")}
         </button>
       </div>
     </div>

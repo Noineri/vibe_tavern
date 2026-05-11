@@ -4,6 +4,7 @@ import { cn } from "../../lib/cn";
 import { CharacterImportModal } from "../ImportModals.js";
 import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader";
 import { useTokenCount } from "../../hooks/use-token-count.js";
+import { useT } from "../../i18n/context.js";
 
 export interface CharacterFormProps {
   draft: Record<string, any>;
@@ -60,12 +61,14 @@ const monoCls = inputCls + " font-mono text-xs";
 /** Small inline token badge for character form fields */
 function TokenBadge({ text }: { text: string }) {
   const count = useTokenCount(text);
-  return <span className="flex justify-end font-ui text-[11px] tabular-nums text-t3">{count.toLocaleString()} tokens</span>;
+  const { t } = useT();
+  return <span className="flex justify-end font-ui text-[11px] tabular-nums text-t3">{count.toLocaleString()} {t("tokens_label")}</span>;
 }
 
 export function CharacterForm({
   draft, patchDraft, setDraft, isDirty, isSaving, saveNotice, avatarUrl, onSave, onReset, onAvatarUpload,
 }: CharacterFormProps) {
+  const { t } = useT();
   const [altGreetIdx, setAltGreetIdx] = useState(0);
   const [tagInput, setTagInput] = useState("");
   const [importError, setImportError] = useState("");
@@ -97,14 +100,14 @@ export function CharacterForm({
           const text = await file.text();
           raw = JSON.parse(text);
         } else {
-          throw new Error("Unsupported file type. Use PNG or JSON character cards.");
+          throw new Error(t("unsupported_format_error"));
         }
         const merged = parseCardToDraft(raw);
-        if (Object.keys(merged).length === 0) throw new Error("No character data found in file.");
+        if (Object.keys(merged).length === 0) throw new Error(t("import_error_no_data"));
         setDraft({ ...draft, ...merged });
         setImportModalOpen(false);
       } catch (err) {
-        setImportError(err instanceof Error ? err.message : "Failed to import");
+        setImportError(err instanceof Error ? err.message : t("import_failed"));
       }
     })();
   }
@@ -140,14 +143,14 @@ export function CharacterForm({
       {/* Header row */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
         <div className="font-body text-[22px] font-medium text-t1" style={{ marginBottom: 6 }}>
-          {draft.name || "Unnamed"}
+          {draft.name || t("unnamed")}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="font-ui text-[11px] tabular-nums text-t3">{charTotal.toLocaleString()} tokens</span>
+          <span className="font-ui text-[11px] tabular-nums text-t3">{charTotal.toLocaleString()} {t("tokens_label")}</span>
           <button
             className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
             style={{ height: 28, width: 28 }}
-            title="Import character card into draft"
+            title={t("char_import_to_draft")}
             onClick={() => setImportModalOpen(true)}
             disabled={isSaving}
           >
@@ -159,7 +162,7 @@ export function CharacterForm({
             disabled={!canSave || !isDirty}
             onClick={onSave}
           >
-            {isSaving ? "Saving..." : "Save"}
+            {isSaving ? t("saving") : t("save")}
           </button>
         </div>
       </div>
@@ -179,7 +182,7 @@ export function CharacterForm({
           className="group relative flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t"
           style={{ height: 64, width: 64 }}
           onClick={() => avaInputRef.current?.click()}
-          title="Change avatar"
+          title={t("change_avatar")}
         >
           <input ref={avaInputRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleAvatarPick(e.target.files)} />
           {displayAvatar ? (
@@ -190,28 +193,28 @@ export function CharacterForm({
           ) : <Ic.plus />}
         </div>
         <div style={{ flex: 1 }}>
-          <label className={lblCls} style={s.label}>Name</label>
+          <label className={lblCls} style={s.label}>{t("char_name_label")}</label>
           <input type="text" className={inputCls} style={s.inputPadding} value={draft.name || ""} disabled={isSaving} onChange={(e) => patchDraft("name", e.target.value)} />
         </div>
       </div>
 
       {/* Description */}
       <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>Description</label>
+        <label className={lblCls} style={s.label}>{t("char_desc_label")}</label>
         <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 100 }} value={draft.description || ""} disabled={isSaving} onChange={(e) => patchDraft("description", e.target.value)} />
         <TokenBadge text={draft.description || ""} />
       </div>
 
       {/* First Message */}
       <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>First Message (Greeting)</label>
-        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 120 }} value={draft.firstMessage || ""} disabled={isSaving} onChange={(e) => patchDraft("firstMessage", e.target.value)} placeholder="Character's first message..." />
+        <label className={lblCls} style={s.label}>{t("first_message_greeting")}</label>
+        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 120 }} value={draft.firstMessage || ""} disabled={isSaving} onChange={(e) => patchDraft("firstMessage", e.target.value)} placeholder={t("first_message_placeholder")} />
         <TokenBadge text={draft.firstMessage || ""} />
       </div>
 
       {/* Alternate Greetings */}
       <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>Alternate Greetings</label>
+        <label className={lblCls} style={s.label}>{t("alternate_greetings")}</label>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
           {(draft.alternateGreetings || []).map((_: any, idx: number) => (
             <span
@@ -245,27 +248,27 @@ export function CharacterForm({
         {(draft.alternateGreetings || []).length > 0 && (
           <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 120 }} value={(draft.alternateGreetings || [])[altGreetIdx] || ""} disabled={isSaving} onChange={(e) => {
             const next = [...(draft.alternateGreetings || [])]; next[altGreetIdx] = e.target.value; patchDraft("alternateGreetings", next);
-          }} placeholder="Alternate greeting..." />
+          }} placeholder={t("alternate_greeting_placeholder")} />
         )}
       </div>
 
       {/* Message Examples */}
       <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>Message Examples</label>
+        <label className={lblCls} style={s.label}>{t("dialog_examples")}</label>
         <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 120 }} value={draft.mesExample || ""} disabled={isSaving} onChange={(e) => patchDraft("mesExample", e.target.value)} placeholder="<START>..." />
         <TokenBadge text={draft.mesExample || ""} />
       </div>
 
       {/* Scenario */}
       <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>Scenario</label>
+        <label className={lblCls} style={s.label}>{t("scenario")}</label>
         <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 100 }} value={draft.scenario || ""} disabled={isSaving} onChange={(e) => patchDraft("scenario", e.target.value)} />
         <TokenBadge text={draft.scenario || ""} />
       </div>
 
       {/* Personality Summary */}
       <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>Personality Summary</label>
+        <label className={lblCls} style={s.label}>{t("char_personality_label")}</label>
         <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.personalitySummary || ""} disabled={isSaving} onChange={(e) => patchDraft("personalitySummary", e.target.value)} />
         <TokenBadge text={draft.personalitySummary || ""} />
       </div>
@@ -277,21 +280,21 @@ export function CharacterForm({
 
       {/* Post-History Instructions */}
       <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>Post-History Instructions</label>
-        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.postHistoryInstructions || ""} disabled={isSaving} onChange={(e) => patchDraft("postHistoryInstructions", e.target.value)} placeholder="Instructions appended to the end of chat history (Jailbreak)..." />
+        <label className={lblCls} style={s.label}>{t("post_history_instructions")}</label>
+        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.postHistoryInstructions || ""} disabled={isSaving} onChange={(e) => patchDraft("postHistoryInstructions", e.target.value)} placeholder={t("post_history_placeholder")} />
         <TokenBadge text={draft.postHistoryInstructions || ""} />
       </div>
 
       {/* Creator Notes */}
       <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>Creator Notes</label>
-        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.creatorNotes || ""} disabled={isSaving} onChange={(e) => patchDraft("creatorNotes", e.target.value)} placeholder="Internal creator notes..." />
+        <label className={lblCls} style={s.label}>{t("creator_notes")}</label>
+        <textarea className={textareaCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.creatorNotes || ""} disabled={isSaving} onChange={(e) => patchDraft("creatorNotes", e.target.value)} placeholder={t("creator_notes_placeholder")} />
         <TokenBadge text={draft.creatorNotes || ""} />
       </div>
 
       {/* Character Book JSON */}
       <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>Character Book (JSON)</label>
+        <label className={lblCls} style={s.label}>{t("character_book_json")}</label>
         <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 80 }} value={draft.characterBook || ""} disabled={isSaving} onChange={(e) => patchDraft("characterBook", e.target.value)} placeholder='{"entries":[...]}'  />
         <TokenBadge text={draft.characterBook || ""} />
       </div>
@@ -299,14 +302,14 @@ export function CharacterForm({
       {/* Depth Prompt */}
       <div style={s.fieldWrap}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <label className={lblCls} style={{ marginBottom: 0 }}>Depth Prompt</label>
+          <label className={lblCls} style={{ marginBottom: 0 }}>{t("depth_prompt")}</label>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">Depth</span>
+              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
               <input type="number" className={inputCls} style={{ padding: "2px 6px", width: 56, height: 24, textAlign: "center", fontSize: 11 }} min={0} max={999} value={draft.depthPromptDepth ?? 4} disabled={isSaving} onChange={(e) => patchDraft("depthPromptDepth", Number(e.target.value))} />
             </div>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">Role</span>
+              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("role")}</span>
               <select className={inputCls} style={{ padding: "2px 6px", width: 82, height: 24, fontSize: 11 }} value={draft.depthPromptRole || "system"} disabled={isSaving} onChange={(e) => patchDraft("depthPromptRole", e.target.value)}>
                 <option value="system">system</option>
                 <option value="user">user</option>
@@ -315,28 +318,28 @@ export function CharacterForm({
             </div>
           </div>
         </div>
-        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.depthPrompt || ""} disabled={isSaving} onChange={(e) => patchDraft("depthPrompt", e.target.value)} placeholder="Prompt injected at a specific depth..." />
+        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.depthPrompt || ""} disabled={isSaving} onChange={(e) => patchDraft("depthPrompt", e.target.value)} placeholder={t("depth_prompt_placeholder")} />
         <TokenBadge text={draft.depthPrompt || ""} />
       </div>
 
       {/* Extensions JSON */}
       <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>Extensions (JSON)</label>
+        <label className={lblCls} style={s.label}>{t("extensions_json")}</label>
         <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 60 }} value={draft.extensions || ""} disabled={isSaving} onChange={(e) => patchDraft("extensions", e.target.value)} placeholder='{"talkativeness":"0.5",...}' />
         <TokenBadge text={draft.extensions || ""} />
       </div>
 
       {/* System Prompt Override */}
       <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>System Prompt Override</label>
-        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 80 }} value={draft.systemPrompt || ""} disabled={isSaving} onChange={(e) => patchDraft("systemPrompt", e.target.value)} placeholder="Leave empty to use the global prompt..." />
+        <label className={lblCls} style={s.label}>{t("system_prompt_override")}</label>
+        <textarea className={monoCls} style={{ ...s.inputPadding, minHeight: 80 }} value={draft.systemPrompt || ""} disabled={isSaving} onChange={(e) => patchDraft("systemPrompt", e.target.value)} placeholder={t("system_prompt_override_placeholder")} />
         <TokenBadge text={draft.systemPrompt || ""} />
       </div>
 
       {/* Tags */}
       <div style={s.fieldWrap}>
-        <label className={lblCls} style={s.label}>Tags</label>
-        <input type="text" className={inputCls} style={s.inputPadding} value={tagInput} disabled={isSaving} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagKey} placeholder="Enter tag and press Enter" />
+        <label className={lblCls} style={s.label}>{t("char_tags_label")}</label>
+        <input type="text" className={inputCls} style={s.inputPadding} value={tagInput} disabled={isSaving} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagKey} placeholder={t("tags_enter")} />
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
           {(draft.tags || []).map((tag: string) => (
             <span key={tag} className="cursor-pointer rounded bg-accent-dim font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" style={{ padding: "4px 10px" }} onClick={() => toggleTag(tag)}>
@@ -348,8 +351,8 @@ export function CharacterForm({
 
       {/* Footer */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
-        <button className="cursor-pointer rounded-md bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" style={{ height: 28, padding: "0 12px" }} disabled={isSaving || !isDirty} onClick={onReset}>Reset</button>
-        <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{saveNotice || (isDirty ? "Unsaved changes" : "Saved state")}</span>
+        <button className="cursor-pointer rounded-md bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" style={{ height: 28, padding: "0 12px" }} disabled={isSaving || !isDirty} onClick={onReset}>{t("reset")}</button>
+        <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{saveNotice || (isDirty ? t("unsaved_changes") : t("saved_state"))}</span>
       </div>
 
       {importModalOpen && (

@@ -1,5 +1,6 @@
 import { useCallback, useRef } from "react";
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
+import { getT } from "../i18n/context.js";
 import {
   activateBranch,
   deleteBranch,
@@ -167,7 +168,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         activeChatId,
       });
       setChatNotice(
-        "Message sending is unavailable until a provider profile is activated and its default model is set. Open Provider settings, pick a model, press Save profile, then Set as active.",
+        getT()("message_unavailable_no_provider"),
       );
       return;
     }
@@ -206,7 +207,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleSend.cancelled", { activeChatId });
         setSnapshot(activeChatId, await fetchChat(activeChatId));
-        setChatNotice("Generation cancelled.");
+        setChatNotice(getT()("generation_cancelled"));
         return;
       }
       void logClientSendDebug("web.hook.handleSend.error", {
@@ -214,7 +215,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         message: error instanceof Error ? error.message : String(error),
       });
       setSnapshot(activeChatId, await fetchChat(activeChatId));
-      setChatNotice(error instanceof Error && error.message ? error.message : "Message sending failed.");
+      setChatNotice(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
     } finally {
       setPendingUserMessageContent(null);
       setIsSending(false);
@@ -229,7 +230,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
 
     if (!getCanSendViaActiveProfile()) {
       setChatNotice(
-        "Resend is unavailable until a provider profile is activated and its default model is set.",
+        getT()("resend_unavailable_no_provider"),
       );
       return;
     }
@@ -265,7 +266,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleResend.cancelled", { activeChatId });
         setSnapshot(activeChatId, await fetchChat(activeChatId));
-        setChatNotice("Generation cancelled.");
+        setChatNotice(getT()("generation_cancelled"));
         return;
       }
       void logClientSendDebug("web.hook.handleResend.error", {
@@ -273,7 +274,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         message: error instanceof Error ? error.message : String(error),
       });
       setSnapshot(activeChatId, await fetchChat(activeChatId));
-      setChatNotice(error instanceof Error && error.message ? error.message : "Resend failed.");
+      setChatNotice(error instanceof Error && error.message ? error.message : getT()("resend_failed"));
     } finally {
       setIsSending(false);
       abortRef.current = null;
@@ -284,7 +285,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
   const handleCancelGeneration = useCallback((): void => {
     abortRef.current?.abort();
     abortRef.current = null;
-    setChatNotice("Cancelling generation…");
+    setChatNotice(getT()("cancelling_generation"));
   }, []);
 
   async function handleSwitchChat(chatId: ChatId): Promise<void> {
@@ -324,7 +325,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
 
   async function handleDeleteMessage(messageId: string): Promise<void> {
     const activeChatId = getActiveChatId();
-    if (!activeChatId || !window.confirm("Delete this message?")) return;
+    if (!activeChatId || !window.confirm(getT()("delete_message_title"))) return;
 
     setMessageActionId(messageId);
     try {
@@ -345,7 +346,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
 
     if (!getCanSendViaActiveProfile()) {
       setChatNotice(
-        "Regeneration is unavailable until a provider profile is activated and its default model is set.",
+        getT()("regen_unavailable_no_provider"),
       );
       return;
     }
@@ -380,11 +381,11 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleRegenerate.cancelled", { activeChatId, messageId });
         setSnapshot(activeChatId, await fetchChat(activeChatId));
-        setChatNotice("Generation cancelled.");
+        setChatNotice(getT()("generation_cancelled"));
         return;
       }
       setSnapshot(activeChatId, await fetchChat(activeChatId));
-      setChatNotice(error instanceof Error ? error.message : "Regeneration failed.");
+      setChatNotice(error instanceof Error ? error.message : getT()("regen_failed"));
     } finally {
       setIsSending(false);
       setMessageActionId(null);
@@ -422,14 +423,14 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     const activeBranch = snapshot.activeBranch;
     const rootBranch = snapshot.branches.find((b) => b.parentBranchId === null);
     if (!rootBranch || activeBranch.id === rootBranch.id) {
-      setChatNotice("Cannot delete: active branch is the main timeline.");
+      setChatNotice(getT()("cannot_delete_main_branch"));
       return;
     }
 
     try {
       setSnapshot(activeChatId, await deleteBranch(activeChatId, activeBranch.id));
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : "Branch delete failed.");
+      setChatNotice(error instanceof Error ? error.message : getT()("branch_delete_failed"));
     }
   }
 

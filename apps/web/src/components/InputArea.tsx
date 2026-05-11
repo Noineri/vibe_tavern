@@ -4,6 +4,7 @@ import { PersonaQuickSwitch } from "./PersonaQuickSwitch.js";
 import { Icons } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
 import { useTokenCount } from "../hooks/use-token-count.js";
+import { useT } from "../i18n/context.js";
 
 function bucketTokens(accounting: Record<string, number>): {
   system: number;
@@ -46,6 +47,7 @@ function bucketTokens(accounting: Record<string, number>): {
 }
 
 export function InputArea(input: InputAreaProps) {
+  const { t } = useT();
   const [tokenPopOpen, setTokenPopOpen] = useState(false);
   const [modelDropOpen, setModelDropOpen] = useState(false);
   const tokenPopRef = useRef<HTMLDivElement>(null);
@@ -74,7 +76,7 @@ export function InputArea(input: InputAreaProps) {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [tokenPopOpen, modelDropOpen]);
 
-  const sendButtonText = input.canSend || !input.draft.trim() ? "Send" : input.sendLabel || "Unavailable";
+  const sendButtonText = input.canSend || !input.draft.trim() ? t("send") : input.sendLabel || t("send_unavailable");
 
   return (
     <div
@@ -85,7 +87,7 @@ export function InputArea(input: InputAreaProps) {
         <textarea
           className="max-h-40 min-h-[55px] w-full resize-none border-0 bg-transparent font-body text-[16.5px] leading-[1.65] text-t1 outline-none placeholder:text-t4"
           style={{ padding: "13px 16px 8px" }}
-          placeholder="Continue the story..."
+          placeholder={t("placeholder")}
           value={input.draft}
           onChange={(event) => input.onDraftChange(event.target.value)}
           onKeyDown={(event) => {
@@ -98,8 +100,8 @@ export function InputArea(input: InputAreaProps) {
         />
 
         <div className="relative flex items-center gap-[7px]" style={{ padding: "6px 135px 9px 12px" }}>
-          <div className="speaker-row multi-persona" title="multi-persona">
-            <span className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.06em] text-t3">Speak as</span>
+          <div className="speaker-row multi-persona" title={t("multi_persona_tooltip")}>
+            <span className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.06em] text-t3">{t("speak_as")}</span>
           </div>
           <PersonaQuickSwitch personas={input.personas} activePersonaId={input.activePersonaId} onSelect={input.onSetPersona} />
           <div className="mx-0.5 h-3.5 w-px shrink-0 bg-border" />
@@ -119,15 +121,15 @@ export function InputArea(input: InputAreaProps) {
                 className="absolute bottom-[calc(100%+8px)] left-1/2 z-[220] w-[220px] -translate-x-1/2 rounded-lg border border-border2 bg-surface shadow-[0_12px_28px_rgba(0,0,0,0.45)]"
                 style={{ padding: "10px 14px" }}
               >
-                <div className="mb-1.5 border-b border-border text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ paddingBottom: "6px" }}>Context Breakdown</div>
-                <div className="mb-1 flex justify-between text-xs text-t2"><span>System</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.system.toLocaleString()}</span></div>
-                <div className="mb-1 flex justify-between text-xs text-t2"><span>Character</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.character.toLocaleString()}</span></div>
-                <div className="mb-1 flex justify-between text-xs text-t2"><span>Persona</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.persona.toLocaleString()}</span></div>
-                <div className="mb-1 flex justify-between text-xs text-t2"><span>Summary</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.summary.toLocaleString()}</span></div>
-                <div className="mb-1 flex justify-between text-xs text-t2"><span>History</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.history.toLocaleString()}</span></div>
-                <div className="mb-1.5 flex justify-between text-xs text-t2"><span>Current Input</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{inputTokens.toLocaleString()}</span></div>
-                <div className="mb-1 flex justify-between border-t border-border text-xs text-t2" style={{ paddingTop: "6px" }}><span>Response Budget</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>-{maxTokens.toLocaleString()}</span></div>
-                <div className="mt-0.5 flex justify-between text-xs font-medium text-t1"><span>Total Available</span><span style={{ fontVariantNumeric: "tabular-nums" }}>{availableBudget.toLocaleString()}</span></div>
+                <div className="mb-1.5 border-b border-border text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ paddingBottom: "6px" }}>{t("context_breakdown")}</div>
+                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_system")}</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.system.toLocaleString()}</span></div>
+                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_character")}</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.character.toLocaleString()}</span></div>
+                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_persona")}</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.persona.toLocaleString()}</span></div>
+                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_summary")}</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.summary.toLocaleString()}</span></div>
+                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_history")}</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{buckets.history.toLocaleString()}</span></div>
+                <div className="mb-1.5 flex justify-between text-xs text-t2"><span>{t("context_current_input")}</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>{inputTokens.toLocaleString()}</span></div>
+                <div className="mb-1 flex justify-between border-t border-border text-xs text-t2" style={{ paddingTop: "6px" }}><span>{t("context_response_budget")}</span><span className="text-t1" style={{ fontVariantNumeric: "tabular-nums" }}>-{maxTokens.toLocaleString()}</span></div>
+                <div className="mt-0.5 flex justify-between text-xs font-medium text-t1"><span>{t("context_total_available")}</span><span style={{ fontVariantNumeric: "tabular-nums" }}>{availableBudget.toLocaleString()}</span></div>
               </div>
             )}
           </div>
@@ -142,13 +144,13 @@ export function InputArea(input: InputAreaProps) {
                     modelDropOpen ? "brightness-110" : "",
                   )}
                   onClick={() => setModelDropOpen((open) => !open)}
-                  title="Favorite models"
+                  title={t("starred_models")}
                 >
                   <Icons.StarFilled />
                 </button>
                 {modelDropOpen && (
                   <div className="absolute bottom-[calc(100%+8px)] right-0 z-[220] w-[260px] rounded-lg border border-border2 bg-surface py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
-                    <div className="mb-1 border-b border-border px-4 pb-2 pt-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">Favorite Models</div>
+                    <div className="mb-1 border-b border-border px-4 pb-2 pt-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("starred_models")}</div>
                     {input.favoriteModels.length > 0 ? (
                       input.favoriteModels.map((model) => (
                         <div
@@ -164,7 +166,7 @@ export function InputArea(input: InputAreaProps) {
                         </div>
                       ))
                     ) : (
-                      <div className="px-4 py-2 font-ui text-[12px] text-t3">No favorite models yet. Star models in Provider Settings.</div>
+                      <div className="px-4 py-2 font-ui text-[12px] text-t3">{t("no_starred_models")}</div>
                     )}
                   </div>
                 )}
@@ -176,7 +178,7 @@ export function InputArea(input: InputAreaProps) {
                 style={{ padding: "0 14px" }}
                 onClick={input.onCancel}
               >
-                Cancel
+                {t("cancel")}
               </button>
             ) : (
               <button
