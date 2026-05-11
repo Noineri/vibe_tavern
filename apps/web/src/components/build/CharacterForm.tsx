@@ -1,8 +1,9 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft } from "@rp-platform/api-contracts";
 import { Ic } from "../shared/icons";
 import { cn } from "../../lib/cn";
+import { AutoTextarea } from "../shared/auto-textarea.js";
 import { CharacterImportModal } from "../ImportModals.js";
 import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader";
 import { useTokenCount } from "../../hooks/use-token-count.js";
@@ -48,61 +49,6 @@ const inputPad = { padding: "6px 10px" } as React.CSSProperties;
 
 const inputCls = "w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent resize-none overflow-hidden";
 const monoCls = inputCls + " font-mono text-xs";
-
-/** Auto-resize textarea to fit content */
-function resizeTextarea(el: HTMLTextAreaElement, allowShrink: boolean): void {
-  if (allowShrink) el.style.height = "auto";
-  const min = parseFloat(getComputedStyle(el).minHeight) || 0;
-  const next = Math.max(el.scrollHeight, min);
-  if (allowShrink || next > el.getBoundingClientRect().height) {
-    el.style.height = `${next}px`;
-  }
-}
-
-/** Shared auto-resize textarea that works with react-hook-form register() */
-function AutoTextarea({
-  className,
-  style,
-  disabled,
-  placeholder,
-  register,
-  value,
-  onChange,
-}: {
-  className: string;
-  style: React.CSSProperties;
-  disabled: boolean;
-  placeholder?: string;
-  register?: ReturnType<UseFormReturn<BuildCharacterDraft>["register"]>;
-  value?: string;
-  onChange?: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
-}) {
-  const ref = useRef<HTMLTextAreaElement | null>(null);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    resizeTextarea(el, true);
-  });
-
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    resizeTextarea(e.currentTarget, false);
-    register?.onChange?.(e);
-    onChange?.(e);
-  }, [register, onChange]);
-
-  return (
-    <textarea
-      {...(register ? { ...register, onChange: handleChange, ref: (el) => { register.ref(el); ref.current = el; } } : {})}
-      className={className}
-      style={style}
-      disabled={disabled}
-      placeholder={placeholder}
-      value={value}
-      onChange={value !== undefined ? (e) => { onChange?.(e); resizeTextarea(e.currentTarget, false); } : undefined}
-    />
-  );
-}
 
 /** Small inline token badge for character form fields */
 function TokenBadge({ text }: { text: string }) {
