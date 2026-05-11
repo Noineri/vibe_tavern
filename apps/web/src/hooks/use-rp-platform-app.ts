@@ -5,8 +5,6 @@ import { PROVIDER_TYPE } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
 import {
   fetchChat,
-  summarizeChat,
-  saveChatSummary,
   type AppSnapshot,
 } from "../app-client.js";
 import type { ConnectionState } from "../components/app-shell-types.js";
@@ -19,7 +17,7 @@ import { usePresetController } from "./use-preset-controller.js";
 import { useDisplayHelpers } from "./use-display-helpers.js";
 import { useChatStore, useNavigationStore, useCharacterStore } from "../stores/index.js";
 import { useBootstrapQuery, usePersonasQuery } from "../queries/bootstrap-queries.js";
-import { useChatSnapshot } from "../queries/chat-queries.js";
+import { useChatSnapshot, useSaveChatSummaryMutation, useSummarizeChatMutation } from "../queries/chat-queries.js";
 import { chatKeys } from "../queries/query-keys.js";
 import {
   readSavedTheme,
@@ -212,6 +210,9 @@ export function useRpPlatformApp() {
 
   // --- Controllers ---
 
+  const summarizeChatMut = useSummarizeChatMutation();
+  const saveChatSummaryMut = useSaveChatSummaryMutation();
+
   const canSendViaActiveProfileRef = useRef(provider.canSendViaActiveProfile);
   canSendViaActiveProfileRef.current = provider.canSendViaActiveProfile;
 
@@ -287,16 +288,14 @@ export function useRpPlatformApp() {
   async function handleSummarizeChat(input: { providerProfileId: string; maxMessages: number }): Promise<string> {
     const chatId = useChatStore.getState().activeChatId;
     if (!chatId) throw new Error("No active chat.");
-    const result = await summarizeChat(chatId, input);
-    snapshotRefresh(chatId, result.snapshot);
+    const result = await summarizeChatMut.mutateAsync({ chatId, input });
     return result.summary;
   }
 
   async function handleSaveChatSummary(summary: string): Promise<string> {
     const chatId = useChatStore.getState().activeChatId;
     if (!chatId) throw new Error("No active chat.");
-    const result = await saveChatSummary(chatId, summary);
-    snapshotRefresh(chatId, result.snapshot);
+    const result = await saveChatSummaryMut.mutateAsync({ chatId, summary });
     return result.summary;
   }
 

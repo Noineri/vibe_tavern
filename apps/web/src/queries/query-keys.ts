@@ -15,6 +15,7 @@ export const providerKeys = {
 // Chat key factory — TQ3
 export const chatKeys = {
   all: () => ["chat"] as const,
+  none: () => ["chat", "snapshot", "none"] as const,
   snapshot: (chatId: ChatId) => ["chat", "snapshot", chatId] as const,
   branches: (chatId: ChatId) => ["chat", "branches", chatId] as const,
 };

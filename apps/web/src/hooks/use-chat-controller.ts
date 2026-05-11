@@ -3,7 +3,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
 import {
-  generateReply,
   generateReplyStream,
   logClientSendDebug,
   regenerateChatMessageStream,
@@ -24,6 +23,7 @@ import {
   useDeleteBranchMutation,
   useSendMessageMutation,
   useRegenerateMessageMutation,
+  useGenerateReplyMutation,
 } from "../queries/chat-queries.js";
 
 export interface ChatControllerDeps {
@@ -94,6 +94,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
   // TQ mutation hooks
   const sendMessageMut = useSendMessageMutation();
   const regenMessageMut = useRegenerateMessageMutation();
+  const generateReplyMut = useGenerateReplyMutation();
   const editMessageMut = useEditMessageMutation();
   const deleteMessageMut = useDeleteMessageMutation();
   const switchChatMut = useSwitchChatMutation();
@@ -166,10 +167,6 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     });
   }
 
-  function writeSnapshot(chatId: ChatId, snapshot: AppSnapshot): void {
-    qc.setQueryData(chatKeys.snapshot(chatId), snapshot);
-  }
-
   const handleSend = useCallback(async (): Promise<void> => {
     const activeChatId = getActiveChatId();
     const draft = getDraft();
@@ -230,7 +227,6 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         const nextSnapshot = await sendMessageMut.mutateAsync(
           { chatId: activeChatId, content: trimmed, signal: controller.signal },
         );
-        writeSnapshot(activeChatId, nextSnapshot);
         setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
         void logClientSendDebug("web.hook.handleSend.success", { activeChatId });
       }
@@ -288,8 +284,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         void logClientSendDebug("web.hook.handleResend.stream-success", { activeChatId, replyLength: collected.length });
       } else {
         void logClientSendDebug("web.hook.handleResend.request", { activeChatId });
-        const nextSnapshot = await generateReply(activeChatId, { signal: controller.signal });
-        writeSnapshot(activeChatId, nextSnapshot);
+        const nextSnapshot = await generateReplyMut.mutateAsync({ chatId: activeChatId, signal: controller.signal });
         setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
         void logClientSendDebug("web.hook.handleResend.success", { activeChatId });
       }
@@ -311,7 +306,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       abortRef.current = null;
       clearStreamingReveal();
     }
-  }, []);
+  }, [generateReplyMut]);
 
   const handleCancelGeneration = useCallback((): void => {
     abortRef.current?.abort();
@@ -323,8 +318,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     // No-op when switching to the same active chat — avoids unnecessary re-fetch
     // that would discard in-memory state like variant selection.
     if (chatId === getActiveChatId()) return;
-    const snapshot = await switchChatMut.mutateAsync(chatId);
-    writeSnapshot(chatId, snapshot);
+    await switchChatMut.mutateAsync(chatId);
     useChatStore.getState().setActiveChatId(chatId);
   }
 
@@ -347,8 +341,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
 
     setMessageActionId(messageId);
     try {
-      const snapshot = await editMessageMut.mutateAsync({ chatId: activeChatId, messageId, content: trimmed });
-      writeSnapshot(activeChatId, snapshot);
+      await editMessageMut.mutateAsync({ chatId: activeChatId, messageId, content: trimmed });
       setEditingMessageId(null);
       setEditingDraft("");
       setChatNotice("");
@@ -363,8 +356,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
 
     setMessageActionId(messageId);
     try {
-      const snapshot = await deleteMessageMut.mutateAsync({ chatId: activeChatId, messageId });
-      writeSnapshot(activeChatId, snapshot);
+      await deleteMessageMut.mutateAsync({ chatId: activeChatId, messageId });
       if (getEditingMessageId() === messageId) {
         setEditingMessageId(null);
         setEditingDraft("");
@@ -411,7 +403,6 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         const nextSnapshot = await regenMessageMut.mutateAsync(
           { chatId: activeChatId, messageId, signal: controller.signal },
         );
-        writeSnapshot(activeChatId, nextSnapshot);
         setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
       }
     } catch (error) {
@@ -435,24 +426,21 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     const activeChatId = getActiveChatId();
     if (!activeChatId || variantIndex < 0) return;
 
-    const snapshot = await selectVariantMut.mutateAsync({ chatId: activeChatId, messageId, variantIndex });
-    writeSnapshot(activeChatId, snapshot);
+    await selectVariantMut.mutateAsync({ chatId: activeChatId, messageId, variantIndex });
   }
 
   async function handleFork(): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
 
-    const snapshot = await forkMut.mutateAsync(activeChatId);
-    writeSnapshot(activeChatId, snapshot);
+    await forkMut.mutateAsync(activeChatId);
   }
 
   async function handleActivateBranch(branchId: ChatBranchId): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
 
-    const snapshot = await activateBranchMut.mutateAsync({ chatId: activeChatId, branchId });
-    writeSnapshot(activeChatId, snapshot);
+    await activateBranchMut.mutateAsync({ chatId: activeChatId, branchId });
   }
 
   async function handleDeleteActiveBranch(): Promise<void> {
@@ -468,8 +456,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     }
 
     try {
-      const result = await deleteBranchMut.mutateAsync({ chatId: activeChatId, branchId: activeBranch.id });
-      writeSnapshot(activeChatId, result);
+      await deleteBranchMut.mutateAsync({ chatId: activeChatId, branchId: activeBranch.id });
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : getT()("branch_delete_failed"));
     }
