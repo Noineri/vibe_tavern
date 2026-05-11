@@ -10,6 +10,7 @@ export interface DisplayHelpers {
   displayScenario: string;
   displayMessages: AppMessage[];
   displayPendingUserMessageContent: string | null;
+  displayAlternateGreetings: string[];
   characterTabs: ReturnType<typeof buildCharacterTabs>;
   canUseLiveApi: boolean;
 }
@@ -83,12 +84,20 @@ export function useDisplayHelpers(
     [macroContext, pendingUserMessageContent],
   );
 
+  const displayAlternateGreetings = useMemo(
+    () => snapshot && macroContext
+      ? snapshot.character.alternateGreetings.map((g) => replaceUiMacros(g, macroContext))
+      : [],
+    [macroContext, snapshot],
+  );
+
   return {
     activePromptTrace,
     promptPayloadText,
     displayScenario,
     displayMessages,
     displayPendingUserMessageContent,
+    displayAlternateGreetings,
     characterTabs,
     canUseLiveApi,
   };
