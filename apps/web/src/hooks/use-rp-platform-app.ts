@@ -302,6 +302,10 @@ export function useRpPlatformApp() {
       const boot = await bootstrapApp();
       useChatStore.getState().setActiveChatId(boot.initialChatId);
       useChatStore.getState().setSnapshot(boot.snapshot);
+      useCharacterStore.getState().setPromptPresets(boot.promptPresets);
+      useCharacterStore.getState().setActivePromptPresetId(
+        boot.snapshot?.activeChat.promptPresetId ?? null,
+      );
       setAllCharacters(boot.allCharacters);
       setIsFirstRun(boot.isFirstRun || import.meta.env.VITE_FORCE_FIRST_RUN === 'true');
     } catch (error) {
@@ -440,6 +444,7 @@ export function useRpPlatformApp() {
     messageActionId,
     pendingUserMessageContent,
     displayPendingUserMessageContent: display.displayPendingUserMessageContent,
+    displayAlternateGreetings: display.displayAlternateGreetings,
     displayMessages: display.displayMessages,
     displayScenario: display.displayScenario,
     chatNotice,

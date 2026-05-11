@@ -117,7 +117,7 @@ export function App() {
         },
         onSelectVariant: (messageId, variantIndex) =>
           void app.handleSelectMessageVariant(messageId, variantIndex),
-        alternateGreetings: snapshot.character.alternateGreetings,
+        alternateGreetings: app.displayAlternateGreetings,
         characterAvatarAssetId: snapshot.character.avatarAssetId ?? null,
         personaAvatarAssetId: snapshot.persona?.avatarAssetId ?? null,
       }}
@@ -230,6 +230,7 @@ export function App() {
           providerLabel={app.activeProviderProfile?.name || t("no_provider")}
           providerModelLabel={app.activeProviderProfile?.defaultModel || app.connection.model || t("no_model_selected")}
           providerConnected={providerConnected}
+          providerStatus={app.connection.status}
           mode={app.mode}
           theme={app.theme}
           onOpenProviderSettings={app.openConnectionPanel}
