@@ -107,7 +107,6 @@ export function useRpPlatformApp() {
   const setIsImportDragActive = useCharacterStore((s) => s.setIsImportDragActive);
   const importNotice = useCharacterStore((s) => s.importNotice);
   const setImportNotice = useCharacterStore((s) => s.setImportNotice);
-  const isFirstRun = useCharacterStore((s) => s.isFirstRun);
   const confirmDestroy = useCharacterStore((s) => s.confirmDestroy);
   const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
   const renamingChatId = useCharacterStore((s) => s.renamingChatId);
@@ -118,10 +117,6 @@ export function useRpPlatformApp() {
   const setIsSavingCharacter = useCharacterStore((s) => s.setIsSavingCharacter);
   const characterSaveNotice = useCharacterStore((s) => s.characterSaveNotice);
   const setCharacterSaveNotice = useCharacterStore((s) => s.setCharacterSaveNotice);
-  const personas = useCharacterStore((s) => s.personas);
-  const setPersonas = useCharacterStore((s) => s.setPersonas);
-  const promptPresets = useCharacterStore((s) => s.promptPresets);
-  const activePromptPresetId = useCharacterStore((s) => s.activePromptPresetId);
 
   // --- Local state (no store equivalent) ---
   const [isCreateCharacterModalOpen, setCreateCharacterModalOpen] = useState(false);
@@ -132,8 +127,12 @@ export function useRpPlatformApp() {
 
   // --- Bootstrap + personas queries ---
   const bootstrapQuery = useBootstrapQuery();
-  void usePersonasQuery();
+  const personasQuery = usePersonasQuery();
 
+  const personas = personasQuery.data ?? [];
+  const promptPresets = bootstrapQuery.data?.promptPresets ?? [];
+  const isFirstRun = (bootstrapQuery.data?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === 'true';
+  const activePromptPresetId = snapshot?.activeChat.promptPresetId ?? null;
   const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
   const isLoading = bootstrapQuery.status === "pending";
   const loadError = bootstrapQuery.status === "error"
@@ -200,10 +199,7 @@ export function useRpPlatformApp() {
 
   useEffect(() => {
     setCharacterSaveNotice("");
-    if (snapshot?.activeChat.promptPresetId) {
-      useCharacterStore.getState().setActivePromptPresetId(snapshot.activeChat.promptPresetId);
-    }
-  }, [snapshot?.character.id, snapshot?.activeChat.promptPresetId]);
+  }, [snapshot?.character.id]);
 
   useEffect(() => {
     useChatStore.getState().setChatNotice("");
@@ -253,12 +249,10 @@ export function useRpPlatformApp() {
       if (current) useChatStore.getState().setSnapshot(updater(current));
     },
     setChatNotice: useChatStore.getState().setChatNotice,
-    setIsFirstRun: useCharacterStore.getState().setIsFirstRun,
     setMode,
     setIsImportDragActive,
     setImportNotice,
     setCharacterSaveNotice,
-    setPersonas: (updater) => useCharacterStore.getState().setPersonas(updater(useCharacterStore.getState().personas)),
     importFile,
   });
 

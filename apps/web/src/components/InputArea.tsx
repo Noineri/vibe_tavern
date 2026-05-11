@@ -5,8 +5,8 @@ import { cn } from "../lib/cn.js";
 import { useTokenCount } from "../hooks/use-token-count.js";
 import { useT } from "../i18n/context.js";
 import { useChatStore } from "../stores/chat-store.js";
-import { useCharacterStore } from "../stores/character-store.js";
 import { useAppActions } from "./AppShell.js";
+import { usePersonasQuery } from "../queries/bootstrap-queries.js";
 
 function bucketTokens(accounting: Record<string, number>): {
   system: number;
@@ -59,7 +59,7 @@ export function InputArea() {
   const draft = useChatStore((s) => s.draft);
   const isSending = useChatStore((s) => s.isSending);
   const snapshot = useChatStore((s) => s.snapshot);
-  const personas = useCharacterStore((s) => s.personas);
+  const personas = usePersonasQuery().data ?? [];
 
   const characterName = snapshot?.character.name ?? "";
   const personaName = snapshot?.persona?.name ?? t("no_persona");

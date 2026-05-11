@@ -5,8 +5,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { bootstrapApp, listPersonas } from "../app-client.js";
 import { bootstrapKeys, personaKeys } from "./query-keys.js";
-import { useChatStore, useCharacterStore } from "../stores/index.js";
-import { getT } from "../i18n/context.js";
+import { useChatStore } from "../stores/index.js";
 
 // ---------------------------------------------------------------------------
 // Bootstrap query
@@ -21,13 +20,6 @@ export function useBootstrapQuery() {
       // Write to stores — same logic as old loadBootstrap()
       useChatStore.getState().setActiveChatId(boot.initialChatId);
       useChatStore.getState().setSnapshot(boot.snapshot);
-      useCharacterStore.getState().setPromptPresets(boot.promptPresets);
-      useCharacterStore.getState().setActivePromptPresetId(
-        boot.snapshot?.activeChat.promptPresetId ?? null,
-      );
-      useCharacterStore.getState().setIsFirstRun(
-        boot.isFirstRun || import.meta.env.VITE_FORCE_FIRST_RUN === 'true',
-      );
 
       return boot;
     },
@@ -41,15 +33,9 @@ export function useBootstrapQuery() {
 // ---------------------------------------------------------------------------
 
 export function usePersonasQuery() {
-  const setPersonas = useCharacterStore((s) => s.setPersonas);
-
   return useQuery({
     queryKey: personaKeys.list(),
-    queryFn: async () => {
-      const personas = await listPersonas();
-      setPersonas(personas);
-      return personas;
-    },
+    queryFn: () => listPersonas(),
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });

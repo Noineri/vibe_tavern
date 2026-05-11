@@ -12,7 +12,6 @@ import {
   updateCharacterAvatar,
   type AppSnapshot,
   type ImportJsonResponse,
-  type PersonaRecord,
 } from "../app-client.js";
 import type { AppMode } from "../components/app-shell-types.js";
 import type { BuildCharacterDraft } from "../components/BuildMode.js";
@@ -32,7 +31,7 @@ import {
   useDeletePersonaMutation,
 } from "../queries/index.js";
 import { useQueryClient } from "@tanstack/react-query";
-import { bootstrapKeys } from "../queries/query-keys.js";
+import { bootstrapKeys, personaKeys } from "../queries/query-keys.js";
 
 export interface CharacterControllerDeps {
   // read state (getter functions — Zustand-compatible)
@@ -42,12 +41,10 @@ export interface CharacterControllerDeps {
   setSnapshot: (chatId: ChatId, next: AppSnapshot) => void;
   patchSnapshot: (updater: (snapshot: AppSnapshot) => AppSnapshot) => void;
   setChatNotice: (notice: string) => void;
-  setIsFirstRun: (first: boolean) => void;
   setMode: (mode: AppMode) => void;
   setIsImportDragActive: (active: boolean) => void;
   setImportNotice: (notice: string) => void;
   setCharacterSaveNotice: (notice: string) => void;
-  setPersonas: (updater: (personas: PersonaRecord[]) => PersonaRecord[]) => void;
   // action callbacks
   importFile: (file: File, options?: CharacterImportOptions) => Promise<ImportJsonResponse>;
 }
@@ -104,12 +101,10 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     setSnapshot,
     patchSnapshot,
     setChatNotice,
-    setIsFirstRun,
     setMode,
     setIsImportDragActive,
     setImportNotice,
     setCharacterSaveNotice,
-    setPersonas,
     importFile,
   } = deps;
 
@@ -206,10 +201,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
           avatarAssetId: draftInput.avatarAssetId,
         },
       });
-      const updatedPersona = nextSnapshot.persona?.id === personaId
-        ? nextSnapshot.persona
-        : { id: personaId, name: draftInput.name.trim(), description: draftInput.description, pronouns: draftInput.pronouns ?? null, avatarAssetId: draftInput.avatarAssetId ?? null };
-      setPersonas((current) => current.map((persona) => persona.id === personaId ? updatedPersona : persona));
+      void qc.invalidateQueries({ queryKey: personaKeys.list() });
       setSnapshot(activeChatId, nextSnapshot);
       setCharacterSaveNotice(getT()("persona_saved"));
     } catch (error) {
@@ -238,7 +230,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
         description: input.description.trim(),
         pronouns: input.pronouns,
       });
-      setPersonas((current) => current.some((persona) => persona.id === created.id) ? current : [...current, created]);
+      void qc.invalidateQueries({ queryKey: personaKeys.list() });
       return { id: created.id };
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : getT()("persona_create_failed"));
@@ -249,6 +241,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
   async function handleDeletePersona(personaId: string): Promise<{ ok: boolean; error?: string }> {
     try {
       await deletePersonaMut.mutateAsync(personaId);
+      void qc.invalidateQueries({ queryKey: personaKeys.list() });
       return { ok: true };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : getT()("persona_delete_failed") };
@@ -272,8 +265,8 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     try {
       const imported = await importFile(firstFile, { chatId: getActiveChatId() ?? undefined });
 
-      setIsFirstRun(false);
       setSnapshot(imported.activeChatId, imported.snapshot);
+      void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
 
       if (imported.imported.kind === "character") {
         setMode("play");
@@ -381,7 +374,6 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
   async function handleCreateCharacter(input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }, avatarFile?: File | null): Promise<{ characterId: string; chatId: string } | null> {
     try {
       const result = await createCharacterMut.mutateAsync(input);
-      setIsFirstRun(false);
 
       const characterId = result.snapshot?.character?.id;
 
@@ -399,6 +391,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
         setSnapshot(result.activeChatId, result.snapshot);
       }
 
+      void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
       if (characterId) {
         return { characterId, chatId: result.activeChatId };
       }
@@ -412,8 +405,8 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
   async function handleFreeChat(): Promise<void> {
     try {
       const next = await createChat();
-      setIsFirstRun(false);
       setSnapshot(next.activeChat.id, next);
+      void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
     } catch (error) {
       setChatNotice(error instanceof Error ? error.message : getT()("failed_to_create_free_chat"));
     }
