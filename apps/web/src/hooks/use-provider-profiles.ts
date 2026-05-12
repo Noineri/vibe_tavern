@@ -491,6 +491,8 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
   }
 
   async function handleFetchModelsForProfile(providerProfileId: string): Promise<Array<{ id: string; label: string; contextLength?: number }>> {
+    // Invalidate cache so refresh always hits the backend
+    await qc.invalidateQueries({ queryKey: providerKeys.models(providerProfileId) });
     const response = await getProviderModelsFromCache(providerProfileId);
     return response.models;
   }
