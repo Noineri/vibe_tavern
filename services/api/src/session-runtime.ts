@@ -1,34 +1,24 @@
 import { type PromptPreset, type StoreContainer, createFileStore } from "@rp-platform/db";
 import type { PromptPresetDto, PromptTraceRecordDto } from "@rp-platform/domain";
 import {
-	brandId,
 	type CharacterId,
 	type ChatBranchId,
 	type ChatId,
 	type LoreEntry,
 	type MessageId,
 	type PromptPresetId,
-	type RetrievedMemoryHit,
 	type StoredProviderProfileRecord,
 	SYSTEM_RESOURCE_ID,
 } from "@rp-platform/domain";
-import {
-	buildPromptVariableContext,
-	createPhaseOneMacroEngine,
-} from "@rp-platform/prompt-pipeline";
 import { ChatApplicationService } from "./chat-application-service.js";
 import {
 	internal,
-	isDomainError,
 	notFound,
 	validation,
 } from "./errors.js";
+import { PromptAssemblyService } from "./prompt-assembly-service.js";
+import { StaticPromptResolver } from "./prompt-resolver.js";
 import {
-	type PromptAssemblyResolver,
-	PromptAssemblyService,
-} from "./prompt-assembly-service.js";
-import {
-	entryMatchesRecentText,
 	mapMessageDto,
 	mapPromptTraceRecord,
 } from "./session-runtime-dto.js";
@@ -40,17 +30,13 @@ import {
 	type CharacterRecord,
 	type PersonaRecord,
 	CharacterRuntime,
-	toCharacterRecord,
 } from "./session-runtime-character.js";
 import { ChatRuntime } from "./session-runtime-chat.js";
 import { ChatOrderService } from "./session-runtime-chat-order.js";
 import { PersonaRuntime } from "./session-runtime-persona.js";
 import { ChatLifecycleRuntime } from "./session-runtime-chat-lifecycle.js";
-import type { MessageDto } from "./session-runtime-dto.js";
 import * as importExportModule from "./session-runtime-import-export.js";
 import * as lorebookModule from "./session-runtime-lorebook.js";
-
-const phaseOneMacroEngine = createPhaseOneMacroEngine();
 
 export interface ChatListItem {
 	id: ChatId;
@@ -68,7 +54,7 @@ export interface SessionSnapshot {
 	activeChat: import("@rp-platform/db").Chat;
 	activeBranch: import("@rp-platform/db").ChatBranch;
 	branches: import("@rp-platform/db").ChatBranch[];
-	messages: MessageDto[];
+	messages: import("./session-runtime-dto.js").MessageDto[];
 	summaries: Array<{
 		id: string;
 		kind: string;
@@ -101,64 +87,6 @@ export interface ImportResult {
 	};
 }
 
-class StaticPromptResolver implements PromptAssemblyResolver {
-	constructor(private readonly stores: StoreContainer) {}
-
-	async getCharacter(characterId: string) {
-		const character = await this.stores.characters.getById(characterId);
-		if (!character) {
-			throw notFound("Character", `Character '${characterId}' was not found.`);
-		}
-		// No character versions in phase 1
-		return toCharacterRecord(character as any, null);
-	}
-
-	async getPersona(personaId: string) {
-		const p = await this.stores.personas.getById(personaId);
-		if (!p) return null;
-		return { id: p.id, name: p.name, description: p.description, pronouns: p.pronouns, avatarAssetId: p.avatarAssetId };
-	}
-
-	async getPromptPreset(presetId: string) {
-		const preset = await this.stores.presets.getById(presetId);
-		if (!preset) return null;
-		return {
-			id: preset.id,
-			name: preset.name,
-			text: preset.systemPrompt,
-			jailbreak: preset.postHistoryInstructions,
-			summary: preset.summaryPrompt,
-			tools: preset.toolsPrompt,
-			prefill: preset.assistantPrefix,
-			authorsNote: preset.authorsNote,
-			authorsNoteDepth: preset.authorsNoteDepth,
-		};
-	}
-
-	async listActiveLoreEntries(input: {
-		chatId: ChatId;
-		branchId: ChatBranchId;
-		recentText: string;
-	}): Promise<LoreEntry[]> {
-		// Phase 1: no lorebook support
-		void input;
-		return [];
-	}
-
-	async listRetrievedMemories(input: {
-		chatId: ChatId;
-		branchId: ChatBranchId;
-		recentText: string;
-	}): Promise<RetrievedMemoryHit[]> {
-		void input;
-		return [];
-	}
-
-	getToolInstructions(): string | null {
-		return null;
-	}
-}
-
 export class SessionRuntime {
 	private readonly stores: StoreContainer;
 	private readonly resolver: StaticPromptResolver;
@@ -166,31 +94,13 @@ export class SessionRuntime {
 	private readonly promptService: PromptAssemblyService;
 	private readonly chatOrder: ChatOrderService;
 	private readonly fileStore = createFileStore();
+	private defaultsEnsured = false;
+	private readonly getActiveProviderProfile: () => Promise<StoredProviderProfileRecord | null>;
+
 	readonly chatRuntime: ChatRuntime;
 	readonly persona: PersonaRuntime;
 	readonly character: CharacterRuntime;
 	readonly chatLifecycle: ChatLifecycleRuntime;
-	private defaultsEnsured = false;
-	private readonly getActiveProviderProfile: () => Promise<StoredProviderProfileRecord | null>;
-
-	private get importExportDeps(): importExportModule.ImportExportModuleDeps {
-		return {
-			stores: this.stores,
-			resolver: this.resolver as any,
-			chatApp: this.chatApp,
-			chatOrder: this.chatOrder,
-			fileStore: this.fileStore,
-			resolveDefaultPersonaId: () => this.persona.resolveDefaultId(),
-			resolveDefaultPromptPresetId: () => this.resolveDefaultPromptPresetId(),
-			getSnapshot: (chatId) => this.getSnapshot(chatId),
-			seedImportedOpening: (chatId, firstMessage) =>
-				this.seedImportedOpening(chatId, firstMessage),
-		};
-	}
-
-	private get lorebookDeps(): lorebookModule.LorebookModuleDeps {
-		return { stores: this.stores };
-	}
 
 	constructor(
 		stores: StoreContainer,
@@ -208,8 +118,8 @@ export class SessionRuntime {
 		this.chatRuntime = new ChatRuntime({
 			chats: stores.chats,
 			chatApp: this.chatApp,
-			assemblePrompt: (chatId, branchId, options) =>
-				this.assemblePrompt(chatId, branchId, options),
+			assemblePrompt: (chatId, branchId, opts) =>
+				this.assemblePrompt(chatId, branchId, opts),
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
 			chatOrder: this.chatOrder,
 		});
@@ -219,18 +129,6 @@ export class SessionRuntime {
 			chatOrder: this.chatOrder,
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
 		});
-		this.character = new CharacterRuntime({
-			stores,
-			chatApp: this.chatApp,
-			chatOrder: this.chatOrder,
-			getSnapshot: (chatId) => this.getSnapshot(chatId),
-			resolveDefaultPersonaId: () => this.persona.resolveDefaultId(),
-			resolveDefaultPromptPresetId: () => this.resolveDefaultPromptPresetId(),
-			seedImportedOpening: (chatId, firstMessage) =>
-				this.seedImportedOpening(chatId, firstMessage),
-			discardPendingPromptTrace: (chatId) =>
-				this.chatRuntime.discardPendingPromptTrace(chatId),
-		});
 		this.chatLifecycle = new ChatLifecycleRuntime({
 			stores,
 			chatApp: this.chatApp,
@@ -239,11 +137,25 @@ export class SessionRuntime {
 			resolveDefaultPromptPresetId: () => this.resolveDefaultPromptPresetId(),
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
 			seedImportedOpening: (chatId, firstMessage) =>
-				this.seedImportedOpening(chatId, firstMessage),
-			assemblePrompt: (chatId, branchId, options) =>
-				this.assemblePrompt(chatId, branchId, options),
+				this.chatLifecycle.seedImportedOpening(chatId, firstMessage),
+			assemblePrompt: (chatId, branchId, opts) =>
+				this.assemblePrompt(chatId, branchId, opts),
+		});
+		this.character = new CharacterRuntime({
+			stores,
+			chatApp: this.chatApp,
+			chatOrder: this.chatOrder,
+			getSnapshot: (chatId) => this.getSnapshot(chatId),
+			resolveDefaultPersonaId: () => this.persona.resolveDefaultId(),
+			resolveDefaultPromptPresetId: () => this.resolveDefaultPromptPresetId(),
+			seedImportedOpening: (chatId, firstMessage) =>
+				this.chatLifecycle.seedImportedOpening(chatId, firstMessage),
+			discardPendingPromptTrace: (chatId) =>
+				this.chatRuntime.discardPendingPromptTrace(chatId),
 		});
 	}
+
+	// ─── Bootstrap & Snapshot ───────────────────────────────────────────
 
 	async getBootstrapState(): Promise<BootstrapState> {
 		const initialChatId = this.chatOrder.items[0] ?? null;
@@ -262,7 +174,7 @@ export class SessionRuntime {
 				subtitle: c.tags.length > 0 ? c.tags[0] : '',
 				avatarAssetId: c.avatarAssetId,
 			})),
-			promptPresets: promptPresets.map((preset) => this.toPromptPresetDto(preset)),
+			promptPresets: promptPresets.map((p) => this.toPromptPresetDto(p)),
 		};
 	}
 
@@ -313,63 +225,29 @@ export class SessionRuntime {
 		return traces.slice(0, limit).map(mapPromptTraceRecord);
 	}
 
-	private toPromptPresetDto(preset: PromptPreset): PromptPresetDto {
+	async rebuildChatOrder(): Promise<void> {
+		await this.chatOrder.rebuild();
+	}
+
+	// ─── Delegated: import/export ───────────────────────────────────────
+
+	private get importExportDeps(): importExportModule.ImportExportModuleDeps {
 		return {
-			id: preset.id,
-			name: preset.name,
-			bindModel: preset.bindProviderPresetId ?? "",
-			system: preset.systemPrompt,
-			jailbreak: preset.postHistoryInstructions,
-			prefill: preset.assistantPrefix,
-			authorsNote: preset.authorsNote,
-			authorsNoteDepth: preset.authorsNoteDepth,
-			summary: preset.summaryPrompt,
-			tools: preset.toolsPrompt,
-			createdAt: preset.createdAt,
-			updatedAt: preset.updatedAt,
+			stores: this.stores,
+			resolver: this.resolver as any,
+			chatApp: this.chatApp,
+			chatOrder: this.chatOrder,
+			fileStore: this.fileStore,
+			resolveDefaultPersonaId: () => this.persona.resolveDefaultId(),
+			resolveDefaultPromptPresetId: () => this.resolveDefaultPromptPresetId(),
+			getSnapshot: (chatId) => this.getSnapshot(chatId),
+			seedImportedOpening: (chatId, firstMessage) =>
+				this.chatLifecycle.seedImportedOpening(chatId, firstMessage),
 		};
 	}
 
-	async switchChat(chatId: ChatId): Promise<SessionSnapshot> {
-		return this.getSnapshot(chatId);
-	}
-
-	async setChatPromptPreset(chatId: ChatId, promptPresetId: string): Promise<SessionSnapshot> {
-		const [chat, preset] = await Promise.all([
-			this.stores.chats.getById(chatId),
-			this.stores.presets.getById(promptPresetId),
-		]);
-		if (!chat) {
-			throw notFound("Chat", `Chat '${chatId}' was not found.`);
-		}
-		if (!preset) {
-			throw notFound("PromptPreset", `Prompt preset '${promptPresetId}' was not found.`);
-		}
-		await this.stores.chats.setPromptPreset(chatId, promptPresetId);
-		return this.getSnapshot(chatId);
-	}
-
-	getPersonalLorebookStatus(_personaId: string): {
-		enabled: boolean;
-		lorebookId: string | null;
-	} {
-		// Phase 1: no personal lorebooks
-		return { enabled: false, lorebookId: null };
-	}
-
-	setPersonalLorebookEnabled(
-		_personaId: string,
-		_enabled: boolean,
-	): { enabled: boolean; lorebookId: string | null } {
-		// Phase 1: no personal lorebooks
-		return { enabled: false, lorebookId: null };
-	}
-
 	async exportCharacter(characterId: string): Promise<Record<string, unknown>> {
-		return await importExportModule.exportCharacter(
-			this.importExportDeps,
-			characterId,
-		);
+		return await importExportModule.exportCharacter(this.importExportDeps, characterId);
 	}
 
 	async exportChatJsonl(chatId: string): Promise<string> {
@@ -381,144 +259,53 @@ export class SessionRuntime {
 	}
 
 	async mirrorChatTranscript(chatId: string): Promise<string[]> {
-		return await importExportModule.mirrorChatTranscript(
-			this.importExportDeps,
-			chatId,
-		);
+		return await importExportModule.mirrorChatTranscript(this.importExportDeps, chatId);
 	}
 
 	async mirrorPromptTrace(traceId: string): Promise<string> {
 		return await importExportModule.mirrorPromptTrace(this.importExportDeps, traceId);
 	}
 
-	createLoreEntry(
-		 lorebookId: string,
-		 input: Omit<LoreEntry, "id" | "lorebookId">,
-	): LoreEntry {
-		 void lorebookModule; void lorebookId; void input;
-		 throw new Error("Not implemented: lorebooks are phase 2");
-	}
-
-	updateLoreEntry(
-		 lorebookId: string,
-		 entryId: string,
-		 input: Partial<Omit<LoreEntry, "id" | "lorebookId">>,
-	): LoreEntry {
-		 void lorebookModule; void lorebookId; void entryId; void input;
-		 throw new Error("Not implemented: lorebooks are phase 2");
-	}
-
-	deleteLoreEntry(lorebookId: string, entryId: string): void {
-		 void lorebookModule; void lorebookId; void entryId;
-		 throw new Error("Not implemented: lorebooks are phase 2");
-	}
-
-	listLoreEntries(lorebookId: string): LoreEntry[] {
-		 void lorebookModule; void lorebookId;
-		 throw new Error("Not implemented: lorebooks are phase 2");
-	}
-
-	testLoreActivation(
-		lorebookId: string,
-		text: string,
-	): { activatedIds: string[]; totalEntries: number } {
-		 void lorebookModule; void lorebookId; void text;
-		 throw new Error("Not implemented: lorebooks are phase 2");
-	}
-
-	async importJson(input: {
-		fileName: string;
-		jsonText: string;
-		chatId?: string;
-	}): Promise<ImportResult> {
+	async importJson(input: { fileName: string; jsonText: string; chatId?: string }): Promise<ImportResult> {
 		return importExportModule.importJson(this.importExportDeps, input);
 	}
 
-	async rebuildChatOrder(): Promise<void> {
-		await this.chatOrder.rebuild();
+	// ─── Delegated: lorebook stubs (phase 2) ────────────────────────────
+
+	getPersonalLorebookStatus(_personaId: string): { enabled: boolean; lorebookId: string | null } {
+		return { enabled: false, lorebookId: null };
 	}
 
-	private async seedImportedOpening(chatId: ChatId, firstMessage: string): Promise<void> {
-		const trimmed = firstMessage.trim();
-		if (!trimmed) {
-			return;
-		}
-
-		const chat = (await this.stores.chats.getById(chatId))!;
-		const assembled = await this.assemblePrompt(chatId, chat.activeBranchId as ChatBranchId);
-		const message = await this.stores.chats.addMessage({
-			chatId,
-			branchId: chat.activeBranchId,
-			role: "assistant",
-			authorType: "assistant",
-			content: trimmed,
-		});
-		await this.stores.chats.saveTrace({
-			...assembled.promptTraceDraft,
-			messageId: message.id,
-		});
+	setPersonalLorebookEnabled(_personaId: string, _enabled: boolean): { enabled: boolean; lorebookId: string | null } {
+		return { enabled: false, lorebookId: null };
 	}
 
-	private async resolvePromptVariableContext(chatId: ChatId) {
-		const chat = await this.stores.chats.getById(chatId);
-		if (!chat) {
-			throw notFound("Chat", `Chat '${chatId}' was not found.`);
-		}
-		const character = await this.resolver.getCharacter(chat.characterId);
-		const persona = await this.resolver.getPersona(
-			chat.personaId ?? await this.persona.resolveDefaultId(),
-		);
-		// No character versions in phase 1
-		return buildPromptVariableContext({
-			character: {
-				name: character.name,
-				description: character.description,
-				personality: character.personality,
-				scenario: character.scenario,
-				firstMessage: character.firstMessage,
-				alternateGreetings: character.alternateGreetings,
-				mesExample: character.mesExample,
-				postHistoryInstructions: character.postHistoryInstructions,
-				creatorNotes: character.creatorNotes,
-				depthPrompt: character.depthPrompt,
-				depthPromptDepth: character.depthPromptDepth,
-				depthPromptRole: character.depthPromptRole,
-				systemPrompt: character.systemPrompt,
-				version: null,
-				tags: character.tags,
-				characterBook: character.characterBook,
-				extensions: character.extensions,
-			},
-			persona: {
-				name: persona?.name ?? "User",
-				description: persona?.description ?? "",
-			},
-		});
+	createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
+		void lorebookModule; void lorebookId; void input;
+		throw new Error("Not implemented: lorebooks are phase 2");
 	}
 
-	private async resolveDefaultPromptPresetId(): Promise<PromptPresetId> {
-		await this.ensureDefaultsOnce();
-
-		const presets = await this.stores.presets.listAll();
-		const globalPreset =
-			presets.find((preset) => !preset.bindProviderPresetId) ?? presets[0];
-		if (!globalPreset) {
-			throw internal("No prompt preset is available for new chats.");
-		}
-		return globalPreset.id as PromptPresetId;
+	updateLoreEntry(lorebookId: string, entryId: string, input: Partial<Omit<LoreEntry, "id" | "lorebookId">>): LoreEntry {
+		void lorebookModule; void lorebookId; void entryId; void input;
+		throw new Error("Not implemented: lorebooks are phase 2");
 	}
 
-	private async ensureDefaultsOnce(): Promise<void> {
-		if (this.defaultsEnsured) return;
-		this.defaultsEnsured = true;
-
-		if ((await this.stores.presets.listAll()).length === 0) {
-			await this.stores.presets.create({
-				name: "Default",
-				systemPrompt: "Write {{char}}'s next reply in a fictional chat between {{char}} and {{user}}.",
-			});
-		}
+	deleteLoreEntry(lorebookId: string, entryId: string): void {
+		void lorebookModule; void lorebookId; void entryId;
+		throw new Error("Not implemented: lorebooks are phase 2");
 	}
+
+	listLoreEntries(lorebookId: string): LoreEntry[] {
+		void lorebookModule; void lorebookId;
+		throw new Error("Not implemented: lorebooks are phase 2");
+	}
+
+	testLoreActivation(lorebookId: string, text: string): { activatedIds: string[]; totalEntries: number } {
+		void lorebookModule; void lorebookId; void text;
+		throw new Error("Not implemented: lorebooks are phase 2");
+	}
+
+	// ─── Private: prompt wiring ─────────────────────────────────────────
 
 	private async assemblePrompt(
 		chatId: ChatId,
@@ -537,30 +324,45 @@ export class SessionRuntime {
 		});
 	}
 
-	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>> {
-		const characters = await this.stores.characters.listIncludingSystem();
-		const hasUserChars = characters.some((c) => c.id !== 'char_system');
-
-		if (!hasUserChars) {
-			return characters.map((c) => ({
-				id: c.id,
-				name: c.name,
-				subtitle: c.tags.length > 0 ? c.tags[0] : '',
-				avatarAssetId: c.avatarAssetId,
-			}));
+	private async resolveDefaultPromptPresetId(): Promise<PromptPresetId> {
+		await this.ensureDefaultsOnce();
+		const presets = await this.stores.presets.listAll();
+		const globalPreset =
+			presets.find((preset) => !preset.bindProviderPresetId) ?? presets[0];
+		if (!globalPreset) {
+			throw internal("No prompt preset is available for new chats.");
 		}
+		return globalPreset.id as PromptPresetId;
+	}
 
-		const allChats = await this.stores.chats.listAll();
-		const hasSystemChat = allChats.some((c) => c.characterId === 'char_system');
+	private async ensureDefaultsOnce(): Promise<void> {
+		if (this.defaultsEnsured) return;
+		this.defaultsEnsured = true;
+		if ((await this.stores.presets.listAll()).length === 0) {
+			await this.stores.presets.create({
+				name: "Default",
+				systemPrompt: "Write {{char}}'s next reply in a fictional chat between {{char}} and {{user}}.",
+			});
+		}
+	}
 
-		return characters
-			.filter((c) => c.id !== 'char_system' || hasSystemChat)
-			.map((c) => ({
-				id: c.id,
-				name: c.name,
-				subtitle: c.tags.length > 0 ? c.tags[0] : '',
-				avatarAssetId: c.avatarAssetId,
-			}));
+	// ─── Private: DTO helpers ───────────────────────────────────────────
+
+	private toPromptPresetDto(preset: PromptPreset): PromptPresetDto {
+		return {
+			id: preset.id,
+			name: preset.name,
+			bindModel: preset.bindProviderPresetId ?? "",
+			system: preset.systemPrompt,
+			jailbreak: preset.postHistoryInstructions,
+			prefill: preset.assistantPrefix,
+			authorsNote: preset.authorsNote,
+			authorsNoteDepth: preset.authorsNoteDepth,
+			summary: preset.summaryPrompt,
+			tools: preset.toolsPrompt,
+			createdAt: preset.createdAt,
+			updatedAt: preset.updatedAt,
+		};
 	}
 
 	private async toChatListItem(chatId: ChatId): Promise<ChatListItem> {
@@ -582,5 +384,28 @@ export class SessionRuntime {
 			activeBranchLabel: chatState.branch.label,
 			messageCount: chatState.messages.length,
 		};
+	}
+
+	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>> {
+		const characters = await this.stores.characters.listIncludingSystem();
+		const hasUserChars = characters.some((c) => c.id !== 'char_system');
+		if (!hasUserChars) {
+			return characters.map((c) => ({
+				id: c.id,
+				name: c.name,
+				subtitle: c.tags.length > 0 ? c.tags[0] : '',
+				avatarAssetId: c.avatarAssetId,
+			}));
+		}
+		const allChats = await this.stores.chats.listAll();
+		const hasSystemChat = allChats.some((c) => c.characterId === 'char_system');
+		return characters
+			.filter((c) => c.id !== 'char_system' || hasSystemChat)
+			.map((c) => ({
+				id: c.id,
+				name: c.name,
+				subtitle: c.tags.length > 0 ? c.tags[0] : '',
+				avatarAssetId: c.avatarAssetId,
+			}));
 	}
 }

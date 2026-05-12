@@ -117,4 +117,44 @@ export class ChatLifecycleRuntime {
 		await this.deps.stores.chats.updateSummary(chatId, summary);
 		return this.deps.getSnapshot(chatId);
 	}
+
+	async switchChat(chatId: ChatId): Promise<SessionSnapshot> {
+		return this.deps.getSnapshot(chatId);
+	}
+
+	async setChatPromptPreset(chatId: ChatId, promptPresetId: string): Promise<SessionSnapshot> {
+		const [chat, preset] = await Promise.all([
+			this.deps.stores.chats.getById(chatId),
+			this.deps.stores.presets.getById(promptPresetId),
+		]);
+		if (!chat) {
+			throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		}
+		if (!preset) {
+			throw notFound("PromptPreset", `Prompt preset '${promptPresetId}' was not found.`);
+		}
+		await this.deps.stores.chats.setPromptPreset(chatId, promptPresetId);
+		return this.deps.getSnapshot(chatId);
+	}
+
+	async seedImportedOpening(chatId: ChatId, firstMessage: string): Promise<void> {
+		const trimmed = firstMessage.trim();
+		if (!trimmed) {
+			return;
+		}
+
+		const chat = (await this.deps.stores.chats.getById(chatId))!;
+		const assembled = await this.deps.assemblePrompt(chatId, chat.activeBranchId as ChatBranchId);
+		const message = await this.deps.stores.chats.addMessage({
+			chatId,
+			branchId: chat.activeBranchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: trimmed,
+		});
+		await this.deps.stores.chats.saveTrace({
+			...assembled.promptTraceDraft,
+			messageId: message.id,
+		});
+	}
 }
