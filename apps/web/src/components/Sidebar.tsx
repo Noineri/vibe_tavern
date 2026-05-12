@@ -239,17 +239,7 @@ export function Sidebar() {
                         >
                           <Icons.Download /> {t("sidebar_export")}
                         </div>
-                        <div
-                          className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
-                          role="menuitem"
-                          onClick={() => {
-                            setCharMenuId(null); setCharMenuPos(null);
-                            actions.handleArchiveCharacter(character.id);
-                          }}
-                        >
-                          <Icons.Book /> {t("sidebar_archive")}
-                        </div>
-                        <div className="my-1 h-px bg-border" />
+
                         <div
                           className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-danger-text transition-colors duration-100 hover:bg-danger-dim hover:text-danger-text [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
                           role="menuitem"
@@ -401,16 +391,7 @@ export function Sidebar() {
                         >
                           <Icons.Edit /> {t("sidebar_rename")}
                         </div>
-                        <div
-                          className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
-                          role="menuitem"
-                          onClick={() => {
-                            setChatMenuId(null); setChatMenuPos(null);
-                            void actions.onCloneChat(chat.id);
-                          }}
-                        >
-                          <Icons.Copy /> {t("sidebar_clone_chat")}
-                        </div>
+
                         <div
                           className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
                           role="menuitem"

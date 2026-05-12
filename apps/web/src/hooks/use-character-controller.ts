@@ -27,7 +27,6 @@ import {
   useDeletePersonaMutation,
   useSetChatPersonaMutation,
   useCreateChatMutation,
-  useCloneChatMutation,
   useDeleteChatMutation as useDeleteChatTqMutation,
   useRenameChatMutation,
 } from "../queries/index.js";
@@ -68,7 +67,6 @@ export interface CharacterControllerActions {
   handleCreateChat: (characterId?: string) => Promise<void>;
   handleCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }, avatarFile?: File | null) => Promise<{ characterId: string; chatId: string } | null>;
   handleFreeChat: () => Promise<void>;
-  handleCloneChat: (chatId: ChatId) => Promise<void>;
   handleExportCharacter: (characterId: string) => Promise<void>;
   handleExportChatJsonl: (chatId: ChatId) => Promise<void>;
   handleExportPromptTrace: (traceId: string) => Promise<void>;
@@ -118,7 +116,6 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
   const deletePersonaMut = useDeletePersonaMutation();
   const setChatPersonaMut = useSetChatPersonaMutation();
   const createChatMut = useCreateChatMutation();
-  const cloneChatMut = useCloneChatMutation();
   const deleteChatMut = useDeleteChatTqMutation();
   const renameChatMut = useRenameChatMutation();
   const qc = useQueryClient();
@@ -401,15 +398,6 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     }
   }
 
-  async function handleCloneChat(chatId: ChatId): Promise<void> {
-    try {
-      const next = await cloneChatMut.mutateAsync(chatId);
-      writeSnapshot(next.activeChat.id, next);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : getT()("failed_to_clone_chat"));
-    }
-  }
-
   async function handleExportCharacter(characterId: string): Promise<void> {
     try {
       const data = await exportCharacterMut.mutateAsync(characterId);
@@ -462,7 +450,6 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     handleCreateChat,
     handleCreateCharacter,
     handleFreeChat,
-    handleCloneChat,
     handleExportCharacter,
     handleExportChatJsonl,
     handleExportPromptTrace,
