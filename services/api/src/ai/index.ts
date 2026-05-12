@@ -38,3 +38,11 @@ export {
 export { nonstreamingProviderExecute } from "./nonstreaming-provider-executor.js";
 
 export { buildSamplerConfig } from "./sampler-mapper.js";
+
+export {
+  resolveModel,
+  toSdkMessages,
+  prepareSdkMessages,
+} from "./provider-executor-utils.js";
+
+export type { SdkMessage, PreparedMessages } from "./provider-executor-utils.js";
