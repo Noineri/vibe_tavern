@@ -7,38 +7,10 @@
 
 import { streamText } from "ai";
 import type { ProviderExecutor, ProviderStreamResult, ProviderStreamChunk, ProviderStreamFinish } from "./provider-execution-types.js";
-import { mapProfileToSdkModel } from "./provider-profile-mapper.js";
+import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
-import { getProviderCapabilities } from "./provider-capabilities.js";
 import type { ProviderType } from "@rp-platform/domain";
 import { cancelled, providerError } from "../errors.js";
-
-/**
- * Resolve a Vercel AI SDK language model from a stored provider profile.
- * Delegates to the canonical provider-profile-mapper.
- */
-function resolveModel(profile: { type: string; endpoint: string; apiKey: string | null }, model: string) {
-  const mapping = mapProfileToSdkModel(profile, model);
-  return mapping.model;
-}
-
-/**
- * Convert an AssemblePromptResponse into Vercel AI SDK message format.
- */
-function toSdkMessages(prompt: { finalPayload?: unknown }): Array<{ role: "system" | "user" | "assistant"; content: string }> {
-  const payload = prompt.finalPayload as { messages?: unknown } | undefined;
-  const records = Array.isArray(payload?.messages) ? payload.messages : [];
-
-  return records
-    .map((record: unknown) => {
-      if (!record || typeof record !== "object") return null;
-      const r = record as { role?: unknown; content?: unknown };
-      if (typeof r.role !== "string" || typeof r.content !== "string") return null;
-      if (r.role !== "system" && r.role !== "user" && r.role !== "assistant") return null;
-      return { role: r.role as "system" | "user" | "assistant", content: r.content };
-    })
-    .filter((m): m is { role: "system" | "user" | "assistant"; content: string } => m !== null);
-}
 
 /**
  * Map the Vercel AI SDK text stream into our ProviderStreamChunk iterable.
@@ -86,15 +58,10 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
   try {
     const model = resolveModel(input.profile, input.model);
     const messages = toSdkMessages(input.prompt);
-
-    // Separate system message from conversation messages
-    const systemMessages = messages.filter(m => m.role === "system");
-    const conversationMessages = messages.filter(m => m.role !== "system");
-    const systemPrompt = systemMessages.map(m => m.content).join("\n\n") || undefined;
-    const capabilities = getProviderCapabilities(input.profile.type as ProviderType);
-    if (input.prefill && capabilities.prefill) {
-      conversationMessages.push({ role: "assistant", content: input.prefill });
-    }
+    const { systemPrompt, conversationMessages } = prepareSdkMessages(messages, {
+      prefill: input.prefill,
+      providerType: input.profile.type as ProviderType,
+    });
 
     const samplerConfig = buildSamplerConfig(input.profile);
     const result = streamText({
