@@ -202,7 +202,6 @@ export class SessionRuntime {
 		this.chatRuntime = new ChatRuntime({
 			chats: stores.chats,
 			chatApp: this.chatApp,
-			expandChatMacros: (chatId, text) => this.expandChatMacros(chatId, text),
 			assemblePrompt: (chatId, branchId, options) =>
 				this.assemblePrompt(chatId, branchId, options),
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
@@ -492,7 +491,7 @@ export class SessionRuntime {
 					branchId: chat.activeBranchId,
 					role: "assistant",
 					authorType: "assistant",
-					content: this.expandChatMacros(createdChatId, greeting),
+					content: greeting,
 				});
 			}
 		}
@@ -801,7 +800,7 @@ export class SessionRuntime {
 			branchId: chat.activeBranchId,
 			role: "assistant",
 			authorType: "assistant",
-			content: this.expandChatMacros(chatId, trimmed),
+			content: trimmed,
 		});
 		await this.stores.chats.saveTrace({
 			...assembled.promptTraceDraft,
@@ -844,14 +843,6 @@ export class SessionRuntime {
 				description: persona?.description ?? "",
 			},
 		});
-	}
-
-	private expandChatMacros(chatId: ChatId, text: string): string {
-		// Note: resolvePromptVariableContext is async, but expandChatMacros is sync.
-		// This is a known limitation — macros won't resolve until we make this async.
-		// For now, return text as-is (macros will be resolved later in the prompt pipeline).
-		void chatId;
-		return text;
 	}
 
 	private async resolveDefaultPersonaId(): Promise<PersonaId> {

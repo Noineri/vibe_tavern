@@ -18,7 +18,6 @@ interface PendingPromptTraceTurn {
 export interface ChatRuntimeDeps {
   chats: ChatStore;
   chatApp: ChatApplicationService;
-  expandChatMacros: (chatId: ChatId, text: string) => string;
   assemblePrompt: (
     chatId: ChatId,
     branchId?: ChatBranchId,
@@ -44,7 +43,7 @@ export class ChatRuntime {
   }
 
   async prepareLiveTurn(chatId: ChatId, content: string, model: string): Promise<PreparedLiveTurn> {
-    const { chatApp, expandChatMacros, assemblePrompt, getSnapshot } = this.deps;
+    const { chatApp, assemblePrompt, getSnapshot } = this.deps;
     const trimmed = content.trim();
     if (!trimmed) {
       const assembled = await assemblePrompt(chatId, undefined, { model });
@@ -54,10 +53,8 @@ export class ChatRuntime {
       };
     }
 
-    const expandedContent = expandChatMacros(chatId, trimmed);
-
     const userMessage = await chatApp.appendUserMessage(chatId, {
-      content: expandedContent,
+      content: trimmed,
       mode: "reply",
     });
 
