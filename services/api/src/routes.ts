@@ -53,7 +53,7 @@ export interface RuntimeApi {
   listFavoriteProviderModels: (providerProfileId: string) => unknown;
   addFavoriteProviderModel: (providerProfileId: string, body: { modelId: string; label?: string | null; contextLength?: number | null }) => unknown;
   removeFavoriteProviderModel: (providerProfileId: string, modelId: string) => unknown;
-  fetchModelsByEndpoint: (baseUrl: string, apiKey?: string) => Promise<unknown>;
+  fetchModelsByEndpoint: (baseUrl: string, apiKey?: string, providerType?: string) => Promise<unknown>;
   importJson: (body: { fileName: string; jsonText: string; chatId?: string }) => unknown;
   forkBranch: (chatId: string) => unknown;
   activateBranch: (chatId: string, branchId: string) => unknown;
@@ -69,24 +69,30 @@ export interface RuntimeApi {
   deletePromptPreset: (presetId: string) => void;
   uploadAsset: (file: File) => Promise<{ assetId: string; url: string }>;
   serveAsset: (assetId: string) => Promise<{ body: Buffer; contentType: string } | null>;
+
+  // ── Methods absorbed from former routerDeps ─────────────────────────
+
+  createCharacterFromScratch: (body: {
+    name: string;
+    description?: string;
+    firstMessage?: string;
+    scenario?: string;
+    personalitySummary?: string;
+  }) => Promise<unknown>;
+
+  createFreeChat: () => Promise<unknown>;
+
+  testProviderChatByEndpoint: (opts: {
+    baseUrl: string;
+    apiKey: string;
+    model: string;
+    providerType?: string;
+  }) => Promise<unknown>;
+
+  testProviderChatByProfile: (providerProfileId: string, model: string) => Promise<unknown>;
 }
 
-export function createApiRouter(
-  runtime: RuntimeApi,
-  deps: {
-    getRequiredProviderProfile: (id: string) => Promise<{ endpoint: string; apiKey?: string | null; type?: string }>;
-    sessionRuntime: {
-      createCharacterFromScratch: (body: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }) => Promise<unknown>;
-      createFreeChat: () => Promise<unknown>;
-      getProviderProfile: (id: string) => Promise<{ endpoint: string; apiKey?: string | null } | null>;
-    };
-    providerOrchestrator: { refreshProfileModels: (profile: any) => Promise<unknown> };
-    listProviderModels: (opts: { baseUrl: string; apiKey: string; providerType?: string; requiresAuthForModels?: boolean }) => Promise<unknown>;
-    normalizeOpenAiCompatibleBaseUrl: (url: string) => string;
-    probeProviderConnection: (opts: { baseUrl: string; apiKey: string; providerType?: string }) => Promise<unknown>;
-    testProviderChat: (opts: { baseUrl: string; apiKey: string; model: string; providerType?: string }) => Promise<unknown>;
-  },
-) {
+export function createApiRouter(runtime: RuntimeApi) {
   return new Hono()
     .post("/api/debug/send-log", zValidator("json", schemas.debugSendLogSchema), async (c) => {
       const body = c.req.valid("json");
@@ -112,7 +118,7 @@ export function createApiRouter(
       if (!name || !name.trim()) {
         return c.json({ error: "name is required" }, 400);
       }
-      return c.json(await deps.sessionRuntime.createCharacterFromScratch({
+      return c.json(await runtime.createCharacterFromScratch({
         name: name.trim(),
         description: body.description ?? undefined,
         firstMessage: body.firstMessage ?? undefined,
@@ -124,7 +130,7 @@ export function createApiRouter(
       const body = c.req.valid("json");
       const characterId = body.characterId;
       if (!characterId) {
-        return c.json(await deps.sessionRuntime.createFreeChat());
+        return c.json(await runtime.createFreeChat());
       }
       return c.json(await runtime.createChatForCharacter(characterId));
     })
@@ -399,9 +405,7 @@ export function createApiRouter(
         return c.json({ error: "baseUrl is required." }, 400);
       }
       try {
-        const normalized = deps.normalizeOpenAiCompatibleBaseUrl(baseUrl);
-        const requiresAuth = body?.providerType === "anthropic" || body?.providerType === "google";
-        const models = await deps.listProviderModels({ baseUrl: normalized, apiKey: apiKey ?? "", providerType: body?.providerType, requiresAuthForModels: requiresAuth });
+        const models = await runtime.fetchModelsByEndpoint(baseUrl, apiKey, body?.providerType);
         return c.json({ models });
       } catch (err) {
         if (isDomainError(err)) throw err;
@@ -416,7 +420,7 @@ export function createApiRouter(
       if (!baseUrl || !model) {
         return c.json({ error: "baseUrl and model are required." }, 400);
       }
-      return c.json(await deps.testProviderChat({ baseUrl, apiKey, model, providerType: body?.providerType }));
+      return c.json(await runtime.testProviderChatByEndpoint({ baseUrl, apiKey, model, providerType: body?.providerType }));
     })
     .post("/api/providers/:providerId/models", async (c) => {
       return c.json(await runtime.fetchProviderModels(c.req.param("providerId")));
@@ -440,13 +444,7 @@ export function createApiRouter(
       if (!model) {
         return c.json({ error: "model is required." }, 400);
       }
-      const profile = await deps.getRequiredProviderProfile(c.req.param("providerId"));
-      return c.json(await deps.testProviderChat({
-        baseUrl: profile.endpoint,
-        apiKey: profile.apiKey ?? "",
-        model,
-        providerType: profile.type,
-      }));
+      return c.json(await runtime.testProviderChatByProfile(c.req.param("providerId"), model));
     });
 }
 
