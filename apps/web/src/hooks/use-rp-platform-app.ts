@@ -454,7 +454,6 @@ export function useRpPlatformApp() {
     handleCreateCharacter: character.handleCreateCharacter,
     handleFreeChat: character.handleFreeChat,
     onCreateChat: character.handleCreateChat,
-    onCloneChat: character.handleCloneChat,
     onExportCharacter: character.handleExportCharacter,
     onExportChatJsonl: character.handleExportChatJsonl,
     allCharacters,

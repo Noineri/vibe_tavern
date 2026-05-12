@@ -857,12 +857,6 @@ export async function createCharacter(input: {
   };
 }
 
-export async function cloneChat(chatId: ChatId): Promise<AppSnapshot> {
-  const response = await client.api.chats[":chatId"].clone.$post({ param: { chatId } });
-  const data = await unwrapRpc<AppSnapshot>(response);
-  return normalizeSnapshot(data);
-}
-
 export async function exportCharacter(characterId: string): Promise<Record<string, unknown>> {
   const response = await client.api.characters[":characterId"].export.$get({ param: { characterId } });
   return unwrapRpc<Record<string, unknown>>(response);

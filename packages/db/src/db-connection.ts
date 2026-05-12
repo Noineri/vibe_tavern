@@ -9,12 +9,5 @@ export function createDb(dbPath: string): AppDb {
   sqlite.exec('PRAGMA foreign_keys = ON');
   sqlite.exec('PRAGMA journal_mode = WAL');
 
-  // Migrate: add prefill column to prompt_traces if missing
-  try {
-    sqlite.exec('ALTER TABLE prompt_traces ADD COLUMN prefill TEXT');
-  } catch {
-    // Column already exists — ignore
-  }
-
   return drizzle(sqlite, { schema });
 }

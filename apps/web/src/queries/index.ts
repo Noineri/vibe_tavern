@@ -51,7 +51,6 @@ export {
   useChatSnapshot,
   useSetChatPersonaMutation,
   useCreateChatMutation,
-  useCloneChatMutation,
   useDeleteChatMutation,
   useRenameChatMutation,
   useSendMessageMutation,

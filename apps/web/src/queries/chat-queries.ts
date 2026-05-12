@@ -11,7 +11,6 @@ import {
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
 import {
   activateBranch,
-  cloneChat,
   createChat,
   deleteBranch,
   deleteChat,
@@ -65,18 +64,6 @@ export function useCreateChatMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: { characterId?: string }) => createChat(args.characterId),
-    onSuccess: (snapshot: AppSnapshot) => {
-      qc.setQueryData(chatKeys.snapshot(snapshot.activeChat.id), snapshot);
-      void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
-    },
-  });
-}
-
-/** Clone a chat. Returns new snapshot. */
-export function useCloneChatMutation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (chatId: ChatId) => cloneChat(chatId),
     onSuccess: (snapshot: AppSnapshot) => {
       qc.setQueryData(chatKeys.snapshot(snapshot.activeChat.id), snapshot);
       void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });

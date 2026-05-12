@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { streamSSE } from "hono/streaming";
 import { logSendDebug } from "./send-debug-log.js";
-import * as schemas from "./api-schemas.js";
+import * as schemas from "@rp-platform/api-contracts";
 import { isDomainError, providerError } from "./errors.js";
 
 export interface RuntimeApi {
