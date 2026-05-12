@@ -3,6 +3,7 @@ import type { Chat, ChatBranch, ChatBranchId, ChatId, Message, MessageVariant } 
 import type { PromptPresetDto, PromptTraceRecordDto, ProviderProbeResponse } from "@rp-platform/domain";
 import type { AppType } from "@rp-platform/api";
 import { getGatewayBaseUrl } from "./gateway-client.js";
+import { parseSSEStream } from "./lib/sse-parser.js";
 
 const client = hc<AppType>(getGatewayBaseUrl());
 
@@ -373,42 +374,7 @@ export async function sendChatMessageStream(
   }
 
   opts.onStatus("streaming");
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("No response body");
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let finishReason = "stop";
-  let usage: Record<string, number> | undefined;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        const data = line.slice(6);
-        if (data === "[DONE]") continue;
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.delta) opts.onChunk(parsed.delta);
-          if (parsed.finishReason) finishReason = parsed.finishReason;
-          if (parsed.usage) usage = parsed.usage;
-        } catch { /* skip malformed */ }
-      }
-      if (line.startsWith("event: abort")) {
-        opts.onStatus("cancelled");
-        return { finishReason: "cancelled", usage };
-      }
-    }
-  }
-
-  opts.onStatus("idle");
-  return { finishReason, usage };
+  return parseSSEStream({ response, onStatus: opts.onStatus, onChunk: opts.onChunk });
 }
 
 export async function regenerateChatMessageStream(
@@ -434,42 +400,7 @@ export async function regenerateChatMessageStream(
   }
 
   opts.onStatus("streaming");
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("No response body");
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let finishReason = "stop";
-  let usage: Record<string, number> | undefined;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        const data = line.slice(6);
-        if (data === "[DONE]") continue;
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.delta) opts.onChunk(parsed.delta);
-          if (parsed.finishReason) finishReason = parsed.finishReason;
-          if (parsed.usage) usage = parsed.usage;
-        } catch { /* skip malformed */ }
-      }
-      if (line.startsWith("event: abort")) {
-        opts.onStatus("cancelled");
-        return { finishReason: "cancelled", usage };
-      }
-    }
-  }
-
-  opts.onStatus("idle");
-  return { finishReason, usage };
+  return parseSSEStream({ response, onStatus: opts.onStatus, onChunk: opts.onChunk });
 }
 
 export async function generateReply(
@@ -506,42 +437,7 @@ export async function generateReplyStream(
   }
 
   opts.onStatus("streaming");
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("No response body");
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let finishReason = "stop";
-  let usage: Record<string, number> | undefined;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        const data = line.slice(6);
-        if (data === "[DONE]") continue;
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.delta) opts.onChunk(parsed.delta);
-          if (parsed.finishReason) finishReason = parsed.finishReason;
-          if (parsed.usage) usage = parsed.usage;
-        } catch { /* skip malformed */ }
-      }
-      if (line.startsWith("event: abort")) {
-        opts.onStatus("cancelled");
-        return { finishReason: "cancelled", usage };
-      }
-    }
-  }
-
-  opts.onStatus("idle");
-  return { finishReason, usage };
+  return parseSSEStream({ response, onStatus: opts.onStatus, onChunk: opts.onChunk });
 }
 
 export async function selectMessageVariant(
