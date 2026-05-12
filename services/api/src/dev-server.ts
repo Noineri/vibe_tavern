@@ -107,7 +107,7 @@ async function ensureSeedData() {
   const runtime = {
     bootstrap: () => sessionRuntime.getBootstrapState(),
     getChatSnapshot: (chatId: string) => sessionRuntime.getSnapshot(brandId<ChatId>(chatId)),
-    createChatForCharacter: (characterId: string) => sessionRuntime.createChatForCharacter(characterId),
+    createChatForCharacter: (characterId: string) => sessionRuntime.chatLifecycle.createChatForCharacter(characterId),
     cloneChat: (chatId: string) => chatRuntime.cloneChat(chatId),
     exportCharacter: (characterId: string) => sessionRuntime.exportCharacter(characterId),
     exportChatJsonl: (chatId: string) => sessionRuntime.exportChatJsonl(chatId),
@@ -247,24 +247,26 @@ async function ensureSeedData() {
         const character = await stores.characters.getById(brandId<CharacterId>(characterId));
         if (character?.avatarAssetId && character.avatarAssetId !== body.avatarAssetId) cleanupAsset(character.avatarAssetId);
       }
-      return sessionRuntime.updateCharacter(brandId<CharacterId>(characterId), { ...body, chatId: body.chatId != null ? brandId<ChatId>(body.chatId) : undefined });
+      return sessionRuntime.character.update(brandId<CharacterId>(characterId), { ...body, chatId: body.chatId != null ? brandId<ChatId>(body.chatId) : undefined }, {
+        rebuildChatOrder: () => sessionRuntime.rebuildChatOrder(),
+      });
     },
     updatePersona: async (personaId: string, body: { chatId?: string; name?: string; description?: string; pronouns?: string | null; avatarAssetId?: string | null }) => {
       if (body.avatarAssetId !== undefined) {
         const persona = await stores.personas.getById(personaId);
         if (persona?.avatarAssetId && persona.avatarAssetId !== body.avatarAssetId) cleanupAsset(persona.avatarAssetId);
       }
-      return sessionRuntime.updatePersona(personaId, { ...body, chatId: body.chatId != null ? brandId<ChatId>(body.chatId) : undefined });
+      return sessionRuntime.persona.update(personaId, { ...body, chatId: body.chatId != null ? brandId<ChatId>(body.chatId) : undefined });
     },
-    listPersonas: () => sessionRuntime.listPersonas(),
-    setChatPersona: (chatId: string, personaId: string) => sessionRuntime.setChatPersona(brandId<ChatId>(chatId), personaId),
+    listPersonas: () => sessionRuntime.persona.list(),
+    setChatPersona: (chatId: string, personaId: string) => sessionRuntime.persona.setChatPersona(brandId<ChatId>(chatId), personaId),
     setChatPromptPreset: (chatId: string, promptPresetId: string) => sessionRuntime.setChatPromptPreset(brandId<ChatId>(chatId), promptPresetId),
     createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) =>
-      sessionRuntime.createPersona(body),
+      sessionRuntime.persona.create(body),
     deletePersona: async (personaId: string) => {
       const persona = await stores.personas.getById(personaId);
       if (persona?.avatarAssetId) cleanupAsset(persona.avatarAssetId);
-      await sessionRuntime.deletePersona(personaId);
+      await sessionRuntime.persona.delete(personaId);
     },
     getPersonalLorebookStatus: (personaId: string) => sessionRuntime.getPersonalLorebookStatus(personaId),
     setPersonalLorebookEnabled: (personaId: string, enabled: boolean) => sessionRuntime.setPersonalLorebookEnabled(personaId, enabled),
@@ -320,12 +322,12 @@ async function ensureSeedData() {
     forkBranch: (chatId: string) => chatRuntime.forkBranch(brandId<ChatId>(chatId)),
     activateBranch: (chatId: string, branchId: string) => chatRuntime.activateBranch(brandId<ChatId>(chatId), brandId<ChatBranchId>(branchId)),
     deleteBranch: (chatId: string, branchId: string) => chatRuntime.deleteBranch(chatId, branchId),
-    archiveCharacter: (characterId: string) => sessionRuntime.archiveCharacter(characterId),
-    unarchiveCharacter: (characterId: string) => sessionRuntime.unarchiveCharacter(characterId),
+    archiveCharacter: (characterId: string) => sessionRuntime.character.archive(characterId),
+    unarchiveCharacter: (characterId: string) => sessionRuntime.character.unarchive(characterId),
     deleteCharacter: async (characterId: string) => {
       const character = await stores.characters.getById(brandId<CharacterId>(characterId));
       if (character?.avatarAssetId) cleanupAsset(character.avatarAssetId);
-      await sessionRuntime.deleteCharacter(characterId);
+      await sessionRuntime.character.delete(characterId);
     },
     deleteChat: (chatId: string) => chatRuntime.deleteChat(chatId),
     renameChat: (chatId: string, title: string) => chatRuntime.renameChat(chatId, title),
@@ -388,8 +390,8 @@ async function ensureSeedData() {
   const apiRouter = createApiRouter(runtime, {
     getRequiredProviderProfile,
     sessionRuntime: {
-      createCharacterFromScratch: (body) => sessionRuntime.createCharacterFromScratch(body),
-      createFreeChat: () => sessionRuntime.createFreeChat(),
+      createCharacterFromScratch: (body) => sessionRuntime.character.createFromScratch(body),
+      createFreeChat: () => sessionRuntime.chatLifecycle.createFreeChat(),
       getProviderProfile: async (id) => {
         const p = await providerProfileService.getProviderProfile(id);
         return p ? { endpoint: p.endpoint, apiKey: p.apiKey, type: p.type } : null;
