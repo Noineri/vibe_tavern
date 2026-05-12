@@ -32,12 +32,6 @@ export interface ConnectionState {
   streamResponse: boolean;
 }
 
-export interface SavedConnectionState {
-  providerLabel?: string;
-  baseUrl?: string;
-  model?: string;
-}
-
 export interface CharacterTab {
   id: string;
   name: string;

@@ -22,8 +22,6 @@ import { chatKeys } from "../queries/query-keys.js";
 import {
   readSavedTheme,
   persistTheme,
-  readSavedConnectionState,
-  persistConnectionState,
   persistTweaks,
   readSavedTweaks,
   type TweaksSettings,
@@ -36,14 +34,13 @@ function createInitialConnectionState(): ConnectionState {
     baseUrl: import.meta.env.VITE_RP_DEFAULT_BASE_URL || "",
     model: import.meta.env.VITE_RP_DEFAULT_MODEL || "",
   };
-  const saved = readSavedConnectionState();
-  const normalizedBaseUrl = normalizeOpenAiCompatibleBaseUrl(saved?.baseUrl || envDefaults.baseUrl);
+  const normalizedBaseUrl = normalizeOpenAiCompatibleBaseUrl(envDefaults.baseUrl);
 
   return {
-    providerLabel: saved?.providerLabel || envDefaults.providerLabel,
+    providerLabel: envDefaults.providerLabel,
     baseUrl: normalizedBaseUrl,
     apiKey: "",
-    model: saved?.model || envDefaults.model,
+    model: envDefaults.model,
     activeProviderProfileId: null,
     hasStoredApiKey: false,
     status: "idle",
@@ -165,10 +162,6 @@ export function useRpPlatformApp() {
   }, []);
 
   // --- Effects ---
-
-  useEffect(() => {
-    persistConnectionState(connection);
-  }, [connection]);
 
   useEffect(() => {
     const root = document.documentElement;
