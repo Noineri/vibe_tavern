@@ -260,7 +260,7 @@ async function ensureSeedData() {
     },
     listPersonas: () => sessionRuntime.persona.list(),
     setChatPersona: (chatId: string, personaId: string) => sessionRuntime.persona.setChatPersona(brandId<ChatId>(chatId), personaId),
-    setChatPromptPreset: (chatId: string, promptPresetId: string) => sessionRuntime.setChatPromptPreset(brandId<ChatId>(chatId), promptPresetId),
+    setChatPromptPreset: (chatId: string, promptPresetId: string) => sessionRuntime.chatLifecycle.setChatPromptPreset(brandId<ChatId>(chatId), promptPresetId),
     createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) =>
       sessionRuntime.persona.create(body),
     deletePersona: async (personaId: string) => {
