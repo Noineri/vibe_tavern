@@ -114,6 +114,13 @@ export function useProviderProfiles(deps: ProviderProfilesDeps) {
       streamResponse: activeProfile.streamResponse ?? true,
     });
 
+    // Load cached models async so TopBar can show human-readable labels
+    void getProviderModelsFromCache(activeProfile.id).then((response) => {
+      if (response.models.length > 0) {
+        patchConnection({ models: response.models });
+      }
+    });
+
     if (!activeProfile.defaultModel || startupProbeProfileIdsRef.current.has(activeProfile.id)) return;
     startupProbeProfileIdsRef.current.add(activeProfile.id);
     void probeHydratedProviderProfile(activeProfile.id);
