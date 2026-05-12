@@ -28,7 +28,8 @@ export function TopBar() {
     : undefined;
   const providerConnected = connection.status === "connected";
   const providerLabel = actions.activeProviderProfile?.name || t("no_provider");
-  const providerModelLabel = actions.activeProviderProfile?.defaultModel || connection.model || t("no_model_selected");
+  const providerModelId = actions.activeProviderProfile?.defaultModel || connection.model || null;
+  const providerModelLabel = (providerModelId && connection.models.find((m) => m.id === providerModelId)?.label) || providerModelId || t("no_model_selected");
   const activatedLoreCount = actions.activePromptTrace?.activatedLoreEntries.length ?? 0;
   const retrievedMemoryCount = actions.activePromptTrace?.retrievedMemories.length ?? 0;
   const activePresetName = promptPresets.find((p) => p.id === activePromptPresetId)?.name ?? t("topbar_default");
