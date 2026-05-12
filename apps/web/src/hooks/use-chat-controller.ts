@@ -14,6 +14,7 @@ import {
 } from "../app-client.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { chatKeys } from "../queries/query-keys.js";
+import { StreamingReveal } from "../lib/streaming-reveal.js";
 import {
   useEditMessageMutation,
   useDeleteMessageMutation,
@@ -103,66 +104,24 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
   const deleteBranchMut = useDeleteBranchMutation();
 
   const abortRef = useRef<AbortController | null>(null);
-  const streamRevealRef = useRef<{
-    target: string;
-    shown: string;
-    timer: ReturnType<typeof setTimeout> | null;
-    flushResolve: (() => void) | null;
-  }>({ target: "", shown: "", timer: null, flushResolve: null });
-
-  function clearStreamingReveal(): void {
-    const reveal = streamRevealRef.current;
-    if (reveal.timer) clearTimeout(reveal.timer);
-    reveal.target = "";
-    reveal.shown = "";
-    reveal.timer = null;
-    reveal.flushResolve?.();
-    reveal.flushResolve = null;
-    useChatStore.getState().setStreamingText("");
-  }
-
-  function scheduleStreamingReveal(): void {
-    const reveal = streamRevealRef.current;
-    if (reveal.timer) return;
-
-    const tick = () => {
-      const state = streamRevealRef.current;
-      const remaining = state.target.length - state.shown.length;
-      if (remaining <= 0) {
-        state.timer = null;
-        state.flushResolve?.();
-        state.flushResolve = null;
-        return;
-      }
-
-      const step = remaining > 240 ? 8 : remaining > 120 ? 5 : 3;
-      state.shown = state.target.slice(0, state.shown.length + step);
-      useChatStore.getState().setStreamingText(state.shown);
-      state.timer = setTimeout(tick, 24);
-    };
-
-    reveal.timer = setTimeout(tick, 16);
-  }
-
-  function pushStreamingDelta(delta: string): void {
-    streamRevealRef.current.target += delta;
-    scheduleStreamingReveal();
-  }
-
-  function waitForStreamingReveal(): Promise<void> {
-    const reveal = streamRevealRef.current;
-    if (reveal.shown.length >= reveal.target.length) return Promise.resolve();
-    return new Promise((resolve) => {
-      reveal.flushResolve = resolve;
-      scheduleStreamingReveal();
-    });
-  }
+  const streamingReveal = useRef(new StreamingReveal());
 
   /** Refetch chat snapshot cache from the canonical source, bypassing TQ staleTime. */
   async function refreshChatSnapshotCache(chatId: ChatId): Promise<AppSnapshot> {
     const snapshot = await refreshChatSnapshot(chatId);
     qc.setQueryData(chatKeys.snapshot(chatId), snapshot);
     return snapshot;
+  }
+
+  /**
+   * After an abort, the backend needs a moment to save the partial variant
+   * before we fetch the snapshot. Without this pause, the snapshot may be
+   * stale (missing the just-saved partial), causing the variant counter to
+   * lag behind (e.g. shows 5/5 instead of 6/6).
+   */
+  async function refreshAfterAbort(chatId: ChatId): Promise<AppSnapshot> {
+    await new Promise((r) => setTimeout(r, 200));
+    return refreshChatSnapshotCache(chatId);
   }
 
   const handleSend = useCallback(async (): Promise<void> => {
@@ -211,10 +170,10 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
           onStatus: setGenerationStatus,
           onChunk: (delta) => {
             collected += delta;
-            pushStreamingDelta(delta);
+            streamingReveal.current.pushDelta(delta);
           },
         });
-        await waitForStreamingReveal();
+        await streamingReveal.current.waitForReveal();
         await refreshChatSnapshotCache(activeChatId);
         void logClientSendDebug("web.hook.handleSend.stream-success", { activeChatId, replyLength: collected.length });
       } else {
@@ -228,7 +187,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     } catch (error) {
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleSend.cancelled", { activeChatId });
-        await refreshChatSnapshotCache(activeChatId);
+        await refreshAfterAbort(activeChatId);
         toast.info(getT()("generation_cancelled"));
         return;
       }
@@ -242,7 +201,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       setPendingUserMessageContent(null);
       setIsSending(false);
       abortRef.current = null;
-      clearStreamingReveal();
+      streamingReveal.current.clear();
     }
   }, [sendMessageMut]);
 
@@ -268,10 +227,10 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
           onStatus: setGenerationStatus,
           onChunk: (delta) => {
             collected += delta;
-            pushStreamingDelta(delta);
+            streamingReveal.current.pushDelta(delta);
           },
         });
-        await waitForStreamingReveal();
+        await streamingReveal.current.waitForReveal();
         await refreshChatSnapshotCache(activeChatId);
         void logClientSendDebug("web.hook.handleResend.stream-success", { activeChatId, replyLength: collected.length });
       } else {
@@ -283,7 +242,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     } catch (error) {
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleResend.cancelled", { activeChatId });
-        await refreshChatSnapshotCache(activeChatId);
+        await refreshAfterAbort(activeChatId);
         toast.info(getT()("generation_cancelled"));
         return;
       }
@@ -296,7 +255,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     } finally {
       setIsSending(false);
       abortRef.current = null;
-      clearStreamingReveal();
+      streamingReveal.current.clear();
     }
   }, [generateReplyMut]);
 
@@ -380,10 +339,10 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
           onStatus: setGenerationStatus,
           onChunk: (delta) => {
             collected += delta;
-            pushStreamingDelta(delta);
+            streamingReveal.current.pushDelta(delta);
           },
         });
-        await waitForStreamingReveal();
+        await streamingReveal.current.waitForReveal();
         await refreshChatSnapshotCache(activeChatId);
         void logClientSendDebug("web.hook.handleRegenerate.stream-success", { activeChatId, messageId, replyLength: collected.length });
       } else {
@@ -395,7 +354,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     } catch (error) {
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.handleRegenerate.cancelled", { activeChatId, messageId });
-        await refreshChatSnapshotCache(activeChatId);
+        await refreshAfterAbort(activeChatId);
         toast.info(getT()("generation_cancelled"));
         return;
       }
@@ -405,7 +364,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       setIsSending(false);
       setMessageActionId(null);
       abortRef.current = null;
-      clearStreamingReveal();
+      streamingReveal.current.clear();
     }
   }
 
