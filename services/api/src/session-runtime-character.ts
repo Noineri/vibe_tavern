@@ -1,4 +1,10 @@
-import type { Character, CharacterVersion } from "@rp-platform/domain";
+import type { Character, CharacterVersion, CharacterId, ChatId, PersonaId, PromptPresetId } from "@rp-platform/domain";
+import type { ChatStore, CharacterStore, StoreContainer } from "@rp-platform/db";
+import type { ChatApplicationService } from "./chat-application-service.js";
+import type { IChatOrder } from "./session-runtime-chat-order.js";
+import type { SessionSnapshot, ImportResult } from "./session-runtime.js";
+import { notFound, validation } from "./errors.js";
+import { brandId } from "@rp-platform/domain";
 
 export type CharacterRecord = {
   id: string;
@@ -134,4 +140,203 @@ export function applyCharacterEditsToDefinition(
   target.extensions = input.extensions;
   target.tags = input.tags;
   return cloned;
+}
+
+export interface CharacterRuntimeDeps {
+  stores: StoreContainer;
+  chatApp: ChatApplicationService;
+  chatOrder: IChatOrder;
+  getSnapshot: (chatId: ChatId) => Promise<SessionSnapshot>;
+  resolveDefaultPersonaId: () => Promise<PersonaId>;
+  resolveDefaultPromptPresetId: () => Promise<PromptPresetId>;
+  seedImportedOpening: (chatId: ChatId, firstMessage: string) => Promise<void>;
+  discardPendingPromptTrace: (chatId: ChatId) => void;
+}
+
+export class CharacterRuntime {
+  private readonly deps: CharacterRuntimeDeps;
+
+  constructor(deps: CharacterRuntimeDeps) {
+    this.deps = deps;
+  }
+
+  async archive(characterId: string): Promise<{
+    characterId: string;
+    status: "archived";
+  }> {
+    const typedCharacterId = brandId<CharacterId>(characterId);
+    await this.deps.stores.characters.archive(typedCharacterId);
+    const chatId = (await this.deps.stores.chats.listAll())
+      .find((c) => c.characterId === typedCharacterId)?.id;
+    if (chatId) {
+      this.deps.chatOrder.remove(chatId as ChatId);
+    }
+    return { characterId, status: "archived" };
+  }
+
+  async unarchive(characterId: string): Promise<{
+    characterId: string;
+    status: "active";
+  }> {
+    await this.deps.stores.characters.unarchive(brandId<CharacterId>(characterId));
+    return { characterId, status: "active" };
+  }
+
+  async delete(characterId: string): Promise<void> {
+    const typedCharacterId = brandId<CharacterId>(characterId);
+    const chatIds = (await this.deps.stores.chats.listAll())
+      .filter((c) => c.characterId === typedCharacterId)
+      .map((c) => c.id as ChatId);
+    for (const chatId of chatIds) {
+      this.deps.chatOrder.remove(chatId);
+      this.deps.discardPendingPromptTrace(chatId);
+    }
+    await this.deps.stores.characters.delete(typedCharacterId);
+  }
+
+  async createFromScratch(input: {
+    name: string;
+    description?: string;
+    personalitySummary?: string | null;
+    scenario?: string | null;
+    firstMessage?: string;
+    mesExample?: string | null;
+    alternateGreetings?: string[];
+  }): Promise<ImportResult> {
+    const character = await this.deps.stores.characters.create({
+      name: input.name,
+      description: input.description,
+      personalitySummary: input.personalitySummary,
+      defaultScenario: input.scenario,
+      firstMessage: input.firstMessage,
+      mesExample: input.mesExample,
+      alternateGreetings: input.alternateGreetings,
+    });
+
+    const characterId = character.id as CharacterId;
+
+    const created = await this.deps.chatApp.createChat({
+      characterId,
+      personaId: await this.deps.resolveDefaultPersonaId(),
+      title: input.name,
+      promptPresetId: await this.deps.resolveDefaultPromptPresetId(),
+    });
+
+    const createdChatId = created.id;
+    this.deps.chatOrder.add(createdChatId);
+
+    if (input.firstMessage?.trim()) {
+      await this.deps.seedImportedOpening(createdChatId, input.firstMessage);
+    }
+
+    return {
+      activeChatId: createdChatId,
+      snapshot: await this.deps.getSnapshot(createdChatId),
+      imported: {
+        kind: "character",
+        name: input.name,
+        fileName: "",
+        warningCount: 0,
+        warnings: [],
+      },
+    };
+  }
+
+  async update(
+    characterId: CharacterId,
+    input: {
+      chatId?: ChatId;
+      name?: string;
+      description?: string;
+      personalitySummary?: string | null;
+      scenario?: string;
+      systemPrompt?: string;
+      firstMessage?: string | null;
+      mesExample?: string | null;
+      alternateGreetings?: string[];
+      postHistoryInstructions?: string | null;
+      creatorNotes?: string | null;
+      characterBook?: Record<string, unknown> | null;
+      depthPrompt?: string | null;
+      depthPromptDepth?: number | null;
+      depthPromptRole?: string | null;
+      extensions?: Record<string, unknown>;
+      tags?: string[];
+      avatarAssetId?: string | null;
+    },
+    options?: {
+      rebuildChatOrder: () => Promise<void>;
+    },
+  ): Promise<SessionSnapshot> {
+    const currentCharacter = await this.deps.stores.characters.getById(characterId);
+    if (!currentCharacter) {
+      throw notFound("Character", `Character '${characterId}' was not found.`);
+    }
+
+    const nextName = (input.name ?? currentCharacter.name).trim();
+    if (!nextName) {
+      throw validation("Character name is required.");
+    }
+
+    await this.deps.stores.characters.update(characterId, {
+      name: nextName,
+      description: input.description ?? currentCharacter.description,
+      personalitySummary: input.personalitySummary !== undefined
+        ? input.personalitySummary
+        : currentCharacter.personalitySummary,
+      defaultScenario: input.scenario ?? currentCharacter.defaultScenario ?? "",
+      firstMessage: input.firstMessage !== undefined
+        ? input.firstMessage
+        : currentCharacter.firstMessage,
+      mesExample: input.mesExample !== undefined
+        ? input.mesExample
+        : currentCharacter.mesExample,
+      alternateGreetings: input.alternateGreetings ?? currentCharacter.alternateGreetings,
+      postHistoryInstructions: input.postHistoryInstructions !== undefined
+        ? input.postHistoryInstructions
+        : currentCharacter.postHistoryInstructions,
+      creatorNotes: input.creatorNotes !== undefined
+        ? input.creatorNotes
+        : currentCharacter.creatorNotes,
+      characterBook: input.characterBook !== undefined
+        ? input.characterBook
+        : currentCharacter.characterBook,
+      depthPrompt: input.depthPrompt !== undefined
+        ? input.depthPrompt
+        : currentCharacter.depthPrompt,
+      depthPromptDepth: input.depthPromptDepth !== undefined
+        ? input.depthPromptDepth
+        : currentCharacter.depthPromptDepth,
+      depthPromptRole: input.depthPromptRole !== undefined
+        ? input.depthPromptRole
+        : currentCharacter.depthPromptRole,
+      extensions: input.extensions ?? currentCharacter.extensions,
+      systemPrompt: input.systemPrompt ?? currentCharacter.systemPrompt,
+      tags: input.tags ?? currentCharacter.tags,
+      avatarAssetId: input.avatarAssetId !== undefined
+        ? input.avatarAssetId
+        : currentCharacter.avatarAssetId,
+    });
+
+    // Promote system character to user character on first edit
+    if ((currentCharacter as any).isSystem === 1 || (currentCharacter as any).isSystem === true) {
+      await this.deps.stores.characters.updateIsSystem(characterId, false);
+      // Re-bootstrap chat order so the character appears in sidebar
+      await options?.rebuildChatOrder?.();
+    }
+
+    const preferredChat = input.chatId
+      ? await this.deps.stores.chats.getById(input.chatId)
+      : null;
+    const targetChatId =
+      ((preferredChat?.characterId === characterId ? preferredChat.id : null) ??
+      (await this.deps.stores.chats.listAll()).find((chat) => chat.characterId === characterId)?.id ??
+      this.deps.chatOrder.items[0]) as ChatId | undefined;
+
+    if (!targetChatId) {
+      throw notFound("Chat", "No chat is available for the updated character.");
+    }
+
+    return this.deps.getSnapshot(targetChatId);
+  }
 }

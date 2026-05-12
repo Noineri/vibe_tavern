@@ -3,6 +3,7 @@ import { brandId, type ChatBranchId, type ChatId, type MessageId } from "@rp-pla
 import type { ChatStore } from "@rp-platform/db";
 import type { ChatApplicationService } from "./chat-application-service.js";
 import type { SessionSnapshot } from "./session-runtime.js";
+import type { IChatOrder } from "./session-runtime-chat-order.js";
 import { logSendDebug } from "./send-debug-log.js";
 
 export interface PreparedLiveTurn {
@@ -28,10 +29,7 @@ export interface ChatRuntimeDeps {
     promptTraceDraft: Omit<PromptTrace, "id" | "messageId" | "createdAt">;
   }>;
   getSnapshot: (chatId: ChatId) => Promise<SessionSnapshot>;
-  chatOrder: {
-    add: (chatId: ChatId) => void;
-    remove: (chatId: ChatId) => void;
-  };
+  chatOrder: IChatOrder;
 }
 
 export class ChatRuntime {

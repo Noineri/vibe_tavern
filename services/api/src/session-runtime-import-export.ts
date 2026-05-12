@@ -7,6 +7,7 @@ import type {
 	PromptPresetId,
 } from "@rp-platform/domain";
 import { brandId, type CharacterId } from "@rp-platform/domain";
+import type { IChatOrder } from "./session-runtime-chat-order.js";
 import { parseSillyTavernChat, serializeSillyTavernChat } from "../../../packages/import-export/src/chats/st-chat.js";
 import {
 	importCharacterCardV3Json,
@@ -26,7 +27,7 @@ export interface ImportExportModuleDeps {
 	stores: StoreContainer;
 	resolver: ImportExportResolver;
 	chatApp: ChatApplicationService;
-	chatOrder: ChatId[];
+	chatOrder: IChatOrder;
 	fileStore: ReturnType<typeof createFileStore>;
 	resolveDefaultPersonaId(): Promise<PersonaId>;
 	resolveDefaultPromptPresetId(): Promise<PromptPresetId>;
@@ -286,7 +287,7 @@ export async function importJson(
 		});
 
 		const createdId = chat.id as ChatId;
-		deps.chatOrder.unshift(createdId);
+		deps.chatOrder.add(createdId);
 		await deps.seedImportedOpening(createdId, imported.normalized.firstMessage);
 
 		return {
@@ -335,7 +336,7 @@ async function importSillyTavernChat(
 		promptPresetId: sourceChat.promptPresetId as PromptPresetId,
 	});
 	const createdId = chat.id as ChatId;
-	deps.chatOrder.unshift(createdId);
+	deps.chatOrder.add(createdId);
 
 	for (const imported of importedMessages) {
 		const selectedVariant = imported.variants.find((variant) => variant.isSelected) ?? imported.variants[0];

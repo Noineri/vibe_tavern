@@ -46,7 +46,7 @@ export class ChatSummaryService {
 
     const chatId = brandId<ChatId>(input.chatId);
     logSendDebug("summary.generate.start", { chatId: input.chatId, providerProfileId, model, maxMessages });
-    const assembled = await this.sessionRuntime.assembleSummaryPrompt({
+    const assembled = await this.sessionRuntime.chatLifecycle.assembleSummaryPrompt({
       chatId,
       model,
       recentMessageLimit: maxMessages,
@@ -74,7 +74,7 @@ export class ChatSummaryService {
       throw validation("Provider returned an empty summary.");
     }
 
-    const snapshot = await this.sessionRuntime.updateChatSummary(chatId, summary);
+    const snapshot = await this.sessionRuntime.chatLifecycle.updateChatSummary(chatId, summary);
     logSendDebug("summary.generate.done", {
       chatId: input.chatId,
       providerProfileId,
@@ -90,7 +90,7 @@ export class ChatSummaryService {
   async saveChatSummary(input: { chatId: string; summary: string }): Promise<SummarizeChatResult> {
     const chatId = brandId<ChatId>(input.chatId);
     const summary = input.summary.trim();
-    const snapshot = await this.sessionRuntime.updateChatSummary(chatId, summary);
+    const snapshot = await this.sessionRuntime.chatLifecycle.updateChatSummary(chatId, summary);
     return { summary, snapshot };
   }
 }
