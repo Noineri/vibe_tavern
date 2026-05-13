@@ -44,8 +44,8 @@ export interface RuntimeApi {
   listProviderProfiles: () => unknown;
   fetchProviderProfile: (providerProfileId: string) => unknown;
   activateProviderProfile: (providerProfileId: string) => unknown;
-  updateProviderProfile: (providerProfileId: string, body: unknown) => unknown;
-  saveProviderDraft: (body: unknown) => unknown;
+  updateProviderProfile: (providerProfileId: string, body: Record<string, unknown>) => unknown;
+  saveProviderDraft: (body: Record<string, unknown>) => unknown;
   testProviderDraft: (body: { endpoint?: string; apiKey?: string } | null) => Promise<unknown>;
   testProviderProfile: (providerProfileId: string) => Promise<unknown>;
   deleteProviderProfile: (providerProfileId: string) => void;

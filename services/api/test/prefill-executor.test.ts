@@ -46,29 +46,33 @@ const { streamProviderExecutor } = await import(
 // Test helpers
 // ═══════════════════════════════════════════════════════════════════════════
 
-function makeInput(type: string, prefill?: string): ProviderExecutionInput {
+function makeInput(providerPreset: string, prefill?: string): ProviderExecutionInput {
   return {
     profile: {
       id: "test",
       name: "Test",
-      type,
+      providerPreset,
       endpoint: "http://localhost:1234/v1",
       apiKey: "test-key",
+      defaultModel: null,
+      contextBudget: null,
       temperature: 0.7,
       topP: 1,
       maxTokens: 512,
-      minP: undefined,
-      topK: undefined,
-      typicalP: undefined,
-      repPen: undefined,
-      freqPen: undefined,
-      presPen: undefined,
-      stopSeq: null,
+      minP: 0,
+      topK: 0,
+      topA: 0,
+      frequencyPenalty: 0,
+      presencePenalty: 0,
+      repetitionPenalty: 1,
+      stopSequences: [],
       seed: null,
-      reasoningEffort: null,
+      reasoningEffort: "auto",
       streamResponse: false,
       isActive: true,
-    } as any,
+      createdAt: "2025-01-01",
+      updatedAt: "2025-01-01",
+    },
     model: "test-model",
     prompt: {
       finalPayload: {

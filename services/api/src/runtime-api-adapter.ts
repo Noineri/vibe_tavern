@@ -191,7 +191,7 @@ export class RuntimeApiAdapter {
 		logSendDebug("api.runtime.send.profile", {
 			chatId,
 			profileId: profile.id,
-			providerType: profile.type,
+			providerType: profile.providerPreset,
 			endpoint: profile.endpoint,
 			model: profile.defaultModel,
 			contextBudget: profile.contextBudget,
@@ -336,11 +336,11 @@ export class RuntimeApiAdapter {
 	activateProviderProfile = (providerProfileId: string) =>
 		this.providerProfileService.activateProviderProfile(providerProfileId);
 
-	updateProviderProfile = (providerProfileId: string, body: unknown) =>
-		this.providerProfileService.updateProviderProfile(providerProfileId, body as any);
+	updateProviderProfile = (providerProfileId: string, body: Record<string, unknown>) =>
+		this.providerProfileService.updateProviderProfile(providerProfileId, body);
 
-	saveProviderDraft = (body: unknown) =>
-		this.providerProfileService.saveProviderProfile(body as any);
+	saveProviderDraft = (body: Record<string, unknown>) =>
+		this.providerProfileService.saveProviderProfile(body);
 
 	testProviderDraft = (body: { endpoint?: string; apiKey?: string; providerType?: string } | null) => {
 		const endpoint = (body?.endpoint ?? "").trim();
@@ -353,7 +353,7 @@ export class RuntimeApiAdapter {
 		return probeProviderConnection({
 			baseUrl: profile.endpoint,
 			apiKey: profile.apiKey ?? "",
-			providerType: profile.type,
+			providerType: profile.providerPreset,
 		});
 	};
 
@@ -365,8 +365,8 @@ export class RuntimeApiAdapter {
 		return { models: await listProviderModels({
 			baseUrl: profile.endpoint,
 			apiKey: profile.apiKey ?? "",
-			providerType: profile.type,
-			requiresAuthForModels: profile.type === "anthropic" || profile.type === "google",
+			providerType: profile.providerPreset,
+			requiresAuthForModels: profile.providerPreset === "anthropic" || profile.providerPreset === "google",
 		}) };
 	};
 
@@ -410,7 +410,7 @@ export class RuntimeApiAdapter {
 			baseUrl: profile.endpoint,
 			apiKey: profile.apiKey ?? "",
 			model,
-			providerType: profile.type,
+			providerType: profile.providerPreset,
 		});
 	};
 

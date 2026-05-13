@@ -129,7 +129,7 @@ export function AppShell() {
         onCreate={app.handleCreatePromptPreset} onUpdate={app.handleUpdatePromptPreset}
         onDelete={app.handleDeletePromptPreset}
         providerProfiles={app.providerProfiles.map(p => ({ id: p.id, name: p.name }))}
-        prefillSupported={!['anthropic', 'google', 'koboldcpp'].includes(app.activeProviderProfile?.type ?? '')}
+        prefillSupported={!['anthropic', 'google', 'koboldcpp'].includes(app.activeProviderProfile?.providerPreset ?? '')}
       />
 
       <PersonaModal

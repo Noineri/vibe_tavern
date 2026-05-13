@@ -7,7 +7,7 @@
  */
 
 import { PROVIDER_TYPE } from "@rp-platform/domain";
-import type { StoredProviderProfileRecord } from "../session-runtime-dto.js";
+import type { StoredProviderProfileRecord } from "@rp-platform/domain";
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -47,18 +47,12 @@ export function buildSamplerConfig(
   if (profile.topP != null) config.topP = profile.topP;
   if (profile.maxTokens != null) config.maxTokens = profile.maxTokens;
 
-  // stopSeq is a comma-separated string — split, trim, filter empty
-  if (profile.stopSeq) {
-    const sequences = profile.stopSeq
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    if (sequences.length > 0) {
-      config.stopSequences = sequences;
-    }
+  // stopSequences is already string[] — use directly
+  if (profile.stopSequences.length > 0) {
+    config.stopSequences = profile.stopSequences;
   }
 
-  const providerType = profile.type;
+  const providerType = profile.providerPreset;
 
   switch (providerType) {
     // -- OpenAI-compatible providers (openai_compat, ollama, llamacpp) --------
@@ -66,8 +60,8 @@ export function buildSamplerConfig(
     case PROVIDER_TYPE.ollama:
     case PROVIDER_TYPE.llamaCpp: {
       // Native params
-      if (profile.freqPen != null) config.frequencyPenalty = profile.freqPen;
-      if (profile.presPen != null) config.presencePenalty = profile.presPen;
+      if (profile.frequencyPenalty != null) config.frequencyPenalty = profile.frequencyPenalty;
+      if (profile.presencePenalty != null) config.presencePenalty = profile.presencePenalty;
       if (profile.seed != null) {
         const parsed = typeof profile.seed === "number"
           ? profile.seed
@@ -79,7 +73,7 @@ export function buildSamplerConfig(
       const openaiOptions: Record<string, number | string | boolean | null> = {};
       if (profile.topK != null) openaiOptions.top_k = profile.topK;
       if (profile.minP != null) openaiOptions.min_p = profile.minP;
-      if (profile.repPen != null) openaiOptions.repetition_penalty = profile.repPen;
+      if (profile.repetitionPenalty != null) openaiOptions.repetition_penalty = profile.repetitionPenalty;
 
       // reasoningEffort only for openai_compat
       if (

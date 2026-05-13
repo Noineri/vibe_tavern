@@ -87,25 +87,27 @@ export interface ImportJsonResponse {
 export interface ProviderProfileRecord {
   id: string;
   name: string;
-  type: string;
+  providerPreset: string;
   endpoint: string;
-  defaultModel?: string | null;
-  contextBudget?: number | null;
-  isActive: boolean;
-  hasStoredApiKey: boolean;
+  defaultModel: string | null;
+  contextBudget: number | null;
+  maxTokens: number;
   temperature: number;
   topP: number;
-  minP: number;
   topK: number;
-  typicalP: number;
-  repPen: number;
-  freqPen: number;
-  presPen: number;
-  maxTokens: number;
-  stopSeq: string;
+  minP: number;
+  topA: number;
+  frequencyPenalty: number;
+  presencePenalty: number;
+  repetitionPenalty: number;
+  stopSequences: string[];
   seed: string | null;
   reasoningEffort: string;
   streamResponse: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  hasStoredApiKey: boolean;
 }
 
 export interface LoreEntryRecord {
@@ -541,7 +543,7 @@ export async function fetchProviderProfile(
 export async function saveProviderProfile(input: {
   id?: string;
   name: string;
-  type: string;
+  providerPreset: string;
   endpoint: string;
   apiKey?: string | null;
   defaultModel?: string | null;
@@ -550,12 +552,12 @@ export async function saveProviderProfile(input: {
   topP?: number;
   minP?: number;
   topK?: number;
-  typicalP?: number;
-  repPen?: number;
-  freqPen?: number;
-  presPen?: number;
+  topA?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  repetitionPenalty?: number;
   maxTokens?: number;
-  stopSeq?: string;
+  stopSequences?: string[];
   seed?: string | null;
   reasoningEffort?: string;
   streamResponse?: boolean;
@@ -646,7 +648,7 @@ export async function updateProviderProfile(
   providerProfileId: string,
   patch: {
     name?: string;
-    type?: string;
+    providerPreset?: string;
     endpoint?: string;
     apiKey?: string | null;
     defaultModel?: string | null;
@@ -655,12 +657,12 @@ export async function updateProviderProfile(
     topP?: number;
     minP?: number;
     topK?: number;
-    typicalP?: number;
-    repPen?: number;
-    freqPen?: number;
-    presPen?: number;
+    topA?: number;
+    frequencyPenalty?: number;
+    presencePenalty?: number;
+    repetitionPenalty?: number;
     maxTokens?: number;
-    stopSeq?: string;
+    stopSequences?: string[];
     seed?: string | null;
     reasoningEffort?: string;
     streamResponse?: boolean;

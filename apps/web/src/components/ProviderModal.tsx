@@ -20,7 +20,6 @@ import { useNavigationStore } from "../stores/navigation-store.js";
 export interface FormState {
   id: string;
   name: string;
-  type: string;
   providerPreset: string;
   baseUrl: string;
   apiKey: string;
@@ -31,13 +30,12 @@ export interface FormState {
   minP: number;
   topK: number;
   topA: number;
-  typicalP: number;
-  repPen: number;
-  freqPen: number;
-  presPen: number;
+  frequencyPenalty: number;
+  presencePenalty: number;
+  repetitionPenalty: number;
   maxTokens: number;
   contextBudget: number;
-  stopSeq: string;
+  stopSequences: string[];
   logitBias: string;
   seed: string | null;
   reasoningEffort: string;
@@ -68,17 +66,20 @@ interface ProviderModalProps {
 }
 
 function profileToForm(p: ProviderProfileRecord): FormState {
-  const preset = PROVIDER_PRESETS.find((f) => f.type === p.type && f.baseUrl === p.endpoint);
+  const preset = PROVIDER_PRESETS.find((f) => f.type === p.providerPreset && f.baseUrl === p.endpoint);
   return {
-    id: p.id, name: p.name, type: p.type, providerPreset: preset?.id ?? "",
+    id: p.id, name: p.name, providerPreset: preset?.id ?? "",
     baseUrl: p.endpoint, apiKey: "", hasStoredApiKey: p.hasStoredApiKey,
-    model: p.defaultModel ?? "", temperature: p.temperature ?? 0.9, topP: p.topP ?? 1.0,
-    minP: p.minP ?? 0.05, topK: p.topK ?? 40, topA: 0, typicalP: p.typicalP ?? 1.0,
-    repPen: p.repPen ?? 1.1, freqPen: p.freqPen ?? 0.0, presPen: p.presPen ?? 0.0,
-    maxTokens: p.maxTokens ?? 8192, contextBudget: p.contextBudget ?? 128000,
-    stopSeq: p.stopSeq ?? "", logitBias: "", seed: p.seed ?? null, showReasoning: false,
-    reasoningEffort: p.reasoningEffort ?? "medium",
-    streamResponse: p.streamResponse ?? true,
+    model: p.defaultModel ?? "", temperature: p.temperature, topP: p.topP,
+    minP: p.minP, topK: p.topK, topA: p.topA,
+    frequencyPenalty: p.frequencyPenalty,
+    presencePenalty: p.presencePenalty,
+    repetitionPenalty: p.repetitionPenalty,
+    maxTokens: p.maxTokens, contextBudget: p.contextBudget ?? 128000,
+    stopSequences: p.stopSequences,
+    logitBias: "", seed: p.seed ?? null, showReasoning: false,
+    reasoningEffort: p.reasoningEffort,
+    streamResponse: p.streamResponse,
   };
 }
 
@@ -86,7 +87,7 @@ function toProviderDraft(form: FormState) {
   return {
     id: form.id,
     name: form.name,
-    type: form.type,
+    providerPreset: form.providerPreset,
     endpoint: form.baseUrl,
     apiKey: form.apiKey || null,
     defaultModel: form.model || null,
@@ -95,12 +96,12 @@ function toProviderDraft(form: FormState) {
     topP: form.topP,
     minP: form.minP,
     topK: form.topK,
-    typicalP: form.typicalP,
-    repPen: form.repPen,
-    freqPen: form.freqPen,
-    presPen: form.presPen,
+    topA: form.topA,
+    frequencyPenalty: form.frequencyPenalty,
+    presencePenalty: form.presencePenalty,
+    repetitionPenalty: form.repetitionPenalty,
     maxTokens: form.maxTokens,
-    stopSeq: form.stopSeq,
+    stopSequences: form.stopSequences,
     seed: form.seed,
     reasoningEffort: form.reasoningEffort,
     streamResponse: form.streamResponse,
@@ -200,11 +201,10 @@ export function ProviderModal({
       if (!f) return f;
       // If provider type changed (e.g. anthropic → openai_compat),
       // the stored API key is irrelevant — clear it so user enters a new one.
-      const typeChanged = f.type !== fmt.type;
+      const typeChanged = f.providerPreset !== fmt.id;
       return {
         ...f,
         providerPreset: fmt.id,
-        type: fmt.type,
         baseUrl: fmt.baseUrl,
         ...(typeChanged ? { apiKey: '', hasStoredApiKey: false } : {}),
       };
@@ -335,9 +335,10 @@ export function ProviderModal({
   // ── Derived ──
   const isActive = activeProviderProfileId === editingId;
   const showConfig = headerMode === "view" && !isNew;
-  const capabilities = form ? getCapabilities(form.type) : null;
+  const providerType = form ? (PROVIDER_PRESETS.find((f) => f.id === form.providerPreset)?.type ?? "openai_compat") : "openai_compat";
+  const capabilities = form ? getCapabilities(providerType) : null;
   const filteredProfiles = profileSearch.trim()
-    ? providerProfiles.filter((p) => p.name.toLowerCase().includes(profileSearch.toLowerCase()) || p.type.toLowerCase().includes(profileSearch.toLowerCase()))
+    ? providerProfiles.filter((p) => p.name.toLowerCase().includes(profileSearch.toLowerCase()) || p.providerPreset.toLowerCase().includes(profileSearch.toLowerCase()))
     : providerProfiles;
   const filteredModels = modelSearch.trim()
     ? models.filter((m) => m.label.toLowerCase().includes(modelSearch.toLowerCase()) || m.id.toLowerCase().includes(modelSearch.toLowerCase()))

@@ -1,32 +1,36 @@
 import { describe, it, expect } from "bun:test";
 import { buildSamplerConfig } from "../src/ai/sampler-mapper.js";
-import type { StoredProviderProfileRecord } from "../src/session-runtime-dto.js";
+import type { StoredProviderProfileRecord } from "@rp-platform/domain";
 
 /** Minimal profile factory — override only what matters for the test. */
 function profile(
-  type: string,
+  providerPreset: string,
   overrides: Partial<StoredProviderProfileRecord> = {},
 ): StoredProviderProfileRecord {
   return {
     id: "test-profile",
     name: "Test",
-    type,
+    providerPreset,
     endpoint: "http://localhost",
     apiKey: null,
+    defaultModel: null,
+    contextBudget: null,
     temperature: 0.9,
     topP: 0.95,
     maxTokens: 4096,
     minP: 0.05,
     topK: 80,
-    typicalP: 1.0,
-    repPen: 1.15,
-    freqPen: 0.5,
-    presPen: 0.3,
-    stopSeq: "\\n\\n,STOP",
+    topA: 0,
+    frequencyPenalty: 0.5,
+    presencePenalty: 0.3,
+    repetitionPenalty: 1.15,
+    stopSequences: ["\\n\\n", "STOP"],
     seed: "42",
     reasoningEffort: "high",
     streamResponse: false,
     isActive: true,
+    createdAt: "2025-01-01",
+    updatedAt: "2025-01-01",
     ...overrides,
   };
 }
@@ -41,30 +45,23 @@ describe("buildSamplerConfig", () => {
     expect(config.maxTokens).toBe(4096);
   });
 
-  it("omits temperature/topP/maxTokens when null on profile", () => {
+  it("omits temperature/topP/maxTokens when undefined on profile", () => {
     const config = buildSamplerConfig(
-      profile("openai_compat", { temperature: undefined, topP: undefined, maxTokens: undefined }),
+      profile("openai_compat", { temperature: undefined as any, topP: undefined as any, maxTokens: undefined as any }),
     );
     expect(config.temperature).toBeUndefined();
     expect(config.topP).toBeUndefined();
     expect(config.maxTokens).toBeUndefined();
   });
 
-  it("parses stopSeq comma-separated string into stopSequences array", () => {
+  it("passes stopSequences array directly", () => {
     const config = buildSamplerConfig(profile("openai_compat"));
     expect(config.stopSequences).toEqual(["\\n\\n", "STOP"]);
   });
 
-  it("trims and filters empty stopSeq entries", () => {
+  it("omits stopSequences when empty", () => {
     const config = buildSamplerConfig(
-      profile("openai_compat", { stopSeq: "  ,  hello  ,  ,world , " }),
-    );
-    expect(config.stopSequences).toEqual(["hello", "world"]);
-  });
-
-  it("omits stopSequences when stopSeq is empty", () => {
-    const config = buildSamplerConfig(
-      profile("openai_compat", { stopSeq: "" }),
+      profile("openai_compat", { stopSequences: [] }),
     );
     expect(config.stopSequences).toBeUndefined();
   });
@@ -79,7 +76,7 @@ describe("buildSamplerConfig", () => {
       expect(config.seed).toBe(42);
     });
 
-    it("sets providerOptions.openai with topK, minP, repPen, reasoningEffort", () => {
+    it("sets providerOptions.openai with topK, minP, repetitionPenalty, reasoningEffort", () => {
       const config = buildSamplerConfig(profile("openai_compat"));
       expect(config.providerOptions).toBeDefined();
       expect(config.providerOptions!.openai).toEqual({
@@ -104,13 +101,13 @@ describe("buildSamplerConfig", () => {
       expect(config.seed).toBeUndefined();
     });
 
-    it("omits providerOptions when all provider-specific fields are null", () => {
+    it("omits providerOptions when all provider-specific fields are undefined", () => {
       const config = buildSamplerConfig(
         profile("openai_compat", {
-          topK: undefined,
-          minP: undefined,
-          repPen: undefined,
-          reasoningEffort: undefined,
+          topK: undefined as any,
+          minP: undefined as any,
+          repetitionPenalty: undefined as any,
+          reasoningEffort: undefined as any,
         }),
       );
       expect(config.providerOptions).toBeUndefined();
@@ -127,7 +124,7 @@ describe("buildSamplerConfig", () => {
       expect(config.seed).toBe(42);
     });
 
-    it("sets providerOptions.openai with topK, minP, repPen but NOT reasoningEffort", () => {
+    it("sets providerOptions.openai with topK, minP, repetitionPenalty but NOT reasoningEffort", () => {
       const config = buildSamplerConfig(profile("ollama"));
       expect(config.providerOptions!.openai).toEqual({
         top_k: 80,

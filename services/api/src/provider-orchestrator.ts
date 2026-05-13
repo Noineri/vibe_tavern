@@ -1,7 +1,5 @@
-import type { StoredProviderProfileRecord } from "./session-runtime-dto.js";
+import type { StoredProviderProfileRecord } from "@rp-platform/domain";
 import type { ProviderProfileService } from "./provider-profile-service.js";
-import { providerProfileToStoredRecord } from "./session-runtime-dto.js";
-import type { ProviderProfile } from "@rp-platform/db";
 import { listProviderModels } from "./provider-gateway.js";
 import { normalizeProviderType } from "./ai/provider-profile-mapper.js";
 import { logSendDebug } from "./send-debug-log.js";
@@ -14,7 +12,7 @@ export class ProviderOrchestrator {
   ) {}
 
   async refreshProfileModels(profile: StoredProviderProfileRecord): Promise<Array<{ id: string; label: string; contextLength?: number }>> {
-    const providerType = normalizeProviderType(profile.type);
+    const providerType = normalizeProviderType(profile.providerPreset);
     try {
       const models = await listProviderModels({
         baseUrl: profile.endpoint,

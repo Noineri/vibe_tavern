@@ -38,7 +38,7 @@ export interface PreparedMessages {
  * Delegates to the canonical provider-profile-mapper.
  */
 export function resolveModel(
-  profile: { type: string; endpoint: string; apiKey: string | null },
+  profile: { providerPreset: string; endpoint: string; apiKey: string | null },
   model: string,
 ): LanguageModelV1 {
   const mapping = mapProfileToSdkModel(profile, model);

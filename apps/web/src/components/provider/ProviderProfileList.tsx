@@ -81,7 +81,7 @@ export function ProviderProfileList({
                     editingId === p.id ? 'text-accent-t' : 'text-t4'
                   )}
                 >
-                  {TYPE_LABELS[p.type] || p.type}
+                  {TYPE_LABELS[p.providerPreset] || p.providerPreset}
                 </div>
               </div>
             </div>

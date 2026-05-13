@@ -33,6 +33,7 @@ export interface Character {
   id: string;
   slug: string;
   name: string;
+  isSystem: boolean;
   description: string;
   personalitySummary: string | null;
   defaultScenario: string | null;
@@ -305,6 +306,7 @@ export class CharacterStore {
       id: row.id,
       slug: deriveSlug(row.name),
       name: row.name,
+      isSystem: row.isSystem === 1,
       description: row.description,
       personalitySummary: row.personalitySummary,
       defaultScenario: row.defaultScenario,
