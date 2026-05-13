@@ -6,18 +6,33 @@ export const createCharacterSchema = z.object({
   firstMessage: z.string().optional(),
   scenario: z.string().optional(),
   personalitySummary: z.string().nullable().optional(),
+  mesExample: z.string().optional(),
+  alternateGreetings: z.array(z.string()).optional(),
+  postHistoryInstructions: z.string().optional(),
+  creatorNotes: z.string().optional(),
+  systemPrompt: z.string().optional(),
+  depthPrompt: z.string().optional(),
+  depthPromptDepth: z.number().optional(),
+  depthPromptRole: z.string().optional(),
+  tags: z.array(z.string()).optional(),
 });
 
 export const updateCharacterSchema = z.object({
   chatId: z.string().optional(),
   name: z.string().optional(),
   description: z.string().optional(),
+  personalitySummary: z.string().nullable().optional(),
   scenario: z.string().optional(),
   systemPrompt: z.string().optional(),
+  firstMessage: z.string().nullable().optional(),
   mesExample: z.string().nullable().optional(),
   alternateGreetings: z.array(z.string()).optional(),
   postHistoryInstructions: z.string().nullable().optional(),
   creatorNotes: z.string().nullable().optional(),
+  depthPrompt: z.string().nullable().optional(),
+  depthPromptDepth: z.number().nullable().optional(),
+  depthPromptRole: z.string().nullable().optional(),
+  tags: z.array(z.string()).optional(),
   avatarAssetId: z.string().nullable().optional(),
 });
 
