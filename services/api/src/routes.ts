@@ -78,6 +78,15 @@ export interface RuntimeApi {
     firstMessage?: string;
     scenario?: string;
     personalitySummary?: string;
+    mesExample?: string;
+    alternateGreetings?: string[];
+    postHistoryInstructions?: string;
+    creatorNotes?: string;
+    systemPrompt?: string;
+    depthPrompt?: string;
+    depthPromptDepth?: number;
+    depthPromptRole?: string;
+    tags?: string[];
   }) => Promise<unknown>;
 
   createFreeChat: () => Promise<unknown>;
@@ -124,6 +133,15 @@ export function createApiRouter(runtime: RuntimeApi) {
         firstMessage: body.firstMessage ?? undefined,
         scenario: body.scenario ?? undefined,
         personalitySummary: body.personalitySummary ?? undefined,
+        mesExample: body.mesExample ?? undefined,
+        alternateGreetings: body.alternateGreetings ?? undefined,
+        postHistoryInstructions: body.postHistoryInstructions ?? undefined,
+        creatorNotes: body.creatorNotes ?? undefined,
+        systemPrompt: body.systemPrompt ?? undefined,
+        depthPrompt: body.depthPrompt ?? undefined,
+        depthPromptDepth: body.depthPromptDepth ?? undefined,
+        depthPromptRole: body.depthPromptRole ?? undefined,
+        tags: body.tags ?? undefined,
       }), 201);
     })
     .post("/api/chats", zValidator("json", schemas.createChatSchema), async (c) => {

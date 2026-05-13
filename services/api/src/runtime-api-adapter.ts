@@ -59,6 +59,15 @@ export class RuntimeApiAdapter {
 		firstMessage?: string;
 		scenario?: string;
 		personalitySummary?: string;
+		mesExample?: string;
+		alternateGreetings?: string[];
+		postHistoryInstructions?: string;
+		creatorNotes?: string;
+		systemPrompt?: string;
+		depthPrompt?: string;
+		depthPromptDepth?: number;
+		depthPromptRole?: string;
+		tags?: string[];
 	}) => this.sessionRuntime.character.createFromScratch(body);
 
 	updateCharacter = async (
@@ -67,12 +76,18 @@ export class RuntimeApiAdapter {
 			chatId?: string;
 			name?: string;
 			description?: string;
+			personalitySummary?: string | null;
 			scenario?: string;
 			systemPrompt?: string;
+			firstMessage?: string | null;
 			mesExample?: string | null;
 			alternateGreetings?: string[];
 			postHistoryInstructions?: string | null;
 			creatorNotes?: string | null;
+			depthPrompt?: string | null;
+			depthPromptDepth?: number | null;
+			depthPromptRole?: string | null;
+			tags?: string[];
 			avatarAssetId?: string | null;
 		},
 	) => {

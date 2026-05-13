@@ -35,6 +35,15 @@ interface CreateCharacterModalProps {
     firstMessage?: string;
     scenario?: string;
     personalitySummary?: string;
+    mesExample?: string;
+    alternateGreetings?: string[];
+    postHistoryInstructions?: string;
+    creatorNotes?: string;
+    systemPrompt?: string;
+    depthPrompt?: string;
+    depthPromptDepth?: number;
+    depthPromptRole?: string;
+    tags?: string[];
   }, avatarFile: File | null) => Promise<{ characterId: string; chatId: string } | null>;
 }
 
@@ -127,6 +136,15 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
         firstMessage: firstMessage.trim() || undefined,
         scenario: defaultScenario.trim() || undefined,
         personalitySummary: personalitySummary.trim() || undefined,
+        mesExample: mesExample.trim() || undefined,
+        alternateGreetings: alternateGreetings.length > 0 ? alternateGreetings : undefined,
+        postHistoryInstructions: postHistoryInstructions.trim() || undefined,
+        creatorNotes: creatorNotes.trim() || undefined,
+        systemPrompt: systemPrompt.trim() || undefined,
+        depthPrompt: depthPrompt.trim() || undefined,
+        depthPromptDepth: depthPromptDepth || undefined,
+        depthPromptRole: depthPromptRole || undefined,
+        tags: tags.length > 0 ? tags : undefined,
       },
       avatarFile,
     );

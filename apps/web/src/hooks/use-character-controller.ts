@@ -65,7 +65,7 @@ export interface CharacterControllerActions {
   handleDeleteChat: (chatId: ChatId) => Promise<void>;
   handleRenameChat: (chatId: ChatId, title: string) => Promise<void>;
   handleCreateChat: (characterId?: string) => Promise<void>;
-  handleCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }, avatarFile?: File | null) => Promise<{ characterId: string; chatId: string } | null>;
+  handleCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string; mesExample?: string; alternateGreetings?: string[]; postHistoryInstructions?: string; creatorNotes?: string; systemPrompt?: string; depthPrompt?: string; depthPromptDepth?: number; depthPromptRole?: string; tags?: string[] }, avatarFile?: File | null) => Promise<{ characterId: string; chatId: string } | null>;
   handleFreeChat: () => Promise<void>;
   handleExportCharacter: (characterId: string) => Promise<void>;
   handleExportChatJsonl: (chatId: ChatId) => Promise<void>;
@@ -139,7 +139,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
           chatId: activeChatId,
           name: draftInput.name,
           description: draftInput.description,
-          subtitle: draftInput.personalitySummary,
+          personalitySummary: draftInput.personalitySummary,
           firstMessage: draftInput.firstMessage,
           scenario: draftInput.scenario,
           systemPrompt: draftInput.systemPrompt,
@@ -358,7 +358,7 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     }
   }
 
-  async function handleCreateCharacter(input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }, avatarFile?: File | null): Promise<{ characterId: string; chatId: string } | null> {
+  async function handleCreateCharacter(input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string; mesExample?: string; alternateGreetings?: string[]; postHistoryInstructions?: string; creatorNotes?: string; systemPrompt?: string; depthPrompt?: string; depthPromptDepth?: number; depthPromptRole?: string; tags?: string[] }, avatarFile?: File | null): Promise<{ characterId: string; chatId: string } | null> {
     try {
       const result = await createCharacterMut.mutateAsync(input);
 

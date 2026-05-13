@@ -203,6 +203,13 @@ export class CharacterRuntime {
     firstMessage?: string;
     mesExample?: string | null;
     alternateGreetings?: string[];
+    postHistoryInstructions?: string | null;
+    creatorNotes?: string | null;
+    systemPrompt?: string | null;
+    depthPrompt?: string | null;
+    depthPromptDepth?: number | null;
+    depthPromptRole?: string | null;
+    tags?: string[];
   }): Promise<ImportResult> {
     const character = await this.deps.stores.characters.create({
       name: input.name,
@@ -212,6 +219,13 @@ export class CharacterRuntime {
       firstMessage: input.firstMessage,
       mesExample: input.mesExample,
       alternateGreetings: input.alternateGreetings,
+      postHistoryInstructions: input.postHistoryInstructions,
+      creatorNotes: input.creatorNotes,
+      systemPrompt: input.systemPrompt,
+      depthPrompt: input.depthPrompt,
+      depthPromptDepth: input.depthPromptDepth,
+      depthPromptRole: input.depthPromptRole,
+      tags: input.tags,
     });
 
     const characterId = character.id as CharacterId;

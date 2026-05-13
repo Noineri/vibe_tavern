@@ -209,7 +209,7 @@ export async function updateCharacter(
     chatId?: ChatId;
     name: string;
     description: string;
-    subtitle: string;
+    personalitySummary: string | null;
     scenario: string;
     systemPrompt: string;
     firstMessage: string | null;
@@ -757,6 +757,15 @@ export async function createCharacter(input: {
   firstMessage?: string;
   scenario?: string;
   personalitySummary?: string;
+  mesExample?: string;
+  alternateGreetings?: string[];
+  postHistoryInstructions?: string;
+  creatorNotes?: string;
+  systemPrompt?: string;
+  depthPrompt?: string;
+  depthPromptDepth?: number;
+  depthPromptRole?: string;
+  tags?: string[];
 }): Promise<ImportJsonResponse> {
   const response = await client.api.characters.$post({ json: input });
   const data = await unwrapRpc<ImportJsonResponse>(response);
