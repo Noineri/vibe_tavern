@@ -319,7 +319,7 @@ export class CharacterRuntime {
     });
 
     // Promote system character to user character on first edit
-    if ((currentCharacter as any).isSystem === 1 || (currentCharacter as any).isSystem === true) {
+    if (currentCharacter.isSystem) {
       await this.deps.stores.characters.updateIsSystem(characterId, false);
       // Re-bootstrap chat order so the character appears in sidebar
       await options?.rebuildChatOrder?.();

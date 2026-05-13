@@ -23,12 +23,12 @@ export async function nonstreamingProviderExecute(
     const messages = toSdkMessages(input.prompt);
     const { systemPrompt, conversationMessages } = prepareSdkMessages(messages, {
       prefill: input.prefill,
-      providerType: input.profile.type as ProviderType,
+      providerType: input.profile.providerPreset as ProviderType,
     });
 
     const samplerConfig = buildSamplerConfig(input.profile);
     logSendDebug("provider.nonstream.samplerConfig", {
-      providerType: input.profile.type,
+      providerType: input.profile.providerPreset,
       samplerConfig,
     });
     const result = await generateText({

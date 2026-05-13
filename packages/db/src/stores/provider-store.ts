@@ -1,3 +1,4 @@
+import type { StoredProviderProfileRecord } from '@rp-platform/domain';
 import { and, eq } from 'drizzle-orm';
 import { providerProfiles, cachedModels, providerModelFavorites } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
@@ -5,31 +6,8 @@ import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
-export interface ProviderProfile {
-  id: string;
-  name: string;
-  providerPreset: string;
-  endpoint: string;
-  apiKey: string | null;
-  defaultModel: string | null;
-  contextBudget: number | null;
-  maxTokens: number;
-  temperature: number;
-  topP: number;
-  topK: number;
-  minP: number;
-  topA: number;
-  frequencyPenalty: number;
-  presencePenalty: number;
-  repetitionPenalty: number;
-  stopSequences: string[];
-  seed: string | null;
-  reasoningEffort: string;
-  streamResponse: boolean;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+// Re-export canonical domain type — all consumers use this name
+export type ProviderProfile = StoredProviderProfileRecord;
 
 export interface CachedModel {
   id: string;

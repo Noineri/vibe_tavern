@@ -148,6 +148,7 @@ export function importCharacterCardV3Json(
     id: characterId,
     slug,
     name: cleaned.name,
+    isSystem: false,
     description: cleaned.description,
     personalitySummary: cleaned.personality || null,
     defaultScenario: cleaned.scenario || null,

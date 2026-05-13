@@ -106,10 +106,10 @@ export function normalizeProviderType(raw: string): ProviderType {
  * outcome — see SdkSupportKind documentation above.
  */
 export function mapProfileToSdkModel(
-  profile: { type: string; endpoint: string; apiKey: string | null },
+  profile: { providerPreset: string; endpoint: string; apiKey: string | null },
   model: string,
 ): ProviderMappingResult {
-  const providerType = normalizeProviderType(profile.type);
+  const providerType = normalizeProviderType(profile.providerPreset);
   const capabilities = getProviderCapabilities(providerType);
 
   switch (providerType) {
@@ -191,15 +191,15 @@ export function mapProfileToSdkModel(
         `Provider type '${PROVIDER_TYPE.koboldCpp}' is not supported by the Vercel AI SDK. ` +
         `KoboldCPP's /api/v1/generate endpoint is not OpenAI-compatible. ` +
         `Please switch to a supported provider (OpenAI-compatible, Anthropic, Google, Ollama, or llama.cpp).`,
-        { providerType: profile.type },
+        { providerType: profile.providerPreset },
       );
     }
 
     default: {
       throw providerError(
-        `Unknown provider type '${profile.type}'. ` +
+        `Unknown provider type '${profile.providerPreset}'. ` +
         `Supported types: ${Object.values(PROVIDER_TYPE).join(", ")}.`,
-        { providerType: profile.type },
+        { providerType: profile.providerPreset },
       );
     }
   }

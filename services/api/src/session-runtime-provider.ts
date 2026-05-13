@@ -1,10 +1,8 @@
-import type { ProviderStore, ProviderProfile } from "@rp-platform/db";
+import type { ProviderStore } from "@rp-platform/db";
+import type { StoredProviderProfileRecord } from "@rp-platform/domain";
 import {
   toClientProviderProfile,
   resolveStoredApiKey,
-  providerProfileToStoredRecord,
-  providerPatchToUpdateData,
-  type StoredProviderProfileRecord,
   type ClientProviderProfileRecord,
   type CachedProviderModelsRecord,
   type FavoriteProviderModelRecord,
@@ -18,7 +16,7 @@ export interface ProviderModuleDeps {
 
 export async function listProviderProfiles(deps: ProviderModuleDeps): Promise<ClientProviderProfileRecord[]> {
   const profiles = await deps.providers.listAll();
-  return profiles.map((profile) => toClientProviderProfile(providerProfileToStoredRecord(profile)));
+  return profiles.map((profile) => toClientProviderProfile(profile));
 }
 
 export async function saveProviderProfile(deps: ProviderModuleDeps, profile: Partial<StoredProviderProfileRecord>): Promise<ClientProviderProfileRecord> {
@@ -42,37 +40,31 @@ export async function saveProviderProfile(deps: ProviderModuleDeps, profile: Par
   });
 
   if (existing) {
-    // Update existing profile
-    const patch: Record<string, unknown> = { ...profile, apiKey };
-    delete (patch as any).id;
-    delete (patch as any).isActive;
-    delete (patch as any).createdAt;
-    delete (patch as any).updatedAt;
-    // Map old field names to new
-    const updateData = providerPatchToUpdateData(patch as any);
+    // Update existing profile — spread patch, remove meta fields
+    const { id: _id, isActive: _isActive, createdAt: _ca, updatedAt: _ua, ...patch } = profile;
     logSendDebug("provider.save.updateData", {
       profileId: existing.id,
-      updateDataApiKeyLength: typeof updateData.apiKey === "string" ? updateData.apiKey.length : `(type: ${typeof updateData.apiKey})`,
-      updateDataFields: Object.keys(updateData).filter(k => (updateData as any)[k] !== undefined).sort().join(","),
+      updateDataApiKeyLength: typeof patch.apiKey === "string" ? patch.apiKey.length : `(type: ${typeof patch.apiKey})`,
+      updateDataFields: Object.keys(patch).filter(k => (patch as Record<string, unknown>)[k] !== undefined).sort().join(","),
     });
-    await deps.providers.update(existing.id, updateData);
+    await deps.providers.update(existing.id, patch);
     const updated = (await deps.providers.getById(existing.id))!;
     logSendDebug("provider.save.afterDb", {
       profileId: updated.id,
       dbApiKeyLength: updated.apiKey?.length ?? 0,
     });
-    return toClientProviderProfile(providerProfileToStoredRecord(updated));
+    return toClientProviderProfile(updated);
   }
 
   // Create new profile
   logSendDebug("provider.save.create", {
     name: profile.name ?? "New Provider",
-    providerPreset: profile.type ?? "openai",
+    providerPreset: profile.providerPreset ?? "openai",
     apiKeyLength: apiKey?.length ?? 0,
   });
   const created = await deps.providers.create({
     name: profile.name ?? "New Provider",
-    providerPreset: profile.type ?? "openai",
+    providerPreset: profile.providerPreset ?? "openai",
     endpoint: profile.endpoint ?? "",
     apiKey,
     defaultModel: profile.defaultModel,
@@ -81,11 +73,12 @@ export async function saveProviderProfile(deps: ProviderModuleDeps, profile: Par
     topP: profile.topP,
     minP: profile.minP,
     topK: profile.topK,
-    frequencyPenalty: profile.freqPen,
-    presencePenalty: profile.presPen,
-    repetitionPenalty: profile.repPen,
+    topA: profile.topA,
+    frequencyPenalty: profile.frequencyPenalty,
+    presencePenalty: profile.presencePenalty,
+    repetitionPenalty: profile.repetitionPenalty,
     maxTokens: profile.maxTokens,
-    stopSequences: profile.stopSeq ? profile.stopSeq.split(",").map(s => s.trim()).filter(Boolean) : undefined,
+    stopSequences: profile.stopSequences,
     seed: profile.seed,
     reasoningEffort: profile.reasoningEffort,
     streamResponse: profile.streamResponse,
@@ -94,7 +87,7 @@ export async function saveProviderProfile(deps: ProviderModuleDeps, profile: Par
     profileId: created.id,
     dbApiKeyLength: created.apiKey?.length ?? 0,
   });
-  return toClientProviderProfile(providerProfileToStoredRecord(created));
+  return toClientProviderProfile(created);
 }
 
 export async function deleteProviderProfile(deps: ProviderModuleDeps, id: string): Promise<void> {
@@ -115,7 +108,7 @@ export async function activateProviderProfile(deps: ProviderModuleDeps, id: stri
   if (!profile) {
     throw notFound("ProviderProfile", `Provider profile '${id}' was not found after activation.`);
   }
-  return toClientProviderProfile(providerProfileToStoredRecord(profile));
+  return toClientProviderProfile(profile);
 }
 
 export async function resolveActiveProviderProfile(deps: ProviderModuleDeps): Promise<StoredProviderProfileRecord | null> {
@@ -131,33 +124,13 @@ export async function resolveActiveProviderProfile(deps: ProviderModuleDeps): Pr
   } else {
     logSendDebug("provider.resolveActive", { profileId: null });
   }
-  return profile ? providerProfileToStoredRecord(profile) : null;
+  return profile;
 }
 
 export async function updateProviderProfile(
   deps: ProviderModuleDeps,
   id: string,
-  patch: {
-    name?: string;
-    type?: string;
-    endpoint?: string;
-    apiKey?: unknown;
-    defaultModel?: string | null;
-    contextBudget?: number | null;
-    temperature?: number;
-    topP?: number;
-    minP?: number;
-    topK?: number;
-    typicalP?: number;
-    repPen?: number;
-    freqPen?: number;
-    presPen?: number;
-    maxTokens?: number;
-    stopSeq?: string;
-    seed?: string | null;
-    reasoningEffort?: string;
-    streamResponse?: boolean;
-  },
+  patch: Partial<Omit<StoredProviderProfileRecord, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>>,
 ): Promise<ClientProviderProfileRecord> {
   const existing = await deps.providers.getById(id);
   if (!existing) {
@@ -177,7 +150,7 @@ export async function updateProviderProfile(
     patchFields: Object.keys(patch).sort().join(","),
   });
 
-  const updateData = providerPatchToUpdateData(patch);
+  const updateData = { ...patch };
   if (hasApiKeyInput) updateData.apiKey = apiKey;
 
   logSendDebug("provider.update.data", {
@@ -193,12 +166,11 @@ export async function updateProviderProfile(
     profileId: id,
     dbApiKeyLength: updated.apiKey?.length ?? 0,
   });
-  return toClientProviderProfile(providerProfileToStoredRecord(updated));
+  return toClientProviderProfile(updated);
 }
 
 export async function getProviderProfile(deps: ProviderModuleDeps, id: string): Promise<StoredProviderProfileRecord | null> {
-  const profile = await deps.providers.getById(id);
-  return profile ? providerProfileToStoredRecord(profile) : null;
+  return deps.providers.getById(id);
 }
 
 export async function getProviderProfileForClient(deps: ProviderModuleDeps, id: string): Promise<ClientProviderProfileRecord | null> {

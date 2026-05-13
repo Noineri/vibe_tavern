@@ -39,11 +39,10 @@ export interface GenerationModelSettings {
   topP?: number | null;
   minP?: number | null;
   topK?: number | null;
-  typicalP?: number | null;
-  repPen?: number | null;
-  freqPen?: number | null;
-  presPen?: number | null;
-  stopSeq?: string | null;
+  frequencyPenalty?: number | null;
+  presencePenalty?: number | null;
+  repetitionPenalty?: number | null;
+  stopSequences?: string[] | null;
   seed?: number | string | null;
   reasoningEffort?: string | null;
 }

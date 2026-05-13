@@ -21,12 +21,12 @@ export interface ConnectionState {
   topP: number;
   minP: number;
   topK: number;
-  typicalP: number;
-  repPen: number;
-  freqPen: number;
-  presPen: number;
+  topA: number;
+  frequencyPenalty: number;
+  presencePenalty: number;
+  repetitionPenalty: number;
   maxTokens: number;
-  stopSeq: string;
+  stopSequences: string[];
   seed: string | null;
   reasoningEffort: string;
   streamResponse: boolean;

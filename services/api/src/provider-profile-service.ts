@@ -1,4 +1,5 @@
 import type { ProviderStore } from "@rp-platform/db";
+import type { StoredProviderProfileRecord } from "@rp-platform/domain";
 import {
   listProviderProfiles,
   saveProviderProfile,
@@ -16,7 +17,6 @@ import {
   type ProviderModuleDeps,
 } from "./session-runtime-provider.js";
 import type {
-  StoredProviderProfileRecord,
   ClientProviderProfileRecord,
   CachedProviderModelsRecord,
   FavoriteProviderModelRecord,
@@ -67,27 +67,7 @@ export class ProviderProfileService {
 
   async updateProviderProfile(
     id: string,
-    patch: {
-      name?: string;
-      type?: string;
-      endpoint?: string;
-      apiKey?: unknown;
-      defaultModel?: string | null;
-      contextBudget?: number | null;
-      temperature?: number;
-      topP?: number;
-      minP?: number;
-      topK?: number;
-      typicalP?: number;
-      repPen?: number;
-      freqPen?: number;
-      presPen?: number;
-      maxTokens?: number;
-      stopSeq?: string;
-      seed?: string | null;
-      reasoningEffort?: string;
-      streamResponse?: boolean;
-    },
+    patch: Partial<Omit<StoredProviderProfileRecord, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>>,
   ): Promise<ClientProviderProfileRecord> {
     return updateProviderProfile(this.deps, id, patch);
   }

@@ -199,16 +199,16 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
               min={-2}
               max={2}
               step={0.1}
-              value={form.freqPen}
-              onChange={(v) => updateForm('freqPen', v)}
+              value={form.frequencyPenalty}
+              onChange={(v) => updateForm('frequencyPenalty', v)}
             />
             <SamplerField
               label={t("sampler_pres_penalty")}
               min={-2}
               max={2}
               step={0.1}
-              value={form.presPen}
-              onChange={(v) => updateForm('presPen', v)}
+              value={form.presencePenalty}
+              onChange={(v) => updateForm('presencePenalty', v)}
             />
             <SamplerField
               label={t("sampler_top_k")}
@@ -232,8 +232,8 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
               min={1}
               max={2}
               step={0.05}
-              value={form.repPen}
-              onChange={(v) => updateForm('repPen', v)}
+              value={form.repetitionPenalty}
+              onChange={(v) => updateForm('repetitionPenalty', v)}
             />
             <SamplerField
               label={t("sampler_min_p")}
@@ -260,8 +260,8 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
               </label>
               <input
                 type="text"
-                value={form.stopSeq}
-                onChange={(e) => updateForm('stopSeq', e.target.value)}
+                value={form.stopSequences.join(", ")}
+                onChange={(e) => updateForm('stopSequences', e.target.value.split(",").map(s => s.trim()).filter(Boolean))}
                 placeholder={t("stop_seqs_placeholder")}
                 className={textInputCls}
               />

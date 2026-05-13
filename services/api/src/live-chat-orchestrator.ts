@@ -3,7 +3,7 @@ import type { ChatId, MessageId } from "@rp-platform/domain";
 import type { ChatRuntime } from "./session-runtime-chat.js";
 import type { SessionSnapshot } from "./session-runtime.js";
 import type { ProviderOrchestrator } from "./provider-orchestrator.js";
-import type { StoredProviderProfileRecord } from "./session-runtime-dto.js";
+import type { StoredProviderProfileRecord } from "@rp-platform/domain";
 import { nonstreamingProviderExecute } from "./ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "./ai/stream-provider-executor.js";
 import { logSendDebug } from "./send-debug-log.js";

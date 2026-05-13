@@ -60,7 +60,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
     const messages = toSdkMessages(input.prompt);
     const { systemPrompt, conversationMessages } = prepareSdkMessages(messages, {
       prefill: input.prefill,
-      providerType: input.profile.type as ProviderType,
+      providerType: input.profile.providerPreset as ProviderType,
     });
 
     const samplerConfig = buildSamplerConfig(input.profile);

@@ -13,7 +13,7 @@ interface ProviderViewHeaderProps {
 export function ProviderViewHeader({ form, isActive, onEdit, onActivate }: ProviderViewHeaderProps) {
   const { t } = useT();
   const preset = PROVIDER_PRESETS.find((p) => p.id === form.providerPreset);
-  const presetLabel = preset?.label ?? form.type;
+  const presetLabel = preset?.label ?? form.providerPreset;
   const hasKey = form.hasStoredApiKey || Boolean(form.apiKey);
 
   return (
