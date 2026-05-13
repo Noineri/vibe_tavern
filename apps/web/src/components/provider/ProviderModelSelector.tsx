@@ -9,7 +9,14 @@ const labelCls =
 const inputCls =
   'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent px-[13px]';
 
-interface ModelOption { id: string; label: string; contextLength?: number; }
+interface ModelOption {
+  id: string;
+  label: string;
+  contextLength?: number;
+  capabilities?: { vision?: boolean; reasoning?: boolean; tools?: boolean; webSearch?: boolean; premium?: boolean };
+  pricing?: { input?: number; output?: number };
+  description?: string;
+}
 interface FavoriteModelOption { modelId: string; label: string | null; contextLength: number | null; }
 
 interface ProviderModelSelectorProps {
@@ -54,6 +61,10 @@ export function ProviderModelSelector({
     if (contextLength == null || !Number.isFinite(contextLength)) return null;
     if (contextLength >= 1000) return `${(contextLength / 1000).toFixed(contextLength % 1000 === 0 ? 0 : 1)}k ctx`;
     return `${contextLength} ctx`;
+  };
+  const formatPrice = (pricing?: { input?: number; output?: number }) => {
+    if (!pricing || pricing.input === undefined || pricing.output === undefined) return null;
+    return `$${pricing.input}/$${pricing.output} in/out Mtok`;
   };
   const sortedModels = [...filteredModels].sort((a, b) => {
     const aFav = favoriteIds.has(a.id);
@@ -139,15 +150,34 @@ export function ProviderModelSelector({
                               <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-t1">
                                 {m.label || m.id}
                               </span>
+                              {m.capabilities?.vision && (
+                                <span className="shrink-0 text-t3" title={t('cap_vision')}>
+                                  <Icons.Eye />
+                                </span>
+                              )}
+                              {m.capabilities?.premium && (
+                                <span className="shrink-0 text-t3" title={t('cap_premium')}>
+                                  <Icons.Crown />
+                                </span>
+                              )}
                               {formatContext(m.contextLength) && (
                                 <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 text-[10px] font-medium text-t2">
                                   {formatContext(m.contextLength)}
                                 </span>
                               )}
                             </div>
-                            {m.label && m.label !== m.id && (
-                              <div className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-t4">
-                                {m.id}
+                            {((m.label && m.label !== m.id) || formatPrice(m.pricing)) && (
+                              <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[10px] text-t4">
+                                {m.label && m.label !== m.id && (
+                                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+                                    {m.id}
+                                  </span>
+                                )}
+                                {formatPrice(m.pricing) && (
+                                  <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-medium text-t4">
+                                    {formatPrice(m.pricing)}
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>

@@ -68,6 +68,7 @@ export class ChatSummaryService {
       model,
       prompt,
       signal: input.signal,
+      overrideMaxTokens: 16384,
     });
     const summary = result.text.trim();
     if (!summary) {
@@ -97,7 +98,7 @@ export class ChatSummaryService {
 
 function normalizeMaxMessages(value: number): number {
   if (!Number.isFinite(value)) return 20;
-  return Math.max(1, Math.min(200, Math.floor(value)));
+  return Math.max(1, Math.floor(value));
 }
 
 function withSummaryPromptAsFinalUserMessage(prompt: AssemblePromptResponse): AssemblePromptResponse {

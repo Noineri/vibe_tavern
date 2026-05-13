@@ -27,6 +27,9 @@ export async function nonstreamingProviderExecute(
     });
 
     const samplerConfig = buildSamplerConfig(input.profile);
+    if (input.overrideMaxTokens != null) {
+      samplerConfig.maxTokens = input.overrideMaxTokens;
+    }
     logSendDebug("provider.nonstream.samplerConfig", {
       providerType: input.profile.providerPreset,
       samplerConfig,

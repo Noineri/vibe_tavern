@@ -24,6 +24,11 @@ export class ProviderOrchestrator {
         id: model.id,
         label: model.label ?? model.id,
         ...(model.contextLength != null ? { contextLength: model.contextLength } : {}),
+        ...(model.capabilities ? { capabilities: {
+          thinking: model.capabilities.reasoning,
+          tools: model.capabilities.tools,
+          vision: model.capabilities.vision,
+        } } : {}),
       }));
 
       await this.providerProfileService.setCachedProviderModels(profile.id, normalized);

@@ -2,6 +2,9 @@ export interface OpenAiModelOption {
   id: string;
   label: string;
   contextLength?: number;
+  capabilities?: { vision?: boolean; reasoning?: boolean; tools?: boolean; webSearch?: boolean; premium?: boolean };
+  pricing?: { input?: number; output?: number };
+  description?: string;
 }
 
 export function normalizeOpenAiCompatibleBaseUrl(baseUrl: string): string {

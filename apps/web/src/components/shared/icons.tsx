@@ -31,7 +31,10 @@ export const Ic = {
   brain:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/></svg>,
   star:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1.5l2 4.1 4.5.65-3.25 3.17.77 4.48L8 11.78 3.98 13.9l.77-4.48L1.5 6.25 6 5.6 8 1.5z"/></svg>,
   starFilled:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5l2 4.1 4.5.65-3.25 3.17.77 4.48L8 11.78 3.98 13.9l.77-4.48L1.5 6.25 6 5.6 8 1.5z"/></svg>,
-  help:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M6 6a2 2 0 0 1 3.5 1.3c0 1.2-1.5 1.5-1.5 2.2"/><circle cx="8" cy="12" r=".5" fill="currentColor"/></svg>
+  help:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M6 6a2 2 0 0 1 3.5 1.3c0 1.2-1.5 1.5-1.5 2.2"/><circle cx="8" cy="12" r=".5" fill="currentColor"/></svg>,
+  crown:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12l1-7 3.5 3L8 4l1.5 4L13 5l1 7H2z"/><line x1="2" y1="13" x2="14" y2="13"/></svg>,
+  floppy:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="1"/><rect x="5" y="2" width="6" height="4" rx="0.5"/><rect x="4.5" y="9" width="7" height="5" rx="0.5"/></svg>,
+  eye:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
 };
 
 // Backward-compat proxy: Icons.XXX → Ic.xxx

@@ -142,6 +142,15 @@ export interface FavoriteProviderModelRecord {
   createdAt: string;
 }
 
+export interface ProviderModelOption {
+  id: string;
+  label: string;
+  contextLength?: number;
+  capabilities?: { vision?: boolean; reasoning?: boolean; tools?: boolean; webSearch?: boolean; premium?: boolean };
+  pricing?: { input?: number; output?: number };
+  description?: string;
+}
+
 export type ChatGenerationStatus =
   | "idle"
   | "preparing"
@@ -587,9 +596,9 @@ export async function testProviderProfile(
 
 export async function fetchProviderProfileModels(
   providerProfileId: string,
-): Promise<{ models: Array<{ id: string; label: string; contextLength?: number }> }> {
+): Promise<{ models: ProviderModelOption[] }> {
   const response = await client.api.providers[":providerId"].models.$post({ param: { providerId: providerProfileId } });
-  return unwrapRpc<{ models: Array<{ id: string; label: string; contextLength?: number }> }>(response);
+  return unwrapRpc<{ models: ProviderModelOption[] }>(response);
 }
 
 export async function listFavoriteProviderModels(providerProfileId: string): Promise<FavoriteProviderModelRecord[]> {
@@ -614,9 +623,9 @@ export async function fetchModelsByEndpoint(
   baseUrl: string,
   apiKey?: string,
   providerType?: string,
-): Promise<{ models: Array<{ id: string; label: string; contextLength?: number }> }> {
+): Promise<{ models: ProviderModelOption[] }> {
   const response = await client.api.providers["fetch-models"].$post({ json: { baseUrl, apiKey: apiKey ?? "", providerType } });
-  return unwrapRpc<{ models: Array<{ id: string; label: string; contextLength?: number }> }>(response);
+  return unwrapRpc<{ models: ProviderModelOption[] }>(response);
 }
 
 export async function testProviderChat(

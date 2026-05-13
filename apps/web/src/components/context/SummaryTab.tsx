@@ -14,6 +14,7 @@ export interface SavedSummary {
   text: string;
   turn: number;
   timestamp: string;
+  includeInContext?: boolean;
 }
 
 export function SummaryTab({
@@ -35,6 +36,7 @@ export function SummaryTab({
   activeSummaryId,
   onSelectSummary,
   onDeleteSummary,
+  onToggleContext,
   onNewSummary,
   disabled,
   error,
@@ -57,6 +59,7 @@ export function SummaryTab({
   activeSummaryId: string | null;
   onSelectSummary: (id: string) => void;
   onDeleteSummary: (id: string) => void;
+  onToggleContext?: (id: string) => void;
   onNewSummary: () => void;
   disabled?: boolean;
   error?: string;
@@ -108,6 +111,21 @@ export function SummaryTab({
               )}
               onClick={() => onSelectSummary(s.id)}
             >
+              {/* Context toggle checkbox */}
+              {onToggleContext && (
+                <button
+                  className={cn(
+                    "flex h-[18px] w-[18px] shrink-0 cursor-pointer items-center justify-center rounded border transition-colors mr-1",
+                    s.includeInContext
+                      ? "border-accent bg-accent text-white"
+                      : "border-border2 bg-transparent hover:border-t3",
+                  )}
+                  title={t('toggle_context_summary')}
+                  onClick={e => { e.stopPropagation(); onToggleContext(s.id); }}
+                >
+                  {s.includeInContext && <Icons.Check />}
+                </button>
+              )}
               <div className="min-w-0 flex-1">
                 <div className={cn("truncate font-ui text-[12px]", activeSummaryId === s.id ? "font-medium text-accent-t" : "text-t2")}>{s.label}</div>
                 <div className="truncate font-ui text-[10px] text-t4">{s.timestamp}</div>

@@ -50,3 +50,62 @@ export function persistTweaks(settings: TweaksSettings): void {
     // Ignore tweaks persistence failures.
   }
 }
+
+// ─── Summary modal settings (per-chat) ────────────────────────────────────────
+
+const SUMMARY_SETTINGS_PREFIX = "rp-platform.summary-settings.";
+
+export interface SummarySettings {
+  providerId: string;
+  model: string;
+}
+
+export interface SavedSummaryRecord {
+  id: string;
+  label: string;
+  text: string;
+  msgCount: number;
+  timestamp: number;
+  /** Whether this summary should be included in the prompt context. */
+  includeInContext: boolean;
+}
+
+export function readSummarySettings(chatId: string): SummarySettings | null {
+  try {
+    const raw = window.localStorage.getItem(SUMMARY_SETTINGS_PREFIX + chatId);
+    if (!raw) return null;
+    return JSON.parse(raw) as SummarySettings;
+  } catch {
+    return null;
+  }
+}
+
+export function persistSummarySettings(chatId: string, settings: SummarySettings): void {
+  try {
+    window.localStorage.setItem(SUMMARY_SETTINGS_PREFIX + chatId, JSON.stringify(settings));
+  } catch {
+    // Ignore persistence failures.
+  }
+}
+
+// ─── Saved summaries (per-chat) ──────────────────────────────────────────────
+
+const SAVED_SUMMARIES_PREFIX = "rp-platform.saved-summaries.";
+
+export function readSavedSummaries(chatId: string): SavedSummaryRecord[] {
+  try {
+    const raw = window.localStorage.getItem(SAVED_SUMMARIES_PREFIX + chatId);
+    if (!raw) return [];
+    return JSON.parse(raw) as SavedSummaryRecord[];
+  } catch {
+    return [];
+  }
+}
+
+export function persistSavedSummaries(chatId: string, summaries: SavedSummaryRecord[]): void {
+  try {
+    window.localStorage.setItem(SAVED_SUMMARIES_PREFIX + chatId, JSON.stringify(summaries));
+  } catch {
+    // Ignore persistence failures.
+  }
+}

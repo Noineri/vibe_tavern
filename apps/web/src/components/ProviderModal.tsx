@@ -43,7 +43,14 @@ export interface FormState {
   streamResponse: boolean;
 }
 
-interface ModelOption { id: string; label: string; contextLength?: number; }
+interface ModelOption {
+  id: string;
+  label: string;
+  contextLength?: number;
+  capabilities?: { vision?: boolean; reasoning?: boolean; tools?: boolean; webSearch?: boolean; premium?: boolean };
+  pricing?: { input?: number; output?: number };
+  description?: string;
+}
 
 type HeaderMode = "edit" | "view";
 
@@ -114,6 +121,11 @@ interface Capabilities {
   streaming: boolean;
   prefill: boolean;
   sdkSupport: string;
+  vision?: boolean;
+  reasoning?: boolean;
+  tools?: boolean;
+  webSearch?: boolean;
+  premium?: boolean;
 }
 
 function getCapabilities(type: string): Capabilities {
@@ -336,7 +348,8 @@ export function ProviderModal({
   const isActive = activeProviderProfileId === editingId;
   const showConfig = headerMode === "view" && !isNew;
   const providerType = form ? (PROVIDER_PRESETS.find((f) => f.id === form.providerPreset)?.type ?? "openai_compat") : "openai_compat";
-  const capabilities = form ? getCapabilities(providerType) : null;
+  const selectedModel = form ? models.find((model) => model.id === form.model) : null;
+  const capabilities = form ? { ...getCapabilities(providerType), ...selectedModel?.capabilities } : null;
   const filteredProfiles = profileSearch.trim()
     ? providerProfiles.filter((p) => p.name.toLowerCase().includes(profileSearch.toLowerCase()) || p.providerPreset.toLowerCase().includes(profileSearch.toLowerCase()))
     : providerProfiles;
@@ -463,7 +476,7 @@ export function ProviderModal({
             )}
           </div>
           <div className="flex items-center gap-2 font-ui text-[12px] text-t3 transition-opacity duration-300" style={{ opacity: autoSaveFlash ? 1 : 0 }}>
-            <Icons.download /> {t("autosaving")}
+            <Icons.Floppy /> {t("autosaving")}
           </div>
         </div>
       </div>

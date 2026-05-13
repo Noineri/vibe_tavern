@@ -9,6 +9,11 @@ interface Capabilities {
   streaming: boolean;
   prefill: boolean;
   sdkSupport: string;
+  vision?: boolean;
+  reasoning?: boolean;
+  tools?: boolean;
+  webSearch?: boolean;
+  premium?: boolean;
 }
 
 interface ProviderCapabilityPanelProps {
@@ -25,6 +30,11 @@ export function ProviderCapabilityPanel({ capabilities }: ProviderCapabilityPane
     { label: t('cap_abort'), on: capabilities.abortSignal },
     { label: t('cap_prefill'), on: capabilities.prefill },
     { label: t('cap_sdk'), on: capabilities.sdkSupport !== 'unsupported' },
+    ...(capabilities.vision !== undefined ? [{ label: t('cap_vision'), on: capabilities.vision }] : []),
+    ...(capabilities.reasoning !== undefined ? [{ label: t('cap_reasoning'), on: capabilities.reasoning }] : []),
+    ...(capabilities.tools !== undefined ? [{ label: t('cap_tools'), on: capabilities.tools }] : []),
+    ...(capabilities.webSearch !== undefined ? [{ label: t('cap_web_search'), on: capabilities.webSearch }] : []),
+    ...(capabilities.premium ? [{ label: t('cap_premium'), on: true }] : []),
   ];
 
   return (

@@ -86,7 +86,7 @@ export class ProviderProfileService {
 
   async setCachedProviderModels(
     providerProfileId: string,
-    models: Array<{ id: string; label: string }>,
+    models: Array<{ id: string; label: string; contextLength?: number; capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean } }>,
   ): Promise<CachedProviderModelsRecord> {
     return setCachedProviderModels(this.deps, providerProfileId, models);
   }
