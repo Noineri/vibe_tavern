@@ -96,6 +96,7 @@ CREATE TABLE chats (
 	title text NOT NULL,
 	summary text DEFAULT '' NOT NULL,
 	message_history_limit integer DEFAULT 0 NOT NULL,
+	last_accessed_at text NOT NULL,
 	status text DEFAULT 'active' NOT NULL,
 	created_at text NOT NULL,
 	updated_at text NOT NULL,

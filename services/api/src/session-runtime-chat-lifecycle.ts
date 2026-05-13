@@ -119,6 +119,8 @@ export class ChatLifecycleRuntime {
 	}
 
 	async switchChat(chatId: ChatId): Promise<SessionSnapshot> {
+		await this.deps.stores.chats.touchLastAccessed(chatId);
+		this.deps.chatOrder.moveToFront(chatId);
 		return this.deps.getSnapshot(chatId);
 	}
 

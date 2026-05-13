@@ -226,7 +226,7 @@ export class SessionRuntime {
 	}
 
 	async rebuildChatOrder(): Promise<void> {
-		await this.chatOrder.rebuild();
+		await this.chatOrder.refresh();
 	}
 
 	// ─── Delegated: import/export ───────────────────────────────────────

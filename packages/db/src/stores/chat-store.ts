@@ -15,6 +15,7 @@ export interface Chat {
   status: 'active' | 'archived';
   activeBranchId: string;
   promptPresetId: string;
+  lastAccessedAt: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -120,6 +121,7 @@ export class ChatStore {
           summary: '',
           messageHistoryLimit: 0,
           status: 'active',
+          lastAccessedAt: now,
           createdAt: now,
           updatedAt: now,
         })
@@ -156,8 +158,17 @@ export class ChatStore {
   }
 
   async listAll(): Promise<Chat[]> {
-    const rows = await this.db.select().from(chats).all();
+    const rows = await this.db.select().from(chats).orderBy(desc(chats.lastAccessedAt)).all();
     return rows.map((row) => this.mapRow(row));
+  }
+
+  async touchLastAccessed(id: string): Promise<void> {
+    const now = this.clock.now();
+    await this.db
+      .update(chats)
+      .set({ lastAccessedAt: now })
+      .where(eq(chats.id, id))
+      .run();
   }
 
   async updateTitle(id: string, title: string): Promise<Chat> {
@@ -740,6 +751,7 @@ export class ChatStore {
       status: row.status as Chat['status'],
       activeBranchId: row.activeBranchId,
       promptPresetId: row.promptPresetId,
+      lastAccessedAt: row.lastAccessedAt,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

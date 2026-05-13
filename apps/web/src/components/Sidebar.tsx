@@ -27,15 +27,25 @@ export function Sidebar() {
   const renameDraft = useCharacterStore((s) => s.renameDraft);
 
   // --- Derived from stores ---
-  const chats = snapshot?.chats ?? [];
+  const allChats = snapshot?.chats ?? [];
+  const activeChatCharacterId = snapshot?.activeChat?.characterId;
+  const currentCharacterId = selectedCharacterId ?? activeChatCharacterId;
+
+  // Filter chats to show only those belonging to the current character
+  const chats = useMemo(
+    () => currentCharacterId
+      ? allChats.filter((c) => c.characterId === currentCharacterId)
+      : allChats,
+    [allChats, currentCharacterId],
+  );
   const branches = snapshot?.branches ?? [];
   const activeBranchId = snapshot?.activeBranch?.id ?? null;
   const personaName = snapshot?.persona?.name ?? t("no_persona");
   const personaAvatarAssetId = snapshot?.persona?.avatarAssetId ?? null;
 
   const characterTabs = useMemo(
-    () => buildCharacterTabs(actions.allCharacters, chats),
-    [actions.allCharacters, chats],
+    () => buildCharacterTabs(actions.allCharacters, allChats),
+    [actions.allCharacters, allChats],
   );
 
   // --- Store actions ---
