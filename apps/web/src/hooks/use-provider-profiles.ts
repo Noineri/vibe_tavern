@@ -3,12 +3,12 @@ import { toast } from "sonner";
 import type { ProviderProbeResponse } from "@rp-platform/domain";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
+import { useProviderStore } from "../stores/provider-store.js";
 import {
   type FavoriteProviderModelRecord,
   type ProviderProfileRecord,
   type TestChatResponse,
 } from "../app-client.js";
-import type { ConnectionState } from "../components/app-shell-types.js";
 import type { FormState } from "../components/ProviderModal.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import {
@@ -31,14 +31,10 @@ import {
 } from "../queries/index.js";
 import { useQueryClient } from "@tanstack/react-query";
 
-export interface ProviderProfilesDeps {
-  connection: ConnectionState;
-  patchConnection: (patch: Partial<ConnectionState>) => void;
-  setConnection: React.Dispatch<React.SetStateAction<ConnectionState>>;
-}
-
-export function useProviderProfiles(deps: ProviderProfilesDeps) {
-  const { connection, patchConnection, setConnection } = deps;
+export function useProviderProfiles() {
+  const connection = useProviderStore((s) => s.connection);
+  const patchConnection = useProviderStore((s) => s.patchConnection);
+  const setConnection = useProviderStore((s) => s.setConnection);
   const qc = useQueryClient();
   const getProviderProfileFromCache = useFetchProviderProfileFromCache();
   const getProviderModelsFromCache = useFetchProviderModelsFromCache();

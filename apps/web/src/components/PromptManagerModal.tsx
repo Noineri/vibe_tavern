@@ -6,7 +6,7 @@ import { ConfirmCloseModal } from "./shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { Icons } from "./shared/icons.js";
 import { SaveButton } from "./shared/SaveBar.js";
-import { useNavigationStore } from "../stores/navigation-store.js";
+import { useModalStore } from "../stores/modal-store.js";
 import { PresetList, PromptFields } from "./prompt/index.js";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -53,8 +53,8 @@ const emptyDraft: DraftData = {
 };
 
 export function PromptManagerModal(input: PromptManagerModalProps) {
-  const isOpen = useNavigationStore((s) => s.isPromptManagerOpen);
-  const setIsOpen = useNavigationStore((s) => s.setIsPromptManagerOpen);
+  const isOpen = useModalStore((s) => s.isPromptManagerOpen);
+  const setIsOpen = useModalStore((s) => s.setIsPromptManagerOpen);
   const onClose = () => setIsOpen(false);
   const { t } = useT();
   const [draft, setDraft] = useState<DraftData>({ ...emptyDraft });

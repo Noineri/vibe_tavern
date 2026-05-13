@@ -67,8 +67,8 @@ describe("listProviderModels", () => {
 	it("defaults to openai_compat when providerType is undefined", async () => {
 		const models = await listProviderModels(baseInput);
 		expect(models).toEqual([
-			{ id: "gpt-4o", label: "gpt-4o - openai" },
-			{ id: "gpt-4o-mini", label: "gpt-4o-mini - openai" },
+			{ id: "gpt-4o", label: "gpt-4o" },
+			{ id: "gpt-4o-mini", label: "gpt-4o-mini" },
 		]);
 	});
 
@@ -84,8 +84,8 @@ describe("listProviderModels", () => {
 			const models = await listProviderModels({ ...baseInput, providerType: "openai_compat" });
 
 			expect(models).toEqual([
-				{ id: "gpt-4o", label: "gpt-4o - openai" },
-				{ id: "gpt-4o-mini", label: "gpt-4o-mini - openai" },
+				{ id: "gpt-4o", label: "gpt-4o" },
+				{ id: "gpt-4o-mini", label: "gpt-4o-mini" },
 			]);
 
 			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
@@ -157,20 +157,24 @@ describe("listProviderModels", () => {
 	// ─── Google ─────────────────────────────────────────────────────────
 
 	describe("google", () => {
-		it("returns static Gemini model list without network call", async () => {
+		it("fetches models from Google API and returns chat-capable models", async () => {
+			globalThis.fetch = mock(() => new Response(JSON.stringify({
+				models: [
+					{ name: "models/gemini-2.0-flash", displayName: "Gemini 2.0 Flash", supportedGenerationMethods: ["generateContent"] },
+					{ name: "models/gemini-2.5-pro", displayName: "Gemini 2.5 Pro", supportedGenerationMethods: ["generateContent"] },
+					{ name: "models/text-embedding-004", displayName: "Text Embedding", supportedGenerationMethods: ["embedContent"] },
+				],
+			}), { status: 200, headers: { "Content-Type": "application/json" } }));
+
 			const models = await listProviderModels({
 				baseUrl: "https://generativelanguage.googleapis.com",
 				apiKey: "google-key",
 				providerType: "google",
 			});
 
-			// No fetch should have been called
-			expect((globalThis.fetch as ReturnType<typeof mock>).mock.calls.length).toBe(0);
-
+			// Only chat-capable models (generateContent), not embeddings
 			expect(models).toEqual([
 				{ id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-				{ id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite" },
-				{ id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
 				{ id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
 			]);
 		});

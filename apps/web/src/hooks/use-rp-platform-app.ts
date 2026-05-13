@@ -1,24 +1,11 @@
-import { type SetStateAction, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import type { ChatId } from "@rp-platform/domain";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
-import {
-  fetchChat,
-  type AppSnapshot,
-} from "../app-client.js";
 import type { ConnectionState } from "../components/app-shell-types.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
-import { useCharacterImport } from "./use-character-import.js";
-import { useProviderProfiles } from "./use-provider-profiles.js";
-import { useChatController } from "./use-chat-controller.js";
-import { useCharacterController } from "./use-character-controller.js";
-import { usePresetController } from "./use-preset-controller.js";
-import { useDisplayHelpers } from "./use-display-helpers.js";
-import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore } from "../stores/index.js";
+import { useNavigationStore, useProviderStore, useChatStore, useModalStore } from "../stores/index.js";
 import { useBootstrapQuery, usePersonasQuery } from "../queries/bootstrap-queries.js";
-import { useChatSnapshot, useSaveChatSummaryMutation, useSummarizeChatMutation } from "../queries/chat-queries.js";
-import { chatKeys } from "../queries/query-keys.js";
+import { useChatSnapshot } from "../queries/chat-queries.js";
 import {
   readSavedTheme,
   persistTheme,
@@ -65,107 +52,44 @@ function createInitialConnectionState(): ConnectionState {
   };
 }
 
+/**
+ * Thin bootstrap hook: loads persisted state, runs theme/CSS effects,
+ * provides bootstrap query data for App.tsx loading/error screens.
+ *
+ * All business logic lives in sub-hooks:
+ *   useChatController, useCharacterController, useProviderProfiles, usePresetController
+ * Components import sub-hooks directly — not through this hook.
+ */
 export function useRpPlatformApp() {
-  // --- Chat store subscriptions ---
-  const qc = useQueryClient();
-  const activeChatId = useChatStore((s) => s.activeChatId);
-  const selectedCharacterId = useChatStore((s) => s.selectedCharacterId);
-  const snapshotQuery = useChatSnapshot(activeChatId);
-  const snapshot = snapshotQuery.data ?? null;
-  const draft = useChatStore((s) => s.draft);
-  const isSending = useChatStore((s) => s.isSending);
-  const selectedTraceId = useChatStore((s) => s.selectedTraceId);
-  const editingMessageId = useChatStore((s) => s.editingMessageId);
-  const editingDraft = useChatStore((s) => s.editingDraft);
-  const messageActionId = useChatStore((s) => s.messageActionId);
-  const pendingUserMessageContent = useChatStore((s) => s.pendingUserMessageContent);
-  const setDraft = useChatStore((s) => s.setDraft);
-  const setEditingDraft = useChatStore((s) => s.setEditingDraft);
-  const setSelectedTraceId = useChatStore((s) => s.setSelectedTraceId);
-
-  // --- Navigation store subscriptions ---
-  const mode = useNavigationStore((s) => s.mode);
-  const setMode = useNavigationStore((s) => s.setMode);
-  const theme = useNavigationStore((s) => s.theme);
-  const setTheme = useNavigationStore((s) => s.setTheme);
-  const sidebarCollapsed = useNavigationStore((s) => s.sidebarCollapsed);
-  const setSidebarCollapsed = useNavigationStore((s) => s.setSidebarCollapsed);
-  const isProviderModalOpen = useNavigationStore((s) => s.isProviderModalOpen);
-  const setIsProviderModalOpen = useNavigationStore((s) => s.setIsProviderModalOpen);
-  const isPromptManagerOpen = useNavigationStore((s) => s.isPromptManagerOpen);
-  const setIsPromptManagerOpen = useNavigationStore((s) => s.setIsPromptManagerOpen);
-  const isPersonaModalOpen = useNavigationStore((s) => s.isPersonaModalOpen);
-  const setIsPersonaModalOpen = useNavigationStore((s) => s.setIsPersonaModalOpen);
-
-  // --- Provider store subscriptions ---
-  const connection = useProviderStore((s) => s.connection);
-  const setConnection = useProviderStore((s) => s.setConnection);
-  const patchConnection = useProviderStore((s) => s.patchConnection);
-
-  // --- Character store subscriptions ---
-  const buildTab = useCharacterStore((s) => s.buildTab);
-  const setBuildTab = useCharacterStore((s) => s.setBuildTab);
-  const isImportDragActive = useCharacterStore((s) => s.isImportDragActive);
-  const setIsImportDragActive = useCharacterStore((s) => s.setIsImportDragActive);
-  const confirmDestroy = useCharacterStore((s) => s.confirmDestroy);
-  const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
-  const renamingChatId = useCharacterStore((s) => s.renamingChatId);
-  const setRenamingChatId = useCharacterStore((s) => s.setRenamingChatId);
-  const renameDraft = useCharacterStore((s) => s.renameDraft);
-  const setRenameDraft = useCharacterStore((s) => s.setRenameDraft);
-  const isSavingCharacter = useCharacterStore((s) => s.isSavingCharacter);
-  const setIsSavingCharacter = useCharacterStore((s) => s.setIsSavingCharacter);
-
-  // --- Local state (no store equivalent) ---
-  const [isCreateCharacterModalOpen, setCreateCharacterModalOpen] = useState(false);
-  const [isContextMemoryOpen, setContextMemoryOpen] = useState(false);
-  const [tweaksSettings, setTweaksSettings] = useState<TweaksSettings>(() => readSavedTweaks());
-  const [tweaksOpen, setTweaksOpen] = useState(false);
-  const [avatarOpen, setAvatarOpen] = useState(false);
-
   // --- Bootstrap + personas queries ---
   const bootstrapQuery = useBootstrapQuery();
   const personasQuery = usePersonasQuery();
 
-  const personas = personasQuery.data ?? [];
-  const promptPresets = bootstrapQuery.data?.promptPresets ?? [];
-  const isFirstRun = (bootstrapQuery.data?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === 'true';
-  const activePromptPresetId = snapshot?.activeChat.promptPresetId ?? null;
-  const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
   const isLoading = bootstrapQuery.status === "pending";
   const loadError = bootstrapQuery.status === "error"
     ? (bootstrapQuery.error instanceof Error ? bootstrapQuery.error.message : getT()("could_not_load_app_state"))
     : "";
 
-  // --- Display helpers (extracted) ---
-  const display = useDisplayHelpers(allCharacters, snapshot);
-  const { importFile, isImporting } = useCharacterImport();
+  // Reactive snapshot for AppShell effects
+  const activeChatId = useChatStore((s) => s.activeChatId);
+  const snapshotQuery = useChatSnapshot(activeChatId);
+  const snapshot = snapshotQuery.data ?? null;
 
-  // --- Provider hook ---
-  const provider = useProviderProfiles({
-    connection,
-    patchConnection,
-    setConnection: (action: SetStateAction<ConnectionState>) => {
-      if (typeof action === "function") {
-        const next = action(useProviderStore.getState().connection);
-        useProviderStore.getState().setConnection(next);
-      } else {
-        useProviderStore.getState().setConnection(action);
-      }
-    },
-  });
+  const selectedTraceId = useChatStore((s) => s.selectedTraceId);
+  const editingMessageId = useChatStore((s) => s.editingMessageId);
 
-  // --- Preset controller (extracted) ---
-  const preset = usePresetController();
+  const theme = useNavigationStore((s) => s.theme);
 
-  // --- Bootstrap: load persisted theme and local connection defaults before provider hydration effects ---
+  // Local tweak state (not in a store — only needed by AppShell/TweaksPanel)
+  const [tweaksSettings, setTweaksSettings] = useState<TweaksSettings>(() => readSavedTweaks());
+
+  // --- Bootstrap: load persisted theme and connection defaults ---
   useLayoutEffect(() => {
     useNavigationStore.getState().setTheme(readSavedTheme());
     useProviderStore.getState().setConnection(createInitialConnectionState());
   }, []);
 
-  // --- Effects ---
-
+  // --- Theme + CSS effects ---
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty('--mfs', `${tweaksSettings.fontSize}px`);
@@ -176,288 +100,24 @@ export function useRpPlatformApp() {
     persistTheme(theme);
   }, [tweaksSettings, theme]);
 
+  // --- Keep selectedTraceId in sync with snapshot ---
   useEffect(() => {
-    setSelectedTraceId(
+    useChatStore.getState().setSelectedTraceId(
       snapshot?.promptTrace?.id ?? snapshot?.promptTraceHistory[0]?.id ?? null,
     );
-    if (!editingMessageId || !snapshot) {
-      return;
-    }
+    if (!editingMessageId || !snapshot) return;
     const stillExists = snapshot.messages.some((message) => message.id === editingMessageId);
     if (!stillExists) {
       useChatStore.getState().setEditingMessageId(null);
-      setEditingDraft("");
+      useChatStore.getState().setEditingDraft("");
     }
   }, [snapshot?.promptTrace?.id, snapshot?.promptTraceHistory, editingMessageId, snapshot]);
 
-  // --- Controllers ---
-
-  const summarizeChatMut = useSummarizeChatMutation();
-  const saveChatSummaryMut = useSaveChatSummaryMutation();
-
-  const canSendViaActiveProfileRef = useRef(provider.canSendViaActiveProfile);
-  canSendViaActiveProfileRef.current = provider.canSendViaActiveProfile;
-
-  const streamResponseRef = useRef(provider.activeProviderProfile?.streamResponse ?? connection.streamResponse);
-  streamResponseRef.current = provider.activeProviderProfile?.streamResponse ?? connection.streamResponse;
-
-  function snapshotRefresh(chatId: ChatId, next: AppSnapshot): void {
-    qc.setQueryData(chatKeys.snapshot(chatId), next);
-    if (useChatStore.getState().activeChatId !== chatId) {
-      useChatStore.getState().setActiveChatId(chatId);
-    }
-  }
-
-  function getCachedSnapshot(): AppSnapshot | null {
-    const id = useChatStore.getState().activeChatId;
-    return id ? (qc.getQueryData<AppSnapshot>(chatKeys.snapshot(id)) ?? null) : null;
-  }
-
-  const chat = useChatController({
-    getActiveChatId: () => useChatStore.getState().activeChatId,
-    getSnapshot: getCachedSnapshot,
-    getDraft: () => useChatStore.getState().draft,
-    getIsSending: () => useChatStore.getState().isSending,
-    getCanSendViaActiveProfile: () => canSendViaActiveProfileRef.current,
-    getEditingDraft: () => useChatStore.getState().editingDraft,
-    getEditingMessageId: () => useChatStore.getState().editingMessageId,
-    setDraft: useChatStore.getState().setDraft,
-    setIsSending: useChatStore.getState().setIsSending,
-    setPendingUserMessageContent: useChatStore.getState().setPendingUserMessageContent,
-    setMessageActionId: useChatStore.getState().setMessageActionId,
-    setEditingMessageId: useChatStore.getState().setEditingMessageId,
-    setEditingDraft: useChatStore.getState().setEditingDraft,
-    setSelectedTraceId: useChatStore.getState().setSelectedTraceId,
-    getGenerationStatus: () => useChatStore.getState().generationStatus,
-    getStreamResponse: () => streamResponseRef.current,
-    setGenerationStatus: useChatStore.getState().setGenerationStatus,
-    refreshChatSnapshot: (chatId) => fetchChat(chatId),
-  });
-
-  const character = useCharacterController({
-    getActiveChatId: () => useChatStore.getState().activeChatId,
-    getSnapshot: getCachedSnapshot,
-    writeSnapshot: snapshotRefresh,
-    patchSnapshot: (updater) => {
-      const id = useChatStore.getState().activeChatId;
-      const current = id ? qc.getQueryData<AppSnapshot>(chatKeys.snapshot(id)) : null;
-      if (id && current) qc.setQueryData(chatKeys.snapshot(id), updater(current));
-    },
-    setMode,
-    setIsImportDragActive,
-    importFile,
-  });
-
-  // --- Modal toggles ---
-
-  function openConnectionPanel(): void { setIsProviderModalOpen(true); }
-  function closeConnectionPanel(): void { setIsProviderModalOpen(false); }
-  function openPromptManager(): void { setIsPromptManagerOpen(true); void preset.loadPromptPresets(); }
-  function closePromptManager(): void { setIsPromptManagerOpen(false); }
-  function openPersonaModal(): void { setIsPersonaModalOpen(true); }
-  function closePersonaModal(): void { setIsPersonaModalOpen(false); }
-  function openContextMemory(): void { setContextMemoryOpen(true); }
-  function closeContextMemory(): void { setContextMemoryOpen(false); }
-  function openCreateCharacterModal(): void { setCreateCharacterModalOpen(true); }
-  function closeCreateCharacterModal(): void { setCreateCharacterModalOpen(false); }
-
-  // --- Chat summary handlers ---
-
-  async function handleSummarizeChat(input: { providerProfileId: string; model?: string; maxMessages: number }): Promise<string> {
-    const chatId = useChatStore.getState().activeChatId;
-    if (!chatId) throw new Error("No active chat.");
-    const result = await summarizeChatMut.mutateAsync({ chatId, input });
-    return result.summary;
-  }
-
-  async function handleSaveChatSummary(summary: string): Promise<string> {
-    const chatId = useChatStore.getState().activeChatId;
-    if (!chatId) throw new Error("No active chat.");
-    const result = await saveChatSummaryMut.mutateAsync({ chatId, summary });
-    return result.summary;
-  }
-
-  // --- Tweak helpers ---
-
-  function updateTweak<K extends keyof TweaksSettings>(key: K, value: TweaksSettings[K]): void {
-    setTweaksSettings(prev => ({ ...prev, [key]: value }));
-  }
-
-  // --- Render helpers ---
-
-  function renderConnectionStatus(): string {
-    if (connection.status === "connecting") {
-      return getT()("connecting_status");
-    }
-    if (connection.status === "connected") {
-      return connection.model ? `${getT()("connected_status")} - ${connection.model}` : getT()("connected_status");
-    }
-    if (connection.status === "error") {
-      return getT()("error_status");
-    }
-    return getT()("not_connected_status");
-  }
-
-  function renderSendLabel(): string {
-    if (isSending) {
-      return getT()("sending");
-    }
-    if (display.canUseLiveApi && draft.trim()) {
-      return getT()("send_message");
-    }
-    if (!display.canUseLiveApi) {
-      return getT()("send_unavailable");
-    }
-    return getT()("type_a_message");
-  }
-
-  function renderConnectionHint(): string {
-    if (connection.error) {
-      return connection.error;
-    }
-    if (display.canUseLiveApi) {
-      return getT()("model_selected_local");
-    }
-    return getT()("no_provider_profile_hint");
-  }
-
   return {
-    activeChatId,
-    selectedCharacterId,
-    setSelectedCharacterId: useChatStore.getState().setSelectedCharacterId,
-    snapshot,
-    draft,
-    setDraft,
-    mode,
-    setMode,
-    theme,
-    setTheme,
-    buildTab,
-    setBuildTab,
-    isSending,
     isLoading,
     loadError,
-    sidebarCollapsed,
-    setSidebarCollapsed,
-    selectedTraceId,
-    setSelectedTraceId,
-    activePromptTrace: display.activePromptTrace,
-    promptPayloadText: display.promptPayloadText,
-    isProviderModalOpen,
-    openConnectionPanel,
-    closeConnectionPanel,
-    isPromptManagerOpen,
-    openPromptManager,
-    closePromptManager,
-    isPersonaModalOpen,
-    openPersonaModal,
-    closePersonaModal,
-    isCreateCharacterModalOpen,
-    openCreateCharacterModal,
-    closeCreateCharacterModal,
-    isContextMemoryOpen,
-    openContextMemory,
-    closeContextMemory,
-    handleSummarizeChat,
-    handleSaveChatSummary,
-    connection,
-    patchConnection,
-    isImportDragActive,
-    providerProfiles: provider.providerProfiles,
-    selectedProviderProfileId: provider.selectedProviderProfileId,
-    setSelectedProviderProfileId: provider.setSelectedProviderProfileId,
-    favoriteModelsByProfile: provider.favoriteModelsByProfile,
-    editingMessageId,
-    editingDraft,
-    setEditingDraft,
-    messageActionId,
-    pendingUserMessageContent,
-    displayPendingUserMessageContent: display.displayPendingUserMessageContent,
-    displayAlternateGreetings: display.displayAlternateGreetings,
-    displayMessages: display.displayMessages,
-    displayScenario: display.displayScenario,
-    isSavingCharacter: character.isSavingCharacter,
-    isImporting,
-    characterTabs: display.characterTabs,
-    canConnect: provider.canConnect,
-    canRefreshModels: provider.canRefreshModels,
-    canUseLiveApi: display.canUseLiveApi,
-    canSendViaActiveProfile: provider.canSendViaActiveProfile,
-    activeProviderProfile: provider.activeProviderProfile,
-    handleActivateProviderProfile: provider.handleActivateProviderProfile,
-    handleCreateProviderProfile: provider.handleCreateProviderProfile,
-    handleDuplicateProviderProfile: provider.handleDuplicateProviderProfile,
-    handleTestDraftConnection: provider.handleTestDraftConnection,
-    handleTestProfileConnection: provider.handleTestProfileConnection,
-    handleTestChat: provider.handleTestChat,
-    handleFetchModelsForProfile: provider.handleFetchModelsForProfile,
-    handleToggleFavoriteProviderModel: provider.handleToggleFavoriteProviderModel,
-    handleSelectFavoriteProviderModel: provider.handleSelectFavoriteProviderModel,
-    handleFetchModelsByEndpoint: provider.handleFetchModelsByEndpoint,
-    handleRefreshProfiles: provider.handleRefreshProfiles,
-    handleSaveProviderProfileFromForm: provider.handleSaveProviderProfileFromForm,
-    personas,
-    renderSendLabel,
-    handleSend: chat.handleSend,
-    handleResend: chat.handleResend,
-    handleCancelGeneration: chat.handleCancelGeneration,
-    handleConnect: provider.handleConnect,
-    handleLoadProviderProfile: provider.handleLoadProviderProfile,
-    handleSaveProviderProfile: provider.handleSaveProviderProfile,
-    handleDeleteProviderProfile: provider.handleDeleteProviderProfile,
-    handleConnectSavedProfile: provider.handleConnectSavedProfile,
-    handleRefreshProviderModels: provider.handleRefreshProviderModels,
-    handleSwitchChat: chat.handleSwitchChat,
-    handleSaveCharacter: character.handleSaveCharacter,
-    handleAvatarUpload: character.handleAvatarUpload,
-    handleSavePersona: character.handleSavePersona,
-    handleSetChatPersona: character.handleSetChatPersona,
-    handleCreatePersona: character.handleCreatePersona,
-    handleDeletePersona: character.handleDeletePersona,
-    handleSetPersonalLorebook: character.handleSetPersonalLorebook,
-    promptPresets,
-    activePromptPresetId,
-    setActivePromptPresetId: preset.handleSetActivePromptPresetId,
-    handleCreatePromptPreset: preset.handleCreatePromptPreset,
-    handleUpdatePromptPreset: preset.handleUpdatePromptPreset,
-    handleDeletePromptPreset: preset.handleDeletePromptPreset,
-    handleFork: chat.handleFork,
-    handleActivateBranch: chat.handleActivateBranch,
-    handleDeleteActiveBranch: chat.handleDeleteActiveBranch,
-    handleStartEdit: chat.handleStartEdit,
-    handleCancelEdit: chat.handleCancelEdit,
-    handleSaveMessageEdit: chat.handleSaveMessageEdit,
-    handleDeleteMessage: chat.handleDeleteMessage,
-    handleRegenerateMessage: chat.handleRegenerateMessage,
-    handleSelectMessageVariant: chat.handleSelectMessageVariant,
-    handleImportDragOver: character.handleImportDragOver,
-    handleImportDragLeave: character.handleImportDragLeave,
-    handleImportDrop: character.handleImportDrop,
-    handleImportInputChange: character.handleImportInputChange,
-    handleImportFiles: character.handleImportFiles,
-    confirmDestroy,
-    setConfirmDestroy,
-    renamingChatId,
-    renameDraft,
-    setRenamingChatId,
-    setRenameDraft,
-    handleArchiveCharacter: character.handleArchiveCharacter,
-    handleUnarchiveCharacter: character.handleUnarchiveCharacter,
-    handleDeleteCharacter: character.handleDeleteCharacter,
-    handleDeleteChat: character.handleDeleteChat,
-    handleRenameChat: character.handleRenameChat,
-    isFirstRun,
-    handleCreateCharacter: character.handleCreateCharacter,
-    handleFreeChat: character.handleFreeChat,
-    onCreateChat: character.handleCreateChat,
-    onExportCharacter: character.handleExportCharacter,
-    onExportChatJsonl: character.handleExportChatJsonl,
-    allCharacters,
+    snapshot,
     tweaksSettings,
-    updateTweak,
-    tweaksOpen,
-    setTweaksOpen,
-    avatarOpen,
-    setAvatarOpen,
+    setTweaksSettings,
   };
 }

@@ -4,9 +4,14 @@ import { Icons } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
 import { useTokenCount } from "../hooks/use-token-count.js";
 import { useT } from "../i18n/context.js";
-import { useChatStore } from "../stores/chat-store.js";
-import { useAppActions } from "./AppShell.js";
-import { usePersonasQuery } from "../queries/bootstrap-queries.js";
+import { useChatController } from "../hooks/use-chat-controller.js";
+import { useCharacterController } from "../hooks/use-character-controller.js";
+import { useProviderProfiles } from "../hooks/use-provider-profiles.js";
+import { useDisplayHelpers } from "../hooks/use-display-helpers.js";
+import { useChatStore, useProviderStore } from "../stores/index.js";
+import { useBootstrapQuery, usePersonasQuery } from "../queries/bootstrap-queries.js";
+import { useChatSnapshot } from "../queries/chat-queries.js";
+import { getT } from "../i18n/context.js";
 
 function bucketTokens(accounting: Record<string, number>): {
   system: number;
@@ -39,7 +44,6 @@ function bucketTokens(accounting: Record<string, number>): {
     } else if (key === "chat_history" || key === "recent_history") {
       history += value;
     }
-    // lore/retrieval entries are part of system layer
     else if (key.startsWith("lore_entry") || key.startsWith("lore_") || key.startsWith("retrieval_")) {
       system += value;
     }
@@ -50,28 +54,48 @@ function bucketTokens(accounting: Record<string, number>): {
 
 export function InputArea() {
   const { t } = useT();
-  const app = useAppActions();
   const [tokenPopOpen, setTokenPopOpen] = useState(false);
   const [modelDropOpen, setModelDropOpen] = useState(false);
   const tokenPopRef = useRef<HTMLDivElement>(null);
   const modelDropRef = useRef<HTMLDivElement>(null);
 
+  // --- Sub-hooks ---
+  const chat = useChatController();
+  const character = useCharacterController();
+  const provider = useProviderProfiles();
+  const bootstrapQuery = useBootstrapQuery();
+
+  // --- Store subscriptions ---
   const draft = useChatStore((s) => s.draft);
   const isSending = useChatStore((s) => s.isSending);
-  const snapshot = app.snapshot;
+  const activeChatId = useChatStore((s) => s.activeChatId);
+  const snapshotQuery = useChatSnapshot(activeChatId);
+  const snapshot = snapshotQuery.data ?? null;
+  const connection = useProviderStore((s) => s.connection);
+
+  const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
+  const display = useDisplayHelpers(allCharacters, snapshot);
   const personas = usePersonasQuery().data ?? [];
 
   const characterName = snapshot?.character.name ?? "";
   const personaName = snapshot?.persona?.name ?? t("no_persona");
   const activePersonaId = snapshot?.persona?.id ?? null;
-  const tokenAccounting = app.activePromptTrace?.tokenAccounting ?? {};
-  const contextSize = app.activeProviderProfile?.contextBudget ?? 0;
-  const maxTokens = app.activeProviderProfile?.maxTokens ?? 0;
-  const favoriteModels = app.activeProviderProfile ? (app.favoriteModelsByProfile[app.activeProviderProfile.id] ?? []) : [];
-  const activeModelId = app.activeProviderProfile?.defaultModel ?? app.connection.model ?? null;
-  const sendLabel = app.renderSendLabel();
-  const canSend = Boolean(draft.trim()) && !isSending && app.canUseLiveApi;
+  const tokenAccounting = display.activePromptTrace?.tokenAccounting ?? {};
+  const contextSize = provider.activeProviderProfile?.contextBudget ?? 0;
+  const maxTokens = provider.activeProviderProfile?.maxTokens ?? 0;
+  const favoriteModels = provider.activeProviderProfile ? (provider.favoriteModelsByProfile[provider.activeProviderProfile.id] ?? []) : [];
+  const activeModelId = provider.activeProviderProfile?.defaultModel ?? connection.model ?? null;
+  const canSend = Boolean(draft.trim()) && !isSending && display.canUseLiveApi;
   const setDraft = useChatStore((s) => s.setDraft);
+
+  // Render helpers
+  function renderSendLabel(): string {
+    if (isSending) return t("sending");
+    if (display.canUseLiveApi && draft.trim()) return t("send_message");
+    if (!display.canUseLiveApi) return t("send_unavailable");
+    return t("type_a_message");
+  }
+  const sendLabel = renderSendLabel();
 
   const buckets = bucketTokens(tokenAccounting);
   const inputTokens = useTokenCount(draft);
@@ -110,7 +134,7 @@ export function InputArea() {
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
-              if (canSend) void app.handleSend();
+              if (canSend) void chat.handleSend();
             }
           }}
           rows={2}
@@ -120,7 +144,7 @@ export function InputArea() {
           <div className="speaker-row multi-persona" title={t("multi_persona_tooltip")}>
             <span className="text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.06em] text-t3">{t("speak_as")}</span>
           </div>
-          <PersonaQuickSwitch personas={personas} activePersonaId={activePersonaId} onSelect={app.handleSetChatPersona} />
+          <PersonaQuickSwitch personas={personas} activePersonaId={activePersonaId} onSelect={character.handleSetChatPersona} />
           <div className="mx-0.5 h-3.5 w-px shrink-0 bg-border" />
 
           <div className="relative" ref={tokenPopRef}>
@@ -173,7 +197,7 @@ export function InputArea() {
                           key={model.modelId}
                           className="flex cursor-pointer items-center gap-2 px-4 py-1.5 font-ui text-[13px] text-t1 hover:bg-s2"
                           onClick={() => {
-                            if (app.activeProviderProfile) void app.handleSelectFavoriteProviderModel(app.activeProviderProfile.id, model.modelId);
+                            if (provider.activeProviderProfile) void provider.handleSelectFavoriteProviderModel(provider.activeProviderProfile.id, model.modelId);
                             setModelDropOpen(false);
                           }}
                         >
@@ -191,7 +215,7 @@ export function InputArea() {
             {isSending ? (
               <button
                 className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface px-3.5 font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
-                onClick={app.handleCancelGeneration}
+                onClick={chat.handleCancelGeneration}
               >
                 {t("cancel")}
               </button>
@@ -199,7 +223,7 @@ export function InputArea() {
               <button
                 className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[5px] bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all duration-150 hover:brightness-110 disabled:cursor-default disabled:opacity-45 disabled:filter-none"
                 disabled={!canSend}
-                onClick={() => void app.handleSend()}
+                onClick={() => void chat.handleSend()}
                 aria-label={sendLabel}
                 title={sendLabel}
               >

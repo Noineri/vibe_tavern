@@ -1,3 +1,4 @@
+import { type SetStateAction } from "react";
 import { create } from "zustand";
 import type { ConnectionState } from "../components/app-shell-types.js";
 
@@ -6,7 +7,7 @@ export interface ProviderState {
 }
 
 export interface ProviderActions {
-  setConnection: (connection: ConnectionState) => void;
+  setConnection: (action: SetStateAction<ConnectionState>) => void;
   patchConnection: (patch: Partial<ConnectionState>) => void;
 }
 
@@ -41,7 +42,9 @@ export const useProviderStore = create<ProviderStore>()((set) => ({
     customSamplers: false,
   },
 
-  setConnection: (connection) => set({ connection }),
+  setConnection: (action) => set((state) => ({
+    connection: typeof action === "function" ? action(state.connection) : action,
+  })),
   patchConnection: (patch) =>
     set((state) => ({
       connection: {

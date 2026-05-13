@@ -11,10 +11,6 @@ import {
 import { useChatStore } from "../stores/index.js";
 
 
-export interface PresetControllerDeps {
-  loadPromptPresets: () => Promise<PromptPresetDto[]>;
-}
-
 export interface PresetControllerActions {
   loadPromptPresets: () => Promise<PromptPresetDto[]>;
   handleSetActivePromptPresetId: (presetId: string | null) => Promise<void>;
