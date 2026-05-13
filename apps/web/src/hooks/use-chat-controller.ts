@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
@@ -8,12 +8,15 @@ import {
   logClientSendDebug,
   regenerateChatMessageStream,
   sendChatMessageStream,
+  fetchChat,
   type AppMessage,
   type AppSnapshot,
   type ChatGenerationStatus,
 } from "../app-client.js";
 import { useChatStore } from "../stores/chat-store.js";
+import { useProviderStore } from "../stores/provider-store.js";
 import { chatKeys } from "../queries/query-keys.js";
+import { useProviderProfilesQuery } from "../queries/provider-queries.js";
 import { StreamingReveal } from "../lib/streaming-reveal.js";
 import {
   useEditMessageMutation,
@@ -27,29 +30,6 @@ import {
   useRegenerateMessageMutation,
   useGenerateReplyMutation,
 } from "../queries/chat-queries.js";
-
-export interface ChatControllerDeps {
-  // read state (getter functions — Zustand-compatible)
-  getActiveChatId: () => ChatId | null;
-  getSnapshot: () => AppSnapshot | null;
-  getDraft: () => string;
-  getIsSending: () => boolean;
-  getCanSendViaActiveProfile: () => boolean;
-  getEditingDraft: () => string;
-  getEditingMessageId: () => string | null;
-  getGenerationStatus: () => ChatGenerationStatus;
-  getStreamResponse: () => boolean;
-  // write / mutate
-  refreshChatSnapshot: (chatId: ChatId) => Promise<AppSnapshot>;
-  setDraft: (draft: string) => void;
-  setIsSending: (sending: boolean) => void;
-  setPendingUserMessageContent: (content: string | null) => void;
-  setMessageActionId: (id: string | null) => void;
-  setEditingMessageId: (id: string | null) => void;
-  setEditingDraft: (draft: string) => void;
-  setSelectedTraceId: (id: string | null) => void;
-  setGenerationStatus: (status: ChatGenerationStatus) => void;
-}
 
 export interface ChatControllerActions {
   handleSend: () => Promise<void>;
@@ -67,29 +47,23 @@ export interface ChatControllerActions {
   handleDeleteActiveBranch: () => Promise<void>;
 }
 
-export function useChatController(deps: ChatControllerDeps): ChatControllerActions {
-  const {
-    getActiveChatId,
-    getSnapshot,
-    getDraft,
-    getIsSending,
-    getCanSendViaActiveProfile,
-    getEditingDraft,
-    getEditingMessageId,
-    getGenerationStatus,
-    getStreamResponse,
-    refreshChatSnapshot,
-    setDraft,
-    setIsSending,
-    setPendingUserMessageContent,
-    setMessageActionId,
-    setEditingMessageId,
-    setEditingDraft,
-    setSelectedTraceId,
-    setGenerationStatus,
-  } = deps;
-
+export function useChatController(): ChatControllerActions {
   const qc = useQueryClient();
+
+  // --- Provider capabilities (derived internally) ---
+  const profilesQuery = useProviderProfilesQuery();
+  const activeProfile = useMemo(
+    () => profilesQuery.data?.find((p) => p.isActive) ?? null,
+    [profilesQuery.data],
+  );
+  const canSendViaActiveProfile = activeProfile !== null && Boolean(activeProfile.defaultModel);
+  const streamResponse = useProviderStore((s) => s.connection.streamResponse);
+
+  // Refs for stable access in async callbacks
+  const canSendRef = useRef(canSendViaActiveProfile);
+  canSendRef.current = canSendViaActiveProfile;
+  const streamResponseRef = useRef(streamResponse);
+  streamResponseRef.current = streamResponse;
 
   // TQ mutation hooks
   const sendMessageMut = useSendMessageMutation();
@@ -106,9 +80,25 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
   const abortRef = useRef<AbortController | null>(null);
   const streamingReveal = useRef(new StreamingReveal());
 
+  // --- Store helpers (imperative reads via getState, not subscriptions) ---
+
+  function getActiveChatId(): ChatId | null { return useChatStore.getState().activeChatId; }
+  function getDraft(): string { return useChatStore.getState().draft; }
+  function getIsSending(): boolean { return useChatStore.getState().isSending; }
+  function getEditingDraft(): string { return useChatStore.getState().editingDraft; }
+  function getEditingMessageId(): string | null { return useChatStore.getState().editingMessageId; }
+  function getGenerationStatus(): ChatGenerationStatus { return useChatStore.getState().generationStatus; }
+
+  // --- Snapshot cache helpers ---
+
+  function getCachedSnapshot(): AppSnapshot | null {
+    const id = getActiveChatId();
+    return id ? (qc.getQueryData<AppSnapshot>(chatKeys.snapshot(id)) ?? null) : null;
+  }
+
   /** Refetch chat snapshot cache from the canonical source, bypassing TQ staleTime. */
   async function refreshChatSnapshotCache(chatId: ChatId): Promise<AppSnapshot> {
-    const snapshot = await refreshChatSnapshot(chatId);
+    const snapshot = await fetchChat(chatId);
     qc.setQueryData(chatKeys.snapshot(chatId), snapshot);
     return snapshot;
   }
@@ -124,6 +114,8 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     return refreshChatSnapshotCache(chatId);
   }
 
+  // --- Actions ---
+
   const handleSend = useCallback(async (): Promise<void> => {
     const activeChatId = getActiveChatId();
     const draft = getDraft();
@@ -134,7 +126,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       draftLength: draft.length,
       trimmedLength: trimmed.length,
       isSending: getIsSending(),
-      canSendViaActiveProfile: getCanSendViaActiveProfile(),
+      canSendViaActiveProfile: canSendRef.current,
     });
 
     if (!trimmed || getIsSending() || !activeChatId) {
@@ -146,7 +138,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       return;
     }
 
-    if (!getCanSendViaActiveProfile()) {
+    if (!canSendRef.current) {
       void logClientSendDebug("web.hook.handleSend.blocked.provider", {
         activeChatId,
       });
@@ -156,18 +148,19 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
 
     const controller = new AbortController();
     abortRef.current = controller;
+    const cs = useChatStore.getState();
 
-    setDraft("");
-    setPendingUserMessageContent(trimmed);
-    setIsSending(true);
+    cs.setDraft("");
+    cs.setPendingUserMessageContent(trimmed);
+    cs.setIsSending(true);
 
     try {
-      if (getStreamResponse()) {
+      if (streamResponseRef.current) {
         void logClientSendDebug("web.hook.handleSend.stream-request", { activeChatId, generationStatus: getGenerationStatus() });
         let collected = "";
         await sendChatMessageStream(activeChatId, { content: trimmed }, {
           signal: controller.signal,
-          onStatus: setGenerationStatus,
+          onStatus: cs.setGenerationStatus,
           onChunk: (delta) => {
             collected += delta;
             streamingReveal.current.pushDelta(delta);
@@ -181,7 +174,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         const nextSnapshot = await sendMessageMut.mutateAsync(
           { chatId: activeChatId, content: trimmed, signal: controller.signal },
         );
-        setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
+        cs.setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
         void logClientSendDebug("web.hook.handleSend.success", { activeChatId });
       }
     } catch (error) {
@@ -198,8 +191,8 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       await refreshChatSnapshotCache(activeChatId);
       toast.error(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
     } finally {
-      setPendingUserMessageContent(null);
-      setIsSending(false);
+      useChatStore.getState().setPendingUserMessageContent(null);
+      useChatStore.getState().setIsSending(false);
       abortRef.current = null;
       streamingReveal.current.clear();
     }
@@ -209,22 +202,23 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
 
-    if (!getCanSendViaActiveProfile()) {
+    if (!canSendRef.current) {
       toast.error(getT()("resend_unavailable_no_provider"));
       return;
     }
 
     const controller = new AbortController();
     abortRef.current = controller;
+    const cs = useChatStore.getState();
+    cs.setIsSending(true);
 
-    setIsSending(true);
     try {
-      if (getStreamResponse()) {
+      if (streamResponseRef.current) {
         void logClientSendDebug("web.hook.handleResend.stream-request", { activeChatId, generationStatus: getGenerationStatus() });
         let collected = "";
         await generateReplyStream(activeChatId, {
           signal: controller.signal,
-          onStatus: setGenerationStatus,
+          onStatus: cs.setGenerationStatus,
           onChunk: (delta) => {
             collected += delta;
             streamingReveal.current.pushDelta(delta);
@@ -236,7 +230,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       } else {
         void logClientSendDebug("web.hook.handleResend.request", { activeChatId });
         const nextSnapshot = await generateReplyMut.mutateAsync({ chatId: activeChatId, signal: controller.signal });
-        setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
+        cs.setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
         void logClientSendDebug("web.hook.handleResend.success", { activeChatId });
       }
     } catch (error) {
@@ -253,7 +247,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       await refreshChatSnapshotCache(activeChatId);
       toast.error(error instanceof Error && error.message ? error.message : getT()("resend_failed"));
     } finally {
-      setIsSending(false);
+      useChatStore.getState().setIsSending(false);
       abortRef.current = null;
       streamingReveal.current.clear();
     }
@@ -266,37 +260,36 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
   }, []);
 
   async function handleSwitchChat(chatId: ChatId): Promise<void> {
-    // No-op when switching to the same active chat — avoids unnecessary re-fetch
-    // that would discard in-memory state like variant selection.
     if (chatId === getActiveChatId()) return;
     await switchChatMut.mutateAsync(chatId);
     useChatStore.getState().setActiveChatId(chatId);
   }
 
   function handleStartEdit(message: AppMessage): void {
-    setEditingMessageId(message.id);
-    setEditingDraft(message.content);
+    useChatStore.getState().setEditingMessageId(message.id);
+    useChatStore.getState().setEditingDraft(message.content);
   }
 
   function handleCancelEdit(): void {
-    setEditingMessageId(null);
-    setEditingDraft("");
+    useChatStore.getState().setEditingMessageId(null);
+    useChatStore.getState().setEditingDraft("");
   }
 
   async function handleSaveMessageEdit(messageId: string): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
 
-    const trimmed = getEditingDraft().trim();
+    const cs = useChatStore.getState();
+    const trimmed = cs.editingDraft.trim();
     if (!trimmed) return;
 
-    setMessageActionId(messageId);
+    cs.setMessageActionId(messageId);
     try {
       await editMessageMut.mutateAsync({ chatId: activeChatId, messageId, content: trimmed });
-      setEditingMessageId(null);
-      setEditingDraft("");
+      cs.setEditingMessageId(null);
+      cs.setEditingDraft("");
     } finally {
-      setMessageActionId(null);
+      useChatStore.getState().setMessageActionId(null);
     }
   }
 
@@ -304,15 +297,16 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     const activeChatId = getActiveChatId();
     if (!activeChatId || !window.confirm(getT()("delete_message_title"))) return;
 
-    setMessageActionId(messageId);
+    const cs = useChatStore.getState();
+    cs.setMessageActionId(messageId);
     try {
       await deleteMessageMut.mutateAsync({ chatId: activeChatId, messageId });
-      if (getEditingMessageId() === messageId) {
-        setEditingMessageId(null);
-        setEditingDraft("");
+      if (cs.editingMessageId === messageId) {
+        useChatStore.getState().setEditingMessageId(null);
+        useChatStore.getState().setEditingDraft("");
       }
     } finally {
-      setMessageActionId(null);
+      useChatStore.getState().setMessageActionId(null);
     }
   }
 
@@ -320,7 +314,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
 
-    if (!getCanSendViaActiveProfile()) {
+    if (!canSendRef.current) {
       toast.error(getT()("regen_unavailable_no_provider"));
       return;
     }
@@ -328,15 +322,17 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setIsSending(true);
-    setMessageActionId(messageId);
+    const cs = useChatStore.getState();
+    cs.setIsSending(true);
+    cs.setMessageActionId(messageId);
+
     try {
-      if (getStreamResponse()) {
+      if (streamResponseRef.current) {
         void logClientSendDebug("web.hook.handleRegenerate.stream-request", { activeChatId, messageId, generationStatus: getGenerationStatus() });
         let collected = "";
         await regenerateChatMessageStream(activeChatId, messageId, {
           signal: controller.signal,
-          onStatus: setGenerationStatus,
+          onStatus: cs.setGenerationStatus,
           onChunk: (delta) => {
             collected += delta;
             streamingReveal.current.pushDelta(delta);
@@ -349,7 +345,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
         const nextSnapshot = await regenMessageMut.mutateAsync(
           { chatId: activeChatId, messageId, signal: controller.signal },
         );
-        setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
+        cs.setSelectedTraceId(nextSnapshot.promptTrace?.id ?? nextSnapshot.promptTraceHistory[0]?.id ?? null);
       }
     } catch (error) {
       if (controller.signal.aborted) {
@@ -361,8 +357,8 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
       await refreshChatSnapshotCache(activeChatId);
       toast.error(error instanceof Error ? error.message : getT()("regen_failed"));
     } finally {
-      setIsSending(false);
-      setMessageActionId(null);
+      useChatStore.getState().setIsSending(false);
+      useChatStore.getState().setMessageActionId(null);
       abortRef.current = null;
       streamingReveal.current.clear();
     }
@@ -391,7 +387,7 @@ export function useChatController(deps: ChatControllerDeps): ChatControllerActio
 
   async function handleDeleteActiveBranch(): Promise<void> {
     const activeChatId = getActiveChatId();
-    const snapshot = getSnapshot();
+    const snapshot = getCachedSnapshot();
     if (!activeChatId || !snapshot) return;
 
     const activeBranch = snapshot.activeBranch;

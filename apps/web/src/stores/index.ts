@@ -19,3 +19,10 @@ export {
   type ProviderState,
   type ProviderActions,
 } from "./provider-store.js";
+
+export {
+  useModalStore,
+  type ModalStore,
+  type ModalState,
+  type ModalActions,
+} from "./modal-store.js";

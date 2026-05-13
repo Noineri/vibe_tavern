@@ -1,11 +1,15 @@
 import { useRef } from "react";
 import { Toaster } from "sonner";
-import { useRpPlatformApp } from "../hooks/use-rp-platform-app.js";
 import { useT } from "../i18n/context.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
-import { useChatStore } from "../stores/index.js";
-import { useNavigationStore } from "../stores/index.js";
-import { useCharacterStore } from "../stores/index.js";
+import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore } from "../stores/index.js";
+import { useBootstrapQuery, usePersonasQuery } from "../queries/bootstrap-queries.js";
+import { useSaveChatSummaryMutation, useSummarizeChatMutation } from "../queries/chat-queries.js";
+import { useChatController } from "../hooks/use-chat-controller.js";
+import { useCharacterController } from "../hooks/use-character-controller.js";
+import { useProviderProfiles } from "../hooks/use-provider-profiles.js";
+import { usePresetController } from "../hooks/use-preset-controller.js";
+import { useDisplayHelpers } from "../hooks/use-display-helpers.js";
 import { Sidebar } from "./Sidebar.js";
 import { TopBar } from "./TopBar.js";
 import { PlayMode } from "./PlayMode.js";
@@ -19,58 +23,109 @@ import { WelcomeScreen } from "./WelcomeScreen.js";
 import { ShellDestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { TweaksPanel } from "./popovers/TweaksPanel.js";
 import { AvatarPanel } from "./popovers/AvatarPanel.js";
-import { createContext, useContext } from "react";
+import type { AppSnapshot } from "../app-client.js";
+import type { TweaksSettings } from "../lib/local-storage.js";
 
-type AppController = ReturnType<typeof useRpPlatformApp>;
-const AppActionsContext = createContext<React.RefObject<AppController> | null>(null);
-
-export function useAppActions(): AppController {
-  const ref = useContext(AppActionsContext);
-  if (!ref?.current) throw new Error("useAppActions must be used inside <App />");
-  return ref.current;
+interface AppShellProps {
+  snapshot: AppSnapshot | null;
+  tweaksSettings: TweaksSettings;
+  setTweaksSettings: React.Dispatch<React.SetStateAction<TweaksSettings>>;
 }
 
-export function AppShellProvider({ app, children }: { app: AppController; children: React.ReactNode }) {
-  const appRef = useRef(app);
-  appRef.current = app;
-  return <AppActionsContext.Provider value={appRef}>{children}</AppActionsContext.Provider>;
-}
-
-export function AppShell() {
+export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShellProps) {
   const { t, setLocale } = useT();
-  const app = useAppActions();
 
-  const snapshot = app.snapshot;
-  const isPlayMode = app.mode === "play";
-  const activeChatId = app.activeChatId ?? snapshot?.activeChat.id ?? null;
-  const contextUsed = app.activePromptTrace?.tokenAccounting?.total ?? 0;
-  const contextLimit = app.activeProviderProfile?.contextBudget ?? 0;
+  // --- Store subscriptions (reactive) ---
+  const mode = useNavigationStore((s) => s.mode);
+  const theme = useNavigationStore((s) => s.theme);
+  const setTheme = useNavigationStore((s) => s.setTheme);
+  const connection = useProviderStore((s) => s.connection);
+  const activeChatId = useChatStore((s) => s.activeChatId);
+  const draft = useChatStore((s) => s.draft);
+  const isSending = useChatStore((s) => s.isSending);
+  const editingDraft = useChatStore((s) => s.editingDraft);
+  const selectedTraceId = useChatStore((s) => s.selectedTraceId);
+  const pendingUserMessageContent = useChatStore((s) => s.pendingUserMessageContent);
+  const confirmDestroy = useCharacterStore((s) => s.confirmDestroy);
+  const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
+  const renamingChatId = useCharacterStore((s) => s.renamingChatId);
+  const setRenamingChatId = useCharacterStore((s) => s.setRenamingChatId);
+  const renameDraft = useCharacterStore((s) => s.renameDraft);
+  const setRenameDraft = useCharacterStore((s) => s.setRenameDraft);
 
-  const tweaksPanelSettings = {
-    theme: app.theme as 'dark' | 'light',
-    fontSize: app.tweaksSettings.fontSize,
-    uiFontSize: app.tweaksSettings.uiFontSize,
-    messageWidth: app.tweaksSettings.messageWidth,
-    lang: app.tweaksSettings.lang,
-  };
+  // Modal store
+  const tweaksOpen = useModalStore((s) => s.tweaksOpen);
+  const setTweaksOpen = useModalStore((s) => s.setTweaksOpen);
+  const avatarOpen = useModalStore((s) => s.avatarOpen);
+  const setAvatarOpen = useModalStore((s) => s.setAvatarOpen);
+  const isContextMemoryOpen = useModalStore((s) => s.isContextMemoryOpen);
+  const setContextMemoryOpen = useModalStore((s) => s.setContextMemoryOpen);
+  const isProviderModalOpen = useModalStore((s) => s.isProviderModalOpen);
+  const setIsProviderModalOpen = useModalStore((s) => s.setIsProviderModalOpen);
+  const isPromptManagerOpen = useModalStore((s) => s.isPromptManagerOpen);
+  const setIsPromptManagerOpen = useModalStore((s) => s.setIsPromptManagerOpen);
+  const isPersonaModalOpen = useModalStore((s) => s.isPersonaModalOpen);
+  const setIsPersonaModalOpen = useModalStore((s) => s.setIsPersonaModalOpen);
+  const isCreateCharacterModalOpen = useModalStore((s) => s.isCreateCharacterModalOpen);
+  const setCreateCharacterModalOpen = useModalStore((s) => s.setCreateCharacterModalOpen);
 
-  const handleSetTweak = (key: string, value: unknown) => {
-    if (key === 'theme') app.setTheme(value as 'dark' | 'light');
-    else if (key === 'fontSize' || key === 'uiFontSize') app.updateTweak(key, value as number);
-    else if (key === 'messageWidth') app.updateTweak(key, value as 'narrow' | 'medium' | 'wide');
-    else if (key === 'lang') { app.updateTweak(key, value as string); setLocale(value as 'en' | 'ru'); }
-  };
+  // --- Sub-hooks (self-contained) ---
+  const bootstrapQuery = useBootstrapQuery();
+  const personasQuery = usePersonasQuery();
+  const chat = useChatController();
+  const character = useCharacterController();
+  const provider = useProviderProfiles();
+  const preset = usePresetController();
 
-  const avatarSrc = snapshot?.character.avatarAssetId
-    ? `${getGatewayBaseUrl()}/api/assets/${snapshot.character.avatarAssetId}`
-    : undefined;
+  const personas = personasQuery.data ?? [];
+  const promptPresets = bootstrapQuery.data?.promptPresets ?? [];
+  const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
+  const isFirstRun = (bootstrapQuery.data?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === 'true';
+  const activePromptPresetId = snapshot?.activeChat.promptPresetId ?? null;
+
+  // Display helpers
+  const display = useDisplayHelpers(allCharacters, snapshot);
+
+  // --- Summary mutations (local to AppShell) ---
+  const summarizeChatMut = useSummarizeChatMutation();
+  const saveChatSummaryMut = useSaveChatSummaryMutation();
+
+  async function handleSummarizeChat(input: { providerProfileId: string; model?: string; maxMessages: number }): Promise<string> {
+    const chatId = useChatStore.getState().activeChatId;
+    if (!chatId) throw new Error("No active chat.");
+    const result = await summarizeChatMut.mutateAsync({ chatId, input });
+    return result.summary;
+  }
+
+  async function handleSaveChatSummary(summary: string): Promise<string> {
+    const chatId = useChatStore.getState().activeChatId;
+    if (!chatId) throw new Error("No active chat.");
+    const result = await saveChatSummaryMut.mutateAsync({ chatId, summary });
+    return result.summary;
+  }
+
+  // --- Tweak helpers ---
+  function updateTweak(key: string, value: unknown): void {
+    setTweaksSettings(prev => {
+      const next = { ...prev, [key]: value };
+      return next;
+    });
+  }
+
+  // --- Derived values for rendering ---
+  const resolvedActiveChatId = activeChatId ?? snapshot?.activeChat.id ?? null;
+  const contextUsed = display.activePromptTrace?.tokenAccounting?.total ?? 0;
+  const contextLimit = provider.activeProviderProfile?.contextBudget ?? 0;
+
+  const isPlayMode = mode === "play";
+  const canUseLiveApi = display.canUseLiveApi;
 
   let shellSurface: React.ReactNode;
 
   if (!snapshot) {
     shellSurface = (
       <div className="flex flex-1 items-center justify-center">
-        <div className="scene-note">{app.isFirstRun ? "" : t("select_character_start_chat")}</div>
+        <div className="scene-note">{isFirstRun ? "" : t("select_character_start_chat")}</div>
       </div>
     );
   } else if (isPlayMode) {
@@ -78,6 +133,25 @@ export function AppShell() {
   } else {
     shellSurface = <BuildMode />;
   }
+
+  const avatarSrc = snapshot?.character.avatarAssetId
+    ? `${getGatewayBaseUrl()}/api/assets/${snapshot.character.avatarAssetId}`
+    : undefined;
+
+  const tweaksPanelSettings = {
+    theme: theme as 'dark' | 'light',
+    fontSize: tweaksSettings.fontSize,
+    uiFontSize: tweaksSettings.uiFontSize,
+    messageWidth: tweaksSettings.messageWidth,
+    lang: tweaksSettings.lang,
+  };
+
+  const handleSetTweak = (key: string, value: unknown) => {
+    if (key === 'theme') setTheme(value as 'dark' | 'light');
+    else if (key === 'fontSize' || key === 'uiFontSize') updateTweak(key, value as number);
+    else if (key === 'messageWidth') updateTweak(key, value as 'narrow' | 'medium' | 'wide');
+    else if (key === 'lang') { updateTweak(key, value as string); setLocale(value as 'en' | 'ru'); }
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg text-t1 font-ui">
@@ -87,13 +161,13 @@ export function AppShell() {
         {shellSurface}
       </main>
 
-      {app.tweaksOpen && <TweaksPanel settings={tweaksPanelSettings} setSetting={handleSetTweak} />}
-      {app.avatarOpen && avatarSrc && <AvatarPanel src={avatarSrc} onClose={() => app.setAvatarOpen(false)} />}
+      {tweaksOpen && <TweaksPanel settings={tweaksPanelSettings} setSetting={handleSetTweak} />}
+      {avatarOpen && avatarSrc && <AvatarPanel src={avatarSrc} onClose={() => setAvatarOpen(false)} />}
 
       <ContextMemoryModal
-        isOpen={app.isContextMemoryOpen} onClose={app.closeContextMemory}
-        activeChatId={activeChatId}
-        providers={app.providerProfiles.map(p => ({
+        isOpen={isContextMemoryOpen} onClose={() => setContextMemoryOpen(false)}
+        activeChatId={resolvedActiveChatId}
+        providers={provider.providerProfiles.map(p => ({
           id: p.id,
           name: p.name,
           defaultModel: p.defaultModel,
@@ -103,47 +177,47 @@ export function AppShell() {
         contextWindow={{ used: contextUsed, limit: contextLimit }}
         currentSummary={snapshot?.activeChat.summary ?? ""}
         messageCount={snapshot?.messages.length ?? 0}
-        onSummarize={app.handleSummarizeChat} onSaveSummary={app.handleSaveChatSummary}
-        onFetchModelsForProfile={app.handleFetchModelsForProfile}
+        onSummarize={handleSummarizeChat} onSaveSummary={handleSaveChatSummary}
+        onFetchModelsForProfile={provider.handleFetchModelsForProfile}
       />
 
       <ProviderModal
-        providerProfiles={app.providerProfiles}
-        activeProviderProfileId={app.activeProviderProfile?.id ?? null}
-        onCreateProfile={app.handleCreateProviderProfile}
-        onDuplicateProfile={app.handleDuplicateProviderProfile}
-        onDeleteProfile={async (id: string) => { await app.handleDeleteProviderProfile(id); }}
-        onActivateProfile={app.handleActivateProviderProfile}
-        onSaveProfile={app.handleSaveProviderProfileFromForm}
-        onTestDraft={app.handleTestDraftConnection} onTestProfile={app.handleTestProfileConnection}
-        onTestChat={app.handleTestChat}
-        onFetchModels={app.handleFetchModelsByEndpoint} onFetchModelsForProfile={app.handleFetchModelsForProfile}
-        favoriteModelsByProfile={app.favoriteModelsByProfile}
-        onToggleFavoriteModel={app.handleToggleFavoriteProviderModel}
-        onRefreshProfiles={async () => { await app.handleRefreshProfiles(); }}
+        providerProfiles={provider.providerProfiles}
+        activeProviderProfileId={provider.activeProviderProfile?.id ?? null}
+        onCreateProfile={provider.handleCreateProviderProfile}
+        onDuplicateProfile={provider.handleDuplicateProviderProfile}
+        onDeleteProfile={async (id: string) => { await provider.handleDeleteProviderProfile(id); }}
+        onActivateProfile={provider.handleActivateProviderProfile}
+        onSaveProfile={provider.handleSaveProviderProfileFromForm}
+        onTestDraft={provider.handleTestDraftConnection} onTestProfile={provider.handleTestProfileConnection}
+        onTestChat={provider.handleTestChat}
+        onFetchModels={provider.handleFetchModelsByEndpoint} onFetchModelsForProfile={provider.handleFetchModelsForProfile}
+        favoriteModelsByProfile={provider.favoriteModelsByProfile}
+        onToggleFavoriteModel={provider.handleToggleFavoriteProviderModel}
+        onRefreshProfiles={async () => { await provider.handleRefreshProfiles(); }}
       />
 
       <PromptManagerModal
-        presets={app.promptPresets} activePresetId={app.activePromptPresetId}
-        setActivePresetId={app.setActivePromptPresetId}
-        onCreate={app.handleCreatePromptPreset} onUpdate={app.handleUpdatePromptPreset}
-        onDelete={app.handleDeletePromptPreset}
-        providerProfiles={app.providerProfiles.map(p => ({ id: p.id, name: p.name }))}
-        prefillSupported={!['anthropic', 'google', 'koboldcpp'].includes(app.activeProviderProfile?.providerPreset ?? '')}
+        presets={promptPresets} activePresetId={activePromptPresetId}
+        setActivePresetId={preset.handleSetActivePromptPresetId}
+        onCreate={preset.handleCreatePromptPreset} onUpdate={preset.handleUpdatePromptPreset}
+        onDelete={preset.handleDeletePromptPreset}
+        providerProfiles={provider.providerProfiles.map(p => ({ id: p.id, name: p.name }))}
+        prefillSupported={!['anthropic', 'google', 'koboldcpp'].includes(provider.activeProviderProfile?.providerPreset ?? '')}
       />
 
       <PersonaModal
-        personas={app.personas} activePersonaId={app.snapshot?.persona?.id ?? null}
-        isSaving={app.isSavingCharacter}
-        onSaveEdit={(personaId, draft) => void app.handleSavePersona(personaId, draft)}
-        onSetActive={(personaId) => void app.handleSetChatPersona(personaId)}
-        onCreatePersona={app.handleCreatePersona} onDeletePersona={app.handleDeletePersona}
+        personas={personas} activePersonaId={snapshot?.persona?.id ?? null}
+        isSaving={character.isSavingCharacter}
+        onSaveEdit={(personaId, draft) => void character.handleSavePersona(personaId, draft)}
+        onSetActive={(personaId) => void character.handleSetChatPersona(personaId)}
+        onCreatePersona={character.handleCreatePersona} onDeletePersona={character.handleDeletePersona}
       />
 
-      {app.isCreateCharacterModalOpen && (
+      {isCreateCharacterModalOpen && (
         <CreateCharacterModal
-          onClose={app.closeCreateCharacterModal}
-          onSave={async (data, avatarFile) => { const result = await app.handleCreateCharacter(data, avatarFile); app.closeCreateCharacterModal(); return result; }}
+          onClose={() => setCreateCharacterModalOpen(false)}
+          onSave={async (data, avatarFile) => { const result = await character.handleCreateCharacter(data, avatarFile); setCreateCharacterModalOpen(false); return result; }}
         />
       )}
 

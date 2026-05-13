@@ -4,7 +4,7 @@ import { setTokenCountFn } from "@rp-platform/prompt-pipeline";
 import { createRuntimeStore } from "./session-runtime-store.js";
 import { warmupTokenizers, countTokensDefault } from "./ai/tokenizer-service.js";
 import { SessionRuntime } from "./session-runtime.js";
-import { ProviderProfileService } from "./provider-profile-service.js";
+import { createProviderProfileService } from "./provider-profile-service.js";
 import { PromptPresetService } from "./prompt-preset-service.js";
 import { ProviderOrchestrator } from "./provider-orchestrator.js";
 import { LiveChatOrchestrator } from "./live-chat-orchestrator.js";
@@ -65,7 +65,7 @@ try {
 	console.log("[bootstrap] Tokenizers ready.");
 
 	// Services
-	const providerProfileService = new ProviderProfileService(stores.providers);
+	const providerProfileService = createProviderProfileService(stores.providers);
 	const promptPresetService = new PromptPresetService(stores.presets);
 	const sessionRuntime = new SessionRuntime(stores, {
 		getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),

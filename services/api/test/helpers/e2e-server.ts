@@ -15,7 +15,7 @@ import { setTokenCountFn } from "@rp-platform/prompt-pipeline";
 import { createRuntimeStore } from "../../src/session-runtime-store.js";
 import { warmupTokenizers, countTokensDefault } from "../../src/ai/tokenizer-service.js";
 import { SessionRuntime } from "../../src/session-runtime.js";
-import { ProviderProfileService } from "../../src/provider-profile-service.js";
+import { createProviderProfileService } from "../../src/provider-profile-service.js";
 import { PromptPresetService } from "../../src/prompt-preset-service.js";
 import { ProviderOrchestrator } from "../../src/provider-orchestrator.js";
 import { LiveChatOrchestrator } from "../../src/live-chat-orchestrator.js";
@@ -261,7 +261,7 @@ export async function createTestServer(): Promise<TestServer> {
   await warmupTokenizers();
   setTokenCountFn(countTokensDefault);
 
-  const providerProfileService = new ProviderProfileService(stores.providers);
+  const providerProfileService = createProviderProfileService(stores.providers);
   const promptPresetService = new PromptPresetService(stores.presets);
   const sessionRuntime = new SessionRuntime(stores, {
     getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),

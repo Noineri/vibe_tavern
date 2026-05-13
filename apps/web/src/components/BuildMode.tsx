@@ -11,7 +11,11 @@ import { CharacterForm } from "./build/CharacterForm.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { useT } from "../i18n/context.js";
 import { useCharacterStore } from "../stores/character-store.js";
-import { useAppActions } from "./AppShell.js";
+import { useCharacterController } from "../hooks/use-character-controller.js";
+import { useDisplayHelpers } from "../hooks/use-display-helpers.js";
+import { useBootstrapQuery } from "../queries/bootstrap-queries.js";
+import { useChatSnapshot } from "../queries/chat-queries.js";
+import { useChatStore } from "../stores/index.js";
 
 export type BuildTab = "character" | "lorebook" | "trace";
 type InternalBuildTab = "char" | "trace";
@@ -20,28 +24,33 @@ export type { BuildCharacterDraft };
 
 export function BuildMode() {
   const { t } = useT();
-  const app = useAppActions();
+  const character = useCharacterController();
+  const bootstrapQuery = useBootstrapQuery();
+  const activeChatId = useChatStore((s) => s.activeChatId);
+  const snapshotQuery = useChatSnapshot(activeChatId);
+  const snapshot = snapshotQuery.data ?? null;
+  const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
+  const display = useDisplayHelpers(allCharacters, snapshot);
 
-  const snapshot = app.snapshot;
-  const character = snapshot?.character;
+  const charData = snapshot?.character;
   const isSaving = useCharacterStore((s) => s.isSavingCharacter);
   const buildTab = useCharacterStore((s) => s.buildTab);
 
-  const activeTrace = app.activePromptTrace;
-  const promptPayloadText = app.promptPayloadText;
+  const activeTrace = display.activePromptTrace;
+  const promptPayloadText = display.promptPayloadText;
   const promptTraceCount = snapshot?.promptTraceHistory.length ?? 0;
 
-  if (!snapshot || !character) return null;
+  if (!snapshot || !charData) return null;
 
   return <BuildModeInner
-    character={character}
+    character={charData}
     isSaving={isSaving}
     buildTab={buildTab}
     activeTrace={activeTrace}
     promptPayloadText={promptPayloadText}
     promptTraceCount={promptTraceCount}
-    onSave={app.handleSaveCharacter}
-    onAvatarUpload={app.handleAvatarUpload}
+    onSave={character.handleSaveCharacter}
+    onAvatarUpload={character.handleAvatarUpload}
     t={t}
   />;
 }

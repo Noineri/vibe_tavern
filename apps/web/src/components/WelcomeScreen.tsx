@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Ic } from './shared/icons';
 import { cn } from '../lib/cn';
 import { useT } from '../i18n/context.js';
-import { useAppActions } from './AppShell.js';
+import { useCharacterController } from '../hooks/use-character-controller.js';
 import { useBootstrapQuery } from '../queries/bootstrap-queries.js';
 
 interface WelcomeScreenProps {
@@ -13,7 +13,7 @@ interface WelcomeScreenProps {
 
 export function WelcomeScreen() {
   const { t } = useT();
-  const actions = useAppActions();
+  const character = useCharacterController();
   const isFirstRun = (useBootstrapQuery().data?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === 'true';
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -28,7 +28,7 @@ export function WelcomeScreen() {
     if (!canCreate) return;
     setBusy(true);
     try {
-      await actions.handleCreateCharacter({
+      await character.handleCreateCharacter({
         name: name.trim(),
         description: desc.trim() || undefined,
         firstMessage: firstMsg.trim() || undefined,
@@ -42,7 +42,7 @@ export function WelcomeScreen() {
     if (busy) return;
     setBusy(true);
     try {
-      await actions.handleFreeChat();
+      await character.handleFreeChat();
     } finally {
       setBusy(false);
     }
@@ -127,7 +127,7 @@ export function WelcomeScreen() {
           className="hidden"
           onChange={(e) => {
             if (e.target.files && e.target.files.length > 0) {
-              actions.handleImportFiles(e.target.files);
+              character.handleImportFiles(e.target.files);
             }
           }}
         />

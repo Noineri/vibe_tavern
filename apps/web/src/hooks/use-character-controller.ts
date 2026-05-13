@@ -1,6 +1,7 @@
 import type { ChangeEvent, DragEvent } from "react";
 import type { ChatId } from "@rp-platform/domain";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { getT } from "../i18n/context.js";
 import {
   setPersonalLorebookEnabled,
@@ -9,9 +10,9 @@ import {
   type AppSnapshot,
   type ImportJsonResponse,
 } from "../app-client.js";
-import type { AppMode } from "../components/app-shell-types.js";
 import type { BuildCharacterDraft } from "../components/BuildMode.js";
 import type { CharacterImportOptions } from "./use-character-import.js";
+import { useCharacterImport } from "./use-character-import.js";
 import {
   useSaveCharacterMutation,
   useCreateCharacterMutation,
@@ -30,21 +31,10 @@ import {
   useDeleteChatMutation as useDeleteChatTqMutation,
   useRenameChatMutation,
 } from "../queries/index.js";
-import { useQueryClient } from "@tanstack/react-query";
-import { bootstrapKeys, personaKeys } from "../queries/query-keys.js";
-
-export interface CharacterControllerDeps {
-  // read state (getter functions — Zustand-compatible)
-  getActiveChatId: () => ChatId | null;
-  getSnapshot: () => AppSnapshot | null;
-  // write / mutate
-  writeSnapshot: (chatId: ChatId, next: AppSnapshot) => void;
-  patchSnapshot: (updater: (snapshot: AppSnapshot) => AppSnapshot) => void;
-  setMode: (mode: AppMode) => void;
-  setIsImportDragActive: (active: boolean) => void;
-  // action callbacks
-  importFile: (file: File, options?: CharacterImportOptions) => Promise<ImportJsonResponse>;
-}
+import { bootstrapKeys, personaKeys, chatKeys } from "../queries/query-keys.js";
+import { useChatStore } from "../stores/chat-store.js";
+import { useNavigationStore } from "../stores/navigation-store.js";
+import { useCharacterStore } from "../stores/character-store.js";
 
 export interface CharacterControllerActions {
   handleSaveCharacter: (draftInput: BuildCharacterDraft) => Promise<void>;
@@ -70,8 +60,9 @@ export interface CharacterControllerActions {
   handleExportCharacter: (characterId: string) => Promise<void>;
   handleExportChatJsonl: (chatId: ChatId) => Promise<void>;
   handleExportPromptTrace: (traceId: string) => Promise<void>;
-  /** Derived from TQ mutation pending state — wire to store isSavingCharacter */
+  /** Derived from TQ mutation pending state */
   isSavingCharacter: boolean;
+  isImporting: boolean;
 }
 
 function formatImportWarnings(count: number): string {
@@ -90,16 +81,29 @@ function downloadTextFile(fileName: string, text: string, mimeType: string): voi
   URL.revokeObjectURL(url);
 }
 
-export function useCharacterController(deps: CharacterControllerDeps): CharacterControllerActions {
-  const {
-    getActiveChatId,
-    getSnapshot,
-    writeSnapshot,
-    patchSnapshot,
-    setMode,
-    setIsImportDragActive,
-    importFile,
-  } = deps;
+export function useCharacterController(): CharacterControllerActions {
+  const qc = useQueryClient();
+
+  // --- Store helpers ---
+  function getActiveChatId(): ChatId | null { return useChatStore.getState().activeChatId; }
+
+  function getSnapshot(): AppSnapshot | null {
+    const id = getActiveChatId();
+    return id ? (qc.getQueryData<AppSnapshot>(chatKeys.snapshot(id)) ?? null) : null;
+  }
+
+  function writeSnapshot(chatId: ChatId, next: AppSnapshot): void {
+    qc.setQueryData(chatKeys.snapshot(chatId), next);
+    if (useChatStore.getState().activeChatId !== chatId) {
+      useChatStore.getState().setActiveChatId(chatId);
+    }
+  }
+
+  function patchSnapshot(updater: (snapshot: AppSnapshot) => AppSnapshot): void {
+    const id = getActiveChatId();
+    const current = id ? qc.getQueryData<AppSnapshot>(chatKeys.snapshot(id)) : null;
+    if (id && current) qc.setQueryData(chatKeys.snapshot(id), updater(current));
+  }
 
   // --- TQ mutations ---
   const saveCharacterMut = useSaveCharacterMutation();
@@ -118,7 +122,9 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
   const createChatMut = useCreateChatMutation();
   const deleteChatMut = useDeleteChatTqMutation();
   const renameChatMut = useRenameChatMutation();
-  const qc = useQueryClient();
+
+  // --- Import hook ---
+  const { importFile, isImporting } = useCharacterImport();
 
   // Sync mutation pending state → store isSavingCharacter
   const isSavingCharacter =
@@ -207,8 +213,6 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
   async function handleSetChatPersona(personaId: string): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
-    // No-op when the persona is already active — avoids unnecessary snapshot refresh
-    // that could reset transient UI state like swipe position.
     const currentPersonaId = getSnapshot()?.persona?.id ?? null;
     if (currentPersonaId === personaId) return;
     try {
@@ -263,10 +267,10 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
       void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
 
       if (imported.imported.kind === "character") {
-        setMode("play");
+        useNavigationStore.getState().setMode("play");
         toast.success(`${getT()("imported_character").replace("{name}", imported.imported.name)}${formatImportWarnings(imported.imported.warningCount)}`);
       } else if (imported.imported.kind === "chat") {
-        setMode("play");
+        useNavigationStore.getState().setMode("play");
         toast.success(`${getT()("imported_chat").replace("{name}", imported.imported.name)}${formatImportWarnings(imported.imported.warningCount)}`);
       } else {
         toast.success(`${getT()("attached_lorebook").replace("{name}", imported.imported.name).replace("{char}", imported.imported.attachedToCharacterName ?? "current character")}${formatImportWarnings(imported.imported.warningCount)}`);
@@ -274,22 +278,22 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     } catch (error) {
       toast.error(error instanceof Error ? error.message : getT()("import_failed_notice"));
     } finally {
-      setIsImportDragActive(false);
+      useCharacterStore.getState().setIsImportDragActive(false);
     }
   }
 
   function handleImportDragOver(event: DragEvent<HTMLLabelElement>): void {
     event.preventDefault();
-    setIsImportDragActive(true);
+    useCharacterStore.getState().setIsImportDragActive(true);
   }
 
   function handleImportDragLeave(): void {
-    setIsImportDragActive(false);
+    useCharacterStore.getState().setIsImportDragActive(false);
   }
 
   function handleImportDrop(event: DragEvent<HTMLLabelElement>): void {
     event.preventDefault();
-    setIsImportDragActive(false);
+    useCharacterStore.getState().setIsImportDragActive(false);
     if (event.dataTransfer.files.length > 0) {
       void handleImportFiles(event.dataTransfer.files);
     }
@@ -454,5 +458,6 @@ export function useCharacterController(deps: CharacterControllerDeps): Character
     handleExportChatJsonl,
     handleExportPromptTrace,
     isSavingCharacter,
+    isImporting,
   };
 }

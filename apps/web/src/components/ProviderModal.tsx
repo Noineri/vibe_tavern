@@ -15,7 +15,7 @@ import {
 } from "./provider/index.js";
 import { ConfirmCloseModal } from "./shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
-import { useNavigationStore } from "../stores/navigation-store.js";
+import { useModalStore } from "../stores/modal-store.js";
 
 export interface FormState {
   id: string;
@@ -150,8 +150,8 @@ export function ProviderModal({
   onSaveProfile, onTestDraft, onTestProfile, onTestChat, onFetchModels, onFetchModelsForProfile,
   favoriteModelsByProfile, onToggleFavoriteModel, onRefreshProfiles,
 }: ProviderModalProps) {
-  const isOpen = useNavigationStore((s) => s.isProviderModalOpen);
-  const setIsOpen = useNavigationStore((s) => s.setIsProviderModalOpen);
+  const isOpen = useModalStore((s) => s.isProviderModalOpen);
+  const setIsOpen = useModalStore((s) => s.setIsProviderModalOpen);
   const onClose = () => setIsOpen(false);
   const { t } = useT();
 

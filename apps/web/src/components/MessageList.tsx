@@ -1,9 +1,13 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { AppMessage } from "../app-client.js";
 import { Markdown } from "../lib/markdown.js";
+import { useChatController } from "../hooks/use-chat-controller.js";
+import { useCharacterController } from "../hooks/use-character-controller.js";
+import { useDisplayHelpers } from "../hooks/use-display-helpers.js";
+import { useBootstrapQuery } from "../queries/bootstrap-queries.js";
+import { useChatSnapshot } from "../queries/chat-queries.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { MessageBlock } from "./MessageBlock.js";
-import { useAppActions } from "./AppShell.js";
 import { useT } from "../i18n/context.js";
 
 const msgWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7";
@@ -11,21 +15,26 @@ const sepWrap = msgWrap + " my-[6px] mt-2";
 
 export function MessageList() {
   const { t } = useT();
-  const app = useAppActions();
+  const chat = useChatController();
+  const bootstrapQuery = useBootstrapQuery();
+  const activeChatId = useChatStore((s) => s.activeChatId);
+  const snapshotQuery = useChatSnapshot(activeChatId);
+  const snapshot = snapshotQuery.data ?? null;
+  const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
+  const display = useDisplayHelpers(allCharacters, snapshot);
   const msgsRef = useRef<HTMLDivElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const [greetingIndex, setGreetingIndex] = useState(0);
 
-  const snapshot = app.snapshot;
   const editingMessageId = useChatStore((s) => s.editingMessageId);
   const editingDraft = useChatStore((s) => s.editingDraft);
   const isSending = useChatStore((s) => s.isSending);
   const messageActionId = useChatStore((s) => s.messageActionId);
   const streamingText = useChatStore((s) => s.streamingText);
 
-  const messages = app.displayMessages;
-  const pendingUserMessageContent = app.displayPendingUserMessageContent;
-  const alternateGreetings = app.displayAlternateGreetings;
+  const messages = display.displayMessages;
+  const pendingUserMessageContent = display.displayPendingUserMessageContent;
+  const alternateGreetings = display.displayAlternateGreetings;
 
   const characterName = snapshot?.character.name ?? "";
   const characterAvatarAssetId = snapshot?.character.avatarAssetId ?? null;
@@ -87,19 +96,19 @@ export function MessageList() {
               greetingOptions={message.id === firstCharMsgId ? greetingOptions : undefined}
               greetingIndex={message.id === firstCharMsgId ? greetingIndex : 0}
               onGreetingIndexChange={setGreetingIndex}
-              onBranch={() => void app.handleFork()}
-              onStartEdit={() => app.handleStartEdit(message)}
-              onEditingDraftChange={app.setEditingDraft}
-              onCancelEdit={app.handleCancelEdit}
-              onSaveEdit={() => void app.handleSaveMessageEdit(message.id)}
-              onDelete={() => void app.handleDeleteMessage(message.id)}
-              onRegenerate={() => void app.handleRegenerateMessage(message.id)}
-              onResend={() => { void app.handleResend(); }}
+              onBranch={() => void chat.handleFork()}
+              onStartEdit={() => chat.handleStartEdit(message)}
+              onEditingDraftChange={useChatStore.getState().setEditingDraft}
+              onCancelEdit={chat.handleCancelEdit}
+              onSaveEdit={() => void chat.handleSaveMessageEdit(message.id)}
+              onDelete={() => void chat.handleDeleteMessage(message.id)}
+              onRegenerate={() => void chat.handleRegenerateMessage(message.id)}
+              onResend={() => { void chat.handleResend(); }}
               onSelectPreviousVariant={() =>
-                app.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) - 1)
+                chat.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) - 1)
               }
               onSelectNextVariant={() =>
-                app.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) + 1)
+                chat.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) + 1)
               }
               characterAvatarAssetId={characterAvatarAssetId}
               personaAvatarAssetId={personaAvatarAssetId}

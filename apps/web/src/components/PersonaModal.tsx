@@ -10,7 +10,7 @@ import { avatarUrl } from "../lib/avatar.js";
 import { uploadAsset } from "../app-client.js";
 import { useTokenCount } from "../hooks/use-token-count.js";
 import { useT } from "../i18n/context.js";
-import { useNavigationStore } from "../stores/navigation-store.js";
+import { useModalStore } from "../stores/modal-store.js";
 
 interface PersonaListItem {
   id: string;
@@ -51,8 +51,8 @@ function PersonaPreviewBadge({ text }: { text: string }) {
 
 export function PersonaModal(input: PersonaModalProps) {
   const { t } = useT();
-  const isOpen = useNavigationStore((s) => s.isPersonaModalOpen);
-  const setIsOpen = useNavigationStore((s) => s.setIsPersonaModalOpen);
+  const isOpen = useModalStore((s) => s.isPersonaModalOpen);
+  const setIsOpen = useModalStore((s) => s.setIsPersonaModalOpen);
   const onClose = () => setIsOpen(false);
   const [selectedId, setSelectedId] = useState<string | null>(input.activePersonaId);
   const [editingId, setEditingId] = useState<string | null>(null);
