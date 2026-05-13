@@ -111,6 +111,7 @@ CREATE TABLE chats (
   title text NOT NULL,
   summary text DEFAULT '' NOT NULL,
   message_history_limit integer DEFAULT 0 NOT NULL,
+  last_accessed_at text NOT NULL,
   status text DEFAULT 'active' NOT NULL,
   created_at text NOT NULL,
   updated_at text NOT NULL,
@@ -119,6 +120,7 @@ CREATE TABLE chats (
   FOREIGN KEY (prompt_preset_id) REFERENCES prompt_presets(id)
 );
 CREATE INDEX idx_chats_character_id ON chats (character_id);
+CREATE INDEX idx_chats_last_accessed ON chats (last_accessed_at);
 CREATE TABLE chat_branches (
   id text PRIMARY KEY NOT NULL,
   chat_id text NOT NULL,
@@ -233,6 +235,7 @@ function bootstrap(db: ReturnType<typeof createTestDb>) {
     id: "chat_1", characterId: "char_1", personaId: null,
     activeBranchId: "brnch_1", promptPresetId: "preset_1",
     title: "Test chat", summary: "", messageHistoryLimit: 0,
+    lastAccessedAt: FIXED_NOW,
     status: "active", createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
   }).run();
 

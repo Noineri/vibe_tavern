@@ -51,11 +51,13 @@ export const chats = sqliteTable('chats', {
   title: text('title').notNull(),
   summary: text('summary').notNull().default(''),
   messageHistoryLimit: integer('message_history_limit').notNull().default(0),
+  lastAccessedAt: text('last_accessed_at').notNull().default(''),
   status: text('status').notNull().default('active'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
   characterIdIdx: index('idx_chats_character_id').on(table.characterId),
+  lastAccessedIdx: index('idx_chats_last_accessed').on(table.lastAccessedAt),
 }));
 
 // ─── chatBranches ──────────────────────────────────────────────────────────────

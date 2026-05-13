@@ -147,8 +147,9 @@ export class RuntimeApiAdapter {
 
 	// ─── Chat lifecycle ───────────────────────────────────────────────────
 
-	getChatSnapshot = (chatId: string) =>
-		this.sessionRuntime.getSnapshot(brandId<ChatId>(chatId));
+	getChatSnapshot = async (chatId: string) => {
+		return this.sessionRuntime.chatLifecycle.switchChat(brandId<ChatId>(chatId));
+	};
 
 	createChatForCharacter = (characterId: string) =>
 		this.sessionRuntime.chatLifecycle.createChatForCharacter(characterId);

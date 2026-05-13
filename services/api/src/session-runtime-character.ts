@@ -166,10 +166,11 @@ export class CharacterRuntime {
   }> {
     const typedCharacterId = brandId<CharacterId>(characterId);
     await this.deps.stores.characters.archive(typedCharacterId);
-    const chatId = (await this.deps.stores.chats.listAll())
-      .find((c) => c.characterId === typedCharacterId)?.id;
-    if (chatId) {
-      this.deps.chatOrder.remove(chatId as ChatId);
+    const chatIds = (await this.deps.stores.chats.listAll())
+      .filter((c) => c.characterId === typedCharacterId)
+      .map((c) => c.id as ChatId);
+    for (const chatId of chatIds) {
+      this.deps.chatOrder.remove(chatId);
     }
     return { characterId, status: "archived" };
   }
