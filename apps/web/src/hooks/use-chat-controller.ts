@@ -165,6 +165,13 @@ export function useChatController(): ChatControllerActions {
             collected += delta;
             streamingReveal.current.pushDelta(delta);
           },
+          onReasoningChunk: (delta) => {
+            const s = useChatStore.getState();
+            s.setStreamingReasoningText(s.streamingReasoningText + delta);
+          },
+          onReasoningDone: () => {
+            // Reasoning complete — text stays until snapshot refresh
+          },
         });
         await streamingReveal.current.waitForReveal();
         await refreshChatSnapshotCache(activeChatId);
@@ -193,6 +200,7 @@ export function useChatController(): ChatControllerActions {
     } finally {
       useChatStore.getState().setPendingUserMessageContent(null);
       useChatStore.getState().setIsSending(false);
+      useChatStore.getState().setStreamingReasoningText("");
       abortRef.current = null;
       streamingReveal.current.clear();
     }
@@ -223,6 +231,11 @@ export function useChatController(): ChatControllerActions {
             collected += delta;
             streamingReveal.current.pushDelta(delta);
           },
+          onReasoningChunk: (delta) => {
+            const s = useChatStore.getState();
+            s.setStreamingReasoningText(s.streamingReasoningText + delta);
+          },
+          onReasoningDone: () => {},
         });
         await streamingReveal.current.waitForReveal();
         await refreshChatSnapshotCache(activeChatId);
@@ -248,6 +261,7 @@ export function useChatController(): ChatControllerActions {
       toast.error(error instanceof Error && error.message ? error.message : getT()("resend_failed"));
     } finally {
       useChatStore.getState().setIsSending(false);
+      useChatStore.getState().setStreamingReasoningText("");
       abortRef.current = null;
       streamingReveal.current.clear();
     }
@@ -337,6 +351,11 @@ export function useChatController(): ChatControllerActions {
             collected += delta;
             streamingReveal.current.pushDelta(delta);
           },
+          onReasoningChunk: (delta) => {
+            const s = useChatStore.getState();
+            s.setStreamingReasoningText(s.streamingReasoningText + delta);
+          },
+          onReasoningDone: () => {},
         });
         await streamingReveal.current.waitForReveal();
         await refreshChatSnapshotCache(activeChatId);
@@ -358,6 +377,7 @@ export function useChatController(): ChatControllerActions {
       toast.error(error instanceof Error ? error.message : getT()("regen_failed"));
     } finally {
       useChatStore.getState().setIsSending(false);
+      useChatStore.getState().setStreamingReasoningText("");
       useChatStore.getState().setMessageActionId(null);
       abortRef.current = null;
       streamingReveal.current.clear();

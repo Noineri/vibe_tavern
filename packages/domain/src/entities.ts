@@ -160,6 +160,8 @@ export interface MessageVariant {
   content: string;
   isSelected: boolean;
   finishReason: string | null;
+  reasoning?: string;
+  reasoningDurationMs?: number;
   createdAt: Timestamp;
 }
 

@@ -138,6 +138,8 @@ CREATE TABLE message_variants (
 	content text NOT NULL,
 	is_selected integer DEFAULT 0 NOT NULL,
 	finish_reason text,
+	reasoning text,
+	reasoning_duration_ms integer,
 	created_at text NOT NULL,
 	FOREIGN KEY (message_id) REFERENCES messages(id) ON UPDATE no action ON DELETE cascade
 );

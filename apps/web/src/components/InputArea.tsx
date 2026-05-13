@@ -12,45 +12,8 @@ import { useChatStore, useProviderStore } from "../stores/index.js";
 import { useBootstrapQuery, usePersonasQuery } from "../queries/bootstrap-queries.js";
 import { useChatSnapshot } from "../queries/chat-queries.js";
 import { getT } from "../i18n/context.js";
-
-function bucketTokens(accounting: Record<string, number>): {
-  system: number;
-  character: number;
-  persona: number;
-  summary: number;
-  history: number;
-} {
-  let system = 0;
-  let character = 0;
-  let persona = 0;
-  let summary = 0;
-  let history = 0;
-
-  for (const [key, value] of Object.entries(accounting)) {
-    if (
-      key === "system_preset" ||
-      key === "character_system_prompt" ||
-      key === "post_history" ||
-      key === "authors_note" ||
-      key === "prompt_preset"
-    ) {
-      system += value;
-    } else if (key === "character" || key === "character_base" || key === "character_description" || key === "character_scenario") {
-      character += value;
-    } else if (key === "persona" || key === "user_persona") {
-      persona += value;
-    } else if (key.startsWith("summary_memory") || key.startsWith("summary_")) {
-      summary += value;
-    } else if (key === "chat_history" || key === "recent_history") {
-      history += value;
-    }
-    else if (key.startsWith("lore_entry") || key.startsWith("lore_") || key.startsWith("retrieval_")) {
-      system += value;
-    }
-  }
-
-  return { system, character, persona, summary, history };
-}
+import { useMemo } from "react";
+import { countTokens } from "../utils/tokenizer.js";
 
 export function InputArea() {
   const { t } = useT();
@@ -74,13 +37,15 @@ export function InputArea() {
   const connection = useProviderStore((s) => s.connection);
 
   const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
+  const promptPresets = bootstrapQuery.data?.promptPresets ?? [];
+  const activePresetId = snapshot?.activeChat.promptPresetId ?? null;
+  const activePreset = promptPresets.find(p => p.id === activePresetId) ?? null;
   const display = useDisplayHelpers(allCharacters, snapshot);
   const personas = usePersonasQuery().data ?? [];
 
   const characterName = snapshot?.character.name ?? "";
   const personaName = snapshot?.persona?.name ?? t("no_persona");
   const activePersonaId = snapshot?.persona?.id ?? null;
-  const tokenAccounting = display.activePromptTrace?.tokenAccounting ?? {};
   const contextSize = provider.activeProviderProfile?.contextBudget ?? 0;
   const maxTokens = provider.activeProviderProfile?.maxTokens ?? 0;
   const favoriteModels = provider.activeProviderProfile ? (provider.favoriteModelsByProfile[provider.activeProviderProfile.id] ?? []) : [];
@@ -97,7 +62,21 @@ export function InputArea() {
   }
   const sendLabel = renderSendLabel();
 
-  const buckets = bucketTokens(tokenAccounting);
+  // --- Token counting from raw texts ---
+  const buckets = useMemo(() => {
+    const c = snapshot?.character;
+    const p = snapshot?.persona;
+    const msgs = snapshot?.messages ?? [];
+    const summary = snapshot?.activeChat.summary ?? "";
+    return {
+      system: countTokens([activePreset?.system, activePreset?.jailbreak, activePreset?.authorsNote, c?.systemPrompt].filter(Boolean).join("\n")),
+      character: countTokens([c?.description, c?.scenario, c?.mesExample, c?.postHistoryInstructions, c?.creatorNotes, c?.depthPrompt].filter(Boolean).join("\n")),
+      persona: countTokens(p?.description ?? ""),
+      summary: countTokens(summary),
+      history: countTokens(msgs.map(m => m.content).join("\n")),
+    };
+  }, [snapshot?.character, snapshot?.persona, snapshot?.messages, snapshot?.activeChat.summary, snapshot?.activeChat.promptPresetId, promptPresets]);
+
   const inputTokens = useTokenCount(draft);
   const totalUsed = buckets.system + buckets.character + buckets.persona + buckets.summary + buckets.history + inputTokens;
   const availableBudget = Math.max(0, contextSize - maxTokens);

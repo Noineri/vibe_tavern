@@ -369,6 +369,8 @@ export async function sendChatMessageStream(
     signal?: AbortSignal;
     onStatus: (status: ChatGenerationStatus) => void;
     onChunk: (delta: string) => void;
+    onReasoningChunk?: (delta: string) => void;
+    onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
   },
 ): Promise<{ finishReason: string; usage?: Record<string, number> }> {
   const baseUrl = getGatewayBaseUrl();
@@ -386,7 +388,13 @@ export async function sendChatMessageStream(
   }
 
   opts.onStatus("streaming");
-  return parseSSEStream({ response, onStatus: opts.onStatus, onChunk: opts.onChunk });
+  return parseSSEStream({
+    response,
+    onStatus: opts.onStatus,
+    onChunk: opts.onChunk,
+    onReasoningChunk: opts.onReasoningChunk,
+    onReasoningDone: opts.onReasoningDone,
+  });
 }
 
 export async function regenerateChatMessageStream(
@@ -396,6 +404,8 @@ export async function regenerateChatMessageStream(
     signal?: AbortSignal;
     onStatus: (status: ChatGenerationStatus) => void;
     onChunk: (delta: string) => void;
+    onReasoningChunk?: (delta: string) => void;
+    onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
   },
 ): Promise<{ finishReason: string; usage?: Record<string, number> }> {
   const baseUrl = getGatewayBaseUrl();
@@ -412,7 +422,13 @@ export async function regenerateChatMessageStream(
   }
 
   opts.onStatus("streaming");
-  return parseSSEStream({ response, onStatus: opts.onStatus, onChunk: opts.onChunk });
+  return parseSSEStream({
+    response,
+    onStatus: opts.onStatus,
+    onChunk: opts.onChunk,
+    onReasoningChunk: opts.onReasoningChunk,
+    onReasoningDone: opts.onReasoningDone,
+  });
 }
 
 export async function generateReply(
@@ -433,6 +449,8 @@ export async function generateReplyStream(
     signal?: AbortSignal;
     onStatus: (status: ChatGenerationStatus) => void;
     onChunk: (delta: string) => void;
+    onReasoningChunk?: (delta: string) => void;
+    onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
   },
 ): Promise<{ finishReason: string; usage?: Record<string, number> }> {
   const baseUrl = getGatewayBaseUrl();
@@ -449,7 +467,13 @@ export async function generateReplyStream(
   }
 
   opts.onStatus("streaming");
-  return parseSSEStream({ response, onStatus: opts.onStatus, onChunk: opts.onChunk });
+  return parseSSEStream({
+    response,
+    onStatus: opts.onStatus,
+    onChunk: opts.onChunk,
+    onReasoningChunk: opts.onReasoningChunk,
+    onReasoningDone: opts.onReasoningDone,
+  });
 }
 
 export async function selectMessageVariant(

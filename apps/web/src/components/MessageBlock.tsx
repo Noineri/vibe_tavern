@@ -8,10 +8,12 @@ import type { MessageBlockProps } from "./play-mode-types.js";
 import { Icons } from "./shared/icons.js";
 import { useTokenCount } from "../hooks/use-token-count.js";
 import { useT } from "../i18n/context.js";
+import { MessageReasoning } from "./MessageReasoning.js";
 
 export function MessageBlock(input: MessageBlockProps) {
   const { t } = useT();
   const streamingText = useChatStore((s) => s.streamingText);
+  const streamingReasoningText = useChatStore((s) => s.streamingReasoningText);
   const [copied, setCopied] = useState(false);
   const isUser = input.message.role === "user";
   const variants = Array.isArray(input.message.variants) ? input.message.variants : [];
@@ -37,6 +39,12 @@ export function MessageBlock(input: MessageBlockProps) {
   const deleteLabel = t("delete");
   const createdLabel = formatMessageTime(input.message.createdAt);
   const messageTokens = useTokenCount(displayContent);
+
+  // Reasoning: from selected variant (persisted) or streaming state
+  const selectedVariant = variants[selectedVariantIndex];
+  const showStreamingReasoning = isGenerating && streamingReasoningText;
+  const reasoningText = showStreamingReasoning ? streamingReasoningText : (selectedVariant?.reasoning || null);
+  const reasoningDuration = selectedVariant?.reasoningDurationMs ?? null;
 
   return (
     <div className="relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))] px-7">
@@ -117,15 +125,23 @@ export function MessageBlock(input: MessageBlockProps) {
             </div>
           </div>
         ) : isGenerating && !renderContent?.trim() ? (
-          <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
-            <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
-              <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
-              <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
-              <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
-            </span>
+          <div>
+            {!isUser && (reasoningText || reasoningDuration) && (
+              <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
+            )}
+            <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
+              <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
+                <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
+                <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
+                <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
+              </span>
+            </div>
           </div>
         ) : (
           <>
+            {!isUser && (reasoningText || reasoningDuration) && (
+              <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
+            )}
             <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
               <Markdown text={renderContent} />
             </div>

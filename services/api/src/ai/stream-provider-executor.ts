@@ -13,16 +13,35 @@ import type { ProviderType } from "@rp-platform/domain";
 import { cancelled, providerError } from "../errors.js";
 
 /**
- * Map the Vercel AI SDK text stream into our ProviderStreamChunk iterable.
+ * Map the Vercel AI SDK fullStream into our ProviderStreamChunk iterable.
+ *
+ * Filters for `text-delta` and `reasoning` parts only.
+ * Tracks whether a `redacted-reasoning` part was seen (e.g. Claude extended thinking).
  */
-async function* mapTextStream(
-  textStream: AsyncIterable<string>,
-): AsyncGenerator<ProviderStreamChunk> {
-  for await (const delta of textStream) {
-    if (delta) {
-      yield { type: "text-delta", delta };
+function createMappedStream(
+  fullStream: AsyncIterable<unknown>,
+): {
+  stream: AsyncGenerator<ProviderStreamChunk>;
+  hasRedacted: boolean;
+} {
+  let hasRedacted = false;
+
+  async function* walk(): AsyncGenerator<ProviderStreamChunk> {
+    for await (const part of fullStream) {
+      const p = part as { type: string; textDelta?: string; text?: string };
+
+      if (p.type === "text-delta" && p.textDelta) {
+        yield { type: "text-delta", delta: p.textDelta };
+      } else if (p.type === "reasoning" && (p.textDelta ?? p.text)) {
+        yield { type: "reasoning-delta", textDelta: p.textDelta ?? p.text ?? "" };
+      } else if (p.type === "redacted-reasoning") {
+        hasRedacted = true;
+      }
+      // reasoning-signature, source, tool-call, etc. — silently ignored
     }
   }
+
+  return { stream: walk(), hasRedacted };
 }
 
 /**
@@ -52,7 +71,7 @@ function mapFinish(result: { finishReason: Promise<unknown>; usage: Promise<unkn
  * Streaming-native provider executor.
  *
  * Returns a ProviderStreamResult with an async iterable stream of text chunks,
- * a collected text promise, and a finish metadata promise.
+ * a collected text promise, reasoning promise, and a finish metadata promise.
  */
 export const streamProviderExecutor: ProviderExecutor = async (input) => {
   try {
@@ -72,13 +91,16 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       ...samplerConfig,
     });
 
-    const stream = mapTextStream(result.textStream);
+    const { stream, hasRedacted } = createMappedStream(result.fullStream);
+
     const finished = mapFinish(result);
 
     return {
       stream,
       finished,
       text: result.text,
+      reasoning: result.reasoning as Promise<string | undefined>,
+      hasRedactedReasoning: hasRedacted,
     };
   } catch (error) {
     if (input.signal?.aborted) throw cancelled();

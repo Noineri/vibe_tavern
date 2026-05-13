@@ -485,5 +485,7 @@
   "tweaks_dark_theme": "Тёмная тема",
 
   "back": "← Назад",
-  "confirm_delete": "Подтвердить удаление"
+  "confirm_delete": "Подтвердить удаление",
+  "reasoning": "Размышления",
+  "reasoning_redacted": "Модель использовала внутренние рассуждения"
 }
