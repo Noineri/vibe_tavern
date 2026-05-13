@@ -488,5 +488,7 @@
   "tweaks_dark_theme": "Dark theme",
 
   "back": "← Back",
-  "confirm_delete": "Confirm deletion"
+  "confirm_delete": "Confirm deletion",
+  "reasoning": "Reasoning",
+  "reasoning_redacted": "Model used internal reasoning"
 }

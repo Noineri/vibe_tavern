@@ -5,6 +5,8 @@ export interface ParseSSEStreamOptions {
   signal?: AbortSignal;
   onStatus: (status: ChatGenerationStatus) => void;
   onChunk: (delta: string) => void;
+  onReasoningChunk?: (delta: string) => void;
+  onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
 }
 
 export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
@@ -18,6 +20,7 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
   let buffer = "";
   let finishReason = "stop";
   let usage: Record<string, number> | undefined;
+  let currentEvent = "";
 
   while (true) {
     const { done, value } = await reader.read();
@@ -28,19 +31,52 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
     buffer = lines.pop() ?? "";
 
     for (const line of lines) {
+      // Track event type
+      if (line.startsWith("event: ")) {
+        currentEvent = line.slice(7).trim();
+        continue;
+      }
+
+      // Process data lines
       if (line.startsWith("data: ")) {
         const data = line.slice(6);
         if (data === "[DONE]") continue;
+
         try {
           const parsed = JSON.parse(data);
-          if (parsed.delta) opts.onChunk(parsed.delta);
-          if (parsed.finishReason) finishReason = parsed.finishReason;
-          if (parsed.usage) usage = parsed.usage;
+
+          if (currentEvent === "reasoning-delta") {
+            if (parsed.delta !== undefined && opts.onReasoningChunk) {
+              opts.onReasoningChunk(parsed.delta);
+            }
+          } else if (currentEvent === "reasoning-done") {
+            if (opts.onReasoningDone) {
+              opts.onReasoningDone({
+                durationMs: parsed.durationMs ?? null,
+                redacted: parsed.redacted ?? false,
+              });
+            }
+          } else {
+            // text-delta or default
+            if (parsed.delta !== undefined) opts.onChunk(parsed.delta);
+            if (parsed.finishReason) finishReason = parsed.finishReason;
+            if (parsed.usage) usage = parsed.usage;
+          }
         } catch { /* skip malformed */ }
+
+        currentEvent = "";
+        continue;
       }
-      if (line.startsWith("event: abort")) {
+
+      // Handle abort event (no data line needed)
+      if (line.startsWith("event: abort") || currentEvent === "abort") {
         opts.onStatus("cancelled");
         return { finishReason: "cancelled", usage };
+      }
+
+      // Reset event on empty lines (SSE separator)
+      if (line.trim() === "") {
+        currentEvent = "";
       }
     }
   }

@@ -13,6 +13,7 @@ export interface ChatState {
   messageActionId: string | null;
   pendingUserMessageContent: string | null;
   streamingText: string;
+  streamingReasoningText: string;
 }
 
 export interface ChatActions {
@@ -27,6 +28,7 @@ export interface ChatActions {
   setPendingUserMessageContent: (content: string | null) => void;
   setGenerationStatus: (status: import("../app-client.js").ChatGenerationStatus) => void;
   setStreamingText: (text: string) => void;
+  setStreamingReasoningText: (text: string) => void;
 }
 
 export type ChatStore = ChatState & ChatActions;
@@ -43,6 +45,7 @@ export const useChatStore = create<ChatStore>()((set) => ({
   messageActionId: null,
   pendingUserMessageContent: null,
   streamingText: "",
+  streamingReasoningText: "",
 
   setActiveChatId: (id) => set({ activeChatId: id, selectedCharacterId: null }),
   setSelectedCharacterId: (id) => set({ selectedCharacterId: id }),
@@ -55,4 +58,5 @@ export const useChatStore = create<ChatStore>()((set) => ({
   setPendingUserMessageContent: (content) => set({ pendingUserMessageContent: content }),
   setGenerationStatus: (status) => set({ generationStatus: status }),
   setStreamingText: (text) => set({ streamingText: text }),
+  setStreamingReasoningText: (text) => set({ streamingReasoningText: text }),
 }));

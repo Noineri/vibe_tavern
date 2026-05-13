@@ -184,11 +184,23 @@ export class LiveChatOrchestrator {
     }
 
     let collected = "";
+    let reasoningCollected = "";
+    let reasoningStartedAt: number | null = null;
+    let reasoningDurationMs: number | null = null;
     try {
       for await (const chunk of streamResult.stream) {
         if (chunk.type === "text-delta" && chunk.delta) {
+          if (!reasoningStartedAt && reasoningCollected) {
+            // First text chunk after reasoning — finalize timing
+            reasoningDurationMs = Date.now() - reasoningStartedAt!;
+          }
           collected += chunk.delta;
           yield { event: "text-delta", data: JSON.stringify({ delta: chunk.delta }) };
+        }
+        if (chunk.type === "reasoning-delta") {
+          if (!reasoningStartedAt) reasoningStartedAt = Date.now();
+          reasoningCollected += chunk.textDelta;
+          yield { event: "reasoning-delta", data: JSON.stringify({ delta: chunk.textDelta }) };
         }
       }
     } catch (err) {
@@ -196,7 +208,10 @@ export class LiveChatOrchestrator {
         // Abort — save partial text
         const latencyMs = Date.now() - startedAt;
         if (collected) {
-          await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), collected, latencyMs);
+          await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), collected, latencyMs, {
+            reasoning: reasoningCollected || undefined,
+            reasoningDurationMs: reasoningStartedAt ? Date.now() - reasoningStartedAt : undefined,
+          });
         }
         yield { event: "abort", data: JSON.stringify({ partialLength: collected.length }) };
         return;
@@ -207,9 +222,29 @@ export class LiveChatOrchestrator {
     const latencyMs = Date.now() - startedAt;
     const finish = await streamResult.finished;
     const finalText = (await streamResult.text) || collected;
+    const finalReasoning = (await streamResult.reasoning) || reasoningCollected || undefined;
 
-    const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), finalText, latencyMs);
+    // Finalize reasoning duration if it wasn't set during streaming
+    if (reasoningStartedAt && reasoningDurationMs === null) {
+      reasoningDurationMs = Date.now() - reasoningStartedAt;
+    }
+
+    const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), finalText, latencyMs, {
+      reasoning: finalReasoning,
+      reasoningDurationMs: reasoningDurationMs ?? undefined,
+    });
     logSendDebug("live.send-stream.done", { chatId: input.chatId, latencyMs, replyLength: finalText.length });
+
+    // Yield reasoning-done before finish if reasoning occurred
+    if (reasoningCollected || streamResult.hasRedactedReasoning) {
+      yield {
+        event: "reasoning-done",
+        data: JSON.stringify({
+          durationMs: reasoningDurationMs,
+          redacted: streamResult.hasRedactedReasoning,
+        }),
+      };
+    }
 
     yield {
       event: "finish",
@@ -249,18 +284,32 @@ export class LiveChatOrchestrator {
     }
 
     let collected = "";
+    let reasoningCollected = "";
+    let reasoningStartedAt: number | null = null;
+    let reasoningDurationMs: number | null = null;
     try {
       for await (const chunk of streamResult.stream) {
         if (chunk.type === "text-delta" && chunk.delta) {
+          if (!reasoningStartedAt && reasoningCollected) {
+            reasoningDurationMs = Date.now() - reasoningStartedAt!;
+          }
           collected += chunk.delta;
           yield { event: "text-delta", data: JSON.stringify({ delta: chunk.delta }) };
+        }
+        if (chunk.type === "reasoning-delta") {
+          if (!reasoningStartedAt) reasoningStartedAt = Date.now();
+          reasoningCollected += chunk.textDelta;
+          yield { event: "reasoning-delta", data: JSON.stringify({ delta: chunk.textDelta }) };
         }
       }
     } catch (err) {
       if (input.signal?.aborted) {
         const latencyMs = Date.now() - startedAt;
         if (collected) {
-          await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), collected, latencyMs);
+          await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), collected, latencyMs, {
+            reasoning: reasoningCollected || undefined,
+            reasoningDurationMs: reasoningStartedAt ? Date.now() - reasoningStartedAt : undefined,
+          });
         }
         yield { event: "abort", data: JSON.stringify({ partialLength: collected.length }) };
         return;
@@ -271,9 +320,27 @@ export class LiveChatOrchestrator {
     const latencyMs = Date.now() - startedAt;
     const finish = await streamResult.finished;
     const finalText = (await streamResult.text) || collected;
+    const finalReasoning = (await streamResult.reasoning) || reasoningCollected || undefined;
 
-    const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), finalText, latencyMs);
+    if (reasoningStartedAt && reasoningDurationMs === null) {
+      reasoningDurationMs = Date.now() - reasoningStartedAt;
+    }
+
+    const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), finalText, latencyMs, {
+      reasoning: finalReasoning,
+      reasoningDurationMs: reasoningDurationMs ?? undefined,
+    });
     logSendDebug("live.generateReply-stream.done", { chatId: input.chatId, latencyMs, replyLength: finalText.length });
+
+    if (reasoningCollected || streamResult.hasRedactedReasoning) {
+      yield {
+        event: "reasoning-done",
+        data: JSON.stringify({
+          durationMs: reasoningDurationMs,
+          redacted: streamResult.hasRedactedReasoning,
+        }),
+      };
+    }
 
     yield {
       event: "finish",
@@ -315,11 +382,22 @@ export class LiveChatOrchestrator {
     }
 
     let collected = "";
+    let reasoningCollected = "";
+    let reasoningStartedAt: number | null = null;
+    let reasoningDurationMs: number | null = null;
     try {
       for await (const chunk of streamResult.stream) {
         if (chunk.type === "text-delta" && chunk.delta) {
+          if (!reasoningStartedAt && reasoningCollected) {
+            reasoningDurationMs = Date.now() - reasoningStartedAt!;
+          }
           collected += chunk.delta;
           yield { event: "text-delta", data: JSON.stringify({ delta: chunk.delta }) };
+        }
+        if (chunk.type === "reasoning-delta") {
+          if (!reasoningStartedAt) reasoningStartedAt = Date.now();
+          reasoningCollected += chunk.textDelta;
+          yield { event: "reasoning-delta", data: JSON.stringify({ delta: chunk.textDelta }) };
         }
       }
     } catch (err) {
@@ -329,6 +407,8 @@ export class LiveChatOrchestrator {
           await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
             content: collected,
             latencyMs,
+            reasoning: reasoningCollected || undefined,
+            reasoningDurationMs: reasoningStartedAt ? Date.now() - reasoningStartedAt : undefined,
           });
         }
         yield { event: "abort", data: JSON.stringify({ partialLength: collected.length }) };
@@ -340,12 +420,29 @@ export class LiveChatOrchestrator {
     const latencyMs = Date.now() - startedAt;
     const finish = await streamResult.finished;
     const finalText = (await streamResult.text) || collected;
+    const finalReasoning = (await streamResult.reasoning) || reasoningCollected || undefined;
+
+    if (reasoningStartedAt && reasoningDurationMs === null) {
+      reasoningDurationMs = Date.now() - reasoningStartedAt;
+    }
 
     await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
       content: finalText,
       latencyMs,
+      reasoning: finalReasoning,
+      reasoningDurationMs: reasoningDurationMs ?? undefined,
     });
     logSendDebug("live.regenerate-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
+
+    if (reasoningCollected || streamResult.hasRedactedReasoning) {
+      yield {
+        event: "reasoning-done",
+        data: JSON.stringify({
+          durationMs: reasoningDurationMs,
+          redacted: streamResult.hasRedactedReasoning,
+        }),
+      };
+    }
 
     yield {
       event: "finish",

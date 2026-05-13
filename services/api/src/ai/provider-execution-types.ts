@@ -78,10 +78,9 @@ export interface GenerationUsage {
 // ---------------------------------------------------------------------------
 
 /** Single chunk emitted by the streaming executor. */
-export interface ProviderStreamChunk {
-  type: "text-delta";
-  delta: string;
-}
+export type ProviderStreamChunk =
+  | { type: "text-delta"; delta: string }
+  | { type: "reasoning-delta"; textDelta: string };
 
 /** Final metadata resolved when the stream completes. */
 export interface ProviderStreamFinish {
@@ -98,6 +97,10 @@ export interface ProviderStreamResult {
   stream: AsyncIterable<ProviderStreamChunk>;
   finished: Promise<ProviderStreamFinish>;
   text: Promise<string>;
+  /** Final reasoning text collected from the stream (resolved after stream ends). */
+  reasoning: Promise<string | undefined>;
+  /** True if a redacted-reasoning chunk was encountered. */
+  hasRedactedReasoning: boolean;
 }
 
 /** Input to the streaming executor. */

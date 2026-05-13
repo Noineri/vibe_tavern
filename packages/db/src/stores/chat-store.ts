@@ -49,6 +49,8 @@ export interface MessageVariant {
   content: string;
   isSelected: boolean;
   finishReason: string | null;
+  reasoning: string | null;
+  reasoningDurationMs: number | null;
   createdAt: string;
 }
 
@@ -324,7 +326,8 @@ export class ChatStore {
         for (const v of variants) {
           newVariants.push({
             id: this.idGen.next('mvar'), messageId: newMsgId, variantIndex: v.variantIndex,
-            content: v.content, isSelected: v.isSelected, finishReason: v.finishReason, createdAt: now,
+            content: v.content, isSelected: v.isSelected, finishReason: v.finishReason,
+            reasoning: v.reasoning, reasoningDurationMs: v.reasoningDurationMs, createdAt: now,
           });
         }
       }
@@ -411,6 +414,7 @@ export class ChatStore {
 
   async addMessage(data: {
     chatId: string; branchId: string; role: string; authorType: string; content: string;
+    reasoning?: string; reasoningDurationMs?: number;
   }): Promise<Message> {
     const id = this.idGen.next('msg');
     const now = this.clock.now();
@@ -428,7 +432,10 @@ export class ChatStore {
       }).run();
       await tx.insert(messageVariants).values({
         id: this.idGen.next('mvar'), messageId: id, variantIndex: 0,
-        content: data.content, isSelected: 1, finishReason: null, createdAt: now,
+        content: data.content, isSelected: 1, finishReason: null,
+        reasoning: data.reasoning ?? null,
+        reasoningDurationMs: data.reasoningDurationMs ?? null,
+        createdAt: now,
       }).run();
     });
 
@@ -476,7 +483,7 @@ export class ChatStore {
     return this.mapRowMessage(row!);
   }
 
-  async completeStreamingMessage(id: string, content: string): Promise<Message> {
+  async completeStreamingMessage(id: string, content: string, reasoning?: string, reasoningDurationMs?: number): Promise<Message> {
     const now = this.clock.now();
 
     await this.db.transaction(async (tx) => {
@@ -503,6 +510,8 @@ export class ChatStore {
             content,
             isSelected: 1,
             finishReason: null,
+            reasoning: reasoning ?? null,
+            reasoningDurationMs: reasoningDurationMs ?? null,
             createdAt: now,
           })
           .run();
@@ -558,6 +567,8 @@ export class ChatStore {
     messageId: string,
     content: string,
     finishReason?: string,
+    reasoning?: string,
+    reasoningDurationMs?: number,
   ): Promise<MessageVariant> {
     // Find max variantIndex
     const lastVariant = await this.db
@@ -590,6 +601,8 @@ export class ChatStore {
           content,
           isSelected: 1,
           finishReason: finishReason ?? null,
+          reasoning: reasoning ?? null,
+          reasoningDurationMs: reasoningDurationMs ?? null,
           createdAt: now,
         })
         .run();
@@ -814,6 +827,8 @@ export class ChatStore {
       content: row.content,
       isSelected: row.isSelected === 1,
       finishReason: row.finishReason,
+      reasoning: row.reasoning,
+      reasoningDurationMs: row.reasoningDurationMs,
       createdAt: row.createdAt,
     };
   }

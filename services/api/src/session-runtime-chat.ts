@@ -80,7 +80,12 @@ export class ChatRuntime {
     this.pendingPromptTraceByChat.delete(chatId);
   }
 
-  async appendAssistantReply(chatId: ChatId, content: string, latencyMs: number): Promise<SessionSnapshot> {
+  async appendAssistantReply(
+    chatId: ChatId,
+    content: string,
+    latencyMs: number,
+    reasoningData?: { reasoning?: string; reasoningDurationMs?: number },
+  ): Promise<SessionSnapshot> {
     const { chats, assemblePrompt, getSnapshot } = this.deps;
     const chat = (await chats.getById(chatId))!;
 
@@ -90,6 +95,8 @@ export class ChatRuntime {
       role: "assistant",
       authorType: "assistant",
       content,
+      reasoning: reasoningData?.reasoning,
+      reasoningDurationMs: reasoningData?.reasoningDurationMs,
     });
 
     const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId as ChatBranchId);
@@ -124,7 +131,7 @@ export class ChatRuntime {
   async appendMessageVariant(
     chatId: ChatId,
     messageId: MessageId,
-    input: { content: string; finishReason?: string | null; latencyMs: number },
+    input: { content: string; finishReason?: string | null; latencyMs: number; reasoning?: string; reasoningDurationMs?: number },
   ): Promise<SessionSnapshot> {
     const { chats, getSnapshot } = this.deps;
     const trimmed = input.content.trim();
@@ -132,7 +139,13 @@ export class ChatRuntime {
       return await getSnapshot(chatId);
     }
 
-    await chats.addVariant(messageId, trimmed, input.finishReason ?? undefined);
+    await chats.addVariant(
+      messageId,
+      trimmed,
+      input.finishReason ?? undefined,
+      input.reasoning,
+      input.reasoningDurationMs,
+    );
 
     const chat = (await chats.getById(chatId))!;
     const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId as ChatBranchId);
