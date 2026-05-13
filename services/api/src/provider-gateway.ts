@@ -18,10 +18,26 @@ export interface ProviderConnectionInput {
 	reasoningEffort?: string | null;
 }
 
+export interface ProviderModelCapabilities {
+	vision?: boolean;
+	reasoning?: boolean;
+	tools?: boolean;
+	webSearch?: boolean;
+	premium?: boolean;
+}
+
+export interface ProviderModelPricing {
+	input?: number;
+	output?: number;
+}
+
 export interface ProviderModelOption {
 	id: string;
 	label: string;
 	contextLength?: number;
+	capabilities?: ProviderModelCapabilities;
+	pricing?: ProviderModelPricing;
+	description?: string;
 }
 
 const PROBE_TIMEOUT_MS = 5_000;
@@ -37,11 +53,27 @@ export interface ProviderProbeResult {
 interface OpenAiModelRecord {
 	id?: string;
 	name?: string;
+	description?: string;
 	owned_by?: string;
 	category?: string;
 	context_length?: number;
 	context_length_total?: number;
+	tokens?: number;
 	top_provider?: { context_length?: number };
+	endpoints?: string[];
+	premium_model?: boolean;
+	pricing?: {
+		input?: number;
+		output?: number;
+		prompt?: number;
+		completion?: number;
+	};
+	metadata?: {
+		vision?: boolean;
+		reasoning?: boolean;
+		function_call?: boolean;
+		web_search?: boolean;
+	};
 }
 
 interface OpenAiModelsResponse {
@@ -489,6 +521,7 @@ async function listOpenAiCompatModels(
 ): Promise<ProviderModelOption[]> {
 	const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
 	const isNanoGpt = /nano-gpt\.com/.test(baseUrl);
+	const isElectronHub = /electronhub\.ai/.test(baseUrl);
 
 	// NanoGPT: use subscription-only endpoint with detailed info
 	// Other providers: standard /models
@@ -524,8 +557,12 @@ async function listOpenAiCompatModels(
 
 	const payload = (await response.json()) as OpenAiModelsResponse;
 	const records = Array.isArray(payload.data) ? payload.data : [];
+	const canFilterByEndpoint = records.some((record) => Array.isArray(record.endpoints));
+	const chatRecords = isElectronHub && canFilterByEndpoint
+		? records.filter((record) => record.endpoints?.includes("/v1/chat/completions"))
+		: records;
 
-	return records
+	return chatRecords
 		.map((record) => {
 			const id = (record.id ?? record.name ?? "").trim();
 			if (!id) {
@@ -543,8 +580,25 @@ async function listOpenAiCompatModels(
 				id,
 				label: (record.name ?? "").trim() || id,
 			};
-			const contextLength = record.context_length ?? record.context_length_total ?? record.top_provider?.context_length;
+			const contextLength = record.context_length ?? record.context_length_total ?? record.tokens ?? record.top_provider?.context_length;
 			if (contextLength) opt.contextLength = contextLength;
+			if (record.description) opt.description = record.description;
+			if (record.pricing) {
+				const inputPrice = record.pricing.input ?? record.pricing.prompt;
+				const outputPrice = record.pricing.output ?? record.pricing.completion;
+				if (inputPrice !== undefined || outputPrice !== undefined) {
+					opt.pricing = { input: inputPrice, output: outputPrice };
+				}
+			}
+			if (record.metadata || record.premium_model !== undefined) {
+				opt.capabilities = {
+					vision: record.metadata?.vision,
+					reasoning: record.metadata?.reasoning,
+					tools: record.metadata?.function_call,
+					webSearch: record.metadata?.web_search,
+					premium: record.premium_model,
+				};
+			}
 			return opt;
 		})
 		.filter((record): record is ProviderModelOption => Boolean(record))

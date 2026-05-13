@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@rp-platform/domain";
 import { Icons } from "./shared/icons.js";
@@ -6,6 +6,13 @@ import { SummaryTab, ContextFooter } from "./context/index.js";
 import type { SavedSummary } from "./context/SummaryTab.js";
 import { cn } from "../lib/cn.js";
 import { useT } from "../i18n/context.js";
+import {
+  readSummarySettings,
+  persistSummarySettings,
+  readSavedSummaries,
+  persistSavedSummaries,
+  type SavedSummaryRecord,
+} from "../lib/local-storage.js";
 
 interface ContextMemoryModalProps {
   isOpen: boolean;
@@ -19,6 +26,8 @@ interface ContextMemoryModalProps {
   onSaveSummary: (summary: string) => Promise<string>;
   onFetchModelsForProfile: (providerProfileId: string) => Promise<Array<{ id: string; label: string; contextLength?: number }>>;
 }
+
+let nextSummaryCounter = 1;
 
 export function ContextMemoryModal({
   isOpen,
@@ -35,20 +44,48 @@ export function ContextMemoryModal({
   const { t } = useT();
   const [topTab, setTopTab] = useState<'summary' | 'memory'>('summary');
   const [summaryText, setSummaryText] = useState(currentSummary);
-  const [activeSummaryId, setActiveSummaryId] = useState<string | null>(currentSummary.trim() ? 'chat-summary' : null);
-  const [msgCount, setMsgCount] = useState(Math.min(Math.max(messageCount || 10, 1), 200));
+  const [activeSummaryId, setActiveSummaryId] = useState<string | null>(null);
+  const effectiveMax = Math.max(messageCount, 1);
+  const [msgCount, setMsgCount] = useState(Math.min(Math.max(messageCount || 10, 1), effectiveMax));
   const [selectedProviderId, setSelectedProviderId] = useState(providers.find((p) => p.isActive)?.id ?? providers[0]?.id ?? '');
   const [selectedModel, setSelectedModel] = useState(providers.find((p) => p.isActive)?.defaultModel ?? providers[0]?.defaultModel ?? '');
   const [providerModels, setProviderModels] = useState<Array<{ id: string; label: string; contextLength?: number }>>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [autosaveFlash, setAutosaveFlash] = useState(false);
+  const [savedRecords, setSavedRecords] = useState<SavedSummaryRecord[]>([]);
+
+  // Stabilize the fetch callback so the model-loading effect doesn't re-run on every render
+  const fetchModelsRef = useRef(onFetchModelsForProfile);
+  fetchModelsRef.current = onFetchModelsForProfile;
+
+  // Autosave timer ref
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load saved summaries from localStorage when modal opens or chat changes
+  useEffect(() => {
+    if (!isOpen || !activeChatId) return;
+    const records = readSavedSummaries(activeChatId);
+    setSavedRecords(records);
+
+    // Restore persisted provider/model settings
+    const settings = readSummarySettings(activeChatId);
+    if (settings) {
+      if (settings.providerId && providers.some(p => p.id === settings.providerId)) {
+        setSelectedProviderId(settings.providerId);
+      }
+      if (settings.model) {
+        setSelectedModel(settings.model);
+      }
+    }
+  }, [isOpen, activeChatId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isOpen) return;
-    setSummaryText(currentSummary);
-    setActiveSummaryId(currentSummary.trim() ? 'chat-summary' : null);
-  }, [currentSummary, isOpen]);
+    const newMax = Math.max(messageCount, 1);
+    setMsgCount((prev) => Math.min(prev, newMax));
+  }, [isOpen, messageCount]);
 
   useEffect(() => {
     if (!selectedProviderId || !providers.some((p) => p.id === selectedProviderId)) {
@@ -66,7 +103,7 @@ export function ContextMemoryModal({
 
     let cancelled = false;
     setIsLoadingModels(true);
-    void onFetchModelsForProfile(selectedProviderId)
+    void fetchModelsRef.current(selectedProviderId)
       .then((models) => {
         if (cancelled) return;
         setProviderModels(models.map((model) => ({ id: model.id, label: model.label || model.id, contextLength: model.contextLength })));
@@ -86,13 +123,48 @@ export function ContextMemoryModal({
       });
 
     return () => { cancelled = true; };
-  }, [isOpen, selectedProviderId, onFetchModelsForProfile]);
+  }, [isOpen, selectedProviderId]);
+
+  const handleAutosaveSettings = useCallback((providerId: string, model: string) => {
+    if (!activeChatId) return;
+    persistSummarySettings(activeChatId, { providerId, model });
+    setAutosaveFlash(true);
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => setAutosaveFlash(false), 1200);
+  }, [activeChatId]);
+
+  const persistRecords = useCallback((records: SavedSummaryRecord[]) => {
+    if (!activeChatId) return;
+    setSavedRecords(records);
+    persistSavedSummaries(activeChatId, records);
+  }, [activeChatId]);
 
   const isDisabled = activeChatId === null;
   const providerOptions = providers.map(p => ({ id: p.id, name: p.name, defaultModel: p.defaultModel ?? '' }));
-  const savedSummaries = useMemo<SavedSummary[]>(() => currentSummary.trim()
-    ? [{ id: 'chat-summary', label: 'Current summary', text: currentSummary, turn: messageCount, timestamp: 'saved' }]
-    : [], [currentSummary, messageCount]);
+
+  // Build sidebar list: saved records + current backend summary (if any)
+  const savedSummaries = useMemo<SavedSummary[]>(() => {
+    const items: SavedSummary[] = savedRecords.map((r) => ({
+      id: r.id,
+      label: r.label,
+      text: r.text,
+      turn: r.msgCount,
+      timestamp: new Date(r.timestamp).toLocaleString(),
+      includeInContext: r.includeInContext,
+    }));
+    // If there's a backend summary that isn't already in savedRecords, show it too
+    if (currentSummary.trim() && !savedRecords.some(r => r.text === currentSummary)) {
+      items.unshift({
+        id: 'chat-summary',
+        label: t('current_summary_label'),
+        text: currentSummary,
+        turn: messageCount,
+        timestamp: t('summary_timestamp_saved'),
+        includeInContext: true,
+      });
+    }
+    return items;
+  }, [currentSummary, messageCount, savedRecords, t]);
 
   if (!isOpen) return null;
 
@@ -109,8 +181,20 @@ export function ContextMemoryModal({
     setIsSummarizing(true);
     try {
       const summary = await onSummarize({ providerProfileId: selectedProviderId, model: selectedModel.trim() || undefined, maxMessages: msgCount });
+
+      // Add a new summary record to localStorage
+      const newRecord: SavedSummaryRecord = {
+        id: `summary-${Date.now()}-${nextSummaryCounter++}`,
+        label: `${t('summary_label_prefix')} ${savedRecords.length + 1}`,
+        text: summary,
+        msgCount,
+        timestamp: Date.now(),
+        includeInContext: false,
+      };
+      persistRecords([...savedRecords, newRecord]);
+
       setSummaryText(summary);
-      setActiveSummaryId('chat-summary');
+      setActiveSummaryId(newRecord.id);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("summarization_failed"));
     } finally {
@@ -121,14 +205,70 @@ export function ContextMemoryModal({
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      // Save the currently edited summary text to the backend
       const summary = await onSaveSummary(summaryText);
       setSummaryText(summary);
-      setActiveSummaryId(summary.trim() ? 'chat-summary' : null);
+
+      // Also update/create a local record for this summary
+      if (summary.trim()) {
+        const existingIdx = savedRecords.findIndex(r => r.id === activeSummaryId);
+        if (existingIdx >= 0) {
+          const updated = [...savedRecords];
+          updated[existingIdx] = { ...updated[existingIdx], text: summary };
+          persistRecords(updated);
+        } else {
+          const newRecord: SavedSummaryRecord = {
+            id: activeSummaryId ?? `summary-${Date.now()}-${nextSummaryCounter++}`,
+            label: `${t('summary_label_prefix')} ${savedRecords.length + 1}`,
+            text: summary,
+            msgCount,
+            timestamp: Date.now(),
+            includeInContext: false,
+          };
+          persistRecords([...savedRecords, newRecord]);
+          setActiveSummaryId(newRecord.id);
+        }
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("summary_save_failed"));
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleSelectSummary = (id: string) => {
+    const record = savedSummaries.find(s => s.id === id);
+    if (record) {
+      setSummaryText(record.text);
+      setActiveSummaryId(id);
+    }
+  };
+
+  const handleDeleteSummary = (id: string) => {
+    if (id === 'chat-summary') {
+      // Delete the backend summary
+      void onSaveSummary('').then((summary) => {
+        setSummaryText(summary);
+        if (activeSummaryId === 'chat-summary') setActiveSummaryId(null);
+      }).catch((err) => {
+        toast.error(err instanceof Error ? err.message : t("summary_save_failed"));
+      });
+    } else {
+      const updated = savedRecords.filter(r => r.id !== id);
+      persistRecords(updated);
+      if (activeSummaryId === id) {
+        setActiveSummaryId(null);
+        setSummaryText('');
+      }
+    }
+  };
+
+  const handleToggleContext = (id: string) => {
+    if (id === 'chat-summary') return; // Backend summary is always included
+    const updated = savedRecords.map(r =>
+      r.id === id ? { ...r, includeInContext: !r.includeInContext } : r
+    );
+    persistRecords(updated);
   };
 
   return (
@@ -152,15 +292,19 @@ export function ContextMemoryModal({
           onSummaryTextChange={setSummaryText}
           msgCount={msgCount}
           onMsgCountChange={setMsgCount}
-          maxMsgCount={200}
+          maxMsgCount={effectiveMax}
           selectedProviderId={selectedProviderId}
           selectedModel={selectedModel}
           onProviderChange={(id) => {
             setSelectedProviderId(id);
             setSelectedModel('');
             setProviderModels([]);
+            handleAutosaveSettings(id, '');
           }}
-          onModelChange={setSelectedModel}
+          onModelChange={(model) => {
+            setSelectedModel(model);
+            handleAutosaveSettings(selectedProviderId, model);
+          }}
           providers={providerOptions}
           models={providerModels}
           isLoadingModels={isLoadingModels}
@@ -168,16 +312,9 @@ export function ContextMemoryModal({
           isSummarizing={isSummarizing}
           savedSummaries={savedSummaries}
           activeSummaryId={activeSummaryId}
-          onSelectSummary={() => { setSummaryText(currentSummary); setActiveSummaryId('chat-summary'); }}
-          onDeleteSummary={async () => {
-            try {
-              const summary = await onSaveSummary('');
-              setSummaryText(summary);
-              setActiveSummaryId(null);
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : t("summary_save_failed"));
-            }
-          }}
+          onSelectSummary={handleSelectSummary}
+          onDeleteSummary={handleDeleteSummary}
+          onToggleContext={handleToggleContext}
           onNewSummary={() => { setSummaryText(''); setActiveSummaryId(null); }}
           disabled={isDisabled}
           error=""
@@ -190,10 +327,9 @@ export function ContextMemoryModal({
           contextWindow={contextWindow}
           onSaveSummary={handleSave}
           isSaving={isSaving}
+          autoSaveFlash={autosaveFlash}
         />
       </div>
     </div>
   );
 }
-
-

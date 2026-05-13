@@ -226,7 +226,12 @@ export async function getCachedProviderModels(deps: ProviderModuleDeps, provider
   const models = await deps.providers.getCachedModels(providerProfileId);
   if (!models || models.length === 0) return null;
   return {
-    models: models.map((m) => ({ id: m.modelSlug, label: m.modelName })),
+    models: models.map((m) => ({
+      id: m.modelSlug,
+      label: m.modelName,
+      ...(m.contextLength != null ? { contextLength: m.contextLength } : {}),
+      ...(m.capabilities ? { capabilities: m.capabilities } : {}),
+    })),
     cachedAt: models[0]?.fetchedAt ?? new Date().toISOString(),
   };
 }
@@ -234,11 +239,13 @@ export async function getCachedProviderModels(deps: ProviderModuleDeps, provider
 export async function setCachedProviderModels(
   deps: ProviderModuleDeps,
   providerProfileId: string,
-  models: Array<{ id: string; label: string }>,
+  models: Array<{ id: string; label: string; contextLength?: number; capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean } }>,
 ): Promise<CachedProviderModelsRecord> {
   await deps.providers.saveCachedModels(providerProfileId, models.map((m) => ({
     modelSlug: m.id,
     modelName: m.label,
+    contextLength: m.contextLength,
+    capabilities: m.capabilities,
   })));
   return {
     models,

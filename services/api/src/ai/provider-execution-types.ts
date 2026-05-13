@@ -107,6 +107,8 @@ export interface ProviderExecutionInput {
   prompt: AssemblePromptResponse;
   signal?: AbortSignal;
   prefill?: string;
+  /** Override the profile's maxTokens for this specific call (e.g. summarization). */
+  overrideMaxTokens?: number;
 }
 
 /** Streaming executor function signature. */

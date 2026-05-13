@@ -32,7 +32,12 @@ export interface ClientProviderProfileRecord {
 }
 
 export interface CachedProviderModelsRecord {
-  models: Array<{ id: string; label: string }>;
+  models: Array<{
+    id: string;
+    label: string;
+    contextLength?: number;
+    capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean };
+  }>;
   cachedAt: string;
 }
 
