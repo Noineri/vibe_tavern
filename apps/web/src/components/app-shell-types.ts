@@ -30,6 +30,7 @@ export interface ConnectionState {
   seed: string | null;
   reasoningEffort: string;
   streamResponse: boolean;
+  customSamplers: boolean;
 }
 
 export interface CharacterTab {

@@ -29,6 +29,7 @@ export interface StoredProviderProfileRecord {
   seed: string | null;
   reasoningEffort: string;
   streamResponse: boolean;
+  customSamplers: boolean;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

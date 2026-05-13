@@ -25,6 +25,7 @@ export interface ClientProviderProfileRecord {
   seed: string | null;
   reasoningEffort: string;
   streamResponse: boolean;
+  customSamplers: boolean;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -142,6 +143,7 @@ export function toClientProviderProfile(profile: import("@rp-platform/domain").S
     seed: profile.seed,
     reasoningEffort: profile.reasoningEffort,
     streamResponse: profile.streamResponse,
+    customSamplers: profile.customSamplers,
     isActive: profile.isActive,
     createdAt: profile.createdAt,
     updatedAt: profile.updatedAt,

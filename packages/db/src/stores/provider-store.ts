@@ -50,6 +50,7 @@ export interface CreateProviderData {
   seed?: string | null;
   reasoningEffort?: string;
   streamResponse?: boolean;
+  customSamplers?: boolean;
 }
 
 export type UpdateProviderData = Partial<CreateProviderData>;
@@ -114,7 +115,7 @@ export class ProviderStore {
         apiKey: data.apiKey ?? null,
         defaultModel: data.defaultModel ?? null,
         contextBudget: data.contextBudget ?? null,
-        maxTokens: data.maxTokens ?? 500,
+        maxTokens: data.maxTokens ?? 2000,
         temperature: data.temperature ?? 1.0,
         topP: data.topP ?? 1.0,
         topK: data.topK ?? 0,
@@ -127,6 +128,7 @@ export class ProviderStore {
         seed: data.seed ?? null,
         reasoningEffort: data.reasoningEffort ?? 'auto',
         streamResponse: data.streamResponse !== undefined ? (data.streamResponse ? 1 : 0) : 1,
+        customSamplers: data.customSamplers ? 1 : 0,
         isActive: 0,
         createdAt: now,
         updatedAt: now,
@@ -161,6 +163,7 @@ export class ProviderStore {
     if (data.seed !== undefined) values.seed = data.seed;
     if (data.reasoningEffort !== undefined) values.reasoningEffort = data.reasoningEffort;
     if (data.streamResponse !== undefined) values.streamResponse = data.streamResponse ? 1 : 0;
+    if (data.customSamplers !== undefined) values.customSamplers = data.customSamplers ? 1 : 0;
 
     const [row] = await this.db
       .update(providerProfiles)
@@ -217,6 +220,7 @@ export class ProviderStore {
         seed: original.seed,
         reasoningEffort: original.reasoningEffort,
         streamResponse: original.streamResponse,
+        customSamplers: original.customSamplers,
         isActive: 0,
         createdAt: now,
         updatedAt: now,
@@ -337,6 +341,7 @@ export class ProviderStore {
       seed: row.seed,
       reasoningEffort: row.reasoningEffort,
       streamResponse: row.streamResponse === 1,
+      customSamplers: row.customSamplers === 1,
       isActive: row.isActive === 1,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

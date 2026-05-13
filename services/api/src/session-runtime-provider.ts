@@ -82,6 +82,7 @@ export async function saveProviderProfile(deps: ProviderModuleDeps, profile: Par
     seed: profile.seed,
     reasoningEffort: profile.reasoningEffort,
     streamResponse: profile.streamResponse,
+    customSamplers: profile.customSamplers,
   });
   logSendDebug("provider.save.created", {
     profileId: created.id,

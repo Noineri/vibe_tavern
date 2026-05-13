@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { AppMessage, AppSnapshot } from "../app-client.js";
-import { useChatStore, useNavigationStore } from "../stores/index.js";
+import { useChatStore, useNavigationStore, useProviderStore } from "../stores/index.js";
 import { replaceUiMacros } from "../lib/macros.js";
 import { buildCharacterTabs } from "../lib/character-tabs.js";
 
@@ -34,7 +34,7 @@ export function useDisplayHelpers(
 ): DisplayHelpers {
   const selectedTraceId = useChatStore((s) => s.selectedTraceId);
   const pendingUserMessageContent = useChatStore((s) => s.pendingUserMessageContent);
-  const connection = useNavigationStore((s) => s.connection);
+  const connection = useProviderStore((s) => s.connection);
 
   const activePromptTrace = useMemo(
     () => deriveActivePromptTrace(snapshot, selectedTraceId),

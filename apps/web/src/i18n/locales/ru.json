@@ -247,6 +247,7 @@
   "effort_high": "Высокое",
   "stream_response": "Стриминг ответа",
   "show_reasoning": "Показывать рассуждения",
+  "custom_samplers": "Кастомные семплеры",
   "samplers_advanced": "Расширенные настройки",
   "sampler_freq_penalty": "Штраф частоты",
   "sampler_pres_penalty": "Штраф присутствия",

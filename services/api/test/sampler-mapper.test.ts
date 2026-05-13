@@ -28,6 +28,7 @@ function profile(
     seed: "42",
     reasoningEffort: "high",
     streamResponse: false,
+    customSamplers: true,
     isActive: true,
     createdAt: "2025-01-01",
     updatedAt: "2025-01-01",
@@ -237,6 +238,43 @@ describe("buildSamplerConfig", () => {
       expect(config.seed).toBeUndefined();
       expect(config.topK).toBeUndefined();
       expect(config.providerOptions).toBeUndefined();
+    });
+  });
+
+  // ─── customSamplers disabled ──────────────────────────────────────────
+
+  describe("customSamplers disabled", () => {
+    it("omits topP when customSamplers is false", () => {
+      const config = buildSamplerConfig(profile("openai_compat", { customSamplers: false }));
+      expect(config.topP).toBeUndefined();
+    });
+
+    it("omits frequencyPenalty, presencePenalty when customSamplers is false", () => {
+      const config = buildSamplerConfig(profile("openai_compat", { customSamplers: false }));
+      expect(config.frequencyPenalty).toBeUndefined();
+      expect(config.presencePenalty).toBeUndefined();
+    });
+
+    it("omits providerOptions when customSamplers is false", () => {
+      const config = buildSamplerConfig(profile("openai_compat", { customSamplers: false }));
+      expect(config.providerOptions).toBeUndefined();
+    });
+
+    it("omits topK for anthropic when customSamplers is false", () => {
+      const config = buildSamplerConfig(profile("anthropic", { customSamplers: false }));
+      expect(config.topK).toBeUndefined();
+    });
+
+    it("still sends temperature, maxTokens, stopSequences when customSamplers is false", () => {
+      const config = buildSamplerConfig(profile("openai_compat", { customSamplers: false }));
+      expect(config.temperature).toBe(0.9);
+      expect(config.maxTokens).toBe(4096);
+      expect(config.stopSequences).toEqual(["\\n\\n", "STOP"]);
+    });
+
+    it("still passes seed when customSamplers is false", () => {
+      const config = buildSamplerConfig(profile("openai_compat", { customSamplers: false, seed: "99" }));
+      expect(config.seed).toBe(99);
     });
   });
 });

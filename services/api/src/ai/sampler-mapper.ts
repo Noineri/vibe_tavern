@@ -4,6 +4,11 @@
  *
  * Both executors (nonstreaming, streaming) spread the returned SamplerConfig
  * into their generateText() / streamText() call.
+ *
+ * When `customSamplers` is false, only basic params (temperature, maxTokens,
+ * stopSequences, seed, reasoningEffort) are sent to the provider. All advanced
+ * sampler fields (topP, topK, minP, topA, penalties) are skipped so the
+ * provider uses its own defaults.
  */
 
 import { PROVIDER_TYPE } from "@rp-platform/domain";
@@ -36,21 +41,38 @@ export interface SamplerConfig {
  * Returns an object that can be spread directly into generateText() / streamText().
  * Routes each sampler field to either native AI SDK params or providerOptions
  * based on the provider type.
+ *
+ * When `customSamplers` is false, advanced sampler params are omitted entirely,
+ * letting the provider use its built-in defaults.
  */
 export function buildSamplerConfig(
   profile: StoredProviderProfileRecord,
 ): SamplerConfig {
-  // -- Native params common to all providers --
+  // -- Always-sent params: temperature, maxTokens, stopSequences --
   const config: SamplerConfig = {};
 
   if (profile.temperature != null) config.temperature = profile.temperature;
-  if (profile.topP != null) config.topP = profile.topP;
   if (profile.maxTokens != null) config.maxTokens = profile.maxTokens;
 
-  // stopSequences is already string[] — use directly
   if (profile.stopSequences.length > 0) {
     config.stopSequences = profile.stopSequences;
   }
+
+  // -- If custom samplers are disabled, skip all advanced params --
+  if (!profile.customSamplers) {
+    // Only pass seed (if set) even without custom samplers
+    if (profile.seed != null) {
+      const parsed = typeof profile.seed === "number"
+        ? profile.seed
+        : parseInt(String(profile.seed), 10);
+      if (!isNaN(parsed)) config.seed = parsed;
+    }
+    return config;
+  }
+
+  // -- Custom samplers enabled: route advanced params per provider type --
+
+  if (profile.topP != null) config.topP = profile.topP;
 
   const providerType = profile.providerPreset;
 

@@ -124,6 +124,11 @@ export function ProviderModelSelector({
                           key={m.id}
                           onClick={() => {
                             updateForm('model', m.id);
+                            if (m.contextLength != null && m.contextLength > 0) {
+                              updateForm('contextBudget', m.contextLength);
+                            } else {
+                              updateForm('contextBudget', 16000);
+                            }
                             setModelListOpen(false);
                             setModelSearch('');
                           }}

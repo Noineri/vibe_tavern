@@ -83,6 +83,7 @@ CREATE TABLE provider_profiles (
   seed text,
   reasoning_effort text DEFAULT 'auto' NOT NULL,
   stream_response integer DEFAULT 1 NOT NULL,
+  custom_samplers integer DEFAULT 0 NOT NULL,
   is_active integer DEFAULT 0 NOT NULL,
   created_at text NOT NULL,
   updated_at text NOT NULL

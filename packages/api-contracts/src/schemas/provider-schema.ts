@@ -26,6 +26,7 @@ const providerCoreSchema = z.object({
   seed: z.string().nullable().optional(),
   reasoningEffort: z.string().optional(),
   streamResponse: z.boolean().optional(),
+  customSamplers: z.boolean().optional(),
 });
 
 export const saveProviderDraftSchema = providerCoreSchema.extend({
