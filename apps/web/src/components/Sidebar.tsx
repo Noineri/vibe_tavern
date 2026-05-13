@@ -443,8 +443,8 @@ export function Sidebar() {
                             <div
                               key={branch.id}
                               className={cn(
-                                'group/br relative cursor-pointer rounded pl-3.5 pr-2 transition-colors duration-100 before:absolute before:left-[5px] before:top-[9px] before:h-1 before:w-1 before:rounded-full before:bg-border2 before:transition-colors hover:bg-s2 hover:before:bg-t3',
-                                isActiveBranch && 'bg-accent-dim before:bg-accent'
+                                'group/br relative cursor-pointer rounded pl-3.5 pr-2 transition-colors duration-100 before:absolute before:left-[5px] before:top-[9px] before:h-1 before:w-1 before:rounded-full before:transition-colors',
+                                isActiveBranch ? 'bg-accent-dim before:bg-accent' : 'before:bg-border2 hover:bg-s2 hover:before:bg-t3'
                               )}
                               style={{ paddingTop: 5, paddingBottom: 5 }}
                               onClick={(event) => {

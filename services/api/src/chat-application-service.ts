@@ -43,9 +43,15 @@ export class ChatApplicationService {
     summaries: SummaryMemorySnapshot[];
   }> {
     const chat = await this.requireChat(chatId);
-    const resolvedBranchId = branchId ?? chat.activeBranchId;
+    let resolvedBranchId = branchId ?? chat.activeBranchId;
     const branches = await this.chats.getBranches(chat.id);
-    const branch = branches.find((b) => b.id === resolvedBranchId);
+    let branch = branches.find((b) => b.id === resolvedBranchId);
+    // Defensive fallback: if activeBranchId is dangling, fall back to the root branch
+    if (!branch && branches.length > 0) {
+      branch = branches.find((b) => b.parentBranchId === null) ?? branches[0];
+      resolvedBranchId = branch.id;
+      await this.chats.activateBranch(chat.id, branch.id as ChatBranchId);
+    }
     if (!branch) {
       throw notFound("Branch", `Branch '${resolvedBranchId}' was not found for chat '${chat.id}'.`);
     }

@@ -371,7 +371,30 @@ export class ChatStore {
       throw new Error('Cannot delete the last branch');
     }
 
-    await this.db.delete(chatBranches).where(eq(chatBranches.id, branchId)).run();
+    const chat = await this.db.select().from(chats).where(eq(chats.id, branch.chatId)).get();
+
+    await this.db.transaction(async (tx) => {
+      await tx.delete(chatBranches).where(eq(chatBranches.id, branchId)).run();
+
+      // If the deleted branch was the active one, reassign to the root branch
+      // (or any remaining branch if root was somehow deleted)
+      if (chat && chat.activeBranchId === branchId) {
+        const remaining = await tx
+          .select()
+          .from(chatBranches)
+          .where(eq(chatBranches.chatId, branch.chatId))
+          .all();
+        const fallback = remaining.find((b) => b.parentBranchId === null) ?? remaining[0];
+        if (fallback) {
+          const now = this.clock.now();
+          await tx
+            .update(chats)
+            .set({ activeBranchId: fallback.id, updatedAt: now })
+            .where(eq(chats.id, branch.chatId))
+            .run();
+        }
+      }
+    });
   }
 
   // ─── Messages ──────────────────────────────────────────────────────────────
