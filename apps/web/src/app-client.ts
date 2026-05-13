@@ -104,6 +104,7 @@ export interface ProviderProfileRecord {
   seed: string | null;
   reasoningEffort: string;
   streamResponse: boolean;
+  customSamplers: boolean;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -570,6 +571,7 @@ export async function saveProviderProfile(input: {
   seed?: string | null;
   reasoningEffort?: string;
   streamResponse?: boolean;
+  customSamplers?: boolean;
 }): Promise<ProviderProfileRecord> {
   const response = await client.api.providers.$post({ json: input });
   return unwrapRpc<ProviderProfileRecord>(response);

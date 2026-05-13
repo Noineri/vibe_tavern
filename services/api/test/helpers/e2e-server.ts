@@ -36,7 +36,7 @@ CREATE TABLE provider_profiles (
 	api_key text,
 	default_model text,
 	context_budget integer,
-	max_tokens integer DEFAULT 500 NOT NULL,
+	max_tokens integer DEFAULT 2000 NOT NULL,
 	temperature real DEFAULT 1 NOT NULL,
 	top_p real DEFAULT 1 NOT NULL,
 	top_k integer DEFAULT 0 NOT NULL,
@@ -49,6 +49,7 @@ CREATE TABLE provider_profiles (
 	seed text,
 	reasoning_effort text DEFAULT 'auto' NOT NULL,
 	stream_response integer DEFAULT 1 NOT NULL,
+	custom_samplers integer DEFAULT 0 NOT NULL,
 	is_active integer DEFAULT 0 NOT NULL,
 	created_at text NOT NULL,
 	updated_at text NOT NULL

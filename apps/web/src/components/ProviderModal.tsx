@@ -41,6 +41,7 @@ export interface FormState {
   reasoningEffort: string;
   showReasoning: boolean;
   streamResponse: boolean;
+  customSamplers: boolean;
 }
 
 interface ModelOption {
@@ -82,11 +83,12 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     frequencyPenalty: p.frequencyPenalty,
     presencePenalty: p.presencePenalty,
     repetitionPenalty: p.repetitionPenalty,
-    maxTokens: p.maxTokens, contextBudget: p.contextBudget ?? 128000,
+    maxTokens: p.maxTokens, contextBudget: p.contextBudget ?? 16000,
     stopSequences: p.stopSequences,
     logitBias: "", seed: p.seed ?? null, showReasoning: false,
     reasoningEffort: p.reasoningEffort,
     streamResponse: p.streamResponse,
+    customSamplers: p.customSamplers ?? false,
   };
 }
 
@@ -112,6 +114,7 @@ function toProviderDraft(form: FormState) {
     seed: form.seed,
     reasoningEffort: form.reasoningEffort,
     streamResponse: form.streamResponse,
+    customSamplers: form.customSamplers,
   };
 }
 

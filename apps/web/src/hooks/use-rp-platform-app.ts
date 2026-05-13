@@ -15,7 +15,7 @@ import { useChatController } from "./use-chat-controller.js";
 import { useCharacterController } from "./use-character-controller.js";
 import { usePresetController } from "./use-preset-controller.js";
 import { useDisplayHelpers } from "./use-display-helpers.js";
-import { useChatStore, useNavigationStore, useCharacterStore } from "../stores/index.js";
+import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore } from "../stores/index.js";
 import { useBootstrapQuery, usePersonasQuery } from "../queries/bootstrap-queries.js";
 import { useChatSnapshot, useSaveChatSummaryMutation, useSummarizeChatMutation } from "../queries/chat-queries.js";
 import { chatKeys } from "../queries/query-keys.js";
@@ -48,19 +48,20 @@ function createInitialConnectionState(): ConnectionState {
     models: [],
     providerType: PROVIDER_TYPE.openaiCompat,
     providerPreset: "",
-    temperature: 0.9,
+    temperature: 1.0,
     topP: 1.0,
-    minP: 0.05,
-    topK: 40,
+    minP: 0,
+    topK: 0,
     topA: 0,
     frequencyPenalty: 0.0,
     presencePenalty: 0.0,
-    repetitionPenalty: 1.1,
-    maxTokens: 8192,
+    repetitionPenalty: 1.0,
+    maxTokens: 2000,
     stopSequences: [],
     seed: null,
-    reasoningEffort: "medium",
+    reasoningEffort: "auto",
     streamResponse: true,
+    customSamplers: false,
   };
 }
 
@@ -95,9 +96,11 @@ export function useRpPlatformApp() {
   const setIsPromptManagerOpen = useNavigationStore((s) => s.setIsPromptManagerOpen);
   const isPersonaModalOpen = useNavigationStore((s) => s.isPersonaModalOpen);
   const setIsPersonaModalOpen = useNavigationStore((s) => s.setIsPersonaModalOpen);
-  const connection = useNavigationStore((s) => s.connection);
-  const setConnection = useNavigationStore((s) => s.setConnection);
-  const patchConnection = useNavigationStore((s) => s.patchConnection);
+
+  // --- Provider store subscriptions ---
+  const connection = useProviderStore((s) => s.connection);
+  const setConnection = useProviderStore((s) => s.setConnection);
+  const patchConnection = useProviderStore((s) => s.patchConnection);
 
   // --- Character store subscriptions ---
   const buildTab = useCharacterStore((s) => s.buildTab);
@@ -144,10 +147,10 @@ export function useRpPlatformApp() {
     patchConnection,
     setConnection: (action: SetStateAction<ConnectionState>) => {
       if (typeof action === "function") {
-        const next = action(useNavigationStore.getState().connection);
-        useNavigationStore.getState().setConnection(next);
+        const next = action(useProviderStore.getState().connection);
+        useProviderStore.getState().setConnection(next);
       } else {
-        useNavigationStore.getState().setConnection(action);
+        useProviderStore.getState().setConnection(action);
       }
     },
   });
@@ -158,7 +161,7 @@ export function useRpPlatformApp() {
   // --- Bootstrap: load persisted theme and local connection defaults before provider hydration effects ---
   useLayoutEffect(() => {
     useNavigationStore.getState().setTheme(readSavedTheme());
-    useNavigationStore.getState().setConnection(createInitialConnectionState());
+    useProviderStore.getState().setConnection(createInitialConnectionState());
   }, []);
 
   // --- Effects ---

@@ -249,6 +249,7 @@
   "effort_high": "High",
   "stream_response": "Stream Response",
   "show_reasoning": "Show Reasoning",
+  "custom_samplers": "Custom Samplers",
   "samplers_advanced": "Advanced Settings",
   "sampler_freq_penalty": "Frequency Penalty",
   "sampler_pres_penalty": "Presence Penalty",
