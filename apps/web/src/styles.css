@@ -87,6 +87,15 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .scene-meta{font-size:.85em;color:var(--t3);font-style:italic;font-family:var(--font-ui);margin-top:.4em}
 .scene-note{text-align:center;font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--t3);padding:4px 24px 26px;max-width:var(--mw);margin:0 auto}
 
+/* ── Markdown formatting ── */
+.md-list{margin:.3em 0 .3em 1.25em;padding:0;list-style:disc}
+.md-list-ordered{list-style:decimal}
+.md-list li{margin-bottom:.15em}
+.md-list li::marker{color:var(--t3)}
+.md-blockquote{border-left:3px solid var(--accent);margin:.4em 0;padding:.2em .8em;color:var(--t2)}
+.md-pre{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:.8em 1em;overflow-x:auto;font-size:calc(var(--mfs) - 2px);line-height:1.55}
+.md-code-inline{background:var(--s2);padding:.1em .35em;border-radius:3px;font-size:.9em}
+
 /* ── Avatar fallback ── */
 .avatar-fallback{font-weight:600;letter-spacing:.01em}
 .avatar-fallback.broken-avatar,.avatar-fallback.broken-image{background:repeating-linear-gradient(135deg,var(--s2),var(--s2) 5px,var(--s3) 5px,var(--s3) 10px);color:var(--t3);border:1px solid var(--border2)}

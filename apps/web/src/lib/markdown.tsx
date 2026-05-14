@@ -1,101 +1,146 @@
-import React from 'react';
+import React from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface MarkdownProps {
   text: string;
   className?: string;
 }
 
-type InlineNode = string | React.ReactNode;
-
-const INLINE_RE = /(\*{3}[^*]+\*{3})|(\*{2}[^*]+\*{2})|(\*[^*]+\*)|("[^"]+")/g;
-
-function parseInlineFormatting(text: string, keyPrefix: string): InlineNode[] {
-  const result: InlineNode[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  let keyIdx = 0;
-
-  INLINE_RE.lastIndex = 0;
-  while ((match = INLINE_RE.exec(text)) !== null) {
-    // Push plain text before this match
-    if (match.index > lastIndex) {
-      result.push(text.slice(lastIndex, match.index));
-    }
-    lastIndex = INLINE_RE.lastIndex;
-
-    const full = match[0];
-    if (match[1]) {
-      // ***bold italic***
-      result.push(<strong key={`${keyPrefix}-bi-${keyIdx++}`}><em>{full.slice(3, -3)}</em></strong>);
-    } else if (match[2]) {
-      // **bold**
-      result.push(<strong key={`${keyPrefix}-b-${keyIdx++}`}>{full.slice(2, -2)}</strong>);
-    } else if (match[3]) {
-      // *italic*
-      result.push(<em key={`${keyPrefix}-i-${keyIdx++}`}>{full.slice(1, -1)}</em>);
-    } else if (match[4]) {
-      // "quoted text"
-      result.push(<span key={`${keyPrefix}-q-${keyIdx++}`} className="quoted-text">{full}</span>);
-    }
-  }
-
-  // Remaining text after last match
-  if (lastIndex < text.length) {
-    result.push(text.slice(lastIndex));
-  }
-
-  return result;
-}
-
 const SCENE_META_RE = /^\[.+:.+\]$/;
 
-function renderParagraphContent(text: string): React.ReactNode[] {
-  const lines = text.split('\n');
-  const result: React.ReactNode[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (i > 0) result.push(<br key={`br-${i}`} />);
-    result.push(...parseInlineFormatting(lines[i], `l${i}`));
+/**
+ * Custom text renderer: wraps "quoted text" in a colored span.
+ */
+function TextWithQuotes({ children }: { children?: React.ReactNode }) {
+  if (typeof children !== "string") return <>{children}</>;
+
+  const parts: React.ReactNode[] = [];
+  const quoteRe = /("[^"]*")/g;
+  let last = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = quoteRe.exec(children)) !== null) {
+    if (match.index > last) parts.push(children.slice(last, match.index));
+    parts.push(
+      <span key={`q-${key++}`} className="quoted-text">
+        {match[0]}
+      </span>
+    );
+    last = quoteRe.lastIndex;
   }
-  return result;
+  if (last < children.length) parts.push(children.slice(last));
+
+  return parts.length === 1 ? <>{parts[0]}</> : <>{parts}</>;
+}
+
+const components: Record<string, React.ComponentType<any>> = {
+  p({ children, node, ...props }: any) {
+    // Detect scene-meta paragraphs: every child line matches [key: value]
+    const text = extractText(children);
+    const lines = text.split("\n").filter((l: string) => l.trim());
+    const allMeta = lines.length > 0 && lines.every((l: string) => SCENE_META_RE.test(l.trim()));
+
+    if (allMeta) {
+      return <div className="scene-meta">{children}</div>;
+    }
+
+    return <p {...props}>{children}</p>;
+  },
+
+  hr() {
+    return <hr className="msg-hr" />;
+  },
+
+  strong({ children }: any) {
+    return <strong>{children}</strong>;
+  },
+
+  em({ children }: any) {
+    return <em>{children}</em>;
+  },
+
+  ul({ children, ...props }: any) {
+    return (
+      <ul className="md-list" {...props}>
+        {children}
+      </ul>
+    );
+  },
+
+  ol({ children, ...props }: any) {
+    return (
+      <ol className="md-list md-list-ordered" {...props}>
+        {children}
+      </ol>
+    );
+  },
+
+  li({ children, ...props }: any) {
+    return (
+      <li className="md-list-item" {...props}>
+        {children}
+      </li>
+    );
+  },
+
+  blockquote({ children, ...props }: any) {
+    return (
+      <blockquote className="md-blockquote" {...props}>
+        {children}
+      </blockquote>
+    );
+  },
+
+  code({ inline, className, children, ...props }: any) {
+    if (inline) {
+      return (
+        <code className="md-code-inline" {...props}>
+          {children}
+        </code>
+      );
+    }
+    return (
+      <code className={className} {...props}>
+        {children}
+      </code>
+    );
+  },
+
+  pre({ children, ...props }: any) {
+    return (
+      <pre className="md-pre" {...props}>
+        {children}
+      </pre>
+    );
+  },
+
+  text({ children }: any) {
+    return <TextWithQuotes>{children}</TextWithQuotes>;
+  },
+};
+
+/**
+ * Extract plain text from React children (for scene-meta detection).
+ */
+function extractText(children: React.ReactNode): string {
+  if (typeof children === "string") return children;
+  if (Array.isArray(children)) return children.map(extractText).join("");
+  if (React.isValidElement(children) && (children.props as any).children) {
+    return extractText((children.props as any).children);
+  }
+  return "";
 }
 
 export const Markdown: React.FC<MarkdownProps> = ({ text, className }) => {
   if (!text) return null;
 
-  let normalized = text.replace(/\r\n/g, '\n');
-  normalized = normalized.replace(/^[_*\-]{3,}$/gm, '\n\n___HR___\n\n');
-  const paragraphs = normalized.split(/\n\n+/).filter(p => p.trim().length > 0);
-
   return (
     <div className={className}>
-      {paragraphs.map((para, i) => {
-        const trimmed = para.trim();
-
-        if (trimmed === '___HR___') {
-          return <hr key={i} className="msg-hr" />;
-        }
-
-        const lines = trimmed.split('\n');
-        const allMeta = lines.length > 0 && lines.every(l => SCENE_META_RE.test(l.trim()));
-        if (allMeta) {
-          return (
-            <div key={i} className="scene-meta">
-              {lines.map((l, j) => (
-                <React.Fragment key={j}>
-                  {j > 0 && <br />}
-                  {l}
-                </React.Fragment>
-              ))}
-            </div>
-          );
-        }
-
-        return (
-          <p key={i} style={{ marginTop: i > 0 ? '0.88em' : 0 }}>
-            {renderParagraphContent(trimmed)}
-          </p>
-        );
-      })}
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        {text}
+      </ReactMarkdown>
     </div>
   );
 };
