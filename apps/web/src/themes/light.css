@@ -17,10 +17,14 @@
   --border2:   oklch(0.80 0.012 80);     /* #A9A39A — stronger dividers */
 
   /* ─── Text ─── */
-  --t1:        oklch(0.14 0.005 70);     /* #1A1917 — primary (near black) */
+  --t1:        oklch(0.14 0.005 70);     /* #1A1917 — primary UI */
   --t2:        oklch(0.47 0.015 72);     /* #6B665F — secondary */
   --t3:        oklch(0.60 0.015 72);     /* #8D877D — muted / disabled */
   --t4:        oklch(0.72 0.01 72);      /* faintest text */
+
+  /* ─── Message text (long-form readability) ─── */
+  --msg-t1:    oklch(0.17 0.006 65);     /* slightly softer than UI black */
+  --msg-t2:    oklch(0.44 0.014 70);     /* softer secondary within messages */
 
   /* ─── Accent (terracotta) ─── */
   --accent:       oklch(0.65 0.14 40);           /* #CC785C — buttons, links */
