@@ -38,7 +38,18 @@ if not exist "services\api\dist" (
 )
 
 echo Starting server on http://127.0.0.1:8787
-echo Press Ctrl+C to stop.
+echo Press Ctrl+C or close this window to stop.
 echo.
 
 "%BUN_EXE%" "services\api\src\prod-server.ts"
+set "EXIT_CODE=%ERRORLEVEL%"
+
+rem Graceful exit codes (Ctrl+C, window close on Windows)
+if "%EXIT_CODE%"=="0" goto :eof
+if "%EXIT_CODE%"=="1" goto :eof
+if "%EXIT_CODE%"=="3221225786" goto :eof
+if "%EXIT_CODE%"=="-1073741510" goto :eof
+
+echo.
+echo Server exited unexpectedly (code %EXIT_CODE%).
+pause

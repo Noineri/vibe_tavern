@@ -92,7 +92,7 @@ mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
 		staticDir: staticEnabled ? staticDir : undefined,
 	});
 
-	Bun.serve({
+	const server = Bun.serve({
 		fetch: app.fetch,
 		port,
 		hostname: host,
@@ -100,9 +100,28 @@ mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
 	});
 
 	console.log(`[prod] Listening on http://${host}:${port}`);
-	if (staticEnabled) {
+
+	// Open browser (like dev-supervisor does)
+	if (staticEnabled && process.env.RP_PLATFORM_OPEN_BROWSER !== "0") {
+		const url = `http://${host}:${port}`;
+		console.log(`[prod] Opening browser at ${url}`);
+		const args =
+			process.platform === "win32" ? ["cmd", "/c", "start", "", url]
+			: process.platform === "darwin" ? ["open", url]
+			: ["xdg-open", url];
+		Bun.spawn(args, { stdout: "ignore", stderr: "ignore", stdin: "ignore", detached: true });
+	} else if (staticEnabled) {
 		console.log(`[prod] Open http://${host}:${port} in your browser.`);
 	} else {
 		console.log(`[prod] Frontend not built. Run "bun run build:web" first, or use dev mode.`);
+	}
+
+	// Graceful shutdown on Ctrl+C / SIGTERM
+	for (const signal of ["SIGINT", "SIGTERM"] as const) {
+		process.on(signal, () => {
+			console.log(`\n[prod] Received ${signal}, shutting down...`);
+			server.stop(true);
+			process.exit(0);
+		});
 	}
 })();
