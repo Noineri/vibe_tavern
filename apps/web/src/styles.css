@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@import "./themes/dark.css";
+@import "./themes/light.css";
 
 /* ─── Font faces ─── */
 @font-face {
@@ -71,60 +73,7 @@
   button { border: 0; background: transparent; font: inherit; color: inherit; }
 }
 
-/* ─── Тёмная тема ─── */
-:root{
-  --bg:#141210;
-  --surface:#1f1d1a;
-  --s2:#272420;
-  --s3:#302c27;
-  --border:#36312c;
-  --border2:#423c36;
-  --t1:#d1d0ba;
-  --t2:#a3988f;
-  --t3:#756a5f;
-  --t4:#4f473f;
-  --accent:oklch(0.72 0.14 75);
-  --accent-t:oklch(0.78 0.12 75);
-  --accent-dim:rgba(212,168,50,0.1);
-  --accent-hover:rgba(212,168,50,0.18);
-  --user-bg:#1a1816;
-  --danger:oklch(0.62 0.2 25);
-  --danger-dim:oklch(0.22 0.06 25);
-  --danger-text:oklch(0.75 0.14 25);
-  --success:oklch(0.68 0.16 145);
-  --success-dim:oklch(0.28 0.06 145);
-  --success-text:oklch(0.78 0.14 145);
-  --info:oklch(0.6 0.15 250);
-  --info-dim:oklch(0.24 0.06 250);
-  --warning:oklch(0.72 0.14 70);
-  --warning-dim:oklch(0.28 0.06 70);
-  --warning-text:oklch(0.78 0.12 70);
-  --on-accent:#fff;
-  --r:6px;--sw:248px;--mw:820px;--mfs:17px;--ui-fs:16px;
-}
-/* ─── Светлая тема ─── */
-:root.light{
-  --bg:#f7f0e6;
-  --surface:#d9cfc3;
-  --s2:#f0ece5;
-  --s3:#e5e0d8;
-  --border:#ddd7ce;
-  --border2:#ccc5bb;
-  --t1:#3a332d;
-  --t2:#7a736a;
-  --t3:#8a857f;
-  --t4:#d5cfc8;
-  --accent:oklch(0.52 0.14 75);
-  --accent-t:oklch(0.46 0.14 75);
-  --accent-dim:rgba(155,116,18,0.08);
-  --accent-hover:rgba(155,116,18,0.14);
-  --user-bg:#edeae5;
-  --danger:oklch(0.55 0.2 25);--danger-dim:oklch(0.92 0.04 25);--danger-text:oklch(0.45 0.16 25);
-  --success:oklch(0.5 0.14 145);--success-dim:oklch(0.92 0.04 145);--success-text:oklch(0.4 0.12 145);
-  --info:oklch(0.45 0.14 250);--info-dim:oklch(0.92 0.04 250);
-  --warning:oklch(0.55 0.14 70);--warning-dim:oklch(0.92 0.04 70);--warning-text:oklch(0.45 0.1 70);
-  --on-accent:#fff;
-}
+
 html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 
