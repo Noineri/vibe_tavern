@@ -41,7 +41,7 @@ export function MessageReasoning({ reasoning, reasoningDurationMs, redacted }: M
         <span className="ml-auto">{open ? <Icons.Caret direction="u" /> : <Icons.Caret direction="d" />}</span>
       </button>
       {open && (
-        <div className="border-t border-border px-3 py-2.5 font-body text-[13px] italic leading-[1.6] text-t2">
+        <div className="border-t border-border px-3 py-2.5 font-body text-[calc(var(--mfs)-2px)] italic leading-[1.6] text-t2">
           {hasContent ? reasoning : t("reasoning_redacted")}
         </div>
       )}
