@@ -9,35 +9,56 @@ interface MarkdownProps {
 
 const SCENE_META_RE = /^\[.+:.+\]$/;
 
-/**
- * Custom text renderer: wraps "quoted text" in a colored span.
- */
-function TextWithQuotes({ children }: { children?: React.ReactNode }) {
-  if (typeof children !== "string") return <>{children}</>;
+// ─── Rehype plugin: wrap "quoted text" in <span class="quoted-text"> ───
 
-  const parts: React.ReactNode[] = [];
-  const quoteRe = /("[^"]*")/g;
+const QUOTE_RE = /("[^"]*")/g;
+
+function splitQuoted(value: string): any[] {
+  const result: any[] = [];
   let last = 0;
+
+  QUOTE_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
-  let key = 0;
-
-  while ((match = quoteRe.exec(children)) !== null) {
-    if (match.index > last) parts.push(children.slice(last, match.index));
-    parts.push(
-      <span key={`q-${key++}`} className="quoted-text">
-        {match[0]}
-      </span>
-    );
-    last = quoteRe.lastIndex;
+  while ((match = QUOTE_RE.exec(value)) !== null) {
+    if (match.index > last) {
+      result.push({ type: "text", value: value.slice(last, match.index) });
+    }
+    result.push({
+      type: "element",
+      tagName: "span",
+      properties: { className: "quoted-text" },
+      children: [{ type: "text", value: match[0] }],
+    });
+    last = QUOTE_RE.lastIndex;
   }
-  if (last < children.length) parts.push(children.slice(last));
-
-  return parts.length === 1 ? <>{parts[0]}</> : <>{parts}</>;
+  if (last < value.length) {
+    result.push({ type: "text", value: value.slice(last) });
+  }
+  return result.length > 0 ? result : [{ type: "text", value }];
 }
+
+function visitText(node: any): void {
+  if (!node.children) return;
+  const next: any[] = [];
+  for (const child of node.children) {
+    if (child.type === "text" && typeof child.value === "string") {
+      next.push(...splitQuoted(child.value));
+    } else if (child.type === "element") {
+      visitText(child);
+      next.push(child);
+    } else {
+      next.push(child);
+    }
+  }
+  node.children = next;
+}
+
+const rehypeQuotedText = () => (tree: any) => visitText(tree);
+
+// ─── Component overrides ───
 
 const components: Record<string, React.ComponentType<any>> = {
   p({ children, node, ...props }: any) {
-    // Detect scene-meta paragraphs: every child line matches [key: value]
     const text = extractText(children);
     const lines = text.split("\n").filter((l: string) => l.trim());
     const allMeta = lines.length > 0 && lines.every((l: string) => SCENE_META_RE.test(l.trim()));
@@ -51,14 +72,6 @@ const components: Record<string, React.ComponentType<any>> = {
 
   hr() {
     return <hr className="msg-hr" />;
-  },
-
-  strong({ children }: any) {
-    return <strong>{children}</strong>;
-  },
-
-  em({ children }: any) {
-    return <em>{children}</em>;
   },
 
   ul({ children, ...props }: any) {
@@ -93,8 +106,8 @@ const components: Record<string, React.ComponentType<any>> = {
     );
   },
 
-  code({ inline, className, children, ...props }: any) {
-    if (inline) {
+  code({ className, children, ...props }: any) {
+    if (!className) {
       return (
         <code className="md-code-inline" {...props}>
           {children}
@@ -115,15 +128,8 @@ const components: Record<string, React.ComponentType<any>> = {
       </pre>
     );
   },
-
-  text({ children }: any) {
-    return <TextWithQuotes>{children}</TextWithQuotes>;
-  },
 };
 
-/**
- * Extract plain text from React children (for scene-meta detection).
- */
 function extractText(children: React.ReactNode): string {
   if (typeof children === "string") return children;
   if (Array.isArray(children)) return children.map(extractText).join("");
@@ -133,12 +139,18 @@ function extractText(children: React.ReactNode): string {
   return "";
 }
 
+// ─── Public API ───
+
 export const Markdown: React.FC<MarkdownProps> = ({ text, className }) => {
   if (!text) return null;
 
   return (
     <div className={className || "md-content"}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeQuotedText]}
+        components={components}
+      >
         {text}
       </ReactMarkdown>
     </div>
