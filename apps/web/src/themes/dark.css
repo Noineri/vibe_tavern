@@ -60,10 +60,10 @@
   --shadow-xl: 0 8px 40px oklch(0 0 0 / 45%);
 
   /* ─── Markdown inline colors ─── */
-  --md-italic:       oklch(0.78 0.025 95);    /* warm gold italic */
-  --md-bold:         oklch(0.85 0.035 85);    /* bright warm bold */
-  --md-bold-italic:  oklch(0.82 0.04 80);     /* combined emphasis */
-  --md-quoted:       oklch(0.75 0.08 75);     /* accent-tone quoted */
+  --md-italic:       oklch(79.603% 0.06726 71.824);    /* warm gold italic */
+  --md-bold:         oklch(55.685% 0.05471 87.899);    /* bright warm bold */
+  --md-bold-italic:  oklch(53.402% 0.0587 54.748);     /* combined emphasis */
+  --md-quoted:       oklch(74.544% 0.11946 73.203);     /* accent-tone quoted */
 
   /* ─── Layout tokens ─── */
   --r: 6px;       /* border radius */
