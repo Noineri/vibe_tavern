@@ -115,7 +115,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   };
 
   const handleDuplicate = () => {
-    void input.onCreate({ ...draft, name: `${draft.name || t("presets")} (copy)` });
+    void input.onCreate({ ...draft, name: `${draft.name || t("presets")} (copy)` }).then((created) => {
+      if (created?.id) input.setActivePresetId(created.id);
+    });
   };
 
   const handleAdd = (name: string) => {
@@ -144,8 +146,14 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
 
   const handleConfirmDelete = () => {
     if (!input.activePresetId) return;
-    void input.onDelete(input.activePresetId);
+    const deleteId = input.activePresetId;
+    const remaining = input.presets.filter((p) => p.id !== deleteId);
+    const fallbackId = remaining.length > 0 ? remaining[0].id : null;
+    input.setActivePresetId(fallbackId);
     setConfirmDeleteOpen(false);
+    setDirty(false);
+    setSaveState("idle");
+    void input.onDelete(deleteId);
   };
 
   return (
