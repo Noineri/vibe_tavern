@@ -84,9 +84,9 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 /* ── Message formatting ── */
 .msg-hr{border:none;border-top:1px solid var(--border);margin:.6em 0}
 .quoted-text{color:var(--md-quoted)}
-.md-content em{color:var(--md-italic)}
+.md-content em{color:var(--md-italic);font-size:var(--md-fs-italic)}
 .md-content strong{color:var(--md-bold)}
-.md-content strong em,.md-content em strong{color:var(--md-bold-italic)}
+.md-content strong em,.md-content em strong{color:var(--md-bold-italic);font-size:var(--md-fs-bold-italic)}
 .scene-meta{font-size:.85em;color:var(--t3);font-style:italic;font-family:var(--font-ui);margin-top:.4em}
 .scene-note{text-align:center;font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--t3);padding:4px 24px 26px;max-width:var(--mw);margin:0 auto}
 

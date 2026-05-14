@@ -66,4 +66,8 @@
   --md-bold:         oklch(0.18 0.02 50);     /* deep warm bold */
   --md-bold-italic:  oklch(0.30 0.06 40);     /* terracotta emphasis */
   --md-quoted:       oklch(0.50 0.12 35);     /* terracotta quoted */
+
+  /* ─── Markdown inline sizes (override if needed) ─── */
+  --md-fs-italic:       calc(var(--mfs) + 1px);
+  --md-fs-bold-italic:  calc(var(--mfs) + 1px);
 }
