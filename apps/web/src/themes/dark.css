@@ -1,0 +1,68 @@
+/* ══════════════════════════════════════════════════════════════
+   Dark theme (default)
+   Espresso palette — warm coffee tones with golden accent.
+   All values in oklch for consistency.
+   ══════════════════════════════════════════════════════════════ */
+:root {
+  /* ─── Backgrounds ─── */
+  --bg:        oklch(0.184 0.0052 67.5);   /* #141210 — deepest layer */
+  --surface:   oklch(0.232 0.0064 78.2);   /* #1f1d1a — panels, modals */
+  --s2:        oklch(0.262 0.0086 75.2);    /* #272420 — inputs, cells */
+  --s3:        oklch(0.296 0.0106 73.5);    /* #302c27 — avatars, bars */
+
+  /* ─── Borders ─── */
+  --border:    oklch(0.317 0.0113 67.4);   /* #36312c — dividers */
+  --border2:   oklch(0.360 0.0131 67.4);   /* #423c36 — hover borders */
+
+  /* ─── Text ─── */
+  --t1:        oklch(0.852 0.0298 104.9);  /* #d1d0ba — primary text */
+  --t2:        oklch(0.687 0.0184 61.8);    /* #a3988f — secondary text */
+  --t3:        oklch(0.531 0.0218 67.3);    /* #756a5f — muted text */
+  --t4:        oklch(0.403 0.0170 67.3);    /* #4f473f — faintest text */
+
+  /* ─── Accent (golden) ─── */
+  --accent:       oklch(0.72 0.14 75);          /* buttons, toggles */
+  --accent-t:     oklch(0.78 0.12 75);          /* accent text */
+  --accent-dim:   oklch(0.752 0.1381 87.1 / 10%);   /* selected row bg */
+  --accent-hover: oklch(0.752 0.1381 87.1 / 18%);   /* hover on accent bg */
+
+  /* ─── User message background ─── */
+  --user-bg:   oklch(0.211 0.0050 67.6);  /* #1a1816 — user msg bg */
+
+  /* ─── Danger (red) ─── */
+  --danger:      oklch(0.62 0.20 25);    /* buttons */
+  --danger-dim:  oklch(0.22 0.06 25);    /* confirm bg */
+  --danger-text: oklch(0.75 0.14 25);    /* error text */
+
+  /* ─── Success (green) ─── */
+  --success:      oklch(0.68 0.16 145);  /* buttons */
+  --success-dim:  oklch(0.28 0.06 145);  /* dim bg */
+  --success-text: oklch(0.78 0.14 145);  /* text */
+
+  /* ─── Info (blue) ─── */
+  --info:      oklch(0.60 0.15 250);     /* buttons */
+  --info-dim:  oklch(0.24 0.06 250);     /* dim bg */
+  --info-text: oklch(0.75 0.12 250);     /* text */
+
+  /* ─── Warning (yellow) ─── */
+  --warning:      oklch(0.72 0.14 70);   /* buttons */
+  --warning-dim:  oklch(0.28 0.06 70);   /* dim bg */
+  --warning-text: oklch(0.78 0.12 70);   /* text */
+
+  /* ─── On-color text ─── */
+  --on-accent: oklch(1 0 0);             /* white on accent button */
+  --on-danger: oklch(1 0 0);             /* white on danger button */
+
+  /* ─── Shadows ─── */
+  --shadow-sm: 0 4px 16px oklch(0 0 0 / 25%);
+  --shadow-md: 0 12px 28px oklch(0 0 0 / 45%);
+  --shadow-lg: 0 24px 60px oklch(0 0 0 / 50%);
+  --shadow-xl: 0 8px 40px oklch(0 0 0 / 45%);
+
+  /* ─── Layout tokens ─── */
+  --r: 6px;       /* border radius */
+  --sw: 248px;    /* sidebar width */
+  --mw: 820px;    /* max message width */
+  --mfs: 17px;    /* message font size */
+  --ui-fs: 16px;  /* UI font size */
+}

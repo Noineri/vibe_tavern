@@ -1,0 +1,63 @@
+/* ══════════════════════════════════════════════════════════════
+   Light theme
+   All color custom properties — warm paper palette.
+   Inspired by Claude Code Light: clean warm neutrals with
+   terracotta accent (#CC785C) and high-contrast text.
+   Every value is oklch for consistency and easy tweaking.
+   ══════════════════════════════════════════════════════════════ */
+:root.light {
+  /* ─── Backgrounds ─── */
+  --bg:        oklch(0.975 0.003 80);    /* #FAF9F5 — clean paper base */
+  --surface:   oklch(0.925 0.008 80);    /* #ECE9E0 — panels, modals, tool blocks */
+  --s2:        oklch(0.905 0.009 80);    /* #E3DFD5 — inputs, inner cards, code blocks */
+  --s3:        oklch(0.87 0.012 80);     /* #D9D4C9 — status bar, avatars, bars */
+
+  /* ─── Borders ─── */
+  --border:    oklch(0.86 0.01 80);      /* #CDC8BE */
+  --border2:   oklch(0.80 0.012 80);     /* #A9A39A — stronger dividers */
+
+  /* ─── Text ─── */
+  --t1:        oklch(0.14 0.005 70);     /* #1A1917 — primary (near black) */
+  --t2:        oklch(0.47 0.015 72);     /* #6B665F — secondary */
+  --t3:        oklch(0.60 0.015 72);     /* #8D877D — muted / disabled */
+  --t4:        oklch(0.72 0.01 72);      /* faintest text */
+
+  /* ─── Accent (terracotta) ─── */
+  --accent:       oklch(0.65 0.14 40);           /* #CC785C — buttons, links */
+  --accent-t:     oklch(0.58 0.15 38);           /* #B85F3D — accent text (hover) */
+  --accent-dim:   oklch(0.65 0.14 40 / 10%);     /* selected row bg */
+  --accent-hover: oklch(0.65 0.14 40 / 16%);     /* hover on accent bg */
+
+  /* ─── User message background ─── */
+  --user-bg:   oklch(0.94 0.009 75);     /* #EDE9DE — warm tint for user bubbles */
+
+  /* ─── Danger ─── */
+  --danger:      oklch(0.52 0.16 18);    /* #A84B3A */
+  --danger-dim:  oklch(0.92 0.03 18);    /* faint red bg */
+  --danger-text: oklch(0.42 0.14 18);    /* dark red text */
+
+  /* ─── Success ─── */
+  --success:      oklch(0.50 0.10 155);  /* #2E7C4C */
+  --success-dim:  oklch(0.92 0.03 155);  /* faint green bg */
+  --success-text: oklch(0.40 0.09 155);  /* dark green text */
+
+  /* ─── Info ─── */
+  --info:      oklch(0.52 0.15 250);     /* #207FDE */
+  --info-dim:  oklch(0.92 0.03 250);     /* faint blue bg */
+  --info-text: oklch(0.42 0.13 250);     /* dark blue text */
+
+  /* ─── Warning ─── */
+  --warning:      oklch(0.52 0.11 65);   /* #8A6220 */
+  --warning-dim:  oklch(0.92 0.03 65);   /* faint amber bg */
+  --warning-text: oklch(0.42 0.09 65);   /* dark amber text */
+
+  /* ─── On-color text ─── */
+  --on-accent: oklch(0.975 0.003 80);    /* #FAF9F5 — warm white on accent */
+  --on-danger: oklch(0.975 0.003 80);    /* warm white on danger */
+
+  /* ─── Shadows (soft, warm) ─── */
+  --shadow-sm: 0 4px 16px oklch(0 0 0 / 8%);
+  --shadow-md: 0 12px 28px oklch(0 0 0 / 10%);
+  --shadow-lg: 0 24px 60px oklch(0 0 0 / 12%);
+  --shadow-xl: 0 8px 40px oklch(0 0 0 / 10%);
+}
