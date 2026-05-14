@@ -6,6 +6,7 @@ import { initials } from "./app-shell-helpers.js";
 import { useChatStore } from "../stores/chat-store.js";
 import type { MessageBlockProps } from "./play-mode-types.js";
 import { Icons } from "./shared/icons.js";
+import { AutoTextarea } from "./shared/auto-textarea.js";
 import { useTokenCount } from "../hooks/use-token-count.js";
 import { useT } from "../i18n/context.js";
 import { MessageReasoning } from "./MessageReasoning.js";
@@ -98,8 +99,9 @@ export function MessageBlock(input: MessageBlockProps) {
 
         {input.isEditing ? (
           <>
-            <textarea
-              className="min-h-[140px] w-full resize-y rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.82] text-t1 outline-none"
+            <AutoTextarea
+              className="w-full resize-none overflow-hidden rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.82] text-t1 outline-none"
+              style={{ minHeight: 140 }}
               value={input.editingDraft}
               onChange={e => input.onEditingDraftChange(e.target.value)}
               onKeyDown={e => { if (e.key === 'Escape') input.onCancelEdit(); }}

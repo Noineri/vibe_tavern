@@ -35,7 +35,14 @@ export function resizeTextarea(el: HTMLTextAreaElement, allowShrink: boolean): v
   if (scrollParent) scrollParent.scrollTop = scrollTop;
 }
 
-export interface AutoTextareaProps {
+/** Native HTML textarea attributes that AutoTextarea doesn't consume itself. */
+export type AutoTextareaPassthrough = Omit<
+  React.TextareaHTMLAttributes<HTMLTextAreaElement>,
+  | "className" | "style" | "disabled" | "placeholder"
+  | "value" | "onChange" | "ref" | "children"
+>;
+
+export interface AutoTextareaProps extends AutoTextareaPassthrough {
   className: string;
   style: React.CSSProperties;
   disabled?: boolean;
@@ -65,6 +72,7 @@ export function AutoTextarea({
   register,
   value,
   onChange,
+  ...rest
 }: AutoTextareaProps) {
   const elRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -105,6 +113,7 @@ export function AutoTextarea({
     return (
       <textarea
         {...register}
+        {...rest}
         ref={setRef}
         onChange={handleRegisterChange}
         className={className}
@@ -119,6 +128,7 @@ export function AutoTextarea({
   return (
     <textarea
       ref={setRef}
+      {...rest}
       className={className}
       style={style}
       disabled={disabled}
