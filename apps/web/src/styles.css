@@ -73,6 +73,7 @@
   html, body { font-family: var(--font-ui); }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   button { border: 0; background: transparent; font: inherit; color: inherit; }
+  ::selection { background: var(--sel-bg); color: var(--sel-text); }
 }
 
 

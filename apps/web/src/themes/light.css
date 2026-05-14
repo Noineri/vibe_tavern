@@ -26,6 +26,10 @@
   --msg-t1:    oklch(0.17 0.006 65);     /* slightly softer than UI black */
   --msg-t2:    oklch(0.44 0.014 70);     /* softer secondary within messages */
 
+  /* ─── Text selection ─── */
+  --sel-bg:    oklch(0.65 0.14 40 / 22%);       /* terracotta tint */
+  --sel-text:  oklch(0.14 0.005 70);             /* near black */
+
   /* ─── Accent (terracotta) ─── */
   --accent:       oklch(0.65 0.14 40);           /* #CC785C — buttons, links */
   --accent-t:     oklch(0.58 0.15 38);           /* #B85F3D — accent text (hover) */

@@ -24,6 +24,10 @@
   --msg-t1:    oklch(0.88 0.022 95);        /* warm cream — primary message body */
   --msg-t2:    oklch(0.72 0.016 80);        /* softer secondary within messages */
 
+  /* ─── Text selection ─── */
+  --sel-bg:    oklch(0.752 0.1381 87.1 / 30%);   /* golden tint */
+  --sel-text:  oklch(0.95 0.02 95);              /* warm white */
+
   /* ─── Accent (golden) ─── */
   --accent:       oklch(0.72 0.14 75);          /* buttons, toggles */
   --accent-t:     oklch(0.78 0.12 75);          /* accent text */
