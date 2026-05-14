@@ -60,4 +60,10 @@
   --shadow-md: 0 12px 28px oklch(0 0 0 / 10%);
   --shadow-lg: 0 24px 60px oklch(0 0 0 / 12%);
   --shadow-xl: 0 8px 40px oklch(0 0 0 / 10%);
+
+  /* ─── Markdown inline colors ─── */
+  --md-italic:       oklch(0.42 0.02 55);     /* warm muted italic */
+  --md-bold:         oklch(0.18 0.02 50);     /* deep warm bold */
+  --md-bold-italic:  oklch(0.30 0.06 40);     /* terracotta emphasis */
+  --md-quoted:       oklch(0.50 0.12 35);     /* terracotta quoted */
 }

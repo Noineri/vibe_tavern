@@ -59,6 +59,12 @@
   --shadow-lg: 0 24px 60px oklch(0 0 0 / 50%);
   --shadow-xl: 0 8px 40px oklch(0 0 0 / 45%);
 
+  /* ─── Markdown inline colors ─── */
+  --md-italic:       oklch(0.78 0.025 95);    /* warm gold italic */
+  --md-bold:         oklch(0.85 0.035 85);    /* bright warm bold */
+  --md-bold-italic:  oklch(0.82 0.04 80);     /* combined emphasis */
+  --md-quoted:       oklch(0.75 0.08 75);     /* accent-tone quoted */
+
   /* ─── Layout tokens ─── */
   --r: 6px;       /* border radius */
   --sw: 248px;    /* sidebar width */
