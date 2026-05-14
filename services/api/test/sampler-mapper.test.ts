@@ -84,7 +84,7 @@ describe("buildSamplerConfig", () => {
         top_k: 80,
         min_p: 0.05,
         repetition_penalty: 1.15,
-        reasoning_effort: "high",
+        reasoningEffort: "high",
       });
     });
 
@@ -134,9 +134,9 @@ describe("buildSamplerConfig", () => {
       });
     });
 
-    it("does not include reasoning_effort for non-openai_compat", () => {
+    it("does not include reasoningEffort for non-openai_compat", () => {
       const config = buildSamplerConfig(profile("ollama"));
-      expect((config.providerOptions!.openai as any).reasoning_effort).toBeUndefined();
+      expect((config.providerOptions!.openai as any).reasoningEffort).toBeUndefined();
     });
   });
 

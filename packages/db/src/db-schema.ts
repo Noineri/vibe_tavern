@@ -145,6 +145,7 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   stopSequencesJson: text('stop_sequences_json'),
   seed: text('seed'),
   reasoningEffort: text('reasoning_effort').notNull().default('auto'),
+  showReasoning: integer('show_reasoning').notNull().default(0),
   streamResponse: integer('stream_response').notNull().default(1),
   customSamplers: integer('custom_samplers').notNull().default(0),
   isActive: integer('is_active').notNull().default(0),

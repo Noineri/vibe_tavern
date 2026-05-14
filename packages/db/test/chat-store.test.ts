@@ -82,6 +82,7 @@ CREATE TABLE provider_profiles (
   stop_sequences_json text,
   seed text,
   reasoning_effort text DEFAULT 'auto' NOT NULL,
+  show_reasoning integer DEFAULT 0 NOT NULL,
   stream_response integer DEFAULT 1 NOT NULL,
   custom_samplers integer DEFAULT 0 NOT NULL,
   is_active integer DEFAULT 0 NOT NULL,

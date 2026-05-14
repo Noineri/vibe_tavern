@@ -107,6 +107,7 @@ export function useProviderProfiles() {
       stopSequences: activeProfile.stopSequences,
       seed: activeProfile.seed ?? null,
       reasoningEffort: activeProfile.reasoningEffort,
+      showReasoning: activeProfile.showReasoning,
       streamResponse: activeProfile.streamResponse,
     });
 
@@ -203,6 +204,7 @@ export function useProviderProfiles() {
         stopSequences: connection.stopSequences,
         seed: connection.seed,
         reasoningEffort: connection.reasoningEffort,
+        showReasoning: connection.showReasoning,
         streamResponse: connection.streamResponse,
       });
 
@@ -260,6 +262,7 @@ export function useProviderProfiles() {
         stopSequences: profile.stopSequences,
         seed: profile.seed ?? null,
         reasoningEffort: profile.reasoningEffort,
+        showReasoning: profile.showReasoning,
         streamResponse: profile.streamResponse,
       });
     } catch (error) {
@@ -310,6 +313,7 @@ export function useProviderProfiles() {
               stopSequences: connection.stopSequences,
               seed: connection.seed,
               reasoningEffort: connection.reasoningEffort,
+              showReasoning: connection.showReasoning,
               streamResponse: connection.streamResponse,
             },
           })
@@ -332,6 +336,7 @@ export function useProviderProfiles() {
             stopSequences: connection.stopSequences,
             seed: connection.seed,
             reasoningEffort: connection.reasoningEffort,
+            showReasoning: connection.showReasoning,
             streamResponse: connection.streamResponse,
           });
 
@@ -425,6 +430,7 @@ export function useProviderProfiles() {
         stopSequences: [],
         seed: null,
         reasoningEffort: "auto",
+        showReasoning: false,
         streamResponse: true,
         customSamplers: false,
       });
@@ -457,6 +463,7 @@ export function useProviderProfiles() {
         stopSequences: existing.stopSequences,
         seed: existing.seed,
         reasoningEffort: existing.reasoningEffort,
+        showReasoning: existing.showReasoning,
         streamResponse: existing.streamResponse,
         customSamplers: existing.customSamplers,
       });
@@ -581,6 +588,7 @@ export function useProviderProfiles() {
       stopSequences: form.stopSequences,
       seed: form.seed,
       reasoningEffort: form.reasoningEffort,
+      showReasoning: form.showReasoning,
       streamResponse: form.streamResponse,
     };
     try {

@@ -102,7 +102,7 @@ export function buildSamplerConfig(
         providerType === PROVIDER_TYPE.openaiCompat &&
         profile.reasoningEffort != null
       ) {
-        openaiOptions.reasoning_effort = profile.reasoningEffort;
+        openaiOptions.reasoningEffort = profile.reasoningEffort;
       }
 
       if (Object.keys(openaiOptions).length > 0) {

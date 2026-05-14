@@ -25,6 +25,7 @@ const providerCoreSchema = z.object({
   stopSequences: z.array(z.string()).optional(),
   seed: z.string().nullable().optional(),
   reasoningEffort: z.string().optional(),
+  showReasoning: z.boolean().optional(),
   streamResponse: z.boolean().optional(),
   customSamplers: z.boolean().optional(),
 });

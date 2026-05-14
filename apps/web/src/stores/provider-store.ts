@@ -38,6 +38,7 @@ export const useProviderStore = create<ProviderStore>()((set) => ({
     stopSequences: [],
     seed: null,
     reasoningEffort: "auto",
+    showReasoning: false,
     streamResponse: true,
     customSamplers: false,
   },

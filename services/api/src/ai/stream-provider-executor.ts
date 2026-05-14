@@ -11,12 +11,18 @@ import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-exec
 import { buildSamplerConfig } from "./sampler-mapper.js";
 import type { ProviderType } from "@rp-platform/domain";
 import { cancelled, providerError } from "../errors.js";
+import { REASONING_START_MARKER, REASONING_END_MARKER } from "./openai-reasoning-fetch.js";
+import { logSendDebug } from "../send-debug-log.js";
 
 /**
  * Map the Vercel AI SDK fullStream into our ProviderStreamChunk iterable.
  *
  * Filters for `text-delta` and `reasoning` parts only.
  * Tracks whether a `redacted-reasoning` part was seen (e.g. Claude extended thinking).
+ *
+ * Also handles the REASONING_START/REASONING_END marker protocol injected
+ * by our `createReasoningAwareFetch()` wrapper for OpenAI Chat Completions
+ * providers that return `reasoning_content` in streaming deltas.
  */
 function createMappedStream(
   fullStream: AsyncIterable<unknown>,
@@ -25,20 +31,54 @@ function createMappedStream(
   hasRedacted: boolean;
 } {
   let hasRedacted = false;
+  let inReasoning = false;
 
   async function* walk(): AsyncGenerator<ProviderStreamChunk> {
+    let chunkCount = 0;
+    let reasoningCount = 0;
+    const partTypes = new Set<string>();
+
     for await (const part of fullStream) {
       const p = part as { type: string; textDelta?: string; text?: string };
+      chunkCount++;
+      partTypes.add(p.type);
 
       if (p.type === "text-delta" && p.textDelta) {
-        yield { type: "text-delta", delta: p.textDelta };
+        // ── Marker protocol (OpenAI Chat Completions reasoning) ──
+        if (p.textDelta === REASONING_START_MARKER) {
+          inReasoning = true;
+          reasoningCount++;
+          logSendDebug("reasoning.marker.start", { chunkCount });
+          continue;
+        }
+        if (p.textDelta === REASONING_END_MARKER) {
+          inReasoning = false;
+          logSendDebug("reasoning.marker.end", { chunkCount, reasoningCount });
+          continue;
+        }
+
+        if (inReasoning) {
+          reasoningCount++;
+          yield { type: "reasoning-delta", textDelta: p.textDelta };
+        } else {
+          yield { type: "text-delta", delta: p.textDelta };
+        }
       } else if (p.type === "reasoning" && (p.textDelta ?? p.text)) {
+        // ── Native reasoning parts (Anthropic, Responses API) ──
+        reasoningCount++;
         yield { type: "reasoning-delta", textDelta: p.textDelta ?? p.text ?? "" };
       } else if (p.type === "redacted-reasoning") {
         hasRedacted = true;
       }
       // reasoning-signature, source, tool-call, etc. — silently ignored
     }
+
+    logSendDebug("reasoning.stream-complete", {
+      totalChunks: chunkCount,
+      reasoningChunks: reasoningCount,
+      partTypes: [...partTypes].sort(),
+      hasRedacted,
+    });
   }
 
   return { stream: walk(), hasRedacted };

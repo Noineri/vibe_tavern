@@ -85,7 +85,7 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     repetitionPenalty: p.repetitionPenalty,
     maxTokens: p.maxTokens, contextBudget: p.contextBudget ?? 16000,
     stopSequences: p.stopSequences,
-    logitBias: "", seed: p.seed ?? null, showReasoning: false,
+    logitBias: "", seed: p.seed ?? null, showReasoning: p.showReasoning,
     reasoningEffort: p.reasoningEffort,
     streamResponse: p.streamResponse,
     customSamplers: p.customSamplers ?? false,
@@ -113,6 +113,7 @@ function toProviderDraft(form: FormState) {
     stopSequences: form.stopSequences,
     seed: form.seed,
     reasoningEffort: form.reasoningEffort,
+    showReasoning: form.showReasoning,
     streamResponse: form.streamResponse,
     customSamplers: form.customSamplers,
   };
