@@ -96,6 +96,9 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .md-pre{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:.8em 1em;overflow-x:auto;font-size:calc(var(--mfs) - 2px);line-height:1.55}
 .md-code-inline{background:var(--s2);padding:.1em .35em;border-radius:3px;font-size:.9em}
 
+/* ── Markdown paragraph spacing ── */
+.md-content p+p{margin-top:.88em}
+
 /* ── Avatar fallback ── */
 .avatar-fallback{font-weight:600;letter-spacing:.01em}
 .avatar-fallback.broken-avatar,.avatar-fallback.broken-image{background:repeating-linear-gradient(135deg,var(--s2),var(--s2) 5px,var(--s3) 5px,var(--s3) 10px);color:var(--t3);border:1px solid var(--border2)}

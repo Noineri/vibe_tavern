@@ -197,11 +197,13 @@ export function MessageBlock(input: MessageBlockProps) {
                 title={regenLabel}
               ><Icons.Regen />{regenLabel}</span>
             )}
-            <span
-              className="absolute right-0 flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-              onClick={() => { if (!input.isBusy) input.onDelete(); }}
-              title={deleteLabel}
-            ><Icons.Trash /></span>
+            {!input.isGreeting && (
+              <span
+                className="absolute right-0 flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+                onClick={() => { if (!input.isBusy) input.onDelete(); }}
+                title={deleteLabel}
+              ><Icons.Trash /></span>
+            )}
           </div>
         )}
       </div>

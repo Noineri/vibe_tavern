@@ -11,6 +11,7 @@ export interface MessageBlockProps {
   canRegenerate: boolean;
   canResend: boolean;
   canSwitchVariant: boolean;
+  isGreeting?: boolean;
   greetingOptions?: string[];
   greetingIndex: number;
   onGreetingIndexChange: (index: number) => void;
