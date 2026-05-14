@@ -21,7 +21,7 @@
   --t4:        oklch(0.403 0.0170 67.3);    /* #4f473f — faintest text */
 
   /* ─── Message text (long-form readability) ─── */
-  --msg-t1:    oklch(0.88 0.022 95);        /* warm cream — primary message body */
+  --msg-t1:    oklch(0.852 0.0298 104.9);  /* warm cream — primary message body */
   --msg-t2:    oklch(0.72 0.016 80);        /* softer secondary within messages */
 
   /* ─── Text selection ─── */
