@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Icons } from "./shared/icons.js";
 import { useT } from "../i18n/context.js";
+import { Markdown } from "../lib/markdown.js";
 
 interface MessageReasoningProps {
   /** The reasoning text content (may be empty for redacted reasoning). */
@@ -41,8 +42,8 @@ export function MessageReasoning({ reasoning, reasoningDurationMs, redacted }: M
         <span className="ml-auto">{open ? <Icons.Caret direction="u" /> : <Icons.Caret direction="d" />}</span>
       </button>
       {open && (
-        <div className="border-t border-border px-3 py-2.5 font-body text-[calc(var(--mfs)-2px)] italic leading-[1.6] text-t2">
-          {hasContent ? reasoning : t("reasoning_redacted")}
+        <div className="border-t border-border px-3 py-2.5 font-body text-[calc(var(--mfs)-2px)] leading-[1.6] text-t2">
+          {hasContent ? <Markdown text={reasoning} /> : t("reasoning_redacted")}
         </div>
       )}
     </div>

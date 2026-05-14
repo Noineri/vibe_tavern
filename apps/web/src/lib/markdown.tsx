@@ -5,14 +5,46 @@ interface MarkdownProps {
   className?: string;
 }
 
-function parseInlineFormatting(text: string, keyPrefix: string): (string | React.ReactNode)[] {
-  const parts = text.split(/(\*[^*]+\*)/g);
-  return parts.map((part, index) => {
-    if (part.startsWith('*') && part.endsWith('*')) {
-      return <em key={`${keyPrefix}-${index}`}>{part.slice(1, -1)}</em>;
+type InlineNode = string | React.ReactNode;
+
+const INLINE_RE = /(\*{3}[^*]+\*{3})|(\*{2}[^*]+\*{2})|(\*[^*]+\*)|("[^"]+")/g;
+
+function parseInlineFormatting(text: string, keyPrefix: string): InlineNode[] {
+  const result: InlineNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let keyIdx = 0;
+
+  INLINE_RE.lastIndex = 0;
+  while ((match = INLINE_RE.exec(text)) !== null) {
+    // Push plain text before this match
+    if (match.index > lastIndex) {
+      result.push(text.slice(lastIndex, match.index));
     }
-    return part;
-  });
+    lastIndex = INLINE_RE.lastIndex;
+
+    const full = match[0];
+    if (match[1]) {
+      // ***bold italic***
+      result.push(<strong key={`${keyPrefix}-bi-${keyIdx++}`}><em>{full.slice(3, -3)}</em></strong>);
+    } else if (match[2]) {
+      // **bold**
+      result.push(<strong key={`${keyPrefix}-b-${keyIdx++}`}>{full.slice(2, -2)}</strong>);
+    } else if (match[3]) {
+      // *italic*
+      result.push(<em key={`${keyPrefix}-i-${keyIdx++}`}>{full.slice(1, -1)}</em>);
+    } else if (match[4]) {
+      // "quoted text"
+      result.push(<span key={`${keyPrefix}-q-${keyIdx++}`} className="quoted-text">{full}</span>);
+    }
+  }
+
+  // Remaining text after last match
+  if (lastIndex < text.length) {
+    result.push(text.slice(lastIndex));
+  }
+
+  return result;
 }
 
 const SCENE_META_RE = /^\[.+:.+\]$/;
