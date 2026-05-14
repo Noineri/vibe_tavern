@@ -93,6 +93,7 @@ export function MessageList() {
               canRegenerate={message.id !== firstCharMsgId && isLastAssistantMessage(messages, message.id)}
               canResend={isLastMessage(messages, message.id) && message.role === "user" && !pendingUserMessageContent}
               canSwitchVariant={isLastMessage(messages, message.id)}
+              isGreeting={message.id === firstCharMsgId}
               greetingOptions={message.id === firstCharMsgId ? greetingOptions : undefined}
               greetingIndex={message.id === firstCharMsgId ? greetingIndex : 0}
               onGreetingIndexChange={setGreetingIndex}

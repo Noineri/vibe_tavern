@@ -137,7 +137,7 @@ export const Markdown: React.FC<MarkdownProps> = ({ text, className }) => {
   if (!text) return null;
 
   return (
-    <div className={className}>
+    <div className={className || "md-content"}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {text}
       </ReactMarkdown>
