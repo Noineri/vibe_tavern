@@ -1,11 +1,17 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { serveStatic } from "hono/bun";
+import { readFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "./errors.js";
 import { logSendDebug } from "./send-debug-log.js";
 import { createApiRouter, type RuntimeApi } from "./routes.js";
 
 export interface AppDeps {
 	runtime: RuntimeApi;
+	/** Absolute path to the built frontend assets directory. When set, the app
+	 *  serves static files and falls back to index.html for SPA routing. */
+	staticDir?: string;
 }
 
 /**
@@ -70,6 +76,17 @@ export function createApp(deps: AppDeps): Hono {
 	});
 
 	app.route("/", apiRouter);
+
+	// ─── Static frontend (production only) ───────────────────────────────
+
+	if (deps.staticDir && existsSync(deps.staticDir)) {
+		// Serve built assets: /assets/*, /fonts/*, etc.
+		app.use("/*", serveStatic({ root: deps.staticDir }));
+
+		// SPA fallback: any non-API, non-asset request → index.html
+		const indexHtml = readFileSync(resolve(deps.staticDir, "index.html"), "utf-8");
+		app.get("*", (c) => c.html(indexHtml));
+	}
 
 	app.all("*", (c) => {
 		const url = new URL(c.req.url);

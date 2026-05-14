@@ -112,6 +112,57 @@ async function main() {
   const target = process.argv[2] || "api-stack";
   let packages: PackageConfig[];
 
+  if (target === "web") {
+    // Build frontend via Vite
+    console.log("📦 Building frontend (vite build)...\n");
+    const proc = Bun.spawn(["bun", "x", "vite", "build", "apps/web"], {
+      cwd: ROOT,
+      stdout: "inherit",
+      stderr: "inherit",
+      stdin: "inherit",
+    });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      console.error("❌ Frontend build failed");
+      process.exit(1);
+    }
+    console.log("\n✅ Frontend built to apps/web/dist/");
+    return;
+  }
+
+  if (target === "prod") {
+    // Build API stack + frontend in sequence
+    console.log("🔨 Building full production bundle\n");
+
+    // 1. API stack
+    for (const name of API_STACK_ORDER) {
+      const ok = await buildPackage(PACKAGES[name]);
+      if (!ok) {
+        console.error("❌ API build failed");
+        process.exit(1);
+      }
+      console.log();
+    }
+
+    // 2. Frontend
+    console.log("📦 Building frontend (vite build)...\n");
+    const proc = Bun.spawn(["bun", "x", "vite", "build", "apps/web"], {
+      cwd: ROOT,
+      stdout: "inherit",
+      stderr: "inherit",
+      stdin: "inherit",
+    });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      console.error("❌ Frontend build failed");
+      process.exit(1);
+    }
+
+    console.log("\n✅ Production bundle ready.");
+    console.log("   Run: bun services/api/src/prod-server.ts");
+    return;
+  }
+
   if (target === "api-stack") {
     packages = API_STACK_ORDER.map((name) => PACKAGES[name]);
   } else if (PACKAGES[target]) {
@@ -119,7 +170,7 @@ async function main() {
   } else {
     console.error(`Unknown target: ${target}`);
     console.error(
-      `Valid targets: api-stack, ${Object.keys(PACKAGES).join(", ")}`
+      `Valid targets: prod, api-stack, web, ${Object.keys(PACKAGES).join(", ")}`
     );
     process.exit(1);
   }
