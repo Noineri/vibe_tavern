@@ -221,8 +221,8 @@ export class LiveChatOrchestrator {
 
     const latencyMs = Date.now() - startedAt;
     const finish = await streamResult.finished;
-    const finalText = (await streamResult.text) || collected;
-    const finalReasoning = (await streamResult.reasoning) || reasoningCollected || undefined;
+    const finalText = collected || (await streamResult.text);
+    const finalReasoning = reasoningCollected || (await streamResult.reasoning) || undefined;
 
     // Finalize reasoning duration if it wasn't set during streaming
     if (reasoningStartedAt && reasoningDurationMs === null) {
@@ -319,8 +319,8 @@ export class LiveChatOrchestrator {
 
     const latencyMs = Date.now() - startedAt;
     const finish = await streamResult.finished;
-    const finalText = (await streamResult.text) || collected;
-    const finalReasoning = (await streamResult.reasoning) || reasoningCollected || undefined;
+    const finalText = collected || (await streamResult.text);
+    const finalReasoning = reasoningCollected || (await streamResult.reasoning) || undefined;
 
     if (reasoningStartedAt && reasoningDurationMs === null) {
       reasoningDurationMs = Date.now() - reasoningStartedAt;
@@ -419,8 +419,8 @@ export class LiveChatOrchestrator {
 
     const latencyMs = Date.now() - startedAt;
     const finish = await streamResult.finished;
-    const finalText = (await streamResult.text) || collected;
-    const finalReasoning = (await streamResult.reasoning) || reasoningCollected || undefined;
+    const finalText = collected || (await streamResult.text);
+    const finalReasoning = reasoningCollected || (await streamResult.reasoning) || undefined;
 
     if (reasoningStartedAt && reasoningDurationMs === null) {
       reasoningDurationMs = Date.now() - reasoningStartedAt;

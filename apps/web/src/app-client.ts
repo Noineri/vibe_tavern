@@ -103,6 +103,7 @@ export interface ProviderProfileRecord {
   stopSequences: string[];
   seed: string | null;
   reasoningEffort: string;
+  showReasoning: boolean;
   streamResponse: boolean;
   customSamplers: boolean;
   isActive: boolean;
@@ -594,6 +595,7 @@ export async function saveProviderProfile(input: {
   stopSequences?: string[];
   seed?: string | null;
   reasoningEffort?: string;
+  showReasoning?: boolean;
   streamResponse?: boolean;
   customSamplers?: boolean;
 }): Promise<ProviderProfileRecord> {
@@ -700,6 +702,7 @@ export async function updateProviderProfile(
     stopSequences?: string[];
     seed?: string | null;
     reasoningEffort?: string;
+    showReasoning?: boolean;
     streamResponse?: boolean;
   },
 ): Promise<ProviderProfileRecord> {

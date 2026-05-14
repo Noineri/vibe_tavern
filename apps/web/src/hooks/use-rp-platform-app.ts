@@ -47,6 +47,7 @@ function createInitialConnectionState(): ConnectionState {
     stopSequences: [],
     seed: null,
     reasoningEffort: "auto",
+    showReasoning: false,
     streamResponse: true,
     customSamplers: false,
   };

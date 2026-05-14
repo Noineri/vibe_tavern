@@ -106,6 +106,7 @@ export function createProviderProfileService(providers: ProviderStore): Provider
         stopSequences: profile.stopSequences,
         seed: profile.seed,
         reasoningEffort: profile.reasoningEffort,
+        showReasoning: profile.showReasoning,
         streamResponse: profile.streamResponse,
         customSamplers: profile.customSamplers,
       });

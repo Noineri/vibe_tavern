@@ -24,6 +24,7 @@ export interface ClientProviderProfileRecord {
   stopSequences: string[];
   seed: string | null;
   reasoningEffort: string;
+  showReasoning: boolean;
   streamResponse: boolean;
   customSamplers: boolean;
   isActive: boolean;
@@ -142,6 +143,7 @@ export function toClientProviderProfile(profile: import("@rp-platform/domain").S
     stopSequences: profile.stopSequences,
     seed: profile.seed,
     reasoningEffort: profile.reasoningEffort,
+    showReasoning: profile.showReasoning,
     streamResponse: profile.streamResponse,
     customSamplers: profile.customSamplers,
     isActive: profile.isActive,

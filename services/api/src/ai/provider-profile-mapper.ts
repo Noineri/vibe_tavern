@@ -26,6 +26,7 @@ import {
   getProviderCapabilities,
   type ProviderCapabilityFlags,
 } from "./provider-capabilities.js";
+import { createReasoningAwareFetch } from "./openai-reasoning-fetch.js";
 
 // ---------------------------------------------------------------------------
 // SDK support classification
@@ -117,7 +118,7 @@ export function mapProfileToSdkModel(
     case PROVIDER_TYPE.openaiCompat: {
       const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
       const apiKey = profile.apiKey ?? "";
-      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
+      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined, fetch: createReasoningAwareFetch() });
       return {
         model: provider(model),
         sdkSupport: "native",
@@ -158,7 +159,7 @@ export function mapProfileToSdkModel(
     case PROVIDER_TYPE.ollama: {
       const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
       const apiKey = profile.apiKey ?? "";
-      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
+      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined, fetch: createReasoningAwareFetch() });
       return {
         model: provider(model),
         sdkSupport: "openai_fallback",
@@ -173,7 +174,7 @@ export function mapProfileToSdkModel(
     case PROVIDER_TYPE.llamaCpp: {
       const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
       const apiKey = profile.apiKey ?? "";
-      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
+      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined, fetch: createReasoningAwareFetch() });
       return {
         model: provider(model),
         sdkSupport: "openai_fallback",

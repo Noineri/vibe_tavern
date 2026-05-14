@@ -29,6 +29,7 @@ export interface ConnectionState {
   stopSequences: string[];
   seed: string | null;
   reasoningEffort: string;
+  showReasoning: boolean;
   streamResponse: boolean;
   customSamplers: boolean;
 }

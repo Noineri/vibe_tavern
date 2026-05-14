@@ -49,6 +49,7 @@ export interface CreateProviderData {
   stopSequences?: string[];
   seed?: string | null;
   reasoningEffort?: string;
+  showReasoning?: boolean;
   streamResponse?: boolean;
   customSamplers?: boolean;
 }
@@ -127,6 +128,7 @@ export class ProviderStore {
         stopSequencesJson: data.stopSequences ? JSON.stringify(data.stopSequences) : null,
         seed: data.seed ?? null,
         reasoningEffort: data.reasoningEffort ?? 'auto',
+        showReasoning: data.showReasoning ? 1 : 0,
         streamResponse: data.streamResponse !== undefined ? (data.streamResponse ? 1 : 0) : 1,
         customSamplers: data.customSamplers ? 1 : 0,
         isActive: 0,
@@ -162,6 +164,7 @@ export class ProviderStore {
     if (data.stopSequences !== undefined) values.stopSequencesJson = JSON.stringify(data.stopSequences);
     if (data.seed !== undefined) values.seed = data.seed;
     if (data.reasoningEffort !== undefined) values.reasoningEffort = data.reasoningEffort;
+    if (data.showReasoning !== undefined) values.showReasoning = data.showReasoning ? 1 : 0;
     if (data.streamResponse !== undefined) values.streamResponse = data.streamResponse ? 1 : 0;
     if (data.customSamplers !== undefined) values.customSamplers = data.customSamplers ? 1 : 0;
 
@@ -219,6 +222,7 @@ export class ProviderStore {
         stopSequencesJson: original.stopSequencesJson,
         seed: original.seed,
         reasoningEffort: original.reasoningEffort,
+        showReasoning: original.showReasoning,
         streamResponse: original.streamResponse,
         customSamplers: original.customSamplers,
         isActive: 0,
@@ -340,6 +344,7 @@ export class ProviderStore {
       stopSequences: row.stopSequencesJson ? JSON.parse(row.stopSequencesJson) : [],
       seed: row.seed,
       reasoningEffort: row.reasoningEffort,
+      showReasoning: row.showReasoning === 1,
       streamResponse: row.streamResponse === 1,
       customSamplers: row.customSamplers === 1,
       isActive: row.isActive === 1,
