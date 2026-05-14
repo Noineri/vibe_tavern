@@ -59,6 +59,10 @@
   --shadow-lg: 0 24px 60px oklch(0 0 0 / 50%);
   --shadow-xl: 0 8px 40px oklch(0 0 0 / 45%);
 
+  /* ─── Markdown inline sizes ─── */
+  --md-fs-italic:       calc(var(--mfs) + 1px);    /* italic reads smaller at same size */
+  --md-fs-bold-italic:  calc(var(--mfs) + 1px);    /* same compensation */
+
   /* ─── Markdown inline colors ─── */
   --md-italic:       oklch(79.603% 0.06726 71.824);    /* warm gold italic */
   --md-bold:         oklch(55.685% 0.05471 87.899);    /* bright warm bold */
