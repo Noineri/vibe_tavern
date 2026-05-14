@@ -100,7 +100,7 @@ export function MessageBlock(input: MessageBlockProps) {
         {input.isEditing ? (
           <>
             <AutoTextarea
-              className="w-full resize-none overflow-hidden rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.82] text-t1 outline-none"
+              className="w-full resize-none overflow-hidden rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.82] text-msg-t1 outline-none"
               style={{ minHeight: 140 }}
               value={input.editingDraft}
               onChange={e => input.onEditingDraftChange(e.target.value)}
@@ -122,7 +122,7 @@ export function MessageBlock(input: MessageBlockProps) {
           </>
         ) : isUser ? (
           <div className="my-0.5 rounded-md bg-user-bg px-4 py-[13px]">
-            <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 opacity-88 [&_em]:italic [&_em]:text-t2">
+            <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-msg-t1 opacity-88 [&_em]:italic [&_em]:text-msg-t2">
               <Markdown text={renderContent} />
             </div>
           </div>
@@ -131,7 +131,7 @@ export function MessageBlock(input: MessageBlockProps) {
             {!isUser && (reasoningText || reasoningDuration) && (
               <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
             )}
-            <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
+            <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
               <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
                 <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
                 <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
@@ -144,7 +144,7 @@ export function MessageBlock(input: MessageBlockProps) {
             {!isUser && (reasoningText || reasoningDuration) && (
               <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
             )}
-            <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
+            <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
               <Markdown text={renderContent} />
             </div>
             {isGenerating && (

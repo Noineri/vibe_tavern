@@ -44,6 +44,8 @@
   --color-t2: var(--t2);
   --color-t3: var(--t3);
   --color-t4: var(--t4);
+  --color-msg-t1: var(--msg-t1);
+  --color-msg-t2: var(--msg-t2);
   --color-accent: var(--accent);
   --color-accent-t: var(--accent-t);
   --color-accent-dim: var(--accent-dim);

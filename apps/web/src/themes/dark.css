@@ -15,10 +15,14 @@
   --border2:   oklch(0.360 0.0131 67.4);   /* #423c36 — hover borders */
 
   /* ─── Text ─── */
-  --t1:        oklch(0.852 0.0298 104.9);  /* #d1d0ba — primary text */
+  --t1:        oklch(0.852 0.0298 104.9);  /* #d1d0ba — primary UI text */
   --t2:        oklch(0.687 0.0184 61.8);    /* #a3988f — secondary text */
   --t3:        oklch(0.531 0.0218 67.3);    /* #756a5f — muted text */
   --t4:        oklch(0.403 0.0170 67.3);    /* #4f473f — faintest text */
+
+  /* ─── Message text (long-form readability) ─── */
+  --msg-t1:    oklch(0.88 0.022 95);        /* warm cream — primary message body */
+  --msg-t2:    oklch(0.72 0.016 80);        /* softer secondary within messages */
 
   /* ─── Accent (golden) ─── */
   --accent:       oklch(0.72 0.14 75);          /* buttons, toggles */
