@@ -87,7 +87,18 @@ export interface ImportResult {
 	};
 }
 
-export class SessionRuntime {
+	/**
+	 * Top-level coordinator for all session state.
+	 *
+	 * Creates and wires sub-runtimes via constructor injection + callback functions:
+	 * - {@link ChatRuntime} — live chat orchestration (prepare turn, append reply, variants)
+	 * - {@link CharacterRuntime} — character CRUD, import, archive
+	 * - {@link PersonaRuntime} — persona CRUD, defaults
+	 * - {@link ChatLifecycleRuntime} — create/delete/switch chats, summary prompt assembly
+	 * - {@link ChatOrderService} — in-memory ordered chat list
+	 * - {@link PromptAssemblyService} — loads context from DB and calls assemblePrompt()
+	 */
+	export class SessionRuntime {
 	private readonly stores: StoreContainer;
 	private readonly resolver: StaticPromptResolver;
 	private readonly chatApp: ChatApplicationService;
@@ -134,7 +145,7 @@ export class SessionRuntime {
 			chatApp: this.chatApp,
 			chatOrder: this.chatOrder,
 			persona: this.persona,
-			resolveDefaultPromptPresetId: () => this.resolveDefaultPromptPresetId(),
+			resolveDefaultPromptPresetId: () => this.ensureDefaultPresetId(),
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
 			seedImportedOpening: (chatId, firstMessage) =>
 				this.chatLifecycle.seedImportedOpening(chatId, firstMessage),
@@ -147,7 +158,7 @@ export class SessionRuntime {
 			chatOrder: this.chatOrder,
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
 			resolveDefaultPersonaId: () => this.persona.resolveDefaultId(),
-			resolveDefaultPromptPresetId: () => this.resolveDefaultPromptPresetId(),
+			resolveDefaultPromptPresetId: () => this.ensureDefaultPresetId(),
 			seedImportedOpening: (chatId, firstMessage) =>
 				this.chatLifecycle.seedImportedOpening(chatId, firstMessage),
 			discardPendingPromptTrace: (chatId) =>
@@ -174,10 +185,14 @@ export class SessionRuntime {
 				subtitle: c.tags.length > 0 ? c.tags[0] : '',
 				avatarAssetId: c.avatarAssetId,
 			})),
-			promptPresets: promptPresets.map((p) => this.toPromptPresetDto(p)),
+			promptPresets: promptPresets.map((p) => this.mapPresetToDto(p)),
 		};
 	}
 
+	/**
+	 * Returns the full session state for the frontend:
+	 * chat list, active chat messages + branches, persona, character, prompt traces.
+	 */
 	async getSnapshot(chatId: ChatId): Promise<SessionSnapshot> {
 		const { chat, branch, messages: branchMessages, summaries } = await this.chatApp.getChatState(chatId);
 		const branches = await this.stores.chats.getBranches(chat.id);
@@ -198,7 +213,7 @@ export class SessionRuntime {
 		);
 
 		return {
-			chats: await Promise.all(this.chatOrder.items.map((id) => this.toChatListItem(id))),
+			chats: await Promise.all(this.chatOrder.items.map((id) => this.mapChatToListItem(id))),
 			allCharacters: await this.getAllCharacterEntries(),
 			activeChat: chat,
 			activeBranch: branch,
@@ -239,7 +254,7 @@ export class SessionRuntime {
 			chatOrder: this.chatOrder,
 			fileStore: this.fileStore,
 			resolveDefaultPersonaId: () => this.persona.resolveDefaultId(),
-			resolveDefaultPromptPresetId: () => this.resolveDefaultPromptPresetId(),
+			resolveDefaultPromptPresetId: () => this.ensureDefaultPresetId(),
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
 			seedImportedOpening: (chatId, firstMessage) =>
 				this.chatLifecycle.seedImportedOpening(chatId, firstMessage),
@@ -307,6 +322,11 @@ export class SessionRuntime {
 
 	// ─── Private: prompt wiring ─────────────────────────────────────────
 
+	/**
+	 * Wiring method: delegates to {@link PromptAssemblyService.assembleForChat}.
+	 * Resolves the active provider profile (currently unused beyond triggering the read)
+	 * and passes context to the prompt service.
+	 */
 	private async assemblePrompt(
 		chatId: ChatId,
 		branchId?: ChatBranchId,
@@ -324,8 +344,8 @@ export class SessionRuntime {
 		});
 	}
 
-	private async resolveDefaultPromptPresetId(): Promise<PromptPresetId> {
-		await this.ensureDefaultsOnce();
+	private async ensureDefaultPresetId(): Promise<PromptPresetId> {
+		await this.ensureDefaultPresetOnce();
 		const presets = await this.stores.presets.listAll();
 		const globalPreset =
 			presets.find((preset) => !preset.bindProviderPresetId) ?? presets[0];
@@ -335,7 +355,8 @@ export class SessionRuntime {
 		return globalPreset.id as PromptPresetId;
 	}
 
-	private async ensureDefaultsOnce(): Promise<void> {
+	/** Creates a "Default" prompt preset on first call if none exist. */
+	private async ensureDefaultPresetOnce(): Promise<void> {
 		if (this.defaultsEnsured) return;
 		this.defaultsEnsured = true;
 		if ((await this.stores.presets.listAll()).length === 0) {
@@ -348,7 +369,7 @@ export class SessionRuntime {
 
 	// ─── Private: DTO helpers ───────────────────────────────────────────
 
-	private toPromptPresetDto(preset: PromptPreset): PromptPresetDto {
+	private mapPresetToDto(preset: PromptPreset): PromptPresetDto {
 		return {
 			id: preset.id,
 			name: preset.name,
@@ -365,7 +386,7 @@ export class SessionRuntime {
 		};
 	}
 
-	private async toChatListItem(chatId: ChatId): Promise<ChatListItem> {
+	private async mapChatToListItem(chatId: ChatId): Promise<ChatListItem> {
 		const chat = (await this.stores.chats.getById(chatId))!;
 		const chatState = await this.chatApp.getChatState(chatId, chat.activeBranchId as ChatBranchId);
 		let characterName = "Unknown";

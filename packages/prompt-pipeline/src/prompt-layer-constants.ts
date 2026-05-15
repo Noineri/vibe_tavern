@@ -10,6 +10,20 @@ export const PROMPT_LAYER_POSITION_RANK: Record<PromptLayerPosition, number> = {
   hidden_system: 3,
 };
 
+/**
+ * Numeric priority system for prompt layers.
+ *
+ * Higher values = more important / rendered first within the same position.
+ *
+ * | Range | Purpose                          |
+ * |-------|----------------------------------|
+ * | 1000  | System prompt (highest priority) |
+ * | 900+  | Character definition blocks      |
+ * | 500   | Summary / retrieval memory       |
+ * | 300   | Tool instructions                |
+ * | 100   | Chat history                     |
+ * | <100  | Compaction diagnostics           |
+ */
 export const PROMPT_LAYER_PRIORITY = {
   promptPresetSystem: 1000,
   promptPresetJailbreak: 990,
@@ -62,18 +76,32 @@ export const PROMPT_LAYER_SOURCE_ID = {
   preflight: "preflight",
 } as const;
 
+/** Generate a prefixed layer ID for a dynamically loaded lore entry. */
 export function createLoreLayerId(id: string): string {
   return `lore_${id}`;
 }
 
+/** Generate a prefixed layer ID for a summary-memory block. */
 export function createSummaryMemoryLayerId(id: string): string {
   return `summary_${id}`;
 }
 
+/** Generate a prefixed layer ID for a retrieval-memory block. */
 export function createRetrievalMemoryLayerId(id: string): string {
   return `retrieval_${id}`;
 }
 
+/**
+ * Formatting helpers that wrap raw text into prompt-ready blocks.
+ *
+ * - `characterHeader(name)`          — `"Character: {name}"`
+ * - `scenarioHeader(text)`           — `"Scenario: {text}"`
+ * - `personaBlock(name,desc,pronouns)` — `"User persona ({name}[, {pronouns}]): {desc}"`
+ * - `loreHeader(title)`              — `"Lore: {title}"`
+ * - `summaryMemory(kind, text)`      — `"[{kind}] {text}"`
+ * - `retrievalMemory(src, content)`  — `"[Retrieved {src}] {content}"`
+ * - `exampleMessages(text)`          — `"[Example messages]\n{text}"`
+ */
 export const PROMPT_FORMAT = {
   characterHeader: (name: string) => `Character: ${name}`,
   scenarioHeader: (text: string) => `Scenario: ${text}`,
@@ -87,6 +115,16 @@ export const PROMPT_FORMAT = {
   exampleMessages: (text: string) => `[Example messages]\n${text}`,
 } as const;
 
+/**
+ * Reason strings attached to layers to explain why they were included or dropped.
+ *
+ * - `included`               — standard layer, always present
+ * - `emptyLoreContent`        — lore entry had no content after trimming
+ * - `activatedLoreEntry`      — lore entry matched and was activated
+ * - `emptySummaryMemory`      — summary memory block was empty
+ * - `emptyRetrievalMemory`    — retrieval memory block was empty
+ * - `preflightCompaction(N)`  — preflight compaction dropped N messages
+ */
 export const PROMPT_LAYER_REASON = {
   included: "included",
   emptyLoreContent: "empty lore content",
@@ -96,7 +134,12 @@ export const PROMPT_LAYER_REASON = {
   preflightCompaction: (droppedCount: number) => `preflight_compaction_dropped_${droppedCount}`,
 } as const;
 
-/** Which assembly modes each built-in layer is active in. Undefined = all modes (backward compat). */
+/**
+ * Maps built-in layer IDs to the list of {@link AssemblyMode}s they are active in.
+ *
+ * Lore and memory layers are not listed here; they default to
+ * `["chat", "continue", "regenerate"]` via runtime logic.
+ */
 export const LAYER_MODES: Record<string, AssemblyMode[]> = {
   prompt_preset_system:        ["chat", "continue", "regenerate"],
   prompt_preset_jailbreak:     ["chat", "continue", "regenerate"],

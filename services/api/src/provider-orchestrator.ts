@@ -4,13 +4,18 @@ import { listProviderModels } from "./provider-gateway.js";
 import { normalizeProviderType } from "./ai/provider-profile-mapper.js";
 import { logSendDebug } from "./send-debug-log.js";
 
-const PROVIDER_TYPES_REQUIRING_AUTH_FOR_MODELS = new Set(["anthropic", "google"]);
+/** Provider types whose model-list API requires authentication. */
+const AUTH_REQUIRED_FOR_MODEL_LIST = new Set(["anthropic", "google"]);
 
 export class ProviderOrchestrator {
   constructor(
     private readonly providerProfileService: ProviderProfileService,
   ) {}
 
+  /**
+   * Fetches models from the provider API, caches them in the DB.
+   * Falls back to cached models or the profile's defaultModel on error.
+   */
   async refreshProfileModels(profile: StoredProviderProfileRecord): Promise<Array<{ id: string; label: string; contextLength?: number }>> {
     const providerType = normalizeProviderType(profile.providerPreset);
     try {
@@ -18,7 +23,7 @@ export class ProviderOrchestrator {
         baseUrl: profile.endpoint,
         apiKey: profile.apiKey ?? "",
         providerType,
-        requiresAuthForModels: PROVIDER_TYPES_REQUIRING_AUTH_FOR_MODELS.has(providerType),
+        requiresAuthForModels: AUTH_REQUIRED_FOR_MODEL_LIST.has(providerType),
       });
       const normalized = models.map((model) => ({
         id: model.id,

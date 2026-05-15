@@ -34,6 +34,12 @@ function formatRecentMessages(messages: RecentMessage[]): string {
     .join("\n\n");
 }
 
+/**
+ * Factory for creating a {@link PromptLayer} with sensible defaults.
+ *
+ * - `position` defaults to `"in_prompt"` when not specified.
+ * - `priority` defaults to {@link DEFAULT_PROMPT_LAYER_PRIORITY} (0).
+ */
 function makeLayer(input: {
   id: string;
   sourceType: string;
@@ -57,6 +63,10 @@ function makeLayer(input: {
   };
 }
 
+/**
+ * Sort layers by position first (`before_prompt` < `in_prompt` < `in_chat` < `hidden_system`),
+ * then by priority **descending** within the same position group.
+ */
 function sortLayers(layers: PromptLayer[]): PromptLayer[] {
   return [...layers].sort((a, b) => {
     const posDiff = PROMPT_LAYER_POSITION_RANK[a.position] - PROMPT_LAYER_POSITION_RANK[b.position];
@@ -104,6 +114,11 @@ function applyMacros(text: string | null | undefined, variableContext: PromptVar
   return text ? phaseOneMacroEngine.resolve(text, variableContext) : "";
 }
 
+/**
+ * Applies macro resolution to every text field of the assembly context
+ * (character fields, persona, preset, lore, memory, chat messages, tool instructions).
+ * Called before any layer construction so all downstream text is fully resolved.
+ */
 function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyContext {
   const variableContext = buildAssemblyVariableContext(context);
   return {
@@ -155,6 +170,24 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
   };
 }
 
+/**
+ * Core assembly pipeline.
+ *
+ * Accepts a raw {@link PromptAssemblyContext}, processes it, and returns
+ * a {@link PromptAssemblyResult} containing ordered layers and the final
+ * `messages` payload.
+ *
+ * Pipeline order:
+ *  1. **Macros** — resolve all `{{…}}` placeholders in context text fields
+ *  2. **Layers** — create a {@link PromptLayer} for every non-empty content source
+ *  3. **Compaction** — if the total exceeds `contextBudget`, trim older messages
+ *     while preserving at least `max(2, ceil(N/2))` recent messages and never
+ *     splitting an assistant→tool pair (see {@link findSafeCompactionBoundary})
+ *  4. **Mode filtering** — drop layers not active for the current {@link AssemblyMode}
+ *  5. **Sorting** — order by position, then priority descending
+ *  6. **Assembly** — build the final `messages` array, interleaving depth-aware
+ *     `in_chat` layers into the history
+ */
 export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssemblyResult {
   const context = applyMacrosToContext(rawContext);
   const layers: PromptLayer[] = [];
@@ -326,6 +359,18 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
 
   let recentMessagesForHistory = context.chat.recentMessages;
 
+  /*
+   * --- Compaction ---
+   *
+   * If contextBudget is set and the estimated token count exceeds it,
+   * we trim older messages from the history.
+   *
+   * preserveCount = max(2, ceil(N/2)) ensures we always keep at least 2 messages
+   * and generally preserve the newer half of the conversation.
+   *
+   * findSafeCompactionBoundary() walks backwards from the proposed cut point
+   * so we never split an assistant→tool call pair.
+   */
   if (
     typeof context.config?.contextBudget === "number" &&
     context.config.contextBudget > 0 &&
@@ -431,10 +476,13 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   const inPrompt = nonHiddenLayers.filter((l) => l.position === "in_prompt");
   const inChat = nonHiddenLayers.filter((l) => l.position === "in_chat");
 
-  // Split in_chat into depth-aware (interleaved into history) and block (before history)
+  // in_chat layers with a numeric injectionDepth are interleaved into the history
+  // at the specified offset from the end.  We sort deepest-first so that splicing
+  // at a larger depth doesn't shift the insertion index of shallower layers.
   const inChatWithDepth = inChat
     .filter((l) => typeof l.injectionDepth === "number")
     .sort((a, b) => b.injectionDepth! - a.injectionDepth!); // deepest first to preserve indices
+  // in_chat layers WITHOUT a depth are collected into a single block placed before history.
   const inChatBlock = inChat.filter((l) => typeof l.injectionDepth !== "number");
 
   // Build history messages
