@@ -1,0 +1,122 @@
+/**
+ * Full installer build pipeline for Claw Tavern.
+ *
+ * Orchestrates:
+ *   1. Run build-standalone.ts (produces dist/claw-tavern.exe + dist/web/)
+ *   2. Invoke ISCC (Inno Setup Compiler) to produce the installer
+ *
+ * Usage:
+ *   bun scripts/build-installer.ts
+ *
+ * Prerequisites:
+ *   - Bun runtime
+ *   - Inno Setup 6+ installed and ISCC on PATH
+ *     (or set ISCC_PATH environment variable)
+ *
+ * Output:
+ *   installer/output/claw-tavern-setup.exe
+ */
+
+import { join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+
+const ROOT = resolve(import.meta.dir, "..");
+const DIST = join(ROOT, "dist");
+const INSTALLER_DIR = join(ROOT, "installer");
+const ISS_FILE = join(INSTALLER_DIR, "claw-tavern.iss");
+const OUTPUT_DIR = join(INSTALLER_DIR, "output");
+const EXPECTED_SETUP = join(OUTPUT_DIR, "claw-tavern-setup.exe");
+
+function findIscc(): string {
+	// 1. Explicit env var
+	const envPath = process.env.ISCC_PATH;
+	if (envPath && existsSync(envPath)) {
+		return envPath;
+	}
+
+	// 2. Common install locations on Windows
+	if (process.platform === "win32") {
+		const programFiles = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
+		const candidates = [
+			join(programFiles, "Inno Setup 6", "ISCC.exe"),
+			join(programFiles, "Inno Setup 7", "ISCC.exe"),
+		];
+		for (const candidate of candidates) {
+			if (existsSync(candidate)) return candidate;
+		}
+	}
+
+	// 3. Assume ISCC is on PATH
+	return "ISCC";
+}
+
+async function main() {
+	console.log("📦 Claw Tavern — Installer Build\n");
+
+	// ── Step 1: Verify prerequisites ─────────────────────────────────────
+
+	if (!existsSync(ISS_FILE)) {
+		console.error(`❌ Inno Setup script not found: ${ISS_FILE}`);
+		process.exit(1);
+	}
+
+	// ── Step 2: Run standalone build ─────────────────────────────────────
+
+	console.log("🔨 Step 1: Building standalone distribution...\n");
+
+	const buildProc = Bun.spawn(
+		["bun", "scripts/build-standalone.ts"],
+		{ cwd: ROOT, stdout: "inherit", stderr: "inherit", stdin: "inherit" },
+	);
+
+	const buildExit = await buildProc.exited;
+	if (buildExit !== 0) {
+		console.error("❌ Standalone build failed");
+		process.exit(1);
+	}
+
+	// ── Step 3: Verify build output ──────────────────────────────────────
+
+	if (!existsSync(join(DIST, "claw-tavern.exe"))) {
+		console.error("❌ dist/claw-tavern.exe not found after build");
+		process.exit(1);
+	}
+
+	if (!existsSync(join(DIST, "web", "index.html"))) {
+		console.error("❌ dist/web/index.html not found after build");
+		process.exit(1);
+	}
+
+	console.log("\n🔨 Step 2: Building installer with Inno Setup...\n");
+
+	// ── Step 4: Run ISCC ─────────────────────────────────────────────────
+
+	const isccPath = findIscc();
+	console.log(`   ISCC: ${isccPath}`);
+
+	const isccProc = Bun.spawn(
+		[isccPath, ISS_FILE],
+		{ cwd: ROOT, stdout: "inherit", stderr: "inherit", stdin: "inherit" },
+	);
+
+	const isccExit = await isccProc.exited;
+	if (isccExit !== 0) {
+		console.error("❌ Inno Setup compilation failed");
+		console.error("   Make sure Inno Setup 6+ is installed.");
+		console.error("   Download: https://jrsoftware.org/isinfo.php");
+		console.error("   Or set ISCC_PATH environment variable.");
+		process.exit(1);
+	}
+
+	// ── Step 5: Verify output ─────────────────────────────────────────────
+
+	if (!existsSync(EXPECTED_SETUP)) {
+		console.error(`❌ Installer not found at expected location: ${EXPECTED_SETUP}`);
+		process.exit(1);
+	}
+
+	console.log(`\n✅ Installer built successfully!`);
+	console.log(`   ${EXPECTED_SETUP}`);
+}
+
+main();
