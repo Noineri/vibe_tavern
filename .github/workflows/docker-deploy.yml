@@ -1,19 +1,25 @@
 name: Build and Push Docker Image
 
 on:
-  push:
-    branches:
-      - main
-      - master
-    paths:
-      - 'Dockerfile'
-      - 'package.json'
-      - 'bun.lock'
-      - 'scripts/**'
-      - 'services/**'
-      - 'apps/**'
-      - 'packages/**'
-      - '.github/workflows/docker-deploy.yml'
+  # Dev build: every push to main that touches source files
+  - push:
+      branches:
+        - main
+        - master
+      paths:
+        - "Dockerfile"
+        - "package.json"
+        - "bun.lock"
+        - "scripts/**"
+        - "services/**"
+        - "apps/**"
+        - "packages/**"
+        - ".github/workflows/docker-deploy.yml"
+
+  # Release build: triggered when release.yml pushes a version tag
+  - push:
+      tags:
+        - "v*"
 
 env:
   REGISTRY: ghcr.io
@@ -30,20 +36,18 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
 
-      - name: Check if version changed (new release)
+      - name: Determine build mode (dev vs release)
         id: version-check
         run: |
           CURRENT_VERSION=$(jq -r '.version' package.json)
-          PREVIOUS_VERSION=$(git show HEAD~1:package.json 2>/dev/null | jq -r '.version' || echo "")
-
           echo "version=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
 
-          if [ -n "${PREVIOUS_VERSION}" ] && [ "${CURRENT_VERSION}" != "${PREVIOUS_VERSION}" ]; then
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "🚀 Release build triggered by tag"
             echo "is_new_release=true" >> "$GITHUB_OUTPUT"
           else
+            echo "🔧 Dev build triggered by push to main"
             echo "is_new_release=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -63,10 +67,10 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # Regular push (no version change): dev + dev-<short-sha>
+            # Dev push: dev + dev-<short-sha>
             type=sha,prefix=dev-,format=short,enable=${{ steps.version-check.outputs.is_new_release == 'false' }}
             type=raw,value=dev,enable=${{ steps.version-check.outputs.is_new_release == 'false' }}
-            # New version detected: latest + version tag (e.g. 0.2.0)
+            # Release tag: latest + version tag (e.g. 0.2.0)
             type=semver,pattern={{version}},value=${{ steps.version-check.outputs.version }},enable=${{ steps.version-check.outputs.is_new_release == 'true' }}
             type=raw,value=latest,enable=${{ steps.version-check.outputs.is_new_release == 'true' }}
 
