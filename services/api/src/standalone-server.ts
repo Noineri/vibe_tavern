@@ -25,6 +25,7 @@ import { ChatSummaryService } from "./chat-summary-service.js";
 import { AssetService } from "./asset-service.js";
 import { RuntimeApiAdapter } from "./runtime-api-adapter.js";
 import { createApp } from "./app-factory.js";
+import { configureLogDir } from "./send-debug-log.js";
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -41,6 +42,7 @@ mkdirSync(paths.dataDir, { recursive: true });
 mkdirSync(paths.assetsDir, { recursive: true });
 mkdirSync(paths.traceDir, { recursive: true });
 mkdirSync(paths.logsDir, { recursive: true });
+configureLogDir(paths.logsDir);
 
 // ─── Bootstrap ───────────────────────────────────────────────────────────────
 
