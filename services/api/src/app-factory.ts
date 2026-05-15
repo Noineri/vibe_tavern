@@ -32,18 +32,6 @@ export function createApp(deps: AppDeps): Hono {
 		allowHeaders: ["Content-Type"],
 	}));
 
-	app.use("*", async (c, next) => {
-		const contentType = c.req.header("content-type") ?? "";
-		if (contentType.includes("multipart/form-data")) {
-			return await next();
-		}
-		const contentLength = c.req.header("content-length");
-		if (contentLength && parseInt(contentLength) > 1024 * 1024) {
-			return c.json({ error: "Request body too large" }, 413);
-		}
-		await next();
-	});
-
 	app.onError((err, c) => {
 		const url = c.req.url;
 		const method = c.req.method;
