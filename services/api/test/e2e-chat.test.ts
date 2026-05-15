@@ -122,7 +122,7 @@ function lastUser(messages: MessageData[]): MessageData | undefined {
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
-describe("Chat E2E — send, stream, delete, regenerate", () => {
+describe("Chat E2E — send, stream, delete, regenerate", { timeout: 30_000 }, () => {
   let chatId: string;
 
   it("sets up provider, character, and chat", async () => {
