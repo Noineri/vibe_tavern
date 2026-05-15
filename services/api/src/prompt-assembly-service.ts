@@ -87,6 +87,7 @@ export class PromptAssemblyService {
   constructor(
     private readonly stores: StoreContainer,
     private readonly resolver: PromptAssemblyResolver,
+    private readonly dataDir?: string,
   ) {}
 
   async assembleForChat(input: AssemblePromptForChatInput): Promise<AssemblePromptForChatResult> {
@@ -244,7 +245,7 @@ export class PromptAssemblyService {
     }
     // data/traces/{yyyy-mm-dd}/{promptTraceId}.json
     const date = trace.createdAt.split("T")[0];
-    const fileStore = createFileStore();
+    const fileStore = createFileStore(this.dataDir);
     const filePath = fileStore.resolvePath(
       STORAGE_FOLDERS.traces,
       `${date}/${traceId}.json`,
