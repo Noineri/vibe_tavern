@@ -1,25 +1,23 @@
 name: Build and Push Docker Image
 
 on:
-  # Dev build: every push to main that touches source files
-  - push:
-      branches:
-        - main
-        - master
-      paths:
-        - "Dockerfile"
-        - "package.json"
-        - "bun.lock"
-        - "scripts/**"
-        - "services/**"
-        - "apps/**"
-        - "packages/**"
-        - ".github/workflows/docker-deploy.yml"
-
-  # Release build: triggered when release.yml pushes a version tag
-  - push:
-      tags:
-        - "v*"
+  push:
+    # Dev build: every push to main that touches source files
+    branches:
+      - main
+      - master
+    # Release build: triggered when release.yml pushes a version tag
+    tags:
+      - "v*"
+    paths:
+      - "Dockerfile"
+      - "package.json"
+      - "bun.lock"
+      - "scripts/**"
+      - "services/**"
+      - "apps/**"
+      - "packages/**"
+      - ".github/workflows/docker-deploy.yml"
 
 env:
   REGISTRY: ghcr.io
