@@ -12,8 +12,13 @@ permissions:
   contents: write
 
 jobs:
+  # ── Job 1: Create GitHub Release with source archive ───────────────────
   release:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.pkg-version.outputs.tag }}
+      version: ${{ steps.pkg-version.outputs.version }}
+      should_release: ${{ steps.check-tag.outputs.exists == 'false' }}
 
     steps:
       - name: Checkout repository
@@ -63,5 +68,43 @@ jobs:
           draft: false
           prerelease: false
           files: ${{ steps.archive.outputs.archive_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Job 2: Build Windows installer and upload to release ──────────────
+  build-windows-installer:
+    needs: release
+    if: needs.release.outputs.should_release == 'true'
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build standalone + installer
+        run: bun scripts/build-installer.ts
+        env:
+          ISCC_PATH: "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe"
+
+      - name: Rename installer with version
+        run: |
+          $version = "${{ needs.release.outputs.version }}"
+          Rename-Item -Path "installer\output\claw-tavern-setup.exe" `
+                      -NewName "claw-tavern-${version}-setup.exe"
+
+      - name: Upload installer to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          files: installer/output/claw-tavern-${{ needs.release.outputs.version }}-setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
