@@ -86,6 +86,18 @@ async function main() {
 		console.log(`   → ${WEB_TARGET}`);
 	});
 
+	// ── Step 3b: Copy tokenizer files to dist/tokenizers/ ───────────────────
+
+	step("Copying tokenizer files to dist/tokenizers/", () => {
+		const tokenizerSource = join(ROOT, "services", "api", "src", "tokenizers");
+		const tokenizerTarget = join(DIST, "tokenizers");
+		if (!existsSync(tokenizerSource)) {
+			throw new Error(`Tokenizer source not found: ${tokenizerSource}`);
+		}
+		cpSync(tokenizerSource, tokenizerTarget, { recursive: true });
+		console.log(`   → ${tokenizerTarget}`);
+	});
+
 	// ── Step 4: Compile standalone server ────────────────────────────────
 
 	await step("Compiling claw-tavern.exe (bun build --compile)", async () => {
