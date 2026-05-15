@@ -25,7 +25,7 @@ const DIST = join(ROOT, "dist");
 const INSTALLER_DIR = join(ROOT, "installer");
 const ISS_FILE = join(INSTALLER_DIR, "claw-tavern.iss");
 const OUTPUT_DIR = join(INSTALLER_DIR, "output");
-const EXPECTED_SETUP = join(OUTPUT_DIR, "claw-tavern-setup.exe");
+const EXPECTED_SETUP = join(OUTPUT_DIR, "claw-tavern-setup.exe");  // Inno Setup is Windows-only
 
 function findIscc(): string {
 	// 1. Explicit env var
@@ -36,11 +36,18 @@ function findIscc(): string {
 
 	// 2. Common install locations on Windows
 	if (process.platform === "win32") {
-		const programFiles = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
+		const programFilesX86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
+		const localAppData = process.env.LOCALAPPDATA ?? "";
 		const candidates = [
-			join(programFiles, "Inno Setup 6", "ISCC.exe"),
-			join(programFiles, "Inno Setup 7", "ISCC.exe"),
+			join(programFilesX86, "Inno Setup 6", "ISCC.exe"),
+			join(programFilesX86, "Inno Setup 7", "ISCC.exe"),
 		];
+		if (localAppData) {
+			candidates.unshift(
+				join(localAppData, "Programs", "Inno Setup 6", "ISCC.exe"),
+				join(localAppData, "Programs", "Inno Setup 7", "ISCC.exe"),
+			);
+		}
 		for (const candidate of candidates) {
 			if (existsSync(candidate)) return candidate;
 		}
@@ -95,7 +102,7 @@ async function main() {
 	console.log(`   ISCC: ${isccPath}`);
 
 	const isccProc = Bun.spawn(
-		[isccPath, ISS_FILE],
+		[isccPath, `/DProjectRoot=${ROOT}`, ISS_FILE],
 		{ cwd: ROOT, stdout: "inherit", stderr: "inherit", stdin: "inherit" },
 	);
 

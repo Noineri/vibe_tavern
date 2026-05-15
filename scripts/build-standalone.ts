@@ -100,9 +100,11 @@ async function main() {
 
 	// ── Step 4: Compile standalone server ────────────────────────────────
 
-	await step("Compiling claw-tavern.exe (bun build --compile)", async () => {
+	await step("Compiling standalone binary (bun build --compile)", async () => {
 		const entrypoint = join(ROOT, "services", "api", "src", "standalone-server.ts");
-		const outfile = join(DIST, "claw-tavern.exe");
+		const ext = process.platform === "win32" ? ".exe" : "";
+		const binName = `claw-tavern${ext}`;
+		const outfile = join(DIST, binName);
 
 		if (!existsSync(entrypoint)) {
 			throw new Error(`Entrypoint not found: ${entrypoint}`);
@@ -134,8 +136,9 @@ async function main() {
 
 	// ── Done ─────────────────────────────────────────────────────────────
 
+	const ext = process.platform === "win32" ? ".exe" : "";
 	console.log("\n✅ Standalone build complete!");
-	console.log(`   Run: ${join(DIST, "claw-tavern.exe")}`);
+	console.log(`   Run: ${join(DIST, `claw-tavern${ext}`)}`);
 }
 
 main();
