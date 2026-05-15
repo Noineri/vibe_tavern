@@ -54,4 +54,15 @@ rp_platform_plan/
 
 # Drizzle generated output
 drizzle-generated/
+packages/db/drizzle/
 .tokensave
+
+# Standalone build output
+dist/
+
+# Inno Setup
+installer/output/
+installer/installer/
+
+# Test temp directories
+services/api/tmp-test-*/
