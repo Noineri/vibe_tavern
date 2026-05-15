@@ -71,6 +71,7 @@ export interface Character {
   systemPrompt: string | null;
   tags: string[];
   avatarAssetId: string | null;
+  avatarFullAssetId: string | null;
   status: "active" | "draft" | "archived";
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -98,6 +99,7 @@ export interface Persona {
   description: string;
   pronouns: string | null;
   avatarAssetId: string | null;
+  avatarFullAssetId: string | null;
   defaultForNewChats: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;

@@ -50,7 +50,7 @@ export interface ChatListItem {
 
 export interface SessionSnapshot {
 	chats: ChatListItem[];
-	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
+	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null }>;
 	activeChat: import("@rp-platform/db").Chat;
 	activeBranch: import("@rp-platform/db").ChatBranch;
 	branches: import("@rp-platform/db").ChatBranch[];
@@ -70,7 +70,7 @@ export interface BootstrapState {
 	initialChatId: ChatId | null;
 	snapshot: SessionSnapshot | null;
 	isFirstRun: boolean;
-	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
+	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null }>;
 	promptPresets: PromptPresetDto[];
 }
 
@@ -186,6 +186,7 @@ export interface ImportResult {
 				name: c.name,
 				subtitle: c.tags.length > 0 ? c.tags[0] : '',
 				avatarAssetId: c.avatarAssetId,
+				avatarFullAssetId: c.avatarFullAssetId,
 			})),
 			promptPresets: promptPresets.map((p) => this.mapPresetToDto(p)),
 		};
@@ -409,7 +410,7 @@ export interface ImportResult {
 		};
 	}
 
-	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>> {
+	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null }>> {
 		const characters = await this.stores.characters.listIncludingSystem();
 		const hasUserChars = characters.some((c) => c.id !== 'char_system');
 		if (!hasUserChars) {
@@ -418,6 +419,7 @@ export interface ImportResult {
 				name: c.name,
 				subtitle: c.tags.length > 0 ? c.tags[0] : '',
 				avatarAssetId: c.avatarAssetId,
+				avatarFullAssetId: c.avatarFullAssetId,
 			}));
 		}
 		const allChats = await this.stores.chats.listAll();
@@ -429,6 +431,7 @@ export interface ImportResult {
 				name: c.name,
 				subtitle: c.tags.length > 0 ? c.tags[0] : '',
 				avatarAssetId: c.avatarAssetId,
+				avatarFullAssetId: c.avatarFullAssetId,
 			}));
 	}
 }

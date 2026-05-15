@@ -34,6 +34,7 @@ export class PersonaRuntime {
 		description: string;
 		pronouns: string | null;
 		avatarAssetId: string | null;
+		avatarFullAssetId: string | null;
 	}>> {
 		const personas = await this.deps.stores.personas.listAll();
 		return personas.map((p) => ({
@@ -42,6 +43,7 @@ export class PersonaRuntime {
 			description: p.description,
 			pronouns: p.pronouns,
 			avatarAssetId: p.avatarAssetId,
+			avatarFullAssetId: p.avatarFullAssetId,
 		}));
 	}
 
@@ -56,6 +58,7 @@ export class PersonaRuntime {
 		description: string;
 		pronouns: string | null;
 		avatarAssetId: string | null;
+		avatarFullAssetId: string | null;
 	}> {
 		const trimmedName = (input.name ?? "").trim();
 		const trimmedDescription = (input.description ?? "").trim();
@@ -74,6 +77,7 @@ export class PersonaRuntime {
 			description: persona.description,
 			pronouns: persona.pronouns,
 			avatarAssetId: persona.avatarAssetId,
+			avatarFullAssetId: persona.avatarFullAssetId,
 		};
 	}
 
@@ -101,6 +105,7 @@ export class PersonaRuntime {
 			description?: string;
 			pronouns?: string | null;
 			avatarAssetId?: string | null;
+			avatarFullAssetId?: string | null;
 		},
 	): Promise<SessionSnapshot> {
 		const currentPersona = await this.deps.stores.personas.getById(brandId<PersonaId>(personaId));
@@ -116,12 +121,14 @@ export class PersonaRuntime {
 		const nextDescription = input.description ?? currentPersona.description;
 		const nextPronouns = input.pronouns !== undefined ? input.pronouns : currentPersona.pronouns;
 		const nextAvatarAssetId = input.avatarAssetId !== undefined ? input.avatarAssetId : currentPersona.avatarAssetId;
+		const nextAvatarFullAssetId = input.avatarFullAssetId !== undefined ? input.avatarFullAssetId : currentPersona.avatarFullAssetId;
 
 		await this.deps.stores.personas.update(personaId, {
 			name: nextName,
 			description: nextDescription,
 			pronouns: nextPronouns,
 			avatarAssetId: nextAvatarAssetId,
+			avatarFullAssetId: nextAvatarFullAssetId,
 		});
 
 		const preferredChat = input.chatId

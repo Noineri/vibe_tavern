@@ -134,9 +134,13 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
     shellSurface = <BuildMode />;
   }
 
-  const avatarSrc = snapshot?.character.avatarAssetId
-    ? `${getGatewayBaseUrl()}/api/assets/${snapshot.character.avatarAssetId}`
-    : undefined;
+  // AvatarPanel shows the full-size original image (for zoom/pan preview)
+  // Falls back to the cropped avatar if no separate full asset exists
+  const avatarSrc = snapshot?.character.avatarFullAssetId
+    ? `${getGatewayBaseUrl()}/api/assets/${snapshot.character.avatarFullAssetId}`
+    : snapshot?.character.avatarAssetId
+      ? `${getGatewayBaseUrl()}/api/assets/${snapshot.character.avatarAssetId}`
+      : undefined;
 
   const tweaksPanelSettings = {
     theme: theme as 'dark' | 'light',
