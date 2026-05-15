@@ -1,8 +1,27 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-const LOG_PATH = resolve(process.cwd(), "logs/send-debug.log");
+/**
+ * Configurable debug log writer.
+ *
+ * By default, logs to `cwd/logs/send-debug.log` (backward compat for dev mode).
+ * Call `configureLogDir(logsDir)` at startup to override the log directory.
+ * The standalone server calls this with the resolved OS-convention logs dir.
+ */
+
+let logDir: string | undefined;
+let logPath: string = resolve(process.cwd(), "logs", "send-debug.log");
 let dirEnsured = false;
+
+/**
+ * Override the log directory. Must be called before any `logSendDebug()` call.
+ * Resets the dirEnsured flag so the new directory is created on first write.
+ */
+export function configureLogDir(dir: string): void {
+	logDir = dir;
+	logPath = resolve(dir, "send-debug.log");
+	dirEnsured = false;
+}
 
 export function logSendDebug(
 	event: string,
@@ -10,11 +29,11 @@ export function logSendDebug(
 ): void {
 	try {
 		if (!dirEnsured) {
-			mkdirSync(dirname(LOG_PATH), { recursive: true });
+			mkdirSync(dirname(logPath), { recursive: true });
 			dirEnsured = true;
 		}
 		appendFileSync(
-			LOG_PATH,
+			logPath,
 			`${new Date().toISOString()} ${event} ${JSON.stringify(data, redactSecrets)}\n`,
 			"utf8",
 		);
