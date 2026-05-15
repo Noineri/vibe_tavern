@@ -1,24 +1,23 @@
 name: Create Release
 
 on:
-  push:
-    branches:
-      - main
-      - master
-    paths:
-      - 'package.json'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version (e.g. 0.2.0)"
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
-  # ── Job 1: Create GitHub Release with source archive ───────────────────
+  # ── Job 1: Bump version, tag, create GitHub Release ──────────────────
   release:
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.pkg-version.outputs.tag }}
-      version: ${{ steps.pkg-version.outputs.version }}
-      should_release: ${{ steps.check-tag.outputs.exists == 'false' }}
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -26,27 +25,62 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Extract version from package.json
-        id: pkg-version
+      - name: Validate and normalize version
+        id: version
         run: |
-          VERSION=$(jq -r '.version' package.json)
+          INPUT="${{ inputs.version }}"
+          # Strip leading 'v' if the user typed v1.2.3
+          VERSION="${INPUT#v}"
+          # Basic semver validation
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid version '$VERSION'. Use format: 1.2.3"
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Set tag
+        id: tag
+        run: |
+          echo "tag=v${{ steps.version.outputs.version }}" >> "$GITHUB_OUTPUT"
 
       - name: Check if tag already exists
         id: check-tag
         run: |
-          if git rev-parse "${{ steps.pkg-version.outputs.tag }}" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "::error::Tag v${{ steps.version.outputs.version }} already exists!"
+            exit 1
           fi
 
+      - name: Bump version in package.json
+        run: |
+          jq --arg v "${{ steps.version.outputs.version }}" '.version = $v' package.json > package.json.tmp
+          mv package.json.tmp package.json
+
+      - name: Commit and tag
+        env:
+          # A PAT (RELEASE_TOKEN) is needed so the pushed tag triggers the
+          # docker-deploy workflow.  The default GITHUB_TOKEN does NOT
+          # trigger downstream workflows (GitHub prevents recursion).
+          # Create a fine-grained PAT with "Contents: read/write" scope
+          # and save it as RELEASE_TOKEN in repo secrets.
+          # If RELEASE_TOKEN is not set, falls back to GITHUB_TOKEN
+          # (release + installer will work, but Docker release build won't fire).
+          TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Configure auth so git push uses the token
+          git remote set-url origin "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.git"
+          git add package.json
+          git commit -m "chore: release v${{ steps.version.outputs.version }}"
+          git tag "v${{ steps.version.outputs.version }}"
+          git push
+          git push --tags
+
       - name: Create source archive
-        if: steps.check-tag.outputs.exists == 'false'
         run: |
           REPO_NAME=$(basename "${{ github.repository }}")
-          ARCHIVE_NAME="${REPO_NAME}-${{ steps.pkg-version.outputs.version }}.zip"
+          ARCHIVE_NAME="${REPO_NAME}-${{ steps.version.outputs.version }}.zip"
 
           git archive --format=zip --prefix="${REPO_NAME}/" HEAD -o "${ARCHIVE_NAME}"
 
@@ -59,27 +93,27 @@ jobs:
         id: archive
 
       - name: Create GitHub Release
-        if: steps.check-tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.pkg-version.outputs.tag }}
-          name: ${{ steps.pkg-version.outputs.tag }}
-          body: ''
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          body: ""
           draft: false
           prerelease: false
           files: ${{ steps.archive.outputs.archive_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── Job 2: Build Windows installer and upload to release ──────────────
+  # ── Job 2: Build Windows installer and upload to release ─────────────
   build-windows-installer:
     needs: release
-    if: needs.release.outputs.should_release == 'true'
     runs-on: windows-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
