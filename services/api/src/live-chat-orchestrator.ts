@@ -5,6 +5,10 @@ import type { SessionSnapshot } from "./session-runtime.js";
 import type { ProviderOrchestrator } from "./provider-orchestrator.js";
 import type { StoredProviderProfileRecord } from "@rp-platform/domain";
 import type { ProviderStreamResult } from "./ai/provider-execution-types.js";
+import type { RawToolCall } from "./ai/provider-execution-types.js";
+import type { ExecutedToolCall } from "./ai/tool-registry.js";
+import { ToolRegistry } from "./ai/tool-registry.js";
+import { executeToolCalls } from "./ai/tool-executor.js";
 import { nonstreamingProviderExecute } from "./ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "./ai/stream-provider-executor.js";
 import { logSendDebug } from "./send-debug-log.js";
@@ -19,6 +23,7 @@ export class LiveChatOrchestrator {
   constructor(
     private readonly chatRuntime: ChatRuntime,
     private readonly providers: ProviderOrchestrator,
+    private readonly toolRegistry: ToolRegistry = new ToolRegistry(),
   ) {}
 
   // ─── Non-streaming methods ────────────────────────────────────────────
@@ -341,6 +346,7 @@ export class LiveChatOrchestrator {
     let reasoningAccumulator = "";
     let reasoningStartMs: number | null = null;
     let reasoningDurationMs: number | null = null;
+    const pendingToolCalls: RawToolCall[] = [];
 
     // ── Collect stream chunks ──
     try {
@@ -356,6 +362,9 @@ export class LiveChatOrchestrator {
           if (!reasoningStartMs) reasoningStartMs = Date.now();
           reasoningAccumulator += chunk.textDelta;
           yield { event: "reasoning-delta", data: JSON.stringify({ delta: chunk.textDelta }) };
+        }
+        if (chunk.type === "tool-call") {
+          pendingToolCalls.push({ toolCallId: chunk.toolCallId, toolName: chunk.toolName, args: chunk.args });
         }
       }
     } catch (err) {
@@ -384,6 +393,31 @@ export class LiveChatOrchestrator {
     }
 
     const snapshot = await onFinal(finalText, finalReasoning, reasoningDurationMs ?? undefined, latencyMs);
+
+    // ── Execute tool calls if present ──
+    const toolCallsToExecute = pendingToolCalls.length > 0
+      ? pendingToolCalls
+      : streamResult.toolCalls;
+
+    if (finish.finishReason === "tool-calls" && toolCallsToExecute.length > 0 && this.toolRegistry.size > 0) {
+      const executed = await executeToolCalls(toolCallsToExecute, this.toolRegistry);
+      yield {
+        event: "tool-calls",
+        data: JSON.stringify({
+          calls: executed.map((tc) => ({
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            isError: tc.result.isError ?? false,
+            latencyMs: tc.latencyMs,
+          })),
+        }),
+      };
+      logSendDebug(`${debugLabel}.tool-calls.executed`, {
+        chatId: input.chatId,
+        count: executed.length,
+        errors: executed.filter((tc) => tc.result.isError).length,
+      });
+    }
 
     // ── Yield reasoning-done + finish ──
     if (reasoningAccumulator || streamResult.hasRedactedReasoning) {

@@ -10,6 +10,7 @@ export type {
   ProviderStreamResult,
   ProviderExecutionInput,
   ProviderExecutor,
+  RawToolCall,
 } from "./provider-execution-types.js";
 
 export { ProviderExecutionError } from "./provider-execution-types.js";
@@ -46,3 +47,10 @@ export {
 } from "./provider-executor-utils.js";
 
 export type { SdkMessage, PreparedMessages } from "./provider-executor-utils.js";
+
+export type { ToolDefinition, ToolResult, ExecutedToolCall } from "./tool-registry.js";
+
+export { ToolRegistry } from "./tool-registry.js";
+
+export { executeToolCalls } from "./tool-executor.js";
+export type { ToolExecutorConfig } from "./tool-executor.js";

@@ -80,7 +80,8 @@ export interface GenerationUsage {
 /** Single chunk emitted by the streaming executor. */
 export type ProviderStreamChunk =
   | { type: "text-delta"; delta: string }
-  | { type: "reasoning-delta"; textDelta: string };
+  | { type: "reasoning-delta"; textDelta: string }
+  | { type: "tool-call"; toolCallId: string; toolName: string; args: Record<string, unknown> };
 
 /** Final metadata resolved when the stream completes. */
 export interface ProviderStreamFinish {
@@ -92,6 +93,16 @@ export interface ProviderStreamFinish {
   };
 }
 
+/** A single tool call as received from the AI SDK stream. */
+export interface RawToolCall {
+  /** Unique ID for this tool call within the generation. */
+  toolCallId: string;
+  /** Name of the tool to invoke. */
+  toolName: string;
+  /** Raw arguments from the LLM (parsed from JSON string). */
+  args: Record<string, unknown>;
+}
+
 /** Result returned by the streaming executor. */
 export interface ProviderStreamResult {
   stream: AsyncIterable<ProviderStreamChunk>;
@@ -101,6 +112,8 @@ export interface ProviderStreamResult {
   reasoning: Promise<string | undefined>;
   /** True if a redacted-reasoning chunk was encountered. */
   hasRedactedReasoning: boolean;
+  /** Tool calls collected during streaming. Empty when tools are not active. */
+  toolCalls: RawToolCall[];
 }
 
 /** Input to the streaming executor. */

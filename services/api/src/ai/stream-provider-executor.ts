@@ -6,7 +6,7 @@
  */
 
 import { streamText } from "ai";
-import type { ProviderExecutor, ProviderStreamResult, ProviderStreamChunk, ProviderStreamFinish } from "./provider-execution-types.js";
+import type { ProviderExecutor, ProviderStreamResult, ProviderStreamChunk, ProviderStreamFinish, RawToolCall } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
 import type { ProviderType } from "@rp-platform/domain";
@@ -29,9 +29,11 @@ function createMappedStream(
 ): {
   stream: AsyncGenerator<ProviderStreamChunk>;
   hasRedacted: boolean;
+  toolCalls: RawToolCall[];
 } {
   let hasRedacted = false;
   let inReasoning = false;
+  const toolCalls: RawToolCall[] = [];
 
   async function* walk(): AsyncGenerator<ProviderStreamChunk> {
     let chunkCount = 0;
@@ -39,9 +41,17 @@ function createMappedStream(
     const partTypes = new Set<string>();
 
     for await (const part of fullStream) {
-      const p = part as { type: string; textDelta?: string; text?: string };
+      const p = part as { type: string; textDelta?: string; text?: string; toolCallId?: string; toolName?: string; args?: unknown };
       chunkCount++;
       partTypes.add(p.type);
+
+      // ── Tool calls ──
+      if (p.type === "tool-call" && p.toolCallId && p.toolName) {
+        const args = (typeof p.args === "object" && p.args !== null ? p.args : {}) as Record<string, unknown>;
+        toolCalls.push({ toolCallId: p.toolCallId, toolName: p.toolName, args });
+        yield { type: "tool-call", toolCallId: p.toolCallId, toolName: p.toolName, args };
+        continue;
+      }
 
       if (p.type === "text-delta" && p.textDelta) {
         // ── Marker protocol (OpenAI Chat Completions reasoning) ──
@@ -81,7 +91,7 @@ function createMappedStream(
     });
   }
 
-  return { stream: walk(), hasRedacted };
+  return { stream: walk(), hasRedacted, toolCalls };
 }
 
 /**
@@ -131,7 +141,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       ...samplerConfig,
     });
 
-    const { stream, hasRedacted } = createMappedStream(result.fullStream);
+    const { stream, hasRedacted, toolCalls: collectedToolCalls } = createMappedStream(result.fullStream);
 
     const finished = mapFinish(result);
 
@@ -141,6 +151,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       text: result.text,
       reasoning: result.reasoning as Promise<string | undefined>,
       hasRedactedReasoning: hasRedacted,
+      toolCalls: collectedToolCalls,
     };
   } catch (error) {
     if (input.signal?.aborted) throw cancelled();
