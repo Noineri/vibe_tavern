@@ -4,7 +4,6 @@ services:
     build: .
     ports:
       - "8787:8787"
-      - "3000:3000"
     volumes:
       - data:/app/data
     restart: unless-stopped
