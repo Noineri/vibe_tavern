@@ -104,7 +104,7 @@ export interface ImportResult {
 	private readonly chatApp: ChatApplicationService;
 	private readonly promptService: PromptAssemblyService;
 	private readonly chatOrder: ChatOrderService;
-	private readonly fileStore = createFileStore();
+	private readonly fileStore: ReturnType<typeof createFileStore>;
 	private defaultsEnsured = false;
 	private readonly getActiveProviderProfile: () => Promise<StoredProviderProfileRecord | null>;
 
@@ -117,12 +117,14 @@ export interface ImportResult {
 		stores: StoreContainer,
 		options?: {
 			getActiveProviderProfile?: () => Promise<StoredProviderProfileRecord | null>;
+			dataDir?: string;
 		},
 	) {
 		this.stores = stores;
+		this.fileStore = createFileStore(options?.dataDir);
 		this.resolver = new StaticPromptResolver(stores);
 		this.chatApp = new ChatApplicationService(stores.chats);
-		this.promptService = new PromptAssemblyService(stores, this.resolver);
+		this.promptService = new PromptAssemblyService(stores, this.resolver, options?.dataDir);
 		this.getActiveProviderProfile =
 			options?.getActiveProviderProfile ?? (async () => null);
 		this.chatOrder = new ChatOrderService(stores.chats);
