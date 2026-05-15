@@ -1,7 +1,9 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft } from "@rp-platform/api-contracts";
 import { Ic } from "../shared/icons";
+import { AvatarCropModal } from "../shared/AvatarCropModal.js";
+import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
 import { cn } from "../../lib/cn";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { CharacterImportModal } from "../ImportModals.js";
@@ -18,7 +20,7 @@ export interface CharacterFormProps {
   avatarUrl?: string;
   onSave: () => void;
   onReset: () => void;
-  onAvatarUpload: (file: File) => Promise<void> | void;
+  onAvatarUpload: (file: File, originalFile?: File | null) => Promise<void> | void;
 
 }
 
@@ -69,6 +71,13 @@ export function CharacterForm({
   const [importModalOpen, setImportModalOpen] = useState(false);
   const avaInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Avatar crop modal state ──
+  const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
+
+  // Keep a ref to the latest form values so crop callback isn't stale
+  const formRef = useRef(form);
+  useEffect(() => { formRef.current = form; }, [form]);
+
   const name = watch("name");
   const description = watch("description");
   const firstMessage = watch("firstMessage");
@@ -89,8 +98,19 @@ export function CharacterForm({
   function handleAvatarPick(files: FileList | null) {
     if (!files || files.length === 0) return;
     const file = files[0];
-    setAvatarPreview(URL.createObjectURL(file));
-    onAvatarUpload(file);
+    setPendingAvatar({ file, url: URL.createObjectURL(file) });
+  }
+
+  function handleAvatarCropConfirm(result: AvatarCropResult) {
+    if (pendingAvatar?.url) URL.revokeObjectURL(pendingAvatar.url);
+    setPendingAvatar(null);
+    setAvatarPreview(result.croppedUrl);
+    onAvatarUpload(result.croppedFile, pendingAvatar!.file);
+  }
+
+  function handleAvatarCropCancel() {
+    if (pendingAvatar?.url) URL.revokeObjectURL(pendingAvatar.url);
+    setPendingAvatar(null);
   }
 
   function handleImportFiles(files: File[]): void {
@@ -146,6 +166,16 @@ export function CharacterForm({
 
   return (
     <div>
+      {/* Avatar crop modal */}
+      {pendingAvatar && (
+        <AvatarCropModal
+          imageUrl={pendingAvatar.url}
+          originalFile={pendingAvatar.file}
+          onConfirm={handleAvatarCropConfirm}
+          onCancel={handleAvatarCropCancel}
+        />
+      )}
+
       {/* Header row */}
       <div className="mb-1.5 flex items-center justify-between">
         <div className="mb-1.5 font-body text-[22px] font-medium text-t1">

@@ -89,6 +89,7 @@ export class RuntimeApiAdapter {
 			depthPromptRole?: string | null;
 			tags?: string[];
 			avatarAssetId?: string | null;
+			avatarFullAssetId?: string | null;
 		},
 	) => {
 		if (body.avatarAssetId !== undefined) {
@@ -134,6 +135,7 @@ export class RuntimeApiAdapter {
 			description?: string;
 			pronouns?: string | null;
 			avatarAssetId?: string | null;
+			avatarFullAssetId?: string | null;
 		},
 	) => {
 		if (body.avatarAssetId !== undefined) {

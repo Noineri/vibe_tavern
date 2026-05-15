@@ -38,8 +38,8 @@ import { useCharacterStore } from "../stores/character-store.js";
 
 export interface CharacterControllerActions {
   handleSaveCharacter: (draftInput: BuildCharacterDraft) => Promise<void>;
-  handleAvatarUpload: (file: File) => Promise<void>;
-  handleSavePersona: (personaId: string, draftInput: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null }) => Promise<void>;
+  handleAvatarUpload: (file: File, originalFile?: File | null) => Promise<void>;
+  handleSavePersona: (personaId: string, draftInput: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null; avatarFullAssetId?: string | null }) => Promise<void>;
   handleSetChatPersona: (personaId: string) => Promise<void>;
   handleCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
   handleDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
@@ -55,7 +55,7 @@ export interface CharacterControllerActions {
   handleDeleteChat: (chatId: ChatId) => Promise<void>;
   handleRenameChat: (chatId: ChatId, title: string) => Promise<void>;
   handleCreateChat: (characterId?: string) => Promise<void>;
-  handleCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string; mesExample?: string; alternateGreetings?: string[]; postHistoryInstructions?: string; creatorNotes?: string; systemPrompt?: string; depthPrompt?: string; depthPromptDepth?: number; depthPromptRole?: string; tags?: string[] }, avatarFile?: File | null) => Promise<{ characterId: string; chatId: string } | null>;
+  handleCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string; mesExample?: string; alternateGreetings?: string[]; postHistoryInstructions?: string; creatorNotes?: string; systemPrompt?: string; depthPrompt?: string; depthPromptDepth?: number; depthPromptRole?: string; tags?: string[] }, avatarFile?: File | null, avatarOriginalFile?: File | null) => Promise<{ characterId: string; chatId: string } | null>;
   handleFreeChat: () => Promise<void>;
   handleExportCharacter: (characterId: string) => Promise<void>;
   handleExportChatJsonl: (chatId: ChatId) => Promise<void>;
@@ -167,7 +167,7 @@ export function useCharacterController(): CharacterControllerActions {
     }
   }
 
-  async function handleAvatarUpload(file: File): Promise<void> {
+  async function handleAvatarUpload(file: File, originalFile?: File | null): Promise<void> {
     const activeChatId = getActiveChatId();
     const snapshot = getSnapshot();
     if (!activeChatId || !snapshot) return;
@@ -175,6 +175,7 @@ export function useCharacterController(): CharacterControllerActions {
     try {
       const nextSnapshot = await avatarUploadMut.mutateAsync({
         file,
+        originalFile,
         characterId: snapshot.character.id,
         chatId: activeChatId,
       });
@@ -186,7 +187,7 @@ export function useCharacterController(): CharacterControllerActions {
     }
   }
 
-  async function handleSavePersona(personaId: string, draftInput: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null }): Promise<void> {
+  async function handleSavePersona(personaId: string, draftInput: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null; avatarFullAssetId?: string | null }): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
 
@@ -199,6 +200,7 @@ export function useCharacterController(): CharacterControllerActions {
           description: draftInput.description,
           pronouns: draftInput.pronouns,
           avatarAssetId: draftInput.avatarAssetId,
+          avatarFullAssetId: draftInput.avatarFullAssetId,
         },
       });
       void qc.invalidateQueries({ queryKey: personaKeys.list() });
@@ -362,17 +364,25 @@ export function useCharacterController(): CharacterControllerActions {
     }
   }
 
-  async function handleCreateCharacter(input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string; mesExample?: string; alternateGreetings?: string[]; postHistoryInstructions?: string; creatorNotes?: string; systemPrompt?: string; depthPrompt?: string; depthPromptDepth?: number; depthPromptRole?: string; tags?: string[] }, avatarFile?: File | null): Promise<{ characterId: string; chatId: string } | null> {
+  async function handleCreateCharacter(input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string; mesExample?: string; alternateGreetings?: string[]; postHistoryInstructions?: string; creatorNotes?: string; systemPrompt?: string; depthPrompt?: string; depthPromptDepth?: number; depthPromptRole?: string; tags?: string[] }, avatarFile?: File | null, avatarOriginalFile?: File | null): Promise<{ characterId: string; chatId: string } | null> {
     try {
       const result = await createCharacterMut.mutateAsync(input);
 
       const characterId = result.snapshot?.character?.id;
 
-      // Upload avatar if provided
+      // Upload avatar(s) if provided
       if (avatarFile && characterId) {
         try {
-          const asset = await uploadAsset(avatarFile);
-          const updatedSnapshot = await updateCharacterAvatar(characterId, result.activeChatId, asset.assetId);
+          const [croppedAsset, originalAsset] = await Promise.all([
+            uploadAsset(avatarFile),
+            avatarOriginalFile ? uploadAsset(avatarOriginalFile) : Promise.resolve(null),
+          ]);
+          const updatedSnapshot = await updateCharacterAvatar(
+            characterId,
+            result.activeChatId,
+            croppedAsset.assetId,
+            originalAsset?.assetId,
+          );
           writeSnapshot(result.activeChatId, updatedSnapshot);
         } catch (err) {
           console.warn("Failed to upload avatar during character creation:", err);
