@@ -20,10 +20,10 @@ import type { ChatStore } from "@rp-platform/db";
 import { notFound } from "./errors.js";
 
 export class ChatApplicationService {
-  constructor(private readonly chats: ChatStore) {}
+  constructor(private readonly chatStore: ChatStore) {}
 
   async createChat(input: CreateChatRequest): Promise<CreateChatResponse> {
-    const chat = await this.chats.createChat({
+    const chat = await this.chatStore.createChat({
       characterId: input.characterId,
       personaId: input.personaId,
       title: input.title,
@@ -44,18 +44,18 @@ export class ChatApplicationService {
   }> {
     const chat = await this.requireChat(chatId);
     let resolvedBranchId = branchId ?? chat.activeBranchId;
-    const branches = await this.chats.getBranches(chat.id);
+    const branches = await this.chatStore.getBranches(chat.id);
     let branch = branches.find((b) => b.id === resolvedBranchId);
     // Defensive fallback: if activeBranchId is dangling, fall back to the root branch
     if (!branch && branches.length > 0) {
       branch = branches.find((b) => b.parentBranchId === null) ?? branches[0];
       resolvedBranchId = branch.id;
-      await this.chats.activateBranch(chat.id, branch.id as ChatBranchId);
+      await this.chatStore.activateBranch(chat.id, branch.id as ChatBranchId);
     }
     if (!branch) {
       throw notFound("Branch", `Branch '${resolvedBranchId}' was not found for chat '${chat.id}'.`);
     }
-    const messages = await this.chats.getMessages(branch.id);
+    const messages = await this.chatStore.getMessages(branch.id);
 
     return {
       chat,
@@ -73,7 +73,7 @@ export class ChatApplicationService {
     const chat = await this.requireChat(chatId);
     const targetBranchId = branchId ?? chat.activeBranchId;
 
-    const message = await this.chats.addMessage({
+    const message = await this.chatStore.addMessage({
       chatId,
       branchId: targetBranchId,
       role: "user",
@@ -85,27 +85,27 @@ export class ChatApplicationService {
   }
 
   async editMessage(messageId: string, content: string): Promise<Message> {
-    const message = await this.chats.editMessage(messageId, content);
+    const message = await this.chatStore.editMessage(messageId, content);
     return message as unknown as Message;
   }
 
   async deleteMessage(messageId: string): Promise<void> {
-    await this.chats.deleteMessage(messageId);
+    await this.chatStore.deleteMessage(messageId);
   }
 
   async createBranch(chatId: ChatId, input: CreateBranchRequest): Promise<CreateBranchResponse> {
-    const branch = await this.chats.forkBranch(
+    const branch = await this.chatStore.forkBranch(
       chatId,
       input.forkedFromMessageId ?? "",
       input.label,
     );
 
     if (input.activateFork !== false) {
-      await this.chats.activateBranch(chatId, branch.id as ChatBranchId);
+      await this.chatStore.activateBranch(chatId, branch.id as ChatBranchId);
     }
 
     // Count messages in the new branch for the response
-    const messages = await this.chats.getMessages(branch.id);
+    const messages = await this.chatStore.getMessages(branch.id);
     return {
       branchId: branch.id as ChatBranchId,
       copiedMessageCount: messages.length,
@@ -113,7 +113,7 @@ export class ChatApplicationService {
   }
 
   async activateBranch(chatId: ChatId, branchId: ChatBranchId): Promise<import("@rp-platform/db").Chat> {
-    return this.chats.activateBranch(chatId, branchId);
+    return this.chatStore.activateBranch(chatId, branchId);
   }
 
   async sleepBranch(_chatId: ChatId, _input: SleepBranchRequest): Promise<SleepBranchResponse> {
@@ -122,7 +122,7 @@ export class ChatApplicationService {
   }
 
   async deleteBranch(chatId: ChatId, branchId: ChatBranchId): Promise<DeleteBranchResponse> {
-    await this.chats.deleteBranch(branchId);
+    await this.chatStore.deleteBranch(branchId);
     const chat = await this.requireChat(chatId);
     return {
       chatId,
@@ -132,7 +132,7 @@ export class ChatApplicationService {
   }
 
   private async requireChat(chatId: ChatId): Promise<import("@rp-platform/db").Chat> {
-    const chat = await this.chats.getById(chatId);
+    const chat = await this.chatStore.getById(chatId);
     if (!chat) {
       throw notFound("Chat", `Chat '${chatId}' was not found.`);
     }

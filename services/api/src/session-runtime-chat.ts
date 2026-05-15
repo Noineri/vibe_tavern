@@ -32,6 +32,13 @@ export interface ChatRuntimeDeps {
   chatOrder: IChatOrder;
 }
 
+/**
+ * Manages the live turn flow for a chat: prepare a prompt, stream/execute AI generation,
+ * and append the result as an assistant message or variant.
+ *
+ * Stores pending prompt traces between {@link prepareLiveTurn} and
+ * {@link appendAssistantReply} / {@link appendMessageVariant} so the trace is saved atomically with the reply.
+ */
 export class ChatRuntime {
   private readonly deps: ChatRuntimeDeps;
   private readonly pendingPromptTraceByChat = new Map<ChatId, PendingPromptTraceTurn>();
@@ -40,6 +47,12 @@ export class ChatRuntime {
     this.deps = deps;
   }
 
+  /**
+   * Prepares a live turn: appends user message (if content is non-empty),
+   * assembles the prompt, and stores a pending prompt trace.
+   *
+   * If `content` is empty, skips user message insertion (used for continue/regenerate).
+   */
   async prepareLiveTurn(chatId: ChatId, content: string, model: string): Promise<PreparedLiveTurn> {
     const { chatApp, assemblePrompt, getSnapshot } = this.deps;
     const trimmed = content.trim();
@@ -247,6 +260,7 @@ export class ChatRuntime {
     return assembled.prompt;
   }
 
+  /** Removes and returns the pending prompt trace for a chat/branch. Returns null if the branch doesn't match. */
   private consumePendingPromptTrace(
     chatId: ChatId,
     branchId: ChatBranchId,

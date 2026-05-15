@@ -39,6 +39,10 @@ export interface ChatLifecycleRuntimeDeps {
 	}>;
 }
 
+/**
+ * Manages the lifecycle of chats: creation, switching, preset binding,
+ * summary prompt assembly, and seeding opening messages from imported cards.
+ */
 export class ChatLifecycleRuntime {
 	private readonly deps: ChatLifecycleRuntimeDeps;
 
@@ -139,6 +143,10 @@ export class ChatLifecycleRuntime {
 		return this.deps.getSnapshot(chatId);
 	}
 
+	/**
+	 * Seeds an imported character's first message as an assistant message
+	 * and records a prompt trace for it.
+	 */
 	async seedImportedOpening(chatId: ChatId, firstMessage: string): Promise<void> {
 		const trimmed = firstMessage.trim();
 		if (!trimmed) {

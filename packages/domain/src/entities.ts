@@ -43,6 +43,13 @@ export {
   PromptLayerPosition,
 };
 
+/**
+ * Core character entity.
+ *
+ * `characterBook` is a `Record` because its internal structure depends on the
+ * card format (ST v2, ST v3, etc.).
+ * `status` tracks the lifecycle: `active`, `draft`, or `archived`.
+ */
 export interface Character {
   id: CharacterId;
   slug: string;
@@ -69,6 +76,11 @@ export interface Character {
   updatedAt: Timestamp;
 }
 
+/**
+ * A snapshot of a character card at a point in time (future multi-version support).
+ *
+ * `definition` holds the raw card data whose schema is determined by `cardFormat`.
+ */
 export interface CharacterVersion {
   id: CharacterVersionId;
   characterId: CharacterId;
@@ -100,6 +112,14 @@ export interface Lorebook {
   updatedAt: Timestamp;
 }
 
+/**
+ * A single lorebook entry.
+ *
+ * `keys` are activation triggers; `secondaryKeys` provide additional conditions
+ * combined via `logic`.
+ * `stickyWindow`, `cooldownWindow`, and `delayWindow` control time-based
+ * activation behaviour (Phase 2).
+ */
 export interface LoreEntry {
   id: LoreEntryId;
   lorebookId: LorebookId;
@@ -118,6 +138,11 @@ export interface LoreEntry {
   metadata: Record<string, unknown>;
 }
 
+/**
+ * A chat session bound to a character, persona, and prompt preset.
+ *
+ * `activeBranchId` points to the currently selected conversation branch.
+ */
 export interface Chat {
   id: ChatId;
   characterId: CharacterId;
@@ -153,6 +178,13 @@ export interface Message {
   updatedAt: Timestamp;
 }
 
+/**
+ * An alternative response ("swipe") for a message.
+ *
+ * `isSelected` marks which variant is currently displayed.
+ * `reasoning` and `reasoningDurationMs` capture chain-of-thought output
+ * from thinking/reasoning models.
+ */
 export interface MessageVariant {
   id: MessageVariantId;
   messageId: MessageId;
@@ -175,6 +207,12 @@ export interface SummaryMemorySnapshot {
   createdAt: Timestamp;
 }
 
+/**
+ * A single hit from a RAG retrieval pass (Phase 3).
+ *
+ * `score` indicates relevance; `matchedKeys` lists the keys that triggered
+ * the match.
+ */
 export interface RetrievedMemoryHit {
   id: RetrievedMemoryHitId;
   chatId: ChatId;
@@ -186,6 +224,13 @@ export interface RetrievedMemoryHit {
   createdAt: Timestamp;
 }
 
+/**
+ * Full audit record of an assembled prompt, used for debugging only — never
+ * consumed at runtime.
+ *
+ * `assembledLayers` lists every layer that was included.
+ * `finalPayload` is the exact JSON sent to the provider.
+ */
 export interface PromptTrace {
   id: PromptTraceId;
   chatId: ChatId;

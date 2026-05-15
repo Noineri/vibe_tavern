@@ -4,16 +4,26 @@ import type { ChatRuntime } from "./session-runtime-chat.js";
 import type { SessionSnapshot } from "./session-runtime.js";
 import type { ProviderOrchestrator } from "./provider-orchestrator.js";
 import type { StoredProviderProfileRecord } from "@rp-platform/domain";
+import type { ProviderStreamResult } from "./ai/provider-execution-types.js";
 import { nonstreamingProviderExecute } from "./ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "./ai/stream-provider-executor.js";
 import { logSendDebug } from "./send-debug-log.js";
 
+/**
+ * Coordinates the prepare → execute → append cycle for all AI generation paths:
+ * send, generate (continue), regenerate — each with streaming and non-streaming variants.
+ *
+ * Delegates prompt assembly to {@link ChatRuntime} and AI execution to the provider layer.
+ */
 export class LiveChatOrchestrator {
   constructor(
     private readonly chatRuntime: ChatRuntime,
     private readonly providers: ProviderOrchestrator,
   ) {}
 
+  // ─── Non-streaming methods ────────────────────────────────────────────
+
+  /** Non-streaming send: prepare → execute → append reply → return snapshot. */
   async sendMessage(input: {
     chatId: string;
     content: string;
@@ -64,6 +74,7 @@ export class LiveChatOrchestrator {
     };
   }
 
+  /** Non-streaming continue: assemble prompt without user message → execute → append reply. */
   async generateReply(input: {
     chatId: string;
     profile: StoredProviderProfileRecord;
@@ -104,6 +115,7 @@ export class LiveChatOrchestrator {
     };
   }
 
+  /** Non-streaming regenerate: exclude target message from prompt → execute → add as variant. */
   async regenerateMessage(input: {
     chatId: string;
     messageId: string;
@@ -157,6 +169,9 @@ export class LiveChatOrchestrator {
     };
   }
 
+  // ─── Streaming methods ────────────────────────────────────────────────
+
+  /** Streaming send: prepare → execute stream → yield SSE events → append on finish/abort. */
   async *sendMessageStream(input: {
     chatId: string;
     content: string;
@@ -167,95 +182,34 @@ export class LiveChatOrchestrator {
   }): AsyncGenerator<{ event: string; data: string }> {
     logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: input.model });
     const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, input.model);
-    const startedAt = Date.now();
+    const { streamResult, startedAt } = await this.startStream(input, prepared.prompt);
 
-    let streamResult;
-    try {
-      streamResult = await streamProviderExecutor({
-        profile: input.profile,
-        model: input.model,
-        prompt: prepared.prompt,
-        signal: input.signal,
-        prefill: prepared.prompt.prefill ?? undefined,
-      });
-    } catch (err) {
-      this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
-      throw err;
-    }
-
-    let collected = "";
-    let reasoningCollected = "";
-    let reasoningStartedAt: number | null = null;
-    let reasoningDurationMs: number | null = null;
-    try {
-      for await (const chunk of streamResult.stream) {
-        if (chunk.type === "text-delta" && chunk.delta) {
-          if (!reasoningStartedAt && reasoningCollected) {
-            // First text chunk after reasoning — finalize timing
-            reasoningDurationMs = Date.now() - reasoningStartedAt!;
-          }
-          collected += chunk.delta;
-          yield { event: "text-delta", data: JSON.stringify({ delta: chunk.delta }) };
-        }
-        if (chunk.type === "reasoning-delta") {
-          if (!reasoningStartedAt) reasoningStartedAt = Date.now();
-          reasoningCollected += chunk.textDelta;
-          yield { event: "reasoning-delta", data: JSON.stringify({ delta: chunk.textDelta }) };
-        }
-      }
-    } catch (err) {
-      if (input.signal?.aborted) {
-        // Abort — save partial text
-        const latencyMs = Date.now() - startedAt;
-        if (collected) {
-          await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), collected, latencyMs, {
-            reasoning: reasoningCollected || undefined,
-            reasoningDurationMs: reasoningStartedAt ? Date.now() - reasoningStartedAt : undefined,
+    yield* this.drainStream({
+      chatId: input.chatId,
+      streamResult,
+      signal: input.signal,
+      startedAt,
+      debugLabel: "live.send-stream",
+      onAbort: async (text, reasoning, reasoningDurationMs, latencyMs) => {
+        if (text) {
+          await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
+            reasoning: reasoning || undefined,
+            reasoningDurationMs,
           });
         }
-        yield { event: "abort", data: JSON.stringify({ partialLength: collected.length }) };
-        return;
-      }
-      throw err;
-    }
-
-    const latencyMs = Date.now() - startedAt;
-    const finish = await streamResult.finished;
-    const finalText = collected || (await streamResult.text);
-    const finalReasoning = reasoningCollected || (await streamResult.reasoning) || undefined;
-
-    // Finalize reasoning duration if it wasn't set during streaming
-    if (reasoningStartedAt && reasoningDurationMs === null) {
-      reasoningDurationMs = Date.now() - reasoningStartedAt;
-    }
-
-    const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), finalText, latencyMs, {
-      reasoning: finalReasoning,
-      reasoningDurationMs: reasoningDurationMs ?? undefined,
+      },
+      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs) => {
+        const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
+          reasoning,
+          reasoningDurationMs,
+        });
+        logSendDebug("live.send-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
+        return snapshot;
+      },
     });
-    logSendDebug("live.send-stream.done", { chatId: input.chatId, latencyMs, replyLength: finalText.length });
-
-    // Yield reasoning-done before finish if reasoning occurred
-    if (reasoningCollected || streamResult.hasRedactedReasoning) {
-      yield {
-        event: "reasoning-done",
-        data: JSON.stringify({
-          durationMs: reasoningDurationMs,
-          redacted: streamResult.hasRedactedReasoning,
-        }),
-      };
-    }
-
-    yield {
-      event: "finish",
-      data: JSON.stringify({
-        finishReason: finish.finishReason,
-        usage: finish.usage,
-        messageCount: snapshot.messages.length,
-      }),
-    };
   }
 
+  /** Streaming continue: assemble without user message → stream → append. */
   async *generateReplyStream(input: {
     chatId: string;
     profile: StoredProviderProfileRecord;
@@ -267,91 +221,34 @@ export class LiveChatOrchestrator {
     const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
       model: input.model,
     });
-    const startedAt = Date.now();
+    const { streamResult, startedAt } = await this.startStream(input, prompt);
 
-    let streamResult;
-    try {
-      streamResult = await streamProviderExecutor({
-        profile: input.profile,
-        model: input.model,
-        prompt,
-        signal: input.signal,
-        prefill: prompt.prefill ?? undefined,
-      });
-    } catch (err) {
-      this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
-      throw err;
-    }
-
-    let collected = "";
-    let reasoningCollected = "";
-    let reasoningStartedAt: number | null = null;
-    let reasoningDurationMs: number | null = null;
-    try {
-      for await (const chunk of streamResult.stream) {
-        if (chunk.type === "text-delta" && chunk.delta) {
-          if (!reasoningStartedAt && reasoningCollected) {
-            reasoningDurationMs = Date.now() - reasoningStartedAt!;
-          }
-          collected += chunk.delta;
-          yield { event: "text-delta", data: JSON.stringify({ delta: chunk.delta }) };
-        }
-        if (chunk.type === "reasoning-delta") {
-          if (!reasoningStartedAt) reasoningStartedAt = Date.now();
-          reasoningCollected += chunk.textDelta;
-          yield { event: "reasoning-delta", data: JSON.stringify({ delta: chunk.textDelta }) };
-        }
-      }
-    } catch (err) {
-      if (input.signal?.aborted) {
-        const latencyMs = Date.now() - startedAt;
-        if (collected) {
-          await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), collected, latencyMs, {
-            reasoning: reasoningCollected || undefined,
-            reasoningDurationMs: reasoningStartedAt ? Date.now() - reasoningStartedAt : undefined,
+    yield* this.drainStream({
+      chatId: input.chatId,
+      streamResult,
+      signal: input.signal,
+      startedAt,
+      debugLabel: "live.generateReply-stream",
+      onAbort: async (text, reasoning, reasoningDurationMs, latencyMs) => {
+        if (text) {
+          await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
+            reasoning: reasoning || undefined,
+            reasoningDurationMs,
           });
         }
-        yield { event: "abort", data: JSON.stringify({ partialLength: collected.length }) };
-        return;
-      }
-      throw err;
-    }
-
-    const latencyMs = Date.now() - startedAt;
-    const finish = await streamResult.finished;
-    const finalText = collected || (await streamResult.text);
-    const finalReasoning = reasoningCollected || (await streamResult.reasoning) || undefined;
-
-    if (reasoningStartedAt && reasoningDurationMs === null) {
-      reasoningDurationMs = Date.now() - reasoningStartedAt;
-    }
-
-    const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), finalText, latencyMs, {
-      reasoning: finalReasoning,
-      reasoningDurationMs: reasoningDurationMs ?? undefined,
+      },
+      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs) => {
+        const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
+          reasoning,
+          reasoningDurationMs,
+        });
+        logSendDebug("live.generateReply-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
+        return snapshot;
+      },
     });
-    logSendDebug("live.generateReply-stream.done", { chatId: input.chatId, latencyMs, replyLength: finalText.length });
-
-    if (reasoningCollected || streamResult.hasRedactedReasoning) {
-      yield {
-        event: "reasoning-done",
-        data: JSON.stringify({
-          durationMs: reasoningDurationMs,
-          redacted: streamResult.hasRedactedReasoning,
-        }),
-      };
-    }
-
-    yield {
-      event: "finish",
-      data: JSON.stringify({
-        finishReason: finish.finishReason,
-        usage: finish.usage,
-        messageCount: snapshot.messages.length,
-      }),
-    };
   }
 
+  /** Streaming regenerate: exclude target message → stream → add as variant. */
   async *regenerateMessageStream(input: {
     chatId: string;
     messageId: string;
@@ -365,76 +262,131 @@ export class LiveChatOrchestrator {
       excludeMessageId: brandId<MessageId>(input.messageId),
       model: input.model,
     });
-    const startedAt = Date.now();
+    const { streamResult, startedAt } = await this.startStream(input, prompt);
 
-    let streamResult;
+    yield* this.drainStream({
+      chatId: input.chatId,
+      streamResult,
+      signal: input.signal,
+      startedAt,
+      debugLabel: "live.regenerate-stream",
+      omitMessageCountInFinish: true,
+      onAbort: async (text, reasoning, reasoningDurationMs, latencyMs) => {
+        if (text) {
+          await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
+            content: text,
+            latencyMs,
+            reasoning: reasoning || undefined,
+            reasoningDurationMs,
+          });
+        }
+      },
+      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs) => {
+        const snapshot = await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
+          content: text,
+          latencyMs,
+          reasoning,
+          reasoningDurationMs,
+        });
+        logSendDebug("live.regenerate-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
+        return snapshot;
+      },
+    });
+  }
+
+  // ─── Shared streaming helpers ─────────────────────────────────────────
+
+  /**
+   * Starts a stream provider execution with error handling.
+   * Discards the pending prompt trace on failure.
+   */
+  private async startStream(
+    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; signal?: AbortSignal; prefill?: string },
+    prompt: Parameters<typeof streamProviderExecutor>[0]["prompt"],
+  ): Promise<{ streamResult: ProviderStreamResult; startedAt: number }> {
+    const startedAt = Date.now();
     try {
-      streamResult = await streamProviderExecutor({
+      const streamResult = await streamProviderExecutor({
         profile: input.profile,
         model: input.model,
         prompt,
         signal: input.signal,
-        prefill: prompt.prefill ?? undefined,
+        prefill: input.prefill ?? (prompt as { prefill?: string }).prefill ?? undefined,
       });
+      return { streamResult, startedAt };
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
     }
+  }
 
-    let collected = "";
-    let reasoningCollected = "";
-    let reasoningStartedAt: number | null = null;
+  /**
+   * Drains a provider stream: collects text and reasoning chunks,
+   * handles aborts via `onAbort`, saves the final result via `onFinal`,
+   * and yields SSE events (text-delta, reasoning-delta, reasoning-done, finish).
+   */
+  private async *drainStream(input: {
+    chatId: string;
+    streamResult: ProviderStreamResult;
+    signal?: AbortSignal | undefined;
+    startedAt: number;
+    debugLabel: string;
+    omitMessageCountInFinish?: boolean;
+    onAbort: (text: string, reasoning: string, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<void>;
+    onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<SessionSnapshot>;
+  }): AsyncGenerator<{ event: string; data: string }> {
+    const { streamResult, signal, startedAt, debugLabel, onAbort, onFinal, omitMessageCountInFinish } = input;
+
+    let textAccumulator = "";
+    let reasoningAccumulator = "";
+    let reasoningStartMs: number | null = null;
     let reasoningDurationMs: number | null = null;
+
+    // ── Collect stream chunks ──
     try {
       for await (const chunk of streamResult.stream) {
         if (chunk.type === "text-delta" && chunk.delta) {
-          if (!reasoningStartedAt && reasoningCollected) {
-            reasoningDurationMs = Date.now() - reasoningStartedAt!;
+          if (!reasoningStartMs && reasoningAccumulator) {
+            reasoningDurationMs = Date.now() - reasoningStartMs!;
           }
-          collected += chunk.delta;
+          textAccumulator += chunk.delta;
           yield { event: "text-delta", data: JSON.stringify({ delta: chunk.delta }) };
         }
         if (chunk.type === "reasoning-delta") {
-          if (!reasoningStartedAt) reasoningStartedAt = Date.now();
-          reasoningCollected += chunk.textDelta;
+          if (!reasoningStartMs) reasoningStartMs = Date.now();
+          reasoningAccumulator += chunk.textDelta;
           yield { event: "reasoning-delta", data: JSON.stringify({ delta: chunk.textDelta }) };
         }
       }
     } catch (err) {
-      if (input.signal?.aborted) {
+      if (signal?.aborted) {
         const latencyMs = Date.now() - startedAt;
-        if (collected) {
-          await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
-            content: collected,
-            latencyMs,
-            reasoning: reasoningCollected || undefined,
-            reasoningDurationMs: reasoningStartedAt ? Date.now() - reasoningStartedAt : undefined,
-          });
-        }
-        yield { event: "abort", data: JSON.stringify({ partialLength: collected.length }) };
+        await onAbort(
+          textAccumulator,
+          reasoningAccumulator,
+          reasoningStartMs ? Date.now() - reasoningStartMs : undefined,
+          latencyMs,
+        );
+        yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
         return;
       }
       throw err;
     }
 
+    // ── Finalize ──
     const latencyMs = Date.now() - startedAt;
     const finish = await streamResult.finished;
-    const finalText = collected || (await streamResult.text);
-    const finalReasoning = reasoningCollected || (await streamResult.reasoning) || undefined;
+    const finalText = textAccumulator || (await streamResult.text);
+    const finalReasoning = reasoningAccumulator || (await streamResult.reasoning) || undefined;
 
-    if (reasoningStartedAt && reasoningDurationMs === null) {
-      reasoningDurationMs = Date.now() - reasoningStartedAt;
+    if (reasoningStartMs && reasoningDurationMs === null) {
+      reasoningDurationMs = Date.now() - reasoningStartMs;
     }
 
-    await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
-      content: finalText,
-      latencyMs,
-      reasoning: finalReasoning,
-      reasoningDurationMs: reasoningDurationMs ?? undefined,
-    });
-    logSendDebug("live.regenerate-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
+    const snapshot = await onFinal(finalText, finalReasoning, reasoningDurationMs ?? undefined, latencyMs);
 
-    if (reasoningCollected || streamResult.hasRedactedReasoning) {
+    // ── Yield reasoning-done + finish ──
+    if (reasoningAccumulator || streamResult.hasRedactedReasoning) {
       yield {
         event: "reasoning-done",
         data: JSON.stringify({
@@ -444,16 +396,18 @@ export class LiveChatOrchestrator {
       };
     }
 
-    yield {
-      event: "finish",
-      data: JSON.stringify({
-        finishReason: finish.finishReason,
-        usage: finish.usage,
-      }),
+    const finishData: Record<string, unknown> = {
+      finishReason: finish.finishReason,
+      usage: finish.usage,
     };
+    if (!omitMessageCountInFinish) {
+      finishData.messageCount = snapshot.messages.length;
+    }
+    yield { event: "finish", data: JSON.stringify(finishData) };
   }
 }
 
+/** Extracts the message count from a prompt's finalPayload. */
 function countPromptMessages(prompt: { finalPayload?: unknown }): number {
   const payload = prompt.finalPayload as { messages?: unknown };
   return Array.isArray(payload?.messages) ? payload.messages.length : 0;

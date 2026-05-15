@@ -6,9 +6,10 @@ export interface CompactionConfig {
 }
 
 /**
- * Injectable token counting function.
- * Default: char length / 4 (rough heuristic).
- * Call setTokenCountFn() from the server to replace with a real tokenizer.
+ * Injectable token-counting function.
+ *
+ * Default heuristic: `ceil(charLength / 4)` — a rough approximation.
+ * Replace at runtime with a real tokenizer via {@link setTokenCountFn}.
  */
 let tokenCountFn: (text: string) => number = (text: string) => {
   if (!text) return 0;
