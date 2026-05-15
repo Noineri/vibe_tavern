@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: master
           fetch-depth: 0
 
       - name: Extract version from tag
@@ -29,7 +29,7 @@ jobs:
           jq --arg v "${{ steps.version.outputs.version }}" '.version = $v' package.json > package.json.tmp
           mv package.json.tmp package.json
 
-      - name: Sync version bump to main
+      - name: Sync version bump to master
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
