@@ -7,9 +7,9 @@
  * - Byte-based fallback for unknown models
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { getEncoding, type Tiktoken } from "js-tiktoken";
 import { Tokenizer as WebTokenizer } from "@agnai/web-tokenizers";
 
@@ -25,7 +25,19 @@ function guesstimate(text: string): number {
 // ── Paths ────────────────────────────────────────────────────────────────
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const TOKENIZER_DIR = join(__dirname, "..", "tokenizers");
+
+function resolveTokenizerDir(): string {
+	// 1. Next to the executable (standalone .exe mode)
+	const exeDir = resolve(process.execPath, "..");
+	const exeTokenizerDir = join(exeDir, "tokenizers");
+	if (existsSync(join(exeTokenizerDir, "claude.json"))) {
+		return exeTokenizerDir;
+	}
+	// 2. Relative to source file (dev mode)
+	return join(__dirname, "..", "tokenizers");
+}
+
+const TOKENIZER_DIR = resolveTokenizerDir();
 
 // ── Tokenizer caches (lazy singletons) ──────────────────────────────────
 
