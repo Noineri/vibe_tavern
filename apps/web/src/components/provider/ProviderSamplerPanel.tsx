@@ -241,8 +241,8 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
             className="flex items-center gap-2"
             onClick={() => setAdvOpen(!advOpen)}
           >
-            <span className={cn('transition-transform', advOpen && 'rotate-180')}>
-              <Icons.Caret direction="d" />
+            <span className={cn('transition-transform', advOpen && 'rotate-90')}>
+              <Icons.Caret direction="r" />
             </span>
             {t("samplers_advanced")}
           </span>
