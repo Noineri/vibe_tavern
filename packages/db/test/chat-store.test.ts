@@ -1,6 +1,5 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { drizzle } from "drizzle-orm/bun-sqlite";
-import { Database } from "bun:sqlite";
+import { createDb } from "../src/db-connection.js";
 import { eq } from "drizzle-orm";
 import * as schema from "../src/db-schema.js";
 import { ChatStore } from "../src/stores/chat-store.js";
@@ -202,10 +201,7 @@ CREATE UNIQUE INDEX idx_cached_models_provider_slug ON cached_models (provider_p
 `;
 
 function createTestDb() {
-  const sqlite = new Database(":memory:");
-  sqlite.exec("PRAGMA foreign_keys = ON");
-  sqlite.exec(CREATE_TABLES_SQL);
-  return drizzle(sqlite, { schema });
+	return createDb(":memory:");
 }
 
 /**
