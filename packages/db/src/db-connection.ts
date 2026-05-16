@@ -63,6 +63,7 @@ function ensureSchema(sqlite: Database): void {
       system_prompt text,
       tags_json text DEFAULT '[]' NOT NULL,
       avatar_asset_id text,
+      avatar_full_asset_id text,
       status text DEFAULT 'active' NOT NULL,
       created_at text NOT NULL,
       updated_at text NOT NULL
@@ -76,6 +77,7 @@ function ensureSchema(sqlite: Database): void {
       description text DEFAULT '' NOT NULL,
       pronouns text,
       avatar_asset_id text,
+      avatar_full_asset_id text,
       default_for_new_chats integer DEFAULT 0 NOT NULL,
       created_at text NOT NULL,
       updated_at text NOT NULL
