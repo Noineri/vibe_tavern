@@ -34,6 +34,7 @@ export const updateCharacterSchema = z.object({
   depthPromptRole: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
   avatarAssetId: z.string().nullable().optional(),
+  avatarFullAssetId: z.string().nullable().optional(),
 });
 
 export const buildCharacterDraftSchema = z.object({

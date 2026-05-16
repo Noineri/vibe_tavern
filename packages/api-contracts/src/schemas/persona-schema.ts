@@ -13,6 +13,7 @@ export const updatePersonaSchema = z.object({
   description: z.string().optional(),
   pronouns: z.string().nullable().optional(),
   avatarAssetId: z.string().nullable().optional(),
+  avatarFullAssetId: z.string().nullable().optional(),
 });
 
 export const setPersonaSchema = z.object({

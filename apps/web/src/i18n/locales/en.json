@@ -490,5 +490,8 @@
   "back": "← Back",
   "confirm_delete": "Confirm deletion",
   "reasoning": "Reasoning",
-  "reasoning_redacted": "Model used internal reasoning"
+  "reasoning_redacted": "Model used internal reasoning",
+  "crop_avatar_title": "Crop Avatar",
+  "crop_avatar_subtitle": "Drag to reposition · use slider to zoom",
+  "crop_preview_label": "Preview:"
 }

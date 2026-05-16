@@ -5,6 +5,8 @@ import { useForm } from "react-hook-form";
 import { Icons } from "./shared/icons.js";
 import { EmptyState } from "./shared/empty-state.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
+import { AvatarCropModal } from "./shared/AvatarCropModal.js";
+import type { AvatarCropResult } from "./shared/AvatarCropModal.js";
 import { cn } from "../lib/cn.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { uploadAsset } from "../app-client.js";
@@ -24,7 +26,7 @@ interface PersonaModalProps {
   personas: PersonaListItem[];
   activePersonaId: string | null;
   isSaving: boolean;
-  onSaveEdit: (personaId: string, draft: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null }) => void;
+  onSaveEdit: (personaId: string, draft: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null; avatarFullAssetId?: string | null }) => void;
   onSetActive: (personaId: string) => void;
   onCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
   onDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
@@ -36,6 +38,7 @@ type PersonaFormData = {
   pronouns: string | null;
   pronounsCustom: string;
   avatarAssetId: string | null;
+  avatarFullAssetId: string | null;
   avatarPreview: string | null;
 };
 
@@ -60,6 +63,9 @@ export function PersonaModal(input: PersonaModalProps) {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; error: string } | null>(null);
 
+  // ── Avatar crop modal state ──
+  const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
+
   const form = useForm<PersonaFormData>({
     defaultValues: {
       name: "",
@@ -67,6 +73,7 @@ export function PersonaModal(input: PersonaModalProps) {
       pronouns: null,
       pronounsCustom: "",
       avatarAssetId: null,
+      avatarFullAssetId: null,
       avatarPreview: null,
     },
   });
@@ -84,6 +91,7 @@ export function PersonaModal(input: PersonaModalProps) {
       pronouns: persona.pronouns ?? "",
       pronounsCustom: "",
       avatarAssetId: persona.avatarAssetId,
+      avatarFullAssetId: null,
       avatarPreview: null,
     });
   }
@@ -95,11 +103,12 @@ export function PersonaModal(input: PersonaModalProps) {
     const pronouns = form.getValues("pronouns");
     const pronounsCustom = form.getValues("pronounsCustom");
     const avatarAssetId = form.getValues("avatarAssetId");
+    const avatarFullAssetId = form.getValues("avatarFullAssetId");
     if (!name.trim()) return;
     const resolved = pronouns === "custom"
       ? (pronounsCustom.trim() || null)
       : (pronouns || null);
-    input.onSaveEdit(editingId, { name: name.trim(), description, pronouns: resolved, avatarAssetId });
+    input.onSaveEdit(editingId, { name: name.trim(), description, pronouns: resolved, avatarAssetId, avatarFullAssetId });
     setSelectedId(editingId);
     setEditingId(null);
   }
@@ -112,6 +121,35 @@ export function PersonaModal(input: PersonaModalProps) {
     const persona = input.personas.find((p) => p.id === selectedId) || input.personas[0];
     if (persona) input.onSetActive(persona.id);
     onClose();
+  }
+
+  function handleAvatarCropConfirm(result: AvatarCropResult): void {
+    // Show cropped preview immediately
+    form.setValue("avatarPreview", result.croppedUrl);
+    // Upload both the cropped and original files in parallel
+    setAvatarUploading(true);
+    Promise.all([
+      uploadAsset(result.croppedFile),
+      uploadAsset(pendingAvatar!.file),
+    ])
+      .then(([croppedRes, originalRes]) => {
+        form.setValue("avatarAssetId", croppedRes.assetId, { shouldDirty: true });
+        form.setValue("avatarFullAssetId", originalRes.assetId, { shouldDirty: true });
+      })
+      .catch(() => {
+        form.setValue("avatarPreview", null);
+        form.setValue("avatarAssetId", null);
+        form.setValue("avatarFullAssetId", null);
+      })
+      .finally(() => {
+        setAvatarUploading(false);
+        setPendingAvatar(null);
+      });
+  }
+
+  function handleAvatarCropCancel(): void {
+    if (pendingAvatar?.url) URL.revokeObjectURL(pendingAvatar.url);
+    setPendingAvatar(null);
   }
 
   function handleDelete(personaId: string): void {
@@ -137,6 +175,15 @@ export function PersonaModal(input: PersonaModalProps) {
 
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      {/* Avatar crop modal */}
+      {pendingAvatar && (
+        <AvatarCropModal
+          imageUrl={pendingAvatar.url}
+          originalFile={pendingAvatar.file}
+          onConfirm={handleAvatarCropConfirm}
+          onCancel={handleAvatarCropCancel}
+        />
+      )}
       {deleteConfirm && (
         <DestructiveConfirmModal
           title={t("delete_persona_title")}
@@ -206,14 +253,16 @@ export function PersonaModal(input: PersonaModalProps) {
                     <div className="w-full" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-3 mb-3">
                         {/* AvatarPicker */}
-                        <div
-                          className={cn(
-                            "group relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-dashed border-border2 bg-s2 transition-all hover:border-accent hover:text-accent-t",
-                            avatarUploading && "pointer-events-none opacity-60"
-                          )}
-                          onClick={() => !avatarUploading && avatarInputRef.current?.click()}
-                          title={t("upload_avatar")}
-                        >
+                        {/* AvatarPicker — outer wrapper carries 'group' so remove button is visible */}
+                        <div className="group relative shrink-0">
+                          <div
+                            className={cn(
+                              "relative flex h-16 w-16 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-dashed border-border2 bg-s2 transition-all hover:border-accent hover:text-accent-t",
+                              avatarUploading && "pointer-events-none opacity-60"
+                            )}
+                            onClick={() => !avatarUploading && avatarInputRef.current?.click()}
+                            title={t("upload_avatar")}
+                          >
                           <input
                             type="file"
                             ref={avatarInputRef}
@@ -222,41 +271,17 @@ export function PersonaModal(input: PersonaModalProps) {
                             onChange={async (e) => {
                               const file = e.target.files?.[0];
                               if (!file) return;
-                              setAvatarUploading(true);
-                              try {
-                                const preview = URL.createObjectURL(file);
-                                form.setValue("avatarPreview", preview);
-                                const result = await uploadAsset(file);
-                                form.setValue("avatarAssetId", result.assetId, { shouldDirty: true });
-                              } catch {
-                                form.setValue("avatarPreview", null);
-                                form.setValue("avatarAssetId", null);
-                              } finally {
-                                setAvatarUploading(false);
-                              }
+                              e.target.value = '';
+                              // Open crop modal with the raw image
+                              setPendingAvatar({ file, url: URL.createObjectURL(file) });
                             }}
                           />
                           {editAvatarPreview || editAvatarAssetId ? (
-                            <>
-                              <img
-                                src={editAvatarPreview || (editAvatarAssetId ? avatarUrl(editAvatarAssetId) : "")}
-                                alt=""
-                                className="h-full w-full object-cover object-top"
-                              />
-                              <button
-                                type="button"
-                                className="absolute right-0.5 bottom-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-surface text-t4 opacity-0 transition-all hover:text-danger group-hover:opacity-100"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  form.setValue("avatarAssetId", null, { shouldDirty: true });
-                                  form.setValue("avatarPreview", null);
-                                  if (avatarInputRef.current) avatarInputRef.current.value = "";
-                                }}
-                                title={t("remove_avatar")}
-                              >
-                                <svg width="10" height="10" viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-                              </button>
-                            </>
+                            <img
+                              src={editAvatarPreview || (editAvatarAssetId ? avatarUrl(editAvatarAssetId) : "")}
+                              alt=""
+                              className="h-full w-full object-cover object-top"
+                            />
                           ) : (
                             <div className="flex h-full w-full items-center justify-center text-t3 transition-colors group-hover:text-accent-t">
                               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -264,6 +289,23 @@ export function PersonaModal(input: PersonaModalProps) {
                                 <circle cx="12" cy="13" r="4"/>
                               </svg>
                             </div>
+                          )}
+                          </div>
+                          {/* Remove button — outside the overflow-hidden circle */}
+                          {(editAvatarPreview || editAvatarAssetId) && (
+                            <button
+                              type="button"
+                              className="absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full bg-surface border border-border text-t4 opacity-0 transition-all hover:text-danger group-hover:opacity-100 z-10"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                form.setValue("avatarAssetId", null, { shouldDirty: true });
+                                form.setValue("avatarPreview", null);
+                                if (avatarInputRef.current) avatarInputRef.current.value = "";
+                              }}
+                              title={t("remove_avatar")}
+                            >
+                              <svg width="10" height="10" viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                            </button>
                           )}
                         </div>
                         <div className="flex-1">

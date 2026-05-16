@@ -162,6 +162,12 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 
 /* ── Keyframes ── */
 @keyframes genp{0%,60%,100%{opacity:.25;transform:scale(.75)}30%{opacity:1;transform:scale(1)}}
+
+/* ── Avatar crop zoom slider ── */
+.crop-zoom-slider{-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:var(--border2);outline:none;cursor:pointer}
+.crop-zoom-slider::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer;transition:transform .1s}
+.crop-zoom-slider::-webkit-slider-thumb:hover{transform:scale(1.15)}
+.crop-zoom-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer}
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 @keyframes bootdot{0%,60%,100%{opacity:.25;transform:scale(.8)}30%{opacity:1;transform:scale(1);background:var(--accent);}}
 @keyframes toastIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}

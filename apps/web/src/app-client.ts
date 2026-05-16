@@ -27,7 +27,7 @@ export interface PersonaRecord {
 
 export interface AppSnapshot {
   chats: ChatListItem[];
-  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
+  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null }>;
   activeChat: Chat & { summary?: string; messageHistoryLimit?: number };
   activeBranch: ChatBranch;
   branches: ChatBranch[];
@@ -56,6 +56,7 @@ export interface AppSnapshot {
     depthPromptRole: string | null;
     tags: string[];
     avatarAssetId: string | null;
+    avatarFullAssetId: string | null;
   };
   persona: {
     id: string;
@@ -63,6 +64,7 @@ export interface AppSnapshot {
     description: string;
     pronouns: string | null;
     avatarAssetId: string | null;
+    avatarFullAssetId: string | null;
   } | null;
 }
 
@@ -237,6 +239,7 @@ export async function updatePersona(
     description: string;
     pronouns?: string | null;
     avatarAssetId?: string | null;
+    avatarFullAssetId?: string | null;
   },
 ): Promise<AppSnapshot> {
   const response = await client.api.personas[":personaId"].$patch({ param: { personaId }, json: input });
@@ -820,8 +823,10 @@ export async function exportPromptTrace(traceId: string): Promise<Record<string,
   return unwrapRpc<Record<string, unknown>>(response);
 }
 
-export async function updateCharacterAvatar(characterId: string, chatId: string, avatarAssetId: string): Promise<AppSnapshot> {
-  const response = await client.api.characters[":characterId"].$patch({ param: { characterId }, json: { chatId, avatarAssetId } });
+export async function updateCharacterAvatar(characterId: string, chatId: string, avatarAssetId: string, avatarFullAssetId?: string): Promise<AppSnapshot> {
+  const payload: Record<string, unknown> = { chatId, avatarAssetId };
+  if (avatarFullAssetId !== undefined) payload.avatarFullAssetId = avatarFullAssetId;
+  const response = await client.api.characters[":characterId"].$patch({ param: { characterId }, json: payload });
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);
 }

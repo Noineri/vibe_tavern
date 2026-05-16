@@ -83,11 +83,20 @@ export function useAvatarUploadMutation() {
   return useMutation({
     mutationFn: async (input: {
       file: File;
+      originalFile?: File | null;
       characterId: string;
       chatId: ChatId;
     }) => {
-      const asset = await uploadAsset(input.file);
-      const snapshot = await updateCharacterAvatar(input.characterId, input.chatId, asset.assetId);
+      const [croppedAsset, originalAsset] = await Promise.all([
+        uploadAsset(input.file),
+        input.originalFile ? uploadAsset(input.originalFile) : Promise.resolve(null),
+      ]);
+      const snapshot = await updateCharacterAvatar(
+        input.characterId,
+        input.chatId,
+        croppedAsset.assetId,
+        originalAsset?.assetId,
+      );
       return snapshot;
     },
     onSuccess: () => {

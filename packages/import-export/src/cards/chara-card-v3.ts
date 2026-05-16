@@ -165,6 +165,7 @@ export function importCharacterCardV3Json(
     systemPrompt: cleaned.systemPrompt || null,
     tags: cleaned.tags,
     avatarAssetId: null,
+    avatarFullAssetId: null,
     status: options.characterStatus ?? "active",
     createdAt: importedAt,
     updatedAt: importedAt,
