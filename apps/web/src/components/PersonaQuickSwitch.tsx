@@ -3,8 +3,34 @@ import { Icons } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
 import { useT } from "../i18n/context.js";
 
+function getAssetUrl(assetId: string): string {
+  const base = window.location.origin;
+  return `${base}/api/assets/${assetId}`;
+}
+
+function PersonaAvatar({ assetId, size }: { assetId: string | null; size: number }) {
+  if (!assetId) {
+    return (
+      <div
+        className="shrink-0 rounded-full bg-s3 flex items-center justify-center text-t3"
+        style={{ width: size, height: size }}
+      >
+        <Icons.user />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={getAssetUrl(assetId)}
+      alt=""
+      className="shrink-0 rounded-full object-cover"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
 interface Props {
-  personas: Array<{ id: string; name: string; description: string }>;
+  personas: Array<{ id: string; name: string; description: string; avatarAssetId: string | null }>;
   activePersonaId: string | null;
   onSelect: (personaId: string) => void;
 }
@@ -42,6 +68,7 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
         className="flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim px-[9px] py-[3px] text-xs font-medium text-accent-t"
         onClick={() => setIsOpen(!isOpen)}
       >
+        <PersonaAvatar assetId={activePersona.avatarAssetId} size={18} />
         <span>{activePersona.name.split(' ')[0]}</span>
         <Icons.Caret direction={isOpen ? "u" : "d"} />
       </button>
@@ -55,6 +82,7 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
               onClick={() => { onSelect(p.id); setIsOpen(false); }}
             >
               <div className="w-4 shrink-0 flex justify-center text-accent-t">{p.id === activePersonaId && <Icons.Check />}</div>
+              <PersonaAvatar assetId={p.avatarAssetId} size={22} />
               <div className="overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</div>
             </button>
           ))}
