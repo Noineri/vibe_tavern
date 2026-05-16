@@ -53,7 +53,7 @@ const PACKAGES: Record<string, PackageConfig> = {
   api: {
     name: "@rp-platform/api",
     dir: "services/api",
-    entrypoints: ["src/index.ts", "src/dev-server.ts"],
+    entrypoints: ["src/index.ts", "src/dev-server.ts", "src/prod-server.ts"],
     outdir: "dist",
     external: [
       "@rp-platform/db",

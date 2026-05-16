@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { AppMessage } from "../app-client.js";
 import { Markdown } from "../lib/markdown.js";
+import { avatarUrl } from "../lib/avatar.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
 import { useCharacterController } from "../hooks/use-character-controller.js";
 import { useDisplayHelpers } from "../hooks/use-display-helpers.js";
@@ -8,6 +9,7 @@ import { useBootstrapQuery } from "../queries/bootstrap-queries.js";
 import { useChatSnapshot } from "../queries/chat-queries.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { MessageBlock } from "./MessageBlock.js";
+import { initials } from "./app-shell-helpers.jsx";
 import { useT } from "../i18n/context.js";
 
 const msgWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7";
@@ -39,6 +41,7 @@ export function MessageList() {
   const characterName = snapshot?.character.name ?? "";
   const characterAvatarAssetId = snapshot?.character.avatarAssetId ?? null;
   const personaAvatarAssetId = snapshot?.persona?.avatarAssetId ?? null;
+  const personaName = snapshot?.persona?.name ?? "";
 
   const firstCharMsgId = useMemo(() => {
     for (const msg of messages) {
@@ -128,7 +131,11 @@ export function MessageList() {
           <div className={msgWrap}>
             <div className="relative group py-2.5">
               <div className="mb-[5px] flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3">Y</span>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
+                  {personaAvatarAssetId
+                    ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
+                    : (personaName ? initials(personaName) : "Y")}
+                </span>
                 <span>{t("message_user_label")}</span>
               </div>
               <div className="my-0.5 rounded-md bg-user-bg px-4 py-[13px]">
