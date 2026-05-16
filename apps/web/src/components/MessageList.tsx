@@ -9,6 +9,7 @@ import { useBootstrapQuery } from "../queries/bootstrap-queries.js";
 import { useChatSnapshot } from "../queries/chat-queries.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { MessageBlock } from "./MessageBlock.js";
+import { TranslateErrorBoundary } from "./TranslateErrorBoundary.js";
 import { initials } from "./app-shell-helpers.jsx";
 import { useT } from "../i18n/context.js";
 
@@ -62,6 +63,7 @@ export function MessageList() {
   }, [messages.length, pendingUserMessageContent, streamingText]);
 
   return (
+    <TranslateErrorBoundary>
     <div className="flex-1 overflow-y-auto scroll-smooth pt-7 pb-3" ref={msgsRef}>
       {/* TODO: VP-W4+ — EmptyState component for no active chat */}
       {/* TODO: VP-W4+ — EmptyState component for empty chat */}
@@ -191,6 +193,7 @@ export function MessageList() {
           </div>
       */}
     </div>
+    </TranslateErrorBoundary>
   );
 }
 

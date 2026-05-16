@@ -122,7 +122,7 @@ export function MessageBlock(input: MessageBlockProps) {
           </>
         ) : isUser ? (
           <div className="my-0.5 rounded-md bg-user-bg px-4 py-[13px]">
-            <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-msg-t1 opacity-88 [&_em]:italic [&_em]:text-msg-t2">
+            <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.82] text-msg-t1 opacity-88 [&_em]:italic [&_em]:text-msg-t2">
               <Markdown text={renderContent} />
             </div>
           </div>
@@ -144,7 +144,7 @@ export function MessageBlock(input: MessageBlockProps) {
             {!isUser && (reasoningText || reasoningDuration) && (
               <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
             )}
-            <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
+            <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.82] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
               <Markdown text={renderContent} />
             </div>
             {isGenerating && (
