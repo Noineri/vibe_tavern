@@ -10,6 +10,7 @@ export interface CreatePersonaData {
   description?: string;
   pronouns?: string | null;
   avatarAssetId?: string | null;
+  avatarFullAssetId?: string | null;
   defaultForNewChats?: boolean;
 }
 
@@ -23,6 +24,7 @@ export interface Persona {
   description: string;
   pronouns: string | null;
   avatarAssetId: string | null;
+  avatarFullAssetId: string | null;
   defaultForNewChats: boolean;
   createdAt: string;
   updatedAt: string;
@@ -77,6 +79,7 @@ export class PersonaStore {
         description: data.description ?? '',
         pronouns: data.pronouns ?? null,
         avatarAssetId: data.avatarAssetId ?? null,
+        avatarFullAssetId: data.avatarFullAssetId ?? null,
         defaultForNewChats: data.defaultForNewChats ? 1 : 0,
         createdAt: now,
         updatedAt: now,
@@ -96,6 +99,7 @@ export class PersonaStore {
     if (data.description !== undefined) values.description = data.description;
     if (data.pronouns !== undefined) values.pronouns = data.pronouns;
     if (data.avatarAssetId !== undefined) values.avatarAssetId = data.avatarAssetId;
+    if (data.avatarFullAssetId !== undefined) values.avatarFullAssetId = data.avatarFullAssetId;
     if (data.defaultForNewChats !== undefined) values.defaultForNewChats = data.defaultForNewChats ? 1 : 0;
 
     const [row] = await this.db
@@ -164,6 +168,7 @@ export class PersonaStore {
       description: row.description,
       pronouns: row.pronouns,
       avatarAssetId: row.avatarAssetId,
+      avatarFullAssetId: row.avatarFullAssetId,
       defaultForNewChats: row.defaultForNewChats === 1,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

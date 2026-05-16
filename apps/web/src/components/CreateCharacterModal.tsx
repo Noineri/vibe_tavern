@@ -4,6 +4,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Ic } from './shared/icons';
 import { cn } from '../lib/cn';
+import { AvatarCropModal } from './shared/AvatarCropModal.js';
+import type { AvatarCropResult } from './shared/AvatarCropModal.js';
 import { useT } from '../i18n/context.js';
 
 const createCharacterFormSchema = z.object({
@@ -22,6 +24,7 @@ const createCharacterFormSchema = z.object({
   depthPromptRole: z.string(),
   tags: z.array(z.string()),
   avatarFile: z.unknown().nullable().optional(),
+  avatarOriginalFile: z.unknown().nullable().optional(),
   avatarPreview: z.string().nullable().optional(),
 });
 
@@ -44,7 +47,7 @@ interface CreateCharacterModalProps {
     depthPromptDepth?: number;
     depthPromptRole?: string;
     tags?: string[];
-  }, avatarFile: File | null) => Promise<{ characterId: string; chatId: string } | null>;
+  }, avatarFile: File | null, avatarOriginalFile: File | null) => Promise<{ characterId: string; chatId: string } | null>;
 }
 
 export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalProps) {
@@ -64,6 +67,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
       systemPrompt: '',
       tags: [],
       avatarFile: null,
+      avatarOriginalFile: null,
       avatarPreview: null,
       depthPrompt: '',
       depthPromptDepth: 4,
@@ -78,6 +82,9 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   const [altGreetIdx, setAltGreetIdx] = useState(0);
   const [tagInput, setTagInput] = useState('');
   const avaInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Avatar crop modal state ──
+  const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
 
   const name = watch('name');
   const description = watch('description');
@@ -95,6 +102,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   const tags = watch('tags') || [];
   const avatarPreview = watch('avatarPreview') as string | null;
   const avatarFile = watch('avatarFile') as File | null;
+  const avatarOriginalFile = watch('avatarOriginalFile') as File | null;
 
   const canSave = (name || '').trim().length > 0 && !busy;
 
@@ -107,10 +115,22 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   function handleAvatarPick(files: FileList | null) {
     if (!files || files.length === 0) return;
     const file = files[0];
+    setPendingAvatar({ file, url: URL.createObjectURL(file) });
+  }
+
+  function handleAvatarCropConfirm(result: AvatarCropResult) {
+    if (pendingAvatar?.url) URL.revokeObjectURL(pendingAvatar.url);
+    setPendingAvatar(null);
     patchForm({
-      avatarFile: file,
-      avatarPreview: URL.createObjectURL(file),
+      avatarFile: result.croppedFile,
+      avatarOriginalFile: pendingAvatar!.file,
+      avatarPreview: result.croppedUrl,
     });
+  }
+
+  function handleAvatarCropCancel() {
+    if (pendingAvatar?.url) URL.revokeObjectURL(pendingAvatar.url);
+    setPendingAvatar(null);
   }
 
   function removeTag(tag: string) {
@@ -147,11 +167,21 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
         tags: tags.length > 0 ? tags : undefined,
       },
       avatarFile,
+      avatarOriginalFile,
     );
   }
 
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={e => e.target === e.currentTarget && onClose()}>
+      {/* Avatar crop modal */}
+      {pendingAvatar && (
+        <AvatarCropModal
+          imageUrl={pendingAvatar.url}
+          originalFile={pendingAvatar.file}
+          onConfirm={handleAvatarCropConfirm}
+          onCancel={handleAvatarCropCancel}
+        />
+      )}
       <div className="flex max-h-[90vh] w-[600px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">
         {/* Header */}
         <div className="shrink-0 border-b border-border px-5 pt-[18px] pb-4">

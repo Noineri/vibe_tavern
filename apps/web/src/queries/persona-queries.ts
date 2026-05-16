@@ -40,6 +40,7 @@ export function useUpdatePersonaMutation() {
         description: string;
         pronouns?: string | null;
         avatarAssetId?: string | null;
+        avatarFullAssetId?: string | null;
       };
     }) => updatePersona(input.personaId, input.patch),
     onSuccess: () => {

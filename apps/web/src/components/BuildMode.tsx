@@ -82,7 +82,7 @@ interface BuildModeInnerProps {
   promptPayloadText: string;
   promptTraceCount: number;
   onSave: (draft: BuildCharacterDraft) => Promise<void> | void;
-  onAvatarUpload: (file: File) => Promise<void> | void;
+  onAvatarUpload: (file: File, originalFile?: File | null) => Promise<void> | void;
   t: (key: string) => string;
 }
 
@@ -126,8 +126,8 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
     setAvatarPreview(null);
   }
 
-  function handleAvatarUpload(file: File): void {
-    void Promise.resolve(onAvatarUpload(file)).then(() => setAvatarPreview(null));
+  function handleAvatarUpload(file: File, originalFile?: File | null): void {
+    void Promise.resolve(onAvatarUpload(file, originalFile)).then(() => setAvatarPreview(null));
   }
 
   const avatarUrl = character.avatarAssetId

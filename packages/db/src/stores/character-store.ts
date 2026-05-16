@@ -23,6 +23,7 @@ export interface CreateCharacterData {
   systemPrompt?: string | null;
   tags?: string[];
   avatarAssetId?: string | null;
+  avatarFullAssetId?: string | null;
 }
 
 export type UpdateCharacterData = Partial<CreateCharacterData>;
@@ -50,6 +51,7 @@ export interface Character {
   systemPrompt: string | null;
   tags: string[];
   avatarAssetId: string | null;
+  avatarFullAssetId: string | null;
   status: 'active' | 'draft' | 'archived';
   createdAt: string;
   updatedAt: string;
@@ -135,6 +137,7 @@ export class CharacterStore {
         systemPrompt: data.systemPrompt ?? null,
         tagsJson: JSON.stringify(data.tags ?? []),
         avatarAssetId: data.avatarAssetId ?? null,
+        avatarFullAssetId: data.avatarFullAssetId ?? null,
         status: 'active',
         isSystem: 0,
         createdAt: now,
@@ -168,6 +171,7 @@ export class CharacterStore {
     if (data.systemPrompt !== undefined) values.systemPrompt = data.systemPrompt;
     if (data.tags !== undefined) values.tagsJson = JSON.stringify(data.tags);
     if (data.avatarAssetId !== undefined) values.avatarAssetId = data.avatarAssetId;
+    if (data.avatarFullAssetId !== undefined) values.avatarFullAssetId = data.avatarFullAssetId;
 
     const [row] = await this.db
       .update(characters)
@@ -224,6 +228,7 @@ export class CharacterStore {
         systemPrompt: original.systemPrompt,
         tagsJson: original.tagsJson,
         avatarAssetId: original.avatarAssetId,
+        avatarFullAssetId: original.avatarFullAssetId,
         status: 'active',
         createdAt: now,
         updatedAt: now,
@@ -323,6 +328,7 @@ export class CharacterStore {
       systemPrompt: row.systemPrompt,
       tags: JSON.parse(row.tagsJson),
       avatarAssetId: row.avatarAssetId,
+      avatarFullAssetId: row.avatarFullAssetId,
       status: row.status as Character['status'],
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

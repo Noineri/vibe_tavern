@@ -234,10 +234,29 @@ function ensureSchema(sqlite: Database): void {
   sqlite.exec('PRAGMA foreign_keys = ON');
 }
 
+/**
+ * Incremental schema migrations — add columns that may not exist in older databases.
+ * Each statement is wrapped in a try/catch so it's safe to run on already-migrated DBs.
+ */
+function runMigrations(sqlite: Database): void {
+  const migrations: string[] = [
+    'ALTER TABLE characters ADD COLUMN avatar_full_asset_id text',
+    'ALTER TABLE personas ADD COLUMN avatar_full_asset_id text',
+  ];
+  for (const sql of migrations) {
+    try {
+      sqlite.exec(sql);
+    } catch {
+      // Column already exists — ignore
+    }
+  }
+}
+
 export function createDb(dbPath: string): AppDb {
   const sqlite = new Database(dbPath);
   sqlite.exec('PRAGMA journal_mode = WAL');
   ensureSchema(sqlite);
+  runMigrations(sqlite);
 
   return drizzle(sqlite, { schema });
 }

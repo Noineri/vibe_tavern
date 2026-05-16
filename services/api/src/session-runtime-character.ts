@@ -27,6 +27,7 @@ export type CharacterRecord = {
   tags: string[];
   subtitle: string;
   avatarAssetId: string | null;
+  avatarFullAssetId: string | null;
 };
 
 export type PersonaRecord = {
@@ -35,6 +36,7 @@ export type PersonaRecord = {
   description: string;
   pronouns: string | null;
   avatarAssetId: string | null;
+  avatarFullAssetId: string | null;
 };
 
 export function toCharacterRecord(
@@ -76,6 +78,7 @@ export function toCharacterRecord(
     tags: character.tags,
     subtitle: subtitleCandidate,
     avatarAssetId: character.avatarAssetId,
+    avatarFullAssetId: character.avatarFullAssetId,
   };
 }
 
@@ -278,6 +281,7 @@ export class CharacterRuntime {
       extensions?: Record<string, unknown>;
       tags?: string[];
       avatarAssetId?: string | null;
+      avatarFullAssetId?: string | null;
     },
     options?: {
       rebuildChatOrder: () => Promise<void>;
@@ -331,6 +335,9 @@ export class CharacterRuntime {
       avatarAssetId: input.avatarAssetId !== undefined
         ? input.avatarAssetId
         : currentCharacter.avatarAssetId,
+      avatarFullAssetId: input.avatarFullAssetId !== undefined
+        ? input.avatarFullAssetId
+        : currentCharacter.avatarFullAssetId,
     });
 
     // Promote system character to user character on first edit
