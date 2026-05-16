@@ -98,6 +98,18 @@ async function main() {
 		console.log(`   → ${tokenizerTarget}`);
 	});
 
+	// ── Step 3c: Copy DB migrations to dist/drizzle/ ────────────────────────
+
+	step("Copying DB migrations to dist/drizzle/", () => {
+		const drizzleSource = join(ROOT, "packages", "db", "drizzle");
+		const drizzleTarget = join(DIST, "drizzle");
+		if (!existsSync(drizzleSource)) {
+			throw new Error(`DB migrations source not found: ${drizzleSource}`);
+		}
+		cpSync(drizzleSource, drizzleTarget, { recursive: true });
+		console.log(`   → ${drizzleTarget}`);
+	});
+
 	// ── Step 4: Compile standalone server ────────────────────────────────
 
 	await step("Compiling standalone binary (bun build --compile)", async () => {
