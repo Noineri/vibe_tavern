@@ -19,6 +19,7 @@
     "check": "bun run typecheck && bun run test",
     "dev:api": "bun run --filter @rp-platform/api dev",
     "dev:web": "bun run --filter @rp-platform/web dev",
+    "db:generate": "bun run --filter @rp-platform/db db:generate",
     "db:push": "bun run --filter @rp-platform/db db:push"
   },
   "devDependencies": {
@@ -30,6 +31,7 @@
     "vite": "^8.0.9"
   },
   "dependencies": {
+    "drizzle-kit": "^0.31.10",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   }
