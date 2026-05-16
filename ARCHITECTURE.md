@@ -126,7 +126,7 @@ POST /api/chats/:chatId/messages/stream
 
 Shared types and constants. No logic, no imports from other packages.
 
-- **`entities.ts`** — `Character`, `Chat`, `Message`, `MessageVariant`, `ChatBranch`, `LoreEntry`, `Persona`, `PromptTrace`, `PromptPreset`, `ToolProfile`, `SummaryMemorySnapshot`, `RetrievedMemoryHit`, `CharacterVersion`
+- **`entities.ts`** — `Character`, `Chat`, `Message`, `MessageVariant`, `ChatBranch`, `LoreEntry`, `Persona`, `PromptTrace`, `PromptPreset`, `ToolProfile`, `SummaryMemorySnapshot`, `RetrievedMemoryHit`, `CharacterVersion`. Characters and personas carry both `avatarAssetId` (cropped thumbnail) and `avatarFullAssetId` (original full-size image for zoom preview).
 - **`ids.ts`** — Branded ID types (`Brand<"ChatId">`) to prevent accidental ID swaps
 - **`platform-constants.ts`** — Enum-like const objects: `PROVIDER_TYPE`, `CHAT_STATUS`, `MESSAGE_ROLE`, `MESSAGE_STATE`, `LORE_LOGIC`, `PROMPT_LAYER_POSITION`, `CARD_FORMAT`, `SUMMARY_KIND`, `TOOL_PROFILE_MODE`
 - **`api-types.ts`** — DTOs for API responses: `AssemblePromptResponse`, `PromptTraceRecordDto`, `PromptPresetDto`, `PromptLayerDto`
@@ -182,6 +182,7 @@ Drizzle ORM schema over SQLite. Key tables:
 
 ```
 characters ←── chats ──→ personas
+  │  (avatarAssetId, avatarFullAssetId → assets)
                  │
              chatBranches
                  │
@@ -258,7 +259,7 @@ The backend. Single Bun process serving HTTP API and static frontend.
 | `provider-gateway.ts` | Pure HTTP functions: probe provider connection, list models, test chat. Supports OpenAI-compat, Anthropic, Google, Ollama. |
 | `provider-profile-service.ts` | CRUD provider profiles, cached model lists, favorite models. API key handling (resolve empty string → keep old key). |
 | `prompt-preset-service.ts` | CRUD prompt presets. |
-| `asset-service.ts` | Upload/serve/cleanup avatar images (jpg, png, gif, webp). |
+| `asset-service.ts` | Upload/serve/cleanup avatar images (jpg, png, gif, webp). Handles both cropped and full-size assets per entity. |
 | `session-runtime-dto.ts` | Mappers: message → DTO (with variants), prompt trace → DTO, provider profile → client-safe (strips apiKey), lore entry activation logic. |
 | `errors.ts` | `DomainError` with kind (NotFound/Validation/Conflict/Provider/Cancelled/Unauthorized/Internal) → HTTP status mapping. |
 | `send-debug-log.ts` | Append-only debug log to `logs/send-debug.log` with automatic secret redaction. |
@@ -313,6 +314,8 @@ React SPA built with Vite. Communicates exclusively via the HTTP API defined in 
 - Prompt preset editor
 - Persona management
 - Multi-language support (en, ru) via i18n
-- Asset upload for character avatars
+- Asset upload for character avatars (cropped thumbnail + original full-size)
+- Avatar crop modal (canvas-based circular crop with zoom slider and scroll-to-zoom)
+- Avatar panel (floating draggable, zoomable full-size avatar preview)
 
 Built as static assets served by the same Hono server in production.
