@@ -54,7 +54,7 @@ rp_platform_plan/
 
 # Drizzle generated output
 drizzle-generated/
-packages/db/drizzle/
+# packages/db/drizzle/ — NOT ignored, migration files must be committed
 .tokensave
 
 # Standalone build output
