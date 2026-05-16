@@ -167,7 +167,14 @@ export function AvatarCropModal({
     setDragging(false);
   }, []);
 
-  /* ── Zoom handler ── */
+  /* ── Compute zoom range ── */
+  const minZoom = canvasSize / Math.max(naturalSize.w, naturalSize.h);
+  const maxZoom = Math.max(
+    (canvasSize / Math.min(naturalSize.w, naturalSize.h)) * 3,
+    minZoom * 6,
+  );
+
+  /* ── Zoom handler (slider) ── */
   const handleZoomChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const newZoom = parseFloat(e.target.value);
@@ -183,11 +190,29 @@ export function AvatarCropModal({
     [zoom, offset, canvasSize],
   );
 
-  /* ── Compute zoom range ── */
-  const minZoom = canvasSize / Math.max(naturalSize.w, naturalSize.h);
-  const maxZoom = Math.max(
-    (canvasSize / Math.min(naturalSize.w, naturalSize.h)) * 3,
-    minZoom * 6,
+  /* ── Zoom handler (mouse wheel) ── */
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      e.preventDefault();
+      const factor = 1 - e.deltaY * 0.001;
+      const newZoom = Math.min(maxZoom, Math.max(minZoom, zoom * factor));
+      // Zoom toward cursor position on canvas
+      const rect = (e.target as HTMLElement).getBoundingClientRect();
+      const cursorX = e.clientX - rect.left;
+      const cursorY = e.clientY - rect.top;
+      const imgCenterX = canvasSize / 2 - offset.x;
+      const imgCenterY = canvasSize / 2 - offset.y;
+      // How far the cursor is from the image center (in canvas pixels)
+      const relX = cursorX - canvasSize / 2 - offset.x;
+      const relY = cursorY - canvasSize / 2 - offset.y;
+      const scale = newZoom / zoom;
+      setOffset({
+        x: canvasSize / 2 - imgCenterX * scale + relX * (1 - scale),
+        y: canvasSize / 2 - imgCenterY * scale + relY * (1 - scale),
+      });
+      setZoom(newZoom);
+    },
+    [zoom, offset, canvasSize, minZoom, maxZoom],
   );
 
   /* ── Crop & confirm ── */
@@ -300,6 +325,7 @@ export function AvatarCropModal({
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
+                onWheel={handleWheel}
               />
             </div>
 

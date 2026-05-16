@@ -15,16 +15,14 @@ echo  RP Platform — Production Server
 echo ============================================
 echo.
 
-if not exist "apps\web\dist\index.html" (
-    echo Frontend not built. Building now...
-    call %BUN_EXE% run scripts\build.ts web
-    if errorlevel 1 (
-        echo Frontend build failed.
-        pause
-        exit /b 1
-    )
-    echo.
+echo Building frontend...
+%BUN_EXE% run scripts\build.ts web
+if errorlevel 1 (
+    echo Frontend build failed.
+    pause
+    exit /b 1
 )
+echo.
 
 if not exist "services\api\dist" (
     echo API not built. Building now...
