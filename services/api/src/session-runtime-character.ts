@@ -16,6 +16,8 @@ export type CharacterRecord = {
   personalitySummary: string | null;
   firstMessage: string | null;
   mesExample: string | null;
+  mesExampleMode: string;
+  mesExampleDepth: number;
   alternateGreetings: string[];
   postHistoryInstructions: string | null;
   creatorNotes: string | null;
@@ -67,6 +69,8 @@ export function toCharacterRecord(
     personalitySummary: character.personalitySummary ?? ((data.personality as string) || null),
     firstMessage: character.firstMessage,
     mesExample: character.mesExample,
+    mesExampleMode: character.mesExampleMode,
+    mesExampleDepth: character.mesExampleDepth,
     alternateGreetings: character.alternateGreetings,
     postHistoryInstructions: character.postHistoryInstructions,
     creatorNotes: character.creatorNotes,
@@ -92,6 +96,8 @@ export function applyCharacterEditsToDefinition(
     systemPrompt: string;
     firstMessage: string | null;
     mesExample: string | null;
+    mesExampleMode?: string;
+    mesExampleDepth?: number;
     alternateGreetings: string[];
     postHistoryInstructions: string | null;
     creatorNotes: string | null;
@@ -117,6 +123,8 @@ export function applyCharacterEditsToDefinition(
   cloned.system_prompt = input.systemPrompt;
   cloned.first_mes = input.firstMessage;
   cloned.mes_example = input.mesExample;
+  if (input.mesExampleMode !== undefined) cloned.mes_example_mode = input.mesExampleMode;
+  if (input.mesExampleDepth !== undefined) cloned.mes_example_depth = input.mesExampleDepth;
   cloned.alternate_greetings = input.alternateGreetings;
   cloned.post_history_instructions = input.postHistoryInstructions;
   cloned.creator_notes = input.creatorNotes;
@@ -133,6 +141,8 @@ export function applyCharacterEditsToDefinition(
   target.system_prompt = input.systemPrompt;
   target.first_mes = input.firstMessage;
   target.mes_example = input.mesExample;
+  if (input.mesExampleMode !== undefined) target.mes_example_mode = input.mesExampleMode;
+  if (input.mesExampleDepth !== undefined) target.mes_example_depth = input.mesExampleDepth;
   target.alternate_greetings = input.alternateGreetings;
   target.post_history_instructions = input.postHistoryInstructions;
   target.creator_notes = input.creatorNotes;
@@ -205,6 +215,8 @@ export class CharacterRuntime {
     scenario?: string | null;
     firstMessage?: string;
     mesExample?: string | null;
+    mesExampleMode?: string;
+    mesExampleDepth?: number;
     alternateGreetings?: string[];
     postHistoryInstructions?: string | null;
     creatorNotes?: string | null;
@@ -221,6 +233,8 @@ export class CharacterRuntime {
       defaultScenario: input.scenario,
       firstMessage: input.firstMessage,
       mesExample: input.mesExample,
+      mesExampleMode: input.mesExampleMode,
+      mesExampleDepth: input.mesExampleDepth,
       alternateGreetings: input.alternateGreetings,
       postHistoryInstructions: input.postHistoryInstructions,
       creatorNotes: input.creatorNotes,
@@ -271,6 +285,8 @@ export class CharacterRuntime {
       systemPrompt?: string;
       firstMessage?: string | null;
       mesExample?: string | null;
+      mesExampleMode?: string;
+      mesExampleDepth?: number;
       alternateGreetings?: string[];
       postHistoryInstructions?: string | null;
       creatorNotes?: string | null;
@@ -310,6 +326,12 @@ export class CharacterRuntime {
       mesExample: input.mesExample !== undefined
         ? input.mesExample
         : currentCharacter.mesExample,
+      mesExampleMode: input.mesExampleMode !== undefined
+        ? input.mesExampleMode
+        : currentCharacter.mesExampleMode,
+      mesExampleDepth: input.mesExampleDepth !== undefined
+        ? input.mesExampleDepth
+        : currentCharacter.mesExampleDepth,
       alternateGreetings: input.alternateGreetings ?? currentCharacter.alternateGreetings,
       postHistoryInstructions: input.postHistoryInstructions !== undefined
         ? input.postHistoryInstructions

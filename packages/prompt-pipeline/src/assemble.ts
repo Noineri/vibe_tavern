@@ -422,15 +422,35 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   }
 
   if (context.character.mesExample?.trim()) {
-    layers.push(
-      makeLayer({
+    const mesExampleMode = context.character.mesExampleMode ?? "always";
+    const isFirstTurn = context.chat.recentMessages.length <= 1;
+    const shouldInclude =
+      mesExampleMode === "always" ||
+      (mesExampleMode === "once" && isFirstTurn) ||
+      mesExampleMode === "depth";
+
+    if (shouldInclude) {
+      const isDepthMode = mesExampleMode === "depth";
+      const depth = context.character.mesExampleDepth ?? 4;
+      layers.push(
+        makeLayer({
+          id: PROMPT_LAYER_ID.mesExample,
+          sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
+          sourceId: context.character.id,
+          priority: PROMPT_LAYER_PRIORITY.mesExample,
+          reason: isDepthMode
+            ? `included (depth mode, depth=${depth})`
+            : isFirstTurn ? "included" : "included (always mode)",
+          text: PROMPT_FORMAT.exampleMessages(context.character.mesExample),
+          ...(isDepthMode ? { injectionDepth: depth } : {}),
+        }),
+      );
+    } else {
+      droppedLayers.push({
         id: PROMPT_LAYER_ID.mesExample,
-        sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
-        sourceId: context.character.id,
-        priority: PROMPT_LAYER_PRIORITY.mesExample,
-        text: PROMPT_FORMAT.exampleMessages(context.character.mesExample),
-      }),
-    );
+        reason: `skipped: mes_example_mode=once, not first turn (${context.chat.recentMessages.length} messages)`,
+      });
+    }
   }
 
   if (context.character.postHistoryInstructions?.trim()) {

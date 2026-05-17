@@ -60,6 +60,8 @@ export class RuntimeApiAdapter {
 		scenario?: string;
 		personalitySummary?: string;
 		mesExample?: string;
+		mesExampleMode?: string;
+		mesExampleDepth?: number;
 		alternateGreetings?: string[];
 		postHistoryInstructions?: string;
 		creatorNotes?: string;
@@ -81,6 +83,8 @@ export class RuntimeApiAdapter {
 			systemPrompt?: string;
 			firstMessage?: string | null;
 			mesExample?: string | null;
+			mesExampleMode?: string;
+			mesExampleDepth?: number;
 			alternateGreetings?: string[];
 			postHistoryInstructions?: string | null;
 			creatorNotes?: string | null;

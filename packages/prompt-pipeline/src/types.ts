@@ -54,6 +54,10 @@ export interface PromptAssemblyContext {
     systemPrompt?: string | null;
     personality?: string | null;
     mesExample?: string | null;
+    /** Controls when mes_example is included: "always" = every turn, "once" = first turn only, "depth" = inject at N messages from end. Defaults to "always". */
+    mesExampleMode?: "always" | "once" | "depth" | null;
+    /** When mesExampleMode is "depth": how many messages from end of history to inject. Defaults to 4. */
+    mesExampleDepth?: number | null;
     postHistoryInstructions?: string | null;
   };
   persona?: {
@@ -105,6 +109,7 @@ export interface PromptAssemblyContext {
   };
   config?: {
     contextBudget?: number | null;
+    model?: string;
   };
 }
 

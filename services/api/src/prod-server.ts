@@ -17,7 +17,7 @@ import { resolve } from "node:path";
 import { mkdirSync, existsSync } from "node:fs";
 import { setTokenCountFn } from "@rp-platform/prompt-pipeline";
 import { createRuntimeStore } from "./session-runtime-store.js";
-import { warmupTokenizers, countTokensDefault } from "./ai/tokenizer-service.js";
+import { warmupTokenizers, countTokens } from "./ai/tokenizer-service.js";
 import { SessionRuntime } from "./session-runtime.js";
 import { createProviderProfileService } from "./provider-profile-service.js";
 import { PromptPresetService } from "./prompt-preset-service.js";
@@ -46,6 +46,25 @@ console.log(`[prod] Static: ${staticEnabled ? staticDir : "(not built — API-on
 mkdirSync(resolve(rootDir, "data"), { recursive: true });
 mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
 
+// ─── DB schema sync ────────────────────────────────────────────────────────────
+console.log("[prod] Syncing DB schema...");
+try {
+	const pushProc = Bun.spawn(["bunx", "drizzle-kit", "push", "--force"], {
+		cwd: resolve(rootDir, "packages", "db"),
+		stdout: "inherit",
+		stderr: "inherit",
+		stdin: "ignore",
+	});
+	const exitCode = await pushProc.exited;
+	if (exitCode === 0) {
+		console.log("[prod] DB schema sync complete.");
+	} else {
+		console.warn(`[prod] DB schema sync exited with code ${exitCode}.`);
+	}
+} catch (err) {
+	console.warn("[prod] DB schema sync failed:", err instanceof Error ? err.message : err);
+}
+
 (async () => {
 	// Stores
 	const stores = createRuntimeStore();
@@ -61,7 +80,7 @@ mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
 
 	// Tokenizers
 	await warmupTokenizers();
-	setTokenCountFn(countTokensDefault);
+	setTokenCountFn(countTokens);
 	console.log("[prod] Tokenizers ready.");
 
 	// Services

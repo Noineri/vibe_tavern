@@ -13,7 +13,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { Database } from "bun:sqlite";
 import { setTokenCountFn } from "@rp-platform/prompt-pipeline";
 import { createRuntimeStore } from "../../src/session-runtime-store.js";
-import { warmupTokenizers, countTokensDefault } from "../../src/ai/tokenizer-service.js";
+import { warmupTokenizers, countTokens } from "../../src/ai/tokenizer-service.js";
 import { SessionRuntime } from "../../src/session-runtime.js";
 import { createProviderProfileService } from "../../src/provider-profile-service.js";
 import { PromptPresetService } from "../../src/prompt-preset-service.js";
@@ -262,7 +262,7 @@ export async function createTestServer(): Promise<TestServer> {
   ]);
 
   await warmupTokenizers();
-  setTokenCountFn(countTokensDefault);
+  setTokenCountFn(countTokens);
 
   const providerProfileService = createProviderProfileService(stores.providers);
   const promptPresetService = new PromptPresetService(stores.presets);

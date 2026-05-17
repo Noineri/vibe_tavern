@@ -8,6 +8,20 @@
       "when": 1778963085992,
       "tag": "0000_past_juggernaut",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1779027594211,
+      "tag": "0001_windy_santa_claus",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1779030803302,
+      "tag": "0002_classy_electro",
+      "breakpoints": true
     }
   ]
 }

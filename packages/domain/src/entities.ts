@@ -60,6 +60,8 @@ export interface Character {
   defaultScenario: string | null;
   firstMessage: string | null;
   mesExample: string | null;
+  mesExampleMode: string;
+  mesExampleDepth: number;
   alternateGreetings: string[];
   postHistoryInstructions: string | null;
   creatorNotes: string | null;

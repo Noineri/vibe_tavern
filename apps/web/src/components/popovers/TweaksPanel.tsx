@@ -26,7 +26,7 @@ export function TweaksPanel({ settings, setSetting }: TweaksPanelProps) {
       </div>
       <div className="flex items-center justify-between gap-3 py-2">
         <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_font_size")}</span>
-        <select className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none px-[7px]" value={settings.fontSize} onChange={e => setSetting('fontSize', parseInt(e.target.value))}>
+        <select className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none pl-[7px] sel-arrow" value={settings.fontSize} onChange={e => setSetting('fontSize', parseInt(e.target.value))}>
           <option value={17}>{t("tweaks_small")}</option>
           <option value={18}>{t("tweaks_medium")}</option>
           <option value={19}>{t("tweaks_large")}</option>
@@ -34,7 +34,7 @@ export function TweaksPanel({ settings, setSetting }: TweaksPanelProps) {
       </div>
       <div className="flex items-center justify-between gap-3 py-2">
         <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_ui_font_size")}</span>
-        <select className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none px-[7px]" value={settings.uiFontSize} onChange={e => setSetting('uiFontSize', parseInt(e.target.value))}>
+        <select className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none pl-[7px] sel-arrow" value={settings.uiFontSize} onChange={e => setSetting('uiFontSize', parseInt(e.target.value))}>
           <option value={16}>{t("tweaks_small")}</option>
           <option value={17}>{t("tweaks_medium")}</option>
           <option value={18}>{t("tweaks_large")}</option>
@@ -42,7 +42,7 @@ export function TweaksPanel({ settings, setSetting }: TweaksPanelProps) {
       </div>
       <div className="flex items-center justify-between gap-3 py-2">
         <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_message_width")}</span>
-        <select className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none px-[7px]" value={settings.messageWidth} onChange={e => setSetting('messageWidth', e.target.value as 'narrow' | 'medium' | 'wide')}>
+        <select className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none pl-[7px] sel-arrow" value={settings.messageWidth} onChange={e => setSetting('messageWidth', e.target.value as 'narrow' | 'medium' | 'wide')}>
           <option value="narrow">{t("tweaks_narrow")}</option>
           <option value="medium">{t("tweaks_medium")}</option>
           <option value="wide">{t("tweaks_wide")}</option>
@@ -50,7 +50,7 @@ export function TweaksPanel({ settings, setSetting }: TweaksPanelProps) {
       </div>
       <div className="flex items-center justify-between gap-3 py-2">
         <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_language")}</span>
-        <select className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none px-[7px]" value={settings.lang} onChange={e => setSetting('lang', e.target.value)}>
+        <select className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none pl-[7px] sel-arrow" value={settings.lang} onChange={e => setSetting('lang', e.target.value)}>
           <option value="en">EN</option>
           <option value="ru">RU</option>
         </select>

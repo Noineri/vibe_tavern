@@ -23,6 +23,8 @@ export const characters = sqliteTable('characters', {
   tagsJson: text('tags_json').notNull().default('[]'),
   avatarAssetId: text('avatar_asset_id'),
   avatarFullAssetId: text('avatar_full_asset_id'),
+  mesExampleMode: text('mes_example_mode').notNull().default('always'),
+  mesExampleDepth: integer('mes_example_depth').notNull().default(4),
   status: text('status').notNull().default('active'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

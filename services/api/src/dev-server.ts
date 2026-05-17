@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { mkdirSync } from "node:fs";
 import { setTokenCountFn } from "@rp-platform/prompt-pipeline";
 import { createRuntimeStore } from "./session-runtime-store.js";
-import { warmupTokenizers, countTokensDefault } from "./ai/tokenizer-service.js";
+import { warmupTokenizers, countTokens } from "./ai/tokenizer-service.js";
 import { SessionRuntime } from "./session-runtime.js";
 import { createProviderProfileService } from "./provider-profile-service.js";
 import { PromptPresetService } from "./prompt-preset-service.js";
@@ -28,7 +28,7 @@ mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
 
 console.log("[bootstrap] Running DB schema push...");
 try {
-	const pushProc = Bun.spawn(["bunx", "drizzle-kit", "push"], {
+	const pushProc = Bun.spawn(["bunx", "drizzle-kit", "push", "--force"], {
 		cwd: resolve(rootDir, "packages/db"),
 		stdout: "inherit",
 		stderr: "inherit",
@@ -61,7 +61,7 @@ try {
 
 	// Tokenizers
 	await warmupTokenizers();
-	setTokenCountFn(countTokensDefault);
+	setTokenCountFn(countTokens);
 	console.log("[bootstrap] Tokenizers ready.");
 
 	// Services
