@@ -377,7 +377,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <div className="mb-5 w-[110px] shrink-0">
               <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("role")}</label>
               <select
-                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
+                className="w-full rounded-md border border-border bg-s2 pl-2.5 sel-arrow py-1.5 font-ui text-t1 outline-none focus:border-accent"
                 value={depthPromptRole}
                 onChange={e => setValue('depthPromptRole', e.target.value, { shouldDirty: true })}
               >

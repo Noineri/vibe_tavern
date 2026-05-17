@@ -282,10 +282,11 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                 <select
                   value={active.logic}
                   onChange={(e) => updateAct("logic", e.target.value)}
+                  className="sel-arrow"
                   style={{
                     width: "100%",
                     height: 38,
-                    padding: "0 10px",
+                    padding: "0 0 0 10px",
                     background: "var(--s2)",
                     border: "1px solid var(--border)",
                     borderRadius: 6,
@@ -305,10 +306,11 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
                 <select
                   value={active.position}
                   onChange={(e) => updateAct("position", e.target.value)}
+                  className="sel-arrow"
                   style={{
                     width: "100%",
                     height: 38,
-                    padding: "0 10px",
+                    padding: "0 0 0 10px",
                     background: "var(--s2)",
                     border: "1px solid var(--border)",
                     borderRadius: 6,

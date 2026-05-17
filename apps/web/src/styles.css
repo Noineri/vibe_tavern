@@ -168,6 +168,22 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 .crop-zoom-slider::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer;transition:transform .1s}
 .crop-zoom-slider::-webkit-slider-thumb:hover{transform:scale(1.15)}
 .crop-zoom-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer}
+
+/* ── Number input: hide spinners ── */
+.num-spinless{-moz-appearance:textfield;-webkit-appearance:none;appearance:textfield}
+.num-spinless::-webkit-inner-spin-button,.num-spinless::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+
+/* ── Select: appearance reset + custom arrow ── */
+select option{padding:2px 6px}
+.sel-arrow{
+  -webkit-appearance:none;-moz-appearance:none;appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 6px center;
+  background-size:12px;
+  padding-right:24px;
+  cursor:pointer;
+}
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 @keyframes bootdot{0%,60%,100%{opacity:.25;transform:scale(.8)}30%{opacity:1;transform:scale(1);background:var(--accent);}}
 @keyframes toastIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}

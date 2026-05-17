@@ -8,26 +8,46 @@ export interface CompactionConfig {
 /**
  * Injectable token-counting function.
  *
+ * Accepts text and an optional model name so the runtime can pick
+ * a model-specific tokenizer (e.g. tiktoken for OpenAI, web-tokenizers
+ * for Claude/Llama, etc).
+ *
  * Default heuristic: `ceil(charLength / 4)` — a rough approximation.
  * Replace at runtime with a real tokenizer via {@link setTokenCountFn}.
  */
-let tokenCountFn: (text: string) => number = (text: string) => {
+let tokenCountFn: (text: string, model?: string) => number = (text: string) => {
   if (!text) return 0;
   return Math.ceil(text.length / 4);
 };
 
+/** Current model hint passed to the token-counting function. */
+let currentModel: string | undefined;
+
 /**
  * Replace the token counting function with a real tokenizer.
+ *
+ * The function receives the text to count and an optional model name
+ * so it can select the appropriate tokenizer.
  */
-export function setTokenCountFn(fn: (text: string) => number): void {
+export function setTokenCountFn(fn: (text: string, model?: string) => number): void {
   tokenCountFn = fn;
 }
 
 /**
+ * Set the model hint used by {@link estimateTokens}.
+ * Called once per prompt assembly to ensure consistent token counts.
+ */
+export function setModelHint(model: string | undefined): void {
+  currentModel = model;
+}
+
+/**
  * Counts tokens using the injected tokenizer (or char-length heuristic as fallback).
+ *
+ * Automatically passes the model hint set via {@link setModelHint}.
  */
 export function estimateTokens(text: string): number {
-  return tokenCountFn(text);
+  return tokenCountFn(text, currentModel);
 }
 
 /**

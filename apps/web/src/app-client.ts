@@ -48,6 +48,8 @@ export interface AppSnapshot {
     subtitle: string;
     firstMessage: string | null;
     mesExample: string | null;
+    mesExampleMode: string;
+    mesExampleDepth: number;
     alternateGreetings: string[];
     postHistoryInstructions: string | null;
     creatorNotes: string | null;
@@ -217,6 +219,8 @@ export async function updateCharacter(
     systemPrompt: string;
     firstMessage: string | null;
     mesExample: string | null;
+    mesExampleMode?: "always" | "once" | "depth";
+    mesExampleDepth?: number;
     alternateGreetings: string[];
     postHistoryInstructions: string | null;
     creatorNotes: string | null;

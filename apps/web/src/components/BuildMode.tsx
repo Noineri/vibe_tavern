@@ -61,6 +61,8 @@ function characterDefaults(character: AppSnapshot["character"]): BuildCharacterD
     description: character.description,
     firstMessage: character.firstMessage || "",
     mesExample: character.mesExample || "",
+    mesExampleMode: (character.mesExampleMode as "always" | "once" | "depth") || "always",
+    mesExampleDepth: character.mesExampleDepth ?? 4,
     scenario: character.scenario,
     personalitySummary: character.subtitle || "",
     systemPrompt: character.systemPrompt,

@@ -154,6 +154,8 @@ export function importCharacterCardV3Json(
     defaultScenario: cleaned.scenario || null,
     firstMessage: cleaned.firstMessage || null,
     mesExample: cleaned.exampleMessages || null,
+    mesExampleMode: "always",
+    mesExampleDepth: 4,
     alternateGreetings: cleaned.alternateGreetings,
     postHistoryInstructions: cleaned.postHistoryInstructions || null,
     creatorNotes: cleaned.creatorNotes || null,

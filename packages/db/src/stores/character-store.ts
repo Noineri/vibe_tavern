@@ -12,6 +12,8 @@ export interface CreateCharacterData {
   defaultScenario?: string | null;
   firstMessage?: string | null;
   mesExample?: string | null;
+  mesExampleMode?: string;
+  mesExampleDepth?: number;
   alternateGreetings?: string[];
   postHistoryInstructions?: string | null;
   creatorNotes?: string | null;
@@ -40,6 +42,8 @@ export interface Character {
   defaultScenario: string | null;
   firstMessage: string | null;
   mesExample: string | null;
+  mesExampleMode: string;
+  mesExampleDepth: number;
   alternateGreetings: string[];
   postHistoryInstructions: string | null;
   creatorNotes: string | null;
@@ -126,6 +130,8 @@ export class CharacterStore {
         defaultScenario: data.defaultScenario ?? null,
         firstMessage: data.firstMessage ?? null,
         mesExample: data.mesExample ?? null,
+        mesExampleMode: data.mesExampleMode ?? 'always',
+        mesExampleDepth: data.mesExampleDepth ?? 4,
         alternateGreetingsJson: JSON.stringify(data.alternateGreetings ?? []),
         postHistoryInstructions: data.postHistoryInstructions ?? null,
         creatorNotes: data.creatorNotes ?? null,
@@ -160,6 +166,8 @@ export class CharacterStore {
     if (data.defaultScenario !== undefined) values.defaultScenario = data.defaultScenario;
     if (data.firstMessage !== undefined) values.firstMessage = data.firstMessage;
     if (data.mesExample !== undefined) values.mesExample = data.mesExample;
+    if (data.mesExampleMode !== undefined) values.mesExampleMode = data.mesExampleMode;
+    if (data.mesExampleDepth !== undefined) values.mesExampleDepth = data.mesExampleDepth;
     if (data.alternateGreetings !== undefined) values.alternateGreetingsJson = JSON.stringify(data.alternateGreetings);
     if (data.postHistoryInstructions !== undefined) values.postHistoryInstructions = data.postHistoryInstructions;
     if (data.creatorNotes !== undefined) values.creatorNotes = data.creatorNotes;
@@ -217,6 +225,8 @@ export class CharacterStore {
         defaultScenario: original.defaultScenario,
         firstMessage: original.firstMessage,
         mesExample: original.mesExample,
+        mesExampleMode: original.mesExampleMode,
+        mesExampleDepth: original.mesExampleDepth,
         alternateGreetingsJson: original.alternateGreetingsJson,
         postHistoryInstructions: original.postHistoryInstructions,
         creatorNotes: original.creatorNotes,
@@ -317,6 +327,8 @@ export class CharacterStore {
       defaultScenario: row.defaultScenario,
       firstMessage: row.firstMessage,
       mesExample: row.mesExample,
+      mesExampleMode: row.mesExampleMode,
+      mesExampleDepth: row.mesExampleDepth,
       alternateGreetings: JSON.parse(row.alternateGreetingsJson),
       postHistoryInstructions: row.postHistoryInstructions,
       creatorNotes: row.creatorNotes,

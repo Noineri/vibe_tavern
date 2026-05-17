@@ -318,7 +318,7 @@ export function PersonaModal(input: PersonaModalProps) {
                             <div className="text-[11px] text-red-400 mt-0.5">{errors.name.message}</div>
                           )}
                           <select
-                            className="mt-2 w-full rounded border border-border bg-s2 py-2 px-2.5 font-ui text-sm text-t1 outline-none transition-colors focus:border-accent"
+                            className="mt-2 w-full rounded border border-border bg-s2 py-2 pl-2.5 sel-arrow font-ui text-sm text-t1 outline-none transition-colors focus:border-accent"
                             value={editPronouns || ""}
                             onChange={(e) => form.setValue("pronouns", e.target.value, { shouldDirty: true })}
                           >

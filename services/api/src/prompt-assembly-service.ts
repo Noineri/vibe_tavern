@@ -14,7 +14,7 @@ import type {
   RetrievedMemoryHit,
 } from "@rp-platform/domain";
 import type { StoreContainer } from "@rp-platform/db";
-import { assemblePrompt } from "@rp-platform/prompt-pipeline";
+import { assemblePrompt, setModelHint } from "@rp-platform/prompt-pipeline";
 import { logSendDebug } from "./send-debug-log.js";
 import { createFileStore, STORAGE_FOLDERS } from "@rp-platform/db";
 
@@ -29,6 +29,8 @@ export interface PromptAssemblyResolver {
     systemPrompt?: string | null;
     personality?: string | null;
     mesExample?: string | null;
+    mesExampleMode?: string | null;
+    mesExampleDepth?: number | null;
     alternateGreetings?: string[];
     postHistoryInstructions?: string | null;
     creatorNotes?: string | null;
@@ -138,6 +140,9 @@ export class PromptAssemblyService {
       recentText,
     });
 
+    // Set model hint so estimateTokens uses the model-specific tokenizer
+    setModelHint(input.model);
+
     const result = assemblePrompt({
       identity: {
         chatId: chat.id as ChatId,
@@ -150,6 +155,8 @@ export class PromptAssemblyService {
         systemPrompt: character.systemPrompt,
         personality: character.personality,
         mesExample: character.mesExample,
+        mesExampleMode: (character.mesExampleMode as "always" | "once" | "depth") ?? "always",
+        mesExampleDepth: character.mesExampleDepth ?? 4,
         postHistoryInstructions: character.postHistoryInstructions,
       },
       persona,
@@ -193,6 +200,7 @@ export class PromptAssemblyService {
       },
       config: {
         contextBudget: input.contextBudget ?? null,
+        model: input.model,
       },
     });
 

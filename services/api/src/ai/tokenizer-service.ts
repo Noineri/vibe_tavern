@@ -130,7 +130,10 @@ function resolveTokenizerFamily(model: string): TokenizerFamily {
  */
 export function countTokens(text: string, model?: string): number {
 	if (!text) return 0;
-	if (!model) return guesstimate(text);
+
+	// When no model is specified, use cl100k_base as a universal default.
+	// It's more accurate than byte estimation for all languages.
+	if (!model) return countTokensDefault(text);
 
 	const family = resolveTokenizerFamily(model);
 
@@ -143,15 +146,15 @@ export function countTokens(text: string, model?: string): number {
 			case "web": {
 				const cached = webTokenizerCache.get(family.file);
 				if (cached) return cached.encode(text).length;
-				// Not loaded yet — fallback for now (will be loaded async later)
-				return guesstimate(text);
+				// Not loaded yet — fallback to cl100k_base
+				return countTokensDefault(text);
 			}
 		}
 	} catch {
 		// ignore — fallback below
 	}
 
-	return guesstimate(text);
+	return countTokensDefault(text);
 }
 
 /**

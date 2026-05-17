@@ -79,6 +79,8 @@ export interface RuntimeApi {
     scenario?: string;
     personalitySummary?: string;
     mesExample?: string;
+    mesExampleMode?: string;
+    mesExampleDepth?: number;
     alternateGreetings?: string[];
     postHistoryInstructions?: string;
     creatorNotes?: string;
@@ -134,6 +136,8 @@ export function createApiRouter(runtime: RuntimeApi) {
         scenario: body.scenario ?? undefined,
         personalitySummary: body.personalitySummary ?? undefined,
         mesExample: body.mesExample ?? undefined,
+        mesExampleMode: body.mesExampleMode ?? undefined,
+        mesExampleDepth: body.mesExampleDepth ?? undefined,
         alternateGreetings: body.alternateGreetings ?? undefined,
         postHistoryInstructions: body.postHistoryInstructions ?? undefined,
         creatorNotes: body.creatorNotes ?? undefined,

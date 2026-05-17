@@ -33,6 +33,8 @@ function parseCardToDraft(raw: unknown): Partial<BuildCharacterDraft> {
   if (d.description) result.description = String(d.description);
   if (d.first_mes) result.firstMessage = String(d.first_mes);
   if (d.mes_example) result.mesExample = String(d.mes_example);
+  if (d.mes_example_mode) result.mesExampleMode = String(d.mes_example_mode) as "always" | "once" | "depth";
+  if (typeof d.mes_example_depth === "number") result.mesExampleDepth = d.mes_example_depth;
   if (d.scenario) result.scenario = String(d.scenario);
   if (d.personality) result.personalitySummary = String(d.personality);
   if (d.system_prompt) result.systemPrompt = String(d.system_prompt);
@@ -51,6 +53,10 @@ const inputPad = { padding: "6px 10px" } as React.CSSProperties;
 
 const inputCls = "w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent resize-none overflow-hidden";
 const monoCls = inputCls + " font-mono text-xs";
+
+/** Styled inline select — matches the project style (TweaksPanel, ProviderEditHeader) */
+const selectCls =
+  "h-6 rounded-md border border-border bg-s2 pl-1.5 sel-arrow text-[11px] font-ui text-t1 outline-none focus:border-accent";
 
 /** Small inline token badge for character form fields */
 function TokenBadge({ text }: { text: string }) {
@@ -82,6 +88,8 @@ export function CharacterForm({
   const description = watch("description");
   const firstMessage = watch("firstMessage");
   const mesExample = watch("mesExample");
+  const mesExampleMode = watch("mesExampleMode");
+  const mesExampleDepth = watch("mesExampleDepth");
   const scenario = watch("scenario");
   const personalitySummary = watch("personalitySummary");
   const systemPrompt = watch("systemPrompt");
@@ -295,7 +303,37 @@ export function CharacterForm({
 
       {/* Message Examples */}
       <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("dialog_examples")}</label>
+        <div className="mb-1.5 flex items-center justify-between">
+          <label className={lblCls}>{t("dialog_examples")}</label>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("activation_label")}</span>
+              <select
+                className={selectCls}
+                value={mesExampleMode || "always"}
+                disabled={isSaving}
+                title={t(`mes_example_mode_tooltip_${mesExampleMode || "always"}`)}
+                onChange={(e) => setValue("mesExampleMode", e.target.value as "always" | "once" | "depth", { shouldDirty: true })}
+              >
+                <option value="always">{t("activation_always")}</option>
+                <option value="once">{t("activation_once")}</option>
+                <option value="depth">{t("activation_depth")}</option>
+              </select>
+            </div>
+            <div className={"flex items-center gap-1" + ((mesExampleMode || "always") !== "depth" ? " opacity-30 pointer-events-none" : "")}>
+              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
+              <input
+                type="number"
+                className="h-6 w-12 rounded-md border border-border bg-s2 px-1 text-center text-[11px] font-ui text-t1 outline-none focus:border-accent num-spinless"
+                min={0}
+                max={999}
+                disabled={isSaving || (mesExampleMode || "always") !== "depth"}
+                value={mesExampleDepth ?? 4}
+                onChange={(e) => setValue("mesExampleDepth", Number(e.target.value), { shouldDirty: true })}
+              />
+            </div>
+          </div>
+        </div>
         <AutoTextarea className={monoCls} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} placeholder="<START>..." register={register("mesExample")} />
         <TokenBadge text={mesExample || ""} />
       </div>
@@ -339,16 +377,29 @@ export function CharacterForm({
           <label className={lblCls}>{t("depth_prompt")}</label>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1">
-              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
-              <input type="number" className="h-6 w-14 rounded-md border border-border bg-s2 px-1.5 text-center text-[11px] font-ui text-t1 outline-none focus:border-accent" min={0} max={999} disabled={isSaving} value={depthPromptDepth ?? 4} onChange={(e) => setValue("depthPromptDepth", Number(e.target.value), { shouldDirty: true })} />
-            </div>
-            <div className="flex items-center gap-1">
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("role")}</span>
-              <select className="h-6 w-[82px] rounded-md border border-border bg-s2 px-1.5 text-[11px] font-ui text-t1 outline-none focus:border-accent" value={depthPromptRole || "system"} disabled={isSaving} onChange={(e) => setValue("depthPromptRole", e.target.value, { shouldDirty: true })}>
+              <select
+                className={selectCls}
+                value={depthPromptRole || "system"}
+                disabled={isSaving}
+                onChange={(e) => setValue("depthPromptRole", e.target.value, { shouldDirty: true })}
+              >
                 <option value="system">system</option>
                 <option value="user">user</option>
                 <option value="assistant">assistant</option>
               </select>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
+              <input
+                type="number"
+                className="h-6 w-12 rounded-md border border-border bg-s2 px-1 text-center text-[11px] font-ui text-t1 outline-none focus:border-accent num-spinless"
+                min={0}
+                max={999}
+                disabled={isSaving}
+                value={depthPromptDepth ?? 4}
+                onChange={(e) => setValue("depthPromptDepth", Number(e.target.value), { shouldDirty: true })}
+              />
             </div>
           </div>
         </div>

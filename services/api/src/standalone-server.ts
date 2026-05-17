@@ -15,7 +15,7 @@ import { mkdirSync } from "node:fs";
 import { setTokenCountFn } from "@rp-platform/prompt-pipeline";
 import { resolveStandalonePaths } from "./standalone-paths.js";
 import { createRuntimeStore } from "./session-runtime-store.js";
-import { warmupTokenizers, countTokensDefault } from "./ai/tokenizer-service.js";
+import { warmupTokenizers, countTokens } from "./ai/tokenizer-service.js";
 import { SessionRuntime } from "./session-runtime.js";
 import { createProviderProfileService } from "./provider-profile-service.js";
 import { PromptPresetService } from "./prompt-preset-service.js";
@@ -61,7 +61,7 @@ configureLogDir(paths.logsDir);
 
 	// Tokenizers
 	await warmupTokenizers();
-	setTokenCountFn(countTokensDefault);
+	setTokenCountFn(countTokens);
 	console.log("[standalone] Tokenizers ready.");
 
 	// Services
