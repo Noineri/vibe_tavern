@@ -71,20 +71,29 @@ export function MessageList() {
     overscan: 5,
   });
 
+  // Reset on chat switch
+  useEffect(() => {
+    prevMsgCountRef.current = 0;
+  }, [activeChatId]);
+
   // Auto-scroll: instant jump on initial load, smooth for incremental updates
   useEffect(() => {
-    if (messages.length === 0) {
-      prevMsgCountRef.current = 0;
-      return;
-    }
+    if (messages.length === 0) return;
     const isInitialLoad = prevMsgCountRef.current === 0;
     prevMsgCountRef.current = messages.length;
 
     if (isInitialLoad) {
-      // Jump instantly — avoid smooth-animating through 70K+ px of virtual height
-      requestAnimationFrame(() => {
-        virtualizer.scrollToIndex(messages.length - 1, { align: "end" });
-      });
+      // Jump instantly — set scrollTop directly, no animation
+      const el = scrollRef.current;
+      if (el) {
+        // Double rAF: first lets virtualizer calculate total height,
+        // second lets browser layout the positioned elements
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            el.scrollTop = el.scrollHeight;
+          });
+        });
+      }
     } else {
       // Incremental: smooth scroll for new messages / streaming
       virtualizer.scrollToIndex(messages.length - 1, { align: "end", behavior: "smooth" });
@@ -100,7 +109,7 @@ export function MessageList() {
 
   return (
     <TranslateErrorBoundary>
-    <div className="flex-1 overflow-y-auto scroll-smooth pt-7 pb-3" ref={scrollRef}>
+    <div className="flex-1 overflow-y-auto pt-7 pb-3" ref={scrollRef}>
       {/* TODO: VP-W4+ — EmptyState component for no active chat */}
       {/* TODO: VP-W4+ — EmptyState component for empty chat */}
 
