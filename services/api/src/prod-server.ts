@@ -46,24 +46,8 @@ console.log(`[prod] Static: ${staticEnabled ? staticDir : "(not built — API-on
 mkdirSync(resolve(rootDir, "data"), { recursive: true });
 mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
 
-// ─── DB schema sync ────────────────────────────────────────────────────────────
-console.log("[prod] Syncing DB schema...");
-try {
-	const pushProc = Bun.spawn(["bunx", "drizzle-kit", "push", "--force"], {
-		cwd: resolve(rootDir, "packages", "db"),
-		stdout: "inherit",
-		stderr: "inherit",
-		stdin: "ignore",
-	});
-	const exitCode = await pushProc.exited;
-	if (exitCode === 0) {
-		console.log("[prod] DB schema sync complete.");
-	} else {
-		console.warn(`[prod] DB schema sync exited with code ${exitCode}.`);
-	}
-} catch (err) {
-	console.warn("[prod] DB schema sync failed:", err instanceof Error ? err.message : err);
-}
+// ─── DB init ─────────────────────────────────────────────────────────────────
+// Migrations run automatically inside createDb() — no separate drizzle-kit step needed.
 
 (async () => {
 	// Stores
