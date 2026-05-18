@@ -23,7 +23,15 @@ function getMigrationsFolder(): string {
   const envDir = process.env.RP_PLATFORM_MIGRATIONS_DIR;
   if (envDir) return envDir;
 
-  // 2. Walk up from this file's directory to find drizzle/meta/_journal.json
+  // 2. In a compiled exe, import.meta.dir is Bun's temp extraction path —
+  //    drizzle/ lives next to the actual executable.
+  const exeDir = resolve(process.execPath, '..');
+  const exeCandidate = resolve(exeDir, 'drizzle');
+  if (existsSync(resolve(exeCandidate, 'meta', '_journal.json'))) {
+    return exeCandidate;
+  }
+
+  // 3. Walk up from this file's directory (works in source + Docker)
   const thisDir = import.meta.dir;
   let dir = thisDir;
   for (let i = 0; i < 5; i++) {
@@ -34,7 +42,7 @@ function getMigrationsFolder(): string {
     dir = resolve(dir, '..');
   }
 
-  // 3. Fallback: assume source context (packages/db/src → ../drizzle)
+  // 4. Fallback: assume source context (packages/db/src → ../drizzle)
   return resolve(thisDir, '..', 'drizzle');
 }
 
