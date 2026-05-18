@@ -12,6 +12,7 @@ import { executeToolCalls } from "./ai/tool-executor.js";
 import { nonstreamingProviderExecute } from "./ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "./ai/stream-provider-executor.js";
 import { logSendDebug } from "./send-debug-log.js";
+import { extractThinkingTags } from "./ai/extract-thinking-tags.js";
 
 /**
  * Coordinates the prepare → execute → append cycle for all AI generation paths:
@@ -361,9 +362,10 @@ export class LiveChatOrchestrator {
       for await (const chunk of streamResult.stream) {
         if (signal?.aborted) {
           const latencyMs = Date.now() - startedAt;
+          const { mainContent: abortText, reasoning: abortReasoning } = extractThinkingTags(textAccumulator, reasoningAccumulator);
           await onAbort(
-            textAccumulator,
-            reasoningAccumulator,
+            abortText,
+            abortReasoning ?? "",
             reasoningStartMs ? Date.now() - reasoningStartMs : undefined,
             latencyMs,
           );
@@ -389,9 +391,10 @@ export class LiveChatOrchestrator {
     } catch (err) {
       if (signal?.aborted) {
         const latencyMs = Date.now() - startedAt;
+        const { mainContent: abortText, reasoning: abortReasoning } = extractThinkingTags(textAccumulator, reasoningAccumulator);
         await onAbort(
-          textAccumulator,
-          reasoningAccumulator,
+          abortText,
+          abortReasoning ?? "",
           reasoningStartMs ? Date.now() - reasoningStartMs : undefined,
           latencyMs,
         );
@@ -404,8 +407,11 @@ export class LiveChatOrchestrator {
     // ── Finalize ──
     const latencyMs = Date.now() - startedAt;
     const finish = await streamResult.finished;
-    const finalText = textAccumulator || (await streamResult.text);
-    const finalReasoning = reasoningAccumulator || (await streamResult.reasoning) || undefined;
+    const rawText = textAccumulator || (await streamResult.text);
+    const rawReasoning = reasoningAccumulator || (await streamResult.reasoning) || undefined;
+
+    // Some providers return <thinking> tags in content instead of reasoning_content
+    const { mainContent: finalText, reasoning: finalReasoning } = extractThinkingTags(rawText, rawReasoning);
 
     if (reasoningStartMs && reasoningDurationMs === null) {
       reasoningDurationMs = Date.now() - reasoningStartMs;
