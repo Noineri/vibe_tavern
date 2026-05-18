@@ -260,7 +260,7 @@ The backend. Single Bun process serving HTTP API and static frontend.
 |------|------|
 | `prompt-assembly-service.ts` | `PromptAssemblyService` — loads context from DB, calls `assemblePrompt()`, returns assembled prompt + trace draft. |
 | `prompt-resolver.ts` | `StaticPromptResolver` — reads character/persona/preset/lore from stores. (Phase 1: lore and memory return empty.) |
-| `live-chat-orchestrator.ts` | `LiveChatOrchestrator` — coordinates prepare → execute → append for all generation paths (send, generate, regenerate, streaming and non-streaming). |
+| `live-chat-orchestrator.ts` | `LiveChatOrchestrator` — coordinates prepare → execute → append for all generation paths (send, generate, regenerate, streaming and non-streaming). Passes `contextBudget` and `responseReserve` from provider profile to prompt assembly. |
 | `chat-summary-service.ts` | `ChatSummaryService` — summarize chat via AI, using summary-mode prompt assembly. |
 
 #### AI execution layer (`services/api/src/ai/`)
@@ -270,7 +270,7 @@ The backend. Single Bun process serving HTTP API and static frontend.
 | `provider-profile-mapper.ts` | Maps `StoredProviderProfileRecord` → Vercel AI SDK `LanguageModelV1`. Normalizes preset IDs (e.g. "openrouter" → `openai_compat`). Classifies providers as native/fallback/unsupported. |
 | `sampler-mapper.ts` | Converts profile sampler settings (temperature, topP, topK, penalties) into AI SDK config. When `customSamplers=false`, only sends basic params. |
 | `nonstreaming-provider-executor.ts` | `generateText()` from Vercel AI SDK — single request/response. |
-| `stream-provider-executor.ts` | `streamText()` from Vercel AI SDK — async iterable with text-delta and reasoning-delta chunks. |
+| `stream-provider-executor.ts` | `streamText()` from Vercel AI SDK — async iterable with text-delta and reasoning-delta chunks. Logs and throws on provider stream errors (`type: "error"` chunks). |
 | `openai-reasoning-fetch.ts` | Custom fetch wrapper that intercepts SSE streams and rewrites `reasoning_content` fields into regular content with start/end markers, so the AI SDK doesn't silently strip them. |
 | `provider-executor-utils.ts` | `toSdkMessages()` — validates messages. `prepareSdkMessages()` — separates system messages from conversation, injects prefill for providers that support it. |
 | `provider-capabilities.ts` | Per-provider-type capability flags: streaming, prefill, abort signal support. |
@@ -346,4 +346,32 @@ React SPA built with Vite. Communicates exclusively via the HTTP API defined in 
 - Context usage display: permanent vs temporary token breakdown from assembled prompt layers
 - Build mode: field-based token counting for character cards (no dependency on sending messages)
 
-Built as static assets served by the same Hono server in production.
+### Frontend data architecture
+
+The frontend uses a **dual-store** pattern for chat data:
+
+1. **TanStack React Query** (`chat-queries.ts`) — owns the server cache, handles fetch/revalidation/mutations. `useChatSnapshot(chatId)` fetches from the API.
+2. **Zustand normalized store** (`stores/chat-data-store.ts`) — holds normalized `messagesById`, `messageOrder`, `macroContext`, and trace data. Written via `setSnapshot()` from query data and mutation callbacks.
+
+The `syncSnapshot()` helper in `chat-queries.ts` writes to both stores atomically. This ensures mutations update the normalized store immediately while React Query handles refetch.
+
+**Memoized selectors** (`stores/chat-selectors.ts`) use `reselect` for lazy derived data:
+
+- `useDisplayMessage(id)` — resolves macros + counts tokens for a single message. Cache hit when content unchanged.
+- `useMessageOrder()` — ordered message ID list from store.
+- `useMacroContext()` — character name + persona name/description for macro resolution.
+- `useActiveTrace(selectedTraceId)` — active prompt trace from trace history.
+
+Each component subscribes to the minimal slice it needs — e.g. `MessageBlock` only subscribes to `useDisplayMessage(id)`, so switching a variant or streaming only re-renders the affected block.
+
+### Message list virtualization
+
+The message list uses `@tanstack/react-virtual` to render only visible messages (~15 DOM nodes regardless of total count). Key behaviors:
+
+- `measureElement` ref for dynamic height measurement (markdown content varies)
+- `overscan: 5` for smooth scrolling
+- Streaming footer rendered outside the virtualizer (always visible when active)
+- Initial load: instant scroll to bottom via repeated `scrollTop = scrollHeight` over ~10 rAF frames (virtualizer measurements stabilize progressively)
+- Incremental updates: smooth scroll to new messages
+
+`MessageBlock` is wrapped in `React.memo` and reads all message data from `useDisplayMessage(messageId)` — no message object prop. This ensures streaming text only re-renders the `StreamingContent` component, not existing message blocks.
