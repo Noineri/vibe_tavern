@@ -108,17 +108,17 @@ export function MessageList() {
     prevMsgCountRef.current = messages.length;
 
     if (isInitialLoad) {
-      // Jump instantly — set scrollTop directly, no animation
-      const el = scrollRef.current;
-      if (el) {
-        // Double rAF: first lets virtualizer calculate total height,
-        // second lets browser layout the positioned elements
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            el.scrollTop = el.scrollHeight;
-          });
-        });
-      }
+      // Scroll to bottom repeatedly as virtualizer measures items.
+      // estimateSize gives rough heights; measureElement replaces them with
+      // real heights after render, growing the total container size.
+      // We keep jumping to bottom over several frames until it stabilizes.
+      let attempts = 0;
+      const jump = () => {
+        const el = scrollRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+        if (++attempts < 10) requestAnimationFrame(jump);
+      };
+      requestAnimationFrame(jump);
     } else {
       // Incremental: smooth scroll for new messages / streaming
       virtualizer.scrollToIndex(messages.length - 1, { align: "end", behavior: "smooth" });
