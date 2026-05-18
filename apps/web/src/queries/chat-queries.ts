@@ -29,6 +29,13 @@ import {
   type AppSnapshot,
 } from "../app-client.js";
 import { bootstrapKeys, chatKeys } from "./query-keys.js";
+import { useChatDataStore } from "../stores/chat-data-store.js";
+
+/** Sync a snapshot to both react-query cache and the normalized chat-data-store. */
+function syncSnapshot(qc: import("@tanstack/react-query").QueryClient, chatId: ChatId, snapshot: AppSnapshot) {
+  qc.setQueryData(chatKeys.snapshot(chatId), snapshot);
+  useChatDataStore.getState().setSnapshot(snapshot);
+}
 
 // ---------------------------------------------------------------------------
 // Query hooks
@@ -53,7 +60,7 @@ export function useSetChatPersonaMutation() {
     mutationFn: (args: { chatId: ChatId; personaId: string }) =>
       setChatPersona(args.chatId, args.personaId),
     onSuccess: (snapshot: AppSnapshot) => {
-      qc.setQueryData(chatKeys.snapshot(snapshot.activeChat.id), snapshot);
+      syncSnapshot(qc, snapshot.activeChat.id, snapshot);
       void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
     },
   });
@@ -65,7 +72,7 @@ export function useCreateChatMutation() {
   return useMutation({
     mutationFn: (args: { characterId?: string }) => createChat(args.characterId),
     onSuccess: (snapshot: AppSnapshot) => {
-      qc.setQueryData(chatKeys.snapshot(snapshot.activeChat.id), snapshot);
+      syncSnapshot(qc, snapshot.activeChat.id, snapshot);
       void qc.invalidateQueries({ queryKey: bootstrapKeys.all() });
     },
   });
@@ -101,7 +108,7 @@ export function useSendMessageMutation() {
     mutationFn: (args: { chatId: ChatId; content: string; signal?: AbortSignal }) =>
       sendChatMessage(args.chatId, { content: args.content }, { signal: args.signal }),
     onSuccess: (snapshot: AppSnapshot, variables) => {
-      qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
+      syncSnapshot(qc, variables.chatId, snapshot);
     },
   });
 }
@@ -113,7 +120,7 @@ export function useRegenerateMessageMutation() {
     mutationFn: (args: { chatId: ChatId; messageId: string; signal?: AbortSignal }) =>
       regenerateChatMessage(args.chatId, args.messageId, { signal: args.signal }),
     onSuccess: (snapshot: AppSnapshot, variables) => {
-      qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
+      syncSnapshot(qc, variables.chatId, snapshot);
     },
   });
 }
@@ -125,7 +132,7 @@ export function useEditMessageMutation() {
     mutationFn: (args: { chatId: ChatId; messageId: string; content: string }) =>
       editChatMessage(args.chatId, args.messageId, args.content),
     onSuccess: (snapshot: AppSnapshot, variables) => {
-      qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
+      syncSnapshot(qc, variables.chatId, snapshot);
     },
   });
 }
@@ -137,7 +144,7 @@ export function useDeleteMessageMutation() {
     mutationFn: (args: { chatId: ChatId; messageId: string }) =>
       deleteChatMessage(args.chatId, args.messageId),
     onSuccess: (snapshot: AppSnapshot, variables) => {
-      qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
+      syncSnapshot(qc, variables.chatId, snapshot);
     },
   });
 }
@@ -148,7 +155,7 @@ export function useSwitchChatMutation() {
   return useMutation({
     mutationFn: (chatId: ChatId) => fetchChat(chatId),
     onSuccess: (snapshot: AppSnapshot, chatId) => {
-      qc.setQueryData(chatKeys.snapshot(chatId), snapshot);
+      syncSnapshot(qc, chatId, snapshot);
     },
   });
 }
@@ -160,7 +167,7 @@ export function useSelectVariantMutation() {
     mutationFn: (args: { chatId: ChatId; messageId: string; variantIndex: number }) =>
       selectMessageVariant(args.chatId, args.messageId, args.variantIndex),
     onSuccess: (snapshot: AppSnapshot, variables) => {
-      qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
+      syncSnapshot(qc, variables.chatId, snapshot);
     },
   });
 }
@@ -171,7 +178,7 @@ export function useForkMutation() {
   return useMutation({
     mutationFn: (chatId: ChatId) => forkBranch(chatId),
     onSuccess: (snapshot: AppSnapshot, chatId) => {
-      qc.setQueryData(chatKeys.snapshot(chatId), snapshot);
+      syncSnapshot(qc, chatId, snapshot);
     },
   });
 }
@@ -183,7 +190,7 @@ export function useActivateBranchMutation() {
     mutationFn: (args: { chatId: ChatId; branchId: ChatBranchId }) =>
       activateBranch(args.chatId, args.branchId),
     onSuccess: (snapshot: AppSnapshot, variables) => {
-      qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
+      syncSnapshot(qc, variables.chatId, snapshot);
     },
   });
 }
@@ -195,7 +202,7 @@ export function useDeleteBranchMutation() {
     mutationFn: (args: { chatId: ChatId; branchId: ChatBranchId }) =>
       deleteBranch(args.chatId, args.branchId),
     onSuccess: (snapshot: AppSnapshot, variables) => {
-      qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
+      syncSnapshot(qc, variables.chatId, snapshot);
     },
   });
 }
@@ -208,7 +215,7 @@ export function useGenerateReplyMutation() {
     mutationFn: (args: { chatId: ChatId; signal?: AbortSignal }) =>
       generateReply(args.chatId, { signal: args.signal }),
     onSuccess: (snapshot: AppSnapshot, variables) => {
-      qc.setQueryData(chatKeys.snapshot(variables.chatId), snapshot);
+      syncSnapshot(qc, variables.chatId, snapshot);
     },
   });
 }
@@ -220,7 +227,7 @@ export function useSummarizeChatMutation() {
     mutationFn: (args: { chatId: ChatId; input: Parameters<typeof summarizeChat>[1] }) =>
       summarizeChat(args.chatId, args.input),
     onSuccess: (result, variables) => {
-      qc.setQueryData(chatKeys.snapshot(variables.chatId), result.snapshot);
+      syncSnapshot(qc, variables.chatId, result.snapshot);
     },
   });
 }
@@ -232,7 +239,7 @@ export function useSaveChatSummaryMutation() {
     mutationFn: (args: { chatId: ChatId; summary: string }) =>
       saveChatSummary(args.chatId, args.summary),
     onSuccess: (result, variables) => {
-      qc.setQueryData(chatKeys.snapshot(variables.chatId), result.snapshot);
+      syncSnapshot(qc, variables.chatId, result.snapshot);
     },
   });
 }
