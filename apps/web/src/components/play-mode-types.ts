@@ -1,10 +1,6 @@
-import type { AppMessage } from "../app-client.js";
-
 export interface MessageBlockProps {
   /** Message ID — component reads data from store via useDisplayMessage(id) */
   messageId: string;
-  /** Raw message data passed from MessageList (transitional) */
-  message: AppMessage;
   characterName: string;
   isEditing: boolean;
   isGenerating?: boolean;

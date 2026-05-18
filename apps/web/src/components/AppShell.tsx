@@ -3,13 +3,13 @@ import { Toaster } from "sonner";
 import { useT } from "../i18n/context.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore } from "../stores/index.js";
+import { useActiveTrace } from "../stores/chat-selectors.js";
 import { useBootstrapQuery, usePersonasQuery } from "../queries/bootstrap-queries.js";
 import { useSaveChatSummaryMutation, useSummarizeChatMutation } from "../queries/chat-queries.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
 import { useCharacterController } from "../hooks/use-character-controller.js";
 import { useProviderProfiles } from "../hooks/use-provider-profiles.js";
 import { usePresetController } from "../hooks/use-preset-controller.js";
-import { useDisplayHelpers } from "../hooks/use-display-helpers.js";
 import { Sidebar } from "./Sidebar.js";
 import { TopBar } from "./TopBar.js";
 import { PlayMode } from "./PlayMode.js";
@@ -39,7 +39,6 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
   const mode = useNavigationStore((s) => s.mode);
   const theme = useNavigationStore((s) => s.theme);
   const setTheme = useNavigationStore((s) => s.setTheme);
-  const connection = useProviderStore((s) => s.connection);
   const activeChatId = useChatStore((s) => s.activeChatId);
   const draft = useChatStore((s) => s.draft);
   const isSending = useChatStore((s) => s.isSending);
@@ -79,12 +78,13 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
 
   const personas = personasQuery.data ?? [];
   const promptPresets = bootstrapQuery.data?.promptPresets ?? [];
-  const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
   const isFirstRun = (bootstrapQuery.data?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === 'true';
   const activePromptPresetId = snapshot?.activeChat.promptPresetId ?? null;
 
-  // Display helpers
-  const display = useDisplayHelpers(allCharacters, snapshot);
+  // Prompt trace from normalized store
+  const activePromptTrace = useActiveTrace(useChatStore((s) => s.selectedTraceId));
+  const connection = useProviderStore((s) => s.connection);
+  const canUseLiveApi = connection.status === "connected" && Boolean(connection.model);
 
   // --- Summary mutations (local to AppShell) ---
   const summarizeChatMut = useSummarizeChatMutation();
@@ -114,11 +114,11 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
 
   // --- Derived values for rendering ---
   const resolvedActiveChatId = activeChatId ?? snapshot?.activeChat.id ?? null;
-  const contextUsed = display.activePromptTrace?.tokenAccounting?.total ?? 0;
+  const contextUsed = activePromptTrace?.tokenAccounting?.total ?? 0;
   const contextLimit = provider.activeProviderProfile?.contextBudget ?? 0;
 
   const isPlayMode = mode === "play";
-  const canUseLiveApi = display.canUseLiveApi;
+  // canUseLiveApi derived above
 
   let shellSurface: React.ReactNode;
 

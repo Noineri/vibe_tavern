@@ -7,8 +7,9 @@ import { useT } from "../i18n/context.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
 import { useCharacterController } from "../hooks/use-character-controller.js";
 import { useProviderProfiles } from "../hooks/use-provider-profiles.js";
-import { useDisplayHelpers } from "../hooks/use-display-helpers.js";
+
 import { useChatStore, useProviderStore } from "../stores/index.js";
+import { useActiveTrace } from "../stores/chat-selectors.js";
 import { useBootstrapQuery, usePersonasQuery } from "../queries/bootstrap-queries.js";
 import { useChatSnapshot } from "../queries/chat-queries.js";
 import type { PromptLayerDto } from "@rp-platform/domain";
@@ -34,23 +35,23 @@ export function InputArea() {
   const snapshot = snapshotQuery.data ?? null;
   const connection = useProviderStore((s) => s.connection);
 
-  const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
-  const display = useDisplayHelpers(allCharacters, snapshot);
   const personas = usePersonasQuery().data ?? [];
+  const activePromptTrace = useActiveTrace(useChatStore((s) => s.selectedTraceId));
+  const canUseLiveApi = connection.status === "connected" && Boolean(connection.model);
 
   const activePersonaId = snapshot?.persona?.id ?? null;
   const contextSize = provider.activeProviderProfile?.contextBudget ?? 0;
   const maxTokens = provider.activeProviderProfile?.maxTokens ?? 0;
   const favoriteModels = provider.activeProviderProfile ? (provider.favoriteModelsByProfile[provider.activeProviderProfile.id] ?? []) : [];
   const activeModelId = provider.activeProviderProfile?.defaultModel ?? connection.model ?? null;
-  const canSend = Boolean(draft.trim()) && !isSending && display.canUseLiveApi;
+  const canSend = Boolean(draft.trim()) && !isSending && canUseLiveApi;
   const setDraft = useChatStore((s) => s.setDraft);
 
   // Render helpers
   function renderSendLabel(): string {
     if (isSending) return t("sending");
-    if (display.canUseLiveApi && draft.trim()) return t("send_message");
-    if (!display.canUseLiveApi) return t("send_unavailable");
+    if (canUseLiveApi && draft.trim()) return t("send_message");
+    if (!canUseLiveApi) return t("send_unavailable");
     return t("type_a_message");
   }
   const sendLabel = renderSendLabel();
@@ -59,7 +60,7 @@ export function InputArea() {
   const TEMPORARY_TYPES = new Set(["chat_history", "compaction"]);
 
   const buckets = useMemo(() => {
-    const layers: PromptLayerDto[] = display.activePromptTrace?.layers ?? [];
+    const layers: PromptLayerDto[] = activePromptTrace?.layers ?? [];
     let system = 0, character = 0, persona = 0, lore = 0, memory = 0, tools = 0, history = 0;
     for (const layer of layers) {
       if (!layer.enabled || layer.position === "hidden_system") continue;
@@ -81,7 +82,7 @@ export function InputArea() {
       }
     }
     return { system, character, persona, lore, memory, tools, history };
-  }, [display.activePromptTrace?.layers]);
+  }, [activePromptTrace?.layers]);
 
   const inputTokens = useTokenCount(draft);
   const permanent = buckets.system + buckets.character + buckets.persona + buckets.lore + buckets.memory + buckets.tools;
