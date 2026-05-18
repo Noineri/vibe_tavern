@@ -239,7 +239,11 @@ export interface ImportResult {
 	/** Lightweight assemble for UI display — no trace saved. */
 	private async assembleContextPreview(chatId: ChatId, branchId: ChatBranchId): Promise<import("@rp-platform/domain").AssemblePromptResponse | null> {
 		try {
-			const assembled = await this.assemblePrompt(chatId, branchId);
+			const profile = await this.getActiveProviderProfile();
+			const assembled = await this.assemblePrompt(chatId, branchId, {
+				contextBudget: profile?.contextBudget ?? null,
+				responseReserve: profile?.maxTokens ?? 0,
+			});
 			return {
 				layers: assembled.promptTraceDraft.assembledLayers as import("@rp-platform/domain").PromptLayerDto[],
 				tokenAccounting: assembled.promptTraceDraft.tokenAccounting,
