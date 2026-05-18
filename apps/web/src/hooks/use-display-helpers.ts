@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { AssemblePromptResponse, PromptTraceRecordDto } from "@rp-platform/domain";
 import type { AppMessage, AppSnapshot } from "../app-client.js";
-import { useChatStore, useNavigationStore, useProviderStore } from "../stores/index.js";
+import { useChatStore, useProviderStore, useChatDataStore, useMessageOrder, useChatMeta, useMacroContext, useActiveTrace } from "../stores/index.js";
 import { replaceUiMacros } from "../lib/macros.js";
 import { buildCharacterTabs } from "../lib/character-tabs.js";
 
@@ -18,21 +18,6 @@ export interface DisplayHelpers {
   canUseLiveApi: boolean;
 }
 
-function deriveActivePromptTrace(
-  snapshot: AppSnapshot | null,
-  selectedTraceId: string | null,
-): ActiveTraceLike | null {
-  if (!snapshot) return null;
-  const fromHistory =
-    snapshot.promptTraceHistory.find((trace) => trace.id === selectedTraceId) ??
-    snapshot.promptTrace ??
-    snapshot.promptTraceHistory[0];
-  if (fromHistory) return fromHistory;
-  // Fallback: ephemeral context preview (e.g. after import, before first generation)
-  if (snapshot.contextPreview) return snapshot.contextPreview;
-  return null;
-}
-
 export function useDisplayHelpers(
   allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>,
   snapshot: AppSnapshot | null,
@@ -41,10 +26,10 @@ export function useDisplayHelpers(
   const pendingUserMessageContent = useChatStore((s) => s.pendingUserMessageContent);
   const connection = useProviderStore((s) => s.connection);
 
-  const activePromptTrace = useMemo(
-    () => deriveActivePromptTrace(snapshot, selectedTraceId),
-    [selectedTraceId, snapshot],
-  );
+  // Read from normalized store
+  const messageOrder = useMessageOrder();
+  const macroContext = useMacroContext();
+  const activePromptTrace = useActiveTrace(selectedTraceId);
 
   const promptPayloadText = useMemo(
     () => JSON.stringify(activePromptTrace?.finalPayload ?? {}, null, 2),
@@ -58,29 +43,27 @@ export function useDisplayHelpers(
     [allCharacters, snapshot],
   );
 
-  const macroContext = useMemo(
-    () => snapshot ? {
-      characterName: snapshot.character.name,
-      personaName: snapshot.persona?.name ?? null,
-      personaDescription: snapshot.persona?.description ?? null,
-    } : null,
-    [snapshot],
-  );
-
   const displayScenario = useMemo(
-    () => snapshot && macroContext ? replaceUiMacros(snapshot.character.scenario, macroContext) : "",
+    () => macroContext && snapshot
+      ? replaceUiMacros(snapshot.character.scenario, macroContext)
+      : "",
     [macroContext, snapshot],
   );
 
-  const displayMessages = useMemo(
-    () => snapshot && macroContext
-      ? snapshot.messages.map((message): AppMessage => ({
+  // Build displayMessages from normalized store.
+  // Reads raw messages from messagesById, applies macro resolution.
+  // In Wave B, MessageBlock will use useDisplayMessage(id) directly and this becomes unused.
+  const displayMessages = useMemo(() => {
+    if (!macroContext) return [];
+    const state = useChatDataStore.getState();
+    return messageOrder
+      .map((id) => state.messagesById[id])
+      .filter((msg): msg is AppMessage => Boolean(msg))
+      .map((message): AppMessage => ({
         ...message,
         content: replaceUiMacros(message.content, macroContext),
-      }))
-      : [],
-    [macroContext, snapshot],
-  );
+      }));
+  }, [messageOrder, macroContext]);
 
   const displayPendingUserMessageContent = useMemo(
     () => pendingUserMessageContent && macroContext
@@ -90,7 +73,7 @@ export function useDisplayHelpers(
   );
 
   const displayAlternateGreetings = useMemo(
-    () => snapshot && macroContext
+    () => macroContext && snapshot
       ? snapshot.character.alternateGreetings.map((g) => replaceUiMacros(g, macroContext))
       : [],
     [macroContext, snapshot],
