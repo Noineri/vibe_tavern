@@ -26,25 +26,8 @@ console.log("[bootstrap] Starting RP Platform API...");
 mkdirSync(resolve(rootDir, "data"), { recursive: true });
 mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
 
-console.log("[bootstrap] Running DB schema push...");
-try {
-	const pushProc = Bun.spawn(["bunx", "drizzle-kit", "push", "--force"], {
-		cwd: resolve(rootDir, "packages/db"),
-		stdout: "inherit",
-		stderr: "inherit",
-		stdin: "inherit",
-	});
-	const exitCode = await pushProc.exited;
-	if (exitCode === 0) {
-		console.log("[bootstrap] DB schema push complete.");
-	} else {
-		console.warn(`[bootstrap] DB schema push exited with code ${exitCode} (tables may already exist).`);
-	}
-} catch (err) {
-	console.warn("[bootstrap] DB schema push failed (tables may already exist):", err instanceof Error ? err.message : err);
-}
-
 // ─── DI wiring + server start ────────────────────────────────────────────────
+// DB migrations run automatically inside createDb() — no separate drizzle-kit step needed.
 
 (async () => {
 	// Stores
