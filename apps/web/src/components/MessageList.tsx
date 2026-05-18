@@ -3,11 +3,11 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AppMessage } from "../app-client.js";
 import { Markdown } from "../lib/markdown.js";
 import { avatarUrl } from "../lib/avatar.js";
+import { replaceUiMacros } from "../lib/macros.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
-import { useDisplayHelpers } from "../hooks/use-display-helpers.js";
-import { useBootstrapQuery } from "../queries/bootstrap-queries.js";
 import { useChatSnapshot } from "../queries/chat-queries.js";
 import { useChatStore } from "../stores/chat-store.js";
+import { useMessageOrder, useMacroContext, useChatDataStore } from "../stores/index.js";
 import { MessageBlock } from "./MessageBlock.js";
 import { TranslateErrorBoundary } from "./TranslateErrorBoundary.js";
 import { initials } from "./app-shell-helpers.jsx";
@@ -19,12 +19,9 @@ const sepWrap = msgWrap + " my-[6px] mt-2";
 export function MessageList() {
   const { t } = useT();
   const chat = useChatController();
-  const bootstrapQuery = useBootstrapQuery();
   const activeChatId = useChatStore((s) => s.activeChatId);
   const snapshotQuery = useChatSnapshot(activeChatId);
   const snapshot = snapshotQuery.data ?? null;
-  const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
-  const display = useDisplayHelpers(allCharacters, snapshot);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const prevMsgCountRef = useRef(0);
@@ -35,10 +32,38 @@ export function MessageList() {
   const isSending = useChatStore((s) => s.isSending);
   const messageActionId = useChatStore((s) => s.messageActionId);
   const streamingText = useChatStore((s) => s.streamingText);
+  const pendingUserMessageContent = useChatStore((s) => s.pendingUserMessageContent);
 
-  const messages = display.displayMessages;
-  const pendingUserMessageContent = display.displayPendingUserMessageContent;
-  const alternateGreetings = display.displayAlternateGreetings;
+  // Read from normalized store selectors
+  const messageOrder = useMessageOrder();
+  const macroContext = useMacroContext();
+
+  // Build displayMessages with macro resolution
+  const messages = useMemo(() => {
+    if (!macroContext) return [];
+    const state = useChatDataStore.getState();
+    return messageOrder
+      .map((id) => state.messagesById[id])
+      .filter((msg): msg is AppMessage => Boolean(msg))
+      .map((message): AppMessage => ({
+        ...message,
+        content: replaceUiMacros(message.content, macroContext),
+      }));
+  }, [messageOrder, macroContext]);
+
+  const displayPendingUserMessageContent = useMemo(
+    () => pendingUserMessageContent && macroContext
+      ? replaceUiMacros(pendingUserMessageContent, macroContext)
+      : pendingUserMessageContent,
+    [macroContext, pendingUserMessageContent],
+  );
+
+  const alternateGreetings = useMemo(
+    () => macroContext && snapshot
+      ? snapshot.character.alternateGreetings.map((g) => replaceUiMacros(g, macroContext))
+      : [],
+    [macroContext, snapshot],
+  );
 
   const characterName = snapshot?.character.name ?? "";
   const characterAvatarAssetId = snapshot?.character.avatarAssetId ?? null;
@@ -140,7 +165,6 @@ export function MessageList() {
               >
                 <MessageBlock
                   messageId={message.id}
-                  message={message}
                   characterName={characterName}
                   isEditing={editingMessageId === message.id}
                   isGenerating={
@@ -153,7 +177,7 @@ export function MessageList() {
                   isBusy={isSending || messageActionId === message.id}
                   canBranch={isLastMessage(messages, message.id)}
                   canRegenerate={message.id !== firstCharMsgId && isLastAssistantMessage(messages, message.id)}
-                  canResend={isLastMessage(messages, message.id) && message.role === "user" && !pendingUserMessageContent}
+                  canResend={isLastMessage(messages, message.id) && message.role === "user" && !displayPendingUserMessageContent}
                   canSwitchVariant={isLastMessage(messages, message.id)}
                   isGreeting={message.id === firstCharMsgId}
                   greetingOptions={message.id === firstCharMsgId ? greetingOptions : undefined}
@@ -183,7 +207,7 @@ export function MessageList() {
       </div>
 
       {/* Streaming footer — outside virtualizer, always rendered when needed */}
-      {pendingUserMessageContent && (
+      {displayPendingUserMessageContent && (
         <>
           {messages.length > 0 && (
             <div className={sepWrap}>
@@ -202,7 +226,7 @@ export function MessageList() {
               </div>
               <div className="my-0.5 rounded-md bg-user-bg px-4 py-[13px]">
                 <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 opacity-88 [&_em]:italic [&_em]:text-t2">
-                  <Markdown text={pendingUserMessageContent} />
+                  <Markdown text={displayPendingUserMessageContent} />
                 </div>
               </div>
             </div>
@@ -224,7 +248,7 @@ export function MessageList() {
         </>
       )}
 
-      {!pendingUserMessageContent && isSending && messages.length > 0 && messages[messages.length - 1].role === "user" && (
+      {!displayPendingUserMessageContent && isSending && messages.length > 0 && messages[messages.length - 1].role === "user" && (
         <>
           <div className={sepWrap}>
             <div className="h-px bg-border opacity-40"/>

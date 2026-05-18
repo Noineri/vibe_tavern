@@ -11,8 +11,9 @@ import { CharacterForm } from "./build/CharacterForm.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { useT } from "../i18n/context.js";
 import { useCharacterStore } from "../stores/character-store.js";
+import { useActiveTrace } from "../stores/chat-selectors.js";
 import { useCharacterController } from "../hooks/use-character-controller.js";
-import { useDisplayHelpers } from "../hooks/use-display-helpers.js";
+
 import { useBootstrapQuery } from "../queries/bootstrap-queries.js";
 import { useChatSnapshot } from "../queries/chat-queries.js";
 import { useChatStore } from "../stores/index.js";
@@ -29,15 +30,12 @@ export function BuildMode() {
   const activeChatId = useChatStore((s) => s.activeChatId);
   const snapshotQuery = useChatSnapshot(activeChatId);
   const snapshot = snapshotQuery.data ?? null;
-  const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
-  const display = useDisplayHelpers(allCharacters, snapshot);
-
   const charData = snapshot?.character;
   const isSaving = useCharacterStore((s) => s.isSavingCharacter);
   const buildTab = useCharacterStore((s) => s.buildTab);
 
-  const activeTrace = display.activePromptTrace;
-  const promptPayloadText = display.promptPayloadText;
+  const activeTrace = useActiveTrace(useChatStore((s) => s.selectedTraceId));
+  const promptPayloadText = JSON.stringify(activeTrace?.finalPayload ?? {}, null, 2);
   const promptTraceCount = snapshot?.promptTraceHistory.length ?? 0;
 
   if (!snapshot || !charData) return null;

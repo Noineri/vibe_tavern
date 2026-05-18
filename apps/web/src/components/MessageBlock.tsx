@@ -13,16 +13,18 @@ import { MessageReasoning } from "./MessageReasoning.js";
 export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps) {
   const { t } = useT();
   const [copied, setCopied] = useState(false);
-  const isUser = input.message.role === "user";
 
-  // Read display data from memoized selector — re-renders only when THIS message changes
-  const displayMsg = useDisplayMessage(input.messageId);
-  const displayContent = displayMsg?.displayContent ?? input.message.content;
-  const messageTokens = displayMsg?.tokenCount ?? 0;
+  // Read ALL display data from memoized selector — re-renders only when THIS message changes
+  const msg = useDisplayMessage(input.messageId);
+  if (!msg) return null;
 
-  const variants = Array.isArray(input.message.variants) ? input.message.variants : [];
+  const isUser = msg.role === "user";
+  const displayContent = msg.displayContent;
+  const messageTokens = msg.tokenCount;
+
+  const variants = Array.isArray(msg.variants) ? msg.variants : [];
   const variantCount = variants.length;
-  const selectedVariantIndex = input.message.selectedVariantIndex ?? 0;
+  const selectedVariantIndex = msg.selectedVariantIndex ?? 0;
   const isGenerating = Boolean(input.isGenerating);
   const greetingOptions = input.greetingOptions;
   const greetIdx = input.greetingIndex;
@@ -34,7 +36,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const branchLabel = t("branch");
   const regenLabel = t("regen");
   const deleteLabel = t("delete");
-  const createdLabel = formatMessageTime(input.message.createdAt);
+  const createdLabel = formatMessageTime(msg.createdAt);
 
   // Reasoning from persisted variant data only (not streaming)
   const selectedVariant = variants[selectedVariantIndex];

@@ -5,8 +5,8 @@ import { cn } from "../lib/cn.js";
 import { useT } from "../i18n/context.js";
 import { useProviderProfiles } from "../hooks/use-provider-profiles.js";
 import { usePresetController } from "../hooks/use-preset-controller.js";
-import { useDisplayHelpers } from "../hooks/use-display-helpers.js";
 import { useNavigationStore, useProviderStore, useChatStore, useModalStore } from "../stores/index.js";
+import { useActiveTrace } from "../stores/chat-selectors.js";
 import { useBootstrapQuery } from "../queries/bootstrap-queries.js";
 import { useChatSnapshot } from "../queries/chat-queries.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
@@ -28,11 +28,7 @@ export function TopBar() {
   const snapshot = snapshotQuery.data ?? null;
 
   const promptPresets = bootstrapQuery.data?.promptPresets ?? [];
-  const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
   const activePromptPresetId = snapshot?.activeChat.promptPresetId ?? null;
-
-  // --- Display helpers for activePromptTrace ---
-  const display = useDisplayHelpers(allCharacters, snapshot);
 
   // --- Derived ---
   const characterName = snapshot?.character.name ?? "";
@@ -44,8 +40,9 @@ export function TopBar() {
   const providerLabel = provider.activeProviderProfile?.name || t("no_provider");
   const providerModelId = provider.activeProviderProfile?.defaultModel || connection.model || null;
   const providerModelLabel = (providerModelId && connection.models.find((m) => m.id === providerModelId)?.label) || providerModelId || t("no_model_selected");
-  const activatedLoreCount = display.activePromptTrace?.activatedLoreEntries.length ?? 0;
-  const retrievedMemoryCount = display.activePromptTrace?.retrievedMemories.length ?? 0;
+  const activePromptTrace = useActiveTrace(useChatStore((s) => s.selectedTraceId));
+  const activatedLoreCount = activePromptTrace?.activatedLoreEntries.length ?? 0;
+  const retrievedMemoryCount = activePromptTrace?.retrievedMemories.length ?? 0;
   const activePresetName = promptPresets.find((p) => p.id === activePromptPresetId)?.name ?? t("topbar_default");
   const tweaksOpen = useModalStore((s) => s.tweaksOpen);
 
