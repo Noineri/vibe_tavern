@@ -267,17 +267,6 @@ export function MessageList() {
         </>
       )}
 
-      {/* Streaming during regenerate/continue — last message is assistant, streaming text appears below */}
-      {!displayPendingUserMessageContent && isSending && streamingText && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
-        <>
-          <div className={msgWrap} aria-label={t("generating_response")}>
-            <div className="relative group py-2.5">
-              <StreamingContent characterName={characterName} />
-            </div>
-          </div>
-        </>
-      )}
-
       <div ref={endRef} className="h-px"/>
     </div>
     </TranslateErrorBoundary>
