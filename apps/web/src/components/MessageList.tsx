@@ -27,6 +27,7 @@ export function MessageList() {
   const display = useDisplayHelpers(allCharacters, snapshot);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const prevMsgCountRef = useRef(0);
   const [greetingIndex, setGreetingIndex] = useState(0);
 
   const editingMessageId = useChatStore((s) => s.editingMessageId);
@@ -70,10 +71,32 @@ export function MessageList() {
     overscan: 5,
   });
 
-  // Auto-scroll to bottom when new messages arrive or streaming starts
+  // Auto-scroll: instant jump on initial load, smooth for incremental updates
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, pendingUserMessageContent, streamingText]);
+    if (messages.length === 0) {
+      prevMsgCountRef.current = 0;
+      return;
+    }
+    const isInitialLoad = prevMsgCountRef.current === 0;
+    prevMsgCountRef.current = messages.length;
+
+    if (isInitialLoad) {
+      // Jump instantly — avoid smooth-animating through 70K+ px of virtual height
+      requestAnimationFrame(() => {
+        virtualizer.scrollToIndex(messages.length - 1, { align: "end" });
+      });
+    } else {
+      // Incremental: smooth scroll for new messages / streaming
+      virtualizer.scrollToIndex(messages.length - 1, { align: "end", behavior: "smooth" });
+    }
+  }, [messages.length, virtualizer]);
+
+  // Keep scrolled to bottom during streaming
+  useEffect(() => {
+    if (streamingText) {
+      endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [streamingText]);
 
   return (
     <TranslateErrorBoundary>
