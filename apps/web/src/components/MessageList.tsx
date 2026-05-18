@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AppMessage } from "../app-client.js";
 import { Markdown } from "../lib/markdown.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
-import { useCharacterController } from "../hooks/use-character-controller.js";
 import { useDisplayHelpers } from "../hooks/use-display-helpers.js";
 import { useBootstrapQuery } from "../queries/bootstrap-queries.js";
 import { useChatSnapshot } from "../queries/chat-queries.js";
@@ -25,7 +25,7 @@ export function MessageList() {
   const snapshot = snapshotQuery.data ?? null;
   const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
   const display = useDisplayHelpers(allCharacters, snapshot);
-  const msgsRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const [greetingIndex, setGreetingIndex] = useState(0);
 
@@ -58,71 +58,99 @@ export function MessageList() {
     ? [firstCharMsg.content, ...alternateGreetings]
     : undefined;
 
+  // --- Virtualizer ---
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (index) => {
+      const msg = messages[index];
+      if (!msg) return 100;
+      return msg.role === "user" ? 80 : 160;
+    },
+    overscan: 5,
+  });
+
+  // Auto-scroll to bottom when new messages arrive or streaming starts
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length, pendingUserMessageContent, streamingText]);
 
   return (
     <TranslateErrorBoundary>
-    <div className="flex-1 overflow-y-auto scroll-smooth pt-7 pb-3" ref={msgsRef}>
+    <div className="flex-1 overflow-y-auto scroll-smooth pt-7 pb-3" ref={scrollRef}>
       {/* TODO: VP-W4+ — EmptyState component for no active chat */}
       {/* TODO: VP-W4+ — EmptyState component for empty chat */}
 
-      {messages.map((message, index) => {
-        const previous = index > 0 ? messages[index - 1] : null;
-        const showSeparator =
-          previous !== null &&
-          !isBreakoutRole(previous.role) &&
-          !isBreakoutRole(message.role);
+      <div style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
+        {virtualizer.getVirtualItems().map((virtualItem) => {
+          const message = messages[virtualItem.index];
+          if (!message) return null;
+          const previous = virtualItem.index > 0 ? messages[virtualItem.index - 1] : null;
+          const showSeparator =
+            previous !== null &&
+            !isBreakoutRole(previous.role) &&
+            !isBreakoutRole(message.role);
 
-        return (
-          <Fragment key={message.id}>
-            {showSeparator && (
-              <div className={sepWrap}>
-                <div className="h-px bg-border opacity-40"/>
+          return (
+            <Fragment key={message.id}>
+              {showSeparator && (
+                <div
+                  style={{ position: "absolute", top: virtualItem.start - 14, left: 0, right: 0 }}
+                  className={sepWrap}
+                >
+                  <div className="h-px bg-border opacity-40"/>
+                </div>
+              )}
+              <div
+                ref={virtualizer.measureElement}
+                data-index={virtualItem.index}
+                style={{ position: "absolute", top: virtualItem.start, left: 0, width: "100%" }}
+              >
+                <MessageBlock
+                  messageId={message.id}
+                  message={message}
+                  characterName={characterName}
+                  isEditing={editingMessageId === message.id}
+                  isGenerating={
+                    message.id !== firstCharMsgId &&
+                    message.role === "assistant" &&
+                    isSending &&
+                    isLastAssistantMessage(messages, message.id)
+                  }
+                  editingDraft={editingDraft}
+                  isBusy={isSending || messageActionId === message.id}
+                  canBranch={isLastMessage(messages, message.id)}
+                  canRegenerate={message.id !== firstCharMsgId && isLastAssistantMessage(messages, message.id)}
+                  canResend={isLastMessage(messages, message.id) && message.role === "user" && !pendingUserMessageContent}
+                  canSwitchVariant={isLastMessage(messages, message.id)}
+                  isGreeting={message.id === firstCharMsgId}
+                  greetingOptions={message.id === firstCharMsgId ? greetingOptions : undefined}
+                  greetingIndex={message.id === firstCharMsgId ? greetingIndex : 0}
+                  onGreetingIndexChange={setGreetingIndex}
+                  onBranch={() => void chat.handleFork()}
+                  onStartEdit={() => chat.handleStartEdit(message)}
+                  onEditingDraftChange={useChatStore.getState().setEditingDraft}
+                  onCancelEdit={chat.handleCancelEdit}
+                  onSaveEdit={() => void chat.handleSaveMessageEdit(message.id)}
+                  onDelete={() => void chat.handleDeleteMessage(message.id)}
+                  onRegenerate={() => void chat.handleRegenerateMessage(message.id)}
+                  onResend={() => { void chat.handleResend(); }}
+                  onSelectPreviousVariant={() =>
+                    chat.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) - 1)
+                  }
+                  onSelectNextVariant={() =>
+                    chat.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) + 1)
+                  }
+                  characterAvatarAssetId={characterAvatarAssetId}
+                  personaAvatarAssetId={personaAvatarAssetId}
+                />
               </div>
-            )}
-            <MessageBlock
-              message={message}
-              characterName={characterName}
-              isEditing={editingMessageId === message.id}
-              isGenerating={
-                message.id !== firstCharMsgId &&
-                message.role === "assistant" &&
-                isSending &&
-                isLastAssistantMessage(messages, message.id)
-              }
-              editingDraft={editingDraft}
-              isBusy={isSending || messageActionId === message.id}
-              canBranch={isLastMessage(messages, message.id)}
-              canRegenerate={message.id !== firstCharMsgId && isLastAssistantMessage(messages, message.id)}
-              canResend={isLastMessage(messages, message.id) && message.role === "user" && !pendingUserMessageContent}
-              canSwitchVariant={isLastMessage(messages, message.id)}
-              isGreeting={message.id === firstCharMsgId}
-              greetingOptions={message.id === firstCharMsgId ? greetingOptions : undefined}
-              greetingIndex={message.id === firstCharMsgId ? greetingIndex : 0}
-              onGreetingIndexChange={setGreetingIndex}
-              onBranch={() => void chat.handleFork()}
-              onStartEdit={() => chat.handleStartEdit(message)}
-              onEditingDraftChange={useChatStore.getState().setEditingDraft}
-              onCancelEdit={chat.handleCancelEdit}
-              onSaveEdit={() => void chat.handleSaveMessageEdit(message.id)}
-              onDelete={() => void chat.handleDeleteMessage(message.id)}
-              onRegenerate={() => void chat.handleRegenerateMessage(message.id)}
-              onResend={() => { void chat.handleResend(); }}
-              onSelectPreviousVariant={() =>
-                chat.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) - 1)
-              }
-              onSelectNextVariant={() =>
-                chat.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) + 1)
-              }
-              characterAvatarAssetId={characterAvatarAssetId}
-              personaAvatarAssetId={personaAvatarAssetId}
-            />
-          </Fragment>
-        );
-      })}
+            </Fragment>
+          );
+        })}
+      </div>
 
+      {/* Streaming footer — outside virtualizer, always rendered when needed */}
       {pendingUserMessageContent && (
         <>
           {messages.length > 0 && (
@@ -184,14 +212,6 @@ export function MessageList() {
       )}
 
       <div ref={endRef} className="h-px"/>
-      {/* TODO: VP-W4+ — scroll-to-bottom button
-          Maket structure:
-          <div className="sticky bottom-2 z-20 flex justify-center pointer-events-none">
-            <div className="pointer-events-auto inline-flex items-center gap-1.5 rounded-2xl border border-border bg-surface px-3.5 py-1.5 text-[calc(var(--ui-fs)-3px)] text-t2 shadow-[0_4px_16px_rgba(0,0,0,.25)] transition-opacity duration-200 cursor-pointer" onClick={scrollHandler}>
-              <span>↓</span> Scroll to latest
-            </div>
-          </div>
-      */}
     </div>
     </TranslateErrorBoundary>
   );
