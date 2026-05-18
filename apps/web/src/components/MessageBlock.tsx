@@ -23,10 +23,11 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const displayContent = msg.displayContent;
   const messageTokens = msg.tokenCount;
 
-  // Streaming text for regeneration — only non-null when this message is the active target
+  // Streaming text for regeneration — only shown on the specific message being regenerated
   const globalStreamingText = useChatStore((s) => s.streamingText);
   const globalStreamingReasoning = useChatStore((s) => s.streamingReasoningText);
-  const isStreamingHere = input.isBusy && !isUser && (globalStreamingText || globalStreamingReasoning);
+  const messageActionId = useChatStore((s) => s.messageActionId);
+  const isStreamingHere = !isUser && messageActionId === input.messageId && (globalStreamingText || globalStreamingReasoning);
   const activeStreamingText = isStreamingHere ? globalStreamingText : null;
   const activeStreamingReasoning = isStreamingHere ? globalStreamingReasoning : null;
 
