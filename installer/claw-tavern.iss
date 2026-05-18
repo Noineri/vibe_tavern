@@ -61,6 +61,8 @@ Source: "{#ProjectRoot}\dist\{#AppExeName}"; DestDir: "{app}"; Flags: ignorevers
 Source: "{#ProjectRoot}\dist\web\*"; DestDir: "{app}\web"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Tokenizer data files
 Source: "{#ProjectRoot}\dist\tokenizers\*"; DestDir: "{app}\tokenizers"; Flags: ignoreversion recursesubdirs createallsubdirs
+; DB migration files
+Source: "{#ProjectRoot}\dist\drizzle\*"; DestDir: "{app}\drizzle"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"
