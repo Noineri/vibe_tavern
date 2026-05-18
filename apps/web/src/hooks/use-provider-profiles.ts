@@ -575,7 +575,7 @@ export function useProviderProfiles() {
       endpoint,
       apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
       defaultModel: form.model.trim() || null,
-      contextBudget: form.contextBudget || 16000,
+      contextBudget: form.contextBudget || null,
       temperature: form.temperature,
       topP: form.topP,
       minP: form.minP,
@@ -590,6 +590,7 @@ export function useProviderProfiles() {
       reasoningEffort: form.reasoningEffort,
       showReasoning: form.showReasoning,
       streamResponse: form.streamResponse,
+      customSamplers: form.customSamplers,
     };
     try {
       const saved = await updateProfileMut.mutateAsync({ id: form.id, patch });
