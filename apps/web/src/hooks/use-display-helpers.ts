@@ -1,11 +1,14 @@
 import { useMemo } from "react";
+import type { AssemblePromptResponse, PromptTraceRecordDto } from "@rp-platform/domain";
 import type { AppMessage, AppSnapshot } from "../app-client.js";
 import { useChatStore, useNavigationStore, useProviderStore } from "../stores/index.js";
 import { replaceUiMacros } from "../lib/macros.js";
 import { buildCharacterTabs } from "../lib/character-tabs.js";
 
+type ActiveTraceLike = PromptTraceRecordDto | AssemblePromptResponse;
+
 export interface DisplayHelpers {
-  activePromptTrace: ReturnType<typeof deriveActivePromptTrace>;
+  activePromptTrace: ActiveTraceLike | null;
   promptPayloadText: string;
   displayScenario: string;
   displayMessages: AppMessage[];
@@ -18,14 +21,16 @@ export interface DisplayHelpers {
 function deriveActivePromptTrace(
   snapshot: AppSnapshot | null,
   selectedTraceId: string | null,
-) {
+): ActiveTraceLike | null {
   if (!snapshot) return null;
-  return (
+  const fromHistory =
     snapshot.promptTraceHistory.find((trace) => trace.id === selectedTraceId) ??
     snapshot.promptTrace ??
-    snapshot.promptTraceHistory[0] ??
-    null
-  );
+    snapshot.promptTraceHistory[0];
+  if (fromHistory) return fromHistory;
+  // Fallback: ephemeral context preview (e.g. after import, before first generation)
+  if (snapshot.contextPreview) return snapshot.contextPreview;
+  return null;
 }
 
 export function useDisplayHelpers(

@@ -43,7 +43,7 @@ export class LiveChatOrchestrator {
     snapshot: SessionSnapshot;
   }> {
     logSendDebug("live.send.prepare.start", { chatId: input.chatId, model: input.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, input.model);
+    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, input.model, input.profile.maxTokens);
     logSendDebug("live.send.prepare.done", {
       chatId: input.chatId,
       snapshotMessageCount: prepared.snapshot.messages.length,
@@ -94,6 +94,7 @@ export class LiveChatOrchestrator {
     logSendDebug("live.generateReply.start", { chatId: input.chatId, model: input.model });
     const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
       model: input.model,
+      responseReserve: input.profile.maxTokens,
     });
     const startedAt = Date.now();
     let reply: string;
@@ -137,6 +138,7 @@ export class LiveChatOrchestrator {
     const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
       excludeMessageId: brandId<MessageId>(input.messageId),
       model: input.model,
+      responseReserve: input.profile.maxTokens,
     });
     logSendDebug("live.regenerate.prompt.ready", {
       chatId: input.chatId,
@@ -186,7 +188,7 @@ export class LiveChatOrchestrator {
     signal?: AbortSignal;
   }): AsyncGenerator<{ event: string; data: string }> {
     logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: input.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, input.model);
+    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, input.model, input.profile.maxTokens);
     const { streamResult, startedAt } = await this.startStream(input, prepared.prompt);
 
     yield* this.drainStream({
@@ -225,6 +227,7 @@ export class LiveChatOrchestrator {
     logSendDebug("live.generateReply-stream.start", { chatId: input.chatId, model: input.model });
     const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
       model: input.model,
+      responseReserve: input.profile.maxTokens,
     });
     const { streamResult, startedAt } = await this.startStream(input, prompt);
 
@@ -266,6 +269,7 @@ export class LiveChatOrchestrator {
     const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
       excludeMessageId: brandId<MessageId>(input.messageId),
       model: input.model,
+      responseReserve: input.profile.maxTokens,
     });
     const { streamResult, startedAt } = await this.startStream(input, prompt);
 
@@ -351,6 +355,17 @@ export class LiveChatOrchestrator {
     // ── Collect stream chunks ──
     try {
       for await (const chunk of streamResult.stream) {
+        if (signal?.aborted) {
+          const latencyMs = Date.now() - startedAt;
+          await onAbort(
+            textAccumulator,
+            reasoningAccumulator,
+            reasoningStartMs ? Date.now() - reasoningStartMs : undefined,
+            latencyMs,
+          );
+          yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
+          return;
+        }
         if (chunk.type === "text-delta" && chunk.delta) {
           if (!reasoningStartMs && reasoningAccumulator) {
             reasoningDurationMs = Date.now() - reasoningStartMs!;

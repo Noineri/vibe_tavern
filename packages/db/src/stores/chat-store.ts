@@ -655,6 +655,24 @@ export class ChatStore {
     return rows.map((row) => this.mapRowVariant(row));
   }
 
+  async getVariantsByBranch(branchId: string): Promise<Map<string, MessageVariant[]>> {
+    const rows = await this.db
+      .select()
+      .from(messageVariants)
+      .innerJoin(messages, eq(messageVariants.messageId, messages.id))
+      .where(eq(messages.branchId, branchId))
+      .orderBy(asc(messageVariants.messageId), asc(messageVariants.variantIndex))
+      .all();
+    const map = new Map<string, MessageVariant[]>();
+    for (const row of rows) {
+      const variant = this.mapRowVariant(row.message_variants);
+      const list = map.get(row.message_variants.messageId);
+      if (list) list.push(variant);
+      else map.set(row.message_variants.messageId, [variant]);
+    }
+    return map;
+  }
+
   async getSelectedVariant(messageId: string): Promise<MessageVariant | null> {
     const row = await this.db
       .select()

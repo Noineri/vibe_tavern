@@ -173,7 +173,7 @@ export function Sidebar() {
           <div className="flex shrink-0 flex-col items-center gap-1 py-2">
             <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)} title={t("sidebar_prompt_manager")}><Icons.Terminal /></div>
             <div className="flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)} title={personaName}>
-              {initials(personaName)}
+              {personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(personaName)}
             </div>
           </div>
         </div>
@@ -181,7 +181,8 @@ export function Sidebar() {
 
       {!sidebarCollapsed && (
         <>
-          <section className="border-b border-border py-1.5">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <section className="min-h-0 max-h-[50%] overflow-y-auto border-b border-border py-1.5">
             <div className="flex items-center pr-2.5">
               <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_characters")}</div>
               <button className="iBtn size-5" onClick={() => setImportModal("character")} title={t("sidebar_import_character")}>
@@ -285,7 +286,7 @@ export function Sidebar() {
             )}
           </section>
 
-          <section className="flex-1 overflow-y-auto border-b-0 py-1.5">
+          <section className="min-h-0 max-h-[50%] overflow-y-auto border-b-0 py-1.5">
             <div className="flex items-center pr-2.5">
               <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_chats")}</div>
               <button className="iBtn size-5" onClick={() => setImportModal("chat")} title={t("sidebar_import_chat")}>
@@ -519,8 +520,9 @@ export function Sidebar() {
               })
             )}
           </section>
+          </div>
 
-          <section className="mt-auto shrink-0 border-t border-border px-1 py-1.5">
+          <section className="shrink-0 border-t border-border px-1 py-1.5">
             <div
               className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
               role="button"

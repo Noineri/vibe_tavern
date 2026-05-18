@@ -3,6 +3,7 @@ import type { MessageRole } from "@rp-platform/domain";
 export interface ImportedVariant {
   content: string;
   isSelected: boolean;
+  reasoning?: string;
 }
 
 export interface ImportedMessage {
@@ -93,9 +94,11 @@ export function parseSillyTavernChat(
         for (let j = 0; j < data.swipes.length; j++) {
           const swipeContent = data.swipes[j];
           if (typeof swipeContent === "string") {
+            const { mainContent, reasoning } = extractThinkingTags(swipeContent);
             variants.push({
-              content: swipeContent,
+              content: mainContent,
               isSelected: j === selectedIndex,
+              reasoning: reasoning || undefined,
             });
           }
         }
@@ -103,9 +106,11 @@ export function parseSillyTavernChat(
 
       // If there are no swipes but there is a message, create a single variant
       if (variants.length === 0 && content) {
+        const { mainContent, reasoning } = extractThinkingTags(content);
         variants.push({
-          content: content,
+          content: mainContent,
           isSelected: true,
+          reasoning: reasoning || undefined,
         });
       }
 
@@ -135,6 +140,29 @@ export function parseSillyTavernChat(
   }
 
   return { metadata, messages };
+}
+
+/**
+ * Extracts `<thinking>...</thinking>` content from text.
+ * Returns the main content (with thinking tags removed) and the reasoning text.
+ * Handles both `<thinking>` and `<think</*>` tags (used by different models).
+ */
+function extractThinkingTags(text: string): { mainContent: string; reasoning: string | null } {
+  const thinkingRegex = /<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi;
+  const matches = text.match(thinkingRegex);
+  if (!matches) return { mainContent: text, reasoning: null };
+
+  const reasoning = matches
+    .map((m) => {
+      return m
+        .replace(/^<think(?:ing)?>\s*/i, "")
+        .replace(/\s*<\/think(?:ing)?>$/i, "")
+        .trim();
+    })
+    .filter(Boolean)
+    .join("\n\n");
+  const mainContent = text.replace(thinkingRegex, "").trim();
+  return { mainContent: mainContent || "", reasoning: reasoning || null };
 }
 
 export interface SerializeMessageInput {

@@ -109,6 +109,8 @@ export interface PromptAssemblyContext {
   };
   config?: {
     contextBudget?: number | null;
+    /** Tokens reserved for the model's response. Subtracted from contextBudget during compaction. */
+    responseReserve?: number;
     model?: string;
   };
 }

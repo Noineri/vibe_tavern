@@ -349,7 +349,7 @@ async function importSillyTavernChat(
 			content: variants[0]?.content ?? imported.content,
 		});
 		for (const variant of variants.slice(1)) {
-			await deps.stores.chats.addVariant(message.id, variant.content);
+			await deps.stores.chats.addVariant(message.id, variant.content, undefined, variant.reasoning);
 		}
 		const selectedIndex = variants.findIndex((variant) => variant.content === selectedVariant?.content);
 		if (selectedIndex > 0) {

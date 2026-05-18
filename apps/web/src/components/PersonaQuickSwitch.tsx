@@ -2,11 +2,8 @@ import { useState, useRef, useEffect } from "react";
 import { Icons } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
 import { useT } from "../i18n/context.js";
-
-function getAssetUrl(assetId: string): string {
-  const base = window.location.origin;
-  return `${base}/api/assets/${assetId}`;
-}
+import { avatarUrl } from "../lib/avatar.js";
+import { useModalStore } from "../stores/modal-store.js";
 
 function PersonaAvatar({ assetId, size }: { assetId: string | null; size: number }) {
   if (!assetId) {
@@ -15,13 +12,13 @@ function PersonaAvatar({ assetId, size }: { assetId: string | null; size: number
         className="shrink-0 rounded-full bg-s3 flex items-center justify-center text-t3"
         style={{ width: size, height: size }}
       >
-        <Icons.user />
+        <Icons.User />
       </div>
     );
   }
   return (
     <img
-      src={getAssetUrl(assetId)}
+      src={avatarUrl(assetId)}
       alt=""
       className="shrink-0 rounded-full object-cover"
       style={{ width: size, height: size }}
@@ -39,7 +36,7 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
   const { t } = useT();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  
+
   const activePersona = personas.find((p) => p.id === activePersonaId) || personas[0];
 
   useEffect(() => {
@@ -86,6 +83,14 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
               <div className="overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</div>
             </button>
           ))}
+          <div className="mt-1 border-t border-border px-4 pt-2 pb-0">
+            <button
+              className="flex cursor-pointer items-center gap-1 rounded p-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+              onClick={() => { setIsOpen(false); useModalStore.getState().setIsPersonaModalOpen(true); }}
+            >
+              <Icons.Edit /> {t("manage_personas")}
+            </button>
+          </div>
         </div>
       )}
     </div>
