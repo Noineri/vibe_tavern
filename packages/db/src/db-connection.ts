@@ -103,6 +103,7 @@ export function createDb(dbPath: string): AppDb {
   const db = drizzle(sqlite, { schema });
   const migrationsFolder = getMigrationsFolder();
 
+  console.log(`[db] Migrations folder: ${migrationsFolder}`);
   baselineLegacyDb(sqlite, migrationsFolder);
   migrate(db, { migrationsFolder });
 
