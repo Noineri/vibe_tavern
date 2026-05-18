@@ -1,0 +1,106 @@
+import { create } from "zustand";
+import { immer } from "zustand/middleware/immer";
+import type { AppMessage, AppSnapshot } from "../app-client.js";
+import type { ChatId } from "@rp-platform/domain";
+
+export interface MacroContext {
+  characterName: string;
+  personaName: string | null;
+  personaDescription: string | null;
+}
+
+export interface ChatDataState {
+  /** Character + persona + branches for current chat */
+  chatMeta: {
+    character: AppSnapshot["character"];
+    persona: AppSnapshot["persona"];
+    activeChat: AppSnapshot["activeChat"];
+    activeBranch: AppSnapshot["activeBranch"];
+    branches: AppSnapshot["branches"];
+    summaries: AppSnapshot["summaries"];
+  } | null;
+  /** Messages keyed by ID — raw, no macro resolution */
+  messagesById: Record<string, AppMessage>;
+  /** Ordered message IDs — corresponds to display order */
+  messageOrder: string[];
+  /** Macro resolution context derived from character+persona */
+  macroContext: MacroContext | null;
+  /** Prompt trace data */
+  promptTrace: AppSnapshot["promptTrace"];
+  promptTraceHistory: AppSnapshot["promptTraceHistory"];
+  contextPreview: AppSnapshot["contextPreview"];
+}
+
+export interface ChatDataActions {
+  /** Normalize a full snapshot into the store */
+  setSnapshot: (snapshot: AppSnapshot) => void;
+  /** Update a single message in messagesById */
+  updateMessage: (id: string, partial: Partial<AppMessage>) => void;
+  /** Clear all data (chat switch, logout) */
+  clear: () => void;
+}
+
+export type ChatDataStore = ChatDataState & ChatDataActions;
+
+const initialState: ChatDataState = {
+  chatMeta: null,
+  messagesById: {},
+  messageOrder: [],
+  macroContext: null,
+  promptTrace: null,
+  promptTraceHistory: [],
+  contextPreview: null,
+};
+
+export const useChatDataStore = create<ChatDataStore>()(
+  immer((set) => ({
+    ...initialState,
+
+    setSnapshot: (snapshot) =>
+      set((state) => {
+        // Chat meta
+        state.chatMeta = {
+          character: snapshot.character,
+          persona: snapshot.persona,
+          activeChat: snapshot.activeChat,
+          activeBranch: snapshot.activeBranch,
+          branches: snapshot.branches,
+          summaries: snapshot.summaries,
+        };
+
+        // Messages: normalize into byId + order
+        const byId: Record<string, AppMessage> = {};
+        const order: string[] = [];
+        for (const msg of snapshot.messages) {
+          byId[msg.id] = msg;
+          order.push(msg.id);
+        }
+        state.messagesById = byId;
+        state.messageOrder = order;
+
+        // Macro context (character name + persona name/description)
+        state.macroContext = {
+          characterName: snapshot.character.name,
+          personaName: snapshot.persona?.name ?? null,
+          personaDescription: snapshot.persona?.description ?? null,
+        };
+
+        // Trace data
+        state.promptTrace = snapshot.promptTrace;
+        state.promptTraceHistory = snapshot.promptTraceHistory;
+        state.contextPreview = snapshot.contextPreview;
+      }),
+
+    updateMessage: (id, partial) =>
+      set((state) => {
+        const existing = state.messagesById[id];
+        if (existing) {
+          Object.assign(existing, partial);
+        }
+      }),
+
+    clear: () => set((state) => {
+      Object.assign(state, initialState);
+    }),
+  }))
+);
