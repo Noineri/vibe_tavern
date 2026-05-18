@@ -94,6 +94,7 @@ export class LiveChatOrchestrator {
     logSendDebug("live.generateReply.start", { chatId: input.chatId, model: input.model });
     const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
       model: input.model,
+      contextBudget: input.profile.contextBudget,
       responseReserve: input.profile.maxTokens,
     });
     const startedAt = Date.now();
@@ -138,6 +139,7 @@ export class LiveChatOrchestrator {
     const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
       excludeMessageId: brandId<MessageId>(input.messageId),
       model: input.model,
+      contextBudget: input.profile.contextBudget,
       responseReserve: input.profile.maxTokens,
     });
     logSendDebug("live.regenerate.prompt.ready", {
@@ -227,6 +229,7 @@ export class LiveChatOrchestrator {
     logSendDebug("live.generateReply-stream.start", { chatId: input.chatId, model: input.model });
     const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
       model: input.model,
+      contextBudget: input.profile.contextBudget,
       responseReserve: input.profile.maxTokens,
     });
     const { streamResult, startedAt } = await this.startStream(input, prompt);
@@ -269,6 +272,7 @@ export class LiveChatOrchestrator {
     const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
       excludeMessageId: brandId<MessageId>(input.messageId),
       model: input.model,
+      contextBudget: input.profile.contextBudget,
       responseReserve: input.profile.maxTokens,
     });
     const { streamResult, startedAt } = await this.startStream(input, prompt);

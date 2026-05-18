@@ -41,9 +41,16 @@ function createMappedStream(
     const partTypes = new Set<string>();
 
     for await (const part of fullStream) {
-      const p = part as { type: string; textDelta?: string; text?: string; toolCallId?: string; toolName?: string; args?: unknown };
+      const p = part as { type: string; textDelta?: string; text?: string; toolCallId?: string; toolName?: string; args?: unknown; error?: unknown };
       chunkCount++;
       partTypes.add(p.type);
+
+      // ── Provider error in stream ──
+      if (p.type === "error") {
+        const errMsg = p.error instanceof Error ? p.error.message : typeof p.error === "string" ? p.error : JSON.stringify(p.error);
+        logSendDebug("reasoning.stream-error", { chunkCount, error: errMsg, partTypes: [...partTypes].sort() });
+        throw providerError(`Provider stream error: ${errMsg}`);
+      }
 
       // ── Tool calls ──
       if (p.type === "tool-call" && p.toolCallId && p.toolName) {
