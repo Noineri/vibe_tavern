@@ -1,22 +1,25 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { cn } from "../lib/cn.js";
 import { Markdown } from "../lib/markdown.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { initials } from "./app-shell-helpers.js";
-import { useChatStore } from "../stores/chat-store.js";
+import { useDisplayMessage } from "../stores/chat-selectors.js";
 import type { MessageBlockProps } from "./play-mode-types.js";
 import { Icons } from "./shared/icons.js";
 import { AutoTextarea } from "./shared/auto-textarea.js";
-import { useTokenCount } from "../hooks/use-token-count.js";
 import { useT } from "../i18n/context.js";
 import { MessageReasoning } from "./MessageReasoning.js";
 
-export function MessageBlock(input: MessageBlockProps) {
+export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps) {
   const { t } = useT();
-  const streamingText = useChatStore((s) => s.streamingText);
-  const streamingReasoningText = useChatStore((s) => s.streamingReasoningText);
   const [copied, setCopied] = useState(false);
   const isUser = input.message.role === "user";
+
+  // Read display data from memoized selector — re-renders only when THIS message changes
+  const displayMsg = useDisplayMessage(input.messageId);
+  const displayContent = displayMsg?.displayContent ?? input.message.content;
+  const messageTokens = displayMsg?.tokenCount ?? 0;
+
   const variants = Array.isArray(input.message.variants) ? input.message.variants : [];
   const variantCount = variants.length;
   const selectedVariantIndex = input.message.selectedVariantIndex ?? 0;
@@ -24,27 +27,18 @@ export function MessageBlock(input: MessageBlockProps) {
   const greetingOptions = input.greetingOptions;
   const greetIdx = input.greetingIndex;
   const greetingActive = !isUser && greetingOptions && greetingOptions.length > 1;
-  // Greetings and variant swipes are separate entities:
-  // - Greetings come from the character card (first message only)
-  // - Variants come from regeneration (any assistant message)
-  // Both lock when there are subsequent messages (canSwitchVariant).
   const canSwitch = input.canSwitchVariant;
-  const displayContent = greetingActive ? (greetingOptions[greetIdx] ?? input.message.content) : input.message.content;
-  // When streaming, show streamed text instead of stale server content
-  const showStreaming = isGenerating && streamingText;
-  const renderContent = showStreaming ? streamingText : displayContent;
+  const renderContent = greetingActive ? (greetingOptions[greetIdx] ?? displayContent) : displayContent;
   const copyLabel = t("copy");
   const editLabel = t("edit");
   const branchLabel = t("branch");
   const regenLabel = t("regen");
   const deleteLabel = t("delete");
   const createdLabel = formatMessageTime(input.message.createdAt);
-  const messageTokens = useTokenCount(displayContent);
 
-  // Reasoning: from selected variant (persisted) or streaming state
+  // Reasoning from persisted variant data only (not streaming)
   const selectedVariant = variants[selectedVariantIndex];
-  const showStreamingReasoning = isGenerating && streamingReasoningText;
-  const reasoningText = showStreamingReasoning ? streamingReasoningText : (selectedVariant?.reasoning || null);
+  const reasoningText = selectedVariant?.reasoning || null;
   const reasoningDuration = selectedVariant?.reasoningDurationMs ?? null;
 
   return (
@@ -128,7 +122,7 @@ export function MessageBlock(input: MessageBlockProps) {
           </div>
         ) : isGenerating && !renderContent?.trim() ? (
           <div>
-            {!isUser && (reasoningText || reasoningDuration) && (
+            {(reasoningText || reasoningDuration) && (
               <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
             )}
             <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
@@ -209,7 +203,7 @@ export function MessageBlock(input: MessageBlockProps) {
       </div>
     </div>
   );
-}
+});
 
 function formatMessageTime(value: string): string {
   const date = new Date(value);
