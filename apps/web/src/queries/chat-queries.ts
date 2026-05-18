@@ -8,6 +8,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { useEffect } from "react";
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
 import {
   activateBranch,
@@ -42,11 +43,22 @@ function syncSnapshot(qc: import("@tanstack/react-query").QueryClient, chatId: C
 // ---------------------------------------------------------------------------
 
 export function useChatSnapshot(chatId: ChatId | null) {
-  return useQuery({
+  const query = useQuery({
     queryKey: chatId ? chatKeys.snapshot(chatId) : chatKeys.none(),
     queryFn: () => fetchChat(chatId!),
     enabled: Boolean(chatId),
   });
+
+  // Sync query data → normalized zustand store on every successful fetch
+  useEffect(() => {
+    if (query.data) {
+      useChatDataStore.getState().setSnapshot(query.data);
+    } else if (!chatId) {
+      useChatDataStore.getState().clear();
+    }
+  }, [query.data, chatId]);
+
+  return query;
 }
 
 // ---------------------------------------------------------------------------
