@@ -22,7 +22,7 @@ export interface ChatRuntimeDeps {
   assemblePrompt: (
     chatId: ChatId,
     branchId?: ChatBranchId,
-    options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call"; contextBudget?: number | null },
+    options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call"; contextBudget?: number | null; responseReserve?: number },
   ) => Promise<{
     branchId: ChatBranchId;
     prompt: AssemblePromptResponse;
@@ -53,11 +53,11 @@ export class ChatRuntime {
    *
    * If `content` is empty, skips user message insertion (used for continue/regenerate).
    */
-  async prepareLiveTurn(chatId: ChatId, content: string, model: string): Promise<PreparedLiveTurn> {
+  async prepareLiveTurn(chatId: ChatId, content: string, model: string, responseReserve?: number): Promise<PreparedLiveTurn> {
     const { chatApp, assemblePrompt, getSnapshot } = this.deps;
     const trimmed = content.trim();
     if (!trimmed) {
-      const assembled = await assemblePrompt(chatId, undefined, { model });
+      const assembled = await assemblePrompt(chatId, undefined, { model, responseReserve });
       return {
         prompt: assembled.prompt,
         snapshot: await getSnapshot(chatId),
@@ -71,7 +71,7 @@ export class ChatRuntime {
 
     let assembled;
     try {
-      assembled = await assemblePrompt(chatId, undefined, { model });
+      assembled = await assemblePrompt(chatId, undefined, { model, responseReserve });
     } catch (err) {
       try {
         await this.deps.chatApp.deleteMessage(userMessage.id);
@@ -244,12 +244,13 @@ export class ChatRuntime {
 
   async assemblePromptPreview(
     chatId: ChatId,
-    options: { excludeMessageId?: MessageId; model: string },
+    options: { excludeMessageId?: MessageId; model: string; responseReserve?: number },
   ): Promise<AssemblePromptResponse> {
     const { assemblePrompt } = this.deps;
     const assembled = await assemblePrompt(chatId, undefined, {
       excludeMessageIds: options.excludeMessageId ? [options.excludeMessageId] : [],
       model: options.model,
+      responseReserve: options.responseReserve,
     });
     if (options.excludeMessageId) {
       this.pendingPromptTraceByChat.set(chatId, {

@@ -31,6 +31,7 @@ export interface ChatLifecycleRuntimeDeps {
 			recentMessageLimit?: number;
 			mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call";
 			contextBudget?: number | null;
+			responseReserve?: number;
 		},
 	) => Promise<{
 		branchId: ChatBranchId;

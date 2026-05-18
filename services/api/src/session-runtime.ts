@@ -62,6 +62,7 @@ export interface SessionSnapshot {
 	}>;
 	promptTrace: PromptTraceRecordDto | null;
 	promptTraceHistory: PromptTraceRecordDto[];
+	contextPreview: import("@rp-platform/domain").AssemblePromptResponse | null;
 	character: CharacterRecord;
 	persona: PersonaRecord | null;
 }
@@ -208,11 +209,9 @@ export interface ImportResult {
 			branch.id as ChatBranchId,
 		);
 
-		const messagesWithVariants = await Promise.all(
-			branchMessages.map(async (message) => {
-				const variants = await this.stores.chats.getVariants(message.id);
-				return mapMessageDto(message as any, variants as any);
-			}),
+		const variantsByMessage = await this.stores.chats.getVariantsByBranch(branch.id);
+		const messagesWithVariants = branchMessages.map((message) =>
+			mapMessageDto(message as any, (variantsByMessage.get(message.id) ?? []) as any),
 		);
 
 		return {
@@ -229,9 +228,29 @@ export interface ImportResult {
 			})),
 			promptTrace: promptTraceHistory[0] ?? null,
 			promptTraceHistory,
+			contextPreview: promptTraceHistory[0]
+				? null
+				: await this.assembleContextPreview(chatId, branch.id as ChatBranchId),
 			character,
 			persona,
 		};
+	}
+
+	/** Lightweight assemble for UI display — no trace saved. */
+	private async assembleContextPreview(chatId: ChatId, branchId: ChatBranchId): Promise<import("@rp-platform/domain").AssemblePromptResponse | null> {
+		try {
+			const assembled = await this.assemblePrompt(chatId, branchId);
+			return {
+				layers: assembled.promptTraceDraft.assembledLayers as import("@rp-platform/domain").PromptLayerDto[],
+				tokenAccounting: assembled.promptTraceDraft.tokenAccounting,
+				activatedLoreEntries: assembled.promptTraceDraft.activatedLoreEntries,
+				retrievedMemories: assembled.promptTraceDraft.retrievedMemories,
+				finalPayload: assembled.promptTraceDraft.finalPayload,
+				prefill: assembled.promptTraceDraft.prefill,
+			};
+		} catch {
+			return null;
+		}
 	}
 
 	async getPromptTraceHistory(
@@ -333,7 +352,7 @@ export interface ImportResult {
 	private async assemblePrompt(
 		chatId: ChatId,
 		branchId?: ChatBranchId,
-		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call"; contextBudget?: number | null },
+		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call"; contextBudget?: number | null; responseReserve?: number },
 	) {
 		void await this.getActiveProviderProfile();
 		return this.promptService.assembleForChat({
@@ -344,6 +363,7 @@ export interface ImportResult {
 			recentMessageLimit: options?.recentMessageLimit,
 			mode: options?.mode,
 			contextBudget: options?.contextBudget ?? null,
+			responseReserve: options?.responseReserve,
 		});
 	}
 

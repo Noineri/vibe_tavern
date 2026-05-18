@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@rp-platform/api-contracts";
-import type { PromptTraceRecordDto } from "@rp-platform/domain";
+import type { AssemblePromptResponse, PromptTraceRecordDto } from "@rp-platform/domain";
 import type { AppSnapshot } from "../app-client.js";
 import { Ic } from "./shared/icons";
 import { cn } from "../lib/cn";
@@ -80,7 +80,7 @@ interface BuildModeInnerProps {
   character: AppSnapshot["character"];
   isSaving: boolean;
   buildTab: BuildTab;
-  activeTrace: PromptTraceRecordDto | null;
+  activeTrace: PromptTraceRecordDto | AssemblePromptResponse | null;
   promptPayloadText: string;
   promptTraceCount: number;
   onSave: (draft: BuildCharacterDraft) => Promise<void> | void;
@@ -160,7 +160,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
           )}
         </div>
         <div className="mb-7 font-ui text-[calc(var(--ui-fs)-1px)] text-t3 leading-[1.55]">
-          {trace ? (
+          {trace && 'id' in trace ? (
             <>
               {t("trace_showing").replace("{n}", String(trace.id))}{" "}
               <span className="text-t2">{trace.id}</span> · {trace.createdAt} · model:{" "}

@@ -363,13 +363,14 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
    * --- Compaction ---
    *
    * If contextBudget is set and the estimated token count exceeds it,
-   * we trim older messages from the history.
+   * we trim older messages from the history using a budget-aware strategy:
    *
-   * preserveCount = max(2, ceil(N/2)) ensures we always keep at least 2 messages
-   * and generally preserve the newer half of the conversation.
-   *
-   * findSafeCompactionBoundary() walks backwards from the proposed cut point
-   * so we never split an assistant→tool call pair.
+   * 1. Reserve tokens for the model's response (`responseReserve`).
+   * 2. Calculate how many tokens are available for history:
+   *      historyBudget = contextBudget - nonHistoryTokens - responseReserve
+   * 3. Walk messages from end to start, keeping as many as fit within historyBudget.
+   * 4. Always keep at least 2 messages (user+assistant pair).
+   * 5. Use findSafeCompactionBoundary() to avoid splitting assistant→tool pairs.
    */
   if (
     typeof context.config?.contextBudget === "number" &&
@@ -381,10 +382,24 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     const totalBeforeCompaction = nonHistoryTokens + fullHistoryTokens;
 
     if (totalBeforeCompaction > context.config.contextBudget) {
-      const preserveCount = Math.max(2, Math.ceil(context.chat.recentMessages.length / 2));
+      const responseReserve = context.config.responseReserve ?? 0;
+      const historyBudget = Math.max(0, context.config.contextBudget - nonHistoryTokens - responseReserve);
+
+      // Walk from end, accumulating tokens until we exceed historyBudget
+      let accTokens = 0;
+      let keepCount = 0;
+      const allMsgs = context.chat.recentMessages;
+      for (let i = allMsgs.length - 1; i >= 0; i--) {
+        const msgTokens = estimateTokens(formatRecentMessages([allMsgs[i]]));
+        if (accTokens + msgTokens > historyBudget && keepCount >= 2) break;
+        accTokens += msgTokens;
+        keepCount++;
+      }
+      keepCount = Math.max(keepCount, 2);
+
       const keepFrom = findSafeCompactionBoundary(
         context.chat.recentMessages as unknown as Parameters<typeof findSafeCompactionBoundary>[0],
-        preserveCount,
+        keepCount,
       );
       if (keepFrom > 0) {
         recentMessagesForHistory = context.chat.recentMessages.slice(keepFrom);
@@ -401,7 +416,9 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
               `[Preflight compaction] Kept ${recentMessagesForHistory.length} of ` +
               `${context.chat.recentMessages.length} recent messages ` +
               `(~${preservedTokens} tokens after compaction, ` +
-              `${totalBeforeCompaction} tokens before, budget ${context.config.contextBudget}).`,
+              `${totalBeforeCompaction} tokens before, ` +
+              `budget ${context.config.contextBudget}, ` +
+              `responseReserve ${responseReserve}).`,
           }),
         );
       }

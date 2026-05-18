@@ -21,7 +21,6 @@ export interface CharacterFormProps {
   onSave: () => void;
   onReset: () => void;
   onAvatarUpload: (file: File, originalFile?: File | null) => Promise<void> | void;
-
 }
 
 function parseCardToDraft(raw: unknown): Partial<BuildCharacterDraft> {
@@ -164,13 +163,12 @@ export function CharacterForm({
   const displayAvatar = avatarPreview || avatarUrl;
   const lblCls = "block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3";
 
-  // Total character tokens (all text fields)
-  const charTotal = useTokenCount([
-    description, firstMessage, mesExample, scenario,
-    personalitySummary, postHistoryInstructions, creatorNotes,
-    systemPrompt, depthPrompt,
-    ...alternateGreetings,
+  // Token breakdown: permanent (all fields except greeting) + greeting
+  const permanentTokens = useTokenCount([
+    description, scenario, personalitySummary, mesExample,
+    postHistoryInstructions, creatorNotes, systemPrompt, depthPrompt,
   ].filter(Boolean).join("\n"));
+  const greetingTokens = useTokenCount(firstMessage || "");
 
   return (
     <div>
@@ -190,7 +188,9 @@ export function CharacterForm({
           {name || t("unnamed")}
         </div>
         <div className="flex items-center gap-2">
-          <span className="font-ui text-[11px] tabular-nums text-t3">{charTotal.toLocaleString()} {t("tokens_label")}</span>
+          <span className="font-ui text-[11px] tabular-nums text-t3">
+            {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
+          </span>
           <button
             className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
             style={{ height: 28, width: 28 }}
@@ -294,10 +294,13 @@ export function CharacterForm({
           >+</span>
         </div>
         {alternateGreetings.length > 0 && (
-          <AutoTextarea className={inputCls} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
-            const next = [...alternateGreetings]; next[altGreetIdx] = e.target.value;
-            setValue("alternateGreetings", next, { shouldDirty: true });
-          }} placeholder={t("alternate_greeting_placeholder")} />
+          <div className="relative">
+            <AutoTextarea className={inputCls} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
+              const next = [...alternateGreetings]; next[altGreetIdx] = e.target.value;
+              setValue("alternateGreetings", next, { shouldDirty: true });
+            }} placeholder={t("alternate_greeting_placeholder")} />
+            <div className="absolute right-0 top-0"><TokenBadge text={alternateGreetings[altGreetIdx] || ""} /></div>
+          </div>
         )}
       </div>
 

@@ -1,6 +1,6 @@
 import { hc } from "hono/client";
 import type { Chat, ChatBranch, ChatBranchId, ChatId, Message, MessageVariant } from "@rp-platform/domain";
-import type { PromptPresetDto, PromptTraceRecordDto, ProviderProbeResponse } from "@rp-platform/domain";
+import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto, ProviderProbeResponse } from "@rp-platform/domain";
 import type { AppType } from "@rp-platform/api";
 import { getGatewayBaseUrl } from "./gateway-client.js";
 import { parseSSEStream } from "./lib/sse-parser.js";
@@ -39,6 +39,7 @@ export interface AppSnapshot {
   }>;
   promptTrace: PromptTraceRecordDto | null;
   promptTraceHistory: PromptTraceRecordDto[];
+  contextPreview: AssemblePromptResponse | null;
   character: {
     id: string;
     name: string;

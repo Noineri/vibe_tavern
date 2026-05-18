@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PersonaQuickSwitch } from "./PersonaQuickSwitch.js";
 import { Icons } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
@@ -11,9 +11,7 @@ import { useDisplayHelpers } from "../hooks/use-display-helpers.js";
 import { useChatStore, useProviderStore } from "../stores/index.js";
 import { useBootstrapQuery, usePersonasQuery } from "../queries/bootstrap-queries.js";
 import { useChatSnapshot } from "../queries/chat-queries.js";
-import { getT } from "../i18n/context.js";
-import { useMemo } from "react";
-import { countTokens } from "../utils/tokenizer.js";
+import type { PromptLayerDto } from "@rp-platform/domain";
 
 export function InputArea() {
   const { t } = useT();
@@ -37,14 +35,9 @@ export function InputArea() {
   const connection = useProviderStore((s) => s.connection);
 
   const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
-  const promptPresets = bootstrapQuery.data?.promptPresets ?? [];
-  const activePresetId = snapshot?.activeChat.promptPresetId ?? null;
-  const activePreset = promptPresets.find(p => p.id === activePresetId) ?? null;
   const display = useDisplayHelpers(allCharacters, snapshot);
   const personas = usePersonasQuery().data ?? [];
 
-  const characterName = snapshot?.character.name ?? "";
-  const personaName = snapshot?.persona?.name ?? t("no_persona");
   const activePersonaId = snapshot?.persona?.id ?? null;
   const contextSize = provider.activeProviderProfile?.contextBudget ?? 0;
   const maxTokens = provider.activeProviderProfile?.maxTokens ?? 0;
@@ -62,23 +55,37 @@ export function InputArea() {
   }
   const sendLabel = renderSendLabel();
 
-  // --- Token counting from raw texts ---
+  // --- Token counting from backend prompt trace layers ---
+  const TEMPORARY_TYPES = new Set(["chat_history", "compaction"]);
+
   const buckets = useMemo(() => {
-    const c = snapshot?.character;
-    const p = snapshot?.persona;
-    const msgs = snapshot?.messages ?? [];
-    const summary = snapshot?.activeChat.summary ?? "";
-    return {
-      system: countTokens([activePreset?.system, activePreset?.jailbreak, activePreset?.authorsNote, c?.systemPrompt].filter(Boolean).join("\n")),
-      character: countTokens([c?.description, c?.scenario, c?.mesExample, c?.postHistoryInstructions, c?.creatorNotes, c?.depthPrompt].filter(Boolean).join("\n")),
-      persona: countTokens(p?.description ?? ""),
-      summary: countTokens(summary),
-      history: countTokens(msgs.map(m => m.content).join("\n")),
-    };
-  }, [snapshot?.character, snapshot?.persona, snapshot?.messages, snapshot?.activeChat.summary, snapshot?.activeChat.promptPresetId, promptPresets]);
+    const layers: PromptLayerDto[] = display.activePromptTrace?.layers ?? [];
+    let system = 0, character = 0, persona = 0, lore = 0, memory = 0, tools = 0, history = 0;
+    for (const layer of layers) {
+      if (!layer.enabled || layer.position === "hidden_system") continue;
+      const tokens = layer.tokenCount;
+      if (TEMPORARY_TYPES.has(layer.sourceType)) {
+        history += tokens;
+      } else {
+        switch (layer.sourceType) {
+          case "prompt_preset":          system += tokens; break;
+          case "character_system_prompt": system += tokens; break;
+          case "character":             character += tokens; break;
+          case "persona":               persona += tokens; break;
+          case "lore_entry":            lore += tokens; break;
+          case "summary_memory":        memory += tokens; break;
+          case "retrieval_memory":      memory += tokens; break;
+          case "tool_profile":          tools += tokens; break;
+          default:                      system += tokens; break;
+        }
+      }
+    }
+    return { system, character, persona, lore, memory, tools, history };
+  }, [display.activePromptTrace?.layers]);
 
   const inputTokens = useTokenCount(draft);
-  const totalUsed = buckets.system + buckets.character + buckets.persona + buckets.summary + buckets.history + inputTokens;
+  const permanent = buckets.system + buckets.character + buckets.persona + buckets.lore + buckets.memory + buckets.tools;
+  const totalUsed = permanent + buckets.history + inputTokens;
   const availableBudget = Math.max(0, contextSize - maxTokens);
   const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
   const tokenState = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
@@ -102,7 +109,6 @@ export function InputArea() {
   return (
     <div
       className="relative z-10 shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3.5 transition-opacity duration-200"
-      style={{ opacity: canSend || isSending || draft.trim() ? 1 : 0.82 }}
     >
       <div className="rounded-lg border border-border bg-bg transition-colors duration-150 focus-within:border-border2">
         <textarea
@@ -134,21 +140,34 @@ export function InputArea() {
               )}
               onClick={() => setTokenPopOpen((open) => !open)}
             >
-              {totalUsed.toLocaleString()} / {contextSize > 0 ? contextSize.toLocaleString() : "∞"}
+              {permanent.toLocaleString()}<span className="text-t4">+</span>{(buckets.history + inputTokens).toLocaleString()} / {contextSize > 0 ? contextSize.toLocaleString() : "∞"}
             </span>
             {tokenPopOpen && (
               <div
-                className="absolute bottom-[calc(100%+8px)] left-1/2 z-[220] w-[220px] -translate-x-1/2 rounded-lg border border-border2 bg-surface px-3.5 py-2.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)]"
+                className="absolute bottom-[calc(100%+8px)] left-1/2 z-[220] w-[240px] -translate-x-1/2 rounded-lg border border-border2 bg-surface px-3.5 py-2.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)]"
               >
                 <div className="mb-1.5 border-b border-border pb-1.5 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("context_breakdown")}</div>
+                <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_permanent")}</div>
                 <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_system")}</span><span className="tabular-nums text-t1">{buckets.system.toLocaleString()}</span></div>
                 <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_character")}</span><span className="tabular-nums text-t1">{buckets.character.toLocaleString()}</span></div>
                 <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_persona")}</span><span className="tabular-nums text-t1">{buckets.persona.toLocaleString()}</span></div>
-                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_summary")}</span><span className="tabular-nums text-t1">{buckets.summary.toLocaleString()}</span></div>
+                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_lore")}</span><span className="tabular-nums text-t1">{buckets.lore.toLocaleString()}</span></div>
+                <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_memory")}</span><span className="tabular-nums text-t1">{buckets.memory.toLocaleString()}</span></div>
+                <div className="mb-1.5 flex justify-between text-xs text-t2"><span>{t("context_tools")}</span><span className="tabular-nums text-t1">{buckets.tools.toLocaleString()}</span></div>
+                <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_temporary")}</div>
                 <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_history")}</span><span className="tabular-nums text-t1">{buckets.history.toLocaleString()}</span></div>
                 <div className="mb-1.5 flex justify-between text-xs text-t2"><span>{t("context_current_input")}</span><span className="tabular-nums text-t1">{inputTokens.toLocaleString()}</span></div>
                 <div className="mb-1 flex justify-between border-t border-border pt-1.5 text-xs text-t2"><span>{t("context_response_budget")}</span><span className="tabular-nums text-t1">-{maxTokens.toLocaleString()}</span></div>
                 <div className="mt-0.5 flex justify-between text-xs font-medium text-t1"><span>{t("context_total_available")}</span><span className="tabular-nums">{availableBudget.toLocaleString()}</span></div>
+                {availableBudget > 0 && (
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-s3">
+                    <div className="flex h-full">
+                      <div className="bg-accent" style={{ width: `${Math.min(100, permanent / availableBudget * 100)}%` }} title={`${t("context_permanent")}: ${permanent.toLocaleString()}`} />
+                      <div className="bg-t3" style={{ width: `${Math.min(100, buckets.history / availableBudget * 100)}%` }} title={`${t("context_history")}: ${buckets.history.toLocaleString()}`} />
+                      <div className="bg-accent-t" style={{ width: `${Math.min(100, inputTokens / availableBudget * 100)}%` }} title={`${t("context_current_input")}: ${inputTokens.toLocaleString()}`} />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

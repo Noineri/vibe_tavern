@@ -76,6 +76,8 @@ export interface AssemblePromptForChatInput {
   recentMessageLimit?: number;
   excludeMessageIds?: MessageId[];
   contextBudget?: number | null;
+  /** Tokens reserved for the model's response. Subtracted from contextBudget during compaction. */
+  responseReserve?: number;
   mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call";
 }
 
@@ -120,9 +122,10 @@ export class PromptAssemblyService {
       promptPresetResolved: promptPreset ? { id: promptPreset.id, name: promptPreset.name, systemLength: promptPreset.text.length } : null,
     });
     const excludedMessageIds = new Set(input.excludeMessageIds ?? []);
+    const messageLimit = input.recentMessageLimit ?? (chat.messageHistoryLimit || Infinity);
     const recentMessages = branchMessages
       .filter((message) => !excludedMessageIds.has(message.id as MessageId))
-      .slice(-(input.recentMessageLimit ?? 12))
+      .slice(-(messageLimit === Infinity ? branchMessages.length : messageLimit))
       .map((message) => ({
         id: message.id as MessageId,
         role: message.role as 'system' | 'user' | 'assistant' | 'tool',
@@ -200,6 +203,7 @@ export class PromptAssemblyService {
       },
       config: {
         contextBudget: input.contextBudget ?? null,
+        responseReserve: input.responseReserve ?? 0,
         model: input.model,
       },
     });

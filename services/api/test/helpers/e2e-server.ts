@@ -75,6 +75,9 @@ CREATE TABLE characters (
 	system_prompt text,
 	tags_json text DEFAULT '[]' NOT NULL,
 	avatar_asset_id text,
+	avatar_full_asset_id text,
+	mes_example_mode text DEFAULT 'always' NOT NULL,
+	mes_example_depth integer DEFAULT 4 NOT NULL,
 	status text DEFAULT 'active' NOT NULL,
 	created_at text NOT NULL,
 	updated_at text NOT NULL
@@ -85,6 +88,7 @@ CREATE TABLE personas (
 	description text DEFAULT '' NOT NULL,
 	pronouns text,
 	avatar_asset_id text,
+	avatar_full_asset_id text,
 	default_for_new_chats integer DEFAULT 0 NOT NULL,
 	created_at text NOT NULL,
 	updated_at text NOT NULL
