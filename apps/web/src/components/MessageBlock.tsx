@@ -4,6 +4,7 @@ import { Markdown } from "../lib/markdown.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { initials } from "./app-shell-helpers.js";
 import { useDisplayMessage } from "../stores/chat-selectors.js";
+import { useChatStore } from "../stores/index.js";
 import type { MessageBlockProps } from "./play-mode-types.js";
 import { Icons } from "./shared/icons.js";
 import { AutoTextarea } from "./shared/auto-textarea.js";
@@ -21,6 +22,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const isUser = msg.role === "user";
   const displayContent = msg.displayContent;
   const messageTokens = msg.tokenCount;
+
+  // Streaming text for regeneration — only non-null when this message is the active target
+  const globalStreamingText = useChatStore((s) => s.streamingText);
+  const globalStreamingReasoning = useChatStore((s) => s.streamingReasoningText);
+  const isStreamingHere = input.isBusy && !isUser && (globalStreamingText || globalStreamingReasoning);
+  const activeStreamingText = isStreamingHere ? globalStreamingText : null;
+  const activeStreamingReasoning = isStreamingHere ? globalStreamingReasoning : null;
 
   const variants = Array.isArray(msg.variants) ? msg.variants : [];
   const variantCount = variants.length;
@@ -135,6 +143,20 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               </span>
             </div>
           </div>
+        ) : isStreamingHere ? (
+          <>
+            {(activeStreamingReasoning || reasoningDuration) && (
+              <MessageReasoning reasoning={activeStreamingReasoning || reasoningText} reasoningDurationMs={reasoningDuration} />
+            )}
+            <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.82] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
+              {activeStreamingText ? <Markdown text={activeStreamingText} /> : null}
+              <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
+                <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
+                <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
+                <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
+              </span>
+            </div>
+          </>
         ) : (
           <>
             {!isUser && (reasoningText || reasoningDuration) && (
