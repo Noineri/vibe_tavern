@@ -244,12 +244,13 @@ export class ChatRuntime {
 
   async assemblePromptPreview(
     chatId: ChatId,
-    options: { excludeMessageId?: MessageId; model: string; responseReserve?: number },
+    options: { excludeMessageId?: MessageId; model: string; contextBudget?: number | null; responseReserve?: number },
   ): Promise<AssemblePromptResponse> {
     const { assemblePrompt } = this.deps;
     const assembled = await assemblePrompt(chatId, undefined, {
       excludeMessageIds: options.excludeMessageId ? [options.excludeMessageId] : [],
       model: options.model,
+      contextBudget: options.contextBudget,
       responseReserve: options.responseReserve,
     });
     if (options.excludeMessageId) {
