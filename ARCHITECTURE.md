@@ -11,11 +11,14 @@ RP Platform is a self-hosted roleplay chat application — a local alternative t
 - Assemble prompts from layered components with priority-based ordering, depth injection, and context-budget-aware compaction
 - Resolve macros (`{{char}}`, `{{user}}`, `{{scenario}}`, etc.) — SillyTavern-compatible
 - Branch chats from any message, regenerate replies, and maintain multiple response variants (swipes)
+- `mesExampleMode` on characters: `always` | `once` | `depth` — controls when example dialogues are included, with optional depth-based injection
 - Configure prompt presets (system prompt, jailbreak, summary prompt, tools, author's note, prefill)
 - Maintain user personas with name, description, pronouns
 - Record full prompt traces for debugging (which layers activated, token counts, final payload)
 - Summarize chat history via AI
 - Stream responses with reasoning support (DeepSeek R1 thinking, Claude extended thinking)
+- Import thinking tags from SillyTavern chat exports as reasoning variants
+- Budget-aware context compaction: reserves tokens for model response, trims history to fit
 
 **Stack:** Bun · Hono · Drizzle ORM / SQLite · Vercel AI SDK · Vite / React · TypeScript monorepo
 
@@ -161,10 +164,12 @@ prompt_preset_summary          350   summary instructions
 tool_instructions              300   tool/system prompts
 prompt_preset_authors_note     170   injected into chat history at depth
 post_history_instructions      160
-mes_example                    150
-recent_history                 100   actual chat messages
+mes_example                    150   (mode: always | once | depth)
+recent_history                 100   actual chat messages (budget-aware compaction)
 preflight_compaction            50   metadata about compacted messages
 ```
+
+**Compaction**: When `contextBudget` is set and history exceeds the budget, older messages are trimmed. The algorithm reserves `responseReserve` tokens (from the provider profile's `maxTokens`) for the model's response, then walks messages from the end, keeping as many as fit within `historyBudget = contextBudget - permanentTokens - responseReserve`. Always keeps at least the last 2 messages. `findSafeCompactionBoundary()` ensures assistant→tool pairs are not split.
 
 **Assembly modes** control which layers are active:
 
@@ -204,7 +209,7 @@ Exposed via **store classes** (`CharacterStore`, `ChatStore`, `PersonaStore`, `P
 
 Parses external formats into internal domain types:
 - `chara-card-v3.ts` — SillyTavern character cards (PNG with embedded JSON via tEXt chunks)
-- `st-chat.ts` — SillyTavern JSONL chat exports
+- `st-chat.ts` — SillyTavern JSONL chat exports. Extracts thinking tags from message content into the `reasoning` field on variants
 - `st-lorebook.ts` — SillyTavern lorebook exports
 
 ### `services/api/`
@@ -285,6 +290,8 @@ The backend. Single Bun process serving HTTP API and static frontend.
 - **JSON columns:** Stored as text, suffixed `Json` in schema (e.g. `tagsJson`, `alternateGreetingsJson`). Parsed on read.
 - **Timestamps:** ISO 8601 strings, not Unix timestamps.
 - **Deletion:** Cascading where appropriate (character → chats → messages). `set null` for persona references.
+- **Message history:** `messageHistoryLimit` on chats (0 = unlimited, all messages passed to pipeline). Pipeline compaction handles actual trimming.
+- **Batch queries:** `getVariantsByBranch(branchId)` loads all variants for a branch in a single JOIN query instead of N+1 individual queries.
 
 ---
 
@@ -317,5 +324,7 @@ React SPA built with Vite. Communicates exclusively via the HTTP API defined in 
 - Asset upload for character avatars (cropped thumbnail + original full-size)
 - Avatar crop modal (canvas-based circular crop with zoom slider and scroll-to-zoom)
 - Avatar panel (floating draggable, zoomable full-size avatar preview)
+- Context usage display: permanent vs temporary token breakdown from assembled prompt layers
+- Build mode: field-based token counting for character cards (no dependency on sending messages)
 
 Built as static assets served by the same Hono server in production.
