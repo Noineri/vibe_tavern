@@ -127,4 +127,7 @@ mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
 			process.exit(0);
 		});
 	}
-})();
+})().catch((err) => {
+	console.error(`[prod] Fatal error:`, err);
+	process.exit(1);
+});

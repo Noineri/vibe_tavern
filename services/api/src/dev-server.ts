@@ -81,4 +81,7 @@ mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
 	});
 
 	console.log(`RP Platform API listening on http://${host}:${port}`);
-})();
+})().catch((err) => {
+	console.error(`[bootstrap] Fatal error:`, err);
+	process.exit(1);
+});
