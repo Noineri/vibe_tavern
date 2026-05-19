@@ -68,7 +68,7 @@ export interface RuntimeApi {
   updatePromptPreset: (presetId: string, body: unknown) => unknown;
   deletePromptPreset: (presetId: string) => void;
   uploadAsset: (file: File) => Promise<{ assetId: string; url: string }>;
-  serveAsset: (assetId: string) => Promise<{ body: Buffer; contentType: string } | null>;
+  serveAsset: (assetId: string) => Promise<{ body: Uint8Array; contentType: string } | null>;
 
   // ── Methods absorbed from former routerDeps ─────────────────────────
 
