@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { Database } from 'bun:sqlite';
 import { resolve } from 'node:path';
+import { mkdir } from 'node:fs/promises';
 import * as schema from './db-schema.js';
 
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
@@ -90,6 +91,7 @@ async function baselineLegacyDb(sqlite: Database, migrationsFolder: string): Pro
 }
 
 export async function createDb(dbPath: string): Promise<AppDb> {
+  await mkdir(resolve(dbPath, '..'), { recursive: true });
   const sqlite = new Database(dbPath);
   sqlite.exec('PRAGMA journal_mode = WAL');
   sqlite.exec('PRAGMA foreign_keys = ON');

@@ -208,7 +208,7 @@ export async function mirrorPromptTrace(
 		STORAGE_FOLDERS.traces,
 		`${date}/${traceId}.json`,
 	);
-	deps.fileStore.writeJson(filePath, trace);
+		await deps.fileStore.writeJson(filePath, trace);
 	return filePath;
 }
 
