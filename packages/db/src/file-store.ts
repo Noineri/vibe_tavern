@@ -1,5 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { mkdir, rename } from "node:fs/promises";
+import { rename } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
 
 export const STORAGE_FOLDERS = {
@@ -18,8 +17,8 @@ export type StorageFolder =
 export interface FileStore {
 	readonly dataRoot: string;
 	resolvePath(folder: StorageFolder, relativePath: string): string;
-	readJson<T = unknown>(absolutePath: string): T;
-	writeJson(absolutePath: string, data: unknown): void;
+	readJson<T = unknown>(absolutePath: string): Promise<T>;
+	writeJson(absolutePath: string, data: unknown): Promise<void>;
 	asyncWriteJson(absolutePath: string, data: unknown): Promise<void>;
 }
 
@@ -66,6 +65,29 @@ function safeResolve(
 	return target;
 }
 
+async function writeLocked(
+	writeLocks: Map<string, Promise<void>>,
+	absolutePath: string,
+	data: unknown,
+): Promise<void> {
+	const previous = writeLocks.get(absolutePath) ?? Promise.resolve();
+	const next = previous
+		.then(async () => {
+			const dir = resolve(absolutePath, "..");
+			const tmpPath = join(
+				dir,
+				`.tmp-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
+			);
+			await Bun.write(tmpPath, canonicalJsonBytes(data));
+			await rename(tmpPath, absolutePath);
+		})
+		.finally(() => {
+			writeLocks.delete(absolutePath);
+		});
+	writeLocks.set(absolutePath, next);
+	await next;
+}
+
 export function createFileStore(dataRoot?: string): FileStore {
 	const root = resolve(dataRoot ?? join(process.cwd(), "data"));
 	const writeLocks = new Map<string, Promise<void>>();
@@ -74,37 +96,14 @@ export function createFileStore(dataRoot?: string): FileStore {
 		resolvePath(folder, relativePath) {
 			return safeResolve(root, folder, relativePath);
 		},
-		readJson<T = unknown>(absolutePath: string): T {
-			return JSON.parse(readFileSync(absolutePath, "utf-8")) as T;
+		readJson<T = unknown>(absolutePath: string): Promise<T> {
+			return Bun.file(absolutePath).json() as Promise<T>;
 		},
-		writeJson(absolutePath: string, data: unknown): void {
-			const dir = resolve(absolutePath, "..");
-			mkdirSync(dir, { recursive: true });
-			const tmpPath = join(
-				dir,
-				`.tmp-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
-			);
-			writeFileSync(tmpPath, canonicalJsonBytes(data));
-			renameSync(tmpPath, absolutePath);
+		writeJson(absolutePath: string, data: unknown): Promise<void> {
+			return writeLocked(writeLocks, absolutePath, data);
 		},
-		async asyncWriteJson(absolutePath: string, data: unknown): Promise<void> {
-			const previous = writeLocks.get(absolutePath) ?? Promise.resolve();
-			const next = previous
-				.then(async () => {
-					const dir = resolve(absolutePath, "..");
-					await mkdir(dir, { recursive: true });
-					const tmpPath = join(
-						dir,
-						`.tmp-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
-					);
-					await Bun.write(tmpPath, canonicalJsonBytes(data));
-					await rename(tmpPath, absolutePath);
-				})
-				.finally(() => {
-					writeLocks.delete(absolutePath);
-				});
-			writeLocks.set(absolutePath, next);
-			await next;
+		asyncWriteJson(absolutePath: string, data: unknown): Promise<void> {
+			return writeLocked(writeLocks, absolutePath, data);
 		},
 	};
 }

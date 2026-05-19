@@ -262,7 +262,7 @@ export class PromptAssemblyService {
       STORAGE_FOLDERS.traces,
       `${date}/${traceId}.json`,
     );
-    fileStore.writeJson(filePath, trace);
+    await fileStore.writeJson(filePath, trace);
     return filePath;
   }
 }
