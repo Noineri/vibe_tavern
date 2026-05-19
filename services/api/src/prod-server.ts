@@ -14,7 +14,7 @@
  */
 
 import { resolve } from "node:path";
-import { mkdirSync, existsSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { setTokenCountFn } from "@rp-platform/prompt-pipeline";
 import { createRuntimeStore } from "./session-runtime-store.js";
 import { warmupTokenizers, countTokens } from "./ai/tokenizer-service.js";
@@ -35,23 +35,22 @@ const host = process.env.RP_PLATFORM_HOST ?? "127.0.0.1";
 const port = Number(process.env.RP_PLATFORM_PORT ?? "8787");
 
 const staticDir = resolve(import.meta.dir, '..', '..', '..', 'apps', 'web', 'dist');
-const staticEnabled = existsSync(resolve(staticDir, "index.html"));
 
 // ─── Bootstrap ───────────────────────────────────────────────────────────────
 
 console.log(`[prod] Starting RP Platform...`);
 console.log(`[prod] Root: ${rootDir}`);
-console.log(`[prod] Static: ${staticEnabled ? staticDir : "(not built — API-only mode)"}`);
 
 mkdirSync(resolve(rootDir, "data"), { recursive: true });
 mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
 
 // ─── DB init ─────────────────────────────────────────────────────────────────
-// Migrations run automatically inside createDb() — no separate drizzle-kit step needed.
 
 (async () => {
+	const staticEnabled = await Bun.file(resolve(staticDir, "index.html")).exists();
+	console.log(`[prod] Static: ${staticEnabled ? staticDir : "(not built — API-only mode)"}`);
 	// Stores
-	const stores = createRuntimeStore();
+	const stores = await createRuntimeStore();
 
 	// Seed
 	await Promise.all([
@@ -90,7 +89,7 @@ mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
 	);
 
 	// Hono app — with static frontend if available
-	const app = createApp({
+	const app = await createApp({
 		runtime,
 		staticDir: staticEnabled ? staticDir : undefined,
 	});

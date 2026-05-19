@@ -29,7 +29,7 @@ import { configureLogDir } from "./send-debug-log.js";
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
-const paths = resolveStandalonePaths();
+const paths = await resolveStandalonePaths();
 
 console.log(`[standalone] Starting Claw Tavern...`);
 console.log(`[standalone] Data:  ${paths.dataDir}`);
@@ -48,7 +48,7 @@ configureLogDir(paths.logsDir);
 
 (async () => {
 	// Stores
-	const stores = createRuntimeStore(paths.dataDir);
+	const stores = await createRuntimeStore(paths.dataDir);
 
 	// Seed
 	await Promise.all([
@@ -88,7 +88,7 @@ configureLogDir(paths.logsDir);
 	);
 
 	// Hono app — with static frontend if available
-	const app = createApp({
+	const app = await createApp({
 		runtime,
 		staticDir: paths.webEnabled ? paths.webDir : undefined,
 	});

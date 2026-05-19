@@ -11,8 +11,8 @@ export interface StoreContainer {
   uiSettings: UiSettingsStore;
 }
 
-export function createStoreContainer(dbPath: string): StoreContainer {
-  const db = createDb(dbPath);
+export async function createStoreContainer(dbPath: string): Promise<StoreContainer> {
+  const db = await createDb(dbPath);
   return {
     db,
     characters: new CharacterStore(db),
