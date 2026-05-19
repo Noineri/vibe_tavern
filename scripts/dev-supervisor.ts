@@ -1,4 +1,4 @@
-import { join, resolve } from "path";
+import { join, resolve } from "node:path";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -28,7 +28,7 @@ const apiServerEntryPath = join(workspaceDir, "services", "api", "src", "dev-ser
 // Bootstrap
 // ---------------------------------------------------------------------------
 
-import { mkdirSync } from "fs";
+import { mkdirSync } from "node:fs";
 mkdirSync(logsDir, { recursive: true });
 await Bun.write(logFilePath, `=== RP Platform launcher started at ${new Date().toISOString()} ===\n`);
 for (const childLogPath of Object.values(processLogPaths)) {

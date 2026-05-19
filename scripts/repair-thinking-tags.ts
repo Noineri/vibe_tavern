@@ -7,7 +7,7 @@
  *
  * Usage: bun run scripts/repair-thinking-tags.ts [path-to-db]
  */
-const { Database } = require("bun:sqlite");
+import { Database } from "bun:sqlite";
 
 const DB_PATH = process.argv[2] || "data/rp-platform.db";
 
