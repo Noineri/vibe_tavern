@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { setTokenCountFn } from "@rp-platform/prompt-pipeline";
 import { createRuntimeStore } from "./session-runtime-store.js";
 import { warmupTokenizers, countTokens } from "./ai/tokenizer-service.js";
@@ -23,8 +23,8 @@ const port = Number(process.env.RP_PLATFORM_API_PORT ?? "8787");
 
 console.log("[bootstrap] Starting RP Platform API...");
 
-mkdirSync(resolve(rootDir, "data"), { recursive: true });
-mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
+await mkdir(resolve(rootDir, "data"), { recursive: true });
+await mkdir(resolve(rootDir, "data", "assets"), { recursive: true });
 
 // ─── DI wiring + server start ────────────────────────────────────────────────
 // DB migrations run automatically inside createDb() — no separate drizzle-kit step needed.

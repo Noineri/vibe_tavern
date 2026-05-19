@@ -14,7 +14,7 @@
  */
 
 import { resolve } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { setTokenCountFn } from "@rp-platform/prompt-pipeline";
 import { createRuntimeStore } from "./session-runtime-store.js";
 import { warmupTokenizers, countTokens } from "./ai/tokenizer-service.js";
@@ -41,8 +41,8 @@ const staticDir = resolve(import.meta.dir, '..', '..', '..', 'apps', 'web', 'dis
 console.log(`[prod] Starting RP Platform...`);
 console.log(`[prod] Root: ${rootDir}`);
 
-mkdirSync(resolve(rootDir, "data"), { recursive: true });
-mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
+await mkdir(resolve(rootDir, "data"), { recursive: true });
+await mkdir(resolve(rootDir, "data", "assets"), { recursive: true });
 
 // ─── DB init ─────────────────────────────────────────────────────────────────
 

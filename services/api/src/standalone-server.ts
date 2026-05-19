@@ -11,7 +11,7 @@
  */
 
 import { resolve } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { setTokenCountFn } from "@rp-platform/prompt-pipeline";
 import { resolveStandalonePaths } from "./standalone-paths.js";
 import { createRuntimeStore } from "./session-runtime-store.js";
@@ -38,10 +38,12 @@ console.log(`[standalone] Host:  ${paths.host}:${paths.port}`);
 
 // ─── Ensure data directories ─────────────────────────────────────────────────
 
-mkdirSync(paths.dataDir, { recursive: true });
-mkdirSync(paths.assetsDir, { recursive: true });
-mkdirSync(paths.traceDir, { recursive: true });
-mkdirSync(paths.logsDir, { recursive: true });
+// ─── Ensure data directories ─────────────────────────────────────────────────
+
+await mkdir(paths.dataDir, { recursive: true });
+await mkdir(paths.assetsDir, { recursive: true });
+await mkdir(paths.traceDir, { recursive: true });
+await mkdir(paths.logsDir, { recursive: true });
 configureLogDir(paths.logsDir);
 
 // ─── Bootstrap ───────────────────────────────────────────────────────────────

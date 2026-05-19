@@ -1,5 +1,5 @@
-import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { resolve, dirname } from "node:path";
+import { mkdir } from "node:fs/promises";
 
 /**
  * Configurable debug log writer.
@@ -13,10 +13,6 @@ let logDir: string | undefined;
 let logPath: string = resolve(process.cwd(), "logs", "send-debug.log");
 let dirEnsured = false;
 
-/**
- * Override the log directory. Must be called before any `logSendDebug()` call.
- * Resets the dirEnsured flag so the new directory is created on first write.
- */
 export function configureLogDir(dir: string): void {
 	logDir = dir;
 	logPath = resolve(dir, "send-debug.log");
@@ -29,13 +25,11 @@ export function logSendDebug(
 ): void {
 	try {
 		if (!dirEnsured) {
-			const dir = dirname(logPath);
-			mkdirSync(dir, { recursive: true });
+			void mkdir(dirname(logPath), { recursive: true });
 			dirEnsured = true;
 		}
 		void (Bun.write as any)(logPath, `${new Date().toISOString()} ${event} ${JSON.stringify(data, redactSecrets)}\n`, { append: true });
 	} catch {
-		// Debug logging must never break chat flow.
 	}
 }
 
