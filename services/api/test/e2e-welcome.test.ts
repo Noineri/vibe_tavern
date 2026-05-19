@@ -11,7 +11,6 @@
 import { describe, it, expect, afterAll, beforeAll } from "bun:test";
 import { createTestServer, json } from "./helpers/e2e-server.js";
 import type { TestServer } from "./helpers/e2e-server.js";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 let server: TestServer;
@@ -129,7 +128,7 @@ describe("Welcome → Import character (Oliver the telepath)", () => {
     const oliverPath = resolve(
       "N:/janitor_characters/Oliver(telepath)/Oliver.json",
     );
-    const oliverJson = readFileSync(oliverPath, "utf-8");
+    const oliverJson = await Bun.file(oliverPath).text();
 
     const result = await json<ImportResult>(
       await server.api("/api/import/json", {

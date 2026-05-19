@@ -7,9 +7,7 @@
  * - Byte-based fallback for unknown models
  */
 
-import { readFileSync, existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { getEncoding, type Tiktoken } from "js-tiktoken";
 import { Tokenizer as WebTokenizer } from "@agnai/web-tokenizers";
 
@@ -18,26 +16,31 @@ import { Tokenizer as WebTokenizer } from "@agnai/web-tokenizers";
 const BYTES_PER_TOKEN = 3.35;
 
 function guesstimate(text: string): number {
-	const byteLen = Buffer.byteLength(text, "utf8");
+	const byteLen = new TextEncoder().encode(text).length;
 	return Math.ceil(byteLen / BYTES_PER_TOKEN);
 }
 
 // ── Paths ────────────────────────────────────────────────────────────────
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-function resolveTokenizerDir(): string {
+async function resolveTokenizerDir(): Promise<string> {
 	// 1. Next to the executable (standalone .exe mode)
 	const exeDir = resolve(process.execPath, "..");
 	const exeTokenizerDir = join(exeDir, "tokenizers");
-	if (existsSync(join(exeTokenizerDir, "claude.json"))) {
+	if (await Bun.file(join(exeTokenizerDir, "claude.json")).exists()) {
 		return exeTokenizerDir;
 	}
 	// 2. Relative to source file (dev mode)
-	return join(__dirname, "..", "tokenizers");
+	return join(import.meta.dir, "..", "tokenizers");
 }
 
-const TOKENIZER_DIR = resolveTokenizerDir();
+let TOKENIZER_DIR: string | undefined;
+
+async function ensureTokenizerDir(): Promise<string> {
+	if (!TOKENIZER_DIR) {
+		TOKENIZER_DIR = await resolveTokenizerDir();
+	}
+	return TOKENIZER_DIR;
+}
 
 // ── Tokenizer caches (lazy singletons) ──────────────────────────────────
 
@@ -55,9 +58,9 @@ function getTiktoken(encoding: string): Tiktoken {
 async function getWebTokenizer(file: string): Promise<WebTokenizer> {
 	let instance = webTokenizerCache.get(file);
 	if (instance) return instance;
-	const buf = readFileSync(join(TOKENIZER_DIR, file));
-	// Tokenizer.fromJSON returns a Promise<WebTokenizer>
-	instance = await WebTokenizer.fromJSON(buf.buffer as ArrayBuffer);
+	const dir = await ensureTokenizerDir();
+	const buf = await Bun.file(join(dir, file)).arrayBuffer();
+	instance = await WebTokenizer.fromJSON(buf);
 	webTokenizerCache.set(file, instance);
 	return instance;
 }
