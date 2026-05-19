@@ -1,7 +1,7 @@
 import { createStoreContainer, type StoreContainer } from '@rp-platform/db';
-import { resolve } from 'path';
+import { resolve } from 'node:path';
 
-export function createRuntimeStore(dataDir?: string): StoreContainer {
+export async function createRuntimeStore(dataDir?: string): Promise<StoreContainer> {
   let dbPath: string;
 
   if (dataDir) {
@@ -13,5 +13,5 @@ export function createRuntimeStore(dataDir?: string): StoreContainer {
     dbPath = resolve(rootDir, process.env.RP_PLATFORM_DB_PATH ?? 'data/rp-platform.db');
   }
 
-  return createStoreContainer(dbPath);
+  return await createStoreContainer(dbPath);
 }

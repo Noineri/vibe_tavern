@@ -8,8 +8,8 @@
  * This script is for production Docker / deployment.
  */
 
-import { join, resolve } from "path";
-import { readdir } from "fs/promises";
+import { join, resolve } from "node:path";
+import { readdir } from "node:fs/promises";
 
 const ROOT = resolve(import.meta.dir, "..");
 
