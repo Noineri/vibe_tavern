@@ -9,7 +9,7 @@
  *   await cleanup();
  */
 import { resolve } from "node:path";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { rm, mkdir } from "node:fs/promises";
 import { Database } from "bun:sqlite";
 import { setTokenCountFn } from "@rp-platform/prompt-pipeline";
 import { createRuntimeStore } from "../../src/session-runtime-store.js";
@@ -242,7 +242,7 @@ export async function createTestServer(): Promise<TestServer> {
     "tmp-test-" + crypto.randomUUID().slice(0, 8),
   );
   const dbPath = resolve(tmpDir, "data", "test.db");
-  mkdirSync(resolve(tmpDir, "data", "assets"), { recursive: true });
+  await mkdir(resolve(tmpDir, "data"), { recursive: true });
 
   // ── Create DB with schema ──────────────────────────────────────────────
   const sqlite = new Database(dbPath);
@@ -299,7 +299,7 @@ export async function createTestServer(): Promise<TestServer> {
       stores.db.$client.close?.();
     } catch {}
     try {
-      rmSync(tmpDir, { recursive: true, force: true });
+      await rm(tmpDir, { recursive: true, force: true });
     } catch {}
     delete process.env.RP_PLATFORM_ROOT_DIR;
     delete process.env.RP_PLATFORM_DB_PATH;

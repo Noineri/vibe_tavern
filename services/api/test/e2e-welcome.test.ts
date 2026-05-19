@@ -11,7 +11,6 @@
 import { describe, it, expect, afterAll, beforeAll } from "bun:test";
 import { createTestServer, json } from "./helpers/e2e-server.js";
 import type { TestServer } from "./helpers/e2e-server.js";
-import { resolve } from "node:path";
 
 let server: TestServer;
 
@@ -125,10 +124,28 @@ describe("Welcome → Create character from scratch", () => {
 
 describe("Welcome → Import character (Oliver the telepath)", () => {
   it("imports Oliver from JSON file", async () => {
-    const oliverPath = resolve(
-      "N:/janitor_characters/Oliver(telepath)/Oliver.json",
-    );
-    const oliverJson = await Bun.file(oliverPath).text();
+    const oliverJson = JSON.stringify({
+      spec: "chara_card_v3",
+      spec_version: "3.0",
+      data: {
+        name: "Oliver",
+        description: "A quiet telepath who reads surface thoughts unbidden.",
+        personality: "Reserved, compassionate, slightly haunted.",
+        scenario: "A rain-soaked café where Oliver has been waiting.",
+        first_mes: "*looks up from a cold cup of coffee* I already know why you're here.",
+        mes_example: "",
+        creator_notes: "",
+        system_prompt: "",
+        post_history_instructions: "",
+        character_book: null,
+        depth_prompt: "",
+        depth_prompt_depth: 4,
+        depth_prompt_role: "system",
+        alternate_greetings: [],
+        extensions: {},
+        tags: [],
+      },
+    });
 
     const result = await json<ImportResult>(
       await server.api("/api/import/json", {
