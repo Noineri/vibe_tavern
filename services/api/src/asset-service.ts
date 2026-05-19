@@ -1,5 +1,4 @@
 import { resolve } from "node:path";
-import { unlink } from "node:fs/promises";
 
 const MIME_TO_EXT: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -58,7 +57,7 @@ export class AssetService {
     if (!assetId) return;
     for (const ext of Object.keys(EXT_TO_MIME)) {
       const filePath = resolve(this.assetsDir, `${assetId}.${ext}`);
-      unlink(filePath).catch(() => {});
+      Bun.file(filePath).unlink().catch(() => {});
     }
   }
 }
