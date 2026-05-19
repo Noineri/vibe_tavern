@@ -18,23 +18,20 @@
  */
 
 import { join, resolve } from "node:path";
-import { existsSync } from "node:fs";
 
 const ROOT = resolve(import.meta.dir, "..");
 const DIST = join(ROOT, "dist");
 const INSTALLER_DIR = join(ROOT, "installer");
 const ISS_FILE = join(INSTALLER_DIR, "claw-tavern.iss");
 const OUTPUT_DIR = join(INSTALLER_DIR, "output");
-const EXPECTED_SETUP = join(OUTPUT_DIR, "claw-tavern-setup.exe");  // Inno Setup is Windows-only
+const EXPECTED_SETUP = join(OUTPUT_DIR, "claw-tavern-setup.exe");
 
-function findIscc(): string {
-	// 1. Explicit env var
+async function findIscc(): Promise<string> {
 	const envPath = process.env.ISCC_PATH;
-	if (envPath && existsSync(envPath)) {
+	if (envPath && await Bun.file(envPath).exists()) {
 		return envPath;
 	}
 
-	// 2. Common install locations on Windows
 	if (process.platform === "win32") {
 		const programFilesX86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
 		const localAppData = process.env.LOCALAPPDATA ?? "";
@@ -49,25 +46,20 @@ function findIscc(): string {
 			);
 		}
 		for (const candidate of candidates) {
-			if (existsSync(candidate)) return candidate;
+			if (await Bun.file(candidate).exists()) return candidate;
 		}
 	}
 
-	// 3. Assume ISCC is on PATH
 	return "ISCC";
 }
 
 async function main() {
 	console.log("📦 Claw Tavern — Installer Build\n");
 
-	// ── Step 1: Verify prerequisites ─────────────────────────────────────
-
-	if (!existsSync(ISS_FILE)) {
+	if (!(await Bun.file(ISS_FILE).exists())) {
 		console.error(`❌ Inno Setup script not found: ${ISS_FILE}`);
 		process.exit(1);
 	}
-
-	// ── Step 2: Run standalone build ─────────────────────────────────────
 
 	console.log("🔨 Step 1: Building standalone distribution...\n");
 
@@ -82,23 +74,19 @@ async function main() {
 		process.exit(1);
 	}
 
-	// ── Step 3: Verify build output ──────────────────────────────────────
-
-	if (!existsSync(join(DIST, "claw-tavern.exe"))) {
+	if (!(await Bun.file(join(DIST, "claw-tavern.exe")).exists())) {
 		console.error("❌ dist/claw-tavern.exe not found after build");
 		process.exit(1);
 	}
 
-	if (!existsSync(join(DIST, "web", "index.html"))) {
+	if (!(await Bun.file(join(DIST, "web", "index.html")).exists())) {
 		console.error("❌ dist/web/index.html not found after build");
 		process.exit(1);
 	}
 
 	console.log("\n🔨 Step 2: Building installer with Inno Setup...\n");
 
-	// ── Step 4: Run ISCC ─────────────────────────────────────────────────
-
-	const isccPath = findIscc();
+	const isccPath = await findIscc();
 	console.log(`   ISCC: ${isccPath}`);
 
 	const isccProc = Bun.spawn(
@@ -115,9 +103,7 @@ async function main() {
 		process.exit(1);
 	}
 
-	// ── Step 5: Verify output ─────────────────────────────────────────────
-
-	if (!existsSync(EXPECTED_SETUP)) {
+	if (!(await Bun.file(EXPECTED_SETUP).exists())) {
 		console.error(`❌ Installer not found at expected location: ${EXPECTED_SETUP}`);
 		process.exit(1);
 	}
