@@ -23,24 +23,21 @@
  */
 
 import { join, resolve } from "node:path";
-import { cpSync, rmSync, mkdirSync, existsSync } from "node:fs";
+import { cp, rm, mkdir, stat } from "node:fs/promises";
 
 const ROOT = resolve(import.meta.dir, "..");
 const DIST = join(ROOT, "dist");
 const WEB_SOURCE = join(ROOT, "apps", "web", "dist");
 const WEB_TARGET = join(DIST, "web");
 
-function step(label: string, fn: () => void | Promise<void>) {
+function exists(path: string): Promise<boolean> {
+	return stat(path).then(() => true, () => false);
+}
+
+async function step(label: string, fn: () => Promise<void>) {
 	console.log(`\n🔨 ${label}`);
 	try {
-		const result = fn();
-		if (result instanceof Promise) {
-			result.catch((e) => {
-				console.error(`❌ ${label} failed:`, e);
-				process.exit(1);
-			});
-			return result;
-		}
+		await fn();
 	} catch (e) {
 		console.error(`❌ ${label} failed:`, e);
 		process.exit(1);
@@ -54,11 +51,11 @@ async function main() {
 
 	// ── Step 1: Clean previous output ────────────────────────────────────
 
-	step("Cleaning dist/", () => {
-		if (existsSync(DIST)) {
-			rmSync(DIST, { recursive: true, force: true });
+	await step("Cleaning dist/", async () => {
+		if (await exists(DIST)) {
+			await rm(DIST, { recursive: true, force: true });
 		}
-		mkdirSync(DIST, { recursive: true });
+		await mkdir(DIST, { recursive: true });
 	});
 
 	// ── Step 2: Build frontend ───────────────────────────────────────────
@@ -78,35 +75,35 @@ async function main() {
 
 	// ── Step 3: Copy frontend to dist/web/ ───────────────────────────────
 
-	step("Copying frontend to dist/web/", () => {
-		if (!existsSync(join(WEB_SOURCE, "index.html"))) {
+	await step("Copying frontend to dist/web/", async () => {
+		if (!(await Bun.file(join(WEB_SOURCE, "index.html")).exists())) {
 			throw new Error(`Frontend not found at ${WEB_SOURCE}. Build may have failed.`);
 		}
-		cpSync(WEB_SOURCE, WEB_TARGET, { recursive: true });
+		await cp(WEB_SOURCE, WEB_TARGET, { recursive: true });
 		console.log(`   → ${WEB_TARGET}`);
 	});
 
 	// ── Step 3b: Copy tokenizer files to dist/tokenizers/ ───────────────────
 
-	step("Copying tokenizer files to dist/tokenizers/", () => {
+	await step("Copying tokenizer files to dist/tokenizers/", async () => {
 		const tokenizerSource = join(ROOT, "services", "api", "src", "tokenizers");
 		const tokenizerTarget = join(DIST, "tokenizers");
-		if (!existsSync(tokenizerSource)) {
+		if (!(await exists(tokenizerSource))) {
 			throw new Error(`Tokenizer source not found: ${tokenizerSource}`);
 		}
-		cpSync(tokenizerSource, tokenizerTarget, { recursive: true });
+		await cp(tokenizerSource, tokenizerTarget, { recursive: true });
 		console.log(`   → ${tokenizerTarget}`);
 	});
 
 	// ── Step 3c: Copy DB migrations to dist/drizzle/ ────────────────────────
 
-	step("Copying DB migrations to dist/drizzle/", () => {
+	await step("Copying DB migrations to dist/drizzle/", async () => {
 		const drizzleSource = join(ROOT, "packages", "db", "drizzle");
 		const drizzleTarget = join(DIST, "drizzle");
-		if (!existsSync(drizzleSource)) {
+		if (!(await exists(drizzleSource))) {
 			throw new Error(`DB migrations source not found: ${drizzleSource}`);
 		}
-		cpSync(drizzleSource, drizzleTarget, { recursive: true });
+		await cp(drizzleSource, drizzleTarget, { recursive: true });
 		console.log(`   → ${drizzleTarget}`);
 	});
 
@@ -118,7 +115,7 @@ async function main() {
 		const binName = `claw-tavern${ext}`;
 		const outfile = join(DIST, binName);
 
-		if (!existsSync(entrypoint)) {
+		if (!(await Bun.file(entrypoint).exists())) {
 			throw new Error(`Entrypoint not found: ${entrypoint}`);
 		}
 
@@ -139,7 +136,7 @@ async function main() {
 			throw new Error(`bun build --compile exited with code ${exitCode}`);
 		}
 
-		if (!existsSync(outfile)) {
+		if (!(await Bun.file(outfile).exists())) {
 			throw new Error(`Expected output not found: ${outfile}`);
 		}
 
