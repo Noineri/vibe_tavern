@@ -31,7 +31,7 @@ mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
 
 (async () => {
 	// Stores
-	const stores = createRuntimeStore();
+	const stores = await createRuntimeStore();
 
 	// Seed
 	await Promise.all([
@@ -70,7 +70,7 @@ mkdirSync(resolve(rootDir, "data", "assets"), { recursive: true });
 	);
 
 	// Hono app
-	const app = createApp({ runtime });
+	const app = await createApp({ runtime });
 
 	// Start
 	Bun.serve({

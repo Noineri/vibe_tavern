@@ -256,7 +256,7 @@ export async function createTestServer(): Promise<TestServer> {
   process.env.RP_PLATFORM_DB_PATH = "data/test.db";
 
   // ── DI wiring (mirrors dev-server.ts) ───────────────────────────────────
-  const stores = createRuntimeStore();
+  const stores = await createRuntimeStore();
 
   await Promise.all([
     stores.characters.getSystemCharacter(),
@@ -288,7 +288,7 @@ export async function createTestServer(): Promise<TestServer> {
     assetService,
   );
 
-  const app = createApp({ runtime });
+  const app = await createApp({ runtime });
 
   // ── API helper ─────────────────────────────────────────────────────────
   const BASE = "http://localhost";

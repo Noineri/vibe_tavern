@@ -2,7 +2,6 @@ import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { Database } from 'bun:sqlite';
 import { resolve } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
 import * as schema from './db-schema.js';
 
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
@@ -18,31 +17,26 @@ export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
  * Strategy: walk up from this file's directory looking for drizzle/meta/_journal.json.
  * Falls back to explicit RP_PLATFORM_MIGRATIONS_DIR env var.
  */
-function getMigrationsFolder(): string {
-  // 1. Explicit override (custom deployments)
+async function getMigrationsFolder(): Promise<string> {
   const envDir = process.env.RP_PLATFORM_MIGRATIONS_DIR;
   if (envDir) return envDir;
 
-  // 2. In a compiled exe, import.meta.dir is Bun's temp extraction path —
-  //    drizzle/ lives next to the actual executable.
   const exeDir = resolve(process.execPath, '..');
   const exeCandidate = resolve(exeDir, 'drizzle');
-  if (existsSync(resolve(exeCandidate, 'meta', '_journal.json'))) {
+  if (await Bun.file(resolve(exeCandidate, 'meta', '_journal.json')).exists()) {
     return exeCandidate;
   }
 
-  // 3. Walk up from this file's directory (works in source + Docker)
   const thisDir = import.meta.dir;
   let dir = thisDir;
   for (let i = 0; i < 5; i++) {
     const candidate = resolve(dir, 'drizzle');
-    if (existsSync(resolve(candidate, 'meta', '_journal.json'))) {
+    if (await Bun.file(resolve(candidate, 'meta', '_journal.json')).exists()) {
       return candidate;
     }
     dir = resolve(dir, '..');
   }
 
-  // 4. Fallback: assume source context (packages/db/src → ../drizzle)
   return resolve(thisDir, '..', 'drizzle');
 }
 
@@ -53,7 +47,7 @@ function getMigrationsFolder(): string {
  *
  * Returns true if the DB was baselined.
  */
-function baselineLegacyDb(sqlite: Database, migrationsFolder: string): boolean {
+async function baselineLegacyDb(sqlite: Database, migrationsFolder: string): Promise<boolean> {
   // If drizzle's meta table already exists, nothing to baseline
   const hasMeta = sqlite
     .prepare("SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name='__drizzle_migrations'")
@@ -69,7 +63,7 @@ function baselineLegacyDb(sqlite: Database, migrationsFolder: string): boolean {
   // Legacy DB detected: tables exist but no migration tracking.
   // Read the journal and stamp every migration as already applied.
   const journalPath = resolve(migrationsFolder, 'meta', '_journal.json');
-  const journal = JSON.parse(readFileSync(journalPath, 'utf-8'));
+  const journal = JSON.parse(await Bun.file(journalPath).text());
 
   // Create the meta table (same structure drizzle expects)
   sqlite.exec(`
@@ -86,7 +80,7 @@ function baselineLegacyDb(sqlite: Database, migrationsFolder: string): boolean {
 
   for (const entry of journal.entries) {
     const sqlPath = resolve(migrationsFolder, `${entry.tag}.sql`);
-    const sqlContent = readFileSync(sqlPath, 'utf-8');
+    const sqlContent = await Bun.file(sqlPath).text();
     const hash = new Bun.CryptoHasher('sha256').update(sqlContent).digest('hex');
     insert.run(hash, entry.when);
   }
@@ -95,16 +89,16 @@ function baselineLegacyDb(sqlite: Database, migrationsFolder: string): boolean {
   return true;
 }
 
-export function createDb(dbPath: string): AppDb {
+export async function createDb(dbPath: string): Promise<AppDb> {
   const sqlite = new Database(dbPath);
   sqlite.exec('PRAGMA journal_mode = WAL');
   sqlite.exec('PRAGMA foreign_keys = ON');
 
   const db = drizzle(sqlite, { schema });
-  const migrationsFolder = getMigrationsFolder();
+  const migrationsFolder = await getMigrationsFolder();
 
   console.log(`[db] Migrations folder: ${migrationsFolder}`);
-  baselineLegacyDb(sqlite, migrationsFolder);
+  await baselineLegacyDb(sqlite, migrationsFolder);
   migrate(db, { migrationsFolder });
 
   return db;

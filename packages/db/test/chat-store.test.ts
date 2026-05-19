@@ -204,15 +204,15 @@ CREATE TABLE cached_models (
 CREATE UNIQUE INDEX idx_cached_models_provider_slug ON cached_models (provider_profile_id, model_slug);
 `;
 
-function createTestDb() {
-	return createDb(":memory:");
+async function createTestDb() {
+	return await createDb(":memory:");
 }
 
 /**
  * Bootstrap minimum rows so ChatStore can operate:
  * character → provider profile → prompt preset → chat + branch
  */
-function bootstrap(db: ReturnType<typeof createTestDb>) {
+function bootstrap(db: Awaited<ReturnType<typeof createTestDb>>) {
   db.insert(schema.characters).values({
     id: "char_1", name: "TestChar", isSystem: 0, description: "",
     alternateGreetingsJson: "[]", extensionsJson: "{}", tagsJson: "[]",
@@ -252,11 +252,11 @@ function bootstrap(db: ReturnType<typeof createTestDb>) {
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("ChatStore — variant (swipe) semantics", () => {
-  let db: ReturnType<typeof createTestDb>;
+  let db: Awaited<ReturnType<typeof createTestDb>>;
   let store: ChatStore;
 
-  beforeEach(() => {
-    db = createTestDb();
+  beforeEach(async () => {
+    db = await createTestDb();
     bootstrap(db);
     clockTick = 0;
     idCounters = new Map();
