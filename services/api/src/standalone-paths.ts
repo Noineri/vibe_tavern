@@ -18,7 +18,6 @@
 
 import { homedir } from "node:os";
 import { resolve, join } from "node:path";
-import { existsSync } from "node:fs";
 
 export interface StandalonePaths {
 	/** Root directory for all user data. */
@@ -64,31 +63,26 @@ function defaultDataDir(): string {
 	return resolve(homedir(), ".local", "share", "claw-tavern");
 }
 
-function defaultWebDir(): string {
-	// In standalone .exe, web/ sits next to the executable.
-	// Bun sets import.meta.dir to the extracted source location,
-	// but process.execPath points to the actual .exe.
-	// We look relative to the exe first, then fall back to source tree.
+async function defaultWebDir(): Promise<string> {
 	const exeDir = resolve(process.execPath, "..");
 	const exeWebDir = resolve(exeDir, "web");
-	if (existsSync(resolve(exeWebDir, "index.html"))) {
+	if (await Bun.file(resolve(exeWebDir, "index.html")).exists()) {
 		return exeWebDir;
 	}
 
-	// Dev/source tree fallback: apps/web/dist relative to this file
 	return resolve(import.meta.dir, "..", "..", "..", "apps", "web", "dist");
 }
 
-export function resolveStandalonePaths(): StandalonePaths {
+export async function resolveStandalonePaths(): Promise<StandalonePaths> {
 	const dataDir = process.env.RP_PLATFORM_DATA_DIR
 		? resolve(process.env.RP_PLATFORM_DATA_DIR)
 		: defaultDataDir();
 
 	const webDir = process.env.RP_PLATFORM_WEB_DIR
 		? resolve(process.env.RP_PLATFORM_WEB_DIR)
-		: defaultWebDir();
+		: await defaultWebDir();
 
-	const webEnabled = existsSync(resolve(webDir, "index.html"));
+	const webEnabled = await Bun.file(resolve(webDir, "index.html")).exists();
 
 	return {
 		dataDir,

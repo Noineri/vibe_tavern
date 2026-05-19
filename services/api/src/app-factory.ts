@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
-import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "./errors.js";
 import { logSendDebug } from "./send-debug-log.js";
@@ -18,7 +17,7 @@ export interface AppDeps {
  * Creates a fully-configured Hono application with middleware,
  * error handling, health-check, and all API routes.
  */
-export function createApp(deps: AppDeps): Hono {
+export async function createApp(deps: AppDeps): Promise<Hono> {
 	const { runtime } = deps;
 	const apiRouter = createApiRouter(runtime);
 
@@ -67,12 +66,12 @@ export function createApp(deps: AppDeps): Hono {
 
 	// ─── Static frontend (production only) ───────────────────────────────
 
-	if (deps.staticDir && existsSync(deps.staticDir)) {
+	if (deps.staticDir && await Bun.file(resolve(deps.staticDir, "index.html")).exists()) {
 		// Serve built assets: /assets/*, /fonts/*, etc.
 		app.use("/*", serveStatic({ root: deps.staticDir }));
 
 		// SPA fallback: any non-API, non-asset request → index.html
-		const indexHtml = readFileSync(resolve(deps.staticDir, "index.html"), "utf-8");
+		const indexHtml = await Bun.file(resolve(deps.staticDir, "index.html")).text();
 		app.get("*", (c) => c.html(indexHtml));
 	}
 

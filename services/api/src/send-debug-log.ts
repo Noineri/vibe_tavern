@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 /**
@@ -29,14 +29,11 @@ export function logSendDebug(
 ): void {
 	try {
 		if (!dirEnsured) {
-			mkdirSync(dirname(logPath), { recursive: true });
+			const dir = dirname(logPath);
+			mkdirSync(dir, { recursive: true });
 			dirEnsured = true;
 		}
-		appendFileSync(
-			logPath,
-			`${new Date().toISOString()} ${event} ${JSON.stringify(data, redactSecrets)}\n`,
-			"utf8",
-		);
+		void (Bun.write as any)(logPath, `${new Date().toISOString()} ${event} ${JSON.stringify(data, redactSecrets)}\n`, { append: true });
 	} catch {
 		// Debug logging must never break chat flow.
 	}
