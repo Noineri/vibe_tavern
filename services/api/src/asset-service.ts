@@ -30,12 +30,12 @@ export class AssetService {
     const assetId = `asset_${crypto.randomUUID().replace(/-/g, "")}`;
     const fileName = `${assetId}.${ext}`;
     const filePath = resolve(this.assetsDir, fileName);
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const buffer = new Uint8Array(await file.arrayBuffer());
     await Bun.write(filePath, buffer);
     return { assetId, url: `/api/assets/${assetId}` };
   }
 
-  async serve(assetId: string): Promise<{ body: Buffer; contentType: string } | null> {
+  async serve(assetId: string): Promise<{ body: Uint8Array; contentType: string } | null> {
     // Prevent path traversal
     if (assetId.includes("/") || assetId.includes("\\") || assetId.includes("..")) {
       return null;
@@ -45,7 +45,7 @@ export class AssetService {
       try {
         const bunFile = Bun.file(filePath);
         if (await bunFile.exists()) {
-          return { body: Buffer.from(await bunFile.arrayBuffer()), contentType: EXT_TO_MIME[ext] };
+          return { body: new Uint8Array(await bunFile.arrayBuffer()), contentType: EXT_TO_MIME[ext] };
         }
       } catch {
         // try next extension

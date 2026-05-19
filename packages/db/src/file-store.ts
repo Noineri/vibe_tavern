@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { mkdir, rename } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
@@ -114,10 +113,10 @@ export function canonicalJsonString(value: unknown): string {
 	return JSON.stringify(value, sortObjectKeys) + "\n";
 }
 
-export function canonicalJsonBytes(value: unknown): Buffer {
-	return Buffer.from(canonicalJsonString(value), "utf-8");
+export function canonicalJsonBytes(value: unknown): Uint8Array {
+  return new TextEncoder().encode(canonicalJsonString(value));
 }
 
 export function hashCanonicalJson(value: unknown): string {
-	return createHash("sha256").update(canonicalJsonBytes(value)).digest("hex");
+  return new Bun.CryptoHasher("sha256").update(canonicalJsonBytes(value)).digest("hex");
 }

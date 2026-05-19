@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 
 const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
@@ -95,7 +94,7 @@ export function slugify(value: string): string {
 }
 
 export function makeDeterministicId(namespace: string, seed: string): string {
-  const digest = createHash("sha1").update(seed).digest("hex").slice(0, 16);
+  const digest = new Bun.CryptoHasher("sha1").update(seed).digest("hex").slice(0, 16);
   return `${namespace}_${digest}`;
 }
 
