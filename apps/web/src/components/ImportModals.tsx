@@ -76,8 +76,19 @@ function StFolderImport({ onImported }: StFolderImportProps) {
         // Match: .../characters/filename.png or .../characters/filename.json
         if (parts.includes("characters")) {
           const ext = file.name.toLowerCase();
-          if (ext.endsWith(".png") || ext.endsWith(".json")) {
+          if (ext.endsWith(".json")) {
             characters.push({ file, relativePath: rp, kind: "character" });
+          } else if (ext.endsWith(".png")) {
+            // Only include PNGs that have character metadata (chara/ccv3 chunk)
+            try {
+              const meta = await extractPngMetadata(file);
+              const hasChara = meta.some(m => m.keyword === "chara" || m.keyword === "ccv3");
+              if (hasChara) {
+                characters.push({ file, relativePath: rp, kind: "character" });
+              }
+            } catch {
+              // Not a valid PNG or can't read — skip
+            }
           }
         }
         // Match: .../chats/CharacterName/file.jsonl
