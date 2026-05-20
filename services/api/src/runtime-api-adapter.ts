@@ -446,7 +446,7 @@ export class RuntimeApiAdapter {
 
 	// ─── Import / Export ───────────────────────────────────────────────────
 
-	importJson = (body: { fileName: string; jsonText: string; chatId?: string }) =>
+	importJson = (body: { fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean }) =>
 		this.sessionRuntime.importJson(body);
 
 	scanSillyTavernDirectory = (dirPath: string) =>

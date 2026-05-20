@@ -218,6 +218,7 @@ export async function importJson(
 		fileName: string;
 		jsonText: string;
 		chatId?: string;
+		skipExisting?: boolean;
 	},
 ): Promise<ImportResult> {
 	const trimmed = input.jsonText.trim();
@@ -231,12 +232,59 @@ export async function importJson(
 
 	const parsed = JSON.parse(trimmed) as Record<string, unknown>;
 
-	if (parsed.spec === "chara_card_v3") {
+	const isCharacterCard = parsed.spec === "chara_card_v3" || parsed.spec === "chara_card_v2" || (parsed.name && !parsed.spec);
+
+	if (isCharacterCard) {
 		const imported = importCharacterCardV3Json(parsed);
 
 		// Upsert character via new CharacterStore
 		const existing = await deps.stores.characters.getById(imported.character.id);
 		let characterId: string;
+
+		if (existing && input.skipExisting) {
+			// Character already imported — skip, return existing snapshot
+			const existingChats = await deps.stores.chats.listByCharacter(imported.character.id);
+			const lastChat = existingChats[existingChats.length - 1];
+			const chatId = lastChat?.id ?? (await deps.chatApp.createChat({
+				characterId: imported.character.id as CharacterId,
+				personaId: await deps.resolveDefaultPersonaId(),
+				title: imported.character.name,
+				promptPresetId: await deps.resolveDefaultPromptPresetId(),
+			})).id as ChatId;
+
+			// Update character data in case card was updated
+			await deps.stores.characters.update(imported.character.id, {
+				name: imported.character.name,
+				description: imported.character.description,
+				personalitySummary: imported.character.personalitySummary,
+				defaultScenario: imported.character.defaultScenario,
+				firstMessage: imported.character.firstMessage,
+				mesExample: imported.character.mesExample,
+				alternateGreetings: imported.character.alternateGreetings,
+				postHistoryInstructions: imported.character.postHistoryInstructions,
+				creatorNotes: imported.character.creatorNotes,
+				characterBook: imported.character.characterBook,
+				depthPrompt: imported.character.depthPrompt,
+				depthPromptDepth: imported.character.depthPromptDepth,
+				depthPromptRole: imported.character.depthPromptRole,
+				extensions: imported.character.extensions,
+				systemPrompt: imported.character.systemPrompt,
+				tags: imported.character.tags,
+			});
+
+			return {
+				activeChatId: chatId as ChatId,
+				snapshot: await deps.getSnapshot(chatId as ChatId),
+				imported: {
+					kind: "character",
+					name: imported.character.name,
+					fileName: input.fileName,
+					warningCount: imported.warnings.length,
+					warnings: imported.warnings,
+				},
+			};
+		}
+
 		if (existing) {
 			characterId = imported.character.id;
 			await deps.stores.characters.update(imported.character.id, {
