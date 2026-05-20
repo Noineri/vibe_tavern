@@ -381,3 +381,59 @@ The message list uses `@tanstack/react-virtual` to render only visible messages 
 - Incremental updates: smooth scroll to new messages
 
 `MessageBlock` is wrapped in `React.memo` and reads all message data from `useDisplayMessage(messageId)` — no message object prop. This ensures streaming text only re-renders the `StreamingContent` component, not existing message blocks.
+
+---
+
+## Bun-native migration
+
+The project targets a standalone `bun build --compile` executable. To minimize Node.js dependency and maximize Bun-native API usage, a systematic migration was performed:
+
+### Completed migrations
+
+| Before | After | Scope |
+|--------|-------|-------|
+| `readFileSync` / `writeFileSync` | `Bun.file().text()` / `Bun.write()` | `file-store.ts`, `db-connection.ts`, `tokenizer-service.ts`, `app-factory.ts`, tests |
+| `existsSync` | `Bun.file().exists()` | `db-connection.ts`, `app-factory.ts`, `standalone-paths.ts` |
+| `appendFileSync` | `Bun.write` with append | `send-debug-log.ts` |
+| `mkdirSync` | `mkdir` from `node:fs/promises` | All server entry points, scripts, debug log |
+| `cpSync` / `rmSync` | `cp` / `rm` from `node:fs/promises` | `build-standalone.ts` |
+| `node:crypto` `createHash('sha1')` / `createHash('sha256')` | `new Bun.CryptoHasher('sha1')` / `Bun.CryptoHasher('sha256')` | `shared.ts`, `file-store.ts` |
+| `Buffer.from` | `Uint8Array` / `TextEncoder` | `file-store.ts`, `asset-service.ts`, `routes.ts` |
+| `require('bun:sqlite')` | `import` from `'bun:sqlite'` | `repair-thinking-tags.ts` |
+| Bare `'path'` / `'fs'` imports | `'node:path'` / `'node:fs/promises'` | All files |
+| `__dirname` / `__filename` | `import.meta.dir` / `import.meta.file` | `tokenizer-service.ts` |
+
+### Remaining `node:fs/promises` usage (intentional)
+
+Bun recommends `node:fs/promises` for directory operations that don't have `Bun.file` equivalents:
+
+- `mkdir` — create directories (used in 11 locations: servers, scripts, debug log, import-export)
+- `rename` — atomic file write in `file-store.ts` (write to temp → rename)
+- `cp` / `rm` — build scripts
+- `readdir` / `stat` — build scripts
+
+These have no Bun-native replacement and are the recommended approach per Bun docs.
+
+### Async propagation
+
+Several core functions became async as a result of migrating to `Bun.file()` (which returns promises). This cascaded to:
+
+- `createDb()` → `createStoreContainer()` → `createRuntimeStore()` → all server entry points
+- `createApp()` (reads static files for SPA serving)
+- `resolveStandalonePaths()`
+
+All callers were updated to `await` these functions.
+
+---
+
+## Streaming regeneration
+
+Message regeneration handles streaming differently from normal message sending:
+
+- **Problem:** Previously, `isBusy` was derived from the global `isSending` flag, causing all assistant messages to show a loading state during regeneration. Streaming text was appended after the old message content.
+- **Solution:** `MessageBlock` now checks `messageActionId === messageId` to determine if it's the specific target of a regeneration action. When active, the block replaces its content with the live streaming text + reasoning instead of appending a separate `StreamingContent` block.
+
+This ensures:
+1. Only the message being regenerated shows streaming state
+2. The old message content is visually replaced, not duplicated
+3. Reasoning (thinking) is displayed inline during regeneration
