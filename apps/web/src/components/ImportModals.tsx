@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@rp-platform/domain";
 import { extractPngMetadata, parseCharacterMetadata } from "../lib/png-reader.js";
-import { scanSillyTavernDirectory, importSillyTavernDirectory } from "../app-client.js";
+import { importJson } from "../app-client.js";
 import { cn } from "../lib/cn.js";
 import { Icons } from "./shared/icons.js";
 import { useT, getT } from "../i18n/context.js";
@@ -37,35 +37,67 @@ interface StFolderImportProps {
   onImported?: () => void;
 }
 
+interface StFileEntry {
+  file: File;
+  relativePath: string;
+  kind: "character" | "chat" | "lorebook";
+}
+
 function StFolderImport({ onImported }: StFolderImportProps) {
   const { t } = useT();
-  const [path, setPath] = useState("");
   const [scanning, setScanning] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
   const [scanResult, setScanResult] = useState<{
-    characters: number;
-    chats: number;
-    lorebooks: number;
-    errors: number;
+    characters: StFileEntry[];
+    chats: StFileEntry[];
+    lorebooks: StFileEntry[];
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const folderRef = useRef<HTMLInputElement | null>(null);
 
-  async function handleScan() {
-    if (!path.trim()) {
-      setError(t("st_no_path"));
-      return;
-    }
+  async function handleFolderPick(files?: FileList | null) {
+    if (!files || files.length === 0) return;
     setError(null);
     setScanResult(null);
     setScanning(true);
+
     try {
-      const result = await scanSillyTavernDirectory(path.trim()) as any;
-      setScanResult({
-        characters: result.characters?.length ?? 0,
-        chats: result.chats?.length ?? 0,
-        lorebooks: result.lorebooks?.length ?? 0,
-        errors: result.errors?.length ?? 0,
-      });
+      const characters: StFileEntry[] = [];
+      const chats: StFileEntry[] = [];
+      const lorebooks: StFileEntry[] = [];
+
+      for (const file of Array.from(files)) {
+        const rp = (file as any).webkitRelativePath as string | undefined;
+        if (!rp) continue;
+        const parts = rp.split("/");
+
+        // Match: .../characters/filename.png or .../characters/filename.json
+        if (parts.includes("characters")) {
+          const ext = file.name.toLowerCase();
+          if (ext.endsWith(".png") || ext.endsWith(".json")) {
+            characters.push({ file, relativePath: rp, kind: "character" });
+          }
+        }
+        // Match: .../chats/CharacterName/file.jsonl
+        else if (parts.includes("chats")) {
+          if (file.name.toLowerCase().endsWith(".jsonl")) {
+            chats.push({ file, relativePath: rp, kind: "chat" });
+          }
+        }
+        // Match: .../worlds/filename.json
+        else if (parts.includes("worlds")) {
+          if (file.name.toLowerCase().endsWith(".json")) {
+            lorebooks.push({ file, relativePath: rp, kind: "lorebook" });
+          }
+        }
+      }
+
+      if (characters.length + chats.length + lorebooks.length === 0) {
+        setError(t("st_no_files"));
+      } else {
+        setScanResult({ characters, chats, lorebooks });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("st_scan_failed"));
     } finally {
@@ -74,67 +106,154 @@ function StFolderImport({ onImported }: StFolderImportProps) {
   }
 
   async function handleImport() {
+    if (!scanResult) return;
     setError(null);
     setImporting(true);
-    try {
-      const result = await importSillyTavernDirectory(path.trim()) as any;
-      const msg = t("st_import_results")
-        .replace("{characters}", String(result.characters ?? 0))
-        .replace("{chats}", String(result.chats ?? 0))
-        .replace("{lorebooks}", String(result.lorebooks ?? 0));
-      toast.success(msg);
-      if ((result.errors?.length ?? 0) > 0) {
-        toast.warning(t("st_import_errors").replace("{count}", String(result.errors.length)));
+
+    const total = scanResult.characters.length + scanResult.chats.length;
+    let current = 0;
+    let importedChars = 0;
+    let importedChats = 0;
+    let errors = 0;
+
+    // Phase 1: Import characters
+    // Build a map: character name → chatId for chat matching
+    const nameToChatId = new Map<string, string>();
+
+    for (const entry of scanResult.characters) {
+      current++;
+      setImportProgress({ current, total });
+      try {
+        let jsonText: string;
+        const lowerName = entry.file.name.toLowerCase();
+
+        if (lowerName.endsWith(".png") || entry.file.type === "image/png") {
+          const metadata = await extractPngMetadata(entry.file);
+          const parsed = parseCharacterMetadata(metadata);
+          jsonText = JSON.stringify(parsed);
+        } else {
+          jsonText = await entry.file.text();
+        }
+
+        const result = await importJson({ fileName: entry.file.name, jsonText });
+        importedChars++;
+
+        // Map character name → chatId for chat matching
+        const parsed = JSON.parse(jsonText);
+        const data = (parsed as any).data ?? parsed;
+        const charName = (data.name as string)?.toLowerCase() ?? "";
+        if (result.activeChatId) {
+          nameToChatId.set(charName, result.activeChatId);
+          // Also map by slug
+          const slug = charName.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+          nameToChatId.set(slug, result.activeChatId);
+        }
+      } catch {
+        errors++;
       }
-      onImported?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("st_import_failed"));
-    } finally {
-      setImporting(false);
     }
+
+    // Phase 2: Import chats
+    for (const entry of scanResult.chats) {
+      current++;
+      setImportProgress({ current, total });
+      try {
+        const parts = entry.relativePath.split("/");
+        const chatIdx = parts.indexOf("chats");
+        const characterFolder = chatIdx >= 0 && chatIdx + 1 < parts.length ? parts[chatIdx + 1] : "";
+        const chatId = nameToChatId.get(characterFolder.toLowerCase());
+
+        const jsonText = await entry.file.text();
+        await importJson({ fileName: entry.file.name, jsonText, chatId: chatId as any });
+        importedChats++;
+      } catch {
+        errors++;
+      }
+    }
+
+    setImporting(false);
+    setImportProgress(null);
+
+    const msg = t("st_import_results")
+      .replace("{characters}", String(importedChars))
+      .replace("{chats}", String(importedChats))
+      .replace("{lorebooks}", "0");
+    toast.success(msg);
+    if (errors > 0) {
+      toast.warning(t("st_import_errors").replace("{count}", String(errors)));
+    }
+    onImported?.();
   }
 
   return (
-    <div className="mt-4 rounded-lg border border-border2 bg-s2 p-4">
-      <div className="mb-2 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">
+    <div className="rounded-lg border border-border2 bg-s2 p-4">
+      <div className="mb-3 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">
         SillyTavern
       </div>
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={path}
-          onChange={(e) => { setPath(e.target.value); setError(null); setScanResult(null); }}
-          placeholder={t("st_folder_hint")}
-          className="h-[34px] flex-1 rounded-md border border-border bg-surface px-3 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent"
-        />
-        <button
-          className="h-[34px] cursor-pointer rounded-md bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45"
-          disabled={scanning || importing || !path.trim()}
-          onClick={handleScan}
-        >
-          {scanning ? t("st_scanning") : t("st_scan")}
-        </button>
-      </div>
-      {error && (
-        <div className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] text-error">{error}</div>
+
+      {!scanResult && !scanning && (
+        <>
+          <div className="mb-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("st_select_folder")}</div>
+          <button
+            className="flex h-[38px] cursor-pointer items-center gap-2 rounded-md border border-border bg-surface px-4 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 transition-all hover:border-accent hover:text-accent-t"
+            onClick={() => folderRef.current?.click()}
+          >
+            <Icons.Import />
+            {t("st_browse")}
+          </button>
+          <input
+            ref={folderRef}
+            className="hidden"
+            type="file"
+            /** @ts-expect-error webkitdirectory is not in React types */
+            webkitdirectory=""
+            directory=""
+            onChange={(e) => handleFolderPick(e.target.files)}
+          />
+        </>
       )}
-      {scanResult && (
-        <div className="mt-3">
+
+      {scanning && <BusyLine label={t("st_scanning")} />}
+
+      {scanResult && !importing && (
+        <div>
           <div className="mb-2.5 font-ui text-xs text-t2">
             {t("st_scan_results")
-              .replace("{characters}", String(scanResult.characters))
-              .replace("{chats}", String(scanResult.chats))
-              .replace("{lorebooks}", String(scanResult.lorebooks))}
-            {scanResult.errors > 0 && (` · ${scanResult.errors} errors`)}
+              .replace("{characters}", String(scanResult.characters.length))
+              .replace("{chats}", String(scanResult.chats.length))
+              .replace("{lorebooks}", String(scanResult.lorebooks.length))}
           </div>
           <button
             className="h-[34px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45"
-            disabled={importing || (scanResult.characters + scanResult.chats + scanResult.lorebooks === 0)}
+            disabled={scanResult.characters.length + scanResult.chats.length === 0}
             onClick={handleImport}
           >
-            {importing ? t("st_importing") : t("confirm_import")}
+            {t("confirm_import")}
           </button>
         </div>
+      )}
+
+      {importing && importProgress && (
+        <div>
+          <div className="flex items-center gap-2 font-ui text-t2">
+            <span className="inline-flex items-center gap-[3px]">
+              <span className="h-1 w-1 rounded-full bg-accent animate-genp" />
+              <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]" />
+              <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]" />
+            </span>
+            {t("st_importing").replace("{current}", String(importProgress.current)).replace("{total}", String(importProgress.total))}
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-s3">
+            <div
+              className="h-full rounded-full bg-accent transition-all"
+              style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] text-error">{error}</div>
       )}
     </div>
   );
