@@ -68,7 +68,8 @@ export function importCharacterCardV3Json(
   const root = parseJsonInput(input);
   const spec = asString(root.spec);
 
-  if (spec !== "chara_card_v3") {
+  // Accept v3 and v2, or treat any JSON with a `name` field as a legacy card
+  if (spec && spec !== "chara_card_v3" && spec !== "chara_card_v2") {
     throw new Error(`Unsupported character card spec: ${spec || "unknown"}`);
   }
 

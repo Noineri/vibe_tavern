@@ -36,9 +36,20 @@ describe("importCharacterCardV3Json", () => {
     expect(result.character.name).toBe("Test Character");
   });
 
-  it("throws on unsupported spec", () => {
+  it("imports a V2 card (legacy, no spec field)", () => {
+    const result = importCharacterCardV3Json({ name: "Legacy Character", description: "Old card", first_mes: "Hi" });
+    expect(result.character.name).toBe("Legacy Character");
+    expect(result.character.firstMessage).toBe("Hi");
+  });
+
+  it("imports a V2 card with explicit spec", () => {
+    const result = importCharacterCardV3Json({ spec: "chara_card_v2", spec_version: "2.0", data: { name: "V2 Char", description: "v2" } });
+    expect(result.character.name).toBe("V2 Char");
+  });
+
+  it("throws on truly unsupported spec", () => {
     expect(() =>
-      importCharacterCardV3Json({ spec: "chara_card_v2", data: { name: "X" } }),
+      importCharacterCardV3Json({ spec: "something_else_v99", data: { name: "X" } }),
     ).toThrow("Unsupported character card spec");
   });
 
