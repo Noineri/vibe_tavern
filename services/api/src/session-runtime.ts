@@ -37,6 +37,7 @@ import { PersonaRuntime } from "./session-runtime-persona.js";
 import { ChatLifecycleRuntime } from "./session-runtime-chat-lifecycle.js";
 import * as importExportModule from "./session-runtime-import-export.js";
 import * as lorebookModule from "./session-runtime-lorebook.js";
+import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as importST } from "./st-directory-scanner.js";
 
 export interface ChatListItem {
 	id: ChatId;
@@ -309,6 +310,14 @@ export interface ImportResult {
 
 	async importJson(input: { fileName: string; jsonText: string; chatId?: string }): Promise<ImportResult> {
 		return importExportModule.importJson(this.importExportDeps, input);
+	}
+
+	scanSillyTavernDirectory(dirPath: string) {
+		return scanST(dirPath);
+	}
+
+	importSillyTavernDirectory(dirPath: string) {
+		return importST(this.importExportDeps, dirPath);
 	}
 
 	// ─── Delegated: lorebook stubs (phase 2) ────────────────────────────

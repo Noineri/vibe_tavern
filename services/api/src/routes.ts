@@ -101,6 +101,9 @@ export interface RuntimeApi {
   }) => Promise<unknown>;
 
   testProviderChatByProfile: (providerProfileId: string, model: string) => Promise<unknown>;
+
+  scanSillyTavernDirectory: (dirPath: string) => Promise<unknown>;
+  importSillyTavernDirectory: (dirPath: string) => Promise<unknown>;
 }
 
 export function createApiRouter(runtime: RuntimeApi) {
@@ -411,6 +414,26 @@ export function createApiRouter(runtime: RuntimeApi) {
     .post("/api/import/json", zValidator("json", schemas.importJsonSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(await runtime.importJson(body));
+    })
+    .post("/api/import/st-scan", async (c) => {
+      const body = await c.req.json<{ path?: string }>();
+      if (!body.path?.trim()) return c.json({ error: "path is required" }, 400);
+      try {
+        const result = await runtime.scanSillyTavernDirectory(body.path);
+        return c.json(result);
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+      }
+    })
+    .post("/api/import/st-directory", async (c) => {
+      const body = await c.req.json<{ path?: string }>();
+      if (!body.path?.trim()) return c.json({ error: "path is required" }, 400);
+      try {
+        const result = await runtime.importSillyTavernDirectory(body.path);
+        return c.json(result);
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+      }
     })
     .post("/api/providers", zValidator("json", schemas.saveProviderDraftSchema), async (c) => {
       const body = c.req.valid("json");
