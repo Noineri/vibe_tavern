@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@rp-platform/domain";
 import { extractPngMetadata, parseCharacterMetadata } from "../lib/png-reader.js";
+import { scanSillyTavernDirectory, importSillyTavernDirectory } from "../app-client.js";
 import { cn } from "../lib/cn.js";
 import { Icons } from "./shared/icons.js";
 import { useT, getT } from "../i18n/context.js";
@@ -30,11 +31,123 @@ interface ChatPreview {
   messages: Array<{ role: string; name: string; text: string }>;
 }
 
+// ─── ST Folder import sub-component ────────────────────────────────────────
+
+interface StFolderImportProps {
+  onImported?: () => void;
+}
+
+function StFolderImport({ onImported }: StFolderImportProps) {
+  const { t } = useT();
+  const [path, setPath] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [scanResult, setScanResult] = useState<{
+    characters: number;
+    chats: number;
+    lorebooks: number;
+    errors: number;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleScan() {
+    if (!path.trim()) {
+      setError(t("st_no_path"));
+      return;
+    }
+    setError(null);
+    setScanResult(null);
+    setScanning(true);
+    try {
+      const result = await scanSillyTavernDirectory(path.trim()) as any;
+      setScanResult({
+        characters: result.characters?.length ?? 0,
+        chats: result.chats?.length ?? 0,
+        lorebooks: result.lorebooks?.length ?? 0,
+        errors: result.errors?.length ?? 0,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("st_scan_failed"));
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function handleImport() {
+    setError(null);
+    setImporting(true);
+    try {
+      const result = await importSillyTavernDirectory(path.trim()) as any;
+      const msg = t("st_import_results")
+        .replace("{characters}", String(result.characters ?? 0))
+        .replace("{chats}", String(result.chats ?? 0))
+        .replace("{lorebooks}", String(result.lorebooks ?? 0));
+      toast.success(msg);
+      if ((result.errors?.length ?? 0) > 0) {
+        toast.warning(t("st_import_errors").replace("{count}", String(result.errors.length)));
+      }
+      onImported?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("st_import_failed"));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-lg border border-border2 bg-s2 p-4">
+      <div className="mb-2 font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">
+        SillyTavern
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={path}
+          onChange={(e) => { setPath(e.target.value); setError(null); setScanResult(null); }}
+          placeholder={t("st_folder_hint")}
+          className="h-[34px] flex-1 rounded-md border border-border bg-surface px-3 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent"
+        />
+        <button
+          className="h-[34px] cursor-pointer rounded-md bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45"
+          disabled={scanning || importing || !path.trim()}
+          onClick={handleScan}
+        >
+          {scanning ? t("st_scanning") : t("st_scan")}
+        </button>
+      </div>
+      {error && (
+        <div className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] text-error">{error}</div>
+      )}
+      {scanResult && (
+        <div className="mt-3">
+          <div className="mb-2.5 font-ui text-xs text-t2">
+            {t("st_scan_results")
+              .replace("{characters}", String(scanResult.characters))
+              .replace("{chats}", String(scanResult.chats))
+              .replace("{lorebooks}", String(scanResult.lorebooks))}
+            {scanResult.errors > 0 && (` · ${scanResult.errors} errors`)}
+          </div>
+          <button
+            className="h-[34px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45"
+            disabled={importing || (scanResult.characters + scanResult.chats + scanResult.lorebooks === 0)}
+            onClick={handleImport}
+          >
+            {importing ? t("st_importing") : t("confirm_import")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── CharacterImportModal ──────────────────────────────────────────────────
+
 export function CharacterImportModal(input: ImportModalCommonProps) {
   const { t } = useT();
   const [drag, setDrag] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [preview, setPreview] = useState<CharacterPreview | null>(null);
+  const [stMode, setStMode] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => () => {
@@ -71,16 +184,30 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
   return (
     <ImportModalFrame title={t("character_import_title")} subtitle={t("character_import_sub")} onClose={input.onClose}>
       <div className="flex-1 overflow-y-auto p-5">
-        {!preview && !parsing && (
-          <Dropzone
-            drag={drag}
-            setDrag={setDrag}
-            accept=".png,.json,image/png,application/json"
-            fileRef={fileRef}
-            title={t("click_or_drop_file")}
-            subtitle={t("st_jsonl_png_supported")}
-            onFile={processFile}
-          />
+        {!preview && !parsing && !stMode && (
+          <>
+            <Dropzone
+              drag={drag}
+              setDrag={setDrag}
+              accept=".png,.json,image/png,application/json"
+              fileRef={fileRef}
+              title={t("click_or_drop_file")}
+              subtitle={t("st_jsonl_png_supported")}
+              onFile={processFile}
+            />
+            <div className="mt-3 flex items-center gap-3">
+              <div className="flex-1 border-t border-border2" />
+              <button
+                className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] text-accent-t transition-colors hover:text-accent"
+                onClick={() => setStMode(true)}
+              >
+                {t("or_import_from_st")}
+              </button>
+            </div>
+          </>
+        )}
+        {stMode && !parsing && (
+          <StFolderImport onImported={input.onClose} />
         )}
         {parsing && <BusyLine label={t("analyzing_metadata")} />}
         {preview && !parsing && (
@@ -108,11 +235,14 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
   );
 }
 
+// ─── ChatImportModal ───────────────────────────────────────────────────────
+
 export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: ChatId | null }) {
   const { t } = useT();
   const [drag, setDrag] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [preview, setPreview] = useState<ChatPreview | null>(null);
+  const [stMode, setStMode] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   async function processFile(file?: File | null): Promise<void> {
@@ -139,16 +269,30 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
   return (
     <ImportModalFrame title={t("chat_import_title")} subtitle={t("chat_import_sub")} onClose={input.onClose}>
       <div className="flex-1 overflow-y-auto p-5">
-        {!preview && !parsing && (
-          <Dropzone
-            drag={drag}
-            setDrag={setDrag}
-            accept=".jsonl"
-            fileRef={fileRef}
-            title={t("click_or_drop_chat")}
-            subtitle={t("st_jsonl_supported")}
-            onFile={processFile}
-          />
+        {!preview && !parsing && !stMode && (
+          <>
+            <Dropzone
+              drag={drag}
+              setDrag={setDrag}
+              accept=".jsonl"
+              fileRef={fileRef}
+              title={t("click_or_drop_chat")}
+              subtitle={t("st_jsonl_supported")}
+              onFile={processFile}
+            />
+            <div className="mt-3 flex items-center gap-3">
+              <div className="flex-1 border-t border-border2" />
+              <button
+                className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] text-accent-t transition-colors hover:text-accent"
+                onClick={() => setStMode(true)}
+              >
+                {t("or_import_from_st_chat")}
+              </button>
+            </div>
+          </>
+        )}
+        {stMode && !parsing && (
+          <StFolderImport onImported={input.onClose} />
         )}
         {parsing && <BusyLine label={t("reading_chat_history")} />}
         {preview && !parsing && (
@@ -176,6 +320,8 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
     </ImportModalFrame>
   );
 }
+
+// ─── Shared sub-components ────────────────────────────────────────────────
 
 function ImportModalFrame(props: { title: string; subtitle: string; onClose: () => void; children: React.ReactNode }) {
   const { t } = useT();
@@ -230,6 +376,8 @@ function ModalFooter(props: { onClose: () => void; onConfirm: () => void; confir
   const { t } = useT();
   return <div className="flex shrink-0 items-center gap-2.5 border-t border-border px-5 py-3.5"><button className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" onClick={props.onClose}>{t("cancel")}</button><button className="h-[37px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45" disabled={props.disabled} onClick={props.onConfirm}>{props.busy ? t("importing") : props.confirmLabel}</button></div>;
 }
+
+// ─── Utility functions ─────────────────────────────────────────────────────
 
 function normalizeCharacterPreview(raw: unknown, file: File): Omit<CharacterPreview, "file" | "avatarUrl"> {
   const obj = asRecord(raw);
