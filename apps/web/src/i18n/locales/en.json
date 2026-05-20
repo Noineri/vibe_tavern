@@ -251,6 +251,7 @@
 
   "sampler_basic_settings": "Basic Settings",
   "sampler_max_context": "Response Tokens",
+  "sampler_max_context_hint": "Set to -1 to let the model decide how much to write.",
   "context_length": "Context Size",
   "context_auto": "Auto",
   "sampler_temperature": "Temperature",
