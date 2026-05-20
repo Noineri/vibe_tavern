@@ -571,24 +571,6 @@ export async function importJson(input: {
   };
 }
 
-export async function scanSillyTavernDirectory(path: string): Promise<unknown> {
-  const response = await fetch(`${getGatewayBaseUrl()}/api/import/st-scan`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path }),
-  });
-  return unwrapRpc(response);
-}
-
-export async function importSillyTavernDirectory(path: string): Promise<unknown> {
-  const response = await fetch(`${getGatewayBaseUrl()}/api/import/st-directory`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path }),
-  });
-  return unwrapRpc(response);
-}
-
 export async function listProviderProfiles(): Promise<ProviderProfileRecord[]> {
   const response = await client.api.providers.$get();
   return unwrapRpc<ProviderProfileRecord[]>(response);
