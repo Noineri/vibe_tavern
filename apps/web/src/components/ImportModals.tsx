@@ -54,6 +54,7 @@ function StFolderImport({ onImported }: StFolderImportProps) {
     lorebooks: StFileEntry[];
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [importErrors, setImportErrors] = useState<ImportError[]>([]);
   const folderRef = useRef<HTMLInputElement | null>(null);
 
   async function handleFolderPick(files?: FileList | null) {
@@ -105,16 +106,22 @@ function StFolderImport({ onImported }: StFolderImportProps) {
     }
   }
 
+interface ImportError {
+    fileName: string;
+    reason: string;
+  }
+
   async function handleImport() {
     if (!scanResult) return;
     setError(null);
     setImporting(true);
+    setImportErrors([]);
 
     const total = scanResult.characters.length + scanResult.chats.length;
     let current = 0;
     let importedChars = 0;
     let importedChats = 0;
-    let errors = 0;
+    const failedItems: ImportError[] = [];
 
     // Phase 1: Import characters
     // Build a map: character name → chatId for chat matching
@@ -136,7 +143,7 @@ function StFolderImport({ onImported }: StFolderImportProps) {
           jsonText = await entry.file.text();
         }
 
-        const result = await importJson({ fileName: entry.file.name, jsonText });
+        const result = await importJson({ fileName: entry.file.name, jsonText, skipExisting: true });
         importedChars++;
 
         // Upload PNG as avatar
@@ -162,8 +169,11 @@ function StFolderImport({ onImported }: StFolderImportProps) {
           const slug = charName.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
           nameToChatId.set(slug, result.activeChatId);
         }
-      } catch {
-        errors++;
+      } catch (err) {
+        failedItems.push({
+          fileName: entry.file.name,
+          reason: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
@@ -180,21 +190,25 @@ function StFolderImport({ onImported }: StFolderImportProps) {
         const jsonText = await entry.file.text();
         await importJson({ fileName: entry.file.name, jsonText, chatId: chatId as any });
         importedChats++;
-      } catch {
-        errors++;
+      } catch (err) {
+        failedItems.push({
+          fileName: entry.relativePath,
+          reason: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
     setImporting(false);
     setImportProgress(null);
+    setImportErrors(failedItems);
 
     const msg = t("st_import_results")
       .replace("{characters}", String(importedChars))
       .replace("{chats}", String(importedChats))
       .replace("{lorebooks}", "0");
     toast.success(msg);
-    if (errors > 0) {
-      toast.warning(t("st_import_errors").replace("{count}", String(errors)));
+    if (failedItems.length > 0) {
+      toast.warning(t("st_import_errors").replace("{count}", String(failedItems.length)));
     }
     onImported?.();
   }
@@ -268,6 +282,22 @@ function StFolderImport({ onImported }: StFolderImportProps) {
 
       {error && (
         <div className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] text-error">{error}</div>
+      )}
+
+      {importErrors.length > 0 && !importing && (
+        <details className="mt-3">
+          <summary className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-warning">
+            {t("st_import_errors").replace("{count}", String(importErrors.length))}
+          </summary>
+          <div className="mt-1.5 max-h-48 overflow-y-auto rounded border border-border2 bg-surface p-2">
+            {importErrors.map((e, i) => (
+              <div key={i} className="border-b border-border2 py-1 last:border-0">
+                <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{e.fileName}</div>
+                <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{e.reason}</div>
+              </div>
+            ))}
+          </div>
+        </details>
       )}
     </div>
   );

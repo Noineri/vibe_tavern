@@ -6,4 +6,5 @@ export const importJsonSchema = z.object({
   fileName: z.string(),
   jsonText: z.string(),
   chatId: z.string().optional(),
+  skipExisting: z.boolean().optional(),
 });
