@@ -233,7 +233,7 @@ Exposed via **store classes** (`CharacterStore`, `ChatStore`, `PersonaStore`, `P
 ### `packages/import-export`
 
 Parses external formats into internal domain types:
-- `chara-card-v3.ts` — SillyTavern character cards (PNG with embedded JSON via tEXt chunks)
+- `chara-card-v3.ts` — SillyTavern character cards (V2, V3, and legacy no-spec format). PNG with embedded JSON via tEXt/iTXt chunks, or raw JSON. Accepts `chara_card_v2`, `chara_card_v3`, and spec-less cards with a `name` field.
 - `st-chat.ts` — SillyTavern JSONL chat exports. Extracts thinking tags from message content into the `reasoning` field on variants
 - `st-lorebook.ts` — SillyTavern lorebook exports
 
@@ -437,3 +437,48 @@ This ensures:
 1. Only the message being regenerated shows streaming state
 2. The old message content is visually replaced, not duplicated
 3. Reasoning (thinking) is displayed inline during regeneration
+
+---
+
+## Import pipeline
+
+The platform imports data from three sources: individual files (PNG/JSON cards, JSONL chats), SillyTavern directory bulk import, and converted Janitor AI exports.
+
+### Character card import
+
+`packages/import-export/src/cards/chara-card-v3.ts` — `importCharacterCardV3Json()` accepts three card formats:
+
+| Format | Detection | Notes |
+|--------|-----------|-------|
+| V3 (`spec: "chara_card_v3"`) | Explicit spec field | Full support: alternate greetings, extensions, tags, character_book, depth prompts |
+| V2 (`spec: "chara_card_v2"`) | Explicit spec field | Same fields as V3, fewer optional fields |
+| Legacy (no spec) | Has `name` field but no `spec` | Treated as V2-equivalent |
+
+PNG cards embed JSON in `tEXt`/`iTXt` chunks with keyword `chara` (V2) or `ccv3` (V3). The frontend `png-reader.ts` extracts these chunks, tries base64→UTF-8 decoding first (standard SillyTavern encoding), then falls back to raw JSON.
+
+**Import flow:** `session-runtime-import-export.ts` → `importJson()`:
+1. Parse JSON → detect format (character card / JSONL chat / lorebook)
+2. Upsert character via `CharacterStore.update()` if exists, `create()` if new
+3. When `skipExisting: true`: character data is updated but no new chat is created; returns existing chat so avatars can still be mapped
+4. Create a new chat for the character (or return existing if skipped)
+5. Return `ImportResult` with `activeChatId`, `snapshot`, and `imported` metadata
+
+### SillyTavern directory bulk import
+
+`StFolderImport` component in `ImportModals.tsx`:
+
+1. **Folder picker** — `<input webkitdirectory>` opens native OS dialog, returns `File[]` with `webkitRelativePath` (e.g. `default-user/characters/Alice.png`)
+2. **Scan** — groups files by directory: `characters/` → PNG with `chara`/`ccv3` chunk or JSON, `chats/` → JSONL, `worlds/` → JSON lorebooks. PNG files without character metadata (plain avatar images) are filtered out during scanning.
+3. **Import** — two phases:
+   - Phase 1: Import each character via `importJson({ skipExisting: true })`. For PNG files, also upload the PNG as avatar via `uploadAsset()` + `updateCharacterAvatar()`. Build a `nameToChatId` map for chat matching.
+   - Phase 2: Import each chat via `importJson({ chatId })`, matching chats to characters by folder name.
+4. **Error reporting** — per-file errors collected as `{ fileName, reason }[]`, displayed in a collapsible `<details>` list after import.
+
+### Janitor AI conversion (external tool)
+
+`janitor-chat-convert.html` — standalone HTML file (not part of the app) that converts Janitor AI chat dumps to SillyTavern JSONL format. Includes browser console scripts that use Supabase auth cookies to download chats, characters, and chat lists directly from Janitor's API. The converter handles:
+
+- Reversed message order (Janitor returns newest first)
+- Swipe grouping (consecutive `is_bot: true` messages become variants; `is_main: true` marks the selected swipe)
+- Two input formats: raw message array (from Network tab) and full chat object `{ character, chat, chatMessages, personas }` (from console script)
+- Character data extraction: converts Janitor character objects to `chara_card_v3` JSON format for import
