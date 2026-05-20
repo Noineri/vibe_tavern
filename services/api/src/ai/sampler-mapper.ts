@@ -52,7 +52,7 @@ export function buildSamplerConfig(
   const config: SamplerConfig = {};
 
   if (profile.temperature != null) config.temperature = profile.temperature;
-  if (profile.maxTokens != null) config.maxTokens = profile.maxTokens;
+  if (profile.maxTokens != null && profile.maxTokens > 0) config.maxTokens = profile.maxTokens;
 
   if (profile.stopSequences.length > 0) {
     config.stopSequences = profile.stopSequences;

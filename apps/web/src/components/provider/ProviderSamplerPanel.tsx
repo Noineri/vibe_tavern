@@ -152,7 +152,7 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
       <div className="grid grid-cols-2 gap-x-6 gap-y-4">
         {/* Max tokens */}
         <div>
-          <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
+          <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3" title={t("sampler_max_context_hint")}>
             {t("sampler_max_context")}
           </label>
           <input

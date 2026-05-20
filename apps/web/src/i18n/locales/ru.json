@@ -249,6 +249,7 @@
 
   "sampler_basic_settings": "Основные настройки",
   "sampler_max_context": "Токены ответа",
+  "sampler_max_context_hint": "Установите -1, чтобы модель сама решала, сколько писать.",
   "context_length": "Размер контекста",
   "context_auto": "Авто",
   "sampler_temperature": "Температура",
