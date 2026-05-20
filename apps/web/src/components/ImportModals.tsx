@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@rp-platform/domain";
 import { extractPngMetadata, parseCharacterMetadata } from "../lib/png-reader.js";
-import { importJson } from "../app-client.js";
+import { importJson, uploadAsset, updateCharacterAvatar } from "../app-client.js";
 import { cn } from "../lib/cn.js";
 import { Icons } from "./shared/icons.js";
 import { useT, getT } from "../i18n/context.js";
@@ -126,8 +126,9 @@ function StFolderImport({ onImported }: StFolderImportProps) {
       try {
         let jsonText: string;
         const lowerName = entry.file.name.toLowerCase();
+        const isPng = lowerName.endsWith(".png") || entry.file.type === "image/png";
 
-        if (lowerName.endsWith(".png") || entry.file.type === "image/png") {
+        if (isPng) {
           const metadata = await extractPngMetadata(entry.file);
           const parsed = parseCharacterMetadata(metadata);
           jsonText = JSON.stringify(parsed);
@@ -137,6 +138,19 @@ function StFolderImport({ onImported }: StFolderImportProps) {
 
         const result = await importJson({ fileName: entry.file.name, jsonText });
         importedChars++;
+
+        // Upload PNG as avatar
+        if (isPng && result.activeChatId) {
+          try {
+            const characterId = result.snapshot?.character?.id;
+            if (characterId) {
+              const asset = await uploadAsset(entry.file);
+              await updateCharacterAvatar(characterId, result.activeChatId, asset.assetId);
+            }
+          } catch {
+            // Avatar upload failure is non-critical
+          }
+        }
 
         // Map character name → chatId for chat matching
         const parsed = JSON.parse(jsonText);
