@@ -6,7 +6,7 @@
  */
 
 import { streamText } from "ai";
-import type { ProviderExecutor, ProviderStreamResult, ProviderStreamChunk, ProviderStreamFinish, RawToolCall } from "./provider-execution-types.js";
+import type { ProviderExecutor, ProviderStreamResult, ProviderStreamChunk, ProviderStreamFinish } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
 import type { ProviderType } from "@rp-platform/domain";
@@ -29,11 +29,9 @@ function createMappedStream(
 ): {
   stream: AsyncGenerator<ProviderStreamChunk>;
   hasRedacted: boolean;
-  toolCalls: RawToolCall[];
 } {
   let hasRedacted = false;
   let inReasoning = false;
-  const toolCalls: RawToolCall[] = [];
 
   async function* walk(): AsyncGenerator<ProviderStreamChunk> {
     let chunkCount = 0;
@@ -52,11 +50,16 @@ function createMappedStream(
         throw providerError(`Provider stream error: ${errMsg}`);
       }
 
-      // ── Tool calls ──
+      // ── Tool calls (informational — AI SDK handles execution) ──
       if (p.type === "tool-call" && p.toolCallId && p.toolName) {
         const args = (typeof p.args === "object" && p.args !== null ? p.args : {}) as Record<string, unknown>;
-        toolCalls.push({ toolCallId: p.toolCallId, toolName: p.toolName, args });
         yield { type: "tool-call", toolCallId: p.toolCallId, toolName: p.toolName, args };
+        continue;
+      }
+
+      // ── Tool results (informational — forwarded for SSE) ──
+      if (p.type === "tool-result" && p.toolCallId) {
+        yield { type: "tool-result", toolCallId: p.toolCallId, toolName: String(p.toolName ?? ""), isError: (p as any).isError };
         continue;
       }
 
@@ -98,7 +101,7 @@ function createMappedStream(
     });
   }
 
-  return { stream: walk(), hasRedacted, toolCalls };
+  return { stream: walk(), hasRedacted };
 }
 
 /**
@@ -146,9 +149,11 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       ...(systemPrompt ? { system: systemPrompt } : {}),
       abortSignal: input.signal,
       ...samplerConfig,
+      ...(input.tools ? { tools: input.tools as any } : {}),
+      ...(input.maxSteps ? { maxSteps: input.maxSteps } : {}),
     });
 
-    const { stream, hasRedacted, toolCalls: collectedToolCalls } = createMappedStream(result.fullStream);
+    const { stream, hasRedacted } = createMappedStream(result.fullStream);
 
     const finished = mapFinish(result);
 
@@ -158,7 +163,6 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       text: result.text,
       reasoning: result.reasoning as Promise<string | undefined>,
       hasRedactedReasoning: hasRedacted,
-      toolCalls: collectedToolCalls,
     };
   } catch (error) {
     if (input.signal?.aborted) throw cancelled();
