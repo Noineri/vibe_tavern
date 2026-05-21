@@ -150,11 +150,13 @@ export class ScriptStore {
   ): Promise<Script[]> {
     const conditions = [
       eq(scripts.scopeType, 'global'),
-      eq(scripts.characterId, characterId),
-      eq(scripts.chatId, chatId),
+      and(eq(scripts.scopeType, 'character'), eq(scripts.characterId, characterId)),
+      and(eq(scripts.scopeType, 'chat'), eq(scripts.chatId, chatId)),
     ];
     if (personaId) {
-      conditions.push(eq(scripts.personaId, personaId));
+      conditions.push(
+        and(eq(scripts.scopeType, 'persona'), eq(scripts.personaId, personaId)),
+      );
     }
 
     const rows = await this.db
