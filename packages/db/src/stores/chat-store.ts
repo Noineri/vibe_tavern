@@ -16,6 +16,8 @@ export interface Chat {
   activeBranchId: string;
   promptPresetId: string;
   lastAccessedAt: string;
+  loreActivationState: Record<string, unknown>;
+  scriptState: Record<string, Record<string, unknown>>;
   createdAt: string;
   updatedAt: string;
 }
@@ -790,6 +792,24 @@ export class ChatStore {
     return rows.map((row) => this.mapRowTrace(row));
   }
 
+  // ─── Lore/Script state persistence ───────────────────────────────────────
+
+  async updateLoreActivationState(chatId: string, state: Record<string, unknown>): Promise<void> {
+    await this.db
+      .update(chats)
+      .set({ loreActivationStateJson: JSON.stringify(state) })
+      .where(eq(chats.id, chatId))
+      .run();
+  }
+
+  async updateScriptState(chatId: string, state: Record<string, Record<string, unknown>>): Promise<void> {
+    await this.db
+      .update(chats)
+      .set({ scriptStateJson: JSON.stringify(state) })
+      .where(eq(chats.id, chatId))
+      .run();
+  }
+
   // ─── Row mappers ──────────────────────────────────────────────────────────
 
   // ─── mapRow helpers ──────────────────────────────────────────────────────────
@@ -806,6 +826,8 @@ export class ChatStore {
       activeBranchId: row.activeBranchId,
       promptPresetId: row.promptPresetId,
       lastAccessedAt: row.lastAccessedAt,
+      loreActivationState: safeParseJson(row.loreActivationStateJson),
+      scriptState: safeParseScriptState(row.scriptStateJson),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -866,5 +888,21 @@ export class ChatStore {
       prefill: row.prefill ?? null,
       createdAt: row.createdAt,
     };
+  }
+}
+
+function safeParseJson(text: string): Record<string, unknown> {
+  try {
+    return JSON.parse(text || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function safeParseScriptState(text: string): Record<string, Record<string, unknown>> {
+  try {
+    return JSON.parse(text || '{}');
+  } catch {
+    return {};
   }
 }
