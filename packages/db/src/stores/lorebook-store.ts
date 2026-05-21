@@ -1,4 +1,4 @@
-import { eq, and, or, sql } from 'drizzle-orm';
+import { eq, and, or } from 'drizzle-orm';
 import { lorebooks, loreEntries } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
@@ -337,11 +337,13 @@ export class LorebookStore {
   ): Promise<Array<{ lorebook: Lorebook; entries: LoreEntry[] }>> {
     const conditions = [
       eq(lorebooks.scopeType, 'global'),
-      eq(lorebooks.characterId, characterId),
-      eq(lorebooks.chatId, chatId),
+      and(eq(lorebooks.scopeType, 'character'), eq(lorebooks.characterId, characterId)),
+      and(eq(lorebooks.scopeType, 'chat'), eq(lorebooks.chatId, chatId)),
     ];
     if (personaId) {
-      conditions.push(eq(lorebooks.personaId, personaId));
+      conditions.push(
+        and(eq(lorebooks.scopeType, 'persona'), eq(lorebooks.personaId, personaId)),
+      );
     }
 
     const bookRows = await this.db
