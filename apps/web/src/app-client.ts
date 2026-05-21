@@ -859,6 +859,62 @@ export async function importScript(body: { format: "js"; code: string; name?: st
   return unwrapRpc<ScriptRecord>(response);
 }
 
+// ── AI Assistant SSE ──────────────────────────────────────────────────
+
+export interface AiAssistantChunk {
+  type: "text" | "error" | "done";
+  text?: string;
+  error?: string;
+}
+
+export async function* streamScriptAiAssistant(body: {
+  prompt: string;
+  existingCode?: string;
+  providerProfileId: string;
+  model?: string;
+}): AsyncGenerator<AiAssistantChunk> {
+  const response = await fetch(`${getGatewayBaseUrl()}/api/scripts/ai-assistant`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    yield { type: "error", error: `HTTP ${response.status}: ${response.statusText}` };
+    return;
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    yield { type: "error", error: "No response body" };
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        try {
+          const chunk: AiAssistantChunk = JSON.parse(line.slice(6));
+          yield chunk;
+          if (chunk.type === "done" || chunk.type === "error") return;
+        } catch {
+          // Skip malformed lines
+        }
+      }
+    }
+  }
+}
+
 export async function archiveCharacter(characterId: string): Promise<{ characterId: string; status: "archived" }> {
   const response = await client.api.characters[":characterId"].archive.$patch({ param: { characterId } });
   return unwrapRpc<{ characterId: string; status: "archived" }>(response);
