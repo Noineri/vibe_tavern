@@ -32,3 +32,10 @@ export type {
   Lorebook as LorebookRow,
   LoreEntry as LoreEntryRow,
 } from './lorebook-store.js';
+
+export { ScriptStore } from './script-store.js';
+export type {
+  CreateScriptData,
+  UpdateScriptData,
+  Script as ScriptRow,
+} from './script-store.js';
