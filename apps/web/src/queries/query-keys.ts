@@ -39,3 +39,9 @@ export const lorebookKeys = {
   byScope: (scopeType: string, ownerId?: string) => ["lorebooks", scopeType, ownerId ?? "none"] as const,
   entries: (lorebookId: string) => ["lorebooks", "entries", lorebookId] as const,
 };
+
+export const scriptKeys = {
+  all: () => ["scripts"] as const,
+  byScope: (scopeType: string, ownerId?: string) => ["scripts", scopeType, ownerId ?? "none"] as const,
+  detail: (scriptId: string) => ["scripts", "detail", scriptId] as const,
+};
