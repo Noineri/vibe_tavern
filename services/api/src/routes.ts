@@ -35,12 +35,15 @@ export interface RuntimeApi {
   deletePersona: (personaId: string) => Promise<void>;
   getPersonalLorebookStatus: (personaId: string) => unknown;
   setPersonalLorebookEnabled: (personaId: string, enabled: boolean) => unknown;
-  updateLorebook: (lorebookId: string, body: { chatId: string; lorebookRaw: string }) => unknown;
-  createLoreEntry: (lorebookId: string, body: unknown) => unknown;
-  updateLoreEntry: (lorebookId: string, entryId: string, body: unknown) => unknown;
-  deleteLoreEntry: (lorebookId: string, entryId: string) => void;
-  listLoreEntries: (lorebookId: string) => unknown;
-  testLoreActivation: (lorebookId: string, body: { text: string }) => unknown;
+  listLorebooks: (scopeType: string, ownerId?: string) => Promise<unknown>;
+  createLorebook: (body: { name: string; description?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean }) => Promise<unknown>;
+  updateLorebookMeta: (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean }) => Promise<unknown>;
+  deleteLorebook: (lorebookId: string) => Promise<void>;
+  createLoreEntry: (lorebookId: string, body: Record<string, unknown>) => Promise<unknown>;
+  updateLoreEntry: (lorebookId: string, entryId: string, body: Record<string, unknown>) => Promise<unknown>;
+  deleteLoreEntry: (lorebookId: string, entryId: string) => Promise<void>;
+  listLoreEntries: (lorebookId: string) => Promise<unknown>;
+  testLoreActivation: (lorebookId: string, body: { text: string }) => Promise<unknown>;
   listProviderProfiles: () => unknown;
   fetchProviderProfile: (providerProfileId: string) => unknown;
   activateProviderProfile: (providerProfileId: string) => unknown;
@@ -334,11 +337,24 @@ export function createApiRouter(runtime: RuntimeApi) {
       const enabled = body.enabled === true;
       return c.json(await runtime.setPersonalLorebookEnabled(c.req.param("personaId"), enabled));
     })
-    .patch("/api/lorebooks/:lorebookId", zValidator("json", schemas.updateLorebookSchema), async (c) => {
+    .get("/api/lorebooks", async (c) => {
+      const scopeType = c.req.query("scopeType") ?? "character";
+      const ownerId = c.req.query("ownerId") ?? undefined;
+      return c.json(await runtime.listLorebooks(scopeType, ownerId));
+    })
+    .post("/api/lorebooks", zValidator("json", schemas.createLorebookSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.createLorebook(body), 201);
+    })
+    .patch("/api/lorebooks/:lorebookId", zValidator("json", schemas.updateLorebookMetaSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(
-        await runtime.updateLorebook(c.req.param("lorebookId"), body),
+        await runtime.updateLorebookMeta(c.req.param("lorebookId"), body),
       );
+    })
+    .delete("/api/lorebooks/:lorebookId", async (c) => {
+      await runtime.deleteLorebook(c.req.param("lorebookId"));
+      return c.json({ ok: true });
     })
     .post("/api/lorebooks/:lorebookId/test-activation", zValidator("json", schemas.testActivationSchema), async (c) => {
       const body = c.req.valid("json");
@@ -358,7 +374,7 @@ export function createApiRouter(runtime: RuntimeApi) {
       return c.json(await runtime.updateLoreEntry(c.req.param("lorebookId"), c.req.param("entryId"), body));
     })
     .delete("/api/lorebooks/:lorebookId/entries/:entryId", async (c) => {
-      runtime.deleteLoreEntry(c.req.param("lorebookId"), c.req.param("entryId"));
+      await runtime.deleteLoreEntry(c.req.param("lorebookId"), c.req.param("entryId"));
       return c.json({ ok: true });
     })
     .get("/api/prompt-presets", async (c) => {

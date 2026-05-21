@@ -1,4 +1,5 @@
 import type { StoreContainer } from "@rp-platform/db";
+import type { CreateLoreEntryData, UpdateLoreEntryData } from "@rp-platform/db";
 import { brandId, type CharacterId, type ChatId, type ChatBranchId, type MessageId } from "@rp-platform/domain";
 import { validation, notFound } from "./errors.js";
 import { logSendDebug } from "./send-debug-log.js";
@@ -324,24 +325,42 @@ export class RuntimeApiAdapter {
 	setPersonalLorebookEnabled = (personaId: string, enabled: boolean) =>
 		this.sessionRuntime.setPersonalLorebookEnabled(personaId, enabled);
 
-	updateLorebook = (_lorebookId: string, _body: { chatId: string; lorebookRaw: string }) => {
-		throw new Error("Lorebook patch route is not wired in this baseline.");
+	// ─── Lorebook CRUD (wired to store) ────────────────────────────────────
+
+	listLorebooks = (scopeType: string, ownerId?: string) =>
+		this.stores.lorebooks.listLorebooksByScope(scopeType, ownerId);
+
+	createLorebook = (body: { name: string; description?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean }) =>
+		this.stores.lorebooks.createLorebook(body);
+
+	updateLorebookMeta = (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean }) =>
+		this.stores.lorebooks.updateLorebook(lorebookId, body);
+
+	deleteLorebook = async (lorebookId: string) => {
+		await this.stores.lorebooks.deleteLorebook(lorebookId);
 	};
 
-	createLoreEntry = (lorebookId: string, body: any) =>
-		this.sessionRuntime.createLoreEntry(lorebookId, body);
+	// ─── Lore entries (wired to store) ──────────────────────────────────────
 
-	updateLoreEntry = (lorebookId: string, entryId: string, body: any) =>
-		this.sessionRuntime.updateLoreEntry(lorebookId, entryId, body);
+	createLoreEntry = (lorebookId: string, body: Record<string, unknown>) =>
+		this.stores.lorebooks.createEntry(lorebookId, body as unknown as CreateLoreEntryData);
 
-	deleteLoreEntry = (lorebookId: string, entryId: string) =>
-		this.sessionRuntime.deleteLoreEntry(lorebookId, entryId);
+	updateLoreEntry = (_lorebookId: string, entryId: string, body: Record<string, unknown>) =>
+		this.stores.lorebooks.updateEntry(entryId, body as unknown as UpdateLoreEntryData);
+
+	deleteLoreEntry = (_lorebookId: string, entryId: string) =>
+		this.stores.lorebooks.deleteEntry(entryId);
 
 	listLoreEntries = (lorebookId: string) =>
-		this.sessionRuntime.listLoreEntries(lorebookId);
+		this.stores.lorebooks.listEntries(lorebookId);
 
-	testLoreActivation = (lorebookId: string, body: { text: string }) =>
-		this.sessionRuntime.testLoreActivation(lorebookId, body.text);
+	testLoreActivation = async (lorebookId: string, body: { text: string }) => {
+		const entries = await this.stores.lorebooks.listEntries(lorebookId);
+		const activated = entries.filter(e =>
+			e.enabled && e.keys.some(k => k && body.text.toLowerCase().includes(k.toLowerCase()))
+		);
+		return { activatedIds: activated.map(e => e.id), totalEntries: entries.length };
+	};
 
 	// ─── Provider profiles ────────────────────────────────────────────────
 
