@@ -66,6 +66,21 @@ export interface PromptAssemblyResolver {
     branchId: ChatBranchId;
     recentText: string;
   }): Promise<RetrievedMemoryHit[]>;
+  executeScripts(input: {
+    chatId: ChatId;
+    characterRecord: {
+      name: string;
+      personality: string | null;
+      scenario: string | null;
+    };
+    messages: Array<{ role: string; content: string }>;
+    activeLoreEntries: LoreEntry[];
+    mode: string;
+  }): Promise<{
+    personality: string;
+    scenario: string;
+    errors: Array<{ scriptId: string; scriptName: string; error: string }>;
+  }>;
   getToolInstructions(): string | null;
 }
 
@@ -143,6 +158,25 @@ export class PromptAssemblyService {
       recentText,
     });
 
+    // Execute scripts AFTER lore activation, BEFORE prompt assembly.
+    // Scripts can read active lore entries and mutate character fields.
+    // Token estimation in makeLayer() will reflect post-script text.
+    const scriptResult = await this.resolver.executeScripts({
+      chatId: chat.id as ChatId,
+      characterRecord: {
+        name: character.name,
+        personality: character.personality ?? null,
+        scenario: character.scenario ?? null,
+      },
+      messages: recentMessages.map(m => ({ role: m.role, content: m.content })),
+      activeLoreEntries,
+      mode: input.mode ?? 'chat',
+    });
+
+    // Apply script mutations to character fields in-place
+    const mutatedPersonality = scriptResult.personality;
+    const mutatedScenario = scriptResult.scenario;
+
     // Set model hint so estimateTokens uses the model-specific tokenizer
     setModelHint(input.model);
 
@@ -154,9 +188,9 @@ export class PromptAssemblyService {
         id: character.id,
         name: character.name,
         description: character.description,
-        scenario: character.scenario,
+        scenario: mutatedScenario,
         systemPrompt: character.systemPrompt,
-        personality: character.personality,
+        personality: mutatedPersonality,
         mesExample: character.mesExample,
         mesExampleMode: (character.mesExampleMode as "always" | "once" | "depth") ?? "always",
         mesExampleDepth: character.mesExampleDepth ?? 4,

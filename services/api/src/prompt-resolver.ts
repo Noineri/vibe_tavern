@@ -20,6 +20,7 @@ import {
 	resolveActivatedEntries,
 	type LoreActivationState,
 } from "./lore-activation-engine.js";
+import { executeScripts } from "./script-sandbox.js";
 
 export class StaticPromptResolver implements PromptAssemblyResolver {
 	constructor(private readonly stores: StoreContainer) {}
@@ -160,6 +161,85 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				sortOrder: e.sortOrder,
 				metadata: e.metadata,
 			}));
+	}
+
+	async executeScripts(input: {
+		chatId: ChatId;
+		characterRecord: {
+			name: string;
+			personality: string | null;
+			scenario: string | null;
+		};
+		messages: Array<{ role: string; content: string }>;
+		activeLoreEntries: LoreEntry[];
+		mode: string;
+	}): Promise<{
+		personality: string;
+		scenario: string;
+		errors: Array<{ scriptId: string; scriptName: string; error: string }>;
+	}> {
+		const defaultResult = {
+			personality: input.characterRecord.personality ?? '',
+			scenario: input.characterRecord.scenario ?? '',
+			errors: [] as Array<{ scriptId: string; scriptName: string; error: string }>,
+		};
+
+		const chat = await this.stores.chats.getById(input.chatId);
+		if (!chat) return defaultResult;
+
+		// 1. Load enabled scripts for this chat
+		const scripts = await this.stores.scripts.listAllEnabledForChat(
+			chat.characterId,
+			chat.personaId,
+			input.chatId,
+		);
+
+		if (scripts.length === 0) return defaultResult;
+
+		// 2. Read current script state from typed Chat object
+		const scriptState = chat.scriptState ?? {};
+
+		// 3. Run scripts
+		const result = executeScripts({
+			scripts: scripts.map(s => ({
+				id: s.id,
+				name: s.name,
+				code: s.code,
+				sortOrder: s.sortOrder,
+			})).sort((a, b) => a.sortOrder - b.sortOrder),
+			chat: {
+				messages: input.messages.map(m => ({
+					message: m.content,
+					role: m.role,
+				})),
+			},
+			character: {
+				name: input.characterRecord.name,
+				personality: input.characterRecord.personality ?? '',
+				scenario: input.characterRecord.scenario ?? '',
+			},
+			activeLoreEntries: input.activeLoreEntries.map(e => ({
+				title: e.title,
+				content: e.content,
+				keys: e.keys,
+			})),
+			scriptState,
+		});
+
+		// 4. Persist updated script state
+		try {
+			await this.stores.chats.updateScriptState(chat.id, result.updatedScriptState);
+		} catch { /* don't crash pipeline on state persistence failure */ }
+
+		return {
+			personality: result.character.personality,
+			scenario: result.character.scenario,
+			errors: result.errors.map(e => ({
+				scriptId: e.scriptId,
+				scriptName: e.scriptName,
+				error: e.error,
+			})),
+		};
 	}
 
 	async listRetrievedMemories(input: {
