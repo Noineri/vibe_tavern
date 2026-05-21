@@ -17,6 +17,7 @@ import {
 	normalizeOpenAiCompatibleBaseUrl,
 } from "./provider-gateway.js";
 import { executeScripts } from "./script-sandbox.js";
+import { streamScriptCode } from "./script-ai-assistant.js";
 
 /**
  * Facade that implements RuntimeApi — the single contract between
@@ -436,6 +437,17 @@ export class RuntimeApiAdapter {
 			personaId: body.personaId,
 			chatId: body.chatId,
 		});
+	};
+
+	// ─── Script AI Assistant ───────────────────────────────────────────
+
+	streamScriptAiAssistant = async function* (this: RuntimeApiAdapter, body: { prompt: string; existingCode?: string; providerProfileId: string; model?: string }) {
+		const { resolveModel } = await import("./ai/provider-executor-utils.js");
+		const profile = await this.stores.providers.getById(body.providerProfileId);
+		if (!profile) throw new Error(`Provider profile not found: ${body.providerProfileId}`);
+		const modelName = body.model ?? profile.defaultModel ?? "gpt-4o-mini";
+		const aiModel = resolveModel(profile, modelName);
+		yield* streamScriptCode(body, aiModel);
 	};
 
 	// ─── Provider profiles ────────────────────────────────────────────────
