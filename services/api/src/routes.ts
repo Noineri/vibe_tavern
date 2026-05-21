@@ -52,6 +52,7 @@ export interface RuntimeApi {
   deleteScript: (scriptId: string) => Promise<void>;
   testScript: (scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<unknown>;
   importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<unknown>;
+  streamScriptAiAssistant: (body: { prompt: string; existingCode?: string; providerProfileId: string; model?: string }) => AsyncIterable<{ type: "text" | "error" | "done"; text?: string; error?: string }>;
   listProviderProfiles: () => unknown;
   fetchProviderProfile: (providerProfileId: string) => unknown;
   activateProviderProfile: (providerProfileId: string) => unknown;
@@ -419,6 +420,29 @@ export function createApiRouter(runtime: RuntimeApi) {
         ? { format, code: body.code, name: body.name, scopeType: body.scopeType, characterId: body.characterId, personaId: body.personaId, chatId: body.chatId }
         : { format, jsonText: body.jsonText, scopeType: body.scopeType, characterId: body.characterId, personaId: body.personaId, chatId: body.chatId };
       return c.json(await runtime.importScript(payload), 201);
+    })
+    .post("/api/scripts/ai-assistant", async (c) => {
+      const body = await c.req.json();
+      const stream = runtime.streamScriptAiAssistant(body);
+
+      return new Response(
+        new ReadableStream({
+          async start(controller) {
+            const encoder = new TextEncoder();
+            for await (const chunk of stream) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            }
+            controller.close();
+          },
+        }),
+        {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          },
+        },
+      );
     })
     .get("/api/prompt-presets", async (c) => {
       return c.json(await runtime.listPromptPresets());
