@@ -435,4 +435,104 @@ export class LorebookStore {
       updatedAt: row.updatedAt,
     };
   }
+
+  // ─── Migration ────────────────────────────────────────────────────────────
+
+  /**
+   * Migrate a character's characterBookJson blob into a normalized lorebook + entries.
+   * Returns the created lorebook ID, or null if no migration needed.
+   */
+  async migrateCharacterBookJson(characterId: string, characterBookJson: string): Promise<string | null> {
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(characterBookJson);
+    } catch {
+      return null;
+    }
+
+    if (!parsed || typeof parsed !== 'object') return null;
+
+    // Extract lorebook metadata
+    const name = typeof parsed.name === 'string' ? parsed.name : 'Character Lorebook';
+    const description = typeof parsed.description === 'string' ? parsed.description : '';
+    const scanDepth = typeof parsed.scan_depth === 'number' ? parsed.scan_depth :
+                      typeof parsed.ext_scan_depth === 'number' ? parsed.ext_scan_depth : 50;
+    const tokenBudget = typeof parsed.token_budget === 'number' ? parsed.token_budget : 2048;
+    const recursiveScanning = typeof parsed.recursive_scanning === 'boolean' ? parsed.recursive_scanning : false;
+
+    // Check if this character already has a character-scoped lorebook
+    const existing = await this.listLorebooksByScope('character', characterId);
+    if (existing.length > 0) return null;
+
+    // Create lorebook
+    const lorebook = await this.createLorebook({
+      name,
+      description,
+      scopeType: 'character',
+      characterId,
+      scanDepth,
+      tokenBudget,
+      recursiveScanning,
+    });
+
+    // Parse entries from the blob
+    const rawEntries = parsed.entries;
+    if (!Array.isArray(rawEntries)) return lorebook.id;
+
+    for (const raw of rawEntries) {
+      if (!raw || typeof raw !== 'object') continue;
+      const entry = raw as Record<string, unknown>;
+
+      const rawKeys = entry.keys;
+      const keys = Array.isArray(rawKeys) ? rawKeys.filter((k): k is string => typeof k === 'string') : [];
+      const rawSecondary = (entry.secondary_keys ?? entry.secondaryKeys);
+      const secondaryKeys = Array.isArray(rawSecondary) ? rawSecondary.filter((k): k is string => typeof k === 'string') : [];
+      const content = typeof entry.content === 'string' ? entry.content : '';
+      if (!content && keys.length === 0) continue;
+
+      await this.createEntry(lorebook.id, {
+        title: typeof entry.name === 'string' ? entry.name : (entry.comment ?? '') as string,
+        content,
+        keys,
+        secondaryKeys,
+        logic: typeof entry.logic === 'string' ? entry.logic : 'and_any',
+        position: typeof entry.position === 'string' ? entry.position : 'before_char',
+        depth: typeof entry.depth === 'number' ? entry.depth : 4,
+        priority: typeof entry.priority === 'number' ? entry.priority : 10,
+        sortOrder: typeof entry.order === 'number' ? entry.order : 0,
+        constant: typeof entry.constant === 'boolean' ? entry.constant : false,
+        probability: typeof entry.probability === 'number' ? entry.probability : 100,
+        role: typeof entry.role === 'number' ? this.mapRoleNumber(entry.role) : (typeof entry.role === 'string' ? entry.role : 'system'),
+        group: typeof entry.group === 'string' ? entry.group : (typeof entry.groupName === 'string' ? entry.groupName as string : ''),
+        groupWeight: typeof entry.group_weight === 'number' ? entry.group_weight : (typeof entry.groupWeight === 'number' ? entry.groupWeight : 1),
+        prioritizeInclusion: typeof (entry.prioritize_inclusion ?? entry.prioritizeInclusion) === 'boolean' ? !!(entry.prioritize_inclusion ?? entry.prioritizeInclusion) : false,
+        excludeRecursion: typeof (entry.exclude_recursion ?? entry.excludeRecursion) === 'boolean' ? !!(entry.exclude_recursion ?? entry.excludeRecursion) : false,
+        preventRecursion: typeof (entry.prevent_recursion ?? entry.preventRecursion) === 'boolean' ? !!(entry.prevent_recursion ?? entry.preventRecursion) : false,
+        delayUntilRecursion: typeof (entry.delay_until_recursion ?? entry.delayUntilRecursion) === 'boolean' ? !!(entry.delay_until_recursion ?? entry.delayUntilRecursion) : false,
+        recursionLevel: typeof (entry.recursion_level ?? entry.recursionLevel) === 'number' ? (entry.recursion_level ?? entry.recursionLevel) as number : 0,
+        scanDepthOverride: typeof (entry.scan_depth_override ?? entry.scanDepthOverride) === 'number' ? (entry.scan_depth_override ?? entry.scanDepthOverride) as number : null,
+        caseSensitive: typeof (entry.case_sensitive ?? entry.caseSensitive) === 'boolean' ? !!(entry.case_sensitive ?? entry.caseSensitive) : false,
+        matchWholeWords: typeof (entry.match_whole_words ?? entry.matchWholeWords) === 'boolean' ? !!(entry.match_whole_words ?? entry.matchWholeWords) : false,
+        characterFilter: (() => { const v = entry.character_filter ?? entry.characterFilter; return Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : []; })(),
+        characterFilterExclude: typeof (entry.character_filter_exclude ?? entry.characterFilterExclude) === 'boolean' ? !!(entry.character_filter_exclude ?? entry.characterFilterExclude) : false,
+        triggers: Array.isArray(entry.triggers) ? entry.triggers.filter((k): k is string => typeof k === 'string') : [],
+        matchSources: (() => { const v = entry.match_sources ?? entry.matchSources; return Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : []; })(),
+        enabled: typeof (entry.enabled ?? entry.disable) === 'boolean' ? (entry.enabled ?? !entry.disable) as boolean : true,
+        stickyWindow: typeof (entry.sticky_window ?? entry.stickyWindow) === 'number' ? (entry.sticky_window ?? entry.stickyWindow) as number : 0,
+        cooldownWindow: typeof (entry.cooldown_window ?? entry.cooldownWindow) === 'number' ? (entry.cooldown_window ?? entry.cooldownWindow) as number : 0,
+        delayWindow: typeof (entry.delay_window ?? entry.delayWindow) === 'number' ? (entry.delay_window ?? entry.delayWindow) as number : 0,
+      });
+    }
+
+    return lorebook.id;
+  }
+
+  private mapRoleNumber(role: number): string {
+    switch (role) {
+      case 0: return 'system';
+      case 1: return 'user';
+      case 2: return 'assistant';
+      default: return 'system';
+    }
+  }
 }

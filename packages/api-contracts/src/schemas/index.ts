@@ -11,7 +11,8 @@ export {
 } from "./chat-schema.js";
 export {
   setPersonalLorebookSchema,
-  updateLorebookSchema,
+  createLorebookSchema,
+  updateLorebookMetaSchema,
   testActivationSchema,
   createLoreEntrySchema,
   updateLoreEntrySchema,
