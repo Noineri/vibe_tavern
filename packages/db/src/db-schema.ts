@@ -59,9 +59,100 @@ export const chats = sqliteTable('chats', {
   status: text('status').notNull().default('active'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
+  loreActivationStateJson: text('lore_activation_state_json').notNull().default('{}'),
+  scriptStateJson: text('script_state_json').notNull().default('{}'),
 }, (table) => ({
   characterIdIdx: index('idx_chats_character_id').on(table.characterId),
   lastAccessedIdx: index('idx_chats_last_accessed').on(table.lastAccessedAt),
+}));
+
+// ─── lorebooks ────────────────────────────────────────────────────────────────
+
+export const lorebooks = sqliteTable('lorebooks', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description').notNull().default(''),
+  scopeType: text('scope_type').notNull(),
+  scanDepth: integer('scan_depth').notNull().default(50),
+  tokenBudget: integer('token_budget').notNull().default(1000),
+  recursiveScanning: integer('recursive_scanning').notNull().default(0),
+  sortOrder: integer('sort_order').notNull().default(0),
+  characterId: text('character_id').references(() => characters.id, { onDelete: 'cascade' }),
+  personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
+  chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
+  extensionsJson: text('extensions_json').notNull().default('{}'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  characterIdIdx: index('idx_lorebooks_character').on(table.characterId),
+  personaIdIdx: index('idx_lorebooks_persona').on(table.personaId),
+  chatIdIdx: index('idx_lorebooks_chat').on(table.chatId),
+  scopeTypeIdx: index('idx_lorebooks_scope').on(table.scopeType),
+}));
+
+// ─── loreEntries ──────────────────────────────────────────────────────────────
+
+export const loreEntries = sqliteTable('lore_entries', {
+  id: text('id').primaryKey(),
+  lorebookId: text('lorebook_id').notNull().references(() => lorebooks.id, { onDelete: 'cascade' }),
+  title: text('title').notNull().default(''),
+  content: text('content').notNull().default(''),
+  keysJson: text('keys_json').notNull().default('[]'),
+  secondaryKeysJson: text('secondary_keys_json').notNull().default('[]'),
+  logic: text('logic').notNull().default('and_any'),
+  position: text('position').notNull().default('in_prompt'),
+  depth: integer('depth').notNull().default(4),
+  priority: integer('priority').notNull().default(100),
+  stickyWindow: integer('sticky_window').notNull().default(0),
+  cooldownWindow: integer('cooldown_window').notNull().default(0),
+  delayWindow: integer('delay_window').notNull().default(0),
+  constant: integer('constant').notNull().default(0),
+  probability: integer('probability').notNull().default(100),
+  role: text('role').notNull().default('system'),
+  groupName: text('group_name').notNull().default(''),
+  groupWeight: integer('group_weight').notNull().default(100),
+  prioritizeInclusion: integer('prioritize_inclusion').notNull().default(0),
+  excludeRecursion: integer('exclude_recursion').notNull().default(0),
+  preventRecursion: integer('prevent_recursion').notNull().default(0),
+  delayUntilRecursion: integer('delay_until_recursion').notNull().default(0),
+  recursionLevel: integer('recursion_level').notNull().default(0),
+  scanDepthOverride: integer('scan_depth_override'),
+  caseSensitive: integer('case_sensitive').notNull().default(0),
+  matchWholeWords: integer('match_whole_words').notNull().default(0),
+  characterFilterJson: text('character_filter_json').notNull().default('[]'),
+  characterFilterExclude: integer('character_filter_exclude').notNull().default(0),
+  triggersJson: text('triggers_json').notNull().default('[]'),
+  matchSourcesJson: text('match_sources_json').notNull().default('[]'),
+  enabled: integer('enabled').notNull().default(1),
+  sortOrder: integer('sort_order').notNull().default(0),
+  metadataJson: text('metadata_json').notNull().default('{}'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  lorebookIdIdx: index('idx_lore_entries_lorebook').on(table.lorebookId),
+}));
+
+// ─── scripts ──────────────────────────────────────────────────────────────────
+
+export const scripts = sqliteTable('scripts', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description').notNull().default(''),
+  code: text('code').notNull().default(''),
+  enabled: integer('enabled').notNull().default(1),
+  scopeType: text('scope_type').notNull().default('character'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  characterId: text('character_id').references(() => characters.id, { onDelete: 'cascade' }),
+  personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
+  chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
+  extensionsJson: text('extensions_json').notNull().default('{}'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  characterIdIdx: index('idx_scripts_character').on(table.characterId),
+  personaIdIdx: index('idx_scripts_persona').on(table.personaId),
+  chatIdIdx: index('idx_scripts_chat').on(table.chatId),
+  scopeTypeIdx: index('idx_scripts_scope').on(table.scopeType),
 }));
 
 // ─── chatBranches ──────────────────────────────────────────────────────────────
