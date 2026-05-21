@@ -132,6 +132,37 @@ export interface LoreEntryRecord {
   cooldownWindow: number;
   delayWindow: number;
   enabled: boolean;
+  constant: boolean;
+  probability: number;
+  role: string;
+  groupName: string;
+  groupWeight: number;
+  prioritizeInclusion: boolean;
+  excludeRecursion: boolean;
+  preventRecursion: boolean;
+  delayUntilRecursion: boolean;
+  recursionLevel: number;
+  scanDepthOverride: number | null;
+  caseSensitive: boolean;
+  matchWholeWords: boolean;
+  characterFilter: string[];
+  characterFilterExclude: boolean;
+  triggers: string[];
+  matchSources: string[];
+}
+
+export interface LorebookRecord {
+  id: string;
+  name: string;
+  description: string;
+  scopeType: string;
+  characterId: string | null;
+  personaId: string | null;
+  chatId: string | null;
+  scanDepth: number;
+  tokenBudget: number;
+  recursiveScanning: boolean;
+  enabled: boolean;
 }
 
 export interface TestChatResponse {
@@ -744,6 +775,31 @@ export async function updateLoreEntry(lorebookId: string, entryId: string, entry
 
 export async function deleteLoreEntry(lorebookId: string, entryId: string): Promise<void> {
   const response = await client.api.lorebooks[":lorebookId"].entries[":entryId"].$delete({ param: { lorebookId, entryId } });
+  if (!response.ok) {
+    const errorBody = await response.json() as { error?: string };
+    throw new Error(errorBody?.error || `Request failed: ${response.status}`);
+  }
+}
+
+// ── Lorebook-level CRUD ─────────────────────────────────────────────
+
+export async function listLorebooks(scopeType: string, ownerId?: string): Promise<LorebookRecord[]> {
+  const response = await client.api.lorebooks.$get({ query: { scopeType, ownerId } });
+  return unwrapRpc<LorebookRecord[]>(response);
+}
+
+export async function createLorebook(body: { name: string; description?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string }): Promise<LorebookRecord> {
+  const response = await client.api.lorebooks.$post({ json: body });
+  return unwrapRpc<LorebookRecord>(response);
+}
+
+export async function updateLorebookMeta(lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean; enabled?: boolean }): Promise<LorebookRecord> {
+  const response = await client.api.lorebooks[":lorebookId"].$patch({ param: { lorebookId }, json: body });
+  return unwrapRpc<LorebookRecord>(response);
+}
+
+export async function deleteLorebook(lorebookId: string): Promise<void> {
+  const response = await client.api.lorebooks[":lorebookId"].$delete({ param: { lorebookId } });
   if (!response.ok) {
     const errorBody = await response.json() as { error?: string };
     throw new Error(errorBody?.error || `Request failed: ${response.status}`);
