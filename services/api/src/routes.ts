@@ -44,6 +44,14 @@ export interface RuntimeApi {
   deleteLoreEntry: (lorebookId: string, entryId: string) => Promise<void>;
   listLoreEntries: (lorebookId: string) => Promise<unknown>;
   testLoreActivation: (lorebookId: string, body: { text: string }) => Promise<unknown>;
+  // ── Scripts ──
+  listScripts: (scopeType: string, ownerId?: string) => Promise<unknown>;
+  getScript: (scriptId: string) => Promise<unknown>;
+  createScript: (body: { name: string; description?: string; code?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<unknown>;
+  updateScript: (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number }) => Promise<unknown>;
+  deleteScript: (scriptId: string) => Promise<void>;
+  testScript: (scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<unknown>;
+  importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<unknown>;
   listProviderProfiles: () => unknown;
   fetchProviderProfile: (providerProfileId: string) => unknown;
   activateProviderProfile: (providerProfileId: string) => unknown;
@@ -376,6 +384,41 @@ export function createApiRouter(runtime: RuntimeApi) {
     .delete("/api/lorebooks/:lorebookId/entries/:entryId", async (c) => {
       await runtime.deleteLoreEntry(c.req.param("lorebookId"), c.req.param("entryId"));
       return c.json({ ok: true });
+    })
+    // ── Scripts ──
+    .get("/api/scripts", async (c) => {
+      const scopeType = c.req.query("scopeType") ?? "character";
+      const ownerId = c.req.query("ownerId") ?? undefined;
+      return c.json(await runtime.listScripts(scopeType, ownerId));
+    })
+    .get("/api/scripts/:scriptId", async (c) => {
+      const script = await runtime.getScript(c.req.param("scriptId"));
+      if (!script) return c.json({ error: "Script not found" }, 404);
+      return c.json(script);
+    })
+    .post("/api/scripts", zValidator("json", schemas.createScriptSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.createScript(body), 201);
+    })
+    .patch("/api/scripts/:scriptId", zValidator("json", schemas.updateScriptSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.updateScript(c.req.param("scriptId"), body));
+    })
+    .delete("/api/scripts/:scriptId", async (c) => {
+      await runtime.deleteScript(c.req.param("scriptId"));
+      return c.json({ ok: true });
+    })
+    .post("/api/scripts/:scriptId/test", zValidator("json", schemas.testScriptSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.testScript(c.req.param("scriptId"), body));
+    })
+    .post("/api/scripts/import", zValidator("json", schemas.importScriptSchema), async (c) => {
+      const body = c.req.valid("json");
+      const format = body.format;
+      const payload = format === "js"
+        ? { format, code: body.code, name: body.name, scopeType: body.scopeType, characterId: body.characterId, personaId: body.personaId, chatId: body.chatId }
+        : { format, jsonText: body.jsonText, scopeType: body.scopeType, characterId: body.characterId, personaId: body.personaId, chatId: body.chatId };
+      return c.json(await runtime.importScript(payload), 201);
     })
     .get("/api/prompt-presets", async (c) => {
       return c.json(await runtime.listPromptPresets());

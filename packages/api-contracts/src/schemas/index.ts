@@ -39,3 +39,10 @@ export {
   debugSendLogSchema,
   importJsonSchema,
 } from "./debug-schema.js";
+
+export {
+  createScriptSchema,
+  updateScriptSchema,
+  testScriptSchema,
+  importScriptSchema,
+} from "./script-schema.js";
