@@ -22,6 +22,13 @@
       "when": 1779030803302,
       "tag": "0002_classy_electro",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1779362754934,
+      "tag": "0003_bouncy_whizzer",
+      "breakpoints": true
     }
   ]
 }
