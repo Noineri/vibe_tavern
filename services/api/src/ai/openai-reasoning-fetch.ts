@@ -210,6 +210,6 @@ export function createReasoningAwareFetch(
       headers: response.headers,
     });
   },
-  { preconnect: (baseFetch as any).preconnect ?? (() => {}) },
+  { preconnect: (baseFetch as { preconnect?: (...args: unknown[]) => void }).preconnect ?? (() => {}) },
   ) as typeof globalThis.fetch;
 }

@@ -81,7 +81,7 @@ function makeInput(providerPreset: string, prefill?: string): ProviderExecutionI
           { role: "user", content: "Hi" },
         ],
       },
-    } as any,
+    } as unknown as ProviderExecutionInput,
     ...(prefill !== undefined ? { prefill } : {}),
   };
 }

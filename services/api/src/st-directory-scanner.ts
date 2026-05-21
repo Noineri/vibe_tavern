@@ -496,8 +496,8 @@ function previewCharacterCard(
 		};
 	} catch (err) {
 		// Couldn't parse as v3 — try to extract name manually
-		const data = (raw as any).data ?? raw;
-		const name = typeof data.name === "string" ? data.name : basename(fileName, extname(fileName));
+		const nestedData = typeof raw.data === 'object' && raw.data !== null ? raw.data as Record<string, unknown> : raw;
+		const name = typeof nestedData.name === "string" ? nestedData.name : basename(fileName, extname(fileName));
 		return {
 			fileName,
 			name,

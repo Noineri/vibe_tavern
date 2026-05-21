@@ -272,7 +272,25 @@ export interface LoreEntry {
 }
 ```
 
-### 3.2. New constants
+### 3.2. Zod schemas (backward compatibility)
+
+All new fields added to `LoreEntry` (the 15+ ST fields) and `Script` must be **optional with defaults** in Zod validation schemas (`packages/api-contracts`):
+
+```typescript
+export const updateLoreEntrySchema = z.object({
+  constant: z.boolean().optional().default(false),
+  probability: z.number().min(0).max(100).optional().default(100),
+  triggers: z.array(z.enum([...])).optional().default([]),
+  // ... all other new fields
+});
+```
+
+This ensures:
+- Import of V2/V3 character cards (missing these fields) works without errors
+- Old frontend code sending partial updates doesn't break
+- `importCharacterCardV3Json()` parses cards without ST-specific fields
+
+### 3.3. New constants
 
 ```typescript
 // packages/domain/src/platform-constants.ts
@@ -302,7 +320,7 @@ export const LORE_MATCH_SOURCE = {
 export type LoreMatchSource = typeof LORE_MATCH_SOURCE[keyof typeof LORE_MATCH_SOURCE];
 ```
 
-### 3.3. New IDs
+### 3.4. New IDs
 
 ```typescript
 // packages/domain/src/ids.ts
@@ -312,7 +330,7 @@ export type ScriptId = Brand<"ScriptId">;
 script: "script",
 ```
 
-### 3.4. Script entity
+### 3.5. Script entity
 
 ```typescript
 // packages/domain/src/entities.ts
@@ -443,17 +461,21 @@ PromptAssemblyService.assembleForChat()
   │       - character data (name, personality, scenario)
   │       - lore.activeEntries (from step 4)
   │       - state (from scriptStateJson)
-  │     For each enabled script:
-  │       - Run in sandbox with 5s timeout
-  │       - Collect mutations to personality/scenario
-  │       - Collect state changes
+  │     For each enabled script (sorted by sort_order ascending):
+  │       - Run synchronously in sandbox with 5s timeout
+  │       - On error: log to PromptTrace, continue to next script
+  │       - Mutate context.character.personality/scenario in-place
+  │       - Next script sees mutations from previous
   │     Write back scriptStateJson
   │
   ├─ 6. Build prompt layers
   │     Activated entries → layers (position + depth + priority)
-  │     Script injections → additional layers
+  │     Script mutations → already applied to character fields
   │
-  └─ 7. assemblePrompt() with full layer set
+  └─ 7. assemblePrompt() with mutated character + lore layers
+        Token estimation happens HERE in makeLayer() —
+        scripts have already modified personality/scenario,
+        so token counts reflect post-script text.
 ```
 
 ### 5.2. StaticPromptResolver changes
@@ -504,8 +526,13 @@ async executeScripts(input: {
 // New flow:
 // getCharacter → getPersona → getPreset
 // → listActiveLoreEntries (with activation matching)
-// → executeScripts (reads active entries, mutates context)
-// → assemblePrompt (with lore layers + script injections)
+// → executeScripts (reads active entries, mutates character fields IN-PLACE)
+// → assemblePrompt (character fields already mutated, token counts correct)
+//
+// Critical: executeScripts() MUST run BEFORE assemblePrompt() because
+// token estimation happens inside makeLayer() during assembly.
+// Scripts modify personality/scenario — if we estimate tokens first,
+// the count will be wrong.
 ```
 
 The `PromptTrace` already has `activatedLoreEntries: LoreEntryId[]` — this will be populated with real data. New addition: `scriptInjections` in the trace for debugging.
@@ -522,7 +549,7 @@ The `PromptTrace` already has `activatedLoreEntries: LoreEntryId[]` — this wil
 | `isolated-vm` | Production hardening later. True V8 isolation. |
 | `Bun.sandbox()` | Monitor maturity. Could replace node:vm. |
 
-Phase 2 ships with `node:vm` + 5s timeout.
+Phase 2 ships with `node:vm` + 5s timeout. Bun v1.2.16+ supports `timeout` natively (issue #10035, closed Sep 2025).
 
 ### 6.2. ScriptContext API
 
@@ -569,23 +596,26 @@ interface ScriptContext {
 
 ### 6.3. Janitor compatibility shim
 
-Scripts imported from Janitor AI work as-is. The runtime provides both naming conventions:
+Scripts imported from Janitor AI work as-is. The runtime provides both naming conventions via **getter-based aliases** (not value duplication):
 
-```
-context.chat.lastMessage     ← canonical
-context.chat.last_message    ← Janitor alias (same value)
-context.chat.messageCount    ← canonical
-context.chat.message_count   ← Janitor alias (same value)
+```typescript
+const chatContext = {
+  messages: messages,
+  get lastMessage() { return this.messages.at(-1)?.content ?? ""; },
+  get last_message() { return this.lastMessage; },  // Janitor alias → same getter
+  get messageCount() { return this.messages.length; },
+  get message_count() { return this.messageCount; }, // Janitor alias → same getter
+};
 ```
 
-No code transformation needed at import time. The shim is in the runtime, not in the script.
+No code transformation needed at import time. The shim is in the runtime, not in the script. Using `Object.defineProperty` getters ensures no memory duplication and guarantees both keys always resolve to the same value.
 
 ### 6.4. State persistence
 
 - Stored in `chats.script_state_json`
 - Keyed by script ID: `{ [scriptId]: { [key]: value } }`
-- 64KB limit per chat
 - Loaded before script execution, saved after
+- No hard size limit — self-hosted context, SQLite handles large text columns fine
 
 ---
 
@@ -862,4 +892,4 @@ POST   /api/scripts/ai-assistant                     — SSE stream, generates/r
 
 4. **Script ordering within same scope**: `sort_order` field. Execution order = sort_order ascending. Scripts can depend on state set by earlier scripts.
 
-5. **State size limit**: 64KB per chat for `script_state_json`. Enough for counters, inventories, stat blocks. Not enough for full procedural generation databases (those belong in lorebook entries).
+5. **Script execution order**: Scripts execute synchronously in `for...of` loop sorted by `sort_order` ascending. No `Promise.all()`. Script #2 can read state written by script #1. On error, the failing script is skipped (logged to trace), remaining scripts continue.

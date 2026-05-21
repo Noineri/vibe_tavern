@@ -39,7 +39,7 @@ function createMappedStream(
     const partTypes = new Set<string>();
 
     for await (const part of fullStream) {
-      const p = part as { type: string; textDelta?: string; text?: string; toolCallId?: string; toolName?: string; args?: unknown; error?: unknown };
+      const p = part as { type: string; textDelta?: string; text?: string; toolCallId?: string; toolName?: string; args?: unknown; error?: unknown; isError?: boolean };
       chunkCount++;
       partTypes.add(p.type);
 
@@ -59,7 +59,7 @@ function createMappedStream(
 
       // ── Tool results (informational — forwarded for SSE) ──
       if (p.type === "tool-result" && p.toolCallId) {
-        yield { type: "tool-result", toolCallId: p.toolCallId, toolName: String(p.toolName ?? ""), isError: (p as any).isError };
+        yield { type: "tool-result", toolCallId: p.toolCallId, toolName: String(p.toolName ?? ""), isError: p.isError };
         continue;
       }
 
@@ -149,7 +149,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       ...(systemPrompt ? { system: systemPrompt } : {}),
       abortSignal: input.signal,
       ...samplerConfig,
-      ...(input.tools ? { tools: input.tools as any } : {}),
+      ...(input.tools ? { tools: input.tools } : {}),
       ...(input.maxSteps ? { maxSteps: input.maxSteps } : {}),
     });
 

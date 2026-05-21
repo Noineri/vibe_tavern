@@ -78,7 +78,7 @@ export function LorebookEditor({ charName, lorebookId }: { charName: string; lor
       else if (k === "cooldown") patch.cooldownWindow = v as number;
       else if (k === "delay") patch.delayWindow = v as number;
       else if (k === "secondaryKeys") patch.secondaryKeys = v as string[];
-      else (patch as any)[k] = v;
+      else (patch as Record<string, unknown>)[k as string] = v;
       updateLoreEntry(lorebookId, activeId, patch).catch(() => {});
     }
   }

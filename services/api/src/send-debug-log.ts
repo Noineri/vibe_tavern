@@ -1,5 +1,5 @@
 import { resolve, dirname } from "node:path";
-import { mkdir } from "node:fs/promises";
+import { mkdir, appendFile } from "node:fs/promises";
 
 /**
  * Configurable debug log writer.
@@ -28,7 +28,7 @@ export function logSendDebug(
 			void mkdir(dirname(logPath), { recursive: true });
 			dirEnsured = true;
 		}
-		void (Bun.write as any)(logPath, `${new Date().toISOString()} ${event} ${JSON.stringify(data, redactSecrets)}\n`, { append: true });
+		void appendFile(logPath, `${new Date().toISOString()} ${event} ${JSON.stringify(data, redactSecrets)}\n`);
 	} catch {
 	}
 }

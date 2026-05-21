@@ -48,7 +48,7 @@ describe("buildSamplerConfig", () => {
 
   it("omits temperature/topP/maxTokens when undefined on profile", () => {
     const config = buildSamplerConfig(
-      profile("openai_compat", { temperature: undefined as any, topP: undefined as any, maxTokens: undefined as any }),
+      profile("openai_compat", { temperature: undefined, topP: undefined, maxTokens: undefined }),
     );
     expect(config.temperature).toBeUndefined();
     expect(config.topP).toBeUndefined();
@@ -105,10 +105,10 @@ describe("buildSamplerConfig", () => {
     it("omits providerOptions when all provider-specific fields are undefined", () => {
       const config = buildSamplerConfig(
         profile("openai_compat", {
-          topK: undefined as any,
-          minP: undefined as any,
-          repetitionPenalty: undefined as any,
-          reasoningEffort: undefined as any,
+          topK: undefined,
+          minP: undefined,
+          repetitionPenalty: undefined,
+          reasoningEffort: undefined,
         }),
       );
       expect(config.providerOptions).toBeUndefined();
@@ -136,7 +136,7 @@ describe("buildSamplerConfig", () => {
 
     it("does not include reasoningEffort for non-openai_compat", () => {
       const config = buildSamplerConfig(profile("ollama"));
-      expect((config.providerOptions!.openai as any).reasoningEffort).toBeUndefined();
+      expect((config.providerOptions!.openai as Record<string, unknown>).reasoningEffort).toBeUndefined();
     });
   });
 
