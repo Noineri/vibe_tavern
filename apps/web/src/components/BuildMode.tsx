@@ -8,6 +8,7 @@ import type { AppSnapshot } from "../app-client.js";
 import { Ic } from "./shared/icons";
 import { cn } from "../lib/cn";
 import { CharacterForm } from "./build/CharacterForm.js";
+import { LorebookEditor } from "./build/LorebookEditor.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { useT } from "../i18n/context.js";
 import { useCharacterStore } from "../stores/character-store.js";
@@ -19,7 +20,7 @@ import { useChatSnapshot } from "../queries/chat-queries.js";
 import { useChatStore } from "../stores/index.js";
 
 export type BuildTab = "character" | "lorebook" | "trace";
-type InternalBuildTab = "char" | "trace";
+type InternalBuildTab = "char" | "lorebooks" | "trace";
 
 export type { BuildCharacterDraft };
 
@@ -50,6 +51,9 @@ export function BuildMode() {
     onSave={character.handleSaveCharacter}
     onAvatarUpload={character.handleAvatarUpload}
     t={t}
+    characterId={charData.id}
+    activeChatId={snapshot.activeChat?.id ?? null}
+    personaId={snapshot.persona?.id ?? null}
   />;
 }
 
@@ -84,9 +88,12 @@ interface BuildModeInnerProps {
   onSave: (draft: BuildCharacterDraft) => Promise<void> | void;
   onAvatarUpload: (file: File, originalFile?: File | null) => Promise<void> | void;
   t: (key: string) => string;
+  characterId: string;
+  activeChatId: string | null;
+  personaId: string | null;
 }
 
-function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, onSave, onAvatarUpload, t }: BuildModeInnerProps) {
+function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, onSave, onAvatarUpload, t, characterId, activeChatId, personaId }: BuildModeInnerProps) {
   const [active, setActive] = useState<InternalBuildTab>(buildTab === "trace" ? "trace" : "char");
 
   useEffect(() => {
@@ -134,9 +141,9 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
     ? `${getGatewayBaseUrl()}/api/assets/${character.avatarAssetId}`
     : undefined;
 
-  // Nav items — Phase 1: only Character + Trace
   const navItems: Array<{ id: InternalBuildTab; icon: ReactNode; label: string }> = [
     { id: "char", icon: <Ic.wrench />, label: t("build_char_card") },
+    { id: "lorebooks", icon: <Ic.book />, label: t("build_lorebooks") },
     { id: "trace", icon: <Ic.trace />, label: t("build_prompt_trace") },
   ];
 
@@ -274,6 +281,13 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
             onSave={handleSave}
             onReset={resetDraft}
             onAvatarUpload={handleAvatarUpload}
+          />
+        )}
+        {active === "lorebooks" && (
+          <LorebookEditor
+            characterId={characterId}
+            chatId={activeChatId}
+            personaId={personaId}
           />
         )}
         {active === "trace" && renderTraceContent()}

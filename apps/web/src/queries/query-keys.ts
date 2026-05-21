@@ -33,3 +33,9 @@ export const bootstrapKeys = {
   all: () => ["bootstrap"] as const,
   snapshot: () => ["bootstrap", "snapshot"] as const,
 };
+
+export const lorebookKeys = {
+  all: () => ["lorebooks"] as const,
+  byScope: (scopeType: string, ownerId?: string) => ["lorebooks", scopeType, ownerId ?? "none"] as const,
+  entries: (lorebookId: string) => ["lorebooks", "entries", lorebookId] as const,
+};
