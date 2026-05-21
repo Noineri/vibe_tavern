@@ -10,6 +10,7 @@
 import type { AssemblePromptResponse } from "@rp-platform/domain";
 import type { ProviderType } from "@rp-platform/domain";
 import type { StoredProviderProfileRecord } from "@rp-platform/domain";
+import type { ToolSet } from "ai";
 
 // ---------------------------------------------------------------------------
 // Provider profile reference (subset needed for generation)
@@ -115,7 +116,7 @@ export interface ProviderExecutionInput {
   /** Override the profile's maxTokens for this specific call (e.g. summarization). */
   overrideMaxTokens?: number;
   /** AI SDK tools to pass to streamText(). AI SDK handles validation, execution, and multi-turn loop. */
-  tools?: Record<string, unknown>;
+  tools?: ToolSet;
   /** Max multi-step tool-calling rounds per generation. */
   maxSteps?: number;
 }

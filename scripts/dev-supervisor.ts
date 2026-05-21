@@ -302,7 +302,7 @@ function openBrowserOnce(targetUrl: string) {
     stdin: "ignore",
     detached: true,
   });
-  (opener as any).unref();
+  opener.unref();
 }
 
 // ---------------------------------------------------------------------------
@@ -353,7 +353,7 @@ function stopChild(
       logWarn(`[launcher] Timed out while stopping ${label}.`);
       resolve();
     }, 5000);
-    (timeout as any).unref();
+    timeout.unref();
 
     child.exited.then(() => {
       clearTimeout(timeout);

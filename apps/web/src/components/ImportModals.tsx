@@ -69,7 +69,7 @@ function StFolderImport({ onImported }: StFolderImportProps) {
       const lorebooks: StFileEntry[] = [];
 
       for (const file of Array.from(files)) {
-        const rp = (file as any).webkitRelativePath as string | undefined;
+        const rp = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
         if (!rp) continue;
         const parts = rp.split("/");
 
@@ -136,7 +136,7 @@ interface ImportError {
 
     // Phase 1: Import characters
     // Build a map: character name → chatId for chat matching
-    const nameToChatId = new Map<string, string>();
+    const nameToChatId = new Map<string, ChatId>();
 
     for (const entry of scanResult.characters) {
       current++;
@@ -172,7 +172,7 @@ interface ImportError {
 
         // Map character name → chatId for chat matching
         const parsed = JSON.parse(jsonText);
-        const data = (parsed as any).data ?? parsed;
+        const data = typeof parsed.data === 'object' && parsed.data !== null ? parsed.data as Record<string, unknown> : parsed;
         const charName = (data.name as string)?.toLowerCase() ?? "";
         if (result.activeChatId) {
           nameToChatId.set(charName, result.activeChatId);
@@ -199,7 +199,7 @@ interface ImportError {
         const chatId = nameToChatId.get(characterFolder.toLowerCase());
 
         const jsonText = await entry.file.text();
-        await importJson({ fileName: entry.file.name, jsonText, chatId: chatId as any });
+        await importJson({ fileName: entry.file.name, jsonText, chatId });
         importedChats++;
       } catch (err) {
         failedItems.push({

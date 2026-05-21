@@ -1,6 +1,6 @@
-import type { PromptTraceRecordDto } from "@rp-platform/domain";
+import { brandId, type ChatId, type ChatBranchId, type MessageId, type PromptTraceRecordDto } from "@rp-platform/domain";
 import type { LoreEntry, Message, MessageVariant } from "@rp-platform/domain";
-import type { PromptTrace as DbPromptTrace } from "@rp-platform/db";
+import type { PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@rp-platform/db";
 
 // Re-export canonical domain type — single source of truth
 export type { StoredProviderProfileRecord } from "@rp-platform/domain";
@@ -60,9 +60,9 @@ export interface MessageDto extends Message {
 export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto {
   return {
     id: trace.id,
-    chatId: trace.chatId as any,
-    branchId: trace.branchId as any,
-    messageId: trace.messageId as any,
+    chatId: brandId<ChatId>(trace.chatId),
+    branchId: brandId<ChatBranchId>(trace.branchId),
+    messageId: brandId<MessageId>(trace.messageId),
     model: trace.model,
     presetName: trace.presetName,
     latencyMs: trace.latencyMs,
@@ -77,15 +77,23 @@ export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto
 }
 
 export function mapMessageDto(message: Message, variants: MessageVariant[]): MessageDto;
-export function mapMessageDto(message: Record<string, unknown>, variants: Array<Record<string, unknown>>): MessageDto;
-export function mapMessageDto(message: any, variants: any[]): MessageDto {
+export function mapMessageDto(message: DbMessage, variants: DbMessageVariant[]): MessageDto;
+export function mapMessageDto(message: Message | DbMessage, variants: MessageVariant[] | DbMessageVariant[]): MessageDto {
   const selectedVariant = variants.find((variant) => variant.isSelected) ?? null;
   return {
-    ...message,
+    id: message.id as MessageId,
+    chatId: message.chatId as ChatId,
+    branchId: message.branchId as ChatBranchId,
+    role: message.role as Message['role'],
+    authorType: message.authorType as Message['authorType'],
+    position: message.position,
     content: selectedVariant?.content ?? message.content,
-    variants,
+    state: message.state as Message['state'],
+    createdAt: message.createdAt,
+    updatedAt: message.updatedAt,
+    variants: variants as MessageVariant[],
     selectedVariantIndex: selectedVariant?.variantIndex ?? null,
-  };
+  } satisfies MessageDto;
 }
 
 export function entryMatchesRecentText(entry: LoreEntry, lowerText: string): boolean {

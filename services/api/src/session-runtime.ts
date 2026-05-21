@@ -212,7 +212,7 @@ export interface ImportResult {
 
 		const variantsByMessage = await this.stores.chats.getVariantsByBranch(branch.id);
 		const messagesWithVariants = branchMessages.map((message) =>
-			mapMessageDto(message as any, (variantsByMessage.get(message.id) ?? []) as any),
+			mapMessageDto(message, variantsByMessage.get(message.id) ?? []),
 		);
 
 		return {
@@ -276,7 +276,7 @@ export interface ImportResult {
 	private get importExportDeps(): importExportModule.ImportExportModuleDeps {
 		return {
 			stores: this.stores,
-			resolver: this.resolver as any,
+			resolver: this.resolver as unknown as importExportModule.ImportExportResolver,
 			chatApp: this.chatApp,
 			chatOrder: this.chatOrder,
 			fileStore: this.fileStore,

@@ -37,9 +37,12 @@ export const Ic = {
   eye:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type IconComponent = React.FC<any>;
+
 // Backward-compat proxy: Icons.XXX → Ic.xxx
 // Handles PascalCase→camelCase, Trash→del, Send→terminal, Caret prop adapter
-export const Icons: Record<string, React.FC<any>> = new Proxy(Ic as any, {
+export const Icons: Record<string, IconComponent> = new Proxy(Ic as Record<string, IconComponent>, {
   get(target, prop: string) {
     // Special key mappings
     if (prop === 'Trash') return target.del;
@@ -56,4 +59,4 @@ export const Icons: Record<string, React.FC<any>> = new Proxy(Ic as any, {
     if (target[lower]) return target[lower];
     return undefined;
   }
-}) as any;
+}) as Record<string, IconComponent>;

@@ -4,6 +4,7 @@ import {
 	type ChatId,
 	type LoreEntry,
 	type RetrievedMemoryHit,
+	type Character,
 } from "@rp-platform/domain";
 import { notFound } from "./errors.js";
 import {
@@ -24,7 +25,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			throw notFound("Character", `Character '${characterId}' was not found.`);
 		}
 		// No character versions in phase 1
-		return toCharacterRecord(character as any, null);
+		return toCharacterRecord(character as unknown as Character, null);
 	}
 
 	async getPersona(personaId: string): Promise<PersonaRecord | null> {

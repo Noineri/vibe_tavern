@@ -8,7 +8,7 @@
  */
 
 import { join, resolve } from "node:path";
-import { getEncoding, type Tiktoken } from "js-tiktoken";
+import { getEncoding, type Tiktoken, type TiktokenEncoding } from "js-tiktoken";
 import { Tokenizer as WebTokenizer } from "@agnai/web-tokenizers";
 
 // ── Byte-based fallback ──────────────────────────────────────────────────
@@ -50,7 +50,7 @@ const webTokenizerCache = new Map<string, WebTokenizer>();
 function getTiktoken(encoding: string): Tiktoken {
 	let instance = tiktokenCache.get(encoding);
 	if (instance) return instance;
-	instance = getEncoding(encoding as any);
+	instance = getEncoding(encoding as TiktokenEncoding);
 	tiktokenCache.set(encoding, instance);
 	return instance;
 }

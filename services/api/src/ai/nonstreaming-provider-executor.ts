@@ -45,8 +45,8 @@ export async function nonstreamingProviderExecute(
     logSendDebug("provider.nonstream.result", {
       textLength: result.text.length,
       textPreview: result.text.slice(0, 200),
-      reasoningLength: (result as any).reasoning?.length ?? undefined,
-      reasoningDetailsCount: (result as any).reasoningDetails?.length ?? undefined,
+      reasoningLength: result.reasoning?.length ?? undefined,
+      reasoningDetailsCount: result.reasoningDetails.length ?? undefined,
       finishReason: result.finishReason,
       usage: result.usage
         ? { promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens, totalTokens: result.usage.totalTokens }
@@ -54,7 +54,7 @@ export async function nonstreamingProviderExecute(
       providerMetadata: result.providerMetadata
         ? JSON.stringify(result.providerMetadata).slice(0, 500)
         : null,
-      stepsCount: (result as any).steps?.length ?? undefined,
+      stepsCount: result.steps.length ?? undefined,
     });
 
     return {

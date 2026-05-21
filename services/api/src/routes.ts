@@ -46,7 +46,7 @@ export interface RuntimeApi {
   activateProviderProfile: (providerProfileId: string) => unknown;
   updateProviderProfile: (providerProfileId: string, body: Record<string, unknown>) => unknown;
   saveProviderDraft: (body: Record<string, unknown>) => unknown;
-  testProviderDraft: (body: { endpoint?: string; apiKey?: string } | null) => Promise<unknown>;
+  testProviderDraft: (body: { endpoint?: string; apiKey?: string; providerType?: string } | null) => Promise<unknown>;
   testProviderProfile: (providerProfileId: string) => Promise<unknown>;
   deleteProviderProfile: (providerProfileId: string) => void;
   fetchProviderModels: (providerProfileId: string) => Promise<{ models: unknown }>;
@@ -405,11 +405,11 @@ export function createApiRouter(runtime: RuntimeApi) {
       if (!result) {
         return c.json({ error: "Asset not found" }, 404);
       }
-      return c.body(result.body as any, 200, { "Content-Type": result.contentType, "Cache-Control": "public, max-age=31536000" });
+      return c.body(new ReadableStream({ start(controller) { controller.enqueue(result.body); controller.close(); } }), 200, { "Content-Type": result.contentType, "Cache-Control": "public, max-age=31536000" });
     })
     .post("/api/providers/test", zValidator("json", schemas.testProviderDraftSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(await runtime.testProviderDraft({ ...body, providerType: body.providerType } as any));
+      return c.json(await runtime.testProviderDraft({ ...body, providerType: body.providerType }));
     })
     .post("/api/import/json", zValidator("json", schemas.importJsonSchema), async (c) => {
       const body = c.req.valid("json");

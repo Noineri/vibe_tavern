@@ -133,8 +133,8 @@ const components: Record<string, React.ComponentType<any>> = {
 function extractText(children: React.ReactNode): string {
   if (typeof children === "string") return children;
   if (Array.isArray(children)) return children.map(extractText).join("");
-  if (React.isValidElement(children) && (children.props as any).children) {
-    return extractText((children.props as any).children);
+  if (React.isValidElement(children) && (children.props as Record<string, unknown>).children) {
+    return extractText((children.props as Record<string, unknown>).children as React.ReactNode);
   }
   return "";
 }
