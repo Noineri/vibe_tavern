@@ -22,3 +22,13 @@ export type {
   PromptTrace,
   SaveTraceData,
 } from './chat-store.js';
+
+export { LorebookStore } from './lorebook-store.js';
+export type {
+  CreateLorebookData,
+  UpdateLorebookData,
+  CreateLoreEntryData,
+  UpdateLoreEntryData,
+  Lorebook as LorebookRow,
+  LoreEntry as LoreEntryRow,
+} from './lorebook-store.js';
