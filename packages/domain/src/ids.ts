@@ -23,6 +23,7 @@ export type RetrievedMemoryHitId = Brand<"RetrievedMemoryHitId">;
 export type PromptTraceId = Brand<"PromptTraceId">;
 export type ToolProfileId = Brand<"ToolProfileId">;
 export type PromptPresetId = Brand<"PromptPresetId">;
+export type ScriptId = Brand<"ScriptId">;
 
 /** Unsafe cast from a plain string to a branded ID. Use only at layer boundaries (DB, API). */
 export function brandId<TId extends Id>(value: string): TId {

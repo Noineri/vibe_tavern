@@ -18,6 +18,7 @@ export const ENTITY_ID_NAMESPACE = {
   promptTrace: "trace",
   providerProfile: "provider",
   promptPreset: "prompt_preset",
+  script: "script",
 } as const;
 
 export type EntityIdNamespace = typeof ENTITY_ID_NAMESPACE[keyof typeof ENTITY_ID_NAMESPACE];
@@ -201,3 +202,30 @@ export const RETRIEVED_MEMORY_SOURCE_TYPE = {
 } as const;
 
 export type RetrievedMemorySourceType = typeof RETRIEVED_MEMORY_SOURCE_TYPE[keyof typeof RETRIEVED_MEMORY_SOURCE_TYPE];
+
+export const LORE_ENTRY_ROLE = {
+  system: "system",
+  user: "user",
+  assistant: "assistant",
+} as const;
+
+export type LoreEntryRole = typeof LORE_ENTRY_ROLE[keyof typeof LORE_ENTRY_ROLE];
+
+export const LORE_TRIGGER_TYPE = {
+  normal: "normal",
+  continue: "continue",
+  impersonate: "impersonate",
+  quiet: "quiet",
+} as const;
+
+export type LoreTriggerType = typeof LORE_TRIGGER_TYPE[keyof typeof LORE_TRIGGER_TYPE];
+
+export const LORE_MATCH_SOURCE = {
+  chatMessages: "chat_messages",
+  characterDesc: "character_desc",
+  personaDesc: "persona_desc",
+  characterNote: "character_note",
+  creatorNotes: "creator_notes",
+} as const;
+
+export type LoreMatchSource = typeof LORE_MATCH_SOURCE[keyof typeof LORE_MATCH_SOURCE];

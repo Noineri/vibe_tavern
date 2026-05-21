@@ -11,6 +11,7 @@ import type {
   PromptPresetId,
   PromptTraceId,
   RetrievedMemoryHitId,
+  ScriptId,
   SummaryMemorySnapshotId,
   ToolProfileId,
 } from "./ids.js";
@@ -25,6 +26,9 @@ import type {
   SummaryKind,
   ToolProfileMode,
   LoreLogic,
+  LoreEntryRole,
+  LoreTriggerType,
+  LoreMatchSource,
   PromptLayerPosition,
 } from "./platform-constants.js";
 
@@ -40,6 +44,9 @@ export {
   SummaryKind,
   ToolProfileMode,
   LoreLogic,
+  LoreEntryRole,
+  LoreTriggerType,
+  LoreMatchSource,
   PromptLayerPosition,
 };
 
@@ -110,8 +117,16 @@ export interface Persona {
 export interface Lorebook {
   id: LorebookId;
   name: string;
-  scopeType: LoreScopeType;
   description: string;
+  scopeType: LoreScopeType;
+  scanDepth: number;
+  tokenBudget: number;
+  recursiveScanning: boolean;
+  sortOrder: number;
+  characterId: string | null;
+  personaId: string | null;
+  chatId: string | null;
+  extensions: Record<string, unknown>;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -135,11 +150,51 @@ export interface LoreEntry {
   position: PromptLayerPosition;
   depth: number;
   priority: number;
+  // Time windows
   stickyWindow: number;
   cooldownWindow: number;
   delayWindow: number;
+  // Extended ST fields
+  constant: boolean;
+  probability: number;
+  role: LoreEntryRole;
+  // Inclusion group
+  group: string;
+  groupWeight: number;
+  prioritizeInclusion: boolean;
+  // Recursion
+  excludeRecursion: boolean;
+  preventRecursion: boolean;
+  delayUntilRecursion: boolean;
+  recursionLevel: number;
+  scanDepthOverride: number | null;
+  // Matching
+  caseSensitive: boolean;
+  matchWholeWords: boolean;
+  characterFilter: string[];
+  characterFilterExclude: boolean;
+  triggers: LoreTriggerType[];
+  matchSources: LoreMatchSource[];
+  // Meta
   enabled: boolean;
+  sortOrder: number;
   metadata: Record<string, unknown>;
+}
+
+export interface Script {
+  id: ScriptId;
+  name: string;
+  description: string;
+  code: string;
+  enabled: boolean;
+  scopeType: LoreScopeType;
+  sortOrder: number;
+  characterId: string | null;
+  personaId: string | null;
+  chatId: string | null;
+  extensions: Record<string, unknown>;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 /**
