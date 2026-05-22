@@ -227,7 +227,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ws_name_label")}</label>
               <input
                 type="text"
-                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
+                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
                 {...register('name')}
                 autoFocus
               />
@@ -241,7 +241,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_desc_label")}</label>
             <textarea
-              className="w-full min-h-[100px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
+              className="w-full min-h-[100px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
               {...register('description')}
             />
           </div>
@@ -250,7 +250,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ws_first_msg_label")}</label>
             <textarea
-              className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
+              className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
               placeholder={t("first_message_placeholder")}
               {...register('firstMessage')}
             />
@@ -290,7 +290,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             </div>
             {alternateGreetings.length > 0 && (
               <textarea
-                className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
+                className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
                 value={alternateGreetings[altGreetIdx] || ''}
                 onChange={e => {
                   const next = [...alternateGreetings];
@@ -316,7 +316,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("scenario")}</label>
             <textarea
-              className="w-full min-h-[100px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
+              className="w-full min-h-[100px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
               {...register('defaultScenario')}
             />
           </div>
@@ -325,7 +325,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_personality_label")}</label>
             <textarea
-              className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
+              className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
               {...register('personalitySummary')}
             />
           </div>
@@ -347,7 +347,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("creator_notes")}</label>
             <textarea
-              className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
+              className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
               {...register('creatorNotes')}
               placeholder={t("creator_notes_placeholder")}
             />
@@ -405,7 +405,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_tags_label")}</label>
             <input
               type="text"
-              className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
+              className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
               value={tagInput}
               onChange={e => setTagInput(e.target.value)}
               onKeyDown={handleTagKey}
