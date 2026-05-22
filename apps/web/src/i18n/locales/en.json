@@ -364,8 +364,6 @@
   "prompt_section_service_desc": "These prompts are used for separate operations and do not affect the chat.",
   "summary_desc": "System prompt for chat memory summarization.",
   "script_ai_prompt_desc": "System prompt for the AI assistant in the script editor.",
-  "script_ai_show_default": "Show default prompt",
-  "script_ai_hide_default": "Hide default prompt",
 
   "context_memory_title": "Memory",
   "context_memory_sub": "Create a concise summary of older chat history for model memory.",
