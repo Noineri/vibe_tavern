@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./app.js";
+import "./lib/register-core-panels.jsx";
 import { LocaleProvider, type Locale } from "./i18n/context.js";
 import "./styles.css";
 
