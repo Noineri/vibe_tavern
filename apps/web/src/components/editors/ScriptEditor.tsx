@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ic } from "../shared/icons.js";
+import { CodeEditor } from "../shared/CodeEditor.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import {
@@ -379,7 +380,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       <div style={{ marginBottom: 20 }}>
         <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_code_label")}</label>
         <div className="relative rounded-md border border-border bg-bg">
-          <textarea className="w-full min-h-[300px] resize-y bg-transparent px-3 py-2 font-mono text-[calc(var(--ui-fs)-1px)] leading-[1.6] text-t1 outline-none" value={activeScript.code ?? ""} onChange={e => updateField("code", e.target.value)} placeholder={t("script_code_placeholder")} spellCheck={false} />
+          <CodeEditor value={activeScript.code ?? ""} onChange={v => updateField("code", v)} minHeight="300px" />
         </div>
       </div>
 
