@@ -312,6 +312,13 @@ export interface PromptTrace {
   }>;
   tokenAccounting: Record<string, number>;
   activatedLoreEntries: LoreEntryId[];
+  scriptInjections: Array<{
+    scriptId: string;
+    scriptName: string;
+    personalityMutation: string;
+    scenarioMutation: string;
+    error?: string;
+  }>;
   retrievedMemories: Array<Record<string, unknown>>;
   finalPayload: Record<string, unknown>;
   latencyMs: number;

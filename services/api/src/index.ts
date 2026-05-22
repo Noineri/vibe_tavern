@@ -5,6 +5,7 @@ export function buildEmptyPromptTrace(): AssemblePromptResponse {
     layers: [],
     tokenAccounting: {},
     activatedLoreEntries: [],
+    scriptInjections: [],
     retrievedMemories: [],
     finalPayload: {},
   };

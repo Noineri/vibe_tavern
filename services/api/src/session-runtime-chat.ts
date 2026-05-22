@@ -123,6 +123,9 @@ export class ChatRuntime {
         assembledLayers: pending.draft.assembledLayers,
         tokenAccounting: pending.draft.tokenAccounting,
         finalPayload: pending.draft.finalPayload,
+        activatedLoreEntries: pending.draft.activatedLoreEntries,
+        retrievedMemories: pending.draft.retrievedMemories ?? [],
+        scriptInjections: pending.draft.scriptInjections ?? [],
         latencyMs,
         prefill: pending.draft.prefill,
       });
@@ -172,6 +175,9 @@ export class ChatRuntime {
         assembledLayers: pending.draft.assembledLayers,
         tokenAccounting: pending.draft.tokenAccounting,
         finalPayload: pending.draft.finalPayload,
+        activatedLoreEntries: pending.draft.activatedLoreEntries,
+        retrievedMemories: pending.draft.retrievedMemories ?? [],
+        scriptInjections: pending.draft.scriptInjections ?? [],
         latencyMs: input.latencyMs,
         prefill: pending.draft.prefill,
       });

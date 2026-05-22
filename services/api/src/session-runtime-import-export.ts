@@ -140,8 +140,9 @@ export async function exportPromptTrace(
 		createdAt: trace.createdAt,
 		layers: trace.assembledLayers as import("@rp-platform/domain").PromptTraceRecordDto["layers"],
 		tokenAccounting: trace.tokenAccounting,
-		activatedLoreEntries: [],
-		retrievedMemories: [],
+		activatedLoreEntries: trace.activatedLoreEntries as string[],
+		scriptInjections: trace.scriptInjections as import("@rp-platform/domain").PromptTraceRecordDto["scriptInjections"],
+		retrievedMemories: trace.retrievedMemories as Array<Record<string, unknown>>,
 		finalPayload: trace.finalPayload,
 	};
 }

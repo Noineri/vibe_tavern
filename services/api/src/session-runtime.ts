@@ -249,6 +249,7 @@ export interface ImportResult {
 				layers: assembled.promptTraceDraft.assembledLayers as import("@rp-platform/domain").PromptLayerDto[],
 				tokenAccounting: assembled.promptTraceDraft.tokenAccounting,
 				activatedLoreEntries: assembled.promptTraceDraft.activatedLoreEntries,
+				scriptInjections: assembled.promptTraceDraft.scriptInjections,
 				retrievedMemories: assembled.promptTraceDraft.retrievedMemories,
 				finalPayload: assembled.promptTraceDraft.finalPayload,
 				prefill: assembled.promptTraceDraft.prefill,

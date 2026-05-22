@@ -22,6 +22,13 @@ export interface AssemblePromptResponse {
   layers: PromptLayerDto[];
   tokenAccounting: Record<string, number>;
   activatedLoreEntries: string[];
+  scriptInjections: Array<{
+    scriptId: string;
+    scriptName: string;
+    personalityMutation: string;
+    scenarioMutation: string;
+    error?: string;
+  }>;
   retrievedMemories: Array<Record<string, unknown>>;
   finalPayload: Record<string, unknown>;
   prefill?: string | null;
