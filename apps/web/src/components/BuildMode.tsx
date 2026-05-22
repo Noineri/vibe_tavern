@@ -65,7 +65,7 @@ function characterDefaults(character: AppSnapshot["character"]): BuildCharacterD
     mesExampleMode: (character.mesExampleMode as "always" | "once" | "depth") || "always",
     mesExampleDepth: character.mesExampleDepth ?? 4,
     scenario: character.scenario,
-    personalitySummary: character.subtitle || "",
+    personalitySummary: character.personalitySummary || "",
     systemPrompt: character.systemPrompt,
     alternateGreetings: character.alternateGreetings || [],
     postHistoryInstructions: character.postHistoryInstructions || "",
@@ -116,7 +116,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
   function handleSave(): void {
     void form.handleSubmit(async (data) => {
       await onSave(data);
-      form.reset(characterDefaults(character));
+      form.reset(data);
       setAvatarPreview(null);
     })();
   }
@@ -130,9 +130,11 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
     void Promise.resolve(onAvatarUpload(file, originalFile)).then(() => setAvatarPreview(null));
   }
 
-  const avatarUrl = character.avatarAssetId
-    ? `${getGatewayBaseUrl()}/api/assets/${character.avatarAssetId}`
-    : undefined;
+  const avatarUrl = character.avatarFullAssetId
+    ? `${getGatewayBaseUrl()}/api/assets/${character.avatarFullAssetId}`
+    : character.avatarAssetId
+      ? `${getGatewayBaseUrl()}/api/assets/${character.avatarAssetId}`
+      : undefined;
 
 
 

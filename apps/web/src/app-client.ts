@@ -60,6 +60,7 @@ export interface AppSnapshot {
     tags: string[];
     avatarAssetId: string | null;
     avatarFullAssetId: string | null;
+    personalitySummary: string | null;
   };
   persona: {
     id: string;

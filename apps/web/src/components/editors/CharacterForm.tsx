@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft } from "@rp-platform/api-contracts";
 import { Ic } from "../shared/icons";
-import { AvatarCropModal } from "../shared/AvatarCropModal.js";
-import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
+
 import { cn } from "../../lib/cn";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { CharacterImportModal } from "../ImportModals.js";
@@ -76,12 +75,7 @@ export function CharacterForm({
   const [importModalOpen, setImportModalOpen] = useState(false);
   const avaInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Avatar crop modal state ──
-  const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
 
-  // Keep a ref to the latest form values so crop callback isn't stale
-  const formRef = useRef(form);
-  useEffect(() => { formRef.current = form; }, [form]);
 
   const name = watch("name");
   const description = watch("description");
@@ -105,19 +99,8 @@ export function CharacterForm({
   function handleAvatarPick(files: FileList | null) {
     if (!files || files.length === 0) return;
     const file = files[0];
-    setPendingAvatar({ file, url: URL.createObjectURL(file) });
-  }
-
-  function handleAvatarCropConfirm(result: AvatarCropResult) {
-    if (pendingAvatar?.url) URL.revokeObjectURL(pendingAvatar.url);
-    setPendingAvatar(null);
-    setAvatarPreview(result.croppedUrl);
-    onAvatarUpload(result.croppedFile, pendingAvatar!.file);
-  }
-
-  function handleAvatarCropCancel() {
-    if (pendingAvatar?.url) URL.revokeObjectURL(pendingAvatar.url);
-    setPendingAvatar(null);
+    setAvatarPreview(URL.createObjectURL(file));
+    onAvatarUpload(file);
   }
 
   function handleImportFiles(files: File[]): void {
@@ -172,16 +155,6 @@ export function CharacterForm({
 
   return (
     <div>
-      {/* Avatar crop modal */}
-      {pendingAvatar && (
-        <AvatarCropModal
-          imageUrl={pendingAvatar.url}
-          originalFile={pendingAvatar.file}
-          onConfirm={handleAvatarCropConfirm}
-          onCancel={handleAvatarCropCancel}
-        />
-      )}
-
       {/* Header row */}
       <div className="mb-1.5 flex items-center justify-between">
         <div className="mb-1.5 font-body text-[22px] font-medium text-t1">
@@ -227,24 +200,38 @@ export function CharacterForm({
       <div className="mb-7 font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.55] text-t2">
       </div>
 
-      {/* Avatar + Name */}
-      <div className="mb-5 flex gap-4">
+      {/* Avatar + Name + Tags */}
+      <div className="mb-5 flex gap-5">
         <div
-          className="group relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t"
+          className="group relative shrink-0 cursor-pointer rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t"
+          style={{ maxWidth: 180, maxHeight: 250 }}
           onClick={() => avaInputRef.current?.click()}
           title={t("change_avatar")}
         >
           <input ref={avaInputRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleAvatarPick(e.target.files)} />
           {displayAvatar ? (
             <>
-              <img src={displayAvatar} alt="" className="h-full w-full object-cover" />
+              <img src={displayAvatar} alt="" className="block max-w-[180px]" style={{ maxHeight: 250, objectFit: "contain" }} />
               <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
             </>
-          ) : <Ic.plus />}
+          ) : <div className="flex h-20 w-28 items-center justify-center"><Ic.plus /></div>}
         </div>
-        <div className="flex-1">
-          <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
-          <input type="text" className={inputCls} style={inputPad} disabled={isSaving} {...register("name")} />
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
+          <div>
+            <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
+            <input type="text" className={inputCls} style={inputPad} disabled={isSaving} {...register("name")} />
+          </div>
+          <div>
+            <label className={lblCls + " mb-1.5 block"}>{t("char_tags_label")}</label>
+            <input type="text" className={inputCls} style={inputPad} value={tagInput} disabled={isSaving} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagKey} placeholder={t("tags_enter")} />
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {tags.map((tag: string) => (
+                <span key={tag} className="cursor-pointer rounded bg-accent-dim px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => toggleTag(tag)}>
+                  {tag} ✕
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -415,19 +402,6 @@ export function CharacterForm({
         <label className={lblCls + " mb-1.5 block"}>{t("system_prompt_override")}</label>
         <AutoTextarea className={monoCls} style={{ ...inputPad, minHeight: 80 }} disabled={isSaving} placeholder={t("system_prompt_override_placeholder")} register={register("systemPrompt")} />
         <TokenBadge text={systemPrompt || ""} />
-      </div>
-
-      {/* Tags */}
-      <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("char_tags_label")}</label>
-        <input type="text" className={inputCls} style={inputPad} value={tagInput} disabled={isSaving} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagKey} placeholder={t("tags_enter")} />
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {tags.map((tag: string) => (
-            <span key={tag} className="cursor-pointer rounded bg-accent-dim px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => toggleTag(tag)}>
-              {tag} ✕
-            </span>
-          ))}
-        </div>
       </div>
 
       {/* Footer */}
