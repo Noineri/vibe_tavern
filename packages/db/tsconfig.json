@@ -6,7 +6,6 @@
     "types": [
       "bun"
     ],
-    "baseUrl": ".",
     "paths": {
       "@rp-platform/domain": [
         "../domain/src/index.ts"

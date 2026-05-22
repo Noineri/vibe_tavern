@@ -188,7 +188,7 @@ export function useSelectVariantMutation() {
 export function useForkMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { chatId: ChatId; fromMessageId: string }) => forkBranch(args.chatId, args.fromMessageId),
+    mutationFn: (args: { chatId: ChatId; fromMessageId?: string }) => forkBranch(args.chatId, args.fromMessageId),
     onSuccess: (snapshot: AppSnapshot, args) => {
       syncSnapshot(qc, args.chatId, snapshot);
     },

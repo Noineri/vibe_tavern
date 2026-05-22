@@ -13,7 +13,6 @@
       "bun",
       "vite/client"
     ],
-    "baseUrl": ".",
     "paths": {
       "@rp-platform/api": [
         "../../services/api/src/index.ts"

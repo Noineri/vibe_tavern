@@ -552,9 +552,9 @@ export function Sidebar() {
                           tabIndex={0}
                           onClick={(event) => {
                             event.stopPropagation();
-                            void chat.handleFork();
+                            void chat.handleFork(undefined);
                           }}
-                          onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.stopPropagation(); void chat.handleFork(); } }}
+                          onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.stopPropagation(); void chat.handleFork(undefined); } }}
                         >
                           {t("sidebar_fork_from_here")}
                         </div>
