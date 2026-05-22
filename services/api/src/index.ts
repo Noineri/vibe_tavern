@@ -13,4 +13,4 @@ export function buildEmptyPromptTrace(): AssemblePromptResponse {
 
 export * from "./chat-application-service.js";
 export * from "./prompt-assembly-service.js";
-export type { AppType } from "./routes.js";
+export type { AppType } from "./routes/index.js";

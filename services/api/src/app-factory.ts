@@ -4,7 +4,7 @@ import { serveStatic } from "hono/bun";
 import { resolve } from "node:path";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "./errors.js";
 import { logSendDebug } from "./send-debug-log.js";
-import { createApiRouter, type RuntimeApi } from "./routes.js";
+import { createApiRouter, type RuntimeApi } from "./routes/index.js";
 
 export interface AppDeps {
 	runtime: RuntimeApi;
