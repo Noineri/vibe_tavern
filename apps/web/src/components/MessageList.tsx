@@ -237,8 +237,10 @@ export function MessageList() {
           <div className={msgWrap} aria-label={t("generating_response")}>
             <div className="relative group py-2.5">
               <div className="mb-[5px] flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3">
-                  {characterName.slice(0, 1).toUpperCase()}
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
+                  {characterAvatarAssetId
+                    ? <img src={avatarUrl(characterAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
+                    : (characterName ? initials(characterName) : "")}
                 </span>
                 <span>{characterName}</span>
               </div>
@@ -256,8 +258,10 @@ export function MessageList() {
           <div className={msgWrap} aria-label={t("generating_response")}>
             <div className="relative group py-2.5">
               <div className="mb-[5px] flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3">
-                  {characterName.slice(0, 1).toUpperCase()}
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
+                  {characterAvatarAssetId
+                    ? <img src={avatarUrl(characterAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
+                    : (characterName ? initials(characterName) : "")}
                 </span>
                 <span>{characterName}</span>
               </div>

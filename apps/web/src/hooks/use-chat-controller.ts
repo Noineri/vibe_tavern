@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef } from "react";
+import { useChatDataStore } from "../stores/chat-data-store.js";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { ChatBranchId, ChatId } from "@rp-platform/domain";
@@ -100,6 +101,7 @@ export function useChatController(): ChatControllerActions {
   async function refreshChatSnapshotCache(chatId: ChatId): Promise<AppSnapshot> {
     const snapshot = await fetchChat(chatId);
     qc.setQueryData(chatKeys.snapshot(chatId), snapshot);
+    useChatDataStore.getState().setSnapshot(snapshot);
     return snapshot;
   }
 
