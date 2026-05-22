@@ -56,11 +56,11 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     <div className="relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))] px-7">
       <div className="relative group py-2.5">
         <div className={cn(
-          "mb-[5px] flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3",
+          "mb-[5px] flex items-center gap-[10px] text-[calc(var(--ui-fs)-2px)] font-semibold tracking-[0.04em] text-t3",
           !isUser && "text-accent-t opacity-85",
           isUser && "flex-row-reverse",
         )}>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[13px] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
             {isUser
               ? (input.personaAvatarAssetId
                 ? <img src={avatarUrl(input.personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
@@ -92,7 +92,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
         {input.isEditing ? (
           <>
             <AutoTextarea
-              className="w-full resize-none overflow-hidden rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.82] text-msg-t1 outline-none"
+              className="w-full resize-none overflow-hidden rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 outline-none"
               style={{ minHeight: 140 }}
               value={input.editingDraft}
               onChange={e => input.onEditingDraftChange(e.target.value)}
@@ -114,7 +114,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
           </>
         ) : isUser ? (
           <div className="my-0.5 rounded-md bg-user-bg px-4 py-[13px]">
-            <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.82] text-msg-t1 opacity-88 [&_em]:italic [&_em]:text-msg-t2">
+            <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 opacity-88 [&_em]:italic [&_em]:text-msg-t2">
               <Markdown text={renderContent} />
             </div>
           </div>
@@ -123,7 +123,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
             {(reasoningText || reasoningDuration) && (
               <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
             )}
-            <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
+            <div className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
               <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
                 <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
                 <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
@@ -136,7 +136,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
             {(activeStreamingReasoning || reasoningDuration) && (
               <MessageReasoning reasoning={activeStreamingReasoning || reasoningText} reasoningDurationMs={reasoningDuration} />
             )}
-            <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.82] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
+            <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
               {activeStreamingText ? <Markdown text={activeStreamingText} /> : null}
               <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
                 <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
@@ -150,7 +150,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
             {!isUser && (reasoningText || reasoningDuration) && (
               <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
             )}
-            <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.82] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
+            <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
               <Markdown text={renderContent} />
             </div>
             {isGenerating && (
