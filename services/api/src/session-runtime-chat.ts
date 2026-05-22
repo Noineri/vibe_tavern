@@ -200,15 +200,21 @@ export class ChatRuntime {
     return await this.deps.getSnapshot(chatId);
   }
 
-  async forkBranch(chatId: ChatId): Promise<SessionSnapshot> {
+  async forkBranch(chatId: ChatId, fromMessageId?: string): Promise<SessionSnapshot> {
     const { chatApp, chats, getSnapshot } = this.deps;
     const chatState = await chatApp.getChatState(chatId);
-    const lastMessage = chatState.messages[chatState.messages.length - 1];
+    let forkedFromId: string;
+    if (fromMessageId) {
+      forkedFromId = fromMessageId;
+    } else {
+      const lastMessage = chatState.messages[chatState.messages.length - 1];
+      forkedFromId = lastMessage?.id ?? "";
+    }
 
     const branches = await chats.getBranches(chatId);
     await chatApp.createBranch(chatId, {
       sourceBranchId: chatState.branch.id as ChatBranchId,
-      forkedFromMessageId: (lastMessage?.id ?? null) as MessageId | null,
+      forkedFromMessageId: forkedFromId as MessageId,
       label: `branch ${branches.length + 1}`,
       activateFork: true,
     });

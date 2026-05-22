@@ -184,10 +184,10 @@ export class RuntimeApiAdapter {
 		this.sessionRuntime.chatRuntime.cloneChat(chatId);
 
 	branchChat = (chatId: string, messageId: string) =>
-		this.sessionRuntime.chatRuntime.forkBranch(brandId<ChatId>(chatId));
+		this.sessionRuntime.chatRuntime.forkBranch(brandId<ChatId>(chatId), messageId);
 
-	forkBranch = (chatId: string) =>
-		this.sessionRuntime.chatRuntime.forkBranch(brandId<ChatId>(chatId));
+	forkBranch = (chatId: string, fromMessageId?: string) =>
+		this.sessionRuntime.chatRuntime.forkBranch(brandId<ChatId>(chatId), fromMessageId);
 
 	activateBranch = (chatId: string, branchId: string) =>
 		this.sessionRuntime.chatRuntime.activateBranch(brandId<ChatId>(chatId), brandId<ChatBranchId>(branchId));

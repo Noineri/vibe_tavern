@@ -184,7 +184,7 @@ export function MessageList() {
                   }
                   editingDraft={editingDraft}
                   isBusy={isSending || messageActionId === message.id}
-                  canBranch={isLastMessage(messages, message.id)}
+                  canBranch={message.id !== firstCharMsgId}
                   canRegenerate={message.id !== firstCharMsgId && isLastAssistantMessage(messages, message.id)}
                   canResend={isLastMessage(messages, message.id) && message.role === "user" && !displayPendingUserMessageContent}
                   canSwitchVariant={isLastMessage(messages, message.id)}
@@ -192,7 +192,7 @@ export function MessageList() {
                   greetingOptions={message.id === firstCharMsgId ? greetingOptions : undefined}
                   greetingIndex={message.id === firstCharMsgId ? greetingIndex : 0}
                   onGreetingIndexChange={setGreetingIndex}
-                  onBranch={() => void chat.handleFork()}
+                  onBranch={(msgId: string) => void chat.handleFork(msgId)}
                   onStartEdit={() => chat.handleStartEdit(message)}
                   onEditingDraftChange={useChatStore.getState().setEditingDraft}
                   onCancelEdit={chat.handleCancelEdit}
@@ -208,6 +208,7 @@ export function MessageList() {
                   }
                   characterAvatarAssetId={characterAvatarAssetId}
                   personaAvatarAssetId={personaAvatarAssetId}
+                  personaName={personaName}
                 />
               </div>
             </Fragment>
