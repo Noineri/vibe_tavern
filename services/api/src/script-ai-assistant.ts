@@ -27,6 +27,7 @@ The script receives a single \`context\` object with these fields:
 5. Keep scripts focused — one responsibility per script.
 6. Handle edge cases (zero values, missing state, empty messages).
 7. Use template literals for multi-line string injection.
+8. Add concise comments explaining what each section does.
 
 ## Examples
 
