@@ -2,95 +2,78 @@
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
-set "BUN_EXE=bun"
 where bun >nul 2>nul
 if errorlevel 1 (
     echo Bun is not installed. Install from https://bun.sh
     pause
     exit /b 1
 )
-set "BUN_EXECUTABLE=%BUN_EXE%"
 
 set "LOG_DIR=%~dp0logs"
-set "RP_PLATFORM_LOG_FILE=%LOG_DIR%\dev-launcher.log"
-set "RP_PLATFORM_LOG_DIR=%LOG_DIR%"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 
-> "%RP_PLATFORM_LOG_FILE%" echo === Start RP Platform.bat started at %date% %time% ===
->> "%RP_PLATFORM_LOG_FILE%" echo Working directory: %cd%
->> "%RP_PLATFORM_LOG_FILE%" echo Bun executable: %BUN_EXE%
-
-if exist "..\mcp\.env" (
-  >> "%RP_PLATFORM_LOG_FILE%" echo Loading defaults from ..\mcp\.env
-  for /f "usebackq tokens=1,* delims==" %%A in ("..\mcp\.env") do (
-    set "KEY=%%A"
-    set "VALUE=%%B"
-    if not "!KEY!"=="" if /i not "!KEY:~0,1!"=="#" (
-      if /i "!KEY!"=="NANO_GPT_BASE_URL" set "VITE_RP_DEFAULT_BASE_URL=!VALUE!"
-      if /i "!KEY!"=="NANO_GPT_MODEL" set "VITE_RP_DEFAULT_MODEL=!VALUE!"
-    )
-  )
-  set "VITE_RP_DEFAULT_PROVIDER_LABEL=NanoGPT"
-)
+set "RP_PLATFORM_LOG_DIR=%LOG_DIR%"
+set "RP_PLATFORM_LOG_FILE=%LOG_DIR%\dev-launcher.log"
 set "VITE_RP_API_URL=http://127.0.0.1:8787"
 
-echo Log file: "%RP_PLATFORM_LOG_FILE%"
-echo API log: "%LOG_DIR%\dev-api.log"
-echo Web log: "%LOG_DIR%\dev-web.log"
->> "%RP_PLATFORM_LOG_FILE%" echo VITE_RP_API_URL=%VITE_RP_API_URL%
+if exist "..\mcp\.env" (
+    for /f "usebackq tokens=1,* delims==" %%A in ("..\mcp\.env") do (
+        set "KEY=%%A"
+        set "VALUE=%%B"
+        if not "!KEY!"=="" if /i not "!KEY:~0,1!"=="#" (
+            if /i "!KEY!"=="NANO_GPT_BASE_URL" set "VITE_RP_DEFAULT_BASE_URL=!VALUE!"
+            if /i "!KEY!"=="NANO_GPT_MODEL" set "VITE_RP_DEFAULT_MODEL=!VALUE!"
+        )
+    )
+    set "VITE_RP_DEFAULT_PROVIDER_LABEL=NanoGPT"
+)
+
+echo ============================================
+echo  RP Platform - Dev Server
+echo ============================================
+echo.
+echo API: http://127.0.0.1:8787
+echo Web: http://localhost:4173
+echo Logs: %LOG_DIR%
+echo.
 
 echo Checking dependencies...
-set "NEEDS_INSTALL=0"
-if not exist "node_modules" (
-  >> "%RP_PLATFORM_LOG_FILE%" echo node_modules missing
-  set "NEEDS_INSTALL=1"
-) else (
-  if not exist "node_modules\@types\bun" (
-    >> "%RP_PLATFORM_LOG_FILE%" echo @types/bun missing
-    set "NEEDS_INSTALL=1"
-  )
-  if not exist "node_modules\hono" (
-    >> "%RP_PLATFORM_LOG_FILE%" echo hono missing
-    set "NEEDS_INSTALL=1"
-  )
-  if not exist "node_modules\drizzle-orm" (
-    >> "%RP_PLATFORM_LOG_FILE%" echo drizzle-orm missing
-    set "NEEDS_INSTALL=1"
-  )
-  if not exist "node_modules\vite" (
-    >> "%RP_PLATFORM_LOG_FILE%" echo vite missing
-    set "NEEDS_INSTALL=1"
-  )
-)
-if "%NEEDS_INSTALL%"=="1" (
-  echo Installing or repairing dependencies...
-  >> "%RP_PLATFORM_LOG_FILE%" echo Running bun install
-  call bun install
-  if errorlevel 1 goto :fail
-  echo Dependencies installed.
-) else (
-  echo Dependencies OK.
+if not exist "node_modules" goto :do_install
+if not exist "node_modules\hono" goto :do_install
+if not exist "node_modules\vite" goto :do_install
+echo Dependencies OK.
+goto :run
+
+:do_install
+echo Installing dependencies...
+call bun install
+if errorlevel 1 (
+    echo.
+    echo Failed to install dependencies.
+    pause
+    exit /b 1
 )
 
- >> "%RP_PLATFORM_LOG_FILE%" echo Launching %BUN_EXE% .\scripts\dev-supervisor.ts
- start "" /wait /b "%BUN_EXE%" ".\scripts\dev-supervisor.ts"
- set "RP_EXIT_CODE=%ERRORLEVEL%"
- >> "%RP_PLATFORM_LOG_FILE%" echo Launcher exited with code %RP_EXIT_CODE%
- if "%RP_EXIT_CODE%"=="0" goto :eof
- if "%RP_EXIT_CODE%"=="-1073741510" goto :eof
- if "%RP_EXIT_CODE%"=="3221225786" goto :eof
- if "%RP_EXIT_CODE%"=="58" goto :eof
- if "%RP_EXIT_CODE%"=="1" goto :eof
-  if not "%RP_EXIT_CODE%"=="0" (
-   echo.
-   echo Launcher failed. Check "%RP_PLATFORM_LOG_FILE%"
-   pause
-  )
-  goto :eof
-
-:fail
->> "%RP_PLATFORM_LOG_FILE%" echo bun install failed with code %ERRORLEVEL%
+:run
 echo.
-echo Failed to install dependencies.
-echo Check "%RP_PLATFORM_LOG_FILE%"
+echo Starting dev server...
+echo Press Ctrl+C to stop.
+echo.
+
+bun ".\scripts\dev-supervisor.ts"
+set "EXIT_CODE=%ERRORLEVEL%"
+
+echo.
+if "%EXIT_CODE%"=="0" (
+    echo Server stopped normally.
+) else if "%EXIT_CODE%"=="1" (
+    echo Server stopped.
+) else if "%EXIT_CODE%"=="3221225786" (
+    echo Server stopped ^(window closed^).
+) else if "%EXIT_CODE%"=="-1073741510" (
+    echo Server stopped ^(Ctrl+C^).
+) else (
+    echo Server crashed with exit code %EXIT_CODE%.
+    echo Check logs: %LOG_DIR%
+)
 pause
