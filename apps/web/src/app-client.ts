@@ -566,7 +566,7 @@ export async function regenerateChatMessage(
   return normalizeSnapshot(data);
 }
 
-export async function forkBranch(chatId: ChatId, fromMessageId: string): Promise<AppSnapshot> {
+export async function forkBranch(chatId: ChatId, fromMessageId?: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].fork.$post({
     param: { chatId },
     json: { fromMessageId },

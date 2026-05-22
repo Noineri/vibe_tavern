@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
+import { z } from "zod";
 import { streamSSE } from "hono/streaming";
 import { logSendDebug } from "./send-debug-log.js";
 import * as schemas from "@rp-platform/api-contracts";
@@ -296,9 +297,8 @@ export function createApiRouter(runtime: RuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.setChatPromptPreset(c.req.param("chatId"), body.promptPresetId));
     })
-    .post("/api/chats/:chatId/fork", async (c) => {
-      const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
-      const fromMessageId = typeof body.fromMessageId === 'string' ? body.fromMessageId : undefined;
+    .post("/api/chats/:chatId/fork", zValidator("json", z.object({ fromMessageId: z.string().optional() })), async (c) => {
+      const { fromMessageId } = c.req.valid("json");
       return c.json(await runtime.forkBranch(c.req.param("chatId"), fromMessageId));
     })
     .post("/api/chats/:chatId/branches/:branchId/activate", async (c) => {

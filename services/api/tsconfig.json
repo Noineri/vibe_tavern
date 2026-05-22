@@ -6,7 +6,6 @@
     "types": [
       "bun"
     ],
-    "baseUrl": ".",
     "paths": {
       "@rp-platform/api-contracts": [
         "../../packages/api-contracts/src/index.ts"
