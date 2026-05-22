@@ -38,7 +38,7 @@ export interface RuntimeApi {
   setPersonalLorebookEnabled: (personaId: string, enabled: boolean) => unknown;
   listLorebooks: (scopeType: string, ownerId?: string) => Promise<unknown>;
   createLorebook: (body: { name: string; description?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean }) => Promise<unknown>;
-  updateLorebookMeta: (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean; scopeType?: string }) => Promise<unknown>;
+  updateLorebookMeta: (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean; enabled?: boolean; scopeType?: string }) => Promise<unknown>;
   deleteLorebook: (lorebookId: string) => Promise<void>;
   createLoreEntry: (lorebookId: string, body: Record<string, unknown>) => Promise<unknown>;
   updateLoreEntry: (lorebookId: string, entryId: string, body: Record<string, unknown>) => Promise<unknown>;

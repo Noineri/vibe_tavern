@@ -13,6 +13,7 @@ export interface CreateLorebookData {
   tokenBudget?: number;
   recursiveScanning?: boolean;
   sortOrder?: number;
+  enabled?: boolean;
   characterId?: string | null;
   personaId?: string | null;
   chatId?: string | null;
@@ -70,6 +71,7 @@ export interface Lorebook {
   tokenBudget: number;
   recursiveScanning: boolean;
   sortOrder: number;
+  enabled: boolean;
   characterId: string | null;
   personaId: string | null;
   chatId: string | null;
@@ -172,6 +174,7 @@ export class LorebookStore {
         tokenBudget: data.tokenBudget ?? 1000,
         recursiveScanning: (data.recursiveScanning ?? false) ? 1 : 0,
         sortOrder: data.sortOrder ?? 0,
+        enabled: (data.enabled ?? true) ? 1 : 0,
         characterId: data.characterId ?? null,
         personaId: data.personaId ?? null,
         chatId: data.chatId ?? null,
@@ -194,6 +197,7 @@ export class LorebookStore {
     if (data.tokenBudget !== undefined) values.tokenBudget = data.tokenBudget;
     if (data.recursiveScanning !== undefined) values.recursiveScanning = data.recursiveScanning ? 1 : 0;
     if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
+    if (data.enabled !== undefined) values.enabled = data.enabled ? 1 : 0;
     if (data.characterId !== undefined) values.characterId = data.characterId;
     if (data.personaId !== undefined) values.personaId = data.personaId;
     if (data.chatId !== undefined) values.chatId = data.chatId;
@@ -371,6 +375,9 @@ export class LorebookStore {
     const result: Array<{ lorebook: Lorebook; entries: LoreEntry[] }> = [];
 
     for (const bookRow of bookRows) {
+      // Skip disabled lorebooks
+      if (bookRow.enabled === 0) continue;
+
       const entryRows = await this.db
         .select()
         .from(loreEntries)
@@ -403,6 +410,7 @@ export class LorebookStore {
       tokenBudget: row.tokenBudget,
       recursiveScanning: row.recursiveScanning === 1,
       sortOrder: row.sortOrder,
+      enabled: row.enabled === 1,
       characterId: row.characterId,
       personaId: row.personaId,
       chatId: row.chatId,

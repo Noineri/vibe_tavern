@@ -173,7 +173,7 @@ export function InputArea() {
             )}
           </div>
 
-          <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-[9px]">
+          <div className="absolute right-3 bottom-[9px] flex items-center gap-[9px]">
             {!isSending && (
               <div className="relative flex items-center" ref={modelDropRef}>
                 <button

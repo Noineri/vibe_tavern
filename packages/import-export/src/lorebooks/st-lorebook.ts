@@ -148,6 +148,7 @@ export function importStLorebookJson(
     tokenBudget: normalized.tokenBudget,
     recursiveScanning: normalized.recursiveScanning,
     sortOrder: 0,
+    enabled: true,
     characterId: null,
     personaId: null,
     chatId: null,

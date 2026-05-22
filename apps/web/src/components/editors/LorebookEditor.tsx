@@ -496,6 +496,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
             onDelete={() => setConfirmDeleteLorebook(lb.id)}
             onAddEntry={() => handleAddEntry(lb.id)}
             onEntryClick={(entryId) => handleEntryClick(lb.id, entryId)}
+            onToggleEnabled={() => updateLbMut.mutate({ id: lb.id, body: { enabled: !lb.enabled } })}
           />
         );
       })}
@@ -895,12 +896,13 @@ interface LorebookAccordionProps {
   onDelete: () => void;
   onAddEntry: () => void;
   onEntryClick: (entryId: string) => void;
+  onToggleEnabled: () => void;
 }
 
 function LorebookAccordion({
   lorebook, expanded, editing, editLbName, editLbScope, activeEntryId, t,
   onToggle, onStartEdit, onSaveEdit, onCancelEdit, onEditLbName, onEditLbScope,
-  onDelete, onAddEntry, onEntryClick,
+  onDelete, onAddEntry, onEntryClick, onToggleEnabled,
 }: LorebookAccordionProps) {
   const entriesQuery = useQuery({
     queryKey: lorebookKeys.entries(lorebook.id),
@@ -930,6 +932,17 @@ function LorebookAccordion({
         ) : (
           <>
             <span className="flex-1 cursor-pointer truncate text-[13px] font-medium text-t1" onClick={onToggle}>{lorebook.name}</span>
+            {/* Enabled toggle */}
+            <div
+              className="relative ml-1 mr-1 h-[22px] w-[40px] shrink-0 cursor-pointer rounded-full transition-[background-color] duration-150"
+              style={{ backgroundColor: lorebook.enabled ? 'var(--accent)' : 'var(--s3)' }}
+              onClick={e => { e.stopPropagation(); onToggleEnabled(); }}
+            >
+              <div
+                className="absolute top-[3px] h-4 w-4 rounded-full shadow-sm transition-[left] duration-150"
+                style={{ left: lorebook.enabled ? 19 : 3, backgroundColor: lorebook.enabled ? '#fff' : 'var(--t3)' }}
+              />
+            </div>
             <span className="shrink-0 rounded-full bg-s3 px-2 py-0.5 font-ui text-[11px] text-t3">{entries.length}</span>
             <div className="flex shrink-0 items-center gap-0.5 ml-1">
               <div className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" title={t("lore_add_entry")} onClick={e => { e.stopPropagation(); onAddEntry(); }}><Ic.plus /></div>
