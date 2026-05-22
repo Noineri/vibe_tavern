@@ -31,15 +31,52 @@ The script receives a single \`context\` object with these fields:
 
 ## Examples
 
-Simple dice roller:
+Dynamic relationship progression:
+\`\`\`js
+// Character's behavior evolves based on conversation length
+const count = context.chat.messageCount;
+if (count < 5) {
+  context.character.personality += ", polite but maintains professional distance";
+  context.character.scenario += " This is their first meeting, so they are careful and observant.";
+} else if (count < 15) {
+  context.character.personality += ", becoming more comfortable and casual";
+  context.character.scenario += " They are warming up and becoming more relaxed in conversation.";
+} else if (count < 30) {
+  context.character.personality += ", friendly and open";
+  context.character.scenario += " They feel comfortable and speak openly as friends.";
+} else {
+  context.character.personality += ", trusting and deeply connected";
+  context.character.scenario += " They share a deep friendship and trust completely.";
+}
 \`\`\`
-const last = context.chat.lastMessage;
-const match = last.match(/\\/roll\\s*(\\d+)d(\\d+)/i);
-if (match) {
-  const n = parseInt(match[1]), s = parseInt(match[2]);
-  const rolls = Array.from({length: n}, () => Math.floor(Math.random() * s) + 1);
-  const total = rolls.reduce((a, b) => a + b, 0);
-  context.character.personality += \`\\n[SYSTEM] Rolled \${n}d\${s}: [\${rolls.join(', ')}] = \${total}.\`;
+
+Scenario events triggered by keywords:
+\`\`\`js
+// React to location keywords in the last message
+const last = context.chat.lastMessage.toLowerCase();
+if (last.includes('restaurant') || last.includes('cafe')) {
+  context.character.scenario += ' The cozy establishment has ambient sounds of clinking dishes and soft music.';
+  context.character.personality += ', notices and comments on the atmosphere around them';
+}
+if (last.includes('park') || last.includes('outside')) {
+  context.character.scenario += ' They are outdoors with natural surroundings and fresh air.';
+  context.character.personality += ', observant of nature and weather';
+}
+\`\`\`
+
+Persistent state tracking (HP system):
+\`\`\`js
+// Simple health tracking that persists between turns
+const hp = context.state.get('hp', 100);
+const last = context.chat.lastMessage.toLowerCase();
+if (last.includes('hit') || last.includes('attack')) {
+  const damage = Math.floor(Math.random() * 15) + 5;
+  const newHp = Math.max(0, hp - damage);
+  context.state.set('hp', newHp);
+  context.character.personality += \`, took \${damage} damage (HP: \${newHp}/100)\`;
+  if (newHp < 30) {
+    context.character.scenario += ' {{char}} is badly wounded and struggling to stay standing.';
+  }
 }
 \`\`\``;
 
