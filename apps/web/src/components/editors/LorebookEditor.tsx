@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ic } from "../shared/icons.js";
+import { Ic, Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import {
@@ -548,7 +548,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
       <div style={{ marginBottom: 16 }}>
         <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_entry_keys")}</label>
         <div className="flex flex-1 flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2" style={{ padding: "6px 10px", minHeight: 38 }}>
-          {activeEntry.keys.map(k => <span key={k} className="cursor-pointer rounded bg-accent-dim px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => removeKey("keys", k)}>{k} \u2715</span>)}
+          {activeEntry.keys.map(k => <span key={k} className="cursor-pointer flex items-center gap-1 rounded bg-accent-dim px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => removeKey("keys", k)}>{k} <Icons.Close /></span>)}
           <input className="min-w-[80px] flex-1 border-0 bg-transparent font-ui text-t1 outline-none" style={{ fontSize: "calc(var(--ui-fs) - 1px)" }} value={keyInput} onChange={e => setKeyInput(e.target.value)} onKeyDown={e => handleKeyAdd(e, "keys")} placeholder={activeEntry.keys.length === 0 ? t("lore_entry_keys_placeholder") : ""} />
         </div>
       </div>
@@ -570,7 +570,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
             <div className="mb-4">
               <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_entry_secondary_keys")}</label>
               <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-bg" style={{ padding: "6px 10px", minHeight: 38 }}>
-                {activeEntry.secondaryKeys.map(k => <span key={k} className="cursor-pointer rounded bg-accent-dim px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => removeKey("secondaryKeys", k)}>{k} \u2715</span>)}
+                {activeEntry.secondaryKeys.map(k => <span key={k} className="cursor-pointer flex items-center gap-1 rounded bg-accent-dim px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => removeKey("secondaryKeys", k)}>{k} <Icons.Close /></span>)}
                 <input className="min-w-[80px] flex-1 border-0 bg-transparent font-ui text-t1 outline-none" style={{ fontSize: "calc(var(--ui-fs) - 1px)" }} value={secKeyInput} onChange={e => setSecKeyInput(e.target.value)} onKeyDown={e => handleKeyAdd(e, "secondaryKeys")} />
               </div>
             </div>
