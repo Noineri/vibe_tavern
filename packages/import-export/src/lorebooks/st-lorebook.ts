@@ -74,6 +74,7 @@ export interface ImportLorebookOptions {
   now?: string;
   scopeType?: LoreScopeType;
   defaultDepth?: number;
+  fallbackName?: string;
 }
 
 function mapSelectiveLogic(value: unknown): LoreLogic {
@@ -122,11 +123,7 @@ export function importStLorebookJson(
   const root = parseJsonInput(input);
   const fallbackNow = options.now ?? new Date().toISOString();
   const importedAt = normalizeTimestamp(root.create_date, fallbackNow);
-  const name = asString(root.name).trim();
-
-  if (!name) {
-    throw new Error("Lorebook JSON is missing `name`.");
-  }
+  const name = asString(root.name).trim() || options.fallbackName || "Imported Lorebook";
 
   const normalized: StLorebookNormalized = {
     name,

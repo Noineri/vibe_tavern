@@ -6,7 +6,7 @@ node_modules/
 dist/
 **/dist/
 build/
-**/build/
+!**/src/**/build/
 .vite/
 coverage/
 *.tsbuildinfo

@@ -26,6 +26,7 @@ export const updateLorebookMetaSchema = z.object({
   scanDepth: z.number().optional(),
   tokenBudget: z.number().optional(),
   recursiveScanning: z.boolean().optional(),
+  scopeType: z.string().optional(),
 });
 
 const loreEntryCoreSchema = z.object({
@@ -64,3 +65,14 @@ const loreEntryCoreSchema = z.object({
 export const createLoreEntrySchema = loreEntryCoreSchema;
 
 export const updateLoreEntrySchema = loreEntryCoreSchema;
+
+export const importLorebookSchema = z.object({
+  format: z.enum(["st", "janitor"]).optional().default("st"),
+  data: z.unknown(),
+  mode: z.enum(["merge", "replace", "new"]).optional().default("new"),
+  scopeType: z.string().optional().default("character"),
+  characterId: z.string().optional(),
+  personaId: z.string().optional(),
+  chatId: z.string().optional(),
+  fallbackName: z.string().optional(),
+});

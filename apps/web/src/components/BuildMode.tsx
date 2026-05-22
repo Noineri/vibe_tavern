@@ -5,11 +5,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@rp-platform/api-contracts";
 import type { AssemblePromptResponse, PromptTraceRecordDto } from "@rp-platform/domain";
 import type { AppSnapshot } from "../app-client.js";
-import { Ic } from "./shared/icons";
-import { cn } from "../lib/cn";
-import { CharacterForm } from "./build/CharacterForm.js";
-import { LorebookEditor } from "./build/LorebookEditor.js";
-import { ScriptEditor } from "./build/ScriptEditor.js";
+import { cn } from "../lib/cn.js";
+import { CharacterForm } from "./editors/CharacterForm.js";
+import { LorebookEditor } from "./editors/LorebookEditor.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { useT } from "../i18n/context.js";
 import { useCharacterStore } from "../stores/character-store.js";
@@ -20,8 +18,8 @@ import { useBootstrapQuery } from "../queries/bootstrap-queries.js";
 import { useChatSnapshot } from "../queries/chat-queries.js";
 import { useChatStore } from "../stores/index.js";
 
-export type BuildTab = "character" | "lorebook" | "scripts" | "trace";
-type InternalBuildTab = "char" | "lorebooks" | "scripts" | "trace";
+export type BuildTab = "character" | "lorebook" | "trace";
+
 
 export type { BuildCharacterDraft };
 
@@ -95,14 +93,6 @@ interface BuildModeInnerProps {
 }
 
 function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, onSave, onAvatarUpload, t, characterId, activeChatId, personaId }: BuildModeInnerProps) {
-  const [active, setActive] = useState<InternalBuildTab>(buildTab === "trace" ? "trace" : "char");
-
-  useEffect(() => {
-    if (buildTab === "trace") setActive("trace");
-    if (buildTab === "character") setActive("char");
-    if (buildTab === "lorebook") setActive("lorebooks");
-    if (buildTab === "scripts") setActive("scripts");
-  }, [buildTab]);
 
   const form = useForm<BuildCharacterDraft>({
     resolver: zodResolver(buildCharacterDraftSchema),
@@ -144,12 +134,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
     ? `${getGatewayBaseUrl()}/api/assets/${character.avatarAssetId}`
     : undefined;
 
-  const navItems: Array<{ id: InternalBuildTab; icon: ReactNode; label: string }> = [
-    { id: "char", icon: <Ic.wrench />, label: t("build_char_card") },
-    { id: "lorebooks", icon: <Ic.book />, label: t("build_lorebooks") },
-    { id: "scripts", icon: <Ic.terminal />, label: t("build_scripts") },
-    { id: "trace", icon: <Ic.trace />, label: t("build_prompt_trace") },
-  ];
+
 
   function renderTraceContent(): ReactNode {
     const trace = activeTrace;
@@ -245,36 +230,18 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
     );
   }
 
-  return (
-    <div className="flex flex-1 overflow-hidden">
-      {/* Nav sidebar */}
-      <div
-        className="flex w-[200px] min-w-[200px] flex-col border-r border-border bg-surface py-2"
-      >
-        <div
-          className={cn("font-ui text-[calc(var(--ui-fs)-5px)] font-medium uppercase tracking-[0.08em] text-t3 pt-[9px] px-[15px] pb-[7px]")}
-        >
-          {t("editor")}
-        </div>
-        {navItems.map((n) => (
-          <div
-            key={n.id}
-            className={cn(
-              "mx-1 flex cursor-pointer items-center gap-2.5 rounded px-3.5 py-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2 transition-all hover:bg-s2 hover:text-t1",
-              active === n.id && "bg-accent-dim text-accent-t",
-            )}
-            onClick={() => setActive(n.id)}
-          >
-            {n.icon}
-            <span>{n.label}</span>
-          </div>
-        ))}
-      </div>
+  const isFullBleed = buildTab === "lorebook";
 
-      {/* Content area */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-4xl px-10 py-8">
-        {active === "char" && (
+  return (
+    <div
+      className={cn(
+        "flex-1 overflow-y-auto",
+        isFullBleed && "flex overflow-hidden p-0",
+      )}
+      style={!isFullBleed ? { padding: "32px 40px" } : undefined}
+    >
+      {buildTab === "character" && (
+        <div className="mx-auto max-w-4xl">
           <CharacterForm
             form={form}
             avatarPreview={avatarPreview}
@@ -286,25 +253,20 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
             onReset={resetDraft}
             onAvatarUpload={handleAvatarUpload}
           />
-        )}
-        {active === "lorebooks" && (
-          <LorebookEditor
-            characterId={characterId}
-            chatId={activeChatId}
-            personaId={personaId}
-          />
-        )}
-        {active === "scripts" && (
-          <ScriptEditor
-            characterId={characterId}
-            chatId={activeChatId}
-            personaId={personaId}
-            onBack={() => setActive("char")}
-          />
-        )}
-        {active === "trace" && renderTraceContent()}
         </div>
-      </div>
+      )}
+      {buildTab === "lorebook" && (
+        <LorebookEditor
+          characterId={characterId}
+          chatId={activeChatId}
+          personaId={personaId}
+        />
+      )}
+      {buildTab === "trace" && (
+        <div className="mx-auto max-w-4xl">
+          {renderTraceContent()}
+        </div>
+      )}
     </div>
   );
 }

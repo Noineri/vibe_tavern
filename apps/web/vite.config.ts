@@ -1,10 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
 import { dataComponentPlugin } from "./vite-plugin-data-component.js";
 
 export default defineConfig({
-	plugins: [dataComponentPlugin(), react()],
+	plugins: [dataComponentPlugin(), react(), tailwindcss()],
 	resolve: {
 		alias: {
 			"@rp-platform/api": fileURLToPath(
