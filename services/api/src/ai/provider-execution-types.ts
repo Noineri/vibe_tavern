@@ -64,6 +64,8 @@ export interface GenerationInput {
 export interface GenerationResult {
   /** The generated text content. */
   text: string;
+  /** Reasoning/thinking content if the model returns it. */
+  reasoning?: string;
   /** Usage metadata if the provider returns it. */
   usage?: GenerationUsage;
 }

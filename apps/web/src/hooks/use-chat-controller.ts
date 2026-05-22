@@ -176,6 +176,7 @@ export function useChatController(): ChatControllerActions {
           },
         });
         await streamingReveal.current.waitForReveal();
+        useChatStore.getState().setPendingUserMessageContent(null);
         await refreshChatSnapshotCache(activeChatId);
         void logClientSendDebug("web.hook.handleSend.stream-success", { activeChatId, replyLength: collected.length });
       } else {

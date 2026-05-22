@@ -125,6 +125,15 @@ export function MessageList() {
     }
   }, [messages.length, virtualizer]);
 
+  // Scroll down when pending user message appears (before streaming starts)
+  useEffect(() => {
+    if (displayPendingUserMessageContent) {
+      requestAnimationFrame(() => {
+        endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      });
+    }
+  }, [displayPendingUserMessageContent]);
+
   // Keep scrolled to bottom during streaming
   useEffect(() => {
     if (streamingText) {
