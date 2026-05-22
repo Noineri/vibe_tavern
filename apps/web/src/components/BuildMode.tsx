@@ -7,24 +7,22 @@ import type { AssemblePromptResponse, PromptTraceRecordDto } from "@rp-platform/
 import type { AppSnapshot } from "../app-client.js";
 import { cn } from "../lib/cn.js";
 import { CharacterForm } from "./editors/CharacterForm.js";
-import { LorebookEditor } from "./editors/LorebookEditor.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { useT } from "../i18n/context.js";
 import { useCharacterStore } from "../stores/character-store.js";
 import { useActiveTrace } from "../stores/chat-selectors.js";
 import { useCharacterController } from "../hooks/use-character-controller.js";
+import { useBuildPanels } from "../hooks/use-build-panels.js";
 
 import { useBootstrapQuery } from "../queries/bootstrap-queries.js";
 import { useChatSnapshot } from "../queries/chat-queries.js";
 import { useChatStore } from "../stores/index.js";
 
-export type BuildTab = "character" | "lorebook" | "trace";
-
+export type BuildTab = string;
 
 export type { BuildCharacterDraft };
 
 export function BuildMode() {
-  const { t } = useT();
   const character = useCharacterController();
   const bootstrapQuery = useBootstrapQuery();
   const activeChatId = useChatStore((s) => s.activeChatId);
@@ -49,7 +47,6 @@ export function BuildMode() {
     promptTraceCount={promptTraceCount}
     onSave={character.handleSaveCharacter}
     onAvatarUpload={character.handleAvatarUpload}
-    t={t}
     characterId={charData.id}
     activeChatId={snapshot.activeChat?.id ?? null}
     personaId={snapshot.persona?.id ?? null}
@@ -86,13 +83,14 @@ interface BuildModeInnerProps {
   promptTraceCount: number;
   onSave: (draft: BuildCharacterDraft) => Promise<void> | void;
   onAvatarUpload: (file: File, originalFile?: File | null) => Promise<void> | void;
-  t: (key: string) => string;
   characterId: string;
   activeChatId: string | null;
   personaId: string | null;
 }
 
-function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, onSave, onAvatarUpload, t, characterId, activeChatId, personaId }: BuildModeInnerProps) {
+function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, onSave, onAvatarUpload, characterId, activeChatId, personaId }: BuildModeInnerProps) {
+  const { t } = useT();
+  const panels = useBuildPanels();
 
   const form = useForm<BuildCharacterDraft>({
     resolver: zodResolver(buildCharacterDraftSchema),
@@ -136,7 +134,47 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
       ? `${getGatewayBaseUrl()}/api/assets/${character.avatarAssetId}`
       : undefined;
 
+  const ctx = { characterId, chatId: activeChatId, personaId };
 
+  const activePanel = panels.find((p) => p.id === buildTab);
+  const isFullBleed = activePanel?.fullBleed === true;
+
+  function renderPanelContent(): ReactNode {
+    // Character panel is special — owns form + save logic in BuildMode
+    if (buildTab === "character") {
+      return (
+        <div className="mx-auto max-w-4xl">
+          <CharacterForm
+            form={form}
+            avatarPreview={avatarPreview}
+            setAvatarPreview={setAvatarPreview}
+            isDirty={isDirty}
+            isSaving={isSaving}
+            avatarUrl={avatarUrl}
+            onSave={handleSave}
+            onReset={resetDraft}
+            onAvatarUpload={handleAvatarUpload}
+          />
+        </div>
+      );
+    }
+
+    // Trace panel is special — owns trace-specific rendering
+    if (buildTab === "trace") {
+      return (
+        <div className="mx-auto max-w-4xl">
+          {renderTraceContent()}
+        </div>
+      );
+    }
+
+    // Generic registered panel
+    if (activePanel?.render) {
+      return activePanel.render(ctx);
+    }
+
+    return null;
+  }
 
   function renderTraceContent(): ReactNode {
     const trace = activeTrace;
@@ -232,8 +270,6 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
     );
   }
 
-  const isFullBleed = buildTab === "lorebook";
-
   return (
     <div
       className={cn(
@@ -242,33 +278,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
       )}
       style={!isFullBleed ? { padding: "32px 40px" } : undefined}
     >
-      {buildTab === "character" && (
-        <div className="mx-auto max-w-4xl">
-          <CharacterForm
-            form={form}
-            avatarPreview={avatarPreview}
-            setAvatarPreview={setAvatarPreview}
-            isDirty={isDirty}
-            isSaving={isSaving}
-            avatarUrl={avatarUrl}
-            onSave={handleSave}
-            onReset={resetDraft}
-            onAvatarUpload={handleAvatarUpload}
-          />
-        </div>
-      )}
-      {buildTab === "lorebook" && (
-        <LorebookEditor
-          characterId={characterId}
-          chatId={activeChatId}
-          personaId={personaId}
-        />
-      )}
-      {buildTab === "trace" && (
-        <div className="mx-auto max-w-4xl">
-          {renderTraceContent()}
-        </div>
-      )}
+      {renderPanelContent()}
     </div>
   );
 }
