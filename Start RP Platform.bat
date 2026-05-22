@@ -63,17 +63,13 @@ echo.
 bun ".\scripts\dev-supervisor.ts"
 set "EXIT_CODE=%ERRORLEVEL%"
 
+REM Graceful exits (0=normal, 1=Ctrl+C, 58=window closed) — just exit silently
+if "%EXIT_CODE%"=="0" exit /b 0
+if "%EXIT_CODE%"=="1" exit /b 0
+if "%EXIT_CODE%"=="58" exit /b 0
+
+REM Unexpected crash — show error and wait for keypress
 echo.
-if "%EXIT_CODE%"=="0" (
-    echo Server stopped normally.
-) else if "%EXIT_CODE%"=="1" (
-    echo Server stopped.
-) else if "%EXIT_CODE%"=="3221225786" (
-    echo Server stopped ^(window closed^).
-) else if "%EXIT_CODE%"=="-1073741510" (
-    echo Server stopped ^(Ctrl+C^).
-) else (
-    echo Server crashed with exit code %EXIT_CODE%.
-    echo Check logs: %LOG_DIR%
-)
+echo Server crashed with exit code %EXIT_CODE%.
+echo Check logs: %LOG_DIR%
 pause
