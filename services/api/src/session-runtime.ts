@@ -418,6 +418,7 @@ export interface ImportResult {
 			authorsNoteDepth: preset.authorsNoteDepth,
 			summary: preset.summaryPrompt,
 			tools: preset.toolsPrompt,
+			scriptAiSystemPrompt: preset.scriptAiSystemPrompt ?? "",
 			createdAt: preset.createdAt,
 			updatedAt: preset.updatedAt,
 		};

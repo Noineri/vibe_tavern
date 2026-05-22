@@ -15,6 +15,7 @@ export interface CreatePresetData {
   authorsNoteDepth?: number;
   summaryPrompt?: string;
   toolsPrompt?: string;
+  scriptAiSystemPrompt?: string;
 }
 
 export type UpdatePresetData = Partial<CreatePresetData>;
@@ -32,6 +33,7 @@ export interface PromptPreset {
   authorsNoteDepth: number;
   summaryPrompt: string;
   toolsPrompt: string;
+  scriptAiSystemPrompt: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -81,6 +83,7 @@ export class PresetStore {
         authorsNoteDepth: data.authorsNoteDepth ?? 4,
         summaryPrompt: data.summaryPrompt ?? '',
         toolsPrompt: data.toolsPrompt ?? '',
+        scriptAiSystemPrompt: data.scriptAiSystemPrompt ?? '',
         createdAt: now,
         updatedAt: now,
       })
@@ -104,6 +107,7 @@ export class PresetStore {
     if (data.authorsNoteDepth !== undefined) values.authorsNoteDepth = data.authorsNoteDepth;
     if (data.summaryPrompt !== undefined) values.summaryPrompt = data.summaryPrompt;
     if (data.toolsPrompt !== undefined) values.toolsPrompt = data.toolsPrompt;
+    if (data.scriptAiSystemPrompt !== undefined) values.scriptAiSystemPrompt = data.scriptAiSystemPrompt;
 
     const [row] = await this.db
       .update(promptPresets)
@@ -143,6 +147,7 @@ export class PresetStore {
         authorsNoteDepth: original.authorsNoteDepth,
         summaryPrompt: original.summaryPrompt,
         toolsPrompt: original.toolsPrompt,
+        scriptAiSystemPrompt: original.scriptAiSystemPrompt ?? '',
         createdAt: now,
         updatedAt: now,
       })
@@ -171,6 +176,7 @@ export class PresetStore {
       authorsNoteDepth: 4,
       summaryPrompt: '',
       toolsPrompt: '',
+      scriptAiSystemPrompt: '',
       bindProviderPresetId: null,
     });
   }
@@ -189,6 +195,7 @@ export class PresetStore {
       authorsNoteDepth: row.authorsNoteDepth,
       summaryPrompt: row.summaryPrompt,
       toolsPrompt: row.toolsPrompt,
+      scriptAiSystemPrompt: row.scriptAiSystemPrompt ?? '',
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

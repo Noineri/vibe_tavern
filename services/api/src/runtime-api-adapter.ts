@@ -17,7 +17,7 @@ import {
 	normalizeOpenAiCompatibleBaseUrl,
 } from "./provider-gateway.js";
 import { executeScripts } from "./script-sandbox.js";
-import { streamScriptCode } from "./script-ai-assistant.js";
+import { streamScriptCode, DEFAULT_SCRIPT_AI_PROMPT } from "./script-ai-assistant.js";
 
 /**
  * Facade that implements RuntimeApi — the single contract between
@@ -517,7 +517,20 @@ export class RuntimeApiAdapter {
 		if (!profile) throw new Error(`Provider profile not found: ${body.providerProfileId}`);
 		const modelName = body.model ?? profile.defaultModel ?? "gpt-4o-mini";
 		const aiModel = resolveModel(profile, modelName);
-		yield* streamScriptCode(body, aiModel);
+
+		// Read system prompt from active prompt preset, fallback to default
+		let systemPrompt = DEFAULT_SCRIPT_AI_PROMPT;
+		try {
+			const settings = await this.stores.uiSettings.get();
+			if (settings?.activePromptPresetId) {
+				const preset = await this.stores.presets.getById(settings.activePromptPresetId);
+				if (preset?.scriptAiSystemPrompt?.trim()) {
+					systemPrompt = preset.scriptAiSystemPrompt;
+				}
+			}
+		} catch { /* fallback to default */ }
+
+		yield* streamScriptCode(body, aiModel, systemPrompt);
 	};
 
 	// ─── Provider profiles ────────────────────────────────────────────────

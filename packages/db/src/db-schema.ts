@@ -215,6 +215,7 @@ export const promptPresets = sqliteTable('prompt_presets', {
   authorsNoteDepth: integer('authors_note_depth').notNull().default(4),
   summaryPrompt: text('summary_prompt').notNull().default(''),
   toolsPrompt: text('tools_prompt').notNull().default(''),
+  scriptAiSystemPrompt: text('script_ai_system_prompt').notNull().default(''),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

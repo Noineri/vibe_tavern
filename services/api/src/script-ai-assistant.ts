@@ -1,7 +1,7 @@
 import { streamText } from "ai";
 import type { LanguageModelV1 } from "ai";
 
-const SYSTEM_PROMPT = `You are an expert JavaScript coding assistant for an RP platform's script system. Users describe what they want a script to do, and you write the code.
+export const DEFAULT_SCRIPT_AI_PROMPT = `You are an expert JavaScript coding assistant for an RP platform's script system. Users describe what they want a script to do, and you write the code.
 
 ## Script Context API
 
@@ -66,6 +66,7 @@ export interface AiAssistantStreamChunk {
 export async function* streamScriptCode(
   request: AiAssistantRequest,
   aiModel: LanguageModelV1,
+  systemPrompt: string = DEFAULT_SCRIPT_AI_PROMPT,
 ): AsyncGenerator<AiAssistantStreamChunk> {
   const { prompt, existingCode } = request;
 
@@ -77,7 +78,7 @@ export async function* streamScriptCode(
   try {
     const result = await streamText({
       model: aiModel,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
       temperature: 0.3,
       maxTokens: 4096,
