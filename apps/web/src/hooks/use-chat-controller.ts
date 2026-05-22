@@ -14,7 +14,7 @@ import {
   type AppSnapshot,
   type ChatGenerationStatus,
 } from "../app-client.js";
-import { useChatStore } from "../stores/chat-store.js";
+import { useChatStore, getAbortController, setAbortController, abortGeneration } from "../stores/chat-store.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { chatKeys } from "../queries/query-keys.js";
 import { useProviderProfilesQuery } from "../queries/provider-queries.js";
@@ -78,7 +78,8 @@ export function useChatController(): ChatControllerActions {
   const activateBranchMut = useActivateBranchMutation();
   const deleteBranchMut = useDeleteBranchMutation();
 
-  const abortRef = useRef<AbortController | null>(null);
+  // AbortController is a module-level singleton in chat-store.ts.
+  // Any hook instance can cancel via abortGeneration().
   const streamingReveal = useRef(new StreamingReveal());
 
   // --- Store helpers (imperative reads via getState, not subscriptions) ---
@@ -149,7 +150,7 @@ export function useChatController(): ChatControllerActions {
     }
 
     const controller = new AbortController();
-    abortRef.current = controller;
+    setAbortController(controller);
     const cs = useChatStore.getState();
 
     cs.setDraft("");
@@ -204,7 +205,7 @@ export function useChatController(): ChatControllerActions {
       useChatStore.getState().setPendingUserMessageContent(null);
       useChatStore.getState().setIsSending(false);
       useChatStore.getState().setStreamingReasoningText("");
-      abortRef.current = null;
+      setAbortController(null);
       streamingReveal.current.clear();
     }
   }, [sendMessageMut]);
@@ -219,7 +220,7 @@ export function useChatController(): ChatControllerActions {
     }
 
     const controller = new AbortController();
-    abortRef.current = controller;
+    setAbortController(controller);
     const cs = useChatStore.getState();
     cs.setIsSending(true);
 
@@ -265,14 +266,14 @@ export function useChatController(): ChatControllerActions {
     } finally {
       useChatStore.getState().setIsSending(false);
       useChatStore.getState().setStreamingReasoningText("");
-      abortRef.current = null;
+      setAbortController(null);
       streamingReveal.current.clear();
     }
   }, [generateReplyMut]);
 
   const handleCancelGeneration = useCallback((): void => {
-    abortRef.current?.abort();
-    abortRef.current = null;
+    abortGeneration();
+    setAbortController(null);
     toast.info(getT()("cancelling_generation"));
   }, []);
 
@@ -337,7 +338,7 @@ export function useChatController(): ChatControllerActions {
     }
 
     const controller = new AbortController();
-    abortRef.current = controller;
+    setAbortController(controller);
 
     const cs = useChatStore.getState();
     cs.setIsSending(true);
@@ -382,7 +383,7 @@ export function useChatController(): ChatControllerActions {
       useChatStore.getState().setIsSending(false);
       useChatStore.getState().setStreamingReasoningText("");
       useChatStore.getState().setMessageActionId(null);
-      abortRef.current = null;
+      setAbortController(null);
       streamingReveal.current.clear();
     }
   }

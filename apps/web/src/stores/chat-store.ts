@@ -33,6 +33,28 @@ export interface ChatActions {
 
 export type ChatStore = ChatState & ChatActions;
 
+// ── Global AbortController ──────────────────────────────────────────────
+// Stored as a module-level singleton so ANY hook instance (InputArea,
+// MessageList, Sidebar, AppShell) can abort a generation started by another.
+// Not in Zustand to avoid unnecessary re-renders on a write-once-read-on-cancel value.
+
+let _abortController: AbortController | null = null;
+
+export function getAbortController(): AbortController | null {
+  return _abortController;
+}
+
+export function setAbortController(ctrl: AbortController | null): void {
+  _abortController = ctrl;
+}
+
+export function abortGeneration(): void {
+  _abortController?.abort();
+  _abortController = null;
+}
+
+// ── Store ───────────────────────────────────────────────────────────────
+
 export const useChatStore = create<ChatStore>()((set) => ({
   activeChatId: null,
   selectedCharacterId: null,
