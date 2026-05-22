@@ -68,6 +68,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const [aiStreaming, setAiStreaming] = useState(false);
   const [aiStreamedCode, setAiStreamedCode] = useState("");
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiProvDropdown, setAiProvDropdown] = useState(false);
+  const [aiModelDropdown, setAiModelDropdown] = useState(false);
   const aiAbortRef = useRef<AbortController | null>(null);
 
   // ── Queries ──────────────────────────────────────────────
@@ -222,7 +224,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         </div>
       )}
       {aiHelperOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => { if (!aiStreaming) setAiHelperOpen(false); }}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => { if (!aiStreaming) { setAiHelperOpen(false); setAiProvDropdown(false); setAiModelDropdown(false); } }}>
           <div className="flex w-[560px] max-w-[90vw] flex-col overflow-hidden rounded-xl border border-border bg-surface" style={{ maxHeight: "85vh" }} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-border" style={{ padding: "16px 20px" }}>
               <span className="text-sm font-semibold text-t1">{t("script_ai_helper")}</span>
@@ -234,23 +236,38 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 16 }}>
-                    <div>
+                    <div className="relative">
                       <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_connection")}</label>
-                      <select className="h-[38px] w-full rounded-[6px] border border-border bg-s2 pl-[13px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent" value={aiProviderId} onChange={e => { setAiProviderId(e.target.value); setAiModelName(""); }}>
-                        <option value="">{t("script_ai_select_provider")}</option>
-                        {providerProfiles.map(p => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
-                      </select>
+                      <button type="button" onClick={() => { setAiProvDropdown(v => !v); setAiModelDropdown(false); }} className="flex w-full items-center justify-between rounded-[6px] border border-border bg-s2 px-[13px] py-[7px] font-ui text-[13px] text-t1 transition-[border-color] duration-150 hover:border-accent">
+                        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">{selectedProfile?.name || t("script_ai_select_provider")}</span>
+                        <span className="ml-2 shrink-0 text-t3">{Ic.caret("d")}</span>
+                      </button>
+                      {aiProvDropdown && (
+                        <div className="absolute left-0 right-0 top-full z-[110] mt-1 overflow-hidden rounded-md border border-border shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
+                          <div className="max-h-[200px] overflow-y-auto bg-surface p-1">
+                            {providerProfiles.map(p => (
+                              <div key={p.id} onClick={() => { setAiProviderId(p.id); setAiModelName(""); setAiProvDropdown(false); }} className={cn("flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] transition-colors", p.id === aiProviderId ? "bg-accent-dim font-medium text-accent-t" : "text-t2 hover:bg-s2 hover:text-t1")}>{p.name}</div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div>
+                    <div className="relative">
                       <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_model")}</label>
-                      <select className="h-[38px] w-full rounded-[6px] border border-border bg-s2 pl-[13px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent" value={aiModelName} onChange={e => setAiModelName(e.target.value)}>
-                        <option value="">{selectedProfile?.defaultModel || "Default"}</option>
-                        {providerModels.map(m => (
-                          <option key={m.id} value={m.id}>{m.label || m.id}</option>
-                        ))}
-                      </select>
+                      <button type="button" onClick={() => { setAiModelDropdown(v => !v); setAiProvDropdown(false); }} className="flex w-full items-center justify-between rounded-[6px] border border-border bg-s2 px-[13px] py-[7px] font-ui text-[13px] text-t1 transition-[border-color] duration-150 hover:border-accent">
+                        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">{aiModelName ? (providerModels.find(m => m.id === aiModelName)?.label || aiModelName) : (selectedProfile?.defaultModel || "Default")}</span>
+                        <span className="ml-2 shrink-0 text-t3">{Ic.caret("d")}</span>
+                      </button>
+                      {aiModelDropdown && (
+                        <div className="absolute left-0 right-0 top-full z-[110] mt-1 overflow-hidden rounded-md border border-border shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
+                          <div className="max-h-[200px] overflow-y-auto bg-surface p-1">
+                            <div onClick={() => { setAiModelName(""); setAiModelDropdown(false); }} className={cn("flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] transition-colors", !aiModelName ? "bg-accent-dim font-medium text-accent-t" : "text-t2 hover:bg-s2 hover:text-t1")}>{selectedProfile?.defaultModel || "Default"}</div>
+                            {providerModels.map(m => (
+                              <div key={m.id} onClick={() => { setAiModelName(m.id); setAiModelDropdown(false); }} className={cn("flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] transition-colors", m.id === aiModelName ? "bg-accent-dim font-medium text-accent-t" : "text-t2 hover:bg-s2 hover:text-t1")}>{m.label || m.id}</div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div style={{ marginBottom: 16 }}>
@@ -365,32 +382,32 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
           <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("script_api_context")}</div>
           <div className="grid gap-3 text-[12px]">
             <div>
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_chat")}</div>
-              <div className="grid gap-1.5">
-                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.chat.lastMessage</code><span className="text-t3">{t("script_api_chat_lastMessage")}</span></div>
-                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.chat.messages</code><span className="text-t3">{t("script_api_chat_messages")}</span></div>
-                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.chat.messageCount</code><span className="text-t3">{t("script_api_chat_messageCount")}</span></div>
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_chat")}</div>
+              <div className="grid gap-1">
+                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.chat.lastMessage</code><span className="text-t3">— {t("script_api_chat_lastMessage")}</span></div>
+                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.chat.messages</code><span className="text-t3">— {t("script_api_chat_messages")}</span></div>
+                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.chat.messageCount</code><span className="text-t3">— {t("script_api_chat_messageCount")}</span></div>
               </div>
             </div>
             <div>
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_character")}</div>
-              <div className="grid gap-1.5">
-                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.character.name</code><span className="text-t3">{t("script_api_char_name")}</span></div>
-                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.character.personality</code><span className="text-t3">{t("script_api_char_personality")}</span></div>
-                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.character.scenario</code><span className="text-t3">{t("script_api_char_scenario")}</span></div>
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_character")}</div>
+              <div className="grid gap-1">
+                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.character.name</code><span className="text-t3">— {t("script_api_char_name")}</span></div>
+                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.character.personality</code><span className="text-t3">— {t("script_api_char_personality")}</span></div>
+                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.character.scenario</code><span className="text-t3">— {t("script_api_char_scenario")}</span></div>
               </div>
             </div>
             <div>
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_state")}</div>
-              <div className="grid gap-1.5">
-                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.state.get(key, default)</code><span className="text-t3">{t("script_api_state_get")}</span></div>
-                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.state.set(key, value)</code><span className="text-t3">{t("script_api_state_set")}</span></div>
-                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.state.increment(key, n)</code><span className="text-t3">{t("script_api_state_increment")}</span></div>
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_state")}</div>
+              <div className="grid gap-1">
+                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.state.get(key, default)</code><span className="text-t3">— {t("script_api_state_get")}</span></div>
+                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.state.set(key, value)</code><span className="text-t3">— {t("script_api_state_set")}</span></div>
+                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.state.increment(key, n)</code><span className="text-t3">— {t("script_api_state_increment")}</span></div>
               </div>
             </div>
             <div>
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_lore")}</div>
-              <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.lore.activeEntries</code><span className="text-t3">{t("script_api_lore_entries")}</span></div>
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_lore")}</div>
+              <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.lore.activeEntries</code><span className="text-t3">— {t("script_api_lore_entries")}</span></div>
             </div>
           </div>
         </div>
