@@ -1,0 +1,55 @@
+import { Hono } from "hono";
+import type { RuntimeApi } from "./types.js";
+import { zValidator } from "@hono/zod-validator";
+import * as schemas from "@rp-platform/api-contracts";
+
+export function createLorebookRoutes(runtime: RuntimeApi) {
+  return new Hono()
+    .get("/api/lorebooks", async (c) => {
+      const scopeType = c.req.query("scopeType") ?? "character";
+      const ownerId = c.req.query("ownerId") ?? undefined;
+      return c.json(await runtime.listLorebooks(scopeType, ownerId));
+    })
+    .post("/api/lorebooks", zValidator("json", schemas.createLorebookSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.createLorebook(body), 201);
+    })
+    .patch("/api/lorebooks/:lorebookId", zValidator("json", schemas.updateLorebookMetaSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(
+        await runtime.updateLorebookMeta(c.req.param("lorebookId"), body),
+      );
+    })
+    .delete("/api/lorebooks/:lorebookId", async (c) => {
+      await runtime.deleteLorebook(c.req.param("lorebookId"));
+      return c.json({ ok: true });
+    })
+    .post("/api/lorebooks/:lorebookId/test-activation", zValidator("json", schemas.testActivationSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(
+        await runtime.testLoreActivation(c.req.param("lorebookId"), body),
+      );
+    })
+    .get("/api/lorebooks/:lorebookId/entries", async (c) => {
+      return c.json(await runtime.listLoreEntries(c.req.param("lorebookId")));
+    })
+    .post("/api/lorebooks/:lorebookId/entries", zValidator("json", schemas.createLoreEntrySchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.createLoreEntry(c.req.param("lorebookId"), body));
+    })
+    .patch("/api/lorebooks/:lorebookId/entries/:entryId", zValidator("json", schemas.updateLoreEntrySchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.updateLoreEntry(c.req.param("lorebookId"), c.req.param("entryId"), body));
+    })
+    .delete("/api/lorebooks/:lorebookId/entries/:entryId", async (c) => {
+      await runtime.deleteLoreEntry(c.req.param("lorebookId"), c.req.param("entryId"));
+      return c.json({ ok: true });
+    })
+    .post("/api/lorebooks/:lorebookId/import", zValidator("json", schemas.importLorebookSchema), async (c) => {
+      const body = c.req.valid("json");
+      const lorebookIdParam = c.req.param("lorebookId");
+      const lorebookId = lorebookIdParam === "new" ? null : lorebookIdParam;
+      return c.json(await runtime.importLorebook(lorebookId, { format: body.format, data: body.data, mode: body.mode, scopeType: body.scopeType, characterId: body.characterId, personaId: body.personaId, chatId: body.chatId, fallbackName: body.fallbackName }), 201);
+    })
+  ;
+}
