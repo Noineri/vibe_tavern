@@ -4,6 +4,33 @@ import { TokenCounter } from "../shared/TokenCounter.js";
 import { PrefillField } from "./PrefillField.js";
 import { useT } from "../../i18n/context.js";
 
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t4">{title}</span>
+      <div className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
+function ServiceField({ label, description, token, children }: {
+  label: string;
+  description: string;
+  token: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="mb-[7px] flex items-center justify-between">
+        <label className="mb-0 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{label}</label>
+        <TokenCounter text={token} />
+      </div>
+      <div className="mb-1.5 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{description}</div>
+      {children}
+    </div>
+  );
+}
+
 type DraftData = {
   system: string;
   jailbreak: string;
@@ -139,6 +166,8 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey 
 
   return (
     <div className="flex flex-1 flex-col gap-6 overflow-y-auto scroll-smooth p-5">
+      <SectionHeader title={t("prompt_section_chat")} />
+
       <FieldSection label={t("system_prompt")} labelClassName={labelAccentCls} token={draft?.system ?? ""}>
         {ta("system", t("system_prompt_placeholder"), 240)}
       </FieldSection>
@@ -174,20 +203,18 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey 
         <TokenCounter text={draft?.authorsNote ?? ""} />
       </div>
 
-      <FieldSection label={t("summary")} token={draft?.summary ?? ""}>
+      <div className="h-2" />
+
+      <SectionHeader title={t("prompt_section_service")} />
+      <div className="-mt-4 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("prompt_section_service_desc")}</div>
+
+      <ServiceField label={t("summary")} description={t("summary_desc")} token={draft?.summary ?? ""}>
         {ta("summary", t("summary_placeholder"), 100)}
-      </FieldSection>
+      </ServiceField>
 
-      <FieldSection label={t("tools")} token={draft?.tools ?? ""}>
-        {ta("tools", t("tools_placeholder"), 100)}
-      </FieldSection>
-
-      <div className="border-t border-border pt-6">
-        <FieldSection label={t("script_ai_prompt_field")} token={draft?.scriptAiSystemPrompt ?? ""}>
-          {ta("scriptAiSystemPrompt", t("script_ai_prompt_placeholder"), 160)}
-        </FieldSection>
-        <div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("script_ai_prompt_hint")}</div>
-      </div>
+      <ServiceField label={t("script_ai_prompt_field")} description={t("script_ai_prompt_desc")} token={draft?.scriptAiSystemPrompt ?? ""}>
+        {ta("scriptAiSystemPrompt", t("script_ai_prompt_placeholder"), 160)}
+      </ServiceField>
     </div>
   );
 }

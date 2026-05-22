@@ -359,7 +359,11 @@
   "tools_placeholder": "Tool invocation instructions...",
   "script_ai_prompt_field": "Script AI System Prompt",
   "script_ai_prompt_placeholder": "System prompt used by the AI assistant when generating scripts. Leave empty to use the default.",
-  "script_ai_prompt_hint": "This prompt is only used when the AI assistant generates script code. It does not affect chat.",
+  "prompt_section_chat": "Chat Prompts",
+  "prompt_section_service": "Service Prompts",
+  "prompt_section_service_desc": "These prompts are used for separate operations and do not affect the chat.",
+  "summary_desc": "System prompt for chat memory summarization.",
+  "script_ai_prompt_desc": "System prompt for the AI assistant in the script editor.",
 
   "context_memory_title": "Memory",
   "context_memory_sub": "Create a concise summary of older chat history for model memory.",
