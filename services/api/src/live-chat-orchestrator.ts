@@ -48,6 +48,7 @@ export class LiveChatOrchestrator {
     const startedAt = Date.now();
     logSendDebug("live.send.provider.start", { chatId: input.chatId, providerId: input.profile.id, model: input.model });
     let reply: string;
+    let reasoning: string | undefined;
     try {
       // TODO FW-AI5: when stream preference is true, forward the stream as SSE instead of collecting
       const result = await nonstreamingProviderExecute({
@@ -58,13 +59,16 @@ export class LiveChatOrchestrator {
         prefill: prepared.prompt.prefill ?? undefined,
       });
       reply = result.text;
+      reasoning = result.reasoning;
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
     }
     const latencyMs = Date.now() - startedAt;
     logSendDebug("live.send.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
-    const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs);
+    const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
+      reasoning,
+    });
     logSendDebug("live.send.append.done", { chatId: input.chatId, messageCount: snapshot.messages.length });
 
     return {
@@ -95,6 +99,7 @@ export class LiveChatOrchestrator {
     });
     const startedAt = Date.now();
     let reply: string;
+    let reasoning: string | undefined;
     try {
       const result = await nonstreamingProviderExecute({
         profile: input.profile,
@@ -104,13 +109,16 @@ export class LiveChatOrchestrator {
         prefill: prompt.prefill ?? undefined,
       });
       reply = result.text;
+      reasoning = result.reasoning;
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
     }
     const latencyMs = Date.now() - startedAt;
     logSendDebug("live.generateReply.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
-    const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs);
+    const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
+      reasoning,
+    });
     return {
       promptMessageCount: countPromptMessages(prompt),
       reply,
@@ -146,6 +154,7 @@ export class LiveChatOrchestrator {
     const startedAt = Date.now();
     logSendDebug("live.regenerate.provider.start", { chatId: input.chatId, providerId: input.profile.id, model: input.model });
     let reply: string;
+    let reasoning: string | undefined;
     try {
       const result = await nonstreamingProviderExecute({
         profile: input.profile,
@@ -155,6 +164,7 @@ export class LiveChatOrchestrator {
         prefill: prompt.prefill ?? undefined,
       });
       reply = result.text;
+      reasoning = result.reasoning;
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
@@ -164,6 +174,7 @@ export class LiveChatOrchestrator {
     const snapshot = await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
       content: reply,
       latencyMs,
+      reasoning,
     });
     logSendDebug("live.regenerate.append.done", { chatId: input.chatId, messageId: input.messageId, messageCount: snapshot.messages.length });
 

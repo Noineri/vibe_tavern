@@ -172,7 +172,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   }
 
   return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]">
       {/* Avatar crop modal */}
       {pendingAvatar && (
         <AvatarCropModal

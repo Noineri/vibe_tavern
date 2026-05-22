@@ -59,6 +59,7 @@ export async function nonstreamingProviderExecute(
 
     return {
       text: result.text,
+      reasoning: result.reasoning ?? undefined,
       usage: result.usage
         ? {
             promptTokens: result.usage.promptTokens,
