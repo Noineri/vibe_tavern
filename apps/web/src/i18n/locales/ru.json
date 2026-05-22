@@ -686,6 +686,7 @@
   "script_template_lorebook": "Динамический лорбук",
   "script_template_hp": "Трекер HP",
   "script_template_random": "Случайное событие",
+  "script_template_advanced_lore": "Продвинутый лорбук",
   "script_import": "Импорт Скрипта",
   "script_import_js": "Вставьте JavaScript код",
   "script_import_json": "Вставьте JSON",
