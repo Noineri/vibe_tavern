@@ -80,6 +80,7 @@ export const lorebooks = sqliteTable('lorebooks', {
   characterId: text('character_id').references(() => characters.id, { onDelete: 'cascade' }),
   personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
   chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
+  enabled: integer('enabled').notNull().default(1),
   extensionsJson: text('extensions_json').notNull().default('{}'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

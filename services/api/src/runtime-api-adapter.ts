@@ -335,7 +335,7 @@ export class RuntimeApiAdapter {
 	createLorebook = (body: { name: string; description?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean }) =>
 		this.stores.lorebooks.createLorebook(body);
 
-	updateLorebookMeta = (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean; scopeType?: string }) =>
+	updateLorebookMeta = (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean; enabled?: boolean; scopeType?: string }) =>
 		this.stores.lorebooks.updateLorebook(lorebookId, body);
 
 	deleteLorebook = async (lorebookId: string) => {

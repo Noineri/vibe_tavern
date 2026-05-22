@@ -123,6 +123,7 @@ export interface Lorebook {
   tokenBudget: number;
   recursiveScanning: boolean;
   sortOrder: number;
+  enabled: boolean;
   characterId: string | null;
   personaId: string | null;
   chatId: string | null;
