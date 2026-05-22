@@ -689,6 +689,7 @@
   "script_template_lorebook": "Dynamic Lorebook",
   "script_template_hp": "HP Tracker",
   "script_template_random": "Random Event",
+  "script_template_advanced_lore": "Advanced Lorebook",
   "script_import": "Import Script",
   "script_import_js": "Paste JavaScript code",
   "script_import_json": "Paste JSON",
