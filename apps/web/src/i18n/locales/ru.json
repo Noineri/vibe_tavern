@@ -695,6 +695,8 @@
   "script_ai_generate": "Генерировать",
   "script_ai_stop": "Остановить",
   "script_ai_select_provider": "Выберите провайдер...",
+  "script_ai_search_provider": "Поиск провайдеров...",
+  "script_ai_search_model": "Поиск моделей...",
   "script_ai_generated": "Сгенерированный код",
   "script_ai_generating": "Генерация...",
   "script_ai_no_providers": "Нет настроенных провайдеров. Добавьте в Настройках.",
