@@ -14,6 +14,10 @@ RP Platform is a self-hosted roleplay chat application — a local alternative t
 - `mesExampleMode` on characters: `always` | `once` | `depth` — controls when example dialogues are included, with optional depth-based injection
 - Configure prompt presets (system prompt, jailbreak, summary prompt, tools, author's note, prefill)
 - Maintain user personas with name, description, pronouns
+- **Lorebook system** — keyword-activated entries with AND/OR/NOT logic, scan depth, recursive scanning, probability, cooldown/delay windows, position injection, group weights, per-entry overrides
+- **Script system** — user-written JavaScript executed in a sandboxed VM with `context` object API (chat messages, character data, persistent state). Janitor AI-compatible aliases. Synchronous execution ordered by `sort_order`.
+- **AI Script Assistant** — AI-powered script generation/refinement via SSE streaming, separate LLM call reusing provider infrastructure
+- **Build Mode** — unified editor panel for character, lorebooks, scripts, and prompt trace inspection
 - Record full prompt traces for debugging (which layers activated, token counts, final payload)
 - Summarize chat history via AI
 - Stream responses with reasoning support (DeepSeek R1 thinking, Claude extended thinking)
@@ -29,13 +33,24 @@ RP Platform is a self-hosted roleplay chat application — a local alternative t
 ```
 rp_platform/
 ├── apps/web/                    # Frontend SPA (React + Vite)
+│   └── src/
+│       ├── components/
+│       │   ├── editors/         # Build Mode editors (Lorebook, Script, Character)
+│       │   └── shared/          # Reusable components (CodeEditor, DropdownSelect, icons)
+│       ├── hooks/               # useBuildPanels, use-chat-controller, etc.
+│       ├── lib/                 # build-panel-registry, cn, avatar, character-tabs
+│       └── stores/              # Zustand stores (chat, character, navigation, modal)
 ├── packages/
 │   ├── domain/                  # Shared types, branded IDs, constants — zero logic
 │   ├── api-contracts/           # Zod schemas for HTTP request validation
 │   ├── db/                      # Drizzle ORM schema, SQLite stores, persistence
 │   ├── prompt-pipeline/         # Pure prompt assembly function — no I/O, no DB
 │   └── import-export/           # Character card and chat import/export (ST formats)
-├── services/api/                # Backend service (Hono server + business logic)
+├── services/api/
+│   └── src/
+│       ├── routes/              # Domain-split route modules (10 files)
+│       ├── ai/                  # Provider execution, tokenizer, sampler mapping
+│       └── session-runtime*.ts  # Session coordination sub-runtimes
 ├── scripts/                     # Build, dev supervisor, static serving
 ├── data/                        # Runtime data (SQLite DB, assets, traces)
 └── docker-compose.yml + Dockerfile
@@ -62,10 +77,12 @@ apps/web
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  Frontend (apps/web)  —  React/Vite SPA                  │
+│  BuildMode → BuildPanel registry → editors                │
+│  Sidebar reads build tabs from registry                   │
 └──────────────┬───────────────────────────────────────────┘
                │ HTTP / SSE
 ┌──────────────▼───────────────────────────────────────────┐
-│  routes.ts — Hono router, ~80 endpoints                  │
+│  routes/ — 10 domain modules, composed via Hono app.route │
 │  validates via zod schemas from @rp-platform/api-contracts│
 └──────────────┬───────────────────────────────────────────┘
                │ delegates to RuntimeApi interface
@@ -89,7 +106,7 @@ This is the most important flow in the system. Every other AI generation path (r
 ```
 POST /api/chats/:chatId/messages/stream
   │
-  ▼ routes.ts
+  ▼ routes/chat.ts
   RuntimeApiAdapter.sendMessageStream()
   │ resolveActiveProfileOrThrow()
   │
@@ -99,9 +116,22 @@ POST /api/chats/:chatId/messages/stream
   │   ├─ ChatApplicationService.appendUserMessage()      → DB: INSERT message
   │   └─ PromptAssemblyService.assembleForChat()
   │       ├─ StaticPromptResolver: load character, persona, preset from DB
+  │       │   ├─ listAllActiveForChat() → load lorebooks + entries
+  │       │   ├─ resolveActivatedEntries()                → lore-activation-engine
+  │       │   │   ├─ Keyword matching (AND/OR/NOT logic)
+  │       │   │   ├─ Scan depth, recursive scanning, probability
+  │       │   │   ├─ Cooldown/delay/sticky windows
+  │       │   │   └─ Group weights, character filters
+  │       │   ├─ executeScripts()                         → script-sandbox
+  │       │   │   ├─ Load enabled scripts for chat scope
+  │       │   │   ├─ Run in node:vm with 5s timeout
+  │       │   │   ├─ Scripts mutate character.personality/scenario
+  │       │   │   └─ Scripts read/write persistent state
+  │       │   └─ Persist activation state + script state to chat row
   │       ├─ Macro resolution ({{user}}, {{char}}, {{scenario}}, etc.)
   │       └─ assemblePrompt()                            → @rp-platform/prompt-pipeline
   │           ├─ Build layers (preset, character, persona, lore, memory, history)
+  │           ├─ Inject activated lore entries at configured positions/depths
   │           ├─ Compact history if context budget exceeded
   │           ├─ Sort by position (before_prompt → in_prompt → in_chat → hidden_system)
   │           ├─ Filter by AssemblyMode (chat / continue / regenerate / summary / tool_call)
@@ -120,6 +150,14 @@ POST /api/chats/:chatId/messages/stream
       ├─ ChatStore.saveTrace()                           → DB: INSERT prompt trace
       └─ SessionRuntime.getSnapshot()                    → full state for frontend
 ```
+
+**Pipeline order (summary):**
+
+```
+Load entities → resolve lorebooks → activation engine → scripts execute → assemble prompt → LLM call
+```
+
+Scripts run BEFORE prompt assembly. They can modify `context.character.personality` and `context.character.scenario`, which then flow into the assembled prompt as character data.
 
 ---
 
@@ -169,6 +207,8 @@ recent_history                 100   actual chat messages (budget-aware compacti
 preflight_compaction            50   metadata about compacted messages
 ```
 
+Activated lore entries are injected as `lore_entry` source type at their configured position and depth, with their own priority.
+
 **Compaction**: When `contextBudget` is set and history exceeds the budget, older messages are trimmed. The algorithm reserves `responseReserve` tokens (from the provider profile's `maxTokens`) for the model's response, then walks messages from the end, keeping as many as fit within `historyBudget = contextBudget - permanentTokens - responseReserve`. Always keeps at least the last 2 messages. `findSafeCompactionBoundary()` ensures assistant→tool pairs are not split.
 
 **Assembly modes** control which layers are active:
@@ -200,11 +240,17 @@ Drizzle ORM schema over SQLite with automatic migration on startup.
 3. `baselineLegacyDb()` — if DB has user tables but no `__drizzle_migrations` tracking table (pre-migration DB), reads `_journal.json`, computes SHA-256 hash of each `.sql` file, and inserts them as already-applied so `migrate()` skips them
 4. `migrate()` — apply any unapplied `.sql` files from `drizzle/` in journal order
 
-**Adding a new migration:**
-1. Edit `src/db-schema.ts` — add columns, tables, indexes
-2. Run `bun run db:generate` (or `bunx drizzle-kit generate`) from `packages/db/` — generates `drizzle/NNNN_name.sql` + updates `meta/_journal.json`
-3. Commit the generated `.sql` file and updated `_journal.json` to git
-4. Next app startup, `migrate()` applies the new migration automatically
+**Migrations:**
+
+| File | Content |
+|------|---------|
+| `0000_past_juggernaut.sql` | Initial schema: characters, chats, messages, branches, variants, personas, presets, providers, traces |
+| `0001_windy_santa_claus.sql` | Schema refinements |
+| `0002_classy_electro.sql` | Schema refinements |
+| `0003_bouncy_whizzer.sql` | Trace enrichment: token accounting, activated lore entries, script injections, retrieved memories, latency tracking |
+| `0004_trace_enrichment.sql` | Additional trace fields |
+| `0005_lorebook_enabled.sql` | `enabled` column on `lorebooks` table |
+| `0006_script_ai_prompt.sql` | `script_ai_system_prompt` column on `prompt_presets` table |
 
 **Key constraint:** The `_journal.json` entries must match the `__drizzle_migrations` rows in the DB. If a migration is in the journal but not in the DB, drizzle applies it. If a migration hash changes (edited SQL file), drizzle will prompt about data loss — never edit committed migration files.
 
@@ -212,10 +258,10 @@ Drizzle ORM schema over SQLite with automatic migration on startup.
 
 ```
 characters ←── chats ──→ personas
-  │  (avatarAssetId, avatarFullAssetId → assets)
-               │
-           chatBranches
-               │
+  │  (avatarAssetId, avatarFullAssetId → assets)        lorebooks ←── lore_entries
+               │                                              │
+           chatBranches                                   scripts
+               │                                      (same scope FK pattern)
            messages ←── messageVariants
                │
            promptTraces
@@ -228,14 +274,25 @@ promptPresets ──→ providerProfiles
 uiSettings (singleton row)
 ```
 
-Exposed via **store classes** (`CharacterStore`, `ChatStore`, `PersonaStore`, `PresetStore`, `ProviderStore`, `UiSettingsStore`) behind a `StoreContainer` facade created by `createStoreContainer(dbPath)`.
+**Lorebook/script scoping** — both `lorebooks` and `scripts` use the same FK pattern:
+
+```
+scopeType: "global" | "character" | "persona" | "chat"
+characterId: FK → characters (nullable, cascade delete)
+personaId:   FK → personas   (nullable, cascade delete)
+chatId:      FK → chats      (nullable, cascade delete)
+```
+
+Global scope: all three FKs null. Character scope: `characterId` set, etc.
+
+Exposed via **store classes** (`CharacterStore`, `ChatStore`, `PersonaStore`, `PresetStore`, `ProviderStore`, `UiSettingsStore`, `LorebookStore`, `ScriptStore`) behind a `StoreContainer` facade created by `createStoreContainer(dbPath)`.
 
 ### `packages/import-export`
 
 Parses external formats into internal domain types:
 - `chara-card-v3.ts` — SillyTavern character cards (V2, V3, and legacy no-spec format). PNG with embedded JSON via tEXt/iTXt chunks, or raw JSON. Accepts `chara_card_v2`, `chara_card_v3`, and spec-less cards with a `name` field.
 - `st-chat.ts` — SillyTavern JSONL chat exports. Extracts thinking tags from message content into the `reasoning` field on variants
-- `st-lorebook.ts` — SillyTavern lorebook exports
+- `st-lorebook.ts` — SillyTavern lorebook exports. Parses ST format into internal `LoreEntry` shape, mapping field name differences (`groupName`/`group`, `match_whole_words`/`matchWholeWords`, etc.)
 
 ### `services/api/`
 
@@ -245,7 +302,19 @@ The backend. Single Bun process serving HTTP API and static frontend.
 
 | File | Role |
 |------|------|
-| `routes.ts` | Hono router with ~80 endpoints. Defines `RuntimeApi` interface. |
+| `routes/index.ts` | Composes 10 domain sub-routers via `Hono.app.route()`. Defines `createApiRouter()`. |
+| `routes/types.ts` | `RuntimeApi` interface — contract between routes and business logic. |
+| `routes/helpers.ts` | Shared utilities (`readOptionalJson`). |
+| `routes/debug.ts` | Debug log + bootstrap + defaults endpoints. |
+| `routes/chat.ts` | Chat CRUD, messages, branches, summaries, forking, regeneration (streaming + non-streaming). Largest domain (~25 endpoints). |
+| `routes/character.ts` | Character CRUD, archive, export. |
+| `routes/persona.ts` | Persona CRUD, personal lorebook toggle. |
+| `routes/lorebook.ts` | Lorebook CRUD, entry CRUD, test activation, import. |
+| `routes/script.ts` | Script CRUD, test, import, AI assistant SSE endpoint. |
+| `routes/provider.ts` | Provider CRUD, test, model fetching, favorites. |
+| `routes/preset.ts` | Prompt preset CRUD. |
+| `routes/import.ts` | JSON import, SillyTavern directory scan + bulk import. |
+| `routes/asset.ts` | Asset upload/serve. |
 | `app-factory.ts` | Wires Hono app: CORS, error handling, health check, API routes, SPA static serving. |
 | `runtime-api-adapter.ts` | Implements `RuntimeApi`. Thin delegation layer — no business logic. Resolves active provider, handles asset cleanup. |
 
@@ -259,13 +328,83 @@ The backend. Single Bun process serving HTTP API and static frontend.
 | `session-runtime-character.ts` | `CharacterRuntime` — CRUD characters, archive/unarchive, promote system character on first edit. |
 | `session-runtime-persona.ts` | `PersonaRuntime` — CRUD personas, resolve defaults. |
 | `session-runtime-chat-order.ts` | `ChatOrderService` — in-memory ordered list of chat IDs, seeded from DB by `lastAccessedAt`. |
+| `session-runtime-lorebook.ts` | Lorebook module — CRUD lorebooks and entries, scope-aware listing, lorebook import. |
+| `session-runtime-store.ts` | Store creation and wiring. |
+| `session-runtime-presets.ts` | Preset-related session methods. |
+
+#### Lorebook system
+
+| File | Role |
+|------|------|
+| `lore-activation-engine.ts` | **Pure function** — takes lorebooks with entries + recent messages + activation state → returns activated entries + updated state. No DB access, no side effects. |
+| `packages/db/src/stores/lorebook-store.ts` | `LorebookStore` — CRUD for lorebooks and entries. `listAllActiveForChat()` loads all lorebooks matching a chat's scope (global + character + persona + chat), filtered by `enabled`. |
+| `prompt-resolver.ts` | `StaticPromptResolver.listActiveLoreEntries()` — orchestrates the full activation flow: load lorebooks → load messages → run activation engine → persist state. |
+
+**Activation engine** (`resolveActivatedEntries()`) evaluates each entry against:
+
+- **Keys** — primary + secondary keyword matching with configurable logic (`AND_ALL`, `AND_ANY`, `NOT_ALL`, `NOT_ANY`)
+- **Scan depth** — how many recent messages to scan (per-lorebook, per-entry override)
+- **Probability** — random chance check (0–100)
+- **Constant entries** — always activate (bypass keyword check)
+- **Cooldown/delay/sticky windows** — turn-based timing: `cooldownWindow` prevents re-activation, `delayWindow` skips first N turns, `stickyWindow` keeps activated for N turns
+- **Group weights** — entries in the same group compete; `groupWeight` determines selection probability
+- **Character filters** — activate only for specific characters (or exclude specific characters)
+- **Match sources** — where to look for keys: `scanned_text` (recent messages), `character_description`, `persona_description`
+- **Triggers** — what events cause activation: `on_message`, `on_activate`, `on_character_change`
+- **Recursion** — entries can activate other entries via `recursiveScanning` on the lorebook
+- **Macro resolution** — keys are resolved against `{{user}}`, `{{char}}`, etc. before matching
+
+**Runtime state** — activation state (`LoreActivationState`) is stored as a JSON column on the `chats` table, tracking per-entry activation turn numbers.
+
+#### Script system
+
+| File | Role |
+|------|------|
+| `script-sandbox.ts` | **Synchronous script execution** in `node:vm` with 5-second timeout. Builds `context` object with Janitor AI-compatible getter aliases. |
+| `packages/db/src/stores/script-store.ts` | `ScriptStore` — CRUD for scripts. `listAllEnabledForChat()` loads all enabled scripts matching a chat's scope, sorted by `sort_order`. |
+| `prompt-resolver.ts` | `StaticPromptResolver.executeScripts()` — loads scripts, resolves AI model context, delegates to `executeScripts()`. |
+
+**Script execution model:**
+
+1. Load all enabled scripts for the chat scope (global + character + persona + chat)
+2. Sort by `sort_order` ascending
+3. Execute **synchronously** in a `for...of` loop — NOT `Promise.all()`
+4. Each script runs in `node:vm` (`runInNewContext`) with a 5-second timeout
+5. Scripts receive a `context` object:
+   - `context.chat.messages` — full message array
+   - `context.chat.lastMessage` — getter for last message content
+   - `context.character.name` — read-only
+   - `context.character.personality` — mutable (scripts can `+=` to inject text)
+   - `context.character.scenario` — mutable (scripts can `+=` to inject text)
+   - `context.lore.activeEntries` — read-only array of activated lore entries
+   - `context.state.get(key, default?)` / `set(key, value)` / `increment(key, amount)` — persistent per-script state
+   - `context.random()`, `context.randomInt(min, max)`, `context.pick(arr)`, `context.weightedPick(entries)` — utility functions
+6. Janitor AI compatibility via getter-based `Object.defineProperty` aliases (e.g. `last_message` → `lastMessage`, `message_count` → `messageCount`)
+7. Errors are caught per-script and collected — execution continues to the next script
+8. After all scripts run, updated character data flows into prompt assembly
+
+**Runtime state** — script state is stored as a JSON column on the `chats` table, keyed by script ID.
+
+#### AI Script Assistant
+
+| File | Role |
+|------|------|
+| `script-ai-assistant.ts` | `streamScriptCode()` — SSE streaming generator. Takes a pre-resolved AI model, system prompt, and user request. Yields `{type: "text"}` chunks and `{type: "done"}` or `{type: "error"}`. |
+| `routes/script.ts` | `POST /api/scripts/ai-assistant` — resolves provider profile → model, calls `streamScriptCode()`, streams SSE response. |
+
+The AI assistant is a **separate LLM call**, not a prompt layer. It reuses the existing provider infrastructure (any configured provider/model). Key features:
+
+- System prompt includes full `context` API reference + coding rules + examples (`DEFAULT_SCRIPT_AI_PROMPT`)
+- Accepts `existingCode` for refinement/modification of current scripts
+- Customizable system prompt via `prompt_presets.script_ai_system_prompt` (editable in Prompt Manager)
+- Temperature: 0.3, max tokens: 4096
 
 #### Prompt and AI
 
 | File | Role |
 |------|------|
 | `prompt-assembly-service.ts` | `PromptAssemblyService` — loads context from DB, calls `assemblePrompt()`, returns assembled prompt + trace draft. |
-| `prompt-resolver.ts` | `StaticPromptResolver` — reads character/persona/preset/lore from stores. (Phase 1: lore and memory return empty.) |
+| `prompt-resolver.ts` | `StaticPromptResolver` — reads character/persona/preset/lore from stores. Orchestrates lorebook activation and script execution. |
 | `live-chat-orchestrator.ts` | `LiveChatOrchestrator` — coordinates prepare → execute → append for all generation paths (send, generate, regenerate, streaming and non-streaming). Passes `contextBudget` and `responseReserve` from provider profile to prompt assembly. |
 | `chat-summary-service.ts` | `ChatSummaryService` — summarize chat via AI, using summary-mode prompt assembly. |
 
@@ -291,6 +430,7 @@ The backend. Single Bun process serving HTTP API and static frontend.
 | `prompt-preset-service.ts` | CRUD prompt presets. |
 | `asset-service.ts` | Upload/serve/cleanup avatar images (jpg, png, gif, webp). Handles both cropped and full-size assets per entity. |
 | `session-runtime-dto.ts` | Mappers: message → DTO (with variants), prompt trace → DTO, provider profile → client-safe (strips apiKey), lore entry activation logic. |
+| `st-directory-scanner.ts` | SillyTavern directory bulk import: scans `characters/`, `chats/`, `worlds/` directories, groups files, handles PNG chunk extraction. |
 | `errors.ts` | `DomainError` with kind (NotFound/Validation/Conflict/Provider/Cancelled/Unauthorized/Internal) → HTTP status mapping. |
 | `send-debug-log.ts` | Append-only debug log to `logs/send-debug.log` with automatic secret redaction. |
 
@@ -311,12 +451,13 @@ The backend. Single Bun process serving HTTP API and static frontend.
 
 ## Database conventions
 
-- **IDs:** Prefixed strings (`char_...`, `chat_...`, `msg_...`, `branch_...`, `variant_...`, `persona_...`, `provider_...`, `prompt_preset_...`, `trace_...`)
-- **JSON columns:** Stored as text, suffixed `Json` in schema (e.g. `tagsJson`, `alternateGreetingsJson`). Parsed on read.
+- **IDs:** Prefixed strings (`char_...`, `chat_...`, `msg_...`, `branch_...`, `variant_...`, `persona_...`, `provider_...`, `prompt_preset_...`, `trace_...`, `lb_...` for lorebooks, `le_...` for lore entries, `script_...` for scripts)
+- **JSON columns:** Stored as text, suffixed `Json` in schema (e.g. `tagsJson`, `alternateGreetingsJson`, `keysJson`, `scriptStateJson`). Parsed on read.
 - **Timestamps:** ISO 8601 strings, not Unix timestamps.
-- **Deletion:** Cascading where appropriate (character → chats → messages). `set null` for persona references.
+- **Deletion:** Cascading where appropriate (character → chats → messages, lorebook → entries). `set null` for persona references.
 - **Message history:** `messageHistoryLimit` on chats (0 = unlimited, all messages passed to pipeline). Pipeline compaction handles actual trimming.
 - **Batch queries:** `getVariantsByBranch(branchId)` loads all variants for a branch in a single JOIN query instead of N+1 individual queries.
+- **Scope FKs:** Lorebooks and scripts use separate nullable FKs (`characterId`, `personaId`, `chatId`) rather than polymorphic associations. Each scope level is a separate query, unioned.
 
 ---
 
@@ -337,20 +478,66 @@ Traces are stored in `promptTraces` table and exported as JSON files under `data
 
 ## Frontend (apps/web)
 
-React SPA built with Vite. Communicates exclusively via the HTTP API defined in `routes.ts`. Key features:
+React SPA built with Vite. Communicates exclusively via the HTTP API defined in `routes/`. Key features:
 
 - Character management (create, edit, import, archive)
 - Chat interface with streaming responses and reasoning display
 - Branch navigation and message variant selection
 - Provider profile configuration and model selection
-- Prompt preset editor
+- Prompt preset editor (chat prompts + service prompts including script AI system prompt)
 - Persona management
+- **Build Mode** — unified editor panel with dynamic tab registration
+- **Lorebook editor** — scope tabs, lorebook accordions, entry editor (Simple + Advanced modes), import wizard, activation tester
+- **Script editor** — script list, CodeMirror 6 code editor, AI assistant modal, script templates, API reference
 - Multi-language support (en, ru) via i18n
 - Asset upload for character avatars (cropped thumbnail + original full-size)
 - Avatar crop modal (canvas-based circular crop with zoom slider and scroll-to-zoom)
 - Avatar panel (floating draggable, zoomable full-size avatar preview)
 - Context usage display: permanent vs temporary token breakdown from assembled prompt layers
 - Build mode: field-based token counting for character cards (no dependency on sending messages)
+
+### BuildPanel registry
+
+Dynamic tab registration system for Build Mode. Allows new panels to be added without modifying `BuildMode.tsx` or `Sidebar.tsx`.
+
+**Files:**
+
+| File | Role |
+|------|------|
+| `lib/build-panel-registry.ts` | `registerBuildPanel(descriptor)` — registers a panel. `getBuildPanels()` / `subscribeBuildPanels()` for reactive reads. |
+| `hooks/use-build-panels.ts` | `useBuildPanels()` — React hook using `useSyncExternalStore`. |
+| `lib/register-core-panels.tsx` | Registers core panels: character, lorebook, trace. Auto-imported from `main.tsx`. |
+
+**Panel descriptor:**
+
+```ts
+interface BuildPanelDescriptor {
+  id: string;           // unique tab id
+  icon: ReactNode;      // icon component
+  labelKey: string;     // i18n key for sidebar label
+  fullBleed?: boolean;  // no padding, no max-width (used by lorebook/scripts)
+  render: (ctx: BuildPanelContext) => ReactNode;
+}
+```
+
+`BuildMode.tsx` reads panels from the registry via `useBuildPanels()` and renders the active panel. `Sidebar.tsx` reads the same registry for both collapsed (icon-only) and expanded (icon + label) navigation. Character and trace panels are special-cased in `BuildMode` for their form/trace logic; all other panels use the generic `render()` path.
+
+### Editors (`components/editors/`)
+
+| File | Role |
+|------|------|
+| `LorebookEditor.tsx` | World & Logic panel. Scope column (vertical icons) → lorebook list (accordions) → entry list → entry editor. Two modes: Simple (keys + content + test) and Advanced (all ST fields). Full-bleed layout. |
+| `ScriptEditor.tsx` | Script list → code editor → AI assistant modal. Pick-card navigation matching LorebookEditor pattern. |
+| `CharacterForm.tsx` | Character editing form with avatar upload, all character fields. Centered layout with `max-w-4xl`. |
+| `scriptTemplates.ts` | 7 RP-relevant script templates: relationship progression, scenario events, memory tracking, dynamic lorebook, advanced lorebook, HP tracker, random event. Inserted into current script or create new. |
+
+### Shared components (`components/shared/`)
+
+| File | Role |
+|------|------|
+| `CodeEditor.tsx` | React wrapper around CodeMirror 6. JS syntax highlighting, custom dark theme using CSS vars + oklch, line numbers, bracket matching. `value`/`onChange` props. |
+| `DropdownSelect.tsx` | Portal-based dropdown with search, click-outside dismiss, disabled state. Reusable across the app. |
+| `icons.tsx` | All UI icons as React components (`Ic.*` system — no emojis). |
 
 ### Frontend data architecture
 
@@ -386,7 +573,7 @@ The message list uses `@tanstack/react-virtual` to render only visible messages 
 
 ## Bun-native migration
 
-The project targets a standalone `bun build --compile` executable. To minimize Node.js dependency and maximize Bun-native API usage, a systematic migration was performed:
+The project targets a standalone `bun build --compile` executable. To minimize Node.js dependency and maximize Bun-native API usage, a systematic migration was performed.
 
 ### Completed migrations
 
@@ -398,7 +585,7 @@ The project targets a standalone `bun build --compile` executable. To minimize N
 | `mkdirSync` | `mkdir` from `node:fs/promises` | All server entry points, scripts, debug log |
 | `cpSync` / `rmSync` | `cp` / `rm` from `node:fs/promises` | `build-standalone.ts` |
 | `node:crypto` `createHash('sha1')` / `createHash('sha256')` | `new Bun.CryptoHasher('sha1')` / `Bun.CryptoHasher('sha256')` | `shared.ts`, `file-store.ts` |
-| `Buffer.from` | `Uint8Array` / `TextEncoder` | `file-store.ts`, `asset-service.ts`, `routes.ts` |
+| `Buffer.from` | `Uint8Array` / `TextEncoder` | `file-store.ts`, `asset-service.ts`, route files |
 | `require('bun:sqlite')` | `import` from `'bun:sqlite'` | `repair-thinking-tags.ts` |
 | Bare `'path'` / `'fs'` imports | `'node:path'` / `'node:fs/promises'` | All files |
 | `__dirname` / `__filename` | `import.meta.dir` / `import.meta.file` | `tokenizer-service.ts` |
@@ -462,6 +649,15 @@ PNG cards embed JSON in `tEXt`/`iTXt` chunks with keyword `chara` (V2) or `ccv3`
 3. When `skipExisting: true`: character data is updated but no new chat is created; returns existing chat so avatars can still be mapped
 4. Create a new chat for the character (or return existing if skipped)
 5. Return `ImportResult` with `activeChatId`, `snapshot`, and `imported` metadata
+
+### Lorebook import
+
+`POST /api/lorebooks/:lorebookId/import` — accepts SillyTavern lorebook JSON. Two modes:
+
+- **Existing lorebook** (`lorebookId` is a real ID) — imports entries into the specified lorebook
+- **Create new** (`lorebookId = "new"`) — creates a new lorebook with imported entries
+
+The importer (`st-lorebook.ts`) maps ST-specific field names to internal names, handles missing optional fields, and creates entries with proper defaults.
 
 ### SillyTavern directory bulk import
 
