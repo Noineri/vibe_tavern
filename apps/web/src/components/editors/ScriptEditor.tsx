@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ic } from "../shared/icons.js";
 import { CodeEditor } from "../shared/CodeEditor.js";
+import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import {
@@ -68,8 +69,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const [aiStreaming, setAiStreaming] = useState(false);
   const [aiStreamedCode, setAiStreamedCode] = useState("");
   const [aiError, setAiError] = useState<string | null>(null);
-  const [aiProvDropdown, setAiProvDropdown] = useState(false);
-  const [aiModelDropdown, setAiModelDropdown] = useState(false);
+
   const aiAbortRef = useRef<AbortController | null>(null);
 
   // ── Queries ──────────────────────────────────────────────
@@ -224,7 +224,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         </div>
       )}
       {aiHelperOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => { if (!aiStreaming) { setAiHelperOpen(false); setAiProvDropdown(false); setAiModelDropdown(false); } }}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => { if (!aiStreaming) setAiHelperOpen(false); }}>
           <div className="flex w-[560px] max-w-[90vw] flex-col overflow-hidden rounded-xl border border-border bg-surface" style={{ maxHeight: "85vh" }} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-border" style={{ padding: "16px 20px" }}>
               <span className="text-sm font-semibold text-t1">{t("script_ai_helper")}</span>
@@ -236,38 +236,27 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 16 }}>
-                    <div className="relative">
+                    <div>
                       <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_connection")}</label>
-                      <button type="button" onClick={() => { setAiProvDropdown(v => !v); setAiModelDropdown(false); }} className="flex w-full items-center justify-between rounded-[6px] border border-border bg-s2 px-[13px] py-[7px] font-ui text-[13px] text-t1 transition-[border-color] duration-150 hover:border-accent">
-                        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">{selectedProfile?.name || t("script_ai_select_provider")}</span>
-                        <span className="ml-2 shrink-0 text-t3">{Ic.caret("d")}</span>
-                      </button>
-                      {aiProvDropdown && (
-                        <div className="absolute left-0 right-0 top-full z-[110] mt-1 overflow-hidden rounded-md border border-border shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
-                          <div className="max-h-[200px] overflow-y-auto bg-surface p-1">
-                            {providerProfiles.map(p => (
-                              <div key={p.id} onClick={() => { setAiProviderId(p.id); setAiModelName(""); setAiProvDropdown(false); }} className={cn("flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] transition-colors", p.id === aiProviderId ? "bg-accent-dim font-medium text-accent-t" : "text-t2 hover:bg-s2 hover:text-t1")}>{p.name}</div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                      <DropdownSelect
+                        value={aiProviderId}
+                        options={providerProfiles.map(p => ({ id: p.id, label: p.name }))}
+                        placeholder={t("script_ai_select_provider")}
+                        searchPlaceholder={t("script_ai_search_provider")}
+                        onChange={id => { setAiProviderId(id); setAiModelName(""); }}
+                      />
                     </div>
-                    <div className="relative">
+                    <div>
                       <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_model")}</label>
-                      <button type="button" onClick={() => { setAiModelDropdown(v => !v); setAiProvDropdown(false); }} className="flex w-full items-center justify-between rounded-[6px] border border-border bg-s2 px-[13px] py-[7px] font-ui text-[13px] text-t1 transition-[border-color] duration-150 hover:border-accent">
-                        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">{aiModelName ? (providerModels.find(m => m.id === aiModelName)?.label || aiModelName) : (selectedProfile?.defaultModel || "Default")}</span>
-                        <span className="ml-2 shrink-0 text-t3">{Ic.caret("d")}</span>
-                      </button>
-                      {aiModelDropdown && (
-                        <div className="absolute left-0 right-0 top-full z-[110] mt-1 overflow-hidden rounded-md border border-border shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
-                          <div className="max-h-[200px] overflow-y-auto bg-surface p-1">
-                            <div onClick={() => { setAiModelName(""); setAiModelDropdown(false); }} className={cn("flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] transition-colors", !aiModelName ? "bg-accent-dim font-medium text-accent-t" : "text-t2 hover:bg-s2 hover:text-t1")}>{selectedProfile?.defaultModel || "Default"}</div>
-                            {providerModels.map(m => (
-                              <div key={m.id} onClick={() => { setAiModelName(m.id); setAiModelDropdown(false); }} className={cn("flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] transition-colors", m.id === aiModelName ? "bg-accent-dim font-medium text-accent-t" : "text-t2 hover:bg-s2 hover:text-t1")}>{m.label || m.id}</div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                      <DropdownSelect
+                        value={aiModelName}
+                        options={providerModels.map(m => ({ id: m.id, label: m.label || m.id }))}
+                        placeholder={selectedProfile?.defaultModel || "Default"}
+                        searchPlaceholder={t("script_ai_search_model")}
+                        defaultOption={selectedProfile?.defaultModel || "Default"}
+                        onChange={id => setAiModelName(id)}
+                        disabled={!aiProviderId}
+                      />
                     </div>
                   </div>
                   <div style={{ marginBottom: 16 }}>

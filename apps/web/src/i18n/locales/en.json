@@ -698,6 +698,8 @@
   "script_ai_generate": "Generate",
   "script_ai_stop": "Stop",
   "script_ai_select_provider": "Select provider...",
+  "script_ai_search_provider": "Search providers...",
+  "script_ai_search_model": "Search models...",
   "script_ai_generated": "Generated code",
   "script_ai_generating": "Generating...",
   "script_ai_no_providers": "No providers configured. Add one in Settings.",
