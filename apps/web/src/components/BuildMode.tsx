@@ -9,6 +9,7 @@ import { Ic } from "./shared/icons";
 import { cn } from "../lib/cn";
 import { CharacterForm } from "./build/CharacterForm.js";
 import { LorebookEditor } from "./build/LorebookEditor.js";
+import { ScriptEditor } from "./build/ScriptEditor.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { useT } from "../i18n/context.js";
 import { useCharacterStore } from "../stores/character-store.js";
@@ -19,8 +20,8 @@ import { useBootstrapQuery } from "../queries/bootstrap-queries.js";
 import { useChatSnapshot } from "../queries/chat-queries.js";
 import { useChatStore } from "../stores/index.js";
 
-export type BuildTab = "character" | "lorebook" | "trace";
-type InternalBuildTab = "char" | "lorebooks" | "trace";
+export type BuildTab = "character" | "lorebook" | "scripts" | "trace";
+type InternalBuildTab = "char" | "lorebooks" | "scripts" | "trace";
 
 export type { BuildCharacterDraft };
 
@@ -99,6 +100,8 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
   useEffect(() => {
     if (buildTab === "trace") setActive("trace");
     if (buildTab === "character") setActive("char");
+    if (buildTab === "lorebook") setActive("lorebooks");
+    if (buildTab === "scripts") setActive("scripts");
   }, [buildTab]);
 
   const form = useForm<BuildCharacterDraft>({
@@ -144,6 +147,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
   const navItems: Array<{ id: InternalBuildTab; icon: ReactNode; label: string }> = [
     { id: "char", icon: <Ic.wrench />, label: t("build_char_card") },
     { id: "lorebooks", icon: <Ic.book />, label: t("build_lorebooks") },
+    { id: "scripts", icon: <Ic.terminal />, label: t("build_scripts") },
     { id: "trace", icon: <Ic.trace />, label: t("build_prompt_trace") },
   ];
 
@@ -288,6 +292,14 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
             characterId={characterId}
             chatId={activeChatId}
             personaId={personaId}
+          />
+        )}
+        {active === "scripts" && (
+          <ScriptEditor
+            characterId={characterId}
+            chatId={activeChatId}
+            personaId={personaId}
+            onBack={() => setActive("char")}
           />
         )}
         {active === "trace" && renderTraceContent()}
