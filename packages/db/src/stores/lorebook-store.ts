@@ -37,6 +37,8 @@ export interface CreateLoreEntryData {
   probability?: number;
   role?: string;
   group?: string;
+  /** Alias accepted from API (Zod schema uses groupName) */
+  groupName?: string;
   groupWeight?: number;
   prioritizeInclusion?: boolean;
   excludeRecursion?: boolean;
@@ -210,6 +212,19 @@ export class LorebookStore {
     await this.db.delete(lorebooks).where(eq(lorebooks.id, id)).run();
   }
 
+  async deleteAllEntries(lorebookId: string): Promise<void> {
+    await this.db.delete(loreEntries).where(eq(loreEntries.lorebookId, lorebookId)).run();
+  }
+
+  async bulkCreateEntries(lorebookId: string, entries: CreateLoreEntryData[]): Promise<number> {
+    let count = 0;
+    for (const data of entries) {
+      await this.createEntry(lorebookId, data);
+      count++;
+    }
+    return count;
+  }
+
   // ─── Lore Entry CRUD ───────────────────────────────────────────────────────
 
   async getEntry(id: string): Promise<LoreEntry | null> {
@@ -291,6 +306,7 @@ export class LorebookStore {
     if (data.probability !== undefined) values.probability = data.probability;
     if (data.role !== undefined) values.role = data.role;
     if (data.group !== undefined) values.groupName = data.group;
+    if (data.groupName !== undefined) values.groupName = data.groupName;
     if (data.groupWeight !== undefined) values.groupWeight = data.groupWeight;
     if (data.prioritizeInclusion !== undefined) values.prioritizeInclusion = data.prioritizeInclusion ? 1 : 0;
     if (data.excludeRecursion !== undefined) values.excludeRecursion = data.excludeRecursion ? 1 : 0;

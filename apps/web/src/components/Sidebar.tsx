@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { ChatId, ChatBranchId, ChatBranch } from "@rp-platform/domain";
 import type { ChatListItem } from "../app-client.js";
 import type { CharacterTab } from "./app-shell-types.js";
+import type { BuildTab } from "./BuildMode.js";
 import { initials } from "./app-shell-helpers.js";
 import { Icons } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
@@ -27,6 +28,9 @@ export function Sidebar() {
 
   // --- Store subscriptions ---
   const sidebarCollapsed = useNavigationStore((s) => s.sidebarCollapsed);
+  const mode = useNavigationStore((s) => s.mode);
+  const buildTab = useCharacterStore((s) => s.buildTab);
+  const setBuildTab = useCharacterStore((s) => s.setBuildTab);
   const activeChatId = useChatStore((s) => s.activeChatId);
   const selectedCharacterId = useChatStore((s) => s.selectedCharacterId);
   const snapshotQuery = useChatSnapshot(activeChatId);
@@ -76,6 +80,8 @@ export function Sidebar() {
   const chatMenuRef = useRef<HTMLDivElement | null>(null);
   const branchPopRef = useRef<HTMLDivElement | null>(null);
   const [importModal, setImportModal] = useState<"character" | "chat" | null>(null);
+  const [charSwitcherOpen, setCharSwitcherOpen] = useState(false);
+  const charSwitcherRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent): void {
@@ -83,6 +89,7 @@ export function Sidebar() {
       if (charMenuRef.current && !charMenuRef.current.contains(target)) setCharMenuId(null);
       if (chatMenuRef.current && !chatMenuRef.current.contains(target)) setChatMenuId(null);
       if (branchPopRef.current && !branchPopRef.current.contains(target)) setBranchPopId(null);
+      if (charSwitcherRef.current && !charSwitcherRef.current.contains(target)) setCharSwitcherOpen(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -119,7 +126,7 @@ export function Sidebar() {
         </button>
       </div>
 
-      {sidebarCollapsed && (
+      {sidebarCollapsed && mode === 'play' && (
         <div className="flex min-h-0 flex-1 flex-col items-center">
           <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto py-2">
             {characterTabs.map((tab) => {
@@ -172,14 +179,79 @@ export function Sidebar() {
 
           <div className="flex shrink-0 flex-col items-center gap-1 py-2">
             <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)} title={t("sidebar_prompt_manager")}><Icons.Terminal /></div>
-            <div className="flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)} title={personaName}>
+            <div className="flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)} title={personaName}>
               {personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(personaName)}
             </div>
           </div>
         </div>
       )}
 
-      {!sidebarCollapsed && (
+      {sidebarCollapsed && mode === 'build' && (
+        <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto px-0 py-2">
+          <div
+            className={cn('flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all duration-150 hover:rounded-xl hover:bg-s2', charSwitcherOpen && 'rounded-xl bg-accent-dim ring-2 ring-accent')}
+            onClick={() => setCharSwitcherOpen(v => !v)}
+            title={snapshot?.character?.name ?? t('switch_character')}
+          >
+            <span className="flex h-full w-full items-center justify-center rounded-full bg-accent font-ui text-sm text-on-accent">
+              {snapshot?.character?.avatarAssetId
+                ? <img src={avatarUrl(snapshot.character.avatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
+                : initials(snapshot?.character?.name ?? '?')}
+            </span>
+          </div>
+          {charSwitcherOpen && (
+            <div className="max-h-[280px] overflow-y-auto rounded-lg border border-border bg-surface p-1 shadow-theme-md z-[200]" ref={charSwitcherRef} style={{ width: 52 }}>
+              <div className="grid grid-cols-1 gap-1">
+              {characterTabs.map(tab => (
+                <div
+                  key={tab.id}
+                  className={cn('flex h-10 w-10 mx-auto cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all hover:bg-s2', tab.id === snapshot?.character?.id && 'ring-2 ring-accent')}
+                  onClick={() => {
+                    if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); }
+                    else { void character.handleCreateChat(tab.id); }
+                    setCharSwitcherOpen(false);
+                  }}
+                  title={tab.name}
+                >
+                  {tab.avatarAssetId
+                    ? <img className="h-full w-full object-cover object-top" src={avatarUrl(tab.avatarAssetId)} alt={tab.name} />
+                    : <span className="flex h-full w-full items-center justify-center rounded-full bg-s3 font-ui text-xs text-t2">{initials(tab.name)}</span>}
+                </div>
+              ))}
+              </div>
+            </div>
+          )}
+
+          <div className="my-1 h-px w-8 shrink-0 bg-border" />
+
+          {([
+            { id: 'character' as BuildTab, icon: <Icons.Wrench /> },
+            { id: 'lorebook' as BuildTab, icon: <Icons.Book /> },
+            { id: 'trace' as BuildTab, icon: <Icons.Trace /> },
+          ]).map((item) => (
+            <div
+              key={item.id}
+              className={cn(
+                'flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-all duration-150 hover:rounded-xl hover:bg-s2',
+                buildTab === item.id && 'rounded-xl bg-accent-dim text-accent-t'
+              )}
+              onClick={() => setBuildTab(item.id)}
+              title={t(`sidebar_build_${item.id === 'character' ? 'char' : item.id === 'lorebook' ? 'lore' : item.id}`)}
+            >
+              {item.icon}
+            </div>
+          ))}
+
+          <div className="mt-auto flex shrink-0 flex-col items-center gap-1">
+            <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)} title={t("sidebar_prompt_manager")}><Icons.Terminal /></div>
+            <div className="flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)} title={personaName}>
+              {personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(personaName)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!sidebarCollapsed && mode === 'play' && (
         <>
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <section className="min-h-0 max-h-[50%] overflow-y-auto border-b border-border py-1.5">
@@ -557,6 +629,104 @@ export function Sidebar() {
               <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">
                 {t("sidebar_your_persona")}
               </span>
+            </div>
+          </section>
+        </>
+      )}
+
+      {!sidebarCollapsed && mode === 'build' && (
+        <>
+          {/* Character switcher */}
+          <div className="shrink-0 border-b border-border" style={{ padding: '10px 12px' }}>
+            <div className="relative" ref={charSwitcherRef}>
+              <div
+                className="flex cursor-pointer items-center gap-2.5 rounded-lg transition-colors hover:bg-s2"
+                style={{ padding: '6px 8px' }}
+                onClick={() => setCharSwitcherOpen(v => !v)}
+              >
+                <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full', snapshot?.character?.avatarAssetId ? '' : 'bg-accent text-on-accent')}>
+                  {snapshot?.character?.avatarAssetId ? (
+                    <img className="h-full w-full object-cover object-top" src={avatarUrl(snapshot.character.avatarAssetId)} alt="" />
+                  ) : (
+                    <span className="font-ui text-sm">{initials(snapshot?.character?.name ?? '?')}</span>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{snapshot?.character?.name ?? t('unnamed')}</div>
+                  <div className="truncate text-[calc(var(--ui-fs)-3px)] text-t3">{t('sidebar_editing_character')}</div>
+                </div>
+                <Icons.Caret direction={charSwitcherOpen ? "u" : "d"} />
+              </div>
+              {charSwitcherOpen && (
+                <div className="absolute left-0 right-0 top-full z-[200] mt-1 max-h-[240px] overflow-y-auto rounded-lg border border-border bg-surface py-1 shadow-theme-md">
+                  {characterTabs.map(tab => (
+                    <div
+                      key={tab.id}
+                      className={cn('flex cursor-pointer items-center gap-2.5 transition-colors hover:bg-s2', tab.id === snapshot?.character?.id && 'bg-accent-dim')}
+                      style={{ padding: '6px 12px' }}
+                      onClick={() => {
+                        if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); }
+                        else { void character.handleCreateChat(tab.id); }
+                        setCharSwitcherOpen(false);
+                      }}
+                    >
+                      <div className={cn('flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full', tab.avatarAssetId ? '' : tab.id === snapshot?.character?.id ? 'bg-accent text-on-accent' : 'bg-s3 text-t2')}>
+                        {tab.avatarAssetId
+                          ? <img className="h-full w-full object-cover object-top" src={avatarUrl(tab.avatarAssetId)} alt={tab.name} />
+                          : <span className="font-ui text-[calc(var(--ui-fs)-4px)]">{initials(tab.name)}</span>}
+                      </div>
+                      <span className={cn('truncate text-[calc(var(--ui-fs)-1px)]', tab.id === snapshot?.character?.id ? 'text-accent-t font-medium' : 'text-t2')}>{tab.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Build sections navigation */}
+          <div className="flex-1 overflow-y-auto py-1">
+            <div className="font-ui text-[calc(var(--ui-fs)-5px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ padding: '9px 15px 7px' }}>{t('sidebar_build_editor')}</div>
+            {([
+              { id: 'character' as BuildTab, icon: <Icons.Wrench />, label: t('sidebar_build_char') },
+              { id: 'lorebook' as BuildTab, icon: <Icons.Book />, label: t('sidebar_build_lore') },
+              { id: 'trace' as BuildTab, icon: <Icons.Trace />, label: t('sidebar_build_trace') },
+            ]).map((navItem) => (
+              <div
+                key={navItem.id}
+                className={cn(
+                  'mx-1 flex cursor-pointer items-center gap-2.5 rounded px-3.5 py-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2 transition-all hover:bg-s2 hover:text-t1',
+                  buildTab === navItem.id && 'bg-accent-dim text-accent-t'
+                )}
+                onClick={() => setBuildTab(navItem.id)}
+              >
+                {navItem.icon}
+                <span>{navItem.label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Footer */}
+          <section className="shrink-0 border-t border-border px-1 py-1.5">
+            <div
+              className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
+              role="button" tabIndex={0}
+              onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent font-ui text-[calc(var(--ui-fs)-3px)] not-italic text-t2">
+                <Icons.Terminal />
+              </span>
+              <span>{t('sidebar_prompt_manager')}</span>
+            </div>
+            <div
+              className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
+              role="button" tabIndex={0}
+              onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">
+                {personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(personaName)}
+              </span>
+              <span>{personaName}</span>
+              <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">{t('sidebar_your_persona')}</span>
             </div>
           </section>
         </>

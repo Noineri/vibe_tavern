@@ -37,13 +37,14 @@ export interface RuntimeApi {
   setPersonalLorebookEnabled: (personaId: string, enabled: boolean) => unknown;
   listLorebooks: (scopeType: string, ownerId?: string) => Promise<unknown>;
   createLorebook: (body: { name: string; description?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean }) => Promise<unknown>;
-  updateLorebookMeta: (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean }) => Promise<unknown>;
+  updateLorebookMeta: (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean; scopeType?: string }) => Promise<unknown>;
   deleteLorebook: (lorebookId: string) => Promise<void>;
   createLoreEntry: (lorebookId: string, body: Record<string, unknown>) => Promise<unknown>;
   updateLoreEntry: (lorebookId: string, entryId: string, body: Record<string, unknown>) => Promise<unknown>;
   deleteLoreEntry: (lorebookId: string, entryId: string) => Promise<void>;
   listLoreEntries: (lorebookId: string) => Promise<unknown>;
   testLoreActivation: (lorebookId: string, body: { text: string }) => Promise<unknown>;
+  importLorebook: (lorebookId: string | null, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string }) => Promise<unknown>;
   // ── Scripts ──
   listScripts: (scopeType: string, ownerId?: string) => Promise<unknown>;
   getScript: (scriptId: string) => Promise<unknown>;
@@ -385,6 +386,12 @@ export function createApiRouter(runtime: RuntimeApi) {
     .delete("/api/lorebooks/:lorebookId/entries/:entryId", async (c) => {
       await runtime.deleteLoreEntry(c.req.param("lorebookId"), c.req.param("entryId"));
       return c.json({ ok: true });
+    })
+    .post("/api/lorebooks/:lorebookId/import", zValidator("json", schemas.importLorebookSchema), async (c) => {
+      const body = c.req.valid("json");
+      const lorebookIdParam = c.req.param("lorebookId");
+      const lorebookId = lorebookIdParam === "new" ? null : lorebookIdParam;
+      return c.json(await runtime.importLorebook(lorebookId, { format: body.format, data: body.data, mode: body.mode, scopeType: body.scopeType, characterId: body.characterId, personaId: body.personaId, chatId: body.chatId, fallbackName: body.fallbackName }), 201);
     })
     // ── Scripts ──
     .get("/api/scripts", async (c) => {

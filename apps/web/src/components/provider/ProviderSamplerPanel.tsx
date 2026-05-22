@@ -160,9 +160,10 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
             min="1"
             step="1"
             value={form.maxTokens}
-            onChange={(e) =>
-              updateForm('maxTokens', parseInt(e.target.value) || 500)
-            }
+            onChange={(e) => {
+              const v = e.target.value;
+              updateForm('maxTokens', v === '' ? -1 : Number(v));
+            }}
             className={textInputCls}
           />
         </div>

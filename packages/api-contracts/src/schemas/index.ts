@@ -16,6 +16,7 @@ export {
   testActivationSchema,
   createLoreEntrySchema,
   updateLoreEntrySchema,
+  importLorebookSchema,
 } from "./lorebook-schema.js";
 export {
   testProviderDraftSchema,

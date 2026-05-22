@@ -781,6 +781,11 @@ export async function deleteLoreEntry(lorebookId: string, entryId: string): Prom
   }
 }
 
+export async function importLorebookEntries(lorebookId: string, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }): Promise<{ lorebookId?: string; imported: number; skipped: number; warnings: string[] }> {
+  const response = await client.api.lorebooks[":lorebookId"].import.$post({ param: { lorebookId }, json: body as { format: "st"; data: unknown; mode: "new"; scopeType?: string; characterId?: string; personaId?: string; chatId?: string } });
+  return unwrapRpc<{ lorebookId?: string; imported: number; skipped: number; warnings: string[] }>(response);
+}
+
 // ── Lorebook-level CRUD ─────────────────────────────────────────────
 
 export async function listLorebooks(scopeType: string, ownerId?: string): Promise<LorebookRecord[]> {
@@ -793,7 +798,7 @@ export async function createLorebook(body: { name: string; description?: string;
   return unwrapRpc<LorebookRecord>(response);
 }
 
-export async function updateLorebookMeta(lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean; enabled?: boolean }): Promise<LorebookRecord> {
+export async function updateLorebookMeta(lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean; enabled?: boolean; scopeType?: string }): Promise<LorebookRecord> {
   const response = await client.api.lorebooks[":lorebookId"].$patch({ param: { lorebookId }, json: body });
   return unwrapRpc<LorebookRecord>(response);
 }
