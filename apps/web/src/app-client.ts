@@ -431,6 +431,7 @@ export async function sendChatMessageStream(
   opts.onStatus("streaming");
   return parseSSEStream({
     response,
+    signal: opts.signal,
     onStatus: opts.onStatus,
     onChunk: opts.onChunk,
     onReasoningChunk: opts.onReasoningChunk,
@@ -465,6 +466,7 @@ export async function regenerateChatMessageStream(
   opts.onStatus("streaming");
   return parseSSEStream({
     response,
+    signal: opts.signal,
     onStatus: opts.onStatus,
     onChunk: opts.onChunk,
     onReasoningChunk: opts.onReasoningChunk,
@@ -510,6 +512,7 @@ export async function generateReplyStream(
   opts.onStatus("streaming");
   return parseSSEStream({
     response,
+    signal: opts.signal,
     onStatus: opts.onStatus,
     onChunk: opts.onChunk,
     onReasoningChunk: opts.onReasoningChunk,

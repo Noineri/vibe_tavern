@@ -22,8 +22,36 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
   let usage: Record<string, number> | undefined;
   let currentEvent = "";
 
+  // Early exit if already aborted
+  if (opts.signal?.aborted) {
+    opts.onStatus("cancelled");
+    return { finishReason: "cancelled", usage };
+  }
+
+  // When the caller aborts, cancel the reader AND reject the pending read
+  // via Promise.race. reader.cancel() alone is unreliable in Bun.
+  let abortReject: ((e: Error) => void) | null = null;
+  const abortPromise = new Promise<never>((_resolve, reject) => {
+    abortReject = reject;
+  });
+
+  if (opts.signal) {
+    opts.signal.addEventListener(
+      "abort",
+      () => {
+        void reader.cancel();
+        abortReject?.(new DOMException("The user aborted a request.", "AbortError"));
+      },
+      { once: true },
+    );
+  }
+
   while (true) {
-    const { done, value } = await reader.read();
+    if (opts.signal?.aborted) {
+      opts.onStatus("cancelled");
+      return { finishReason: "cancelled", usage };
+    }
+    const { done, value } = await Promise.race([reader.read(), abortPromise]) as IteratorResult<Uint8Array, undefined>;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 

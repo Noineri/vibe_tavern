@@ -9,6 +9,7 @@ import { useChatSnapshot } from "../queries/chat-queries.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useMessageOrder, useMacroContext, useChatDataStore } from "../stores/index.js";
 import { MessageBlock } from "./MessageBlock.js";
+import { MessageReasoning } from "./MessageReasoning.js";
 import { TranslateErrorBoundary } from "./TranslateErrorBoundary.js";
 import { initials } from "./app-shell-helpers.jsx";
 import { useT } from "../i18n/context.js";
@@ -38,7 +39,7 @@ export function MessageList() {
   const messageOrder = useMessageOrder();
   const macroContext = useMacroContext();
 
-  // Build displayMessages with macro resolution
+  // Build messages with macro resolution
   const messages = useMemo(() => {
     if (!macroContext) return [];
     const state = useChatDataStore.getState();
@@ -50,6 +51,20 @@ export function MessageList() {
         content: replaceUiMacros(message.content, macroContext),
       }));
   }, [messageOrder, macroContext]);
+
+  // When a user message is pending (being streamed), it's rendered in the
+  // pending-message footer.  If React Query refetches the snapshot mid-stream,
+  // the message appears in `messages` too — causing a ghost duplicate.
+  // Filter it out here.
+  const lastUserMsgId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") return messages[i].id;
+    }
+    return null;
+  }, [messages]);
+  const displayMessages = pendingUserMessageContent && lastUserMsgId
+    ? messages.filter((m) => m.id !== lastUserMsgId)
+    : messages;
 
   const displayPendingUserMessageContent = useMemo(
     () => pendingUserMessageContent && macroContext
@@ -86,10 +101,10 @@ export function MessageList() {
 
   // --- Virtualizer ---
   const virtualizer = useVirtualizer({
-    count: messages.length,
+    count: displayMessages.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: (index) => {
-      const msg = messages[index];
+      const msg = displayMessages[index];
       if (!msg) return 100;
       return msg.role === "user" ? 80 : 160;
     },
@@ -103,9 +118,9 @@ export function MessageList() {
 
   // Auto-scroll: instant jump on initial load, smooth for incremental updates
   useEffect(() => {
-    if (messages.length === 0) return;
+    if (displayMessages.length === 0) return;
     const isInitialLoad = prevMsgCountRef.current === 0;
-    prevMsgCountRef.current = messages.length;
+    prevMsgCountRef.current = displayMessages.length;
 
     if (isInitialLoad) {
       // Scroll to bottom repeatedly as virtualizer measures items.
@@ -121,9 +136,9 @@ export function MessageList() {
       requestAnimationFrame(jump);
     } else {
       // Incremental: smooth scroll for new messages / streaming
-      virtualizer.scrollToIndex(messages.length - 1, { align: "end", behavior: "smooth" });
+      virtualizer.scrollToIndex(displayMessages.length - 1, { align: "end", behavior: "smooth" });
     }
-  }, [messages.length, virtualizer]);
+  }, [displayMessages.length, virtualizer]);
 
   // Scroll down when pending user message appears (before streaming starts)
   useEffect(() => {
@@ -149,9 +164,9 @@ export function MessageList() {
 
       <div style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
         {virtualizer.getVirtualItems().map((virtualItem) => {
-          const message = messages[virtualItem.index];
+          const message = displayMessages[virtualItem.index];
           if (!message) return null;
-          const previous = virtualItem.index > 0 ? messages[virtualItem.index - 1] : null;
+          const previous = virtualItem.index > 0 ? displayMessages[virtualItem.index - 1] : null;
           const showSeparator =
             previous !== null &&
             !isBreakoutRole(previous.role) &&
@@ -180,14 +195,15 @@ export function MessageList() {
                     message.id !== firstCharMsgId &&
                     message.role === "assistant" &&
                     isSending &&
-                    isLastAssistantMessage(messages, message.id)
+                    !pendingUserMessageContent &&
+                    isLastAssistantMessage(displayMessages, message.id)
                   }
                   editingDraft={editingDraft}
                   isBusy={isSending || messageActionId === message.id}
                   canBranch={message.id !== firstCharMsgId}
-                  canRegenerate={message.id !== firstCharMsgId && isLastAssistantMessage(messages, message.id)}
-                  canResend={isLastMessage(messages, message.id) && message.role === "user" && !displayPendingUserMessageContent}
-                  canSwitchVariant={isLastMessage(messages, message.id)}
+                  canRegenerate={message.id !== firstCharMsgId && isLastAssistantMessage(displayMessages, message.id)}
+                  canResend={isLastMessage(displayMessages, message.id) && message.role === "user" && !displayPendingUserMessageContent}
+                  canSwitchVariant={isLastMessage(displayMessages, message.id)}
                   isGreeting={message.id === firstCharMsgId}
                   greetingOptions={message.id === firstCharMsgId ? greetingOptions : undefined}
                   greetingIndex={message.id === firstCharMsgId ? greetingIndex : 0}
@@ -219,7 +235,7 @@ export function MessageList() {
       {/* Streaming footer — outside virtualizer, always rendered when needed */}
       {displayPendingUserMessageContent && (
         <>
-          {messages.length > 0 && (
+          {displayMessages.length > 0 && (
             <div className={sepWrap}>
               <div className="h-px bg-border opacity-40"/>
             </div>
@@ -260,7 +276,7 @@ export function MessageList() {
         </>
       )}
 
-      {!displayPendingUserMessageContent && isSending && messages.length > 0 && messages[messages.length - 1].role === "user" && (
+      {!displayPendingUserMessageContent && isSending && displayMessages.length > 0 && displayMessages[displayMessages.length - 1].role === "user" && (
         <>
           <div className={sepWrap}>
             <div className="h-px bg-border opacity-40"/>
@@ -311,9 +327,11 @@ const _dots = (
 
 function StreamingContent(_props: { characterName: string }) {
   const streamingText = useChatStore((s) => s.streamingText);
+  const streamingReasoning = useChatStore((s) => s.streamingReasoningText);
   if (streamingText) {
     return (
       <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
+        {streamingReasoning && <MessageReasoning reasoning={streamingReasoning} />}
         <Markdown text={streamingText} />
         {_dots}
       </div>
@@ -321,6 +339,7 @@ function StreamingContent(_props: { characterName: string }) {
   }
   return (
     <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
+      {streamingReasoning && <MessageReasoning reasoning={streamingReasoning} />}
       {_dots}
     </div>
   );
