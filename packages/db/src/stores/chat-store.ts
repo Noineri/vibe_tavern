@@ -66,6 +66,9 @@ export interface PromptTrace {
   assembledLayers: unknown[];
   tokenAccounting: Record<string, number>;
   finalPayload: Record<string, unknown>;
+  activatedLoreEntries: string[];
+  retrievedMemories: Array<Record<string, unknown>>;
+  scriptInjections: Array<Record<string, unknown>>;
   latencyMs: number;
   createdAt: string;
   prefill?: string | null;
@@ -82,6 +85,9 @@ export interface SaveTraceData {
   assembledLayers: unknown[];
   tokenAccounting: Record<string, number>;
   finalPayload?: Record<string, unknown>;
+  activatedLoreEntries: string[];
+  retrievedMemories: Array<Record<string, unknown>>;
+  scriptInjections: Array<Record<string, unknown>>;
   latencyMs: number;
   prefill?: string | null;
 }
@@ -755,6 +761,9 @@ export class ChatStore {
         assembledLayersJson: JSON.stringify(data.assembledLayers),
         tokenAccountingJson: JSON.stringify(data.tokenAccounting),
         finalPayloadJson: JSON.stringify(data.finalPayload ?? {}),
+        activatedLoreEntriesJson: JSON.stringify(data.activatedLoreEntries),
+        retrievedMemoriesJson: JSON.stringify(data.retrievedMemories),
+        scriptInjectionsJson: JSON.stringify(data.scriptInjections),
         prefill: data.prefill ?? null,
         latencyMs: data.latencyMs,
         createdAt: now,
@@ -884,6 +893,9 @@ export class ChatStore {
       assembledLayers: JSON.parse(row.assembledLayersJson),
       tokenAccounting: JSON.parse(row.tokenAccountingJson),
       finalPayload: JSON.parse(row.finalPayloadJson),
+      activatedLoreEntries: JSON.parse(row.activatedLoreEntriesJson),
+      retrievedMemories: JSON.parse(row.retrievedMemoriesJson),
+      scriptInjections: JSON.parse(row.scriptInjectionsJson),
       latencyMs: row.latencyMs,
       prefill: row.prefill ?? null,
       createdAt: row.createdAt,

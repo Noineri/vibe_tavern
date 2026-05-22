@@ -242,6 +242,19 @@ export class PromptAssemblyService {
       },
     });
 
+    // Build script injection trace data
+    const scriptInjections = scriptResult.errors.length > 0 ||
+      scriptResult.personality !== (character.personality ?? '') ||
+      scriptResult.scenario !== (character.scenario ?? '')
+      ? [{
+          scriptId: '__pipeline',
+          scriptName: 'Script Pipeline',
+          personalityMutation: scriptResult.personality !== (character.personality ?? '') ? scriptResult.personality : '',
+          scenarioMutation: scriptResult.scenario !== (character.scenario ?? '') ? scriptResult.scenario : '',
+          error: scriptResult.errors.length > 0 ? scriptResult.errors.map(e => `${e.scriptName}: ${e.error}`).join('; ') : undefined,
+        }]
+      : [];
+
     return {
       branchId,
       prompt: {
@@ -251,6 +264,7 @@ export class PromptAssemblyService {
           recentHistory: recentMessages.length,
         },
         activatedLoreEntries: result.activatedLoreEntries,
+        scriptInjections,
         retrievedMemories: retrievedMemories.map((memory) => ({
           id: memory.id,
           sourceType: memory.sourceType,
@@ -270,6 +284,7 @@ export class PromptAssemblyService {
           total: result.totalTokenEstimate,
         },
         activatedLoreEntries: result.activatedLoreEntries.map((id) => brandId<LoreEntryId>(id)),
+        scriptInjections,
         retrievedMemories: retrievedMemories.map((memory) => ({
           id: memory.id,
           sourceType: memory.sourceType,
