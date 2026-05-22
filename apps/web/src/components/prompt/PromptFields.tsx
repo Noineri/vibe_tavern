@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect, useRef } from "react";
+import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../../lib/cn.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
 import { PrefillField } from "./PrefillField.js";
@@ -150,6 +150,8 @@ function FieldSection({ label, labelClassName, token, children }: {
 
 export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey }: PromptFieldsProps) {
   const { t } = useT();
+  const [showDefaultScriptPrompt, setShowDefaultScriptPrompt] = useState(false);
+  const [defaultScriptAiPrompt, setDefaultScriptAiPrompt] = useState<string | null>(null);
   const disabled = !draft;
 
   const ta = useCallback((key: TextDraftKey, placeholder: string, minH = 100) => (
@@ -214,6 +216,15 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey 
 
       <ServiceField label={t("script_ai_prompt_field")} description={t("script_ai_prompt_desc")} token={draft?.scriptAiSystemPrompt ?? ""}>
         {ta("scriptAiSystemPrompt", t("script_ai_prompt_placeholder"), 160)}
+        <button type="button" onClick={() => {
+          setShowDefaultScriptPrompt(v => !v);
+          if (!defaultScriptAiPrompt) fetch("/api/defaults/script-ai-prompt").then(r => r.json()).then(d => setDefaultScriptAiPrompt(d.prompt)).catch(() => {});
+        }} className="mt-1.5 cursor-pointer font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-accent-t/70 transition-colors hover:text-accent-t">
+          {showDefaultScriptPrompt ? t("script_ai_hide_default") : t("script_ai_show_default")}
+        </button>
+        {showDefaultScriptPrompt && defaultScriptAiPrompt && (
+          <pre className="mt-2 max-h-[300px] overflow-auto whitespace-pre-wrap rounded-md border border-border bg-s2 p-3 font-mono text-[11px] leading-[1.5] text-t3">{defaultScriptAiPrompt}</pre>
+        )}
       </ServiceField>
     </div>
   );

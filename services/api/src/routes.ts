@@ -582,6 +582,12 @@ export function createApiRouter(runtime: RuntimeApi) {
         return c.json({ error: "model is required." }, 400);
       }
       return c.json(await runtime.testProviderChatByProfile(c.req.param("providerId"), model));
+    })
+
+    // ── Defaults (static) ──────────────────────────────────────────────────
+    .get("/api/defaults/script-ai-prompt", async (c) => {
+      const { DEFAULT_SCRIPT_AI_PROMPT } = await import("./script-ai-assistant.js");
+      return c.json({ prompt: DEFAULT_SCRIPT_AI_PROMPT });
     });
 }
 
