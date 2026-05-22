@@ -934,12 +934,12 @@ function LorebookAccordion({
             <span className="flex-1 cursor-pointer truncate text-[13px] font-medium text-t1" onClick={onToggle}>{lorebook.name}</span>
             {/* Enabled toggle */}
             <div
-              className="relative ml-1 mr-1 h-[22px] w-[40px] shrink-0 cursor-pointer rounded-full transition-[background-color] duration-150"
+              className="relative ml-1 mr-1 h-[22px] w-[40px] shrink-0 cursor-pointer rounded-full transition-[background-color] duration-200 ease-out"
               style={{ backgroundColor: lorebook.enabled ? 'var(--accent)' : 'var(--s3)' }}
               onClick={e => { e.stopPropagation(); onToggleEnabled(); }}
             >
               <div
-                className="absolute top-[3px] h-4 w-4 rounded-full shadow-sm transition-[left] duration-150"
+                className="absolute top-[3px] h-4 w-4 rounded-full shadow-sm transition-[left,background-color] duration-200 ease-out"
                 style={{ left: lorebook.enabled ? 19 : 3, backgroundColor: lorebook.enabled ? '#fff' : 'var(--t3)' }}
               />
             </div>
