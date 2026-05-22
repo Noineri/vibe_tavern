@@ -21,6 +21,7 @@ type DraftData = {
   authorsNoteDepth: number;
   summary: string;
   tools: string;
+  scriptAiSystemPrompt: string;
 };
 
 interface PromptManagerModalProps {
@@ -37,6 +38,7 @@ interface PromptManagerModalProps {
     authorsNoteDepth?: number;
     summary?: string;
     tools?: string;
+    scriptAiSystemPrompt?: string;
   }) => Promise<{ id: string } | null>;
   onUpdate: (
     presetId: string,
@@ -49,7 +51,7 @@ interface PromptManagerModalProps {
 
 const emptyDraft: DraftData = {
   name: "", bindModel: "", system: "", jailbreak: "",
-  prefill: "", authorsNote: "", authorsNoteDepth: 4, summary: "", tools: "",
+  prefill: "", authorsNote: "", authorsNoteDepth: 4, summary: "", tools: "", scriptAiSystemPrompt: "",
 };
 
 export function PromptManagerModal(input: PromptManagerModalProps) {
@@ -76,6 +78,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         authorsNoteDepth: activePreset.authorsNoteDepth ?? 4,
         summary: activePreset.summary,
         tools: activePreset.tools,
+        scriptAiSystemPrompt: activePreset.scriptAiSystemPrompt ?? "",
       });
     } else {
       setDraft({ ...emptyDraft });
@@ -131,6 +134,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       authorsNoteDepth: 4,
       summary: "",
       tools: "",
+      scriptAiSystemPrompt: "",
     }).then((created) => {
       if (created?.id) input.setActivePresetId(created.id);
     });

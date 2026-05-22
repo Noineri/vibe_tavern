@@ -56,6 +56,7 @@ export interface PromptPresetDto {
   authorsNoteDepth: number;
   summary: string;
   tools: string;
+  scriptAiSystemPrompt: string;
   createdAt: string;
   updatedAt: string;
 }

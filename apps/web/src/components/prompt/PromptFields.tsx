@@ -12,6 +12,7 @@ type DraftData = {
   authorsNoteDepth: number;
   summary: string;
   tools: string;
+  scriptAiSystemPrompt: string;
 };
 
 interface PromptFieldsProps {
@@ -180,6 +181,13 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey 
       <FieldSection label={t("tools")} token={draft?.tools ?? ""}>
         {ta("tools", t("tools_placeholder"), 100)}
       </FieldSection>
+
+      <div className="border-t border-border pt-6">
+        <FieldSection label={t("script_ai_prompt_field")} token={draft?.scriptAiSystemPrompt ?? ""}>
+          {ta("scriptAiSystemPrompt", t("script_ai_prompt_placeholder"), 160)}
+        </FieldSection>
+        <div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("script_ai_prompt_hint")}</div>
+      </div>
     </div>
   );
 }

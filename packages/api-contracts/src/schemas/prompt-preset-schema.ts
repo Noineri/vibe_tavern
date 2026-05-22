@@ -10,6 +10,7 @@ const promptPresetCoreSchema = z.object({
   authorsNoteDepth: z.number().optional(),
   summary: z.string().optional(),
   tools: z.string().optional(),
+  scriptAiSystemPrompt: z.string().optional(),
 });
 
 export const createPromptPresetSchema = promptPresetCoreSchema;

@@ -236,8 +236,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                   <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 16 }}>
                     <div>
                       <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_connection")}</label>
-                      <select className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none" value={aiProviderId} onChange={e => { setAiProviderId(e.target.value); setAiModelName(""); }}>
-                        <option value="">Select provider...</option>
+                      <select className="h-[38px] w-full rounded-[6px] border border-border bg-s2 pl-[13px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent" value={aiProviderId} onChange={e => { setAiProviderId(e.target.value); setAiModelName(""); }}>
+                        <option value="">{t("script_ai_select_provider")}</option>
                         {providerProfiles.map(p => (
                           <option key={p.id} value={p.id}>{p.name}</option>
                         ))}
@@ -245,7 +245,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                     </div>
                     <div>
                       <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_model")}</label>
-                      <select className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none" value={aiModelName} onChange={e => setAiModelName(e.target.value)}>
+                      <select className="h-[38px] w-full rounded-[6px] border border-border bg-s2 pl-[13px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent" value={aiModelName} onChange={e => setAiModelName(e.target.value)}>
                         <option value="">{selectedProfile?.defaultModel || "Default"}</option>
                         {providerModels.map(m => (
                           <option key={m.id} value={m.id}>{m.label || m.id}</option>
@@ -255,7 +255,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                   </div>
                   <div style={{ marginBottom: 16 }}>
                     <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_prompt")}</label>
-                    <textarea className="w-full min-h-[100px] rounded-md border border-border bg-bg px-3 py-2 font-ui text-t1 outline-none focus:border-accent" placeholder={t("script_ai_prompt")} value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
+                    <textarea className="w-full min-h-[100px] rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent resize-none" placeholder={t("script_ai_prompt")} value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
                   </div>
                   {aiStreamedCode && (
                     <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
@@ -362,16 +362,36 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       {/* API Reference */}
       {apiRefOpen && (
         <div className="mb-4 rounded-lg border border-accent/30 bg-accent-dim/30" style={{ padding: 14 }}>
-          <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("script_api_context")}</div>
-          <div className="grid gap-2 text-[12px]">
-            <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.chat.lastMessage</code><span className="text-t3">string</span></div>
-            <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.chat.messages</code><span className="text-t3">Array of &#123; role, message &#125;</span></div>
-            <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.chat.messageCount</code><span className="text-t3">number</span></div>
-            <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.character.name</code><span className="text-t3">string</span></div>
-            <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.character.personality</code><span className="text-t3">string, MUTABLE</span></div>
-            <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.character.scenario</code><span className="text-t3">string, MUTABLE</span></div>
-            <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.state.get/set/increment</code><span className="text-t3">persistent state</span></div>
-            <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.lore.activeEntries</code><span className="text-t3">read-only lore entries</span></div>
+          <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("script_api_context")}</div>
+          <div className="grid gap-3 text-[12px]">
+            <div>
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_chat")}</div>
+              <div className="grid gap-1.5">
+                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.chat.lastMessage</code><span className="text-t3">{t("script_api_chat_lastMessage")}</span></div>
+                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.chat.messages</code><span className="text-t3">{t("script_api_chat_messages")}</span></div>
+                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.chat.messageCount</code><span className="text-t3">{t("script_api_chat_messageCount")}</span></div>
+              </div>
+            </div>
+            <div>
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_character")}</div>
+              <div className="grid gap-1.5">
+                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.character.name</code><span className="text-t3">{t("script_api_char_name")}</span></div>
+                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.character.personality</code><span className="text-t3">{t("script_api_char_personality")}</span></div>
+                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.character.scenario</code><span className="text-t3">{t("script_api_char_scenario")}</span></div>
+              </div>
+            </div>
+            <div>
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_state")}</div>
+              <div className="grid gap-1.5">
+                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.state.get(key, default)</code><span className="text-t3">{t("script_api_state_get")}</span></div>
+                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.state.set(key, value)</code><span className="text-t3">{t("script_api_state_set")}</span></div>
+                <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.state.increment(key, n)</code><span className="text-t3">{t("script_api_state_increment")}</span></div>
+              </div>
+            </div>
+            <div>
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_lore")}</div>
+              <div className="flex gap-2"><code className="shrink-0 rounded bg-bg px-1.5 py-0.5 font-mono text-accent-t">context.lore.activeEntries</code><span className="text-t3">{t("script_api_lore_entries")}</span></div>
+            </div>
           </div>
         </div>
       )}

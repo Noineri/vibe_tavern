@@ -343,6 +343,7 @@ export interface PromptPreset {
   jailbreak: string;
   summary: string;
   tools: string;
+  scriptAiSystemPrompt: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

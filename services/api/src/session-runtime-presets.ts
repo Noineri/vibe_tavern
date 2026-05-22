@@ -19,6 +19,7 @@ export async function listPromptPresets(deps: PresetModuleDeps): Promise<PromptP
     authorsNoteDepth: p.authorsNoteDepth,
     summary: p.summaryPrompt,
     tools: p.toolsPrompt,
+    scriptAiSystemPrompt: p.scriptAiSystemPrompt ?? "",
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   }));
@@ -34,6 +35,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
   authorsNoteDepth?: number;
   summary?: string;
   tools?: string;
+  scriptAiSystemPrompt?: string;
 }): Promise<PromptPresetDto> {
   const trimmed = (input.name ?? "").trim();
   if (!trimmed) {
@@ -49,6 +51,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
     authorsNoteDepth: input.authorsNoteDepth ?? 4,
     summaryPrompt: input.summary ?? "",
     toolsPrompt: input.tools ?? "",
+    scriptAiSystemPrompt: input.scriptAiSystemPrompt ?? "",
   });
   return {
     id: created.id,
@@ -61,6 +64,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
     authorsNoteDepth: created.authorsNoteDepth,
     summary: created.summaryPrompt,
     tools: created.toolsPrompt,
+    scriptAiSystemPrompt: created.scriptAiSystemPrompt ?? "",
     createdAt: created.createdAt,
     updatedAt: created.updatedAt,
   };
@@ -76,6 +80,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
   authorsNoteDepth?: number;
   summary?: string;
   tools?: string;
+  scriptAiSystemPrompt?: string;
 }): Promise<PromptPresetDto> {
   try {
     const updated = await deps.presets.update(presetId as PromptPresetId, {
@@ -88,6 +93,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
       authorsNoteDepth: patch.authorsNoteDepth,
       summaryPrompt: patch.summary,
       toolsPrompt: patch.tools,
+      scriptAiSystemPrompt: patch.scriptAiSystemPrompt,
     });
     return {
       id: updated.id,
@@ -100,6 +106,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
       authorsNoteDepth: updated.authorsNoteDepth,
       summary: updated.summaryPrompt,
       tools: updated.toolsPrompt,
+      scriptAiSystemPrompt: updated.scriptAiSystemPrompt ?? "",
       createdAt: updated.createdAt,
       updatedAt: updated.updatedAt,
     };
