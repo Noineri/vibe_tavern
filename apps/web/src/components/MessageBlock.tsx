@@ -85,21 +85,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               >▶</button>
             </span>
           )}
-          {!isUser && variantCount > 1 && canSwitch && (
-            <span className="ml-auto flex items-center gap-1">
-              <button
-                className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                disabled={input.isBusy || selectedVariantIndex <= 0}
-                onClick={input.onSelectPreviousVariant}
-              ><Icons.Caret direction="l" /></button>
-              <span className="min-w-6 text-center text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3">{selectedVariantIndex + 1}/{variantCount}</span>
-              <button
-                className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                disabled={input.isBusy || selectedVariantIndex >= variantCount - 1}
-                onClick={input.onSelectNextVariant}
-              ><Icons.Caret direction="r" /></button>
-            </span>
-          )}
+
         </div>
 
         {input.isEditing ? (
@@ -174,6 +160,22 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               </span>
             )}
           </>
+        )}
+
+        {!input.isEditing && !isGenerating && !isUser && variantCount > 1 && canSwitch && (
+          <div className="mt-2 flex items-center gap-1">
+            <button
+              className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t1"
+              disabled={input.isBusy || selectedVariantIndex <= 0}
+              onClick={input.onSelectPreviousVariant}
+            ><Icons.Caret direction="l" /></button>
+            <span className="min-w-6 text-center text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3">{selectedVariantIndex + 1}/{variantCount}</span>
+            <button
+              className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t1"
+              disabled={input.isBusy || selectedVariantIndex >= variantCount - 1}
+              onClick={input.onSelectNextVariant}
+            ><Icons.Caret direction="r" /></button>
+          </div>
         )}
 
         {!input.isEditing && !isGenerating && createdLabel && (
