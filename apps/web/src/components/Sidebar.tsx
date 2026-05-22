@@ -4,6 +4,7 @@ import type { ChatId, ChatBranchId, ChatBranch } from "@rp-platform/domain";
 import type { ChatListItem } from "../app-client.js";
 import type { CharacterTab } from "./app-shell-types.js";
 import type { BuildTab } from "./BuildMode.js";
+import { useBuildPanels } from "../hooks/use-build-panels.js";
 import { initials } from "./app-shell-helpers.js";
 import { Icons } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
@@ -37,6 +38,7 @@ export function Sidebar() {
   const snapshot = snapshotQuery.data ?? null;
   const renamingChatId = useCharacterStore((s) => s.renamingChatId);
   const renameDraft = useCharacterStore((s) => s.renameDraft);
+  const buildPanelItems = useBuildPanels();
 
   // --- Derived from bootstrap ---
   const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
@@ -224,11 +226,7 @@ export function Sidebar() {
 
           <div className="my-1 h-px w-8 shrink-0 bg-border" />
 
-          {([
-            { id: 'character' as BuildTab, icon: <Icons.Wrench /> },
-            { id: 'lorebook' as BuildTab, icon: <Icons.Book /> },
-            { id: 'trace' as BuildTab, icon: <Icons.Trace /> },
-          ]).map((item) => (
+          {buildPanelItems.map((item) => (
             <div
               key={item.id}
               className={cn(
@@ -236,7 +234,7 @@ export function Sidebar() {
                 buildTab === item.id && 'rounded-xl bg-accent-dim text-accent-t'
               )}
               onClick={() => setBuildTab(item.id)}
-              title={t(`sidebar_build_${item.id === 'character' ? 'char' : item.id === 'lorebook' ? 'lore' : item.id}`)}
+              title={t(item.labelKey)}
             >
               {item.icon}
             </div>
@@ -686,21 +684,17 @@ export function Sidebar() {
           {/* Build sections navigation */}
           <div className="flex-1 overflow-y-auto py-1">
             <div className="font-ui text-[calc(var(--ui-fs)-5px)] font-medium uppercase tracking-[0.08em] text-t3" style={{ padding: '9px 15px 7px' }}>{t('sidebar_build_editor')}</div>
-            {([
-              { id: 'character' as BuildTab, icon: <Icons.Wrench />, label: t('sidebar_build_char') },
-              { id: 'lorebook' as BuildTab, icon: <Icons.Book />, label: t('sidebar_build_lore') },
-              { id: 'trace' as BuildTab, icon: <Icons.Trace />, label: t('sidebar_build_trace') },
-            ]).map((navItem) => (
+            {buildPanelItems.map((item) => (
               <div
-                key={navItem.id}
+                key={item.id}
                 className={cn(
                   'mx-1 flex cursor-pointer items-center gap-2.5 rounded px-3.5 py-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2 transition-all hover:bg-s2 hover:text-t1',
-                  buildTab === navItem.id && 'bg-accent-dim text-accent-t'
+                  buildTab === item.id && 'bg-accent-dim text-accent-t'
                 )}
-                onClick={() => setBuildTab(navItem.id)}
+                onClick={() => setBuildTab(item.id)}
               >
-                {navItem.icon}
-                <span>{navItem.label}</span>
+                {item.icon}
+                <span>{t(item.labelKey)}</span>
               </div>
             ))}
           </div>
