@@ -55,21 +55,22 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   return (
     <div className="relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))] px-7">
       <div className="relative group py-2.5">
-        <div className={isUser
-          ? "mb-[5px] flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3"
-          : "mb-[5px] flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85"
-        }>
+        <div className={cn(
+          "mb-[5px] flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3",
+          !isUser && "text-accent-t opacity-85",
+          isUser && "flex-row-reverse",
+        )}>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
             {isUser
               ? (input.personaAvatarAssetId
                 ? <img src={avatarUrl(input.personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
-                : "Y")
+                : (input.personaName ? initials(input.personaName) : "Y"))
               : (input.characterAvatarAssetId
                 ? <img src={avatarUrl(input.characterAvatarAssetId)} alt={input.characterName} className="h-full w-full object-cover object-top" />
                 : initials(input.characterName))
             }
           </div>
-          <span>{isUser ? t("message_user_label") : input.characterName}</span>
+          <span>{isUser ? input.personaName : input.characterName}</span>
           {greetingActive && (
             <span className="ml-auto flex items-center gap-1 text-[calc(var(--ui-fs)-3px)] text-t3">
               <button
@@ -191,7 +192,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
             {input.canBranch && (
               <span
                 className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-                onClick={() => { if (!input.isBusy) input.onBranch(); }}
+                onClick={() => { if (!input.isBusy) input.onBranch(input.messageId); }}
                 title={branchLabel}
               ><Icons.Branch />{branchLabel}</span>
             )}

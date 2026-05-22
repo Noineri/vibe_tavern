@@ -353,39 +353,41 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             />
           </div>
 
-          {/* Depth Prompt row */}
-          <div className="flex gap-3 items-end">
-            <div className="mb-5 flex-1">
-              <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("depth_prompt")}</label>
-              <textarea
-                className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-                {...register('depthPrompt')}
-                placeholder={t("depth_prompt_placeholder")}
-              />
+          {/* Depth Prompt */}
+          <div className="mb-5">
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("depth_prompt")}</label>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("role")}</span>
+                  <select
+                    className="h-6 rounded-md border border-border bg-s2 pl-1.5 sel-arrow text-[11px] font-ui text-t1 outline-none focus:border-accent"
+                    value={depthPromptRole}
+                    onChange={e => setValue('depthPromptRole', e.target.value, { shouldDirty: true })}
+                  >
+                    <option value="system">system</option>
+                    <option value="user">user</option>
+                    <option value="assistant">assistant</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
+                  <input
+                    type="number"
+                    className="h-6 w-12 rounded-md border border-border bg-s2 px-1 text-center text-[11px] font-ui text-t1 outline-none focus:border-accent num-spinless"
+                    min={0}
+                    max={999}
+                    value={depthPromptDepth}
+                    onChange={e => setValue('depthPromptDepth', Number(e.target.value), { shouldDirty: true })}
+                  />
+                </div>
+              </div>
             </div>
-            <div className="mb-5 w-20 shrink-0">
-              <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("depth")}</label>
-              <input
-                type="number"
-                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent"
-                min={0}
-                max={999}
-                value={depthPromptDepth}
-                onChange={e => setValue('depthPromptDepth', Number(e.target.value), { shouldDirty: true })}
-              />
-            </div>
-            <div className="mb-5 w-[110px] shrink-0">
-              <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("role")}</label>
-              <select
-                className="w-full rounded-md border border-border bg-s2 pl-2.5 sel-arrow py-1.5 font-ui text-t1 outline-none focus:border-accent"
-                value={depthPromptRole}
-                onChange={e => setValue('depthPromptRole', e.target.value, { shouldDirty: true })}
-              >
-                <option value="system">system</option>
-                <option value="user">user</option>
-                <option value="assistant">assistant</option>
-              </select>
-            </div>
+            <textarea
+              className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
+              {...register('depthPrompt')}
+              placeholder={t("depth_prompt_placeholder")}
+            />
           </div>
 
           {/* System Prompt Override */}

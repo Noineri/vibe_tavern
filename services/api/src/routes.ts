@@ -68,7 +68,7 @@ export interface RuntimeApi {
   removeFavoriteProviderModel: (providerProfileId: string, modelId: string) => unknown;
   fetchModelsByEndpoint: (baseUrl: string, apiKey?: string, providerType?: string) => Promise<unknown>;
   importJson: (body: { fileName: string; jsonText: string; chatId?: string }) => unknown;
-  forkBranch: (chatId: string) => unknown;
+  forkBranch: (chatId: string, fromMessageId?: string) => unknown;
   activateBranch: (chatId: string, branchId: string) => unknown;
   deleteBranch: (chatId: string, branchId: string) => unknown;
   archiveCharacter: (characterId: string) => Promise<unknown>;
@@ -297,7 +297,9 @@ export function createApiRouter(runtime: RuntimeApi) {
       return c.json(await runtime.setChatPromptPreset(c.req.param("chatId"), body.promptPresetId));
     })
     .post("/api/chats/:chatId/fork", async (c) => {
-      return c.json(await runtime.forkBranch(c.req.param("chatId")));
+      const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+      const fromMessageId = typeof body.fromMessageId === 'string' ? body.fromMessageId : undefined;
+      return c.json(await runtime.forkBranch(c.req.param("chatId"), fromMessageId));
     })
     .post("/api/chats/:chatId/branches/:branchId/activate", async (c) => {
       return c.json(await runtime.activateBranch(c.req.param("chatId"), c.req.param("branchId")));

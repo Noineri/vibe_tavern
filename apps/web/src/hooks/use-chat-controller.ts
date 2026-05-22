@@ -43,7 +43,7 @@ export interface ChatControllerActions {
   handleRegenerateMessage: (messageId: string) => Promise<void>;
   handleSelectMessageVariant: (messageId: string, variantIndex: number) => Promise<void>;
   handleResend: () => Promise<void>;
-  handleFork: () => Promise<void>;
+  handleFork: (messageId: string) => Promise<void>;
   handleActivateBranch: (branchId: ChatBranchId) => Promise<void>;
   handleDeleteActiveBranch: () => Promise<void>;
 }
@@ -394,11 +394,11 @@ export function useChatController(): ChatControllerActions {
     await selectVariantMut.mutateAsync({ chatId: activeChatId, messageId, variantIndex });
   }
 
-  async function handleFork(): Promise<void> {
+  async function handleFork(messageId: string): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
 
-    await forkMut.mutateAsync(activeChatId);
+    await forkMut.mutateAsync({ chatId: activeChatId, fromMessageId: messageId });
   }
 
   async function handleActivateBranch(branchId: ChatBranchId): Promise<void> {

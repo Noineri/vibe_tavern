@@ -14,7 +14,7 @@ export interface MessageBlockProps {
   greetingOptions?: string[];
   greetingIndex: number;
   onGreetingIndexChange: (index: number) => void;
-  onBranch: () => void;
+  onBranch: (messageId: string) => void;
   onStartEdit: () => void;
   onEditingDraftChange: (value: string) => void;
   onCancelEdit: () => void;
@@ -26,4 +26,5 @@ export interface MessageBlockProps {
   onSelectNextVariant: () => void;
   characterAvatarAssetId: string | null;
   personaAvatarAssetId: string | null;
+  personaName: string;
 }
