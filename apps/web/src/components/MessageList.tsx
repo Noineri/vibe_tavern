@@ -142,12 +142,19 @@ export function MessageList() {
           onDelete={() => void chat.handleDeleteMessage(message.id)}
           onRegenerate={() => void chat.handleRegenerateMessage(message.id)}
           onResend={() => { void chat.handleResend(); }}
-          onSelectPreviousVariant={() =>
-            chat.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) - 1)
-          }
-          onSelectNextVariant={() =>
-            chat.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) + 1)
-          }
+          onSelectPreviousVariant={() => {
+            // Read FRESH selectedVariantIndex from store — the `message` in this closure
+            // is stale because `messages` useMemo only depends on messageOrder/macroContext,
+            // not on individual message mutations.
+            const current = useChatDataStore.getState().messagesById[message.id];
+            const idx = current?.selectedVariantIndex ?? 0;
+            chat.handleSelectMessageVariant(message.id, idx - 1);
+          }}
+          onSelectNextVariant={() => {
+            const current = useChatDataStore.getState().messagesById[message.id];
+            const idx = current?.selectedVariantIndex ?? 0;
+            chat.handleSelectMessageVariant(message.id, idx + 1);
+          }}
           characterAvatarAssetId={characterAvatarAssetId}
           personaAvatarAssetId={personaAvatarAssetId}
           personaName={personaName}
