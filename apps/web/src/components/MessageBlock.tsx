@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../lib/cn.js";
 import { Markdown } from "../lib/markdown.js";
 import { avatarUrl } from "../lib/avatar.js";
@@ -14,10 +14,9 @@ import { MessageReasoning } from "./MessageReasoning.js";
 export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps) {
   const { t } = useT();
   const [copied, setCopied] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const swipeRef = useRef<HTMLDivElement>(null);
-  const prevVariantRef = useRef<number>(-1);
-  const prevSwipeYRef = useRef<number>(0);
+
+  // Horizontal slide container for variant switching
+  const slideRef = useRef<HTMLDivElement>(null);
 
   // Read ALL display data from memoized selector — re-renders only when THIS message changes
   const msg = useDisplayMessage(input.messageId);
@@ -56,37 +55,16 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const reasoningText = selectedVariant?.reasoning || null;
   const reasoningDuration = selectedVariant?.reasoningDurationMs ?? null;
 
-  // Scroll compensation: when variant changes, smoothly animate scroll so
-  // swipe arrows stay at the same viewport position under the cursor.
-  useLayoutEffect(() => {
-    if (prevVariantRef.current >= 0 && prevVariantRef.current !== selectedVariantIndex && rootRef.current) {
-      const scrollEl = rootRef.current.closest(".overflow-y-auto") as HTMLElement | null;
-      const newY = swipeRef.current ? swipeRef.current.getBoundingClientRect().top : 0;
-      const delta = newY - prevSwipeYRef.current;
-      if (delta !== 0 && scrollEl) {
-        const startTop = scrollEl.scrollTop;
-        const target = startTop + delta;
-        const duration = 150;
-        const startTime = performance.now();
-        function tick(now: number) {
-          const elapsed = now - startTime;
-          const t = Math.min(elapsed / duration, 1);
-          // ease-out cubic
-          const ease = 1 - Math.pow(1 - t, 3);
-          scrollEl!.scrollTop = startTop + (target - startTop) * ease;
-          if (t < 1) requestAnimationFrame(tick);
-        }
-        requestAnimationFrame(tick);
-      }
+  // Horizontal slide: scroll to selected variant smoothly
+  useEffect(() => {
+    if (slideRef.current && variantCount > 1) {
+      const w = slideRef.current.offsetWidth;
+      slideRef.current.scrollTo({ left: w * selectedVariantIndex, behavior: 'smooth' });
     }
-    if (swipeRef.current) {
-      prevSwipeYRef.current = swipeRef.current.getBoundingClientRect().top;
-    }
-    prevVariantRef.current = selectedVariantIndex;
-  }, [selectedVariantIndex]);
+  }, [selectedVariantIndex, variantCount]);
 
   return (
-    <div ref={rootRef} className="relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))] px-7">
+    <div className="relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))] px-7">
       <div className="relative group py-2.5">
         <div className={cn(
           "mb-[12px] flex items-center gap-[10px] text-[calc(var(--ui-fs)-2px)] font-semibold tracking-[0.04em] text-t3",
@@ -183,9 +161,29 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
             {!isUser && (reasoningText || reasoningDuration) && (
               <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
             )}
-            <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-              <Markdown text={renderContent} />
-            </div>
+            {variantCount > 1 ? (
+              <div
+                ref={slideRef}
+                className="overflow-x-hidden"
+              >
+                <div className="flex" style={{ width: `${variantCount * 100}%` }}>
+                  {variants.map((v, i) => (
+                    <div
+                      key={i}
+                      className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
+                      style={{ width: `${100 / variantCount}%`, flexShrink: 0 }}
+                      translate="yes"
+                    >
+                      <Markdown text={v.content} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
+                <Markdown text={renderContent} />
+              </div>
+            )}
             {isGenerating && (
               <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
                 <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
@@ -237,7 +235,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               ><Icons.Regen />{regenLabel}</span>
             )}
             {!isUser && variantCount > 1 && canSwitch && (
-              <span ref={swipeRef} className="ml-auto mr-auto flex items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
+              <span className="ml-auto mr-auto flex items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
                 <button
                   className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
                   disabled={input.isBusy || selectedVariantIndex <= 0}
