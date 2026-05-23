@@ -1,4 +1,4 @@
-import { memo, useState, useMemo } from "react";
+import { memo, useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "../lib/cn.js";
 import { Markdown } from "../lib/markdown.js";
@@ -17,6 +17,33 @@ import { CustomTooltip } from "./shared/Tooltip.js";
 
 const msgWrap = "relative group py-2.5";
 const sepWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7 my-[6px] mt-2";
+
+// ── Swipe animation diagnostic logger ──────────────────────────────────────
+const _swipeLog: string[] = [];
+const MAX_LOG = 200;
+function _logSwipe(event: string, data: Record<string, unknown>) {
+  const ts = performance.now().toFixed(1);
+  const entry = `[${ts}ms] ${event} ${JSON.stringify(data)}`;
+  _swipeLog.push(entry);
+  if (_swipeLog.length > MAX_LOG) _swipeLog.shift();
+  console.log(`%c[SWIPE] ${entry}`, 'color: #0af', data);
+}
+
+(window as unknown as Record<string, unknown>).getSwipeLog = () => {
+  const text = _swipeLog.join('\n');
+  console.log(text);
+  return text;
+};
+(window as unknown as Record<string, unknown>).downloadSwipeLog = () => {
+  const blob = new Blob([_swipeLog.join('\n')], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'swipe-log.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+};
+// ────────────────────────────────────────────────────────────────────────────
 
 
 
@@ -38,7 +65,9 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const messageActionId = useChatStore(s => s.messageActionId);
   const pendingUserMessageContent = useChatStore(s => s.pendingUserMessageContent);
 
-
+  // Diagnostics: render counter
+  const renderCountRef = useRef(0);
+  renderCountRef.current++;
 
   if (!msg || !chatMeta) return null;
 
@@ -117,6 +146,17 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   const renderContent = greetingActive ? (greetingOptions[greetingIndex] ?? msg.displayContent) : activeContent;
 
+  // Diagnostics: log every render with key animation state
+  _logSwipe(`render #${renderCountRef.current}`, {
+    msgId: input.messageId.slice(0, 8),
+    variant: selectedVariantIndex,
+    greeting: greetingIndex,
+    dir: direction,
+    contentLen: renderContent?.length ?? 0,
+    greetingActive,
+    key: greetingActive ? `g-${greetingIndex}` : `v-${selectedVariantIndex}`,
+  });
+
   // Streaming text for regeneration — only shown on the specific message being regenerated
   const globalStreamingText = useChatStore((s) => s.streamingText);
   const globalStreamingReasoning = useChatStore((s) => s.streamingReasoningText);
@@ -176,13 +216,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                 <button
                   className="cursor-pointer text-t3 transition-colors duration-100 hover:text-accent"
                   disabled={!canSwitchVariant || greetingIndex <= 0}
-                  onClick={() => { useChatDataStore.getState().setSwipeDirection(-1); setGreetingIndex(Math.max(0, greetingIndex - 1)); }}
+                  onClick={() => { _logSwipe('click:prevGreeting', { greetingIndex, target: Math.max(0, greetingIndex - 1) }); useChatDataStore.getState().setSwipeDirection(-1); setGreetingIndex(Math.max(0, greetingIndex - 1)); }}
                 >◀</button>
                 {t("greeting_counter").replace("{n}", String(greetingIndex + 1)).replace("{total}", String(greetingOptions!.length))}
                 <button
                   className="cursor-pointer text-t3 transition-colors duration-100 hover:text-accent"
                   disabled={!canSwitchVariant || greetingIndex >= greetingOptions!.length - 1}
-                  onClick={() => { useChatDataStore.getState().setSwipeDirection(1); setGreetingIndex(Math.min(greetingOptions!.length - 1, greetingIndex + 1)); }}
+                  onClick={() => { _logSwipe('click:nextGreeting', { greetingIndex, target: Math.min(greetingOptions!.length - 1, greetingIndex + 1) }); useChatDataStore.getState().setSwipeDirection(1); setGreetingIndex(Math.min(greetingOptions!.length - 1, greetingIndex + 1)); }}
                 >▶</button>
               </span>
             )}
@@ -332,6 +372,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                       className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
                       disabled={isBusy || selectedVariantIndex <= 0}
                       onClick={() => {
+                        _logSwipe('click:prevVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex - 1 });
                         useChatDataStore.getState().setSwipeDirection(-1);
                         const current = useChatDataStore.getState().messagesById[msg.id];
                         const idx = current?.selectedVariantIndex ?? 0;
@@ -345,6 +386,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                       className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
                       disabled={isBusy || selectedVariantIndex >= variantCount - 1}
                       onClick={() => {
+                        _logSwipe('click:nextVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex + 1 });
                         useChatDataStore.getState().setSwipeDirection(1);
                         const current = useChatDataStore.getState().messagesById[msg.id];
                         const idx = current?.selectedVariantIndex ?? 0;
