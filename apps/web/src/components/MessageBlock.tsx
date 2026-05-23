@@ -335,20 +335,37 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               {!isUser && (reasoningText || reasoningDuration) && (
                 <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
               )}
-              <div className="relative overflow-hidden" ref={msgWrapRef}>
-                <AnimatePresence initial={false}>
-                  <motion.div
-                    key={greetingActive ? `g-${greetingIndex}` : `v-${selectedVariantIndex}`}
-                    initial={{ x: direction * 40, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 35 }}
-                    translate="yes"
-                    className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
-                  >
-                    <Markdown text={renderContent} />
-                  </motion.div>
-                </AnimatePresence>
-              </div>
+              {isGreeting ? (
+                <div className="relative overflow-hidden">
+                  <AnimatePresence mode="popLayout" initial={false}>
+                    <motion.div
+                      key={`g-${greetingIndex}`}
+                      initial={{ x: direction * 40, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 35 }}
+                      translate="yes"
+                      className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
+                    >
+                      <Markdown text={renderContent} />
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
+              ) : (
+                <div className="relative overflow-hidden" ref={msgWrapRef}>
+                  <AnimatePresence initial={false}>
+                    <motion.div
+                      key={`v-${selectedVariantIndex}`}
+                      initial={{ x: direction * 40, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 35 }}
+                      translate="yes"
+                      className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
+                    >
+                      <Markdown text={renderContent} />
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
+              )}
               {isGenerating && (
                 <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
                   <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
