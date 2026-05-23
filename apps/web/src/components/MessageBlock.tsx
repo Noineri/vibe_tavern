@@ -35,9 +35,14 @@ function _logSwipe(event: string, data: Record<string, unknown>) {
   console.log(text);
   return text;
 };
-(window as unknown as Record<string, unknown>).copySwipeLog = () => {
-  const text = _swipeLog.join('\n');
-  navigator.clipboard.writeText(text).then(() => console.log('Copied to clipboard!'));
+(window as unknown as Record<string, unknown>).downloadSwipeLog = () => {
+  const blob = new Blob([_swipeLog.join('\n')], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'swipe-log.txt';
+  a.click();
+  URL.revokeObjectURL(url);
 };
 // ────────────────────────────────────────────────────────────────────────────
 
