@@ -92,7 +92,7 @@ export interface AiAssistantRequest {
 }
 
 export interface AiAssistantStreamChunk {
-  type: "text" | "error" | "done";
+  type: "text" | "reasoning" | "error" | "done";
   text?: string;
   error?: string;
 }
@@ -122,8 +122,36 @@ export async function* streamScriptCode(
       maxTokens: 10240,
     });
 
+    let reasoningBuffer = "";
+    let insideReasoning = false;
+
     for await (const chunk of result.textStream) {
-      yield { type: "text", text: chunk };
+        // Detect reasoning markers from openai-reasoning-fetch.ts
+        if (chunk.includes('REASONING_START')) {
+          insideReasoning = true;
+          const after = chunk.split('REASONING_START').pop() ?? '';
+          reasoningBuffer += after;
+          yield { type: "reasoning", text: after };
+          continue;
+        }
+        if (insideReasoning && chunk.includes('REASONING_END')) {
+          insideReasoning = false;
+          const before = chunk.split('REASONING_END')[0];
+          reasoningBuffer += before;
+          if (before) yield { type: "reasoning", text: before };
+          // Text after REASONING_END is actual code
+          const after = chunk.split('REASONING_END').slice(1).join('REASONING_END');
+          if (after) yield { type: "text", text: after };
+          continue;
+        }
+        if (insideReasoning) {
+          reasoningBuffer += chunk;
+          yield { type: "reasoning", text: chunk };
+        } else {
+          // Also strip <think> tags (DeepSeek style)
+          const cleaned = chunk.replace(/<think[\s\S]*?<\/think>/g, '');
+          if (cleaned) yield { type: "text", text: cleaned };
+        }
     }
 
     yield { type: "done" };
