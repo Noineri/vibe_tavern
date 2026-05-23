@@ -368,13 +368,8 @@ export function useChatController(): ChatControllerActions {
   async function handleSelectMessageVariant(messageId: string, variantIndex: number): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId || variantIndex < 0) return;
-
-    // Optimistic local update — instant visual feedback, no server round-trip lag
-    const msg = useChatDataStore.getState().messagesById[messageId];
-    if (msg) {
-      useChatDataStore.getState().updateMessage(messageId, { selectedVariantIndex: variantIndex });
-    }
-    // Fire-and-forget server persist
+    // Store already updated optimistically via selectVariant() in MessageBlock.
+    // Fire-and-forget server persist (no syncSnapshot).
     void selectVariantAction(activeChatId, messageId, variantIndex);
   }
 
