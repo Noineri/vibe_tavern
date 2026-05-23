@@ -1,4 +1,4 @@
-import { memo, useRef, useState, useMemo } from "react";
+import { memo, useRef, useState, useMemo, useLayoutEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "../lib/cn.js";
 import { Markdown } from "../lib/markdown.js";
@@ -13,9 +13,28 @@ import { useT } from "../i18n/context.js";
 import { MessageReasoning } from "./MessageReasoning.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
 import { replaceUiMacros } from "../lib/macros.js";
+import { CustomTooltip, TooltipProvider } from "./shared/Tooltip.js";
 
 const msgWrap = "relative group py-2.5";
 const sepWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7 my-[6px] mt-2";
+
+const MeasureHeight = memo(function MeasureHeight({ children, onHeightChange }: { children: React.ReactNode; onHeightChange: (h: number) => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const cbRef = useRef(onHeightChange);
+  cbRef.current = onHeightChange;
+
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) cbRef.current(entry.target.getBoundingClientRect().height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return <div ref={containerRef} className="flow-root">{children}</div>;
+});
 
 export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps) {
   const { t } = useT();
@@ -34,6 +53,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const isSending = useChatStore(s => s.isSending);
   const messageActionId = useChatStore(s => s.messageActionId);
   const pendingUserMessageContent = useChatStore(s => s.pendingUserMessageContent);
+
+  // -- Height measurement for smooth swipe --
+  const prevHeightRef = useRef<number>(undefined);
+  const [displayHeight, setDisplayHeight] = useState<number | undefined>();
 
   if (!msg || !chatMeta) return null;
 
@@ -105,6 +128,18 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const direction = selectedVariantIndex > prevVariantRef.current ? 1 : -1;
   prevVariantRef.current = selectedVariantIndex;
 
+  // When variant changes — lock to old height
+  useLayoutEffect(() => {
+    if (prevHeightRef.current !== undefined && displayHeight !== undefined) {
+      setDisplayHeight(prevHeightRef.current);
+    }
+  }, [selectedVariantIndex, greetingIndex]);
+
+  const handleHeightMeasured = (newHeight: number) => {
+    prevHeightRef.current = newHeight;
+    setDisplayHeight(newHeight);
+  };
+
   // Server sets message.content = selected variant's content at load time,
   // but client-side switching only changes selectedVariantIndex.
   // Read the actual variant text directly.
@@ -144,7 +179,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   })();
 
   return (
-    <>
+    <TooltipProvider delayDuration={200}>
       {showSeparator && (
         <div className={sepWrap}>
           <div className="h-px bg-border opacity-40"/>
@@ -243,34 +278,39 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               </div>
             </>
           ) : (
-            <div>
-              {!isUser && (reasoningText || reasoningDuration) && (
-                <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
-              )}
-              <div className="relative overflow-hidden">
-                <AnimatePresence mode="popLayout" initial={false}>
-                  <motion.div
-                    key={selectedVariantIndex}
-                    layout
-                    initial={{ x: direction * 80, opacity: 0, filter: "blur(4px)" }}
-                    animate={{ x: 0, opacity: 1, filter: "blur(0px)" }}
-                    exit={{ x: direction * -80, opacity: 0, filter: "blur(4px)" }}
-                    transition={{ duration: 0.22, ease: [0.25, 0.46, 0.45, 0.94] }}
-                    translate="yes"
-                    className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
-                  >
-                    <Markdown text={renderContent} />
-                  </motion.div>
-                </AnimatePresence>
-              </div>
-              {isGenerating && (
-                <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
-                  <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
-                  <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
-                  <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
-                </span>
-              )}
-            </div>
+            <motion.div
+              className="relative overflow-hidden"
+              animate={{ height: displayHeight ?? "auto" }}
+              transition={{ type: "spring", stiffness: 400, damping: 40, restDelta: 0.1 }}
+            >
+              <MeasureHeight onHeightChange={handleHeightMeasured}>
+                {!isUser && (reasoningText || reasoningDuration) && (
+                  <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
+                )}
+                <div className="relative overflow-hidden">
+                  <AnimatePresence mode="popLayout" initial={false}>
+                    <motion.div
+                      key={greetingActive ? `g-${greetingIndex}` : `v-${selectedVariantIndex}`}
+                      initial={{ x: direction * 80, opacity: 0, filter: "blur(4px)" }}
+                      animate={{ x: 0, opacity: 1, filter: "blur(0px)" }}
+                      exit={{ x: direction * -80, opacity: 0, filter: "blur(4px)" }}
+                      transition={{ type: "spring", stiffness: 350, damping: 32 }}
+                      translate="yes"
+                      className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
+                    >
+                      <Markdown text={renderContent} />
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
+                {isGenerating && (
+                  <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
+                    <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
+                    <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
+                    <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
+                  </span>
+                )}
+              </MeasureHeight>
+            </motion.div>
           )}
 
           {!isEditing && !isGenerating && createdLabel && (
@@ -282,72 +322,88 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
           {!isEditing && !isGenerating && (
             <div className="relative flex items-center gap-px mt-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-              <span
-                className={cn('flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all duration-150 hover:bg-s2 hover:text-t2', copied && 'translate-y-[-1px] bg-success-dim text-success-text')}
-                onClick={() => { if (isBusy) return; void navigator.clipboard?.writeText(msg.displayContent); setCopied(true); setTimeout(() => setCopied(false), 1000); }}
-                title={copyLabel}
-              >{copied ? <Icons.Check /> : <Icons.Copy />}{copied ? t("copied") : copyLabel}</span>
-              <span
-                className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-                onClick={() => { if (!isBusy) chat.handleStartEdit(msg); }}
-                title={editLabel}
-              ><Icons.Edit />{editLabel}</span>
+              <CustomTooltip content={copyLabel}>
+                <span
+                  className={cn('flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all duration-150 hover:bg-s2 hover:text-t2', copied && 'translate-y-[-1px] bg-success-dim text-success-text')}
+                  onClick={() => { if (isBusy) return; void navigator.clipboard?.writeText(msg.displayContent); setCopied(true); setTimeout(() => setCopied(false), 1000); }}
+                >{copied ? <Icons.Check /> : <Icons.Copy />}{copied ? t("copied") : copyLabel}</span>
+              </CustomTooltip>
+
+              <CustomTooltip content={editLabel}>
+                <span
+                  className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+                  onClick={() => { if (!isBusy) chat.handleStartEdit(msg); }}
+                ><Icons.Edit />{editLabel}</span>
+              </CustomTooltip>
+
               {canResend && (
-                <span
-                  className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-                  onClick={() => { if (!isBusy) void chat.handleResend(); }}
-                  title={t("resend")}
-                ><Icons.Regen />{t("resend")}</span>
+                <CustomTooltip content={t("resend")}>
+                  <span
+                    className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+                    onClick={() => { if (!isBusy) void chat.handleResend(); }}
+                  ><Icons.Regen />{t("resend")}</span>
+                </CustomTooltip>
               )}
+
               {canBranch && (
-                <span
-                  className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-                  onClick={() => { if (!isBusy) void chat.handleFork(msg.id); }}
-                  title={branchLabel}
-                ><Icons.Branch />{branchLabel}</span>
+                <CustomTooltip content={branchLabel}>
+                  <span
+                    className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+                    onClick={() => { if (!isBusy) void chat.handleFork(msg.id); }}
+                  ><Icons.Branch />{branchLabel}</span>
+                </CustomTooltip>
               )}
+
               {canRegenerate && (
-                <span
-                  className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-                  onClick={() => { if (!isBusy) void chat.handleRegenerateMessage(msg.id); }}
-                  title={regenLabel}
-                ><Icons.Regen />{regenLabel}</span>
+                <CustomTooltip content={regenLabel}>
+                  <span
+                    className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+                    onClick={() => { if (!isBusy) void chat.handleRegenerateMessage(msg.id); }}
+                  ><Icons.Regen />{regenLabel}</span>
+                </CustomTooltip>
               )}
+
               {!isUser && variantCount > 1 && canSwitchVariant && (
                 <span className="ml-auto mr-auto flex items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
-                  <button
-                    className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                    disabled={isBusy || selectedVariantIndex <= 0}
-                    onClick={() => {
-                      const current = useChatDataStore.getState().messagesById[msg.id];
-                      const idx = current?.selectedVariantIndex ?? 0;
-                      chat.handleSelectMessageVariant(msg.id, idx - 1);
-                    }}
-                  ><Icons.Caret direction="l" /></button>
+                  <CustomTooltip content={t("previous_variant")}>
+                    <button
+                      className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
+                      disabled={isBusy || selectedVariantIndex <= 0}
+                      onClick={() => {
+                        const current = useChatDataStore.getState().messagesById[msg.id];
+                        const idx = current?.selectedVariantIndex ?? 0;
+                        chat.handleSelectMessageVariant(msg.id, idx - 1);
+                      }}
+                    ><Icons.Caret direction="l" /></button>
+                  </CustomTooltip>
                   <span className="min-w-6 text-center tabular-nums">{selectedVariantIndex + 1}/{variantCount}</span>
-                  <button
-                    className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                    disabled={isBusy || selectedVariantIndex >= variantCount - 1}
-                    onClick={() => {
-                      const current = useChatDataStore.getState().messagesById[msg.id];
-                      const idx = current?.selectedVariantIndex ?? 0;
-                      chat.handleSelectMessageVariant(msg.id, idx + 1);
-                    }}
-                  ><Icons.Caret direction="r" /></button>
+                  <CustomTooltip content={t("next_variant")}>
+                    <button
+                      className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
+                      disabled={isBusy || selectedVariantIndex >= variantCount - 1}
+                      onClick={() => {
+                        const current = useChatDataStore.getState().messagesById[msg.id];
+                        const idx = current?.selectedVariantIndex ?? 0;
+                        chat.handleSelectMessageVariant(msg.id, idx + 1);
+                      }}
+                    ><Icons.Caret direction="r" /></button>
+                  </CustomTooltip>
                 </span>
               )}
+
               {!isGreeting && (
-                <span
-                  className="absolute right-0 flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-                  onClick={() => { if (!isBusy) void chat.handleDeleteMessage(msg.id); }}
-                  title={deleteLabel}
-                ><Icons.Trash /></span>
+                <CustomTooltip content={deleteLabel}>
+                  <span
+                    className="absolute right-0 flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+                    onClick={() => { if (!isBusy) void chat.handleDeleteMessage(msg.id); }}
+                  ><Icons.Trash /></span>
+                </CustomTooltip>
               )}
             </div>
           )}
         </div>
       </div>
-    </>
+    </TooltipProvider>
   );
 });
 
