@@ -2,6 +2,7 @@ import { useState } from "react";
 import * as Select from "@radix-ui/react-select";
 import { cn } from "../../lib/cn.js";
 import { Ic } from "./icons.js";
+import { getModalPortal } from "./Modal.js";
 
 interface DropdownOption {
   id: string;
@@ -82,7 +83,7 @@ export function DropdownSelect({
         </button>
       </Select.Trigger>
 
-      <Select.Portal>
+      <Select.Portal container={getModalPortal() ?? undefined}>
         <Select.Content
           position="popper"
           sideOffset={4}
