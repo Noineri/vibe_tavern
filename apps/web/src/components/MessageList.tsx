@@ -13,6 +13,7 @@ import { initials } from "./app-shell-helpers.jsx";
 import { useT } from "../i18n/context.js";
 import { loadOlderMessagesAction } from "../stores/api-actions/chat-actions.js";
 import { Icons } from "./shared/icons.js";
+import { CustomTooltip, TooltipProvider } from "./shared/Tooltip.js";
 
 const msgWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7";
 const sepWrap = msgWrap + " my-[6px] mt-2";
@@ -188,30 +189,33 @@ export function MessageList() {
 
   return (
     <TranslateErrorBoundary>
-      <div className="relative flex-1 flex flex-col min-h-0">
-        <Virtuoso
-          ref={virtuosoRef}
-          totalCount={displayMessageIds.length}
-          initialTopMostItemIndex={Math.max(0, displayMessageIds.length - 1)}
-          followOutput="smooth"
-          overscan={5}
-          itemContent={itemContent}
-          components={{ Header, Footer }}
-          className="flex-1 pb-3"
-          style={{ overflowY: "auto" }}
-          startReached={handleStartReached}
-          atBottomStateChange={setAtBottom}
-        />
-        {!atBottom && displayMessageIds.length > 0 && (
-          <button
-            className="absolute bottom-6 right-8 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-on-accent shadow-lg transition-transform hover:scale-110 active:scale-95 z-10"
-            onClick={() => virtuosoRef.current?.scrollToIndex({ index: displayMessageIds.length - 1, behavior: "smooth" })}
-            title={t("scroll_to_bottom")}
-          >
-            <Icons.Caret direction="d" />
-          </button>
-        )}
-      </div>
+      <TooltipProvider delayDuration={200}>
+        <div className="relative flex-1 flex flex-col min-h-0">
+          <Virtuoso
+            ref={virtuosoRef}
+            totalCount={displayMessageIds.length}
+            initialTopMostItemIndex={Math.max(0, displayMessageIds.length - 1)}
+            followOutput="smooth"
+            overscan={5}
+            itemContent={itemContent}
+            components={{ Header, Footer }}
+            className="flex-1 pb-3"
+            style={{ overflowY: "auto" }}
+            startReached={handleStartReached}
+            atBottomStateChange={setAtBottom}
+          />
+          {!atBottom && displayMessageIds.length > 0 && (
+            <CustomTooltip content={t("scroll_to_bottom")} side="left">
+              <button
+                className="absolute bottom-6 right-8 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-on-accent shadow-lg transition-transform hover:scale-110 active:scale-95 z-10"
+                onClick={() => virtuosoRef.current?.scrollToIndex({ index: displayMessageIds.length - 1, behavior: "smooth" })}
+              >
+                <Icons.Caret direction="d" />
+              </button>
+            </CustomTooltip>
+          )}
+        </div>
+      </TooltipProvider>
     </TranslateErrorBoundary>
   );
 }
