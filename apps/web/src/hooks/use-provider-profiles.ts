@@ -487,7 +487,14 @@ export function useProviderProfiles() {
   }
 
   async function handleSelectFavoriteProviderModel(providerProfileId: string, modelId: string): Promise<void> {
-    const saved = await updateProviderProfileAction(providerProfileId, { defaultModel: modelId });
+    // Find the favorite model's contextLength to auto-update contextBudget
+    const favList = useProviderDataStore.getState().favoritesByProfile[providerProfileId] ?? [];
+    const fav = favList.find((f) => f.modelId === modelId);
+    const patch: Record<string, unknown> = { defaultModel: modelId };
+    if (fav?.contextLength != null && fav.contextLength > 0) {
+      patch.contextBudget = fav.contextLength;
+    }
+    const saved = await updateProviderProfileAction(providerProfileId, patch);
     patchConnection({
       providerLabel: saved.name,
       baseUrl: normalizeOpenAiCompatibleBaseUrl(saved.endpoint),
