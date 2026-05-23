@@ -67,12 +67,12 @@ echo.
 bun services/api/src/prod-server.ts
 set "EXIT_CODE=%ERRORLEVEL%"
 
-REM Graceful exits (0=normal, 1=Ctrl+C, 58=window closed) — just exit silently
+REM Graceful exits (0=normal, 1=Ctrl+C, 58=window closed) - just exit silently
 if "%EXIT_CODE%"=="0" exit /b 0
 if "%EXIT_CODE%"=="1" exit /b 0
 if "%EXIT_CODE%"=="58" exit /b 0
 
-REM Unexpected crash — show error and wait for keypress
+REM Unexpected crash - show error and wait for keypress
 echo.
 echo Server crashed with exit code %EXIT_CODE%.
 pause

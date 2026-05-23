@@ -11,7 +11,7 @@ if errorlevel 1 (
 )
 
 echo ============================================
-echo  RP Platform — Production Server
+echo  RP Platform - Production Server
 echo ============================================
 echo.
 
@@ -45,6 +45,7 @@ set "EXIT_CODE=%ERRORLEVEL%"
 rem Graceful exit codes (Ctrl+C, window close on Windows)
 if "%EXIT_CODE%"=="0" goto :eof
 if "%EXIT_CODE%"=="1" goto :eof
+if "%EXIT_CODE%"=="58" goto :eof
 if "%EXIT_CODE%"=="3221225786" goto :eof
 if "%EXIT_CODE%"=="-1073741510" goto :eof
 
