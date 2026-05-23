@@ -1,11 +1,12 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState, useMemo } from "react";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
 import type { ConnectionState } from "../components/app-shell-types.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import { useNavigationStore, useProviderStore, useChatStore, useModalStore } from "../stores/index.js";
-import { useBootstrapQuery, usePersonasQuery } from "../queries/bootstrap-queries.js";
-import { useChatSnapshot } from "../queries/chat-queries.js";
+import { useBootstrapStore, fetchBootstrapAction, fetchPersonasAction } from "../stores/api-actions/bootstrap-actions.js";
+import { useChatDataStore } from "../stores/chat-data-store.js";
+import type { AppMessage } from "../app-client.js";
 import {
   readSavedTheme,
   persistTheme,
@@ -62,19 +63,52 @@ function createInitialConnectionState(): ConnectionState {
  * Components import sub-hooks directly — not through this hook.
  */
 export function useRpPlatformApp() {
-  // --- Bootstrap + personas queries ---
-  const bootstrapQuery = useBootstrapQuery();
-  const personasQuery = usePersonasQuery();
+  const [loadError, setLoadError] = useState("");
 
-  const isLoading = bootstrapQuery.status === "pending";
-  const loadError = bootstrapQuery.status === "error"
-    ? (bootstrapQuery.error instanceof Error ? bootstrapQuery.error.message : getT()("could_not_load_app_state"))
-    : "";
+  const isLoading = useBootstrapStore((s) => s.isLoading);
+  const bootstrapData = useBootstrapStore((s) => s.data);
+
+  // Initial load
+  useEffect(() => {
+    async function load() {
+      try {
+        await Promise.all([
+          fetchBootstrapAction(),
+          fetchPersonasAction(),
+        ]);
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : getT()("could_not_load_app_state"));
+      }
+    }
+    void load();
+  }, []);
 
   // Reactive snapshot for AppShell effects
   const activeChatId = useChatStore((s) => s.activeChatId);
-  const snapshotQuery = useChatSnapshot(activeChatId);
-  const snapshot = snapshotQuery.data ?? null;
+  const snapshotRaw = useChatDataStore((s) => s.chatMeta);
+  const messagesById = useChatDataStore((s) => s.messagesById);
+  const promptTrace = useChatDataStore((s) => s.promptTrace);
+  const promptTraceHistory = useChatDataStore((s) => s.promptTraceHistory);
+  const contextPreview = useChatDataStore((s) => s.contextPreview);
+
+  const snapshot = useMemo(() => {
+    if (!activeChatId || !snapshotRaw) return null;
+    if (snapshotRaw.activeChat.id !== activeChatId) return null; // Avoid returning old snapshot for new activeChatId until loaded
+    return {
+      character: snapshotRaw.character,
+      persona: snapshotRaw.persona,
+      activeChat: snapshotRaw.activeChat,
+      activeBranch: snapshotRaw.activeBranch,
+      branches: snapshotRaw.branches,
+      summaries: snapshotRaw.summaries,
+      messages: Object.values(messagesById),
+      chats: snapshotRaw.chats, // chats list is in snapshot!
+      allCharacters: snapshotRaw.allCharacters,
+      promptTrace,
+      promptTraceHistory,
+      contextPreview,
+    };
+  }, [activeChatId, snapshotRaw, messagesById, promptTrace, promptTraceHistory, contextPreview]);
 
   const selectedTraceId = useChatStore((s) => s.selectedTraceId);
   const editingMessageId = useChatStore((s) => s.editingMessageId);
@@ -107,7 +141,7 @@ export function useRpPlatformApp() {
       snapshot?.promptTrace?.id ?? snapshot?.promptTraceHistory[0]?.id ?? null,
     );
     if (!editingMessageId || !snapshot) return;
-    const stillExists = snapshot.messages.some((message) => message.id === editingMessageId);
+    const stillExists = snapshot.messages.some((message: AppMessage) => message.id === editingMessageId);
     if (!stillExists) {
       useChatStore.getState().setEditingMessageId(null);
       useChatStore.getState().setEditingDraft("");

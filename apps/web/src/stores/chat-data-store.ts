@@ -18,6 +18,8 @@ export interface ChatDataState {
     activeBranch: AppSnapshot["activeBranch"];
     branches: AppSnapshot["branches"];
     summaries: AppSnapshot["summaries"];
+    chats: AppSnapshot["chats"];
+    allCharacters: AppSnapshot["allCharacters"];
   } | null;
   /** Messages keyed by ID — raw, no macro resolution */
   messagesById: Record<string, AppMessage>;
@@ -66,6 +68,8 @@ export const useChatDataStore = create<ChatDataStore>()(
           activeBranch: snapshot.activeBranch,
           branches: snapshot.branches,
           summaries: snapshot.summaries,
+          chats: snapshot.chats,
+          allCharacters: snapshot.allCharacters,
         };
 
         // Messages: normalize into byId + order

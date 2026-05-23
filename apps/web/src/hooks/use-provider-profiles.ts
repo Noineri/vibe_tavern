@@ -4,6 +4,7 @@ import type { ProviderProbeResponse } from "@rp-platform/domain";
 import { PROVIDER_TYPE } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
 import { useProviderStore } from "../stores/provider-store.js";
+import { useProviderDataStore } from "../stores/provider-data-store.js";
 import {
   type FavoriteProviderModelRecord,
   type ProviderProfileRecord,
@@ -12,47 +13,46 @@ import {
 import type { FormState } from "../components/ProviderModal.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import {
-  providerKeys,
-  useProviderProfilesQuery,
-  useFavoriteModelsQuery,
-  useFetchProviderProfileFromCache,
-  useFetchProviderModelsFromCache,
-  useSaveProviderProfileMutation,
-  useUpdateProviderProfileMutation,
-  useDeleteProviderProfileMutation,
-  useActivateProviderProfileMutation,
-  useTestProviderProfileMutation,
-  useTestProviderDraftMutation,
-  useTestProfileChatMutation,
-  useTestProviderChatMutation,
-  useFetchModelsByEndpointMutation,
-  useToggleFavoriteModelMutation,
-  useRefreshProviderProfilesMutation,
-} from "../queries/index.js";
-import { useQueryClient } from "@tanstack/react-query";
+  loadProviderProfilesAction,
+  loadFavoriteModelsAction,
+  fetchProviderProfileAction,
+  fetchProviderModelsAction,
+  saveProviderProfileAction,
+  updateProviderProfileAction,
+  deleteProviderProfileAction,
+  activateProviderProfileAction,
+  testProviderProfileAction,
+  testProviderDraftAction,
+  testProfileChatAction,
+  testProviderChatAction,
+  fetchModelsByEndpointAction,
+  toggleFavoriteModelAction,
+} from "../stores/api-actions/provider-actions.js";
 
 export function useProviderProfiles() {
   const connection = useProviderStore((s) => s.connection);
   const patchConnection = useProviderStore((s) => s.patchConnection);
   const setConnection = useProviderStore((s) => s.setConnection);
-  const qc = useQueryClient();
-  const getProviderProfileFromCache = useFetchProviderProfileFromCache();
-  const getProviderModelsFromCache = useFetchProviderModelsFromCache();
-
-  // --- TQ Queries (server data — no useState) ---
-  const profilesQuery = useProviderProfilesQuery();
-  const providerProfiles = profilesQuery.data ?? [];
+  
+  const providerProfiles = useProviderDataStore((s) => s.profiles);
+  const favoritesByProfile = useProviderDataStore((s) => s.favoritesByProfile);
 
   // selectedProviderProfileId is local UI state, not server data
   const [selectedProviderProfileId, setSelectedProviderProfileId] = useState("");
 
-  // Favorites: use TQ query keyed by the active/selected profile
+  // Favorites
   const favoritesProfileId = connection.activeProviderProfileId || selectedProviderProfileId || null;
-  const favoritesQuery = useFavoriteModelsQuery(favoritesProfileId);
+  
+  useEffect(() => {
+    if (favoritesProfileId) {
+      void loadFavoriteModelsAction(favoritesProfileId);
+    }
+  }, [favoritesProfileId]);
+
   const favoriteModelsByProfile = useMemo<Record<string, FavoriteProviderModelRecord[]>>(() => {
-    if (!favoritesProfileId || !favoritesQuery.data) return {};
-    return { [favoritesProfileId]: favoritesQuery.data };
-  }, [favoritesQuery.data, favoritesProfileId]);
+    if (!favoritesProfileId) return {};
+    return { [favoritesProfileId]: favoritesByProfile[favoritesProfileId] ?? [] };
+  }, [favoritesByProfile, favoritesProfileId]);
 
   // --- Derived values ---
   const activeProviderProfile = useMemo(
@@ -64,19 +64,6 @@ export function useProviderProfiles() {
   const canRefreshModels = Boolean(connection.activeProviderProfileId || selectedProviderProfileId);
   const canConnect = Boolean(connection.providerLabel.trim() && connection.baseUrl.trim());
   const canSendViaActiveProfile = activeProviderProfile !== null && Boolean(activeProviderProfile.defaultModel);
-
-  // --- TQ Mutations ---
-  const saveProfileMut = useSaveProviderProfileMutation();
-  const updateProfileMut = useUpdateProviderProfileMutation();
-  const deleteProfileMut = useDeleteProviderProfileMutation();
-  const activateProfileMut = useActivateProviderProfileMutation();
-  const testProfileMut = useTestProviderProfileMutation();
-  const testDraftMut = useTestProviderDraftMutation();
-  const testProfileChatMut = useTestProfileChatMutation();
-  const testProviderChatMut = useTestProviderChatMutation();
-  const fetchModelsMut = useFetchModelsByEndpointMutation();
-  const toggleFavoriteMut = useToggleFavoriteModelMutation();
-  const refreshProfilesMut = useRefreshProviderProfilesMutation();
 
   // --- Hydration: sync active profile into connection state ---
   function hydrateActiveProviderProfile(profiles: ProviderProfileRecord[]): void {
@@ -112,7 +99,7 @@ export function useProviderProfiles() {
     });
 
     // Load cached models async so TopBar can show human-readable labels
-    void getProviderModelsFromCache(activeProfile.id).then((response) => {
+    void fetchProviderModelsAction(activeProfile.id).then((response) => {
       if (response.models.length > 0) {
         patchConnection({ models: response.models });
       }
@@ -125,7 +112,7 @@ export function useProviderProfiles() {
 
   async function probeHydratedProviderProfile(providerProfileId: string): Promise<void> {
     try {
-      const result = await testProfileMut.mutateAsync(providerProfileId);
+      const result = await testProviderProfileAction(providerProfileId);
       setConnection((current) => {
         if (current.activeProviderProfileId !== providerProfileId) return current;
         if (result.success) {
@@ -150,6 +137,11 @@ export function useProviderProfiles() {
   }
 
   // --- Effects ---
+
+  useEffect(() => {
+    // Initial load
+    void loadProviderProfilesAction();
+  }, []);
 
   // Auto-hydrate when profiles load/refresh
   useEffect(() => {
@@ -184,8 +176,8 @@ export function useProviderProfiles() {
     }));
 
     try {
-      const saved = await saveProfileMut.mutateAsync({
-        id: selectedProviderProfileId || connection.activeProviderProfileId || undefined,
+      const savedId = selectedProviderProfileId || connection.activeProviderProfileId || undefined;
+      const patch = {
         name: connection.providerLabel.trim(),
         providerPreset: connection.providerType || PROVIDER_TYPE.openaiCompat,
         endpoint: normalizedBaseUrl,
@@ -206,11 +198,12 @@ export function useProviderProfiles() {
         reasoningEffort: connection.reasoningEffort,
         showReasoning: connection.showReasoning,
         streamResponse: connection.streamResponse,
-      });
+      };
 
-      // Profiles query will auto-refetch via mutation's onSuccess invalidation
-      // but we need the latest data immediately, so refetch + wait
-      await qc.invalidateQueries({ queryKey: providerKeys.list() });
+      const saved = savedId 
+        ? await updateProviderProfileAction(savedId, patch)
+        : await saveProviderProfileAction(patch);
+
       setSelectedProviderProfileId(saved.id);
       patchConnection({
         providerLabel: saved.name,
@@ -237,7 +230,7 @@ export function useProviderProfiles() {
     }
 
     try {
-      const profile = await getProviderProfileFromCache(selectedProviderProfileId);
+      const profile = await fetchProviderProfileAction(selectedProviderProfileId);
       patchConnection({
         providerLabel: profile.name,
         baseUrl: normalizeOpenAiCompatibleBaseUrl(profile.endpoint),
@@ -291,56 +284,32 @@ export function useProviderProfiles() {
 
     try {
       const apiKeyInput = connection.apiKey.trim();
-      const saved = existingId
-        ? await updateProfileMut.mutateAsync({
-            id: existingId,
-            patch: {
-              name,
-              providerPreset: connection.providerType || PROVIDER_TYPE.openaiCompat,
-              endpoint,
-              apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
-              defaultModel: connection.model.trim() || null,
-              contextBudget: connection.maxTokens || 16000,
-              temperature: connection.temperature,
-              topP: connection.topP,
-              minP: connection.minP,
-              topK: connection.topK,
-              
-              repetitionPenalty: connection.repetitionPenalty,
-              frequencyPenalty: connection.frequencyPenalty,
-              presencePenalty: connection.presencePenalty,
-              maxTokens: connection.maxTokens,
-              stopSequences: connection.stopSequences,
-              seed: connection.seed,
-              reasoningEffort: connection.reasoningEffort,
-              showReasoning: connection.showReasoning,
-              streamResponse: connection.streamResponse,
-            },
-          })
-        : await saveProfileMut.mutateAsync({
-            name,
-            providerPreset: connection.providerType || PROVIDER_TYPE.openaiCompat,
-            endpoint,
-            apiKey: apiKeyInput || undefined,
-            defaultModel: connection.model.trim() || null,
-            contextBudget: connection.maxTokens || 16000,
-            temperature: connection.temperature,
-            topP: connection.topP,
-            minP: connection.minP,
-            topK: connection.topK,
-            
-            repetitionPenalty: connection.repetitionPenalty,
-            frequencyPenalty: connection.frequencyPenalty,
-            presencePenalty: connection.presencePenalty,
-            maxTokens: connection.maxTokens,
-            stopSequences: connection.stopSequences,
-            seed: connection.seed,
-            reasoningEffort: connection.reasoningEffort,
-            showReasoning: connection.showReasoning,
-            streamResponse: connection.streamResponse,
-          });
+      const patch = {
+        name,
+        providerPreset: connection.providerType || PROVIDER_TYPE.openaiCompat,
+        endpoint,
+        apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
+        defaultModel: connection.model.trim() || null,
+        contextBudget: connection.maxTokens || 16000,
+        temperature: connection.temperature,
+        topP: connection.topP,
+        minP: connection.minP,
+        topK: connection.topK,
+        repetitionPenalty: connection.repetitionPenalty,
+        frequencyPenalty: connection.frequencyPenalty,
+        presencePenalty: connection.presencePenalty,
+        maxTokens: connection.maxTokens,
+        stopSequences: connection.stopSequences,
+        seed: connection.seed,
+        reasoningEffort: connection.reasoningEffort,
+        showReasoning: connection.showReasoning,
+        streamResponse: connection.streamResponse,
+      };
 
-      await qc.invalidateQueries({ queryKey: providerKeys.list() });
+      const saved = existingId
+        ? await updateProviderProfileAction(existingId, patch)
+        : await saveProviderProfileAction(patch);
+
       setSelectedProviderProfileId(saved.id);
       patchConnection({
         providerLabel: saved.name,
@@ -364,9 +333,8 @@ export function useProviderProfiles() {
       return;
     }
     try {
-      await activateProfileMut.mutateAsync(providerProfileId);
-      await qc.invalidateQueries({ queryKey: providerKeys.list() });
-      const profile = await getProviderProfileFromCache(providerProfileId);
+      await activateProviderProfileAction(providerProfileId);
+      const profile = await fetchProviderProfileAction(providerProfileId);
       patchConnection({
         providerLabel: profile.name,
         baseUrl: normalizeOpenAiCompatibleBaseUrl(profile.endpoint),
@@ -392,8 +360,7 @@ export function useProviderProfiles() {
     }
 
     try {
-      await deleteProfileMut.mutateAsync(targetId);
-      await qc.invalidateQueries({ queryKey: providerKeys.list() });
+      await deleteProviderProfileAction(targetId);
       if (connection.activeProviderProfileId === targetId) {
         patchConnection({
           activeProviderProfileId: null,
@@ -413,7 +380,7 @@ export function useProviderProfiles() {
 
   async function handleCreateProviderProfile(): Promise<ProviderProfileRecord | null> {
     try {
-      const saved = await saveProfileMut.mutateAsync({
+      const saved = await saveProviderProfileAction({
         name: getT()("new_profile"),
         providerPreset: PROVIDER_TYPE.openaiCompat,
         endpoint: "",
@@ -434,7 +401,6 @@ export function useProviderProfiles() {
         streamResponse: true,
         customSamplers: false,
       });
-      await qc.invalidateQueries({ queryKey: providerKeys.list() });
       return saved;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : getT()("provider_create_failed"));
@@ -446,7 +412,7 @@ export function useProviderProfiles() {
     const existing = providerProfiles.find((p) => p.id === id);
     if (!existing) return null;
     try {
-      const saved = await saveProfileMut.mutateAsync({
+      const saved = await saveProviderProfileAction({
         name: `${existing.name} (copy)`,
         providerPreset: existing.providerPreset,
         endpoint: existing.endpoint,
@@ -467,7 +433,6 @@ export function useProviderProfiles() {
         streamResponse: existing.streamResponse,
         customSamplers: existing.customSamplers,
       });
-      await qc.invalidateQueries({ queryKey: providerKeys.list() });
       return saved;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : getT()("provider_duplicate_failed"));
@@ -476,11 +441,11 @@ export function useProviderProfiles() {
   }
 
   async function handleTestDraftConnection(endpoint: string, apiKey: string, providerType?: string): Promise<ProviderProbeResponse> {
-    return testDraftMut.mutateAsync({ endpoint, apiKey, providerType });
+    return testProviderDraftAction({ endpoint, apiKey, providerType });
   }
 
   async function handleTestProfileConnection(providerProfileId: string): Promise<ProviderProbeResponse> {
-    return testProfileMut.mutateAsync(providerProfileId);
+    return testProviderProfileAction(providerProfileId);
   }
 
   async function handleTestChat(
@@ -491,28 +456,19 @@ export function useProviderProfiles() {
     providerType?: string,
   ): Promise<TestChatResponse> {
     if (profileId) {
-      return testProfileChatMut.mutateAsync({ profileId, model });
+      return testProfileChatAction(profileId, model);
     }
-    return testProviderChatMut.mutateAsync({ baseUrl, apiKey, model, providerType });
+    return testProviderChatAction(baseUrl, apiKey, model, providerType);
   }
 
   const handleFetchModelsForProfile = useCallback(async (providerProfileId: string): Promise<Array<{ id: string; label: string; contextLength?: number }>> => {
-    // Invalidate cache so refresh always hits the backend
-    await qc.invalidateQueries({ queryKey: providerKeys.models(providerProfileId) });
-    const response = await getProviderModelsFromCache(providerProfileId);
+    const response = await fetchProviderModelsAction(providerProfileId);
     return response.models;
-  }, [qc, getProviderModelsFromCache]);
+  }, []);
 
   async function handleLoadFavoriteProviderModels(providerProfileId: string): Promise<FavoriteProviderModelRecord[]> {
-    await qc.invalidateQueries({ queryKey: providerKeys.favorites(providerProfileId) });
-    const data = await qc.fetchQuery({
-      queryKey: providerKeys.favorites(providerProfileId),
-      queryFn: () => {
-        // Import needed inline to avoid circular ref; use app-client directly
-        return import("../app-client.js").then((m) => m.listFavoriteProviderModels(providerProfileId));
-      },
-    });
-    return data;
+    await loadFavoriteModelsAction(providerProfileId);
+    return useProviderDataStore.getState().favoritesByProfile[providerProfileId] ?? [];
   }
 
   async function handleToggleFavoriteProviderModel(
@@ -521,21 +477,17 @@ export function useProviderProfiles() {
   ): Promise<void> {
     const current = favoriteModelsByProfile[providerProfileId] ?? [];
     const isFavorite = current.some((favorite) => favorite.modelId === model.id);
-    await toggleFavoriteMut.mutateAsync({
-      profileId: providerProfileId,
-      modelId: model.id,
-      label: model.label,
-      contextLength: model.contextLength,
-      removing: isFavorite,
-    });
+    await toggleFavoriteModelAction(
+      providerProfileId,
+      model.id,
+      model.label,
+      model.contextLength,
+      isFavorite
+    );
   }
 
   async function handleSelectFavoriteProviderModel(providerProfileId: string, modelId: string): Promise<void> {
-    const saved = await updateProfileMut.mutateAsync({
-      id: providerProfileId,
-      patch: { defaultModel: modelId },
-    });
-    await qc.invalidateQueries({ queryKey: providerKeys.list() });
+    const saved = await updateProviderProfileAction(providerProfileId, { defaultModel: modelId });
     patchConnection({
       providerLabel: saved.name,
       baseUrl: normalizeOpenAiCompatibleBaseUrl(saved.endpoint),
@@ -554,12 +506,12 @@ export function useProviderProfiles() {
     _useCache?: boolean,
     providerType?: string,
   ): Promise<Array<{ id: string; label: string; contextLength?: number }>> {
-    const response = await fetchModelsMut.mutateAsync({ baseUrl, apiKey, providerType });
+    const response = await fetchModelsByEndpointAction(baseUrl, apiKey, providerType);
     return response.models;
   }
 
   async function handleRefreshProfiles(): Promise<void> {
-    await refreshProfilesMut.mutateAsync();
+    await loadProviderProfilesAction();
   }
 
   async function handleSaveProviderProfileFromForm(
@@ -593,8 +545,7 @@ export function useProviderProfiles() {
       customSamplers: form.customSamplers,
     };
     try {
-      const saved = await updateProfileMut.mutateAsync({ id: form.id, patch });
-      await qc.invalidateQueries({ queryKey: providerKeys.list() });
+      const saved = await updateProviderProfileAction(form.id, patch);
       return saved;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : getT()("provider_save_failed"));
@@ -615,10 +566,8 @@ export function useProviderProfiles() {
       return;
     }
 
-    
-
     try {
-      const result = await testProfileMut.mutateAsync(providerProfileId);
+      const result = await testProviderProfileAction(providerProfileId);
       if (result.success) {
         const countHint = typeof result.modelCount === "number"
           ? ` Provider advertises ${result.modelCount} models — press Refresh models to load them.`
@@ -646,8 +595,8 @@ export function useProviderProfiles() {
 
     try {
       const [profile, response] = await Promise.all([
-        getProviderProfileFromCache(providerProfileId),
-        getProviderModelsFromCache(providerProfileId),
+        fetchProviderProfileAction(providerProfileId),
+        fetchProviderModelsAction(providerProfileId),
       ]);
       const models = response.models;
       setConnection((current) => ({
