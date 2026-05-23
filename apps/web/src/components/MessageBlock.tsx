@@ -13,7 +13,6 @@ import { useT } from "../i18n/context.js";
 import { MessageReasoning } from "./MessageReasoning.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
 import { replaceUiMacros } from "../lib/macros.js";
-import { CustomTooltip } from "./shared/Tooltip.js";
 
 const msgWrap = "relative group py-2.5";
 const sepWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7 my-[6px] mt-2";
@@ -324,86 +323,70 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
           {!isEditing && !isGenerating && (
             <div className="relative flex items-center gap-px mt-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-              <CustomTooltip content={copyLabel}>
-                <span
-                  className={cn('flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all duration-150 hover:bg-s2 hover:text-t2', copied && 'translate-y-[-1px] bg-success-dim text-success-text')}
-                  onClick={() => { if (isBusy) return; void navigator.clipboard?.writeText(msg.displayContent); setCopied(true); setTimeout(() => setCopied(false), 1000); }}
-                >{copied ? <Icons.Check /> : <Icons.Copy />}{copied ? t("copied") : copyLabel}</span>
-              </CustomTooltip>
+              <span
+                className={cn('flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all duration-150 hover:bg-s2 hover:text-t2', copied && 'translate-y-[-1px] bg-success-dim text-success-text')}
+                onClick={() => { if (isBusy) return; void navigator.clipboard?.writeText(msg.displayContent); setCopied(true); setTimeout(() => setCopied(false), 1000); }}
+              >{copied ? <Icons.Check /> : <Icons.Copy />}{copied ? t("copied") : copyLabel}</span>
 
-              <CustomTooltip content={editLabel}>
-                <span
-                  className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-                  onClick={() => { if (!isBusy) chat.handleStartEdit(msg); }}
-                ><Icons.Edit />{editLabel}</span>
-              </CustomTooltip>
+              <span
+                className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+                onClick={() => { if (!isBusy) chat.handleStartEdit(msg); }}
+              ><Icons.Edit />{editLabel}</span>
 
               {canResend && (
-                <CustomTooltip content={t("resend")}>
-                  <span
-                    className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-                    onClick={() => { if (!isBusy) void chat.handleResend(); }}
-                  ><Icons.Regen />{t("resend")}</span>
-                </CustomTooltip>
+                <span
+                  className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+                  onClick={() => { if (!isBusy) void chat.handleResend(); }}
+                ><Icons.Regen />{t("resend")}</span>
               )}
 
               {canBranch && (
-                <CustomTooltip content={branchLabel}>
-                  <span
-                    className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-                    onClick={() => { if (!isBusy) void chat.handleFork(msg.id); }}
-                  ><Icons.Branch />{branchLabel}</span>
-                </CustomTooltip>
+                <span
+                  className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+                  onClick={() => { if (!isBusy) void chat.handleFork(msg.id); }}
+                ><Icons.Branch />{branchLabel}</span>
               )}
 
               {canRegenerate && (
-                <CustomTooltip content={regenLabel}>
-                  <span
-                    className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-                    onClick={() => { if (!isBusy) void chat.handleRegenerateMessage(msg.id); }}
-                  ><Icons.Regen />{regenLabel}</span>
-                </CustomTooltip>
+                <span
+                  className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+                  onClick={() => { if (!isBusy) void chat.handleRegenerateMessage(msg.id); }}
+                ><Icons.Regen />{regenLabel}</span>
               )}
 
               {!isUser && variantCount > 1 && canSwitchVariant && (
                 <span className="ml-auto mr-auto flex items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
-                  <CustomTooltip content={t("previous_variant")}>
-                    <button
-                      className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                      disabled={isBusy || selectedVariantIndex <= 0}
-                      onClick={() => {
-                        _logSwipe('click:prevVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex - 1 });
-                        useChatDataStore.getState().setSwipeDirection(-1);
-                        const current = useChatDataStore.getState().messagesById[msg.id];
-                        const idx = current?.selectedVariantIndex ?? 0;
-                        chat.handleSelectMessageVariant(msg.id, idx - 1);
-                      }}
-                    ><Icons.Caret direction="l" /></button>
-                  </CustomTooltip>
+                  <button
+                    className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
+                    disabled={isBusy || selectedVariantIndex <= 0}
+                    onClick={() => {
+                      _logSwipe('click:prevVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex - 1 });
+                      useChatDataStore.getState().setSwipeDirection(-1);
+                      const current = useChatDataStore.getState().messagesById[msg.id];
+                      const idx = current?.selectedVariantIndex ?? 0;
+                      chat.handleSelectMessageVariant(msg.id, idx - 1);
+                    }}
+                  ><Icons.Caret direction="l" /></button>
                   <span className="min-w-6 text-center tabular-nums">{selectedVariantIndex + 1}/{variantCount}</span>
-                  <CustomTooltip content={t("next_variant")}>
-                    <button
-                      className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                      disabled={isBusy || selectedVariantIndex >= variantCount - 1}
-                      onClick={() => {
-                        _logSwipe('click:nextVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex + 1 });
-                        useChatDataStore.getState().setSwipeDirection(1);
-                        const current = useChatDataStore.getState().messagesById[msg.id];
-                        const idx = current?.selectedVariantIndex ?? 0;
-                        chat.handleSelectMessageVariant(msg.id, idx + 1);
-                      }}
-                    ><Icons.Caret direction="r" /></button>
-                  </CustomTooltip>
+                  <button
+                    className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
+                    disabled={isBusy || selectedVariantIndex >= variantCount - 1}
+                    onClick={() => {
+                      _logSwipe('click:nextVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex + 1 });
+                      useChatDataStore.getState().setSwipeDirection(1);
+                      const current = useChatDataStore.getState().messagesById[msg.id];
+                      const idx = current?.selectedVariantIndex ?? 0;
+                      chat.handleSelectMessageVariant(msg.id, idx + 1);
+                    }}
+                  ><Icons.Caret direction="r" /></button>
                 </span>
               )}
 
               {!isGreeting && (
-                <CustomTooltip content={deleteLabel}>
-                  <span
-                    className="absolute right-0 flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-                    onClick={() => { if (!isBusy) void chat.handleDeleteMessage(msg.id); }}
-                  ><Icons.Trash /></span>
-                </CustomTooltip>
+                <span
+                  className="absolute right-0 flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+                  onClick={() => { if (!isBusy) void chat.handleDeleteMessage(msg.id); }}
+                ><Icons.Trash /></span>
               )}
             </div>
           )}
