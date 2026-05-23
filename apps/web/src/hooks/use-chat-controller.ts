@@ -13,7 +13,7 @@ import {
 } from "../app-client.js";
 import { useChatStore, getAbortController, setAbortController, abortGeneration } from "../stores/chat-store.js";
 import { useProviderStore } from "../stores/provider-store.js";
-import { useProviderProfilesQuery } from "../queries/provider-queries.js";
+import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { StreamingReveal } from "../lib/streaming-reveal.js";
 import {
   fetchChatAction,
@@ -47,10 +47,10 @@ export interface ChatControllerActions {
 
 export function useChatController(): ChatControllerActions {
   // --- Provider capabilities (derived internally) ---
-  const profilesQuery = useProviderProfilesQuery();
+  const providerProfiles = useProviderDataStore((s) => s.profiles);
   const activeProfile = useMemo(
-    () => profilesQuery.data?.find((p) => p.isActive) ?? null,
-    [profilesQuery.data],
+    () => providerProfiles.find((p) => p.isActive) ?? null,
+    [providerProfiles],
   );
   const canSendViaActiveProfile = activeProfile !== null && Boolean(activeProfile.defaultModel);
   const streamResponse = useProviderStore((s) => s.connection.streamResponse);

@@ -13,8 +13,8 @@ import { CharacterImportModal, ChatImportModal } from "./ImportModals.js";
 import { useT } from "../i18n/context.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
 import { useCharacterController } from "../hooks/use-character-controller.js";
-import { useBootstrapQuery } from "../queries/bootstrap-queries.js";
-import { useChatSnapshot } from "../queries/chat-queries.js";
+import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
+import { useChatDataStore } from "../stores/chat-data-store.js";
 import { useNavigationStore, useChatStore, useCharacterStore, useModalStore } from "../stores/index.js";
 import { buildCharacterTabs } from "../lib/character-tabs.js";
 import { useMemo } from "react";
@@ -25,7 +25,6 @@ export function Sidebar() {
   // --- Sub-hooks ---
   const chat = useChatController();
   const character = useCharacterController();
-  const bootstrapQuery = useBootstrapQuery();
 
   // --- Store subscriptions ---
   const sidebarCollapsed = useNavigationStore((s) => s.sidebarCollapsed);
@@ -34,14 +33,14 @@ export function Sidebar() {
   const setBuildTab = useCharacterStore((s) => s.setBuildTab);
   const activeChatId = useChatStore((s) => s.activeChatId);
   const selectedCharacterId = useChatStore((s) => s.selectedCharacterId);
-  const snapshotQuery = useChatSnapshot(activeChatId);
-  const snapshot = snapshotQuery.data ?? null;
+  const chatMeta = useChatDataStore((s) => s.chatMeta);
+  const snapshot = chatMeta;
   const renamingChatId = useCharacterStore((s) => s.renamingChatId);
   const renameDraft = useCharacterStore((s) => s.renameDraft);
   const buildPanelItems = useBuildPanels();
 
   // --- Derived from bootstrap ---
-  const allCharacters = bootstrapQuery.data?.allCharacters ?? [];
+  const allCharacters = useBootstrapStore((s) => s.data)?.allCharacters ?? snapshot?.allCharacters ?? [];
 
   // --- Derived from stores ---
   const allChats = snapshot?.chats ?? [];

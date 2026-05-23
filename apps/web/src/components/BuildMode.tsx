@@ -14,8 +14,8 @@ import { useActiveTrace } from "../stores/chat-selectors.js";
 import { useCharacterController } from "../hooks/use-character-controller.js";
 import { useBuildPanels } from "../hooks/use-build-panels.js";
 
-import { useBootstrapQuery } from "../queries/bootstrap-queries.js";
-import { useChatSnapshot } from "../queries/chat-queries.js";
+import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
+import { useChatDataStore } from "../stores/chat-data-store.js";
 import { useChatStore } from "../stores/index.js";
 
 export type BuildTab = string;
@@ -24,19 +24,19 @@ export type { BuildCharacterDraft };
 
 export function BuildMode() {
   const character = useCharacterController();
-  const bootstrapQuery = useBootstrapQuery();
+  const bootstrapData = useBootstrapStore((s) => s.data);
   const activeChatId = useChatStore((s) => s.activeChatId);
-  const snapshotQuery = useChatSnapshot(activeChatId);
-  const snapshot = snapshotQuery.data ?? null;
-  const charData = snapshot?.character;
+  const chatMeta = useChatDataStore((s) => s.chatMeta);
+  const promptTraceHistory = useChatDataStore((s) => s.promptTraceHistory);
+  const charData = chatMeta?.character ?? null;
   const isSaving = useCharacterStore((s) => s.isSavingCharacter);
   const buildTab = useCharacterStore((s) => s.buildTab);
 
   const activeTrace = useActiveTrace(useChatStore((s) => s.selectedTraceId));
   const promptPayloadText = JSON.stringify(activeTrace?.finalPayload ?? {}, null, 2);
-  const promptTraceCount = snapshot?.promptTraceHistory.length ?? 0;
+  const promptTraceCount = promptTraceHistory.length;
 
-  if (!snapshot || !charData) return null;
+  if (!chatMeta || !charData) return null;
 
   return <BuildModeInner
     character={charData}
@@ -48,8 +48,8 @@ export function BuildMode() {
     onSave={character.handleSaveCharacter}
     onAvatarUpload={character.handleAvatarUpload}
     characterId={charData.id}
-    activeChatId={snapshot.activeChat?.id ?? null}
-    personaId={snapshot.persona?.id ?? null}
+    activeChatId={chatMeta.activeChat?.id ?? null}
+    personaId={chatMeta.persona?.id ?? null}
   />;
 }
 

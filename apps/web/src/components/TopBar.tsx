@@ -7,8 +7,8 @@ import { useProviderProfiles } from "../hooks/use-provider-profiles.js";
 import { usePresetController } from "../hooks/use-preset-controller.js";
 import { useNavigationStore, useProviderStore, useChatStore, useModalStore } from "../stores/index.js";
 import { useActiveTrace } from "../stores/chat-selectors.js";
-import { useBootstrapQuery } from "../queries/bootstrap-queries.js";
-import { useChatSnapshot } from "../queries/chat-queries.js";
+import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
+import { useChatDataStore } from "../stores/chat-data-store.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 
 export function TopBar() {
@@ -17,24 +17,23 @@ export function TopBar() {
   // --- Sub-hooks ---
   const provider = useProviderProfiles();
   const preset = usePresetController();
-  const bootstrapQuery = useBootstrapQuery();
+  const bootstrapData = useBootstrapStore((s) => s.data);
 
   // --- Store subscriptions ---
   const mode = useNavigationStore((s) => s.mode);
   const theme = useNavigationStore((s) => s.theme);
   const connection = useProviderStore((s) => s.connection);
   const activeChatId = useChatStore((s) => s.activeChatId);
-  const snapshotQuery = useChatSnapshot(activeChatId);
-  const snapshot = snapshotQuery.data ?? null;
+  const chatMeta = useChatDataStore((s) => s.chatMeta);
 
-  const promptPresets = bootstrapQuery.data?.promptPresets ?? [];
-  const activePromptPresetId = snapshot?.activeChat.promptPresetId ?? null;
+  const promptPresets = bootstrapData?.promptPresets ?? [];
+  const activePromptPresetId = chatMeta?.activeChat.promptPresetId ?? null;
 
   // --- Derived ---
-  const characterName = snapshot?.character.name ?? "";
-  const characterSubtitle = snapshot?.character.subtitle ?? "";
-  const characterAvatar = snapshot?.character.avatarAssetId
-    ? `${getGatewayBaseUrl()}/api/assets/${snapshot.character.avatarAssetId}`
+  const characterName = chatMeta?.character.name ?? "";
+  const characterSubtitle = chatMeta?.character.subtitle ?? "";
+  const characterAvatar = chatMeta?.character.avatarAssetId
+    ? `${getGatewayBaseUrl()}/api/assets/${chatMeta.character.avatarAssetId}`
     : undefined;
   const providerConnected = connection.status === "connected";
   const providerLabel = provider.activeProviderProfile?.name || t("no_provider");

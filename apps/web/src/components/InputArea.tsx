@@ -10,8 +10,8 @@ import { useProviderProfiles } from "../hooks/use-provider-profiles.js";
 
 import { useChatStore, useProviderStore } from "../stores/index.js";
 import { useActiveTrace } from "../stores/chat-selectors.js";
-import { useBootstrapQuery, usePersonasQuery } from "../queries/bootstrap-queries.js";
-import { useChatSnapshot } from "../queries/chat-queries.js";
+import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
+import { useChatDataStore } from "../stores/chat-data-store.js";
 import type { PromptLayerDto } from "@rp-platform/domain";
 
 export function InputArea() {
@@ -25,21 +25,20 @@ export function InputArea() {
   const chat = useChatController();
   const character = useCharacterController();
   const provider = useProviderProfiles();
-  const bootstrapQuery = useBootstrapQuery();
+  const bootstrapData = useBootstrapStore((s) => s.data);
 
   // --- Store subscriptions ---
   const draft = useChatStore((s) => s.draft);
   const isSending = useChatStore((s) => s.isSending);
   const activeChatId = useChatStore((s) => s.activeChatId);
-  const snapshotQuery = useChatSnapshot(activeChatId);
-  const snapshot = snapshotQuery.data ?? null;
+  const chatMeta = useChatDataStore((s) => s.chatMeta);
   const connection = useProviderStore((s) => s.connection);
 
-  const personas = usePersonasQuery().data ?? [];
+  const personas = useBootstrapStore((s) => s.personas) ?? [];
   const activePromptTrace = useActiveTrace(useChatStore((s) => s.selectedTraceId));
   const canUseLiveApi = connection.status === "connected" && Boolean(connection.model);
 
-  const activePersonaId = snapshot?.persona?.id ?? null;
+  const activePersonaId = chatMeta?.persona?.id ?? null;
   const contextSize = provider.activeProviderProfile?.contextBudget ?? 0;
   const maxTokens = provider.activeProviderProfile?.maxTokens ?? 0;
   const favoriteModels = provider.activeProviderProfile ? (provider.favoriteModelsByProfile[provider.activeProviderProfile.id] ?? []) : [];
