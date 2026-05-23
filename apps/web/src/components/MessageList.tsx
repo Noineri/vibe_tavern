@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useMemo, useRef, useState, useCallback } from "react";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import type { AppMessage } from "../app-client.js";
 import { Markdown } from "../lib/markdown.js";
 import { avatarUrl } from "../lib/avatar.js";
@@ -23,9 +23,7 @@ export function MessageList() {
   const activeChatId = useChatStore((s) => s.activeChatId);
   const snapshotQuery = useChatSnapshot(activeChatId);
   const snapshot = snapshotQuery.data ?? null;
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const endRef = useRef<HTMLDivElement | null>(null);
-  const prevMsgCountRef = useRef(0);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [greetingIndex, setGreetingIndex] = useState(0);
 
   const editingMessageId = useChatStore((s) => s.editingMessageId);
@@ -99,140 +97,67 @@ export function MessageList() {
     ? [firstCharMsg.content, ...alternateGreetings]
     : undefined;
 
-  // --- Virtualizer ---
-  const virtualizer = useVirtualizer({
-    count: displayMessages.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: (index) => {
-      const msg = displayMessages[index];
-      if (!msg) return 100;
-      return msg.role === "user" ? 80 : 160;
-    },
-    overscan: 5,
-  });
+  const itemContent = useCallback((index: number, message: AppMessage) => {
+    const previous = index > 0 ? displayMessages[index - 1] : null;
+    const showSeparator =
+      previous !== null &&
+      !isBreakoutRole(previous.role) &&
+      !isBreakoutRole(message.role);
 
-  // Reset on chat switch
-  useEffect(() => {
-    prevMsgCountRef.current = 0;
-  }, [activeChatId]);
-
-  // Auto-scroll: instant jump on initial load, smooth for incremental updates
-  useEffect(() => {
-    if (displayMessages.length === 0) return;
-    const isInitialLoad = prevMsgCountRef.current === 0;
-    prevMsgCountRef.current = displayMessages.length;
-
-    if (isInitialLoad) {
-      // Scroll to bottom repeatedly as virtualizer measures items.
-      // estimateSize gives rough heights; measureElement replaces them with
-      // real heights after render, growing the total container size.
-      // We keep jumping to bottom over several frames until it stabilizes.
-      let attempts = 0;
-      const jump = () => {
-        const el = scrollRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-        if (++attempts < 10) requestAnimationFrame(jump);
-      };
-      requestAnimationFrame(jump);
-    } else {
-      // Incremental: smooth scroll for new messages / streaming
-      virtualizer.scrollToIndex(displayMessages.length - 1, { align: "end", behavior: "smooth" });
-    }
-  }, [displayMessages.length, virtualizer]);
-
-  // Scroll down when pending user message appears (before streaming starts)
-  useEffect(() => {
-    if (displayPendingUserMessageContent) {
-      requestAnimationFrame(() => {
-        endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-      });
-    }
-  }, [displayPendingUserMessageContent]);
-
-  // Keep scrolled to bottom during streaming
-  useEffect(() => {
-    if (streamingText) {
-      endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-    }
-  }, [streamingText]);
-
-  return (
-    <TranslateErrorBoundary>
-    <div className="flex-1 overflow-y-auto pt-7 pb-3" ref={scrollRef}>
-      {/* TODO: VP-W4+ — EmptyState component for no active chat */}
-      {/* TODO: VP-W4+ — EmptyState component for empty chat */}
-
-      <div style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
-        {virtualizer.getVirtualItems().map((virtualItem) => {
-          const message = displayMessages[virtualItem.index];
-          if (!message) return null;
-          const previous = virtualItem.index > 0 ? displayMessages[virtualItem.index - 1] : null;
-          const showSeparator =
-            previous !== null &&
-            !isBreakoutRole(previous.role) &&
-            !isBreakoutRole(message.role);
-
-          return (
-            <Fragment key={message.id}>
-              {showSeparator && (
-                <div
-                  style={{ position: "absolute", top: virtualItem.start - 14, left: 0, right: 0 }}
-                  className={sepWrap}
-                >
-                  <div className="h-px bg-border opacity-40"/>
-                </div>
-              )}
-              <div
-                ref={virtualizer.measureElement}
-                data-index={virtualItem.index}
-                style={{ position: "absolute", top: virtualItem.start, left: 0, width: "100%" }}
-              >
-                <MessageBlock
-                  messageId={message.id}
-                  characterName={characterName}
-                  isEditing={editingMessageId === message.id}
-                  isGenerating={
-                    message.id !== firstCharMsgId &&
-                    message.role === "assistant" &&
-                    isSending &&
-                    !pendingUserMessageContent &&
-                    isLastAssistantMessage(displayMessages, message.id)
-                  }
-                  editingDraft={editingDraft}
-                  isBusy={isSending || messageActionId === message.id}
-                  canBranch={message.id !== firstCharMsgId}
-                  canRegenerate={message.id !== firstCharMsgId && isLastAssistantMessage(displayMessages, message.id)}
-                  canResend={isLastMessage(displayMessages, message.id) && message.role === "user" && !displayPendingUserMessageContent}
-                  canSwitchVariant={isLastMessage(displayMessages, message.id)}
-                  isGreeting={message.id === firstCharMsgId}
-                  greetingOptions={message.id === firstCharMsgId ? greetingOptions : undefined}
-                  greetingIndex={message.id === firstCharMsgId ? greetingIndex : 0}
-                  onGreetingIndexChange={setGreetingIndex}
-                  onBranch={(msgId: string) => void chat.handleFork(msgId)}
-                  onStartEdit={() => chat.handleStartEdit(message)}
-                  onEditingDraftChange={useChatStore.getState().setEditingDraft}
-                  onCancelEdit={chat.handleCancelEdit}
-                  onSaveEdit={() => void chat.handleSaveMessageEdit(message.id)}
-                  onDelete={() => void chat.handleDeleteMessage(message.id)}
-                  onRegenerate={() => void chat.handleRegenerateMessage(message.id)}
-                  onResend={() => { void chat.handleResend(); }}
-                  onSelectPreviousVariant={() =>
-                    chat.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) - 1)
-                  }
-                  onSelectNextVariant={() =>
-                    chat.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) + 1)
-                  }
-                  characterAvatarAssetId={characterAvatarAssetId}
-                  personaAvatarAssetId={personaAvatarAssetId}
-                  personaName={personaName}
-                />
-              </div>
-            </Fragment>
-          );
-        })}
+    return (
+      <div key={message.id}>
+        {showSeparator && (
+          <div className={sepWrap}>
+            <div className="h-px bg-border opacity-40"/>
+          </div>
+        )}
+        <MessageBlock
+          messageId={message.id}
+          characterName={characterName}
+          isEditing={editingMessageId === message.id}
+          isGenerating={
+            message.id !== firstCharMsgId &&
+            message.role === "assistant" &&
+            isSending &&
+            !pendingUserMessageContent &&
+            isLastAssistantMessage(displayMessages, message.id)
+          }
+          editingDraft={editingDraft}
+          isBusy={isSending || messageActionId === message.id}
+          canBranch={message.id !== firstCharMsgId}
+          canRegenerate={message.id !== firstCharMsgId && isLastAssistantMessage(displayMessages, message.id)}
+          canResend={isLastMessage(displayMessages, message.id) && message.role === "user" && !displayPendingUserMessageContent}
+          canSwitchVariant={isLastMessage(displayMessages, message.id)}
+          isGreeting={message.id === firstCharMsgId}
+          greetingOptions={message.id === firstCharMsgId ? greetingOptions : undefined}
+          greetingIndex={message.id === firstCharMsgId ? greetingIndex : 0}
+          onGreetingIndexChange={setGreetingIndex}
+          onBranch={(msgId: string) => void chat.handleFork(msgId)}
+          onStartEdit={() => chat.handleStartEdit(message)}
+          onEditingDraftChange={useChatStore.getState().setEditingDraft}
+          onCancelEdit={chat.handleCancelEdit}
+          onSaveEdit={() => void chat.handleSaveMessageEdit(message.id)}
+          onDelete={() => void chat.handleDeleteMessage(message.id)}
+          onRegenerate={() => void chat.handleRegenerateMessage(message.id)}
+          onResend={() => { void chat.handleResend(); }}
+          onSelectPreviousVariant={() =>
+            chat.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) - 1)
+          }
+          onSelectNextVariant={() =>
+            chat.handleSelectMessageVariant(message.id, (message.selectedVariantIndex ?? 0) + 1)
+          }
+          characterAvatarAssetId={characterAvatarAssetId}
+          personaAvatarAssetId={personaAvatarAssetId}
+          personaName={personaName}
+        />
       </div>
+    );
+  }, [displayMessages, characterName, editingMessageId, firstCharMsgId, isSending,
+      pendingUserMessageContent, editingDraft, messageActionId, greetingOptions,
+      greetingIndex, chat, characterAvatarAssetId, personaAvatarAssetId, personaName]);
 
-      {/* Streaming footer — outside virtualizer, always rendered when needed */}
+  const Footer = useCallback(() => (
+    <>
       {displayPendingUserMessageContent && (
         <>
           {displayMessages.length > 0 && (
@@ -296,9 +221,23 @@ export function MessageList() {
           </div>
         </>
       )}
+    </>
+  ), [displayPendingUserMessageContent, displayMessages, isSending,
+      personaAvatarAssetId, personaName, characterAvatarAssetId, characterName, t]);
 
-      <div ref={endRef} className="h-px"/>
-    </div>
+  return (
+    <TranslateErrorBoundary>
+      <Virtuoso<AppMessage>
+        ref={virtuosoRef}
+        data={displayMessages}
+        initialTopMostItemIndex={Math.max(0, displayMessages.length - 1)}
+        followOutput="smooth"
+        overscan={5}
+        itemContent={itemContent}
+        components={{ Footer }}
+        className="flex-1 pt-7 pb-3"
+        style={{ overflowY: "auto" }}
+      />
     </TranslateErrorBoundary>
   );
 }
