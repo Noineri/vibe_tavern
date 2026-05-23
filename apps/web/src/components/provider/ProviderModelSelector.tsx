@@ -123,6 +123,7 @@ export function ProviderModelSelector({
                         <div
                           key={m.id}
                           onClick={() => {
+                            console.log('[MODEL-SELECT]', { modelId: m.id, contextLength: m.contextLength, willSet: m.contextLength ?? 16000 });
                             updateForm('model', m.id);
                             if (m.contextLength != null && m.contextLength > 0) {
                               updateForm('contextBudget', m.contextLength);
