@@ -162,7 +162,6 @@ html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
 
 /* ── Keyframes ── */
 @keyframes genp{0%,60%,100%{opacity:.25;transform:scale(.75)}30%{opacity:1;transform:scale(1)}}
-@keyframes contentFadeIn{from{opacity:0}to{opacity:1}}
 
 /* ── Avatar crop zoom slider ── */
 .crop-zoom-slider{-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:var(--border2);outline:none;cursor:pointer}
