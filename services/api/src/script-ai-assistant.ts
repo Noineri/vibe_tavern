@@ -119,7 +119,7 @@ export async function* streamScriptCode(
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
       temperature: 0.3,
-      maxTokens: 4096,
+      maxTokens: 10240,
     });
 
     for await (const chunk of result.textStream) {
