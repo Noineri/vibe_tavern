@@ -54,6 +54,11 @@ export function DropdownSelect({
     if (isOpen) setSearch("");
   }
 
+  // When inside a Modal, portal into the Modal's anchor element
+  // so the content stays within Dialog's focus trap → keyboard nav works.
+  // When outside a Modal, portal to body as normal.
+  const portalContainer = getModalPortal() ?? undefined;
+
   return (
     <Select.Root
       open={open}
@@ -83,7 +88,7 @@ export function DropdownSelect({
         </button>
       </Select.Trigger>
 
-      <Select.Portal container={getModalPortal() ?? undefined}>
+      <Select.Portal container={portalContainer}>
         <Select.Content
           position="popper"
           sideOffset={4}
@@ -99,7 +104,23 @@ export function DropdownSelect({
               onChange={(e) => setSearch(e.target.value)}
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => {
-                // Prevent Radix from intercepting typing in search box
+                // Arrow keys, Enter, Escape: let them reach Radix Select handler
+                // Radix listens on Content level, events bubble from input → Content
+                if (
+                  e.key === "ArrowDown" ||
+                  e.key === "ArrowUp" ||
+                  e.key === "Enter" ||
+                  e.key === "Escape" ||
+                  e.key === "Home" ||
+                  e.key === "End"
+                ) {
+                  // Blur input so Radix can move focus to items
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    (e.target as HTMLElement).blur();
+                  }
+                  return;
+                }
+                // Prevent Radix type-ahead from intercepting typing in search box
                 if (e.key.length === 1) e.stopPropagation();
               }}
               className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[12px] text-t1 outline-none focus:border-accent"
