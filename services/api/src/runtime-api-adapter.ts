@@ -175,6 +175,9 @@ export class RuntimeApiAdapter {
 		return this.sessionRuntime.chatLifecycle.switchChat(brandId<ChatId>(chatId));
 	};
 
+	getChatMessages = (chatId: string, options: { limit?: number; beforeMessageId?: string }) =>
+		this.sessionRuntime.getMessages(chatId, options);
+
 	createChatForCharacter = (characterId: string) =>
 		this.sessionRuntime.chatLifecycle.createChatForCharacter(characterId);
 

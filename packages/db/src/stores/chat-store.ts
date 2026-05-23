@@ -410,14 +410,32 @@ export class ChatStore {
 
   // ─── Messages ──────────────────────────────────────────────────────────────
 
-  async getMessages(branchId: string): Promise<Message[]> {
-    const rows = await this.db
+  async getMessages(branchId: string, options?: { limit?: number; beforeMessageId?: string }): Promise<Message[]> {
+    let query = this.db
       .select()
       .from(messages)
-      .where(eq(messages.branchId, branchId))
-      .orderBy(asc(messages.position))
+      .where(eq(messages.branchId, branchId));
+
+    if (options?.beforeMessageId) {
+      const beforeMsg = await this.db.select({ position: messages.position })
+        .from(messages)
+        .where(eq(messages.id, options.beforeMessageId))
+        .get();
+      if (beforeMsg) {
+        query = this.db
+          .select()
+          .from(messages)
+          .where(and(eq(messages.branchId, branchId), lte(messages.position, beforeMsg.position - 1)));
+      }
+    }
+
+    const rows = await query
+      .orderBy(desc(messages.position))
+      .limit(options?.limit ?? 999999)
       .all();
-    return rows.map((row) => this.mapRowMessage(row));
+
+    // Re-sort to ascending for the application
+    return rows.map((row) => this.mapRowMessage(row)).reverse();
   }
 
   async addMessage(data: {

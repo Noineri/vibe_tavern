@@ -86,6 +86,7 @@ export function useRpPlatformApp() {
   // Reactive snapshot for AppShell effects
   const activeChatId = useChatStore((s) => s.activeChatId);
   const snapshotRaw = useChatDataStore((s) => s.chatMeta);
+  const hasMore = useChatDataStore((s) => s.hasMore);
   const messagesById = useChatDataStore((s) => s.messagesById);
   const promptTrace = useChatDataStore((s) => s.promptTrace);
   const promptTraceHistory = useChatDataStore((s) => s.promptTraceHistory);
@@ -102,13 +103,14 @@ export function useRpPlatformApp() {
       branches: snapshotRaw.branches,
       summaries: snapshotRaw.summaries,
       messages: Object.values(messagesById),
+      hasMore,
       chats: snapshotRaw.chats, // chats list is in snapshot!
       allCharacters: snapshotRaw.allCharacters,
       promptTrace,
       promptTraceHistory,
       contextPreview,
     };
-  }, [activeChatId, snapshotRaw, messagesById, promptTrace, promptTraceHistory, contextPreview]);
+  }, [activeChatId, snapshotRaw, messagesById, hasMore, promptTrace, promptTraceHistory, contextPreview]);
 
   const selectedTraceId = useChatStore((s) => s.selectedTraceId);
   const editingMessageId = useChatStore((s) => s.editingMessageId);
