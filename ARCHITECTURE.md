@@ -491,7 +491,7 @@ React SPA built with Vite. Communicates exclusively via the HTTP API defined in 
 - **Script editor** — script list, CodeMirror 6 code editor, AI assistant modal, script templates, API reference
 - Multi-language support (en, ru) via i18n
 - Asset upload for character avatars (cropped thumbnail + original full-size)
-- Avatar crop modal (canvas-based circular crop with zoom slider and scroll-to-zoom)
+- Avatar crop modal (react-easy-crop library, circular crop, zoom, pan-to-crop)
 - Avatar panel (floating draggable, zoomable full-size avatar preview)
 - Context usage display: permanent vs temporary token breakdown from assembled prompt layers
 - Build mode: field-based token counting for character cards (no dependency on sending messages)
@@ -535,18 +535,31 @@ interface BuildPanelDescriptor {
 
 | File | Role |
 |------|------|
+| `Modal.tsx` | Radix Dialog wrapper. Provides focus trap, scroll lock, Escape-to-close, overlay click dismiss. All modals in the app use this. Exports `getModalPortal()` for nested Radix components. |
 | `CodeEditor.tsx` | React wrapper around CodeMirror 6. JS syntax highlighting, custom dark theme using CSS vars + oklch, line numbers, bracket matching. `value`/`onChange` props. |
-| `DropdownSelect.tsx` | Portal-based dropdown with search, click-outside dismiss, disabled state. Reusable across the app. |
+| `DropdownSelect.tsx` | @radix-ui/react-select wrapper with search filter, default option, disabled state. Keyboard navigation (arrow keys, Enter, Escape). Portals into Modal focus scope when inside a Dialog. |
+| `AvatarCropModal.tsx` | react-easy-crop circular crop tool. Outputs 480×480 PNG. Uses shared `<Modal>` wrapper. |
 | `icons.tsx` | All UI icons as React components (`Ic.*` system — no emojis). |
+| `confirm-close-modal.tsx` | Small "discard changes?" confirm dialog. Uses shared `<Modal>` with `z-[700]`. |
+| `destructive-confirm-modal.tsx` | Destructive action confirm dialog (e.g., delete lorebook). Uses shared `<Modal>` with `z-[700]`. |
 
 ### Frontend data architecture
 
-The frontend uses a **dual-store** pattern for chat data:
+The frontend uses **Zustand as single source of truth**. React Query was fully removed — it caused dual-state sync bugs (React Query cache + Zustand store fighting over re-render timing, especially with framer-motion animations).
 
-1. **TanStack React Query** (`chat-queries.ts`) — owns the server cache, handles fetch/revalidation/mutations. `useChatSnapshot(chatId)` fetches from the API.
-2. **Zustand normalized store** (`stores/chat-data-store.ts`) — holds normalized `messagesById`, `messageOrder`, `macroContext`, and trace data. Written via `setSnapshot()` from query data and mutation callbacks.
+**Data stores (Zustand):**
 
-The `syncSnapshot()` helper in `chat-queries.ts` writes to both stores atomically. This ensures mutations update the normalized store immediately while React Query handles refetch.
+| Store | Content |
+|-------|---------|
+| `useChatDataStore` | Messages by ID, message order, chat meta (character, persona, branches, chats list), macro context, prompt trace/history, context preview |
+| `useBootstrapStore` | Bootstrap data (allCharacters, promptPresets), personas, loading state |
+| `useProviderDataStore` | Provider profiles, favorites by profile |
+| `useChatStore` | UI state — active chat ID, editing, draft, streaming text/reasoning, pending user message, sending state |
+| `useNavigationStore` | Theme, sidebar width |
+| `useProviderStore` | Connection UI state, generation status |
+| `useModalStore` | Modal open/close state |
+
+**API actions** (`stores/api-actions/`) are plain async functions that call the API, then call `syncSnapshot()` or targeted store updates. No try/catch inside actions — errors propagate to callers. Actions write to Zustand directly.
 
 **Memoized selectors** (`stores/chat-selectors.ts`) use `reselect` for lazy derived data:
 
@@ -559,13 +572,23 @@ Each component subscribes to the minimal slice it needs — e.g. `MessageBlock` 
 
 ### Message list virtualization
 
-The message list uses `@tanstack/react-virtual` to render only visible messages (~15 DOM nodes regardless of total count). Key behaviors:
+The message list uses `react-virtuoso` — purpose-built for chat UIs with reverse list support, dynamic height, and auto-follow:
 
-- `measureElement` ref for dynamic height measurement (markdown content varies)
-- `overscan: 5` for smooth scrolling
-- Streaming footer rendered outside the virtualizer (always visible when active)
-- Initial load: instant scroll to bottom via repeated `scrollTop = scrollHeight` over ~10 rAF frames (virtualizer measurements stabilize progressively)
-- Incremental updates: smooth scroll to new messages
+- `<Virtuoso>` component with `followOutput="smooth"` — auto-scrolls when new messages arrive
+- `initialTopMostItemIndex` — starts scrolled to bottom on load
+- `overscan={5}` for smooth scrolling
+- Dynamic height measurement built-in (no manual `measureElement`)
+- Virtuoso `Footer` component renders `StreamingContent` (pending user message + streaming assistant reply)
+
+### Variant swipe animation
+
+Message variant switching (swipes) uses `framer-motion`:
+
+- `AnimatePresence mode="popLayout"` — exiting element becomes `position: absolute` (no height collapse), entering element occupies space immediately. Both animate simultaneously.
+- `motion.div key={selectedVariantIndex}` — direction-aware slide (left/right) + blur transition
+- No `motion.div layout` wrapper — layout animations conflict with Virtuoso's measurement
+- Variant content read from `variants[selectedVariantIndex].content` (not `message.content`) — server sets `message.content` to selected variant at load time, but client-side switching only changes `selectedVariantIndex`
+- Swipe callbacks read `selectedVariantIndex` directly from store via `useChatDataStore.getState()` — avoids stale closure from memoized `itemContent`
 
 `MessageBlock` is wrapped in `React.memo` and reads all message data from `useDisplayMessage(messageId)` — no message object prop. This ensures streaming text only re-renders the `StreamingContent` component, not existing message blocks.
 
