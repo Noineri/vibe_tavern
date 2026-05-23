@@ -157,20 +157,21 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
             {!isUser && (reasoningText || reasoningDuration) && (
               <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
             )}
-            <AnimatePresence mode="popLayout" initial={false}>
-              <motion.div
-                key={selectedVariantIndex}
-                layout
-                initial={{ x: direction * 80, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: direction * -80, opacity: 0 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-                translate="yes"
-                className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
-              >
-                <Markdown text={renderContent} />
-              </motion.div>
-            </AnimatePresence>
+            <motion.div layout transition={{ layout: { duration: 0.15, ease: "easeOut" } }}>
+              <AnimatePresence mode="popLayout" initial={false}>
+                <motion.div
+                  key={selectedVariantIndex}
+                  initial={{ x: direction * 80, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: direction * -80, opacity: 0 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  translate="yes"
+                  className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
+                >
+                  <Markdown text={renderContent} />
+                </motion.div>
+              </AnimatePresence>
+            </motion.div>
             {isGenerating && (
               <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
                 <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
