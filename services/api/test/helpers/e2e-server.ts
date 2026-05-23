@@ -255,7 +255,7 @@ export async function createTestServer(): Promise<TestServer> {
   process.env.RP_PLATFORM_ROOT_DIR = tmpDir;
   process.env.RP_PLATFORM_DB_PATH = "data/test.db";
 
-  // ── DI wiring (mirrors dev-server.ts) ───────────────────────────────────
+  // ── DI wiring (mirrors prod-server.ts) ──────────────────────────────────
   const stores = await createRuntimeStore();
 
   await Promise.all([

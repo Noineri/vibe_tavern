@@ -9,11 +9,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-set "LOG_DIR=%~dp0logs"
-if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
-
-set "RP_PLATFORM_LOG_DIR=%LOG_DIR%"
-set "RP_PLATFORM_LOG_FILE=%LOG_DIR%\dev-launcher.log"
 set "VITE_RP_API_URL=http://127.0.0.1:8787"
 
 if exist "..\mcp\.env" (
@@ -29,12 +24,10 @@ if exist "..\mcp\.env" (
 )
 
 echo ============================================
-echo  RP Platform - Dev Server
+echo  RP Platform
 echo ============================================
 echo.
-echo API: http://127.0.0.1:8787
-echo Web: http://localhost:4173
-echo Logs: %LOG_DIR%
+echo Server: http://127.0.0.1:8787
 echo.
 
 echo Checking dependencies...
@@ -42,7 +35,7 @@ if not exist "node_modules" goto :do_install
 if not exist "node_modules\hono" goto :do_install
 if not exist "node_modules\vite" goto :do_install
 echo Dependencies OK.
-goto :run
+goto :build
 
 :do_install
 echo Installing dependencies...
@@ -54,13 +47,24 @@ if errorlevel 1 (
     exit /b 1
 )
 
+:build
+echo.
+echo Building...
+call bun run build
+if errorlevel 1 (
+    echo.
+    echo Build failed.
+    pause
+    exit /b 1
+)
+
 :run
 echo.
-echo Starting dev server...
+echo Starting server...
 echo Press Ctrl+C to stop.
 echo.
 
-bun ".\scripts\dev-supervisor.ts"
+bun services/api/src/prod-server.ts
 set "EXIT_CODE=%ERRORLEVEL%"
 
 REM Graceful exits (0=normal, 1=Ctrl+C, 58=window closed) — just exit silently
@@ -71,5 +75,4 @@ if "%EXIT_CODE%"=="58" exit /b 0
 REM Unexpected crash — show error and wait for keypress
 echo.
 echo Server crashed with exit code %EXIT_CODE%.
-echo Check logs: %LOG_DIR%
 pause

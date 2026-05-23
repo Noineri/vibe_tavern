@@ -1,7 +1,7 @@
 /**
  * Production server entry point.
  *
- * Builds on the same DI wiring as dev-server but serves the built frontend
+ * Production server — serves built frontend + API from a single Bun process
  * from dist/ via Hono's serveStatic, so the whole app runs on a single port.
  *
  * Usage:
@@ -103,7 +103,7 @@ await mkdir(resolve(rootDir, "data", "assets"), { recursive: true });
 
 	console.log(`[prod] Listening on http://${host}:${port}`);
 
-	// Open browser (like dev-supervisor does)
+	// Open browser
 	if (staticEnabled && process.env.RP_PLATFORM_OPEN_BROWSER !== "0") {
 		const url = `http://${host}:${port}`;
 		console.log(`[prod] Opening browser at ${url}`);
