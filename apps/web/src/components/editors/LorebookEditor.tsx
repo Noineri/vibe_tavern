@@ -766,13 +766,13 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => setConfirmDeleteEntry(null)}>
       <div className="flex w-[400px] max-w-[90vw] flex-col overflow-hidden rounded-xl border border-border bg-surface" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-border" style={{ padding: "16px 20px" }}>
-          <span className="text-sm font-semibold text-t1">{t("lore_save_entry")}</span>
+          <span className="text-sm font-semibold text-t1">{t("delete_entry_confirm")}</span>
           <div className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={() => setConfirmDeleteEntry(null)}><Ic.close /></div>
         </div>
-        <div className="p-5 text-[13px] text-t2">{t("delete_lorebook_msg")}</div>
+        <div className="p-5 text-[13px] text-t2">{t("delete_entry_msg")}</div>
         <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
           <button className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => setConfirmDeleteEntry(null)}>{t("lore_cancel_edit")}</button>
-          <button className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={() => { if (activeLorebookIdForEntry && confirmDeleteEntry) handleDeleteEntry(activeLorebookIdForEntry, confirmDeleteEntry); }}>{t("lore_save_entry")}</button>
+          <button className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={() => { if (activeLorebookIdForEntry && confirmDeleteEntry) handleDeleteEntry(activeLorebookIdForEntry, confirmDeleteEntry); }}>{t("delete_entry_confirm")}</button>
         </div>
       </div>
     </div>
