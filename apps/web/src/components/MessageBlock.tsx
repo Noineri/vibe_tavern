@@ -361,10 +361,8 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                     disabled={isBusy || selectedVariantIndex <= 0}
                     onClick={() => {
                       _logSwipe('click:prevVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex - 1 });
-                      useChatDataStore.getState().setSwipeDirection(-1);
-                      const current = useChatDataStore.getState().messagesById[msg.id];
-                      const idx = current?.selectedVariantIndex ?? 0;
-                      chat.handleSelectMessageVariant(msg.id, idx - 1);
+                      useChatDataStore.getState().selectVariant(msg.id, selectedVariantIndex - 1, -1);
+                      chat.handleSelectMessageVariant(msg.id, selectedVariantIndex - 1);
                     }}
                   ><Icons.Caret direction="l" /></button>
                   <span className="min-w-6 text-center tabular-nums">{selectedVariantIndex + 1}/{variantCount}</span>
@@ -373,10 +371,8 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                     disabled={isBusy || selectedVariantIndex >= variantCount - 1}
                     onClick={() => {
                       _logSwipe('click:nextVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex + 1 });
-                      useChatDataStore.getState().setSwipeDirection(1);
-                      const current = useChatDataStore.getState().messagesById[msg.id];
-                      const idx = current?.selectedVariantIndex ?? 0;
-                      chat.handleSelectMessageVariant(msg.id, idx + 1);
+                      useChatDataStore.getState().selectVariant(msg.id, selectedVariantIndex + 1, 1);
+                      chat.handleSelectMessageVariant(msg.id, selectedVariantIndex + 1);
                     }}
                   ><Icons.Caret direction="r" /></button>
                 </span>

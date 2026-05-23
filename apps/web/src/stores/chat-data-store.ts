@@ -40,6 +40,8 @@ export interface ChatDataActions {
   setSnapshot: (snapshot: AppSnapshot) => void;
   /** Update a single message in messagesById */
   updateMessage: (id: string, partial: Partial<AppMessage>) => void;
+  /** Atomically update selectedVariantIndex + swipeDirection in a single store write */
+  selectVariant: (messageId: string, variantIndex: number, direction: 1 | -1) => void;
   /** Set swipe direction for variant animation */
   setSwipeDirection: (dir: 1 | -1) => void;
   /** Clear all data (chat switch, logout) */
@@ -106,6 +108,15 @@ export const useChatDataStore = create<ChatDataStore>()(
         if (existing) {
           Object.assign(existing, partial);
         }
+      }),
+
+    selectVariant: (messageId, variantIndex, direction) =>
+      set((state) => {
+        const existing = state.messagesById[messageId];
+        if (existing) {
+          existing.selectedVariantIndex = variantIndex;
+        }
+        state.swipeDirection = direction;
       }),
 
     setSwipeDirection: (dir) =>
