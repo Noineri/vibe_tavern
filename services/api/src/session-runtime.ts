@@ -1,6 +1,7 @@
 import { type PromptPreset, type StoreContainer, createFileStore } from "@rp-platform/db";
 import type { PromptPresetDto, PromptTraceRecordDto } from "@rp-platform/domain";
 import {
+	brandId,
 	type CharacterId,
 	type ChatBranchId,
 	type ChatId,
@@ -56,6 +57,7 @@ export interface SessionSnapshot {
 	activeBranch: import("@rp-platform/db").ChatBranch;
 	branches: import("@rp-platform/db").ChatBranch[];
 	messages: import("./session-runtime-dto.js").MessageDto[];
+	hasMore: boolean;
 	summaries: Array<{
 		id: string;
 		kind: string;
@@ -199,7 +201,7 @@ export interface ImportResult {
 	 * chat list, active chat messages + branches, persona, character, prompt traces.
 	 */
 	async getSnapshot(chatId: ChatId): Promise<SessionSnapshot> {
-		const { chat, branch, messages: branchMessages, summaries } = await this.chatApp.getChatState(chatId);
+		const { chat, branch, messages: branchMessages, hasMore, summaries } = await this.chatApp.getChatState(chatId, undefined, { limit: 50 });
 		const branches = await this.stores.chats.getBranches(chat.id);
 		const character = await this.resolver.getCharacter(chat.characterId);
 		const persona = await this.resolver.getPersona(
@@ -222,6 +224,7 @@ export interface ImportResult {
 			activeBranch: branch,
 			branches,
 			messages: messagesWithVariants,
+			hasMore,
 			summaries: summaries.map((summary) => ({
 				id: summary.id,
 				kind: summary.kind,
@@ -234,6 +237,25 @@ export interface ImportResult {
 				: await this.assembleContextPreview(chatId, branch.id as ChatBranchId),
 			character,
 			persona,
+		};
+	}
+
+	async getMessages(
+		chatId: string,
+		options: { limit?: number; beforeMessageId?: string },
+	): Promise<{ messages: import("./session-runtime-dto.js").MessageDto[]; hasMore: boolean }> {
+		const typedChatId = brandId<ChatId>(chatId);
+		const { messages, hasMore } = await this.chatApp.getMessages(typedChatId, options);
+		const chat = (await this.stores.chats.getById(typedChatId))!;
+		const variantsByMessage = await this.stores.chats.getVariantsByBranch(chat.activeBranchId);
+
+		const messagesWithVariants = messages.map((message) =>
+			mapMessageDto(message, variantsByMessage.get(message.id) ?? []),
+		);
+
+		return {
+			messages: messagesWithVariants,
+			hasMore,
 		};
 	}
 

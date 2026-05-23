@@ -36,10 +36,11 @@ export class ChatApplicationService {
     };
   }
 
-  async getChatState(chatId: ChatId, branchId?: ChatBranchId): Promise<{
+  async getChatState(chatId: ChatId, branchId?: ChatBranchId, options?: { limit?: number }): Promise<{
     chat: import("@rp-platform/db").Chat;
     branch: import("@rp-platform/db").ChatBranch;
     messages: import("@rp-platform/db").Message[];
+    hasMore: boolean;
     summaries: SummaryMemorySnapshot[];
   }> {
     const chat = await this.requireChat(chatId);
@@ -55,13 +56,41 @@ export class ChatApplicationService {
     if (!branch) {
       throw notFound("Branch", `Branch '${resolvedBranchId}' was not found for chat '${chat.id}'.`);
     }
-    const messages = await this.chatStore.getMessages(branch.id);
+    
+    const limit = options?.limit ?? 50;
+    const messages = await this.chatStore.getMessages(branch.id, { limit: limit + 1 });
+    const hasMore = messages.length > limit;
+    const resultMessages = hasMore ? messages.slice(1) : messages;
 
     return {
       chat,
       branch,
-      messages,
+      messages: resultMessages,
+      hasMore,
       summaries: [], // Phase 2: summary snapshots
+    };
+  }
+
+  async getMessages(
+    chatId: ChatId,
+    options: { limit?: number; beforeMessageId?: string },
+    branchId?: ChatBranchId,
+  ): Promise<{ messages: import("@rp-platform/db").Message[]; hasMore: boolean }> {
+    const chat = await this.requireChat(chatId);
+    const targetBranchId = branchId ?? chat.activeBranchId;
+    const limit = options.limit ?? 50;
+    
+    const messages = await this.chatStore.getMessages(targetBranchId, { 
+      limit: limit + 1, 
+      beforeMessageId: options.beforeMessageId 
+    });
+    
+    const hasMore = messages.length > limit;
+    const resultMessages = hasMore ? messages.slice(1) : messages;
+    
+    return {
+      messages: resultMessages,
+      hasMore,
     };
   }
 
