@@ -26,6 +26,7 @@
     "js-tiktoken": "^1.0.21",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-easy-crop": "^5.5.7",
     "react-hook-form": "^7.75.0",
     "react-markdown": "^10.1.0",
     "react-virtuoso": "^4.18.7",
