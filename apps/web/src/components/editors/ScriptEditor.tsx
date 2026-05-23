@@ -264,7 +264,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         </div>
       )}
       {aiHelperOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => { if (!aiStreaming) setAiHelperOpen(false); }}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60">
           <div className="flex w-[560px] max-w-[90vw] flex-col overflow-hidden rounded-xl border border-border bg-surface" style={{ maxHeight: "85vh" }} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-border" style={{ padding: "16px 20px" }}>
               <span className="text-sm font-semibold text-t1">{t("script_ai_helper")}</span>

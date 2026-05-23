@@ -27,7 +27,6 @@ export async function saveCharacterAction(input: {
 }): Promise<void> {
   const snapshot = await updateCharacter(input.characterId, input.patch);
   useChatDataStore.getState().setSnapshot(snapshot);
-  void fetchBootstrapAction();
 }
 
 export async function createCharacterAction(
