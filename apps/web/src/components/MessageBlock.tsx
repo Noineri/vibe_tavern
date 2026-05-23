@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useState } from "react";
+import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../lib/cn.js";
 import { Markdown } from "../lib/markdown.js";
 import { avatarUrl } from "../lib/avatar.js";
@@ -39,6 +39,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const prevIdxRef = useRef(selectedVariantIndex);
   const [slideFrom, setSlideFrom] = useState<number | null>(null);
   const [sliding, setSliding] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // Detect variant change
   if (prevIdxRef.current !== selectedVariantIndex) {
@@ -48,6 +49,27 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     }
     prevIdxRef.current = selectedVariantIndex;
   }
+
+  // After render: if height changed, smoothly animate scrollTop to keep
+  // this message's position stable (so swipe arrows stay under cursor)
+  useLayoutEffect(() => {
+    if (sliding && contentRef.current) {
+      const scrollEl = contentRef.current.closest(".overflow-y-auto") as HTMLElement | null;
+      if (scrollEl) {
+        const prevH = prevHeightRef.current;
+        const newH = contentRef.current.offsetHeight;
+        const delta = newH - prevH;
+        if (delta !== 0) {
+          scrollEl.scrollTop += delta;
+        }
+      }
+    }
+    if (contentRef.current) {
+      prevHeightRef.current = contentRef.current.offsetHeight;
+    }
+  });
+
+  const prevHeightRef = useRef(0);
 
   const endSlide = useCallback(() => {
     setSliding(false);
@@ -166,30 +188,23 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
             </div>
           </>
         ) : (
-          <div>
+          <div ref={contentRef} className="relative overflow-hidden">
             {!isUser && (reasoningText || reasoningDuration) && (
               <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
             )}
-            {sliding && slideFrom !== null ? (
-              <div className="overflow-hidden">
-                <div
-                  className="flex transition-transform duration-200 ease-out"
-                  style={{
-                    transform: `translateX(${selectedVariantIndex > slideFrom ? '-' : ''}100%)`,
-                  }}
-                  onTransitionEnd={endSlide}
-                >
-                  <div className="min-w-full shrink-0 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2" translate="yes">
-                    <Markdown text={variants[slideFrom].content} />
-                  </div>
-                  <div className="min-w-full shrink-0 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2" translate="yes">
-                    <Markdown text={renderContent} />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-                <Markdown text={renderContent} />
+            {/* New content: in normal flow, defines container height */}
+            <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
+              <Markdown text={renderContent} />
+            </div>
+            {/* Old content: absolute overlay, slides out */}
+            {sliding && slideFrom !== null && (
+              <div
+                className="absolute inset-0 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2 transition-transform duration-200 ease-out"
+                style={{ transform: `translateX(${selectedVariantIndex > slideFrom ? '-100%' : '100%'})` }}
+                onTransitionEnd={endSlide}
+                translate="yes"
+              >
+                <Markdown text={variants[slideFrom].content} />
               </div>
             )}
             {isGenerating && (
