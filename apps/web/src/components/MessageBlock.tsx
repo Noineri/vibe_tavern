@@ -181,6 +181,14 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   const renderContent = greetingActive ? (greetingOptions[greetingIndex] ?? msg.displayContent) : activeContent;
 
+  if (isGreeting) {
+    _logSwipe(`render-greeting #${renderCountRef.current}`, {
+      greetingIndex,
+      contentLen: renderContent?.length,
+      rect: msgWrapRef.current?.getBoundingClientRect()
+    });
+  }
+
   // Diagnostics: log every render with key animation state
   _logSwipe(`render #${renderCountRef.current}`, {
     msgId: input.messageId.slice(0, 8),
@@ -253,13 +261,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                 <button
                   className="cursor-pointer text-t3 transition-colors duration-100 hover:text-accent"
                   disabled={!canSwitchVariant || greetingIndex <= 0}
-                  onClick={() => { isSwipingRef.current = true; _logSwipe('click:prevGreeting', { greetingIndex, target: Math.max(0, greetingIndex - 1) }); useChatDataStore.getState().setSwipeDirection(-1); setGreetingIndex(Math.max(0, greetingIndex - 1)); }}
+                  onClick={() => { if (!isGreeting) isSwipingRef.current = true; _logSwipe('click:prevGreeting', { greetingIndex, target: Math.max(0, greetingIndex - 1) }); useChatDataStore.getState().setSwipeDirection(-1); setGreetingIndex(Math.max(0, greetingIndex - 1)); }}
                 >◀</button>
                 {t("greeting_counter").replace("{n}", String(greetingIndex + 1)).replace("{total}", String(greetingOptions!.length))}
                 <button
                   className="cursor-pointer text-t3 transition-colors duration-100 hover:text-accent"
                   disabled={!canSwitchVariant || greetingIndex >= greetingOptions!.length - 1}
-                  onClick={() => { isSwipingRef.current = true; _logSwipe('click:nextGreeting', { greetingIndex, target: Math.min(greetingOptions!.length - 1, greetingIndex + 1) }); useChatDataStore.getState().setSwipeDirection(1); setGreetingIndex(Math.min(greetingOptions!.length - 1, greetingIndex + 1)); }}
+                  onClick={() => { if (!isGreeting) isSwipingRef.current = true; _logSwipe('click:nextGreeting', { greetingIndex, target: Math.min(greetingOptions!.length - 1, greetingIndex + 1) }); useChatDataStore.getState().setSwipeDirection(1); setGreetingIndex(Math.min(greetingOptions!.length - 1, greetingIndex + 1)); }}
                 >▶</button>
               </span>
             )}
@@ -327,14 +335,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               {!isUser && (reasoningText || reasoningDuration) && (
                 <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
               )}
-              <div className="relative overflow-hidden">
-                <AnimatePresence mode="popLayout" initial={false}>
+              <div className="relative overflow-hidden" ref={msgWrapRef}>
+                <AnimatePresence initial={false}>
                   <motion.div
                     key={greetingActive ? `g-${greetingIndex}` : `v-${selectedVariantIndex}`}
-                    initial={{ x: direction * 80, opacity: 0, filter: "blur(4px)" }}
-                    animate={{ x: 0, opacity: 1, filter: "blur(0px)" }}
-                    exit={{ x: direction * -80, opacity: 0, filter: "blur(4px)" }}
-                    transition={{ type: "spring", stiffness: 350, damping: 32 }}
+                    initial={{ x: direction * 40, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 35 }}
                     translate="yes"
                     className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
                   >
