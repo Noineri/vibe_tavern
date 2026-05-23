@@ -84,8 +84,10 @@ export async function switchChatAction(chatId: ChatId): Promise<void> {
 }
 
 export async function selectVariantAction(chatId: ChatId, messageId: string, variantIndex: number): Promise<void> {
-  const snapshot = await selectMessageVariant(chatId, messageId, variantIndex);
-  syncSnapshot(snapshot);
+  // No syncSnapshot — handleSelectMessageVariant already did the optimistic update.
+  // syncSnapshot would replace the entire messagesById with fresh JSON objects,
+  // breaking reselect memoization and causing all MessageBlocks to re-render.
+  await selectMessageVariant(chatId, messageId, variantIndex);
 }
 
 export async function forkBranchAction(chatId: ChatId, fromMessageId?: string): Promise<void> {
