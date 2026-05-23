@@ -1,4 +1,5 @@
 import { useT } from "../../i18n/context.js";
+import { Modal } from "./Modal.js";
 
 interface ConfirmCloseModalProps {
   onConfirm: () => void;
@@ -8,10 +9,9 @@ interface ConfirmCloseModalProps {
 export function ConfirmCloseModal(input: ConfirmCloseModalProps) {
   const { t } = useT();
   return (
-    <div className="fixed inset-0 z-[700] flex items-center justify-center bg-black/50" onClick={input.onCancel}>
+    <Modal open={true} onClose={input.onCancel} overlayClassName="z-[700]">
       <div
         className="w-[360px] rounded-lg border border-border bg-surface p-7 text-center shadow-xl"
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-2 text-base font-medium text-t1">
           {t("unsaved_changes_title")}
@@ -34,6 +34,6 @@ export function ConfirmCloseModal(input: ConfirmCloseModalProps) {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
