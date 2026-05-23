@@ -13,7 +13,7 @@
     "build:prod": "bun scripts/build.ts api-stack",
     "build:standalone": "bun scripts/build-standalone.ts",
     "build:installer": "bun scripts/build-installer.ts",
-    "dev": "bun ./scripts/dev-supervisor.ts",
+    "dev": "bun run build && bun services/api/src/prod-server.ts",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun run --filter '*' test",
     "check": "bun run typecheck && bun run test",
