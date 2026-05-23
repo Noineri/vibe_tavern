@@ -20,6 +20,7 @@ import {
 } from "../../app-client.js";
 
 import { useScriptPanel } from "./ScriptEditor.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -449,9 +450,11 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
   const scopeColumn = !isMobile ? (
     <div className="flex shrink-0 flex-col items-center gap-1 border-r border-border bg-surface" style={{ width: 48, padding: "12px 0" }}>
       {scopeItems.map(s => (
-        <div key={s.id} className={cn("relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg transition-all hover:bg-s2", scope === s.id && "bg-accent-dim text-accent-t")} title={s.label} onClick={() => setScope(s.id)}>
-          {s.icon}
-        </div>
+        <CustomTooltip content={s.label} key={s.id}>
+          <div className={cn("relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg transition-all hover:bg-s2", scope === s.id && "bg-accent-dim text-accent-t")} onClick={() => setScope(s.id)}>
+            {s.icon}
+          </div>
+        </CustomTooltip>
       ))}
     </div>
   ) : null;
@@ -459,9 +462,11 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
   const scopeBarMobile = isMobile ? (
     <div className="flex shrink-0 gap-1 border-b border-border" style={{ padding: "8px 12px" }}>
       {scopeItems.map(s => (
-        <div key={s.id} className={cn("flex flex-1 cursor-pointer items-center justify-center rounded-lg font-ui text-[10px] transition-all", scope === s.id ? "bg-accent-dim text-accent-t font-medium" : "text-t3 hover:bg-s2")} style={{ padding: "6px 2px", gap: 3 }} onClick={() => setScope(s.id)} title={s.label}>
-          {s.icon}
-        </div>
+        <CustomTooltip content={s.label} key={s.id}>
+          <div className={cn("flex flex-1 cursor-pointer items-center justify-center rounded-lg font-ui text-[10px] transition-all", scope === s.id ? "bg-accent-dim text-accent-t font-medium" : "text-t3 hover:bg-s2")} style={{ padding: "6px 2px", gap: 3 }} onClick={() => setScope(s.id)}>
+            {s.icon}
+          </div>
+        </CustomTooltip>
       ))}
     </div>
   ) : null;
@@ -567,7 +572,9 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
               }}
             />
           </div>
-          <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" title={t("lore_save_entry")} onClick={() => setConfirmDeleteEntry(activeEntryId)}><Ic.del /></div>
+          <CustomTooltip content={t("lore_save_entry")}>
+            <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={() => setConfirmDeleteEntry(activeEntryId)}><Ic.del /></div>
+          </CustomTooltip>
         </div>
       </div>
 
@@ -605,7 +612,9 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
               <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_position_label")}</label><select className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none" value={activeEntry.position} onChange={e => updateAct("position", e.target.value)}><option value="before_char">Before Char</option><option value="after_char">After Char</option><option value="before_examples">Before Examples</option><option value="after_examples">After Examples</option><option value="top_an">Top of AN</option><option value="bottom_an">Bottom of AN</option><option value="at_depth">@ Depth</option><option value="outlet">Outlet</option></select></div>
               <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_depth_label")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.depth} onChange={e => updateAct("depth", parseInt(e.target.value))} /></div>
               <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_priority_label")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.priority} onChange={e => updateAct("priority", parseInt(e.target.value))} /></div>
-              <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3" title={t("role_hint")}>{t("lore_role_label")}</label><select className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none" value={activeEntry.role} onChange={e => updateAct("role", e.target.value)}><option value="system">System</option><option value="user">User</option><option value="assistant">Assistant</option></select></div>
+              <CustomTooltip content={t("role_hint")}>
+                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_role_label")}</label><select className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none" value={activeEntry.role} onChange={e => updateAct("role", e.target.value)}><option value="system">System</option><option value="user">User</option><option value="assistant">Assistant</option></select></div>
+              </CustomTooltip>
             </div>
           </div>
 
@@ -613,13 +622,23 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
           <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
             <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_strategy_section")}</div>
             <div className="flex flex-wrap gap-x-6 gap-y-3">
-              <label className="flex items-center gap-2 text-[13px] text-t1" title={t("constant_hint")}><input type="checkbox" checked={activeEntry.constant} onChange={e => updateAct("constant", e.target.checked)} /> {t("lore_constant")}</label>
-              <label className="flex items-center gap-2 text-[13px] text-t1" title={t("case_sensitive_hint")}><input type="checkbox" checked={activeEntry.caseSensitive} onChange={e => updateAct("caseSensitive", e.target.checked)} /> {t("lore_case_sensitive")}</label>
-              <label className="flex items-center gap-2 text-[13px] text-t1" title={t("match_whole_words_hint")}><input type="checkbox" checked={activeEntry.matchWholeWords} onChange={e => updateAct("matchWholeWords", e.target.checked)} /> {t("lore_match_whole_words")}</label>
+              <CustomTooltip content={t("constant_hint")}>
+                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.constant} onChange={e => updateAct("constant", e.target.checked)} /> {t("lore_constant")}</label>
+              </CustomTooltip>
+              <CustomTooltip content={t("case_sensitive_hint")}>
+                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.caseSensitive} onChange={e => updateAct("caseSensitive", e.target.checked)} /> {t("lore_case_sensitive")}</label>
+              </CustomTooltip>
+              <CustomTooltip content={t("match_whole_words_hint")}>
+                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.matchWholeWords} onChange={e => updateAct("matchWholeWords", e.target.checked)} /> {t("lore_match_whole_words")}</label>
+              </CustomTooltip>
             </div>
             <div className="mt-3 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
-              <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3" title={t("probability_hint")}>{t("lore_probability")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" max="100" value={activeEntry.probability} onChange={e => updateAct("probability", parseInt(e.target.value))} /></div>
-              <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3" title={t("scan_depth_override_hint")}>{t("lore_scan_depth_override")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="-1" value={activeEntry.scanDepthOverride ?? -1} onChange={e => updateAct("scanDepthOverride", parseInt(e.target.value))} /></div>
+              <CustomTooltip content={t("probability_hint")}>
+                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_probability")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" max="100" value={activeEntry.probability} onChange={e => updateAct("probability", parseInt(e.target.value))} /></div>
+              </CustomTooltip>
+              <CustomTooltip content={t("scan_depth_override_hint")}>
+                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_scan_depth_override")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="-1" value={activeEntry.scanDepthOverride ?? -1} onChange={e => updateAct("scanDepthOverride", parseInt(e.target.value))} /></div>
+              </CustomTooltip>
             </div>
           </div>
 
@@ -627,9 +646,15 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
           <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
             <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_timed_section")}</div>
             <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
-              <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3" title={t("sticky_win_hint")}>{t("lore_sticky_window")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.stickyWindow} onChange={e => updateAct("stickyWindow", parseInt(e.target.value))} /></div>
-              <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3" title={t("cooldown_hint")}>{t("lore_cooldown_window")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.cooldownWindow} onChange={e => updateAct("cooldownWindow", parseInt(e.target.value))} /></div>
-              <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3" title={t("delay_hint")}>{t("lore_delay_window")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.delayWindow} onChange={e => updateAct("delayWindow", parseInt(e.target.value))} /></div>
+              <CustomTooltip content={t("sticky_win_hint")}>
+                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_sticky_window")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.stickyWindow} onChange={e => updateAct("stickyWindow", parseInt(e.target.value))} /></div>
+              </CustomTooltip>
+              <CustomTooltip content={t("cooldown_hint")}>
+                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_cooldown_window")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.cooldownWindow} onChange={e => updateAct("cooldownWindow", parseInt(e.target.value))} /></div>
+              </CustomTooltip>
+              <CustomTooltip content={t("delay_hint")}>
+                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_delay_window")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.delayWindow} onChange={e => updateAct("delayWindow", parseInt(e.target.value))} /></div>
+              </CustomTooltip>
             </div>
           </div>
 
@@ -637,13 +662,21 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
           <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
             <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_recursion_section")}</div>
             <div className="flex flex-wrap gap-x-6 gap-y-3">
-              <label className="flex items-center gap-2 text-[13px] text-t1" title={t("exclude_recursion_hint")}><input type="checkbox" checked={activeEntry.excludeRecursion} onChange={e => updateAct("excludeRecursion", e.target.checked)} /> {t("lore_exclude_recursion")}</label>
-              <label className="flex items-center gap-2 text-[13px] text-t1" title={t("prevent_recursion_hint")}><input type="checkbox" checked={activeEntry.preventRecursion} onChange={e => updateAct("preventRecursion", e.target.checked)} /> {t("lore_prevent_recursion")}</label>
-              <label className="flex items-center gap-2 text-[13px] text-t1" title={t("delay_until_recursion_hint")}><input type="checkbox" checked={activeEntry.delayUntilRecursion} onChange={e => updateAct("delayUntilRecursion", e.target.checked)} /> {t("lore_delay_until_recursion")}</label>
+              <CustomTooltip content={t("exclude_recursion_hint")}>
+                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.excludeRecursion} onChange={e => updateAct("excludeRecursion", e.target.checked)} /> {t("lore_exclude_recursion")}</label>
+              </CustomTooltip>
+              <CustomTooltip content={t("prevent_recursion_hint")}>
+                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.preventRecursion} onChange={e => updateAct("preventRecursion", e.target.checked)} /> {t("lore_prevent_recursion")}</label>
+              </CustomTooltip>
+              <CustomTooltip content={t("delay_until_recursion_hint")}>
+                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.delayUntilRecursion} onChange={e => updateAct("delayUntilRecursion", e.target.checked)} /> {t("lore_delay_until_recursion")}</label>
+              </CustomTooltip>
             </div>
             {activeEntry.delayUntilRecursion && (
               <div className="mt-3" style={{ maxWidth: 200 }}>
-                <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3" title={t("recursion_level_hint")}>{t("lore_recursion_label")}</label>
+                <CustomTooltip content={t("recursion_level_hint")}>
+                  <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_recursion_label")}</label>
+                </CustomTooltip>
                 <input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.recursionLevel} onChange={e => updateAct("recursionLevel", parseInt(e.target.value))} />
               </div>
             )}
@@ -653,17 +686,25 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
           <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
             <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_inclusion_section")}</div>
             <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
-              <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3" title={t("group_hint")}>{t("lore_group_name")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="text" value={activeEntry.groupName} onChange={e => updateAct("groupName", e.target.value)} /></div>
-              <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3" title={t("group_weight_hint")}>{t("lore_group_weight")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.groupWeight} onChange={e => updateAct("groupWeight", parseInt(e.target.value))} /></div>
+              <CustomTooltip content={t("group_hint")}>
+                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_group_name")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="text" value={activeEntry.groupName} onChange={e => updateAct("groupName", e.target.value)} /></div>
+              </CustomTooltip>
+              <CustomTooltip content={t("group_weight_hint")}>
+                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_group_weight")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.groupWeight} onChange={e => updateAct("groupWeight", parseInt(e.target.value))} /></div>
+              </CustomTooltip>
             </div>
             <div className="mt-3 flex flex-wrap gap-x-6 gap-y-3">
-              <label className="flex items-center gap-2 text-[13px] text-t1" title={t("prioritize_inclusion_hint")}><input type="checkbox" checked={activeEntry.prioritizeInclusion} onChange={e => updateAct("prioritizeInclusion", e.target.checked)} /> {t("lore_prioritize_inclusion")}</label>
+              <CustomTooltip content={t("prioritize_inclusion_hint")}>
+                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.prioritizeInclusion} onChange={e => updateAct("prioritizeInclusion", e.target.checked)} /> {t("lore_prioritize_inclusion")}</label>
+              </CustomTooltip>
             </div>
           </div>
 
           {/* Triggers */}
           <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-            <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_triggers_section")} <span className="font-normal text-t3" title={t("trigger_hint")}>(?)</span></div>
+            <CustomTooltip content={t("trigger_hint")}>
+              <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_triggers_section")} <span className="font-normal text-t3">(?)</span></div>
+            </CustomTooltip>
             <div className="flex flex-wrap gap-x-5 gap-y-3">
               {(["normal", "continue", "impersonate", "swipe", "regenerate", "quiet"] as const).map(trig => (
                 <label key={trig} className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.triggers.includes(trig)} onChange={e => { const next = e.target.checked ? [...activeEntry.triggers, trig] : activeEntry.triggers.filter((t2) => t2 !== trig); updateAct("triggers", next); }} /> {t("trigger_" + trig)}</label>
@@ -673,17 +714,23 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
 
           {/* Character Filter */}
           <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-            <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_charfilter_section")} <span className="font-normal text-t3" title={t("char_filter_hint")}>(?)</span></div>
+            <CustomTooltip content={t("char_filter_hint")}>
+              <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_charfilter_section")} <span className="font-normal text-t3">(?)</span></div>
+            </CustomTooltip>
             <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-bg" style={{ padding: "6px 10px", minHeight: 38 }}>
               {activeEntry.characterFilter.map(c => <span key={c} className="cursor-pointer rounded bg-accent-dim px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => updateAct("characterFilter", activeEntry.characterFilter.filter(x => x !== c))}>{c} \u2715</span>)}
               <input className="min-w-[80px] flex-1 border-0 bg-transparent font-ui text-t1 outline-none" style={{ fontSize: "calc(var(--ui-fs) - 1px)" }} placeholder="Add character..." onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); const v = (e.target as HTMLInputElement).value.trim(); if (v && !activeEntry.characterFilter.includes(v)) { updateAct("characterFilter", [...activeEntry.characterFilter, v]); } (e.target as HTMLInputElement).value = ""; } }} />
             </div>
-            <label className="mt-2 flex items-center gap-2 text-[13px] text-t1" title={t("char_filter_exclude_hint")}><input type="checkbox" checked={activeEntry.characterFilterExclude} onChange={e => updateAct("characterFilterExclude", e.target.checked)} /> {t("lore_char_filter_exclude")}</label>
+            <CustomTooltip content={t("char_filter_exclude_hint")}>
+              <label className="mt-2 flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.characterFilterExclude} onChange={e => updateAct("characterFilterExclude", e.target.checked)} /> {t("lore_char_filter_exclude")}</label>
+            </CustomTooltip>
           </div>
 
           {/* Match Sources */}
           <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-            <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_matchsources_section")} <span className="font-normal text-t3" title={t("match_sources_hint")}>(?)</span></div>
+            <CustomTooltip content={t("match_sources_hint")}>
+              <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_matchsources_section")} <span className="font-normal text-t3">(?)</span></div>
+            </CustomTooltip>
             <div className="flex flex-wrap gap-x-5 gap-y-3">
               {(["char_desc", "char_personality", "scenario", "persona_desc", "char_note", "creator_notes"] as const).map(src => (
                 <label key={src} className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.matchSources.includes(src)} onChange={e => { const next = e.target.checked ? [...activeEntry.matchSources, src] : activeEntry.matchSources.filter(s2 => s2 !== src); updateAct("matchSources", next); }} /> {t("match_src_" + src)}</label>
@@ -850,14 +897,22 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
       <div className="ml-auto flex gap-1">
         {tab === "lorebooks" && (
           <>
-            <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" title={t("new_lorebook")} onClick={handleAddLorebook}><Ic.plus /></div>
-            <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" title={t("import_lorebook_title")} onClick={() => { setImportOpen(true); setImportStep(1); }}><Ic.import /></div>
+            <CustomTooltip content={t("new_lorebook")}>
+              <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={handleAddLorebook}><Ic.plus /></div>
+            </CustomTooltip>
+            <CustomTooltip content={t("import_lorebook_title")}>
+              <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={() => { setImportOpen(true); setImportStep(1); }}><Ic.import /></div>
+            </CustomTooltip>
           </>
         )}
         {tab === "scripts" && (
           <>
-            <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" title={t("new_script")} onClick={scriptPanel.handleAdd}><Ic.plus /></div>
-            <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" title={t("script_import")} onClick={scriptPanel.handleImportOpen}><Ic.import /></div>
+            <CustomTooltip content={t("new_script")}>
+              <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={scriptPanel.handleAdd}><Ic.plus /></div>
+            </CustomTooltip>
+            <CustomTooltip content={t("script_import")}>
+              <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={scriptPanel.handleImportOpen}><Ic.import /></div>
+            </CustomTooltip>
           </>
         )}
       </div>
@@ -973,9 +1028,15 @@ function LorebookAccordion({
             </div>
             <span className="shrink-0 rounded-full bg-s3 px-2 py-0.5 font-ui text-[11px] text-t3">{entries.length}</span>
             <div className="flex shrink-0 items-center gap-0.5 ml-1">
-              <div className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" title={t("lore_add_entry")} onClick={e => { e.stopPropagation(); onAddEntry(); }}><Ic.plus /></div>
-              <div className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" title="Edit" onClick={e => { e.stopPropagation(); onStartEdit(); }}><Ic.edit /></div>
-              <div className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-danger" title={t("delete_lorebook_confirm")} onClick={e => { e.stopPropagation(); onDelete(); }}><Ic.del /></div>
+              <CustomTooltip content={t("lore_add_entry")}>
+                <div className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={e => { e.stopPropagation(); onAddEntry(); }}><Ic.plus /></div>
+              </CustomTooltip>
+              <CustomTooltip content={"Edit"}>
+                <div className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={e => { e.stopPropagation(); onStartEdit(); }}><Ic.edit /></div>
+              </CustomTooltip>
+              <CustomTooltip content={t("delete_lorebook_confirm")}>
+                <div className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-danger" onClick={e => { e.stopPropagation(); onDelete(); }}><Ic.del /></div>
+              </CustomTooltip>
             </div>
           </>
         )}
