@@ -5,7 +5,6 @@ import { Markdown } from "../lib/markdown.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { replaceUiMacros } from "../lib/macros.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
-import { useChatSnapshot } from "../queries/chat-queries.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useMessageOrder, useMacroContext, useChatDataStore } from "../stores/index.js";
 import { MessageBlock } from "./MessageBlock.js";
@@ -21,8 +20,11 @@ export function MessageList() {
   const { t } = useT();
   const chat = useChatController();
   const activeChatId = useChatStore((s) => s.activeChatId);
-  const snapshotQuery = useChatSnapshot(activeChatId);
-  const snapshot = snapshotQuery.data ?? null;
+  const chatMeta = useChatDataStore((s) => s.chatMeta);
+  const snapshot = chatMeta ? {
+    character: chatMeta.character,
+    persona: chatMeta.persona,
+  } : null;
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [greetingIndex, setGreetingIndex] = useState(0);
 

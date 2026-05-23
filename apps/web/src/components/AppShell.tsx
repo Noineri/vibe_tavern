@@ -1,11 +1,11 @@
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import { Toaster } from "sonner";
 import { useT } from "../i18n/context.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore } from "../stores/index.js";
 import { useActiveTrace } from "../stores/chat-selectors.js";
-import { useBootstrapQuery, usePersonasQuery } from "../queries/bootstrap-queries.js";
-import { useSaveChatSummaryMutation, useSummarizeChatMutation } from "../queries/chat-queries.js";
+import { useBootstrapStore, fetchPersonasAction } from "../stores/api-actions/bootstrap-actions.js";
+import { summarizeChatAction, saveChatSummaryAction } from "../stores/api-actions/chat-actions.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
 import { useCharacterController } from "../hooks/use-character-controller.js";
 import { useProviderProfiles } from "../hooks/use-provider-profiles.js";
@@ -69,16 +69,16 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
   const setCreateCharacterModalOpen = useModalStore((s) => s.setCreateCharacterModalOpen);
 
   // --- Sub-hooks (self-contained) ---
-  const bootstrapQuery = useBootstrapQuery();
-  const personasQuery = usePersonasQuery();
+  const bootstrapData = useBootstrapStore((s) => s.data);
+  const personas = useBootstrapStore((s) => s.personas) ?? [];
+  useEffect(() => { void fetchPersonasAction(); }, []);
   const chat = useChatController();
   const character = useCharacterController();
   const provider = useProviderProfiles();
   const preset = usePresetController();
 
-  const personas = personasQuery.data ?? [];
-  const promptPresets = bootstrapQuery.data?.promptPresets ?? [];
-  const isFirstRun = (bootstrapQuery.data?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === 'true';
+  const promptPresets = bootstrapData?.promptPresets ?? [];
+  const isFirstRun = (bootstrapData?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === 'true';
   const activePromptPresetId = snapshot?.activeChat.promptPresetId ?? null;
 
   // Prompt trace from normalized store
@@ -86,21 +86,18 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
   const connection = useProviderStore((s) => s.connection);
   const canUseLiveApi = connection.status === "connected" && Boolean(connection.model);
 
-  // --- Summary mutations (local to AppShell) ---
-  const summarizeChatMut = useSummarizeChatMutation();
-  const saveChatSummaryMut = useSaveChatSummaryMutation();
-
+  // --- Summary actions (local to AppShell) ---
   async function handleSummarizeChat(input: { providerProfileId: string; model?: string; maxMessages: number }): Promise<string> {
     const chatId = useChatStore.getState().activeChatId;
     if (!chatId) throw new Error("No active chat.");
-    const result = await summarizeChatMut.mutateAsync({ chatId, input });
+    const result = await summarizeChatAction(chatId, input);
     return result.summary;
   }
 
   async function handleSaveChatSummary(summary: string): Promise<string> {
     const chatId = useChatStore.getState().activeChatId;
     if (!chatId) throw new Error("No active chat.");
-    const result = await saveChatSummaryMut.mutateAsync({ chatId, summary });
+    const result = await saveChatSummaryAction(chatId, summary);
     return result.summary;
   }
 

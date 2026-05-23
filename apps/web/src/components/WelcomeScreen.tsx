@@ -3,7 +3,7 @@ import { Ic } from './shared/icons';
 import { cn } from '../lib/cn';
 import { useT } from '../i18n/context.js';
 import { useCharacterController } from '../hooks/use-character-controller.js';
-import { useBootstrapQuery } from '../queries/bootstrap-queries.js';
+import { useBootstrapStore } from '../stores/api-actions/bootstrap-actions.js';
 
 interface WelcomeScreenProps {
   onCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }) => Promise<void>;
@@ -14,7 +14,8 @@ interface WelcomeScreenProps {
 export function WelcomeScreen() {
   const { t } = useT();
   const character = useCharacterController();
-  const isFirstRun = (useBootstrapQuery().data?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === 'true';
+  const bootstrapData = useBootstrapStore((s) => s.data);
+  const isFirstRun = (bootstrapData?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === 'true';
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');

@@ -2,12 +2,12 @@ import { toast } from "sonner";
 import type { PromptPresetDto } from "@rp-platform/domain";
 import { getT } from "../i18n/context.js";
 import {
-  useCreatePromptPresetMutation,
-  useDeletePromptPresetMutation,
-  useLoadPromptPresetsMutation,
-  useSetChatPromptPresetMutation,
-  useUpdatePromptPresetMutation,
-} from "../queries/index.js";
+  loadPromptPresetsAction,
+  createPromptPresetAction,
+  updatePromptPresetAction,
+  deletePromptPresetAction,
+  setChatPromptPresetAction,
+} from "../stores/api-actions/preset-actions.js";
 import { useChatStore } from "../stores/index.js";
 
 
@@ -20,21 +20,16 @@ export interface PresetControllerActions {
 }
 
 export function usePresetController(): PresetControllerActions {
-  const loadPromptPresetsMut = useLoadPromptPresetsMutation();
-  const createPromptPresetMut = useCreatePromptPresetMutation();
-  const updatePromptPresetMut = useUpdatePromptPresetMutation();
-  const deletePromptPresetMut = useDeletePromptPresetMutation();
-  const setChatPromptPresetMut = useSetChatPromptPresetMutation();
 
   async function loadPresetsFromServer(): Promise<PromptPresetDto[]> {
-    return await loadPromptPresetsMut.mutateAsync();
+    return await loadPromptPresetsAction();
   }
 
   async function handleSetActivePromptPresetId(presetId: string | null): Promise<void> {
     const chatId = useChatStore.getState().activeChatId;
     if (!chatId || !presetId) return;
     try {
-      await setChatPromptPresetMut.mutateAsync({ chatId, presetId });
+      await setChatPromptPresetAction(chatId, presetId);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : getT()("preset_set_failed"));
     }
@@ -42,7 +37,7 @@ export function usePresetController(): PresetControllerActions {
 
   async function handleCreatePromptPreset(input: { name: string; bindModel?: string; system?: string; jailbreak?: string; prefill?: string; authorsNote?: string; authorsNoteDepth?: number; summary?: string; tools?: string }): Promise<{ id: string } | null> {
     try {
-      const created = await createPromptPresetMut.mutateAsync(input);
+      const created = await createPromptPresetAction(input);
       await handleSetActivePromptPresetId(created.id);
       return { id: created.id };
     } catch (error) {
@@ -53,7 +48,7 @@ export function usePresetController(): PresetControllerActions {
 
   async function handleUpdatePromptPreset(presetId: string, patch: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">>): Promise<boolean> {
     try {
-      await updatePromptPresetMut.mutateAsync({ presetId, patch });
+      await updatePromptPresetAction(presetId, patch);
       return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : getT()("preset_save_failed"));
@@ -63,7 +58,7 @@ export function usePresetController(): PresetControllerActions {
 
   async function handleDeletePromptPreset(presetId: string): Promise<boolean> {
     try {
-      await deletePromptPresetMut.mutateAsync(presetId);
+      await deletePromptPresetAction(presetId);
       return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : getT()("preset_delete_failed"));
