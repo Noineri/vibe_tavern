@@ -12,11 +12,6 @@ export function createChatRoutes(runtime: RuntimeApi) {
     .get("/api/chats/:chatId", async (c) => {
       return c.json(await runtime.getChatSnapshot(c.req.param("chatId")));
     })
-    .get("/api/chats/:chatId/messages", zValidator("query", schemas.getMessagesQuerySchema), async (c) => {
-      const chatId = c.req.param("chatId");
-      const { limit, before } = c.req.valid("query");
-      return c.json(await runtime.getChatMessages(chatId, { limit, beforeMessageId: before }));
-    })
     .post("/api/chats", zValidator("json", schemas.createChatSchema), async (c) => {
       const body = c.req.valid("json");
       const characterId = body.characterId;

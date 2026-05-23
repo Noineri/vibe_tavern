@@ -32,7 +32,6 @@ export interface AppSnapshot {
   activeBranch: ChatBranch;
   branches: ChatBranch[];
   messages: AppMessage[];
-  hasMore: boolean;
   summaries: Array<{
     id: string;
     kind: string;
@@ -240,21 +239,6 @@ export async function fetchChat(chatId: ChatId): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].$get({ param: { chatId } });
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);
-}
-
-export async function fetchChatMessages(
-  chatId: ChatId,
-  options: { limit?: number; before?: string },
-): Promise<{ messages: AppMessage[]; hasMore: boolean }> {
-  const response = await client.api.chats[":chatId"].messages.$get({
-    param: { chatId },
-    query: { limit: options.limit?.toString(), before: options.before },
-  });
-  const data = await unwrapRpc<{ messages: AppMessage[]; hasMore: boolean }>(response);
-  return {
-    messages: data.messages.map(normalizeMessage),
-    hasMore: data.hasMore,
-  };
 }
 
 export async function updateCharacter(

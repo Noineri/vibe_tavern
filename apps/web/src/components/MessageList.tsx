@@ -11,7 +11,6 @@ import { MessageReasoning } from "./MessageReasoning.js";
 import { TranslateErrorBoundary } from "./TranslateErrorBoundary.js";
 import { initials } from "./app-shell-helpers.jsx";
 import { useT } from "../i18n/context.js";
-import { loadOlderMessagesAction } from "../stores/api-actions/chat-actions.js";
 import { Icons } from "./shared/icons.js";
 import { CustomTooltip, TooltipProvider } from "./shared/Tooltip.js";
 
@@ -21,7 +20,6 @@ const sepWrap = msgWrap + " my-[6px] mt-2";
 export function MessageList() {
   const { t } = useT();
   const chatMeta = useChatDataStore((s) => s.chatMeta);
-  const hasMore = useChatDataStore((s) => s.hasMore);
   const snapshot = chatMeta ? {
     character: chatMeta.character,
     persona: chatMeta.persona,
@@ -32,7 +30,6 @@ export function MessageList() {
   const pendingUserMessageContent = useChatStore((s) => s.pendingUserMessageContent);
 
   const [atBottom, setAtBottom] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // Read from normalized store selectors
   const messageOrder = useMessageOrder();
@@ -87,27 +84,6 @@ export function MessageList() {
       />
     );
   }, [displayMessageIds]);
-
-  const handleStartReached = useCallback(async () => {
-    if (!hasMore || isLoadingMore || !chatMeta || displayMessageIds.length === 0) return;
-    setIsLoadingMore(true);
-    try {
-      await loadOlderMessagesAction(chatMeta.activeChat.id, displayMessageIds[0], 50);
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [hasMore, isLoadingMore, chatMeta, displayMessageIds]);
-
-  const Header = useCallback(() => (
-    <>
-      {isLoadingMore && (
-        <div className="flex items-center justify-center py-4 text-xs text-t3 opacity-50">
-          <span className="animate-pulse">{t("loading")}...</span>
-        </div>
-      )}
-      {!isLoadingMore && hasMore && <div className="h-8" />}
-    </>
-  ), [isLoadingMore, hasMore, t]);
 
   const Footer = useCallback(() => (
     <>
@@ -198,10 +174,9 @@ export function MessageList() {
             followOutput="smooth"
             overscan={5}
             itemContent={itemContent}
-            components={{ Header, Footer }}
-            className="flex-1 pb-3"
+            components={{ Footer }}
+            className="flex-1 pt-7 pb-3"
             style={{ overflowY: "auto" }}
-            startReached={handleStartReached}
             atBottomStateChange={setAtBottom}
           />
           {!atBottom && displayMessageIds.length > 0 && (

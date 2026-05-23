@@ -7,7 +7,6 @@ import {
   deleteChatMessage,
   editChatMessage,
   fetchChat,
-  fetchChatMessages,
   forkBranch,
   generateReply,
   saveChatSummary,
@@ -119,9 +118,4 @@ export async function saveChatSummaryAction(chatId: ChatId, summary: string): Pr
   const result = await saveChatSummary(chatId, summary);
   syncSnapshot(result.snapshot);
   return { summary: result.summary };
-}
-
-export async function loadOlderMessagesAction(chatId: ChatId, beforeMessageId: string, limit: number = 50): Promise<void> {
-  const { messages, hasMore } = await fetchChatMessages(chatId, { before: beforeMessageId, limit });
-  useChatDataStore.getState().prependMessages(messages, hasMore);
 }

@@ -1,7 +1,6 @@
 export interface RuntimeApi {
   bootstrap: () => Promise<unknown>;
   getChatSnapshot: (chatId: string) => Promise<unknown>;
-  getChatMessages: (chatId: string, options: { limit?: number; beforeMessageId?: string }) => Promise<unknown>;
   createChatForCharacter: (characterId: string) => Promise<unknown>;
   cloneChat: (chatId: string) => Promise<unknown>;
   exportCharacter: (characterId: string) => Promise<unknown>;
