@@ -456,7 +456,7 @@ export class RuntimeApiAdapter {
 	testScript = async (scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => {
 		const script = await this.stores.scripts.getById(scriptId);
 		if (!script) throw new Error(`Script not found: ${scriptId}`);
-		const messages = body.messages ?? (body.lastMessage ? [{ role: "user", content: body.lastMessage }] : []);
+		const messages = (body.messages && body.messages.length > 0) ? body.messages : (body.lastMessage ? [{ role: "user", content: body.lastMessage }] : []);
 		const sandboxMessages = messages.map(m => ({ message: m.content, role: m.role }));
 		const result = executeScripts({
 			scripts: [{
