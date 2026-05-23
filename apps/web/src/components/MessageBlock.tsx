@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../lib/cn.js";
 import { Markdown } from "../lib/markdown.js";
 import { avatarUrl } from "../lib/avatar.js";
@@ -14,6 +14,9 @@ import { MessageReasoning } from "./MessageReasoning.js";
 export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps) {
   const { t } = useT();
   const [copied, setCopied] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const prevHeightRef = useRef<number>(0);
+  const prevVariantRef = useRef<number>(-1);
 
   // Read ALL display data from memoized selector — re-renders only when THIS message changes
   const msg = useDisplayMessage(input.messageId);
@@ -52,8 +55,28 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const reasoningText = selectedVariant?.reasoning || null;
   const reasoningDuration = selectedVariant?.reasoningDurationMs ?? null;
 
+  // Scroll compensation: when variant changes, keep the scroll position stable
+  // by adjusting for the height difference of this message.
+  useLayoutEffect(() => {
+    if (prevVariantRef.current >= 0 && prevVariantRef.current !== selectedVariantIndex && rootRef.current) {
+      const scrollEl = rootRef.current.closest(".overflow-y-auto");
+      if (scrollEl) {
+        const oldHeight = prevHeightRef.current;
+        const newHeight = rootRef.current.offsetHeight;
+        const delta = newHeight - oldHeight;
+        if (delta !== 0) {
+          scrollEl.scrollTop += delta;
+        }
+      }
+    }
+    if (rootRef.current) {
+      prevHeightRef.current = rootRef.current.offsetHeight;
+    }
+    prevVariantRef.current = selectedVariantIndex;
+  }, [selectedVariantIndex]);
+
   return (
-    <div className="relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))] px-7">
+    <div ref={rootRef} className="relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))] px-7">
       <div className="relative group py-2.5">
         <div className={cn(
           "mb-[12px] flex items-center gap-[10px] text-[calc(var(--ui-fs)-2px)] font-semibold tracking-[0.04em] text-t3",
@@ -146,7 +169,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
             </div>
           </>
         ) : (
-          <>
+          <div key={selectedVariantIndex} style={{ animation: "contentFadeIn 150ms ease-out" }}>
             {!isUser && (reasoningText || reasoningDuration) && (
               <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
             )}
@@ -160,7 +183,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                 <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
               </span>
             )}
-          </>
+          </div>
         )}
 
         {!input.isEditing && !isGenerating && createdLabel && (

@@ -392,7 +392,13 @@ export function useChatController(): ChatControllerActions {
     const activeChatId = getActiveChatId();
     if (!activeChatId || variantIndex < 0) return;
 
-    await selectVariantMut.mutateAsync({ chatId: activeChatId, messageId, variantIndex });
+    // Optimistic local update — instant visual feedback, no server round-trip lag
+    const msg = useChatDataStore.getState().messagesById[messageId];
+    if (msg) {
+      useChatDataStore.getState().updateMessage(messageId, { selectedVariantIndex: variantIndex });
+    }
+    // Fire-and-forget server persist
+    selectVariantMut.mutate({ chatId: activeChatId, messageId, variantIndex });
   }
 
   async function handleFork(messageId?: string): Promise<void> {
