@@ -1,4 +1,4 @@
-import { memo, useRef, useState, useMemo, useLayoutEffect } from "react";
+import { memo, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "../lib/cn.js";
 import { Markdown } from "../lib/markdown.js";
@@ -18,51 +18,7 @@ import { CustomTooltip } from "./shared/Tooltip.js";
 const msgWrap = "relative group py-2.5";
 const sepWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7 my-[6px] mt-2";
 
-// ── Swipe animation diagnostic logger ──────────────────────────────────────
-const _swipeLog: string[] = [];
-const MAX_LOG = 200;
-function _logSwipe(event: string, data: Record<string, unknown>) {
-  const ts = performance.now().toFixed(1);
-  const entry = `[${ts}ms] ${event} ${JSON.stringify(data)}`;
-  _swipeLog.push(entry);
-  if (_swipeLog.length > MAX_LOG) _swipeLog.shift();
-  console.log(`%c[SWIPE] ${entry}`, 'color: #0af', data);
-}
 
-/** Call from browser console to get the log */
-(window as unknown as Record<string, unknown>).getSwipeLog = () => {
-  const text = _swipeLog.join('\n');
-  console.log(text);
-  return text;
-};
-(window as unknown as Record<string, unknown>).downloadSwipeLog = () => {
-  const blob = new Blob([_swipeLog.join('\n')], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'swipe-log.txt';
-  a.click();
-  URL.revokeObjectURL(url);
-};
-// ────────────────────────────────────────────────────────────────────────────
-
-const MeasureHeight = memo(function MeasureHeight({ children, onHeightChange }: { children: React.ReactNode; onHeightChange: (h: number) => void }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const cbRef = useRef(onHeightChange);
-  cbRef.current = onHeightChange;
-
-  useLayoutEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry) cbRef.current(entry.target.getBoundingClientRect().height);
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  return <div ref={containerRef} className="flow-root">{children}</div>;
-});
 
 export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps) {
   const { t } = useT();
@@ -82,12 +38,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const messageActionId = useChatStore(s => s.messageActionId);
   const pendingUserMessageContent = useChatStore(s => s.pendingUserMessageContent);
 
-  // -- Height measurement for smooth swipe --
-  const prevHeightRef = useRef<number>(undefined);
-  const [displayHeight, setDisplayHeight] = useState<number | undefined>();
-  const renderCountRef = useRef(0);
-  renderCountRef.current++;
-  const _rc = renderCountRef.current;
+
 
   if (!msg || !chatMeta) return null;
 
@@ -157,34 +108,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // -- Variant slide: direction from store (survives remounts) --
   const direction = useChatDataStore((s) => s.swipeDirection);
 
-  // When variant changes — lock to old height
-  useLayoutEffect(() => {
-    _logSwipe('useLayoutEffect[variant]', {
-      msgId: input.messageId.slice(0, 8),
-      variant: selectedVariantIndex,
-      greeting: greetingIndex,
-      prevH: prevHeightRef.current,
-      displayH: displayHeight,
-      willLock: prevHeightRef.current !== undefined && displayHeight !== undefined,
-      lockTo: prevHeightRef.current,
-    });
-    if (prevHeightRef.current !== undefined && displayHeight !== undefined) {
-      setDisplayHeight(prevHeightRef.current);
-    }
-  }, [selectedVariantIndex, greetingIndex]);
-
-  const handleHeightMeasured = (newHeight: number) => {
-    _logSwipe('heightMeasured', {
-      msgId: input.messageId.slice(0, 8),
-      newH: Math.round(newHeight),
-      prevH: prevHeightRef.current !== undefined ? Math.round(prevHeightRef.current) : undefined,
-      displayH: displayHeight !== undefined ? Math.round(displayHeight) : undefined,
-      delta: prevHeightRef.current !== undefined ? Math.round(newHeight - prevHeightRef.current) : undefined,
-    });
-    prevHeightRef.current = newHeight;
-    setDisplayHeight(newHeight);
-  };
-
   // Server sets message.content = selected variant's content at load time,
   // but client-side switching only changes selectedVariantIndex.
   // Read the actual variant text directly.
@@ -193,17 +116,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     : msg.displayContent;
 
   const renderContent = greetingActive ? (greetingOptions[greetingIndex] ?? msg.displayContent) : activeContent;
-
-  // Diagnostics: log every render with key animation state
-  _logSwipe(`render #${_rc}`, {
-    msgId: input.messageId.slice(0, 8),
-    variant: selectedVariantIndex,
-    greeting: greetingIndex,
-    dir: direction,
-    displayH: displayHeight,
-    prevH: prevHeightRef.current,
-    contentLen: renderContent?.length ?? 0,
-  });
 
   // Streaming text for regeneration — only shown on the specific message being regenerated
   const globalStreamingText = useChatStore((s) => s.streamingText);
@@ -334,39 +246,33 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               </div>
             </>
           ) : (
-            <motion.div
-              className="relative overflow-hidden"
-              animate={{ height: displayHeight ?? "auto" }}
-              transition={{ type: "spring", stiffness: 400, damping: 40, restDelta: 0.1 }}
-            >
-              <MeasureHeight onHeightChange={handleHeightMeasured}>
-                {!isUser && (reasoningText || reasoningDuration) && (
-                  <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
-                )}
-                <div className="relative overflow-hidden">
-                  <AnimatePresence mode="popLayout" initial={false}>
-                    <motion.div
-                      key={greetingActive ? `g-${greetingIndex}` : `v-${selectedVariantIndex}`}
-                      initial={{ x: direction * 80, opacity: 0, filter: "blur(4px)" }}
-                      animate={{ x: 0, opacity: 1, filter: "blur(0px)" }}
-                      exit={{ x: direction * -80, opacity: 0, filter: "blur(4px)" }}
-                      transition={{ type: "spring", stiffness: 350, damping: 32 }}
-                      translate="yes"
-                      className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
-                    >
-                      <Markdown text={renderContent} />
-                    </motion.div>
-                  </AnimatePresence>
-                </div>
-                {isGenerating && (
-                  <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
-                    <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
-                    <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
-                    <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
-                  </span>
-                )}
-              </MeasureHeight>
-            </motion.div>
+            <div>
+              {!isUser && (reasoningText || reasoningDuration) && (
+                <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
+              )}
+              <div className="relative overflow-hidden">
+                <AnimatePresence mode="popLayout" initial={false}>
+                  <motion.div
+                    key={greetingActive ? `g-${greetingIndex}` : `v-${selectedVariantIndex}`}
+                    initial={{ x: direction * 80, opacity: 0, filter: "blur(4px)" }}
+                    animate={{ x: 0, opacity: 1, filter: "blur(0px)" }}
+                    exit={{ x: direction * -80, opacity: 0, filter: "blur(4px)" }}
+                    transition={{ type: "spring", stiffness: 350, damping: 32 }}
+                    translate="yes"
+                    className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
+                  >
+                    <Markdown text={renderContent} />
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+              {isGenerating && (
+                <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
+                  <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
+                  <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
+                  <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
+                </span>
+              )}
+            </div>
           )}
 
           {!isEditing && !isGenerating && createdLabel && (
@@ -426,7 +332,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                       className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
                       disabled={isBusy || selectedVariantIndex <= 0}
                       onClick={() => {
-                        _logSwipe('click:prevVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex - 1 });
                         useChatDataStore.getState().setSwipeDirection(-1);
                         const current = useChatDataStore.getState().messagesById[msg.id];
                         const idx = current?.selectedVariantIndex ?? 0;
@@ -440,7 +345,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                       className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
                       disabled={isBusy || selectedVariantIndex >= variantCount - 1}
                       onClick={() => {
-                        _logSwipe('click:nextVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex + 1 });
                         useChatDataStore.getState().setSwipeDirection(1);
                         const current = useChatDataStore.getState().messagesById[msg.id];
                         const idx = current?.selectedVariantIndex ?? 0;
