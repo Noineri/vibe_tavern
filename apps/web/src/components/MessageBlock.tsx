@@ -1,4 +1,5 @@
-import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "../lib/cn.js";
 import { Markdown } from "../lib/markdown.js";
 import { avatarUrl } from "../lib/avatar.js";
@@ -35,46 +36,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const variantCount = variants.length;
   const selectedVariantIndex = msg.selectedVariantIndex ?? 0;
 
-  // -- Variant slide animation --
-  const prevIdxRef = useRef(selectedVariantIndex);
-  const [slideFrom, setSlideFrom] = useState<number | null>(null);
-  const [sliding, setSliding] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
-
-  // Detect variant change
-  if (prevIdxRef.current !== selectedVariantIndex) {
-    if (!sliding) {
-      setSlideFrom(prevIdxRef.current);
-      setSliding(true);
-    }
-    prevIdxRef.current = selectedVariantIndex;
-  }
-
-  // After render: if height changed, smoothly animate scrollTop to keep
-  // this message's position stable (so swipe arrows stay under cursor)
-  useLayoutEffect(() => {
-    if (sliding && contentRef.current) {
-      const scrollEl = contentRef.current.closest(".overflow-y-auto") as HTMLElement | null;
-      if (scrollEl) {
-        const prevH = prevHeightRef.current;
-        const newH = contentRef.current.offsetHeight;
-        const delta = newH - prevH;
-        if (delta !== 0) {
-          scrollEl.scrollTop += delta;
-        }
-      }
-    }
-    if (contentRef.current) {
-      prevHeightRef.current = contentRef.current.offsetHeight;
-    }
-  });
-
-  const prevHeightRef = useRef(0);
-
-  const endSlide = useCallback(() => {
-    setSliding(false);
-    setSlideFrom(null);
-  }, []);
+  // -- Variant slide: direction tracking for framer-motion --
+  const prevVariantRef = useRef(selectedVariantIndex);
+  const direction = selectedVariantIndex > prevVariantRef.current ? 1 : -1;
+  prevVariantRef.current = selectedVariantIndex;
 
   const isGenerating = Boolean(input.isGenerating);
   const greetingOptions = input.greetingOptions;
@@ -188,25 +153,24 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
             </div>
           </>
         ) : (
-          <div ref={contentRef} className="relative overflow-hidden">
+          <div>
             {!isUser && (reasoningText || reasoningDuration) && (
               <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
             )}
-            {/* New content: in normal flow, defines container height */}
-            <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-              <Markdown text={renderContent} />
-            </div>
-            {/* Old content: absolute overlay, slides out */}
-            {sliding && slideFrom !== null && (
-              <div
-                className="absolute inset-0 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2 transition-transform duration-200 ease-out"
-                style={{ transform: `translateX(${selectedVariantIndex > slideFrom ? '-100%' : '100%'})` }}
-                onTransitionEnd={endSlide}
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.div
+                key={selectedVariantIndex}
+                layout
+                initial={{ x: direction * 80, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: direction * -80, opacity: 0 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
                 translate="yes"
+                className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
               >
-                <Markdown text={variants[slideFrom].content} />
-              </div>
-            )}
+                <Markdown text={renderContent} />
+              </motion.div>
+            </AnimatePresence>
             {isGenerating && (
               <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
                 <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
