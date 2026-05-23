@@ -8,6 +8,7 @@ import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { SCRIPT_TEMPLATES } from "./scriptTemplates.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
+import { MessageReasoning } from "../MessageReasoning.js";
 import {
   listScripts,
   createScript,
@@ -59,6 +60,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiStreaming, setAiStreaming] = useState(false);
   const [aiStreamedCode, setAiStreamedCode] = useState("");
+  const [aiStreamedReasoning, setAiStreamedReasoning] = useState("");
   const [aiError, setAiError] = useState<string | null>(null);
 
   const aiAbortRef = useRef<AbortController | null>(null);
@@ -190,16 +192,16 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     setAiStreaming(true);
     setAiError(null);
     setAiStreamedCode("");
+    setAiStreamedReasoning("");
     const ac = new AbortController();
     aiAbortRef.current = ac;
     try {
       for await (const chunk of streamScriptAiAssistant({ prompt: aiPrompt, existingCode: activeScript?.code || undefined, providerProfileId: aiProviderId, model: aiModelName || undefined })) {
+        if (chunk.type === "reasoning" && chunk.text) {
+          setAiStreamedReasoning(prev => prev + chunk.text);
+        }
         if (chunk.type === "text" && chunk.text) {
-          // Strip reasoning/thinking tags from stream - models may emit them
-          const cleaned = chunk.text
-            .replace(/REASONING_START[\s\S]*?REASONING_END/g, '')
-            .replace(/<think[\s\S]*?<\/think>/g, '');
-          if (cleaned) setAiStreamedCode(prev => prev + cleaned);
+          setAiStreamedCode(prev => prev + chunk.text);
         }
         if (chunk.type === "error" && chunk.error) { setAiError(chunk.error); setAiStreaming(false); return; }
         if (chunk.type === "done") { setAiStreaming(false); return; }
@@ -211,8 +213,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   };
 
   const handleAiStop = () => { aiAbortRef.current?.abort(); setAiStreaming(false); };
-  const handleAiInsert = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: (activeScript?.code || "") + "\n\n" + aiStreamedCode }); setAiHelperOpen(false); setAiStreamedCode(""); setAiPrompt(""); };
-  const handleAiReplace = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: aiStreamedCode }); setAiHelperOpen(false); setAiStreamedCode(""); setAiPrompt(""); };
+  const handleAiInsert = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: (activeScript?.code || "") + "\n\n" + aiStreamedCode }); setAiHelperOpen(false); setAiStreamedCode(""); setAiStreamedReasoning(""); setAiPrompt(""); };
+  const handleAiReplace = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: aiStreamedCode }); setAiHelperOpen(false); setAiStreamedCode(""); setAiStreamedReasoning(""); setAiPrompt(""); };
 
   // ── Modals ───────────────────────────────────────────────
   const modals = (
@@ -302,6 +304,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                     <textarea className="w-full min-h-[100px] rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent resize-none" placeholder={t("script_ai_prompt")} value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
                     <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("script_ai_prompt_hint")}</div>
                   </div>
+                  {aiStreamedReasoning && (
+                    <div className="mb-3">
+                      <MessageReasoning reasoning={aiStreamedReasoning} />
+                    </div>
+                  )}
                   {aiStreamedCode && (
                     <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
                       <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">Generated code</div>

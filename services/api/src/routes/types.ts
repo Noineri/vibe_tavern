@@ -1,3 +1,5 @@
+import type { AiAssistantStreamChunk } from "../script-ai-assistant.js";
+
 export interface RuntimeApi {
   bootstrap: () => Promise<unknown>;
   getChatSnapshot: (chatId: string) => Promise<unknown>;
@@ -46,7 +48,7 @@ export interface RuntimeApi {
   deleteScript: (scriptId: string) => Promise<void>;
   testScript: (scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<unknown>;
   importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<unknown>;
-  streamScriptAiAssistant: (body: { prompt: string; existingCode?: string; providerProfileId: string; model?: string }) => AsyncIterable<{ type: "text" | "error" | "done"; text?: string; error?: string }>;
+  streamScriptAiAssistant: (body: { prompt: string; existingCode?: string; providerProfileId: string; model?: string }) => AsyncIterable<AiAssistantStreamChunk>;
   listProviderProfiles: () => unknown;
   fetchProviderProfile: (providerProfileId: string) => unknown;
   activateProviderProfile: (providerProfileId: string) => unknown;

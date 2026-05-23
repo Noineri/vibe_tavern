@@ -874,7 +874,7 @@ export async function importScript(body: { format: "js"; code: string; name?: st
 // ── AI Assistant SSE ──────────────────────────────────────────────────
 
 export interface AiAssistantChunk {
-  type: "text" | "error" | "done";
+  type: "text" | "reasoning" | "error" | "done";
   text?: string;
   error?: string;
 }
