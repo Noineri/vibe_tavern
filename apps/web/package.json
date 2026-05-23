@@ -13,6 +13,7 @@
     "@codemirror/state": "^6.6.0",
     "@codemirror/theme-one-dark": "^6.1.3",
     "@hookform/resolvers": "^5.2.2",
+    "@radix-ui/react-dialog": "^1.1.15",
     "@rp-platform/api": "0.1.0",
     "@rp-platform/db": "0.1.0",
     "@rp-platform/domain": "0.1.0",
