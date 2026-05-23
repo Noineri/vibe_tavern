@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useT } from "../../i18n/context.js";
 import { useCharacterStore } from "../../stores/character-store.js";
+import { Modal } from "./Modal.js";
 
 interface DestructiveConfirmModalProps {
   title: string;
@@ -14,10 +15,9 @@ interface DestructiveConfirmModalProps {
 export function DestructiveConfirmModal(input: DestructiveConfirmModalProps) {
   const { t } = useT();
   return (
-    <div className="fixed inset-0 z-[700] flex items-center justify-center bg-black/50" onClick={input.onCancel}>
+    <Modal open={true} onClose={input.onCancel} overlayClassName="z-[700]">
       <div
         className="w-[380px] rounded-lg border border-border bg-surface p-7 text-center shadow-xl"
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-2 text-base font-medium text-t1">
           {input.title}
@@ -40,7 +40,7 @@ export function DestructiveConfirmModal(input: DestructiveConfirmModalProps) {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -53,10 +53,9 @@ export function ShellDestructiveConfirmModal() {
   if (!confirmDestroy) return null;
 
   return (
-    <div className="fixed inset-0 z-[700] flex items-center justify-center bg-black/50" onClick={() => setConfirmDestroy(null)}>
+    <Modal open={true} onClose={() => setConfirmDestroy(null)} overlayClassName="z-[700]">
       <div
         className="w-[380px] rounded-lg border border-border bg-surface p-7 text-center shadow-xl"
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-2 text-base font-medium text-t1">
           {confirmDestroy.title}
@@ -82,6 +81,6 @@ export function ShellDestructiveConfirmModal() {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
