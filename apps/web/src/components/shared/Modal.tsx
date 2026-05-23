@@ -1,4 +1,3 @@
-import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { cn } from "../../lib/cn.js";
@@ -15,23 +14,20 @@ export interface ModalProps {
 }
 
 /**
+ * Returns the nearest modal portal container element.
+ * DropdownSelect calls this to portal its content inside the Dialog's focus scope,
+ * so keyboard navigation (arrow keys) works inside modals.
+ */
+export function getModalPortal(): HTMLElement | null {
+  return document.getElementById("modal-portal");
+}
+
+/**
  * Shared Modal wrapper using Radix Dialog primitives.
  *
  * Provides: focus trap, scroll lock, Escape-to-close, overlay click dismiss.
  * Visual: same `bg-black/55 backdrop-blur-[2px]` overlay, centered content.
- *
- * Renders a hidden portal container so nested Radix components (Select, Popover)
- * can portal their content inside the Dialog's focus scope.
  */
-
-// Global ref to the current modal portal container.
-// Radix Select/Popover can portal into this to stay inside the focus trap.
-let modalPortalEl: HTMLDivElement | null = null;
-
-export function getModalPortal(): HTMLDivElement | null {
-  return modalPortalEl;
-}
-
 export function Modal({ open, onClose, children, overlayClassName }: ModalProps) {
   return (
     <Dialog.Root open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -47,12 +43,12 @@ export function Modal({ open, onClose, children, overlayClassName }: ModalProps)
             onInteractOutside={(e) => e.preventDefault()}
           >
             {children}
-            {/* Portal container for nested Radix components (Select, Popover).
-                Rendered inside Dialog so focus trap includes portaled content. */}
+            {/* Portal anchor for nested Radix components (Select, Popover).
+                Positioned as a zero-size fixed element inside Dialog.Content.
+                Select.Portal uses this as container to stay within focus trap. */}
             <div
-              ref={(el) => { modalPortalEl = el; }}
-              data-modal-portal
-              style={{ display: "contents" }}
+              id="modal-portal"
+              style={{ position: "fixed", top: 0, left: 0, width: 0, height: 0 }}
             />
           </Dialog.Content>
         </Dialog.Overlay>
