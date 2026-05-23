@@ -46,7 +46,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const greetIdx = input.greetingIndex;
   const greetingActive = !isUser && greetingOptions && greetingOptions.length > 1;
   const canSwitch = input.canSwitchVariant;
-  const renderContent = greetingActive ? (greetingOptions[greetIdx] ?? displayContent) : displayContent;
+  // Server sets message.content = selected variant's content at load time,
+  // but client-side switching only changes selectedVariantIndex.
+  // Read the actual variant text directly.
+  const activeContent = (selectedVariantIndex < variants.length)
+    ? variants[selectedVariantIndex].content
+    : displayContent;
+  const renderContent = greetingActive ? (greetingOptions[greetIdx] ?? displayContent) : activeContent;
   const copyLabel = t("copy");
   const editLabel = t("edit");
   const branchLabel = t("branch");
@@ -157,21 +163,22 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
             {!isUser && (reasoningText || reasoningDuration) && (
               <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
             )}
-            <motion.div layout transition={{ layout: { duration: 0.15, ease: "easeOut" } }}>
+            <div className="relative overflow-hidden">
               <AnimatePresence mode="popLayout" initial={false}>
                 <motion.div
                   key={selectedVariantIndex}
-                  initial={{ x: direction * 80, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  exit={{ x: direction * -80, opacity: 0 }}
-                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  layout
+                  initial={{ x: direction * 80, opacity: 0, filter: "blur(4px)" }}
+                  animate={{ x: 0, opacity: 1, filter: "blur(0px)" }}
+                  exit={{ x: direction * -80, opacity: 0, filter: "blur(4px)" }}
+                  transition={{ duration: 0.22, ease: [0.25, 0.46, 0.45, 0.94] }}
                   translate="yes"
                   className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
                 >
                   <Markdown text={renderContent} />
                 </motion.div>
               </AnimatePresence>
-            </motion.div>
+            </div>
             {isGenerating && (
               <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
                 <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
