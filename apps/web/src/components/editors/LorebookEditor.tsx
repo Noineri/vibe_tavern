@@ -988,7 +988,7 @@ function LorebookAccordion({
   const [entries, setEntries] = useState<LoreEntryRecord[]>([]);
 
   useEffect(() => {
-    if (!expanded) { setEntries([]); return; }
+    if (!expanded) return;
     let cancelled = false;
     listLoreEntries(lorebook.id).then(data => { if (!cancelled) setEntries(data); });
     return () => { cancelled = true; };
