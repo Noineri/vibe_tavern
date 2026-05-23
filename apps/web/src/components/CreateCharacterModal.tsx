@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Ic } from './shared/icons';
 import { cn } from '../lib/cn';
+import { Modal } from "./shared/Modal.js";
 import { AvatarCropModal } from './shared/AvatarCropModal.js';
 import type { AvatarCropResult } from './shared/AvatarCropModal.js';
 import { useT } from '../i18n/context.js';
@@ -172,7 +173,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   }
 
   return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]">
+    <Modal open={true} onClose={onClose}>
       {/* Avatar crop modal */}
       {pendingAvatar && (
         <AvatarCropModal
@@ -441,6 +442,6 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

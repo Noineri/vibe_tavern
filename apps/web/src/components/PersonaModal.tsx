@@ -8,6 +8,7 @@ import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { AvatarCropModal } from "./shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "./shared/AvatarCropModal.js";
 import { cn } from "../lib/cn.js";
+import { Modal } from "./shared/Modal.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { uploadAsset } from "../app-client.js";
 import { useTokenCount } from "../hooks/use-token-count.js";
@@ -174,7 +175,7 @@ export function PersonaModal(input: PersonaModalProps) {
   const { errors } = form.formState;
 
   return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <Modal open={true} onClose={onClose}>
       {/* Avatar crop modal */}
       {pendingAvatar && (
         <AvatarCropModal
@@ -460,6 +461,6 @@ export function PersonaModal(input: PersonaModalProps) {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

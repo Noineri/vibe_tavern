@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../i18n/context.js";
+import { Modal } from "./shared/Modal.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../app-client.js";
 import type { ProviderProbeResponse } from "@rp-platform/domain";
 import { saveProviderDraftSchema } from "@rp-platform/api-contracts";
@@ -362,7 +363,7 @@ export function ProviderModal({
     : models;
 
   return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={(e) => e.target === e.currentTarget && handleClose()}>
+    <Modal open={true} onClose={handleClose}>
       {confirmClose && <ConfirmCloseModal onCancel={() => setConfirmClose(false)} onConfirm={() => { setDirty(false); onClose(); }} />}
       {confirmDelete && (
         <DestructiveConfirmModal
@@ -484,6 +485,6 @@ export function ProviderModal({
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

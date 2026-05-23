@@ -6,6 +6,7 @@ import { extractPngMetadata, parseCharacterMetadata } from "../lib/png-reader.js
 import { importJson, uploadAsset, updateCharacterAvatar } from "../app-client.js";
 import { cn } from "../lib/cn.js";
 import { Icons } from "./shared/icons.js";
+import { Modal } from "./shared/Modal.js";
 import { useT, getT } from "../i18n/context.js";
 
 interface ImportModalCommonProps {
@@ -500,7 +501,7 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
 function ImportModalFrame(props: { title: string; subtitle: string; onClose: () => void; children: React.ReactNode }) {
   const { t } = useT();
   return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={(event) => event.target === event.currentTarget && props.onClose()}>
+    <Modal open={true} onClose={props.onClose}>
       <div className="flex max-h-[calc(100vh-60px)] w-[500px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">
         <div className="shrink-0 px-5 pt-[18px]">
           <div className="flex items-start justify-between">
@@ -513,7 +514,7 @@ function ImportModalFrame(props: { title: string; subtitle: string; onClose: () 
         </div>
         {props.children}
       </div>
-    </div>
+    </Modal>
   );
 }
 

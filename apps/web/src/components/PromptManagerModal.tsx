@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { PromptPresetDto } from "@rp-platform/domain";
 import { cn } from "../lib/cn.js";
 import { useT } from "../i18n/context.js";
+import { Modal } from "./shared/Modal.js";
 import { ConfirmCloseModal } from "./shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { Icons } from "./shared/icons.js";
@@ -161,10 +162,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]"
-      onClick={(e) => e.target === e.currentTarget && handleClose()}
-    >
+    <Modal open={true} onClose={handleClose}>
       {confirmCloseOpen && (
         <ConfirmCloseModal
           onCancel={() => setConfirmCloseOpen(false)}
@@ -267,6 +265,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

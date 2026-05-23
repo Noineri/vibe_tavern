@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@rp-platform/domain";
 import { Icons } from "./shared/icons.js";
+import { Modal } from "./shared/Modal.js";
 import { SummaryTab, ContextFooter } from "./context/index.js";
 import type { SavedSummary } from "./context/SummaryTab.js";
 import { cn } from "../lib/cn.js";
@@ -272,7 +273,7 @@ export function ContextMemoryModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={e => e.target === e.currentTarget && onClose()}>
+    <Modal open={true} onClose={onClose}>
       <div className="flex h-[min(85vh,680px)] max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[820px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">
         <div className="shrink-0 border-b border-border px-5 pt-[18px]">
           <div className="flex items-start justify-between pb-3">
@@ -330,6 +331,6 @@ export function ContextMemoryModal({
           autoSaveFlash={autosaveFlash}
         />
       </div>
-    </div>
+    </Modal>
   );
 }
