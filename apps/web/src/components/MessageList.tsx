@@ -12,7 +12,7 @@ import { TranslateErrorBoundary } from "./TranslateErrorBoundary.js";
 import { initials } from "./app-shell-helpers.jsx";
 import { useT } from "../i18n/context.js";
 import { Icons } from "./shared/icons.js";
-import { CustomTooltip, TooltipProvider } from "./shared/Tooltip.js";
+import { CustomTooltip } from "./shared/Tooltip.js";
 
 const msgWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7";
 const sepWrap = msgWrap + " my-[6px] mt-2";
@@ -165,7 +165,6 @@ export function MessageList() {
 
   return (
     <TranslateErrorBoundary>
-      <TooltipProvider delayDuration={200}>
         <div className="relative flex-1 flex flex-col min-h-0">
           <Virtuoso
             ref={virtuosoRef}
@@ -191,7 +190,6 @@ export function MessageList() {
             </CustomTooltip>
           )}
         </div>
-      </TooltipProvider>
     </TranslateErrorBoundary>
   );
 }
