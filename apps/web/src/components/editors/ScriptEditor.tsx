@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useProviderDataStore } from "../../stores/provider-data-store.js";
+import { fetchProviderModelsAction } from "../../stores/api-actions/provider-actions.js";
 import { Ic } from "../shared/icons.js";
 import { CodeEditor } from "../shared/CodeEditor.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
@@ -17,8 +18,7 @@ import {
   streamScriptAiAssistant,
   type ScriptRecord,
 } from "../../app-client.js";
-import { scriptKeys } from "../../queries/query-keys.js";
-import { useProviderProfilesQuery, useProviderModelsQuery } from "../../queries/provider-queries.js";
+
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -41,7 +41,6 @@ interface ScriptPanelProps {
 
 export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEditor, onBackToList }: ScriptPanelProps) {
   const { t } = useT();
-  const qc = useQueryClient();
 
   const [activeScriptId, setActiveScriptIdRaw] = useState<string | null>(null);
   const setActiveScriptId = (id: string | null) => {
@@ -64,7 +63,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
   const aiAbortRef = useRef<AbortController | null>(null);
 
-  // ── Queries ──────────────────────────────────────────────
+  // ── Queries (replaced with local state + async fetch) ────
   const scopeId = (() => {
     if (scope === "character") return characterId;
     if (scope === "persona") return personaId ?? undefined;
@@ -72,43 +71,84 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     return undefined;
   })();
 
-  const scriptsQuery = useQuery({
-    queryKey: scriptKeys.byScope(scope, scopeId),
-    queryFn: () => listScripts(scope, scopeId),
-  });
-  const scripts = scriptsQuery.data ?? [];
+  const [scripts, setScripts] = useState<ScriptRecord[]>([]);
+  const providerProfiles = useProviderDataStore((s) => s.profiles);
+  const selectedProfile = providerProfiles.find(p => p.id === aiProviderId);
+  const [providerModels, setProviderModels] = useState<Array<{ id: string; label?: string }>>([]);
+
+  const refreshScripts = useCallback(async () => {
+    setScripts(await listScripts(scope, scopeId));
+  }, [scope, scopeId]);
+
+  useEffect(() => { void refreshScripts(); }, [refreshScripts]);
+
+  useEffect(() => {
+    if (!aiProviderId) { setProviderModels([]); return; }
+    let cancelled = false;
+    void fetchProviderModelsAction(aiProviderId).then(response => {
+      if (!cancelled) {
+        const models = (response && "models" in response ? response.models : []) as Array<{ id: string; label?: string }>;
+        setProviderModels(models);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [aiProviderId]);
+
   const activeScript = scripts.find(s => s.id === activeScriptId) ?? null;
 
-  const { data: providerProfiles = [] } = useProviderProfilesQuery();
-  const selectedProfile = providerProfiles.find(p => p.id === aiProviderId);
-  const { data: providerModelsRaw } = useProviderModelsQuery(aiProviderId);
-  const providerModels = (providerModelsRaw && "models" in providerModelsRaw ? providerModelsRaw.models : []) as Array<{ id: string; label?: string }>;
+  // ── Mutations (replaced with async handlers) ─────────────
+  const [creatingScript, setCreatingScript] = useState(false);
+  const [updatingScript, setUpdatingScript] = useState(false);
+  const [deletingScript, setDeletingScript] = useState(false);
+  const [testingScript, setTestingScript] = useState(false);
+  const [importingScript, setImportingScript] = useState(false);
 
-  // ── Mutations ────────────────────────────────────────────
-  const createMut = useMutation({
-    mutationFn: (body: Parameters<typeof createScript>[0]) => createScript(body),
-    onSuccess: (s) => { qc.invalidateQueries({ queryKey: scriptKeys.all() }); setActiveScriptId(s.id); },
-  });
+  const handleCreateScript = async (body: Parameters<typeof createScript>[0]) => {
+    setCreatingScript(true);
+    try {
+      const s = await createScript(body);
+      await refreshScripts();
+      setActiveScriptId(s.id);
+    } finally { setCreatingScript(false); }
+  };
 
-  const updateMut = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Parameters<typeof updateScript>[1] }) => updateScript(id, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: scriptKeys.all() }),
-  });
+  const handleUpdateScript = async (id: string, body: Parameters<typeof updateScript>[1]) => {
+    setUpdatingScript(true);
+    try {
+      await updateScript(id, body);
+      await refreshScripts();
+    } finally { setUpdatingScript(false); }
+  };
 
-  const deleteMut = useMutation({
-    mutationFn: (id: string) => deleteScript(id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: scriptKeys.all() }); if (activeScriptId === confirmDeleteId) setActiveScriptIdRaw(null); setConfirmDeleteId(null); onBackToList?.(); },
-  });
+  const handleDeleteScript = async (id: string) => {
+    setDeletingScript(true);
+    try {
+      await deleteScript(id);
+      await refreshScripts();
+      if (activeScriptId === confirmDeleteId) setActiveScriptIdRaw(null);
+      setConfirmDeleteId(null);
+      onBackToList?.();
+    } finally { setDeletingScript(false); }
+  };
 
-  const testMut = useMutation({
-    mutationFn: ({ id, input }: { id: string; input: string }) => testScript(id, { lastMessage: input }),
-    onSuccess: (r) => setTestResult(r),
-  });
+  const handleTestScript = async (id: string, input: string) => {
+    setTestingScript(true);
+    try {
+      const r = await testScript(id, { lastMessage: input });
+      setTestResult(r);
+    } finally { setTestingScript(false); }
+  };
 
-  const importMut = useMutation({
-    mutationFn: (code: string) => importScript({ format: "js", code, scopeType: scope, characterId: scope === "character" ? characterId : undefined, personaId: scope === "persona" ? personaId ?? undefined : undefined, chatId: scope === "chat" ? chatId ?? undefined : undefined }),
-    onSuccess: (s) => { qc.invalidateQueries({ queryKey: scriptKeys.all() }); setActiveScriptId(s.id); setImportOpen(false); setImportCode(""); },
-  });
+  const handleImportScript = async (code: string) => {
+    setImportingScript(true);
+    try {
+      const s = await importScript({ format: "js", code, scopeType: scope, characterId: scope === "character" ? characterId : undefined, personaId: scope === "persona" ? personaId ?? undefined : undefined, chatId: scope === "chat" ? chatId ?? undefined : undefined });
+      await refreshScripts();
+      setActiveScriptId(s.id);
+      setImportOpen(false);
+      setImportCode("");
+    } finally { setImportingScript(false); }
+  };
 
   // ── Scope-aware body helper ──────────────────────────────
   const scopeBody = () => {
@@ -122,27 +162,27 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   // ── Handlers ─────────────────────────────────────────────
   const handleAdd = () => {
     const body = { name: "New Script", code: "", ...scopeBody() } as Parameters<typeof createScript>[0];
-    createMut.mutate(body);
+    handleCreateScript(body);
   };
 
   const handleAddFromTemplate = (key: string) => {
     const tpl = SCRIPT_TEMPLATES[key];
     if (!tpl) return;
     if (activeScriptId && activeScript) {
-      updateMut.mutate({ id: activeScriptId, body: { code: activeScript.code ? activeScript.code + "\n\n" + tpl.code : tpl.code } });
+      handleUpdateScript(activeScriptId, { code: activeScript.code ? activeScript.code + "\n\n" + tpl.code : tpl.code });
     } else {
-      createMut.mutate({ name: tpl.name, code: tpl.code, ...scopeBody() } as Parameters<typeof createScript>[0]);
+      handleCreateScript({ name: tpl.name, code: tpl.code, ...scopeBody() } as Parameters<typeof createScript>[0]);
     }
   };
 
   const updateField = (field: string, value: unknown) => {
     if (!activeScriptId) return;
-    updateMut.mutate({ id: activeScriptId, body: { [field]: value } as Parameters<typeof updateScript>[1] });
+    handleUpdateScript(activeScriptId, { [field]: value } as Parameters<typeof updateScript>[1]);
   };
 
   const runTest = () => {
     if (!activeScriptId || !testInput.trim()) return;
-    testMut.mutate({ id: activeScriptId, input: testInput });
+    handleTestScript(activeScriptId, testInput);
   };
 
   const handleAiGenerate = async () => {
@@ -165,8 +205,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   };
 
   const handleAiStop = () => { aiAbortRef.current?.abort(); setAiStreaming(false); };
-  const handleAiInsert = () => { if (!activeScriptId || !aiStreamedCode) return; updateMut.mutate({ id: activeScriptId, body: { code: (activeScript?.code || "") + "\n\n" + aiStreamedCode } }); setAiHelperOpen(false); setAiStreamedCode(""); setAiPrompt(""); };
-  const handleAiReplace = () => { if (!activeScriptId || !aiStreamedCode) return; updateMut.mutate({ id: activeScriptId, body: { code: aiStreamedCode } }); setAiHelperOpen(false); setAiStreamedCode(""); setAiPrompt(""); };
+  const handleAiInsert = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: (activeScript?.code || "") + "\n\n" + aiStreamedCode }); setAiHelperOpen(false); setAiStreamedCode(""); setAiPrompt(""); };
+  const handleAiReplace = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: aiStreamedCode }); setAiHelperOpen(false); setAiStreamedCode(""); setAiPrompt(""); };
 
   // ── Modals ───────────────────────────────────────────────
   const modals = (
@@ -181,7 +221,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             <div className="p-5 text-[13px] text-t2">{t("delete_script_msg")}</div>
             <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
               <button className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
-              <button className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={() => deleteMut.mutate(confirmDeleteId)}>{t("delete_script_confirm")}</button>
+              <button className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={() => handleDeleteScript(confirmDeleteId)}>{t("delete_script_confirm")}</button>
             </div>
           </div>
         </div>
@@ -210,7 +250,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             </div>
             <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
               <button className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => { setImportOpen(false); setImportCode(""); }}>Cancel</button>
-              <button className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={() => importMut.mutate(importCode)} disabled={!importCode.trim()}>{t("script_import_import")}</button>
+              <button className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={() => handleImportScript(importCode)} disabled={!importCode.trim()}>{t("script_import_import")}</button>
             </div>
           </div>
         </div>
@@ -442,7 +482,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             )}
           </div>
         )}
-        {testMut.isPending && <div className="mt-3 text-center font-ui text-[12px] text-t3">Running...</div>}
+        {testingScript && <div className="mt-3 text-center font-ui text-[12px] text-t3">Running...</div>}
       </div>
     </div>
   ) : (

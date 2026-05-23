@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
 import { Ic, Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
@@ -18,7 +18,7 @@ import {
   type LorebookRecord,
   type LoreEntryRecord,
 } from "../../app-client.js";
-import { lorebookKeys } from "../../queries/query-keys.js";
+
 import { useScriptPanel } from "./ScriptEditor.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -64,8 +64,6 @@ function useIsMobile() {
 export function LorebookEditor({ characterId, chatId, personaId }: LorebookEditorProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
-  const qc = useQueryClient();
-
   // ── State ────────────────────────────────────────────────
   const [view, setView] = useState<View>("pick");
   const [tab, setTab] = useState<Tab>("lorebooks");
@@ -130,14 +128,19 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
     return undefined;
   }, [characterId, personaId, chatId]);
 
-  // ── Queries ───────────────────────────────────────────────
-  const lorebooksQuery = useQuery({
-    queryKey: lorebookKeys.byScope(scope, getOwnerId(scope)),
-    queryFn: () => listLorebooks(scope, getOwnerId(scope)),
-    enabled: view !== "pick",
-  });
+  // ── Queries (replaced with local state + async fetch) ────
+  const [lorebooks, setLorebooks] = useState<LorebookRecord[]>([]);
+  const [loadingLorebooks, setLoadingLorebooks] = useState(false);
 
-  const lorebooks = lorebooksQuery.data ?? [];
+  const refreshLorebooks = useCallback(async () => {
+    setLoadingLorebooks(true);
+    try { setLorebooks(await listLorebooks(scope, getOwnerId(scope))); }
+    finally { setLoadingLorebooks(false); }
+  }, [scope, getOwnerId(scope)]);
+
+  useEffect(() => {
+    if (view !== "pick") void refreshLorebooks();
+  }, [view, refreshLorebooks]);
 
   // Find which lorebook the active entry belongs to
   const activeLorebookId = activeEntryId
@@ -147,74 +150,94 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
       })?.id
     : null;
 
-  // ── Mutations ────────────────────────────────────────────
-  const createLbMut = useMutation({
-    mutationFn: (body: { name: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string }) =>
-      createLorebook(body),
-    onSuccess: (newLb) => {
-      void qc.invalidateQueries({ queryKey: lorebookKeys.byScope(scope, getOwnerId(scope)) });
+  // ── Mutations (replaced with async handlers) ─────────────
+  const [creatingLb, setCreatingLb] = useState(false);
+  const [savingLb, setSavingLb] = useState(false);
+  const [deletingLb, setDeletingLb] = useState(false);
+  const [creatingEntry, setCreatingEntry] = useState(false);
+  const [savingEntry, setSavingEntry] = useState(false);
+  const [deletingEntry, setDeletingEntry] = useState(false);
+  const [testingActivation, setTestingActivation] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [testMutData, setTestMutData] = useState<{ activatedIds: string[]; totalEntries: number } | null>(null);
+  const [importMutError, setImportMutError] = useState<string | null>(null);
+
+  const handleCreateLb = async (body: { name: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string }) => {
+    setCreatingLb(true);
+    try {
+      const newLb = await createLorebook(body);
+      await refreshLorebooks();
       setExpandedLorebooks(prev => new Set([...prev, newLb.id]));
       setEditingLorebookId(newLb.id);
       setEditLbName(newLb.name);
-    },
-  });
+    } finally { setCreatingLb(false); }
+  };
 
-  const updateLbMut = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Parameters<typeof updateLorebookMeta>[1] }) =>
-      updateLorebookMeta(id, body),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: lorebookKeys.all() });
+  const handleUpdateLb = async (id: string, body: Parameters<typeof updateLorebookMeta>[1]) => {
+    setSavingLb(true);
+    try {
+      await updateLorebookMeta(id, body);
+      await refreshLorebooks();
       setEditingLorebookId(null);
-    },
-  });
+    } finally { setSavingLb(false); }
+  };
 
-  const deleteLbMut = useMutation({
-    mutationFn: (id: string) => deleteLorebook(id),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: lorebookKeys.all() });
+  const handleDeleteLb = async (id: string) => {
+    setDeletingLb(true);
+    try {
+      await deleteLorebook(id);
+      await refreshLorebooks();
       setConfirmDeleteLorebook(null);
-    },
-  });
+    } finally { setDeletingLb(false); }
+  };
 
-  const createEntryMut = useMutation({
-    mutationFn: ({ lorebookId, entry }: { lorebookId: string; entry: Partial<LoreEntryRecord> }) =>
-      createLoreEntry(lorebookId, entry),
-    onSuccess: (_data, vars) => {
-      void qc.invalidateQueries({ queryKey: lorebookKeys.entries(vars.lorebookId) });
-    },
-  });
+  const handleCreateEntry = async (lorebookId: string, entry: Partial<LoreEntryRecord>): Promise<LoreEntryRecord | null> => {
+    setCreatingEntry(true);
+    try {
+      const created = await createLoreEntry(lorebookId, entry);
+      await refreshEntries();
+      return created;
+    } catch { return null; }
+    finally { setCreatingEntry(false); }
+  };
 
-  const updateEntryMut = useMutation({
-    mutationFn: ({ lorebookId, entryId, entry }: { lorebookId: string; entryId: string; entry: Partial<LoreEntryRecord> }) =>
-      updateLoreEntry(lorebookId, entryId, entry),
-    onSuccess: (_data, vars) => {
-      void qc.invalidateQueries({ queryKey: lorebookKeys.entries(vars.lorebookId) });
-    },
-  });
+  const handleUpdateEntry = async (lorebookId: string, entryId: string, entry: Partial<LoreEntryRecord>) => {
+    setSavingEntry(true);
+    try {
+      await updateLoreEntry(lorebookId, entryId, entry);
+      await refreshEntries();
+    } finally { setSavingEntry(false); }
+  };
 
-  const deleteEntryMut = useMutation({
-    mutationFn: ({ lorebookId, entryId }: { lorebookId: string; entryId: string }) =>
-      deleteLoreEntry(lorebookId, entryId),
-    onSuccess: (_data, vars) => {
-      void qc.invalidateQueries({ queryKey: lorebookKeys.entries(vars.lorebookId) });
-      if (activeEntryId === vars.entryId) { setActiveEntryId(null); setTestResult(null); setView("list"); }
+  const handleDeleteEntry = async (lorebookId: string, entryId: string) => {
+    setDeletingEntry(true);
+    try {
+      await deleteLoreEntry(lorebookId, entryId);
+      await refreshEntries();
+      if (activeEntryId === entryId) { setActiveEntryId(null); setTestResult(null); setView("list"); }
       setConfirmDeleteEntry(null);
-    },
-  });
+    } finally { setDeletingEntry(false); }
+  };
 
-  const testMut = useMutation({
-    mutationFn: ({ lorebookId, text }: { lorebookId: string; text: string }) =>
-      testLoreActivation(lorebookId, text),
-  });
+  const handleTestActivation = async (lorebookId: string, text: string) => {
+    setTestingActivation(true);
+    try {
+      const result = await testLoreActivation(lorebookId, text);
+      setTestMutData(result);
+    } finally { setTestingActivation(false); }
+  };
 
-  const importMut = useMutation({
-    mutationFn: ({ lorebookId, body }: { lorebookId: string; body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string } }) =>
-      importLorebookEntries(lorebookId, body),
-    onSuccess: (result) => {
-      void qc.invalidateQueries({ queryKey: lorebookKeys.all() });
+  const handleImportEntries = async (lorebookId: string, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string }) => {
+    setImporting(true);
+    setImportMutError(null);
+    try {
+      await importLorebookEntries(lorebookId, body);
+      await refreshLorebooks();
       closeImportModal();
-    },
-  });
+    } catch (err) {
+      setImportMutError(err instanceof Error ? err.message : String(err));
+    } finally { setImporting(false); }
+  };
 
   // ── Import helpers ──────────────────────────────────────
   const parseFileContent = (text: string, fileName: string) => {
@@ -292,7 +315,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
       if (scope === "chat" && chatId) body.chatId = chatId;
     }
     if (importFileName) body.fallbackName = importFileName.replace(/\.json$/i, "");
-    importMut.mutate({ lorebookId, body });
+    handleImportEntries(lorebookId, body);
   };
 
   // ── Helpers ───────────────────────────────────────────────
@@ -304,12 +327,12 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
     if (scope === "character") body.characterId = characterId;
     if (scope === "persona" && personaId) body.personaId = personaId;
     if (scope === "chat" && chatId) body.chatId = chatId;
-    createLbMut.mutate(body);
+    handleCreateLb(body);
   };
 
   const saveLorebookEdit = () => {
     if (!editingLorebookId) return;
-    updateLbMut.mutate({ id: editingLorebookId, body: { name: editLbName, scopeType: editLbScope } });
+    handleUpdateLb(editingLorebookId, { name: editLbName, scopeType: editLbScope });
   };
 
   const toggleLorebook = (id: string) => {
@@ -318,7 +341,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
 
   const runTest = () => {
     if (!testText.trim() || !activeEntryId || !activeLorebookIdForEntry) return;
-    testMut.mutate({ lorebookId: activeLorebookIdForEntry, text: testText });
+    handleTestActivation(activeLorebookIdForEntry, testText);
   };
 
   // ── Resolve active entry and its lorebook ─────────────────
@@ -365,35 +388,32 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
       triggers: ["normal", "continue", "swipe", "regenerate"],
       matchSources: [],
     };
-    createEntryMut.mutate(
-      { lorebookId, entry: newEntry },
-      {
-        onSuccess: (created) => {
-          setActiveEntryId(created.id);
-          setActiveLorebookIdForEntry(lorebookId);
-          setTestResult(null);
-          setView("editor");
-        },
-      },
-    );
+    void handleCreateEntry(lorebookId, newEntry).then(created => {
+      if (created) {
+        setActiveEntryId(created.id);
+        setActiveLorebookIdForEntry(lorebookId);
+        setTestResult(null);
+        setView("editor");
+      }
+    });
   };
 
   // ── Active entry data ─────────────────────────────────────
-  const entriesQuery = useQuery({
-    queryKey: lorebookKeys.entries(activeLorebookIdForEntry ?? ""),
-    queryFn: () => listLoreEntries(activeLorebookIdForEntry!),
-    enabled: !!activeLorebookIdForEntry,
-  });
+  const [entries, setEntries] = useState<LoreEntryRecord[]>([]);
+  const activeEntry = entries.find(e => e.id === activeEntryId) ?? null;
 
-  const activeEntry = entriesQuery.data?.find(e => e.id === activeEntryId) ?? null;
+  const refreshEntries = useCallback(async () => {
+    if (!activeLorebookIdForEntry) return;
+    setEntries(await listLoreEntries(activeLorebookIdForEntry));
+  }, [activeLorebookIdForEntry]);
+
+  useEffect(() => {
+    if (activeLorebookIdForEntry) void refreshEntries();
+  }, [activeLorebookIdForEntry, refreshEntries]);
 
   const updateAct = (field: string, value: unknown) => {
     if (!activeEntryId || !activeLorebookIdForEntry) return;
-    updateEntryMut.mutate({
-      lorebookId: activeLorebookIdForEntry,
-      entryId: activeEntryId,
-      entry: { [field]: value } as Partial<LoreEntryRecord>,
-    });
+    handleUpdateEntry(activeLorebookIdForEntry, activeEntryId, { [field]: value } as Partial<LoreEntryRecord>);
   };
 
   const handleKeyAdd = (e: React.KeyboardEvent, type: "keys" | "secondaryKeys") => {
@@ -496,7 +516,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
             onDelete={() => setConfirmDeleteLorebook(lb.id)}
             onAddEntry={() => handleAddEntry(lb.id)}
             onEntryClick={(entryId) => handleEntryClick(lb.id, entryId)}
-            onToggleEnabled={() => updateLbMut.mutate({ id: lb.id, body: { enabled: !lb.enabled } })}
+            onToggleEnabled={() => handleUpdateLb(lb.id, { enabled: !lb.enabled })}
           />
         );
       })}
@@ -679,9 +699,9 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
             {testResult.ok ? <Ic.check /> : <Ic.close />} {testResult.msg}
           </div>
         )}
-        {testMut.data && (
+        {testMutData && (
           <div className="mt-3 rounded-md border border-success bg-success-dim font-ui text-xs font-medium text-success-text" style={{ padding: 10 }}>
-            <Ic.check /> Activated: {testMut.data.activatedIds.length} / {testMut.data.totalEntries} entries
+            <Ic.check /> Activated: {testMutData.activatedIds.length} / {testMutData.totalEntries} entries
           </div>
         )}
       </div>
@@ -699,7 +719,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
         <div className="p-5 text-[13px] text-t2">{t("delete_lorebook_msg")}</div>
         <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
           <button className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => setConfirmDeleteEntry(null)}>{t("lore_cancel_edit")}</button>
-          <button className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={() => { if (activeLorebookIdForEntry && confirmDeleteEntry) deleteEntryMut.mutate({ lorebookId: activeLorebookIdForEntry, entryId: confirmDeleteEntry }); }}>{t("lore_save_entry")}</button>
+          <button className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={() => { if (activeLorebookIdForEntry && confirmDeleteEntry) handleDeleteEntry(activeLorebookIdForEntry, confirmDeleteEntry); }}>{t("lore_save_entry")}</button>
         </div>
       </div>
     </div>
@@ -715,7 +735,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
         <div className="p-5 text-[13px] text-t2">{t("delete_lorebook_msg")}</div>
         <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
           <button className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => setConfirmDeleteLorebook(null)}>{t("lore_cancel_edit")}</button>
-          <button className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={() => deleteLbMut.mutate(confirmDeleteLorebook)}>{t("delete_lorebook_confirm")}</button>
+          <button className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={() => handleDeleteLb(confirmDeleteLorebook)}>{t("delete_lorebook_confirm")}</button>
         </div>
       </div>
     </div>
@@ -805,9 +825,9 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
               )}
               <div className="flex gap-2">
                 <button className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => setImportStep(2)}>{t("import_back")}</button>
-                <button className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" disabled={importMut.isPending} onClick={runImport}>{t("import_btn")}</button>
+                <button className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" disabled={importing} onClick={runImport}>{t("import_btn")}</button>
               </div>
-              {importMut.error && <div className="mt-3 text-xs text-danger">{importMut.error.message}</div>}
+              {importMutError && <div className="mt-3 text-xs text-danger">{importMutError}</div>}
             </>
           )}
         </div>
@@ -904,12 +924,14 @@ function LorebookAccordion({
   onToggle, onStartEdit, onSaveEdit, onCancelEdit, onEditLbName, onEditLbScope,
   onDelete, onAddEntry, onEntryClick, onToggleEnabled,
 }: LorebookAccordionProps) {
-  const entriesQuery = useQuery({
-    queryKey: lorebookKeys.entries(lorebook.id),
-    queryFn: () => listLoreEntries(lorebook.id),
-    enabled: expanded,
-  });
-  const entries = entriesQuery.data ?? [];
+  const [entries, setEntries] = useState<LoreEntryRecord[]>([]);
+
+  useEffect(() => {
+    if (!expanded) { setEntries([]); return; }
+    let cancelled = false;
+    listLoreEntries(lorebook.id).then(data => { if (!cancelled) setEntries(data); });
+    return () => { cancelled = true; };
+  }, [expanded, lorebook.id]);
 
   return (
     <div className="mb-3 rounded-xl border border-border bg-surface">
