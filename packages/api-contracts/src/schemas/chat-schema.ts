@@ -24,8 +24,3 @@ export const editMessageSchema = z.object({
 export const renameChatSchema = z.object({
   title: z.string(),
 });
-
-export const getMessagesQuerySchema = z.object({
-  limit: z.string().optional().transform(v => v ? parseInt(v, 10) : undefined),
-  before: z.string().optional(),
-});

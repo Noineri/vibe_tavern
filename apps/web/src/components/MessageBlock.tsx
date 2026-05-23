@@ -13,7 +13,7 @@ import { useT } from "../i18n/context.js";
 import { MessageReasoning } from "./MessageReasoning.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
 import { replaceUiMacros } from "../lib/macros.js";
-import { CustomTooltip, TooltipProvider } from "./shared/Tooltip.js";
+import { CustomTooltip } from "./shared/Tooltip.js";
 
 const msgWrap = "relative group py-2.5";
 const sepWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7 my-[6px] mt-2";
@@ -74,13 +74,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const isBusy = isSending || messageActionId === input.messageId;
 
   // Find first assistant message ID for greeting logic
-  const firstAssistantMsgId = (() => {
+  const firstAssistantMsgId = useMemo(() => {
     const state = useChatDataStore.getState();
     for (const id of messageOrder) {
       if (state.messagesById[id]?.role === "assistant") return id;
     }
     return null;
-  })();
+  }, [messageOrder]);
 
   const isGreeting = input.messageId === firstAssistantMsgId;
   const isLast = input.index === messageOrder.length - 1;
@@ -123,10 +123,8 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   const greetingActive = !isUser && greetingOptions && greetingOptions.length > 1;
 
-  // -- Variant slide: direction tracking for framer-motion --
-  const prevVariantRef = useRef(selectedVariantIndex);
-  const direction = selectedVariantIndex > prevVariantRef.current ? 1 : -1;
-  prevVariantRef.current = selectedVariantIndex;
+  // -- Variant slide: direction from store (survives remounts) --
+  const direction = useChatDataStore((s) => s.swipeDirection);
 
   // When variant changes — lock to old height
   useLayoutEffect(() => {
@@ -169,17 +167,17 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const reasoningDuration = selectedVariant?.reasoningDurationMs ?? null;
 
   // Separator logic
-  const showSeparator = (() => {
+  const showSeparator = useMemo(() => {
     if (input.index === 0) return false;
     const state = useChatDataStore.getState();
     const prevId = messageOrder[input.index - 1];
     const prev = state.messagesById[prevId];
     if (!prev) return false;
     return !isBreakoutRole(prev.role) && !isBreakoutRole(msg.role);
-  })();
+  }, [input.index, messageOrder, msg.role]);
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <>
       {showSeparator && (
         <div className={sepWrap}>
           <div className="h-px bg-border opacity-40"/>
@@ -208,13 +206,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                 <button
                   className="cursor-pointer text-t3 transition-colors duration-100 hover:text-accent"
                   disabled={!canSwitchVariant || greetingIndex <= 0}
-                  onClick={() => setGreetingIndex(Math.max(0, greetingIndex - 1))}
+                  onClick={() => { useChatDataStore.getState().setSwipeDirection(-1); setGreetingIndex(Math.max(0, greetingIndex - 1)); }}
                 >◀</button>
                 {t("greeting_counter").replace("{n}", String(greetingIndex + 1)).replace("{total}", String(greetingOptions!.length))}
                 <button
                   className="cursor-pointer text-t3 transition-colors duration-100 hover:text-accent"
                   disabled={!canSwitchVariant || greetingIndex >= greetingOptions!.length - 1}
-                  onClick={() => setGreetingIndex(Math.min(greetingOptions!.length - 1, greetingIndex + 1))}
+                  onClick={() => { useChatDataStore.getState().setSwipeDirection(1); setGreetingIndex(Math.min(greetingOptions!.length - 1, greetingIndex + 1)); }}
                 >▶</button>
               </span>
             )}
@@ -370,6 +368,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                       className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
                       disabled={isBusy || selectedVariantIndex <= 0}
                       onClick={() => {
+                        useChatDataStore.getState().setSwipeDirection(-1);
                         const current = useChatDataStore.getState().messagesById[msg.id];
                         const idx = current?.selectedVariantIndex ?? 0;
                         chat.handleSelectMessageVariant(msg.id, idx - 1);
@@ -382,6 +381,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                       className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
                       disabled={isBusy || selectedVariantIndex >= variantCount - 1}
                       onClick={() => {
+                        useChatDataStore.getState().setSwipeDirection(1);
                         const current = useChatDataStore.getState().messagesById[msg.id];
                         const idx = current?.selectedVariantIndex ?? 0;
                         chat.handleSelectMessageVariant(msg.id, idx + 1);
@@ -403,7 +403,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
           )}
         </div>
       </div>
-    </TooltipProvider>
+    </>
   );
 });
 
