@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../lib/cn.js";
 import { Markdown } from "../lib/markdown.js";
 import { avatarUrl } from "../lib/avatar.js";
@@ -15,8 +15,9 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const { t } = useT();
   const [copied, setCopied] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const prevHeightRef = useRef<number>(0);
+  const swipeRef = useRef<HTMLDivElement>(null);
   const prevVariantRef = useRef<number>(-1);
+  const prevSwipeYRef = useRef<number>(0);
 
   // Read ALL display data from memoized selector — re-renders only when THIS message changes
   const msg = useDisplayMessage(input.messageId);
@@ -55,22 +56,31 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const reasoningText = selectedVariant?.reasoning || null;
   const reasoningDuration = selectedVariant?.reasoningDurationMs ?? null;
 
-  // Scroll compensation: when variant changes, keep the scroll position stable
-  // by adjusting for the height difference of this message.
+  // Scroll compensation: when variant changes, smoothly animate scroll so
+  // swipe arrows stay at the same viewport position under the cursor.
   useLayoutEffect(() => {
     if (prevVariantRef.current >= 0 && prevVariantRef.current !== selectedVariantIndex && rootRef.current) {
-      const scrollEl = rootRef.current.closest(".overflow-y-auto");
-      if (scrollEl) {
-        const oldHeight = prevHeightRef.current;
-        const newHeight = rootRef.current.offsetHeight;
-        const delta = newHeight - oldHeight;
-        if (delta !== 0) {
-          scrollEl.scrollTop += delta;
+      const scrollEl = rootRef.current.closest(".overflow-y-auto") as HTMLElement | null;
+      const newY = swipeRef.current ? swipeRef.current.getBoundingClientRect().top : 0;
+      const delta = newY - prevSwipeYRef.current;
+      if (delta !== 0 && scrollEl) {
+        const startTop = scrollEl.scrollTop;
+        const target = startTop + delta;
+        const duration = 150;
+        const startTime = performance.now();
+        function tick(now: number) {
+          const elapsed = now - startTime;
+          const t = Math.min(elapsed / duration, 1);
+          // ease-out cubic
+          const ease = 1 - Math.pow(1 - t, 3);
+          scrollEl!.scrollTop = startTop + (target - startTop) * ease;
+          if (t < 1) requestAnimationFrame(tick);
         }
+        requestAnimationFrame(tick);
       }
     }
-    if (rootRef.current) {
-      prevHeightRef.current = rootRef.current.offsetHeight;
+    if (swipeRef.current) {
+      prevSwipeYRef.current = swipeRef.current.getBoundingClientRect().top;
     }
     prevVariantRef.current = selectedVariantIndex;
   }, [selectedVariantIndex]);
@@ -169,7 +179,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
             </div>
           </>
         ) : (
-          <div key={selectedVariantIndex} style={{ animation: "contentFadeIn 150ms ease-out" }}>
+          <div>
             {!isUser && (reasoningText || reasoningDuration) && (
               <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
             )}
@@ -227,7 +237,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               ><Icons.Regen />{regenLabel}</span>
             )}
             {!isUser && variantCount > 1 && canSwitch && (
-              <span className="ml-auto mr-auto flex items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
+              <span ref={swipeRef} className="ml-auto mr-auto flex items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
                 <button
                   className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
                   disabled={input.isBusy || selectedVariantIndex <= 0}
