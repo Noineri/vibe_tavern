@@ -17,7 +17,6 @@
     "@rp-platform/db": "0.1.0",
     "@rp-platform/domain": "0.1.0",
     "@rp-platform/prompt-pipeline": "0.1.0",
-    "@tanstack/react-query": "^5.100.9",
     "codemirror": "^6.0.2",
     "framer-motion": "^12.40.0",
     "hono": "^4.7.10",
