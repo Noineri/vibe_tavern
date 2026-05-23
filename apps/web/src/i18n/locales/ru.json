@@ -639,7 +639,7 @@
   "char_filter_exclude_hint": "Инвертировать: активировать для ВСЕХ кроме перечисленных.",
   "lore_save_entry": "Сохранить",
   "delete_entry_confirm": "Удалить запись",
-  "delete_entry_msg": "Это удалит запись из лорбука."
+  "delete_entry_msg": "Это удалит запись из лорбука.",
   "lore_cancel_edit": "Отмена",
   "lore_no_entries": "Пока нет записей",
   "lore_add_entry": "Добавить запись",
