@@ -13,7 +13,7 @@ import { useActiveTrace } from "../stores/chat-selectors.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 import { useChatDataStore } from "../stores/chat-data-store.js";
 import type { PromptLayerDto } from "@rp-platform/domain";
-import { CustomTooltip, TooltipProvider } from "./shared/Tooltip.js";
+import { CustomTooltip } from "./shared/Tooltip.js";
 
 export function InputArea() {
   const { t } = useT();
@@ -108,8 +108,7 @@ export function InputArea() {
   const sendButtonText = canSend || !draft.trim() ? t("send") : sendLabel || t("send_unavailable");
 
   return (
-    <TooltipProvider delayDuration={200}>
-      <div
+    <div
         className="relative z-10 shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3.5 transition-opacity duration-200"
       >
         <div className="rounded-lg border border-border bg-bg transition-colors duration-150 focus-within:border-border2">
@@ -238,6 +237,5 @@ export function InputArea() {
           </div>
         </div>
       </div>
-    </TooltipProvider>
-  );
+    );
 }

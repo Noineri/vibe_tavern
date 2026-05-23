@@ -2,6 +2,7 @@ import { useRpPlatformApp } from "./hooks/use-rp-platform-app.js";
 import { useT } from "./i18n/context.js";
 import { AppShell } from "./components/AppShell.js";
 import { fetchBootstrapAction } from "./stores/api-actions/bootstrap-actions.js";
+import { TooltipProvider } from "./components/shared/Tooltip.js";
 
 export function App() {
   const { t } = useT();
@@ -34,10 +35,12 @@ export function App() {
   }
 
   return (
-    <AppShell
-      snapshot={snapshot}
-      tweaksSettings={tweaksSettings}
-      setTweaksSettings={setTweaksSettings}
-    />
+    <TooltipProvider delayDuration={200}>
+      <AppShell
+        snapshot={snapshot}
+        tweaksSettings={tweaksSettings}
+        setTweaksSettings={setTweaksSettings}
+      />
+    </TooltipProvider>
   );
 }
