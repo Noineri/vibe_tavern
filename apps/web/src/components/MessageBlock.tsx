@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import { cn } from "../lib/cn.js";
 import { Markdown } from "../lib/markdown.js";
 import { avatarUrl } from "../lib/avatar.js";
@@ -14,9 +14,6 @@ import { MessageReasoning } from "./MessageReasoning.js";
 export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps) {
   const { t } = useT();
   const [copied, setCopied] = useState(false);
-
-  // Horizontal slide container for variant switching
-  const slideRef = useRef<HTMLDivElement>(null);
 
   // Read ALL display data from memoized selector — re-renders only when THIS message changes
   const msg = useDisplayMessage(input.messageId);
@@ -37,6 +34,26 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const variants = Array.isArray(msg.variants) ? msg.variants : [];
   const variantCount = variants.length;
   const selectedVariantIndex = msg.selectedVariantIndex ?? 0;
+
+  // -- Variant slide animation --
+  const prevIdxRef = useRef(selectedVariantIndex);
+  const [slideFrom, setSlideFrom] = useState<number | null>(null);
+  const [sliding, setSliding] = useState(false);
+
+  // Detect variant change
+  if (prevIdxRef.current !== selectedVariantIndex) {
+    if (!sliding) {
+      setSlideFrom(prevIdxRef.current);
+      setSliding(true);
+    }
+    prevIdxRef.current = selectedVariantIndex;
+  }
+
+  const endSlide = useCallback(() => {
+    setSliding(false);
+    setSlideFrom(null);
+  }, []);
+
   const isGenerating = Boolean(input.isGenerating);
   const greetingOptions = input.greetingOptions;
   const greetIdx = input.greetingIndex;
@@ -54,14 +71,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const selectedVariant = variants[selectedVariantIndex];
   const reasoningText = selectedVariant?.reasoning || null;
   const reasoningDuration = selectedVariant?.reasoningDurationMs ?? null;
-
-  // Horizontal slide: scroll to selected variant smoothly
-  useEffect(() => {
-    if (slideRef.current && variantCount > 1) {
-      const w = slideRef.current.offsetWidth;
-      slideRef.current.scrollTo({ left: w * selectedVariantIndex, behavior: 'smooth' });
-    }
-  }, [selectedVariantIndex, variantCount]);
 
   return (
     <div className="relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))] px-7">
@@ -161,22 +170,21 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
             {!isUser && (reasoningText || reasoningDuration) && (
               <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
             )}
-            {variantCount > 1 ? (
-              <div
-                ref={slideRef}
-                className="overflow-x-hidden"
-              >
-                <div className="flex" style={{ width: `${variantCount * 100}%` }}>
-                  {variants.map((v, i) => (
-                    <div
-                      key={i}
-                      className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
-                      style={{ width: `${100 / variantCount}%`, flexShrink: 0 }}
-                      translate="yes"
-                    >
-                      <Markdown text={v.content} />
-                    </div>
-                  ))}
+            {sliding && slideFrom !== null ? (
+              <div className="overflow-hidden">
+                <div
+                  className="flex transition-transform duration-200 ease-out"
+                  style={{
+                    transform: `translateX(${selectedVariantIndex > slideFrom ? '-' : ''}100%)`,
+                  }}
+                  onTransitionEnd={endSlide}
+                >
+                  <div className="min-w-full shrink-0 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2" translate="yes">
+                    <Markdown text={variants[slideFrom].content} />
+                  </div>
+                  <div className="min-w-full shrink-0 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2" translate="yes">
+                    <Markdown text={renderContent} />
+                  </div>
                 </div>
               </div>
             ) : (
