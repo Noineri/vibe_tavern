@@ -411,9 +411,15 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
     if (activeLorebookIdForEntry) void refreshEntries();
   }, [activeLorebookIdForEntry, refreshEntries]);
 
+  // Optimistic update: apply locally immediately, fire API in background
   const updateAct = (field: string, value: unknown) => {
     if (!activeEntryId || !activeLorebookIdForEntry) return;
-    handleUpdateEntry(activeLorebookIdForEntry, activeEntryId, { [field]: value } as Partial<LoreEntryRecord>);
+    // Optimistic local update
+    setEntries(prev => prev.map(e =>
+      e.id === activeEntryId ? { ...e, [field]: value } : e
+    ));
+    // Fire-and-forget server update
+    void updateLoreEntry(activeLorebookIdForEntry, activeEntryId, { [field]: value } as Partial<LoreEntryRecord>);
   };
 
   const handleKeyAdd = (e: React.KeyboardEvent, type: "keys" | "secondaryKeys") => {
