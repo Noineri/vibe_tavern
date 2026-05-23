@@ -194,7 +194,13 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     aiAbortRef.current = ac;
     try {
       for await (const chunk of streamScriptAiAssistant({ prompt: aiPrompt, existingCode: activeScript?.code || undefined, providerProfileId: aiProviderId, model: aiModelName || undefined })) {
-        if (chunk.type === "text" && chunk.text) setAiStreamedCode(prev => prev + chunk.text);
+        if (chunk.type === "text" && chunk.text) {
+          // Strip reasoning/thinking tags from stream - models may emit them
+          const cleaned = chunk.text
+            .replace(/REASONING_START[\s\S]*?REASONING_END/g, '')
+            .replace(/<think[\s\S]*?<\/think>/g, '');
+          if (cleaned) setAiStreamedCode(prev => prev + cleaned);
+        }
         if (chunk.type === "error" && chunk.error) { setAiError(chunk.error); setAiStreaming(false); return; }
         if (chunk.type === "done") { setAiStreaming(false); return; }
       }
