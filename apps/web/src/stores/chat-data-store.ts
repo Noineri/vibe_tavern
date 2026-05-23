@@ -65,7 +65,9 @@ export const useChatDataStore = create<ChatDataStore>()(
   immer((set) => ({
     ...initialState,
 
-    setSnapshot: (snapshot) =>
+    setSnapshot: (snapshot) => {
+      console.log(`[STORE] setSnapshot called with ${snapshot.messages.length} messages`, new Error().stack);
+      snapshot.messages.forEach(m => console.log(`[STORE] msg ${m.id} has ${m.variants?.length} variants`));
       set((state) => {
         // Chat meta
         state.chatMeta = {
@@ -100,7 +102,8 @@ export const useChatDataStore = create<ChatDataStore>()(
         state.promptTrace = snapshot.promptTrace;
         state.promptTraceHistory = snapshot.promptTraceHistory;
         state.contextPreview = snapshot.contextPreview;
-      }),
+      });
+    },
 
     updateMessage: (id, partial) =>
       set((state) => {

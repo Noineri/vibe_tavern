@@ -1,4 +1,4 @@
-import { memo, useState, useMemo, useRef } from "react";
+import { memo, useState, useMemo, useRef, useLayoutEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "../lib/cn.js";
 import { Markdown } from "../lib/markdown.js";
@@ -46,6 +46,26 @@ function _logSwipe(event: string, data: Record<string, unknown>) {
 
 
 
+// ── Height Measurement for Smooth Swipes ───────────────────────────────────
+const MeasureHeight = memo(function MeasureHeight({ children, onHeightChange }: { children: React.ReactNode; onHeightChange: (h: number) => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const cbRef = useRef(onHeightChange);
+  cbRef.current = onHeightChange;
+
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) cbRef.current(entry.target.getBoundingClientRect().height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return <div ref={containerRef} className="flow-root">{children}</div>;
+});
+// ────────────────────────────────────────────────────────────────────────────
+
 export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps) {
   const { t } = useT();
   const chat = useChatController();
@@ -63,6 +83,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const isSending = useChatStore(s => s.isSending);
   const messageActionId = useChatStore(s => s.messageActionId);
   const pendingUserMessageContent = useChatStore(s => s.pendingUserMessageContent);
+
+  // -- Height measurement state --
+  const prevHeightRef = useRef<number>(undefined);
+  const [displayHeight, setDisplayHeight] = useState<number | undefined>();
 
   // Diagnostics: render counter
   const renderCountRef = useRef(0);
@@ -133,15 +157,40 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   const greetingActive = !isUser && greetingOptions && greetingOptions.length > 1;
 
-  // -- Variant slide: direction from store (survives remounts) --
-  const direction = useChatDataStore((s) => s.swipeDirection);
+  // -- Variant slide: direction derived locally to prevent phantom renders --
+  const prevVariantIndexRef = useRef(selectedVariantIndex);
+  const prevGreetingIndexRef = useRef(greetingIndex);
+  const directionRef = useRef(1);
+
+  if (selectedVariantIndex !== prevVariantIndexRef.current) {
+    directionRef.current = selectedVariantIndex > prevVariantIndexRef.current ? 1 : -1;
+    prevVariantIndexRef.current = selectedVariantIndex;
+  }
+  if (greetingIndex !== prevGreetingIndexRef.current) {
+    directionRef.current = greetingIndex > prevGreetingIndexRef.current ? 1 : -1;
+    prevGreetingIndexRef.current = greetingIndex;
+  }
+  const direction = directionRef.current;
+
+  // -- Height lock during variant transitions --
+  // We use useMemo here instead of useLayoutEffect so it's strictly synchronous
+  // before the render commits.
+  useMemo(() => {
+    if (prevHeightRef.current !== undefined && displayHeight !== undefined) {
+      setDisplayHeight(prevHeightRef.current);
+    }
+  }, [selectedVariantIndex, greetingIndex]);
+
+  const handleHeightMeasured = (newHeight: number) => {
+    prevHeightRef.current = newHeight;
+    setDisplayHeight(newHeight);
+  };
 
   // Server sets message.content = selected variant's content at load time,
   // but client-side switching only changes selectedVariantIndex.
   // Read the actual variant text directly.
-  const activeContent = (selectedVariantIndex < variants.length)
-    ? variants[selectedVariantIndex].content
-    : msg.displayContent;
+  const selectedVariant = variants[selectedVariantIndex] ?? variants[0];
+  const activeContent = selectedVariant ? selectedVariant.content : msg.displayContent;
 
   const renderContent = greetingActive ? (greetingOptions[greetingIndex] ?? msg.displayContent) : activeContent;
 
@@ -152,7 +201,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     greeting: greetingIndex,
     dir: direction,
     contentLen: renderContent?.length ?? 0,
-    greetingActive,
+    activeContentLen: activeContent?.length ?? 0,
+    msgDisplayContentLen: msg.displayContent?.length ?? 0,
+    variantsLen: variants.length,
+    rawVariantsLen: msg.variants?.length ?? 0,
     key: greetingActive ? `g-${greetingIndex}` : `v-${selectedVariantIndex}`,
   });
 
@@ -171,7 +223,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const createdLabel = formatMessageTime(msg.createdAt);
 
   // Reasoning from persisted variant data only (not streaming)
-  const selectedVariant = variants[selectedVariantIndex];
   const reasoningText = selectedVariant?.reasoning || null;
   const reasoningDuration = selectedVariant?.reasoningDurationMs ?? null;
 
@@ -289,21 +340,29 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               {!isUser && (reasoningText || reasoningDuration) && (
                 <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
               )}
-              <div className="relative overflow-hidden">
-                <AnimatePresence mode="popLayout" initial={false}>
-                  <motion.div
-                    key={greetingActive ? `g-${greetingIndex}` : `v-${selectedVariantIndex}`}
-                    initial={{ x: direction * 80, opacity: 0, filter: "blur(4px)" }}
-                    animate={{ x: 0, opacity: 1, filter: "blur(0px)" }}
-                    exit={{ x: direction * -80, opacity: 0, filter: "blur(4px)" }}
-                    transition={{ type: "spring", stiffness: 350, damping: 32 }}
-                    translate="yes"
-                    className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
-                  >
-                    <Markdown text={renderContent} />
-                  </motion.div>
-                </AnimatePresence>
-              </div>
+              <motion.div
+                className="relative overflow-hidden"
+                animate={{ height: displayHeight ?? "auto" }}
+                transition={{ type: "spring", stiffness: 400, damping: 40, restDelta: 0.1 }}
+              >
+                <MeasureHeight onHeightChange={handleHeightMeasured}>
+                  <div className="relative overflow-hidden">
+                    <AnimatePresence mode="popLayout" initial={false}>
+                      <motion.div
+                        key={greetingActive ? `g-${greetingIndex}` : `v-${selectedVariantIndex}`}
+                        initial={{ x: direction * 80, opacity: 0, filter: "blur(4px)" }}
+                        animate={{ x: 0, opacity: 1, filter: "blur(0px)" }}
+                        exit={{ x: direction * -80, opacity: 0, filter: "blur(4px)" }}
+                        transition={{ type: "spring", stiffness: 350, damping: 32 }}
+                        translate="yes"
+                        className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
+                      >
+                        <Markdown text={renderContent} />
+                      </motion.div>
+                    </AnimatePresence>
+                  </div>
+                </MeasureHeight>
+              </motion.div>
               {isGenerating && (
                 <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-label={t("generating_response")}>
                   <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>

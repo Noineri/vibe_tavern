@@ -169,10 +169,11 @@ export function MessageList() {
         <div className="relative flex-1 flex flex-col min-h-0">
           <Virtuoso
             ref={virtuosoRef}
+            computeItemKey={(index) => displayMessageIds[index]}
             totalCount={displayMessageIds.length}
             initialTopMostItemIndex={Math.max(0, displayMessageIds.length - 1)}
             followOutput="smooth"
-            overscan={5}
+            overscan={{ main: 4000, reverse: 4000 }}
             itemContent={itemContent}
             components={{ Footer }}
             className="flex-1 pt-7 pb-3"
