@@ -18,6 +18,29 @@ import { CustomTooltip } from "./shared/Tooltip.js";
 const msgWrap = "relative group py-2.5";
 const sepWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7 my-[6px] mt-2";
 
+// ── Swipe animation diagnostic logger ──────────────────────────────────────
+const _swipeLog: string[] = [];
+const MAX_LOG = 200;
+function _logSwipe(event: string, data: Record<string, unknown>) {
+  const ts = performance.now().toFixed(1);
+  const entry = `[${ts}ms] ${event} ${JSON.stringify(data)}`;
+  _swipeLog.push(entry);
+  if (_swipeLog.length > MAX_LOG) _swipeLog.shift();
+  console.log(`%c[SWIPE] ${entry}`, 'color: #0af', data);
+}
+
+/** Call from browser console to get the log */
+(window as unknown as Record<string, unknown>).getSwipeLog = () => {
+  const text = _swipeLog.join('\n');
+  console.log(text);
+  return text;
+};
+(window as unknown as Record<string, unknown>).copySwipeLog = () => {
+  const text = _swipeLog.join('\n');
+  navigator.clipboard.writeText(text).then(() => console.log('Copied to clipboard!'));
+};
+// ────────────────────────────────────────────────────────────────────────────
+
 const MeasureHeight = memo(function MeasureHeight({ children, onHeightChange }: { children: React.ReactNode; onHeightChange: (h: number) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cbRef = useRef(onHeightChange);
@@ -57,6 +80,9 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // -- Height measurement for smooth swipe --
   const prevHeightRef = useRef<number>(undefined);
   const [displayHeight, setDisplayHeight] = useState<number | undefined>();
+  const renderCountRef = useRef(0);
+  renderCountRef.current++;
+  const _rc = renderCountRef.current;
 
   if (!msg || !chatMeta) return null;
 
@@ -128,12 +154,28 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   // When variant changes — lock to old height
   useLayoutEffect(() => {
+    _logSwipe('useLayoutEffect[variant]', {
+      msgId: input.messageId.slice(0, 8),
+      variant: selectedVariantIndex,
+      greeting: greetingIndex,
+      prevH: prevHeightRef.current,
+      displayH: displayHeight,
+      willLock: prevHeightRef.current !== undefined && displayHeight !== undefined,
+      lockTo: prevHeightRef.current,
+    });
     if (prevHeightRef.current !== undefined && displayHeight !== undefined) {
       setDisplayHeight(prevHeightRef.current);
     }
   }, [selectedVariantIndex, greetingIndex]);
 
   const handleHeightMeasured = (newHeight: number) => {
+    _logSwipe('heightMeasured', {
+      msgId: input.messageId.slice(0, 8),
+      newH: Math.round(newHeight),
+      prevH: prevHeightRef.current !== undefined ? Math.round(prevHeightRef.current) : undefined,
+      displayH: displayHeight !== undefined ? Math.round(displayHeight) : undefined,
+      delta: prevHeightRef.current !== undefined ? Math.round(newHeight - prevHeightRef.current) : undefined,
+    });
     prevHeightRef.current = newHeight;
     setDisplayHeight(newHeight);
   };
@@ -146,6 +188,17 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     : msg.displayContent;
 
   const renderContent = greetingActive ? (greetingOptions[greetingIndex] ?? msg.displayContent) : activeContent;
+
+  // Diagnostics: log every render with key animation state
+  _logSwipe(`render #${_rc}`, {
+    msgId: input.messageId.slice(0, 8),
+    variant: selectedVariantIndex,
+    greeting: greetingIndex,
+    dir: direction,
+    displayH: displayHeight,
+    prevH: prevHeightRef.current,
+    contentLen: renderContent?.length ?? 0,
+  });
 
   // Streaming text for regeneration — only shown on the specific message being regenerated
   const globalStreamingText = useChatStore((s) => s.streamingText);
@@ -368,6 +421,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                       className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
                       disabled={isBusy || selectedVariantIndex <= 0}
                       onClick={() => {
+                        _logSwipe('click:prevVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex - 1 });
                         useChatDataStore.getState().setSwipeDirection(-1);
                         const current = useChatDataStore.getState().messagesById[msg.id];
                         const idx = current?.selectedVariantIndex ?? 0;
@@ -381,6 +435,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                       className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
                       disabled={isBusy || selectedVariantIndex >= variantCount - 1}
                       onClick={() => {
+                        _logSwipe('click:nextVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex + 1 });
                         useChatDataStore.getState().setSwipeDirection(1);
                         const current = useChatDataStore.getState().messagesById[msg.id];
                         const idx = current?.selectedVariantIndex ?? 0;
