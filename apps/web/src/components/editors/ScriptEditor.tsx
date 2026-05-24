@@ -364,14 +364,14 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         <>
           {scripts.map(s => (
             <div key={s.id} className={cn("mb-3 cursor-pointer rounded-xl border transition-all", s.id === activeScriptId ? "border-accent bg-accent-dim" : "border-border bg-surface hover:bg-s2")} onClick={() => setActiveScriptId(s.id)}>
-              <div className="flex items-center gap-2" style={{ padding: "14px 16px" }}>
+              <div className="flex items-center gap-2 px-4 pt-3 pb-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
                 <span className="flex-1 truncate text-[14px] font-semibold text-t1">{s.name}</span>
                 <div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", s.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
                   {s.enabled ? "ON" : "OFF"}
                 </div>
               </div>
-              {s.description && <div className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2" style={{ padding: "2px 16px 0" }}>{s.description}</div>}
+              {s.description && <div className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2 px-4 pb-3 pt-0">{s.description}</div>}
             </div>
           ))}
           <div className="mt-2 flex flex-wrap gap-2">
