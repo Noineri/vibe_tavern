@@ -25,6 +25,9 @@ export default defineConfig({
 			),
 		},
 	},
+	build: {
+		chunkSizeWarningLimit: 8000,
+	},
 	server: {
 		port: 4173,
 	},
