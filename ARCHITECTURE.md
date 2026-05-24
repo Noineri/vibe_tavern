@@ -527,9 +527,30 @@ interface BuildPanelDescriptor {
 | File | Role |
 |------|------|
 | `LorebookEditor.tsx` | World & Logic panel. Scope column (vertical icons) → lorebook list (accordions) → entry list → entry editor. Two modes: Simple (keys + content + test) and Advanced (all ST fields). Full-bleed layout. |
-| `ScriptEditor.tsx` | Script list → code editor → AI assistant modal. Pick-card navigation matching LorebookEditor pattern. |
+| `ScriptEditor.tsx` | Exports `useScriptPanel()` hook (not a component!). Returns `{ scriptListContent, scriptEditorPanel, modals, ... }`. Embedded inside LorebookEditor as a co-equal tab. |
 | `CharacterForm.tsx` | Character editing form with avatar upload, all character fields. Centered layout with `max-w-4xl`. |
 | `scriptTemplates.ts` | 7 RP-relevant script templates: relationship progression, scenario events, memory tracking, dynamic lorebook, advanced lorebook, HP tracker, random event. Inserted into current script or create new. |
+
+### Lorebook + Script embedding pattern
+
+**Important architectural detail:** Scripts are NOT a separate build panel. The `useScriptPanel()` hook from `ScriptEditor.tsx` is called inside `LorebookEditor.tsx`, which renders both lorebooks and scripts as tabs within a single full-bleed panel:
+
+```
+LorebookEditor
+├── Scope selector (character / persona / chat)
+├── Tab bar: [Lorebooks] [Scripts]
+├── Tab content:
+│   ├── "lorebooks" → lorebook accordion list → entry list → entry editor
+│   └── "scripts" → useScriptPanel().scriptListContent / scriptEditorPanel
+└── Modals from both systems
+```
+
+This means:
+- `ScriptEditor.tsx` exports a **hook** (`useScriptPanel`), not a component
+- The hook manages its own state (active script, test input, AI helper, import, etc.) and returns JSX fragments
+- `LorebookEditor.tsx` wires up navigation (`setView`) and coordinates the two systems
+- Script list cards are rendered in `ScriptEditor.tsx` → `scriptListContent`
+- Script code editor is rendered in `ScriptEditor.tsx` → `scriptEditorPanel`
 
 ### Shared components (`components/shared/`)
 
