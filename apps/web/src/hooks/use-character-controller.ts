@@ -20,6 +20,7 @@ import {
   archiveCharacterAction,
   unarchiveCharacterAction,
   deleteCharacterAction,
+  duplicateCharacterAction,
   avatarUploadAction,
   exportCharacterAction,
   exportChatJsonlAction,
@@ -29,6 +30,7 @@ import {
   createPersonaAction,
   updatePersonaAction,
   deletePersonaAction,
+  duplicatePersonaAction,
 } from "../stores/api-actions/persona-actions.js";
 import {
   setChatPersonaAction,
@@ -44,6 +46,7 @@ export interface CharacterControllerActions {
   handleSetChatPersona: (personaId: string) => Promise<void>;
   handleCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
   handleDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
+  handleDuplicatePersona: (personaId: string) => Promise<void>;
   handleSetPersonalLorebook: (personaId: string, enabled: boolean) => Promise<{ enabled: boolean; lorebookId: string | null } | null>;
   handleImportFiles: (files: FileList | File[]) => Promise<void>;
   handleImportDragOver: (event: DragEvent<HTMLLabelElement>) => void;
@@ -53,6 +56,7 @@ export interface CharacterControllerActions {
   handleArchiveCharacter: (characterId: string) => Promise<void>;
   handleUnarchiveCharacter: (characterId: string) => Promise<void>;
   handleDeleteCharacter: (characterId: string) => Promise<void>;
+  handleDuplicateCharacter: (characterId: string) => Promise<void>;
   handleDeleteChat: (chatId: ChatId) => Promise<void>;
   handleRenameChat: (chatId: ChatId, title: string) => Promise<void>;
   handleCreateChat: (characterId?: string) => Promise<void>;
@@ -237,6 +241,14 @@ export function useCharacterController(): CharacterControllerActions {
     }
   }
 
+  async function handleDuplicatePersona(personaId: string): Promise<void> {
+    try {
+      await duplicatePersonaAction(personaId);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : getT()("failed_to_duplicate"));
+    }
+  }
+
   async function handleSetPersonalLorebook(personaId: string, enabled: boolean): Promise<{ enabled: boolean; lorebookId: string | null } | null> {
     try {
       return await setPersonalLorebookEnabled(personaId, enabled);
@@ -305,6 +317,18 @@ export function useCharacterController(): CharacterControllerActions {
 
   async function handleDeleteCharacter(characterId: string): Promise<void> {
     await deleteCharacterAction(characterId);
+  }
+
+  async function handleDuplicateCharacter(characterId: string): Promise<void> {
+    try {
+      const result = await duplicateCharacterAction(characterId);
+      if (result.snapshot) {
+        writeSnapshot(result.activeChatId, result.snapshot);
+      }
+      toast.success(getT()("character_duplicated"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : getT()("failed_to_duplicate"));
+    }
   }
 
   async function handleDeleteChat(chatId: ChatId): Promise<void> {
@@ -419,6 +443,7 @@ export function useCharacterController(): CharacterControllerActions {
     handleSetChatPersona,
     handleCreatePersona,
     handleDeletePersona,
+    handleDuplicatePersona,
     handleSetPersonalLorebook,
     handleImportFiles,
     handleImportDragOver,
@@ -428,6 +453,7 @@ export function useCharacterController(): CharacterControllerActions {
     handleArchiveCharacter,
     handleUnarchiveCharacter,
     handleDeleteCharacter,
+    handleDuplicateCharacter,
     handleDeleteChat,
     handleRenameChat,
     handleCreateChat,

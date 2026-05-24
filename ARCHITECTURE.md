@@ -37,9 +37,9 @@ rp_platform/
 │       ├── components/
 │       │   ├── editors/         # Build Mode editors (Lorebook, Script, Character)
 │       │   └── shared/          # Reusable components (CodeEditor, DropdownSelect, icons)
-│       ├── hooks/               # useBuildPanels, use-chat-controller, etc.
-│       ├── lib/                 # build-panel-registry, cn, avatar, character-tabs
-│       └── stores/              # Zustand stores (chat, character, navigation, modal)
+│       ├── hooks/               # useBuildPanels, use-chat-controller, use-provider-profiles, etc.
+│       ├── lib/                 # build-panel-registry, cn, avatar, macros, markdown, sse-parser
+│       └── stores/              # Zustand stores + API actions (chat, character, bootstrap, provider)
 ├── packages/
 │   ├── domain/                  # Shared types, branded IDs, constants — zero logic
 │   ├── api-contracts/           # Zod schemas for HTTP request validation
@@ -287,6 +287,20 @@ Global scope: all three FKs null. Character scope: `characterId` set, etc.
 
 Exposed via **store classes** (`CharacterStore`, `ChatStore`, `PersonaStore`, `PresetStore`, `ProviderStore`, `UiSettingsStore`, `LorebookStore`, `ScriptStore`) behind a `StoreContainer` facade created by `createStoreContainer(dbPath)`.
 
+**File storage** (`packages/db/src/file-store.ts`) — `FileStore` provides structured JSON file I/O under a `data/` root with per-type subfolders:
+
+| Folder | Content |
+|--------|----------|
+| `characters` | Character card mirrors (not yet fully active — see dual storage proposal) |
+| `personas` | Persona data mirrors |
+| `promptPresets` | Preset data mirrors |
+| `lorebooks` | Lorebook data mirrors |
+| `chatMirrors` | Chat transcript exports (JSONL per branch) |
+| `assets` | Avatar images |
+| `traces` | Prompt trace JSON files |
+
+Currently used for: chat transcript mirrors (`mirrorChatTranscript()`), prompt trace persistence, and asset storage. Character/persona/preset/lorebook folders are defined but not yet wired as primary storage.
+
 ### `packages/import-export`
 
 Parses external formats into internal domain types:
@@ -419,7 +433,11 @@ The AI assistant is a **separate LLM call**, not a prompt layer. It reuses the e
 | `openai-reasoning-fetch.ts` | Custom fetch wrapper that intercepts SSE streams and rewrites `reasoning_content` fields into regular content with start/end markers, so the AI SDK doesn't silently strip them. |
 | `provider-executor-utils.ts` | `toSdkMessages()` — validates messages. `prepareSdkMessages()` — separates system messages from conversation, injects prefill for providers that support it. |
 | `provider-capabilities.ts` | Per-provider-type capability flags: streaming, prefill, abort signal support. |
+| `provider-execution-types.ts` | Shared types for provider execution (`GenerationResult`, etc.). |
+| `builtin-tools.ts` | Built-in tool definitions for tool-use generation. |
+| `extract-thinking-tags.ts` | Extracts thinking/reasoning tags from model output. |
 | `tokenizer-service.ts` | Token counting: `js-tiktoken` for OpenAI models, `@agnai/web-tokenizers` for Claude/Llama/etc, byte-based fallback. |
+| `../tokenizers/` | Pre-built tokenizer vocab files (`claude.json`, `llama3.json`). |
 
 #### Supporting services
 
@@ -429,6 +447,7 @@ The AI assistant is a **separate LLM call**, not a prompt layer. It reuses the e
 | `provider-profile-service.ts` | CRUD provider profiles, cached model lists, favorite models. API key handling (resolve empty string → keep old key). |
 | `prompt-preset-service.ts` | CRUD prompt presets. |
 | `asset-service.ts` | Upload/serve/cleanup avatar images (jpg, png, gif, webp). Handles both cropped and full-size assets per entity. |
+| `provider-orchestrator.ts` | Provider-level coordination logic. |
 | `session-runtime-dto.ts` | Mappers: message → DTO (with variants), prompt trace → DTO, provider profile → client-safe (strips apiKey), lore entry activation logic. |
 | `st-directory-scanner.ts` | SillyTavern directory bulk import: scans `characters/`, `chats/`, `worlds/` directories, groups files, handles PNG chunk extraction. |
 | `errors.ts` | `DomainError` with kind (NotFound/Validation/Conflict/Provider/Cancelled/Unauthorized/Internal) → HTTP status mapping. |
@@ -560,9 +579,16 @@ This means:
 | `CodeEditor.tsx` | React wrapper around CodeMirror 6. JS syntax highlighting, custom dark theme using CSS vars + oklch, line numbers, bracket matching. `value`/`onChange` props. |
 | `DropdownSelect.tsx` | @radix-ui/react-select wrapper with search filter, default option, disabled state. Keyboard navigation (arrow keys, Enter, Escape). Portals into Modal focus scope when inside a Dialog. |
 | `AvatarCropModal.tsx` | react-easy-crop circular crop tool. Outputs 480×480 PNG. Uses shared `<Modal>` wrapper. |
-| `icons.tsx` | All UI icons as React components (`Ic.*` system — no emojis). |
+| `AutoTextarea.tsx` | Auto-resizing textarea. Finds scroll parent, adjusts height on input/change, respects `maxHeight`. Used in chat input, persona editor, prompt fields. |
+| `icons.tsx` | All UI icons as React components (`Icons.*` system — no emojis). |
+| `Tooltip.tsx` | Custom tooltip component |
+| `TokenCounter.tsx` | Token count badge display |
+| `SaveBar.tsx` | Sticky save bar with unsaved changes indicator |
+| `save-btn.tsx` | Save button component |
+| `Toggle.tsx` | Toggle switch component |
 | `confirm-close-modal.tsx` | Small "discard changes?" confirm dialog. Uses shared `<Modal>` with `z-[700]`. |
 | `destructive-confirm-modal.tsx` | Destructive action confirm dialog (e.g., delete lorebook). Uses shared `<Modal>` with `z-[700]`. |
+| `empty-state.tsx` | Empty state placeholder component |
 
 ### Frontend data architecture
 
@@ -570,17 +596,20 @@ The frontend uses **Zustand as single source of truth**. React Query was fully r
 
 **Data stores (Zustand):**
 
-| Store | Content |
-|-------|---------|
-| `useChatDataStore` | Messages by ID, message order, chat meta (character, persona, branches, chats list), macro context, prompt trace/history, context preview |
-| `useBootstrapStore` | Bootstrap data (allCharacters, promptPresets), personas, loading state |
-| `useProviderDataStore` | Provider profiles, favorites by profile |
-| `useChatStore` | UI state — active chat ID, editing, draft, streaming text/reasoning, pending user message, sending state |
-| `useNavigationStore` | Theme, sidebar width |
-| `useProviderStore` | Connection UI state, generation status |
-| `useModalStore` | Modal open/close state |
+| Store | Location | Content |
+|-------|----------|---------|
+| `useChatDataStore` | `stores/chat-data-store.ts` | Messages by ID, message order, chat meta (character, persona, branches, chats list), macro context, prompt trace/history, context preview |
+| `useBootstrapStore` | `stores/api-actions/bootstrap-actions.ts` | Bootstrap data (allCharacters, promptPresets), personas, loading state |
+| `useProviderDataStore` | `stores/provider-data-store.ts` | Provider profiles, favorites by profile |
+| `useChatStore` | `stores/chat-store.ts` | UI state — active chat ID, editing, draft, streaming text/reasoning, pending user message, sending state |
+| `useCharacterStore` | `stores/character-store.ts` | Character list for sidebar, confirm-destroy dialog state |
+| `useNavigationStore` | `stores/navigation-store.ts` | Theme, sidebar width |
+| `useProviderStore` | `stores/provider-store.ts` | Connection UI state, generation status |
+| `useModalStore` | `stores/modal-store.ts` | Modal open/close state |
 
 **API actions** (`stores/api-actions/`) are plain async functions that call the API, then call `syncSnapshot()` or targeted store updates. No try/catch inside actions — errors propagate to callers. Actions write to Zustand directly.
+
+**Action modules:** `bootstrap-actions.ts` (initial load), `character-actions.ts`, `chat-actions.ts`, `persona-actions.ts`, `preset-actions.ts`, `provider-actions.ts`.
 
 **Memoized selectors** (`stores/chat-selectors.ts`) use `reselect` for lazy derived data:
 

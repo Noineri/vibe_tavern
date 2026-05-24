@@ -213,6 +213,7 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
         onSaveEdit={(personaId, draft) => void character.handleSavePersona(personaId, draft)}
         onSetActive={(personaId) => void character.handleSetChatPersona(personaId)}
         onCreatePersona={character.handleCreatePersona} onDeletePersona={character.handleDeletePersona}
+        onDuplicatePersona={character.handleDuplicatePersona}
       />
 
       {isCreateCharacterModalOpen && (

@@ -307,6 +307,20 @@ export async function deletePersona(personaId: string): Promise<void> {
   }
 }
 
+export async function duplicatePersona(personaId: string): Promise<PersonaRecord> {
+  const response = await client.api.personas[":personaId"].duplicate.$post({ param: { personaId } });
+  return unwrapRpc<PersonaRecord>(response);
+}
+
+export async function duplicateCharacter(characterId: string): Promise<ImportJsonResponse> {
+  const response = await client.api.characters[":characterId"].duplicate.$post({ param: { characterId } });
+  const data = await unwrapRpc<ImportJsonResponse>(response);
+  return {
+    ...data,
+    snapshot: normalizeSnapshot(data.snapshot),
+  };
+}
+
 export async function listPromptPresets(): Promise<PromptPresetDto[]> {
   const response = await client.api["prompt-presets"].$get();
   return unwrapRpc<PromptPresetDto[]>(response);

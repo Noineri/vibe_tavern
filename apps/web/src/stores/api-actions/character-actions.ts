@@ -2,6 +2,7 @@ import {
   archiveCharacter,
   createCharacter,
   deleteCharacter,
+  duplicateCharacter,
   exportCharacter,
   exportChatJsonl,
   exportPromptTrace,
@@ -94,6 +95,12 @@ export async function importCharacterAction(input: {
 
 export async function exportCharacterAction(characterId: string): Promise<Record<string, unknown>> {
   return await exportCharacter(characterId);
+}
+
+export async function duplicateCharacterAction(characterId: string): Promise<ImportJsonResponse> {
+  const result = await duplicateCharacter(characterId);
+  void fetchBootstrapAction();
+  return result;
 }
 
 export async function exportChatJsonlAction(chatId: ChatId): Promise<string> {
