@@ -119,7 +119,6 @@ export async function* streamScriptCode(
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
       temperature: 0.3,
-      maxTokens: 10240,
     });
 
     let reasoningBuffer = "";
