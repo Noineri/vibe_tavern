@@ -45,8 +45,11 @@ async function getMigrationsFolder(): Promise<string> {
 
 /**
  * Detect a database created by the legacy ensureSchema() approach
- * (before drizzle migrations existed) and stamp all current migrations
- * as already applied so migrate() skips them.
+ * (before drizzle migrations existed) and stamp only the migrations
+ * whose tables already exist in the DB.
+ *
+ * This prevents stamping migrations that create NEW tables not yet
+ * present in an older DB (e.g. lorebooks/scripts added after initial release).
  *
  * Returns true if the DB was baselined.
  */
@@ -63,8 +66,14 @@ async function baselineLegacyDb(sqlite: Database, migrationsFolder: string): Pro
     .get() as { cnt: number } | null;
   if (!userTables || userTables.cnt === 0) return false;
 
+  // Get all existing table names
+  const existingRows = sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE '__drizzle%'")
+    .all() as { name: string }[];
+  const existingTables = new Set(existingRows.map(r => r.name));
+
   // Legacy DB detected: tables exist but no migration tracking.
-  // Read the journal and stamp every migration as already applied.
+  // Read the journal and only stamp migrations whose tables are all present.
   const journalPath = resolve(migrationsFolder, 'meta', '_journal.json');
   const journal = JSON.parse(await Bun.file(journalPath).text());
 
@@ -81,14 +90,29 @@ async function baselineLegacyDb(sqlite: Database, migrationsFolder: string): Pro
     'INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)'
   );
 
+  let stamped = 0;
   for (const entry of journal.entries) {
     const sqlPath = resolve(migrationsFolder, `${entry.tag}.sql`);
     const sqlContent = await Bun.file(sqlPath).text();
-    const hash = new Bun.CryptoHasher('sha256').update(sqlContent).digest('hex');
-    insert.run(hash, entry.when);
+
+    // Extract table names created by this migration
+    const createdTables = [...sqlContent.matchAll(/CREATE\s+TABLE\s+[`"']?(\w+)/gmi)]
+      .map(m => m[1])
+      .filter(t => !t.startsWith('__drizzle'));
+
+    // Only stamp if ALL tables from this migration already exist
+    const allExist = createdTables.length > 0 && createdTables.every(t => existingTables.has(t));
+
+    if (allExist) {
+      const hash = new Bun.CryptoHasher('sha256').update(sqlContent).digest('hex');
+      insert.run(hash, entry.when);
+      stamped++;
+    } else {
+      console.log(`[db] Migration ${entry.tag} has new tables (${createdTables.filter(t => !existingTables.has(t)).join(', ')}), will apply via migrate().`);
+    }
   }
 
-  console.log(`[db] Baselined legacy database — ${journal.entries.length} migration(s) marked as applied.`);
+  console.log(`[db] Baselined legacy database — ${stamped}/${journal.entries.length} migration(s) marked as applied.`);
   return true;
 }
 
