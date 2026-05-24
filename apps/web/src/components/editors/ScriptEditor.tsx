@@ -59,7 +59,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     if (id && onOpenEditor) onOpenEditor();
   };
   const [testInput, setTestInput] = useState("");
-  const [testResult, setTestResult] = useState<{ personality: string; scenario: string; state: Record<string, unknown>; errors: string[] } | null>(null);
+  const [testResult, setTestResult] = useState<{ personality: string; scenario: string; state: Record<string, unknown>; errors: Array<{ scriptId: string; scriptName: string; error: string; line?: number } | string> } | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importCode, setImportCode] = useState("");
@@ -488,7 +488,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             {testResult.errors.length > 0 && (
               <div className="rounded-md border border-danger bg-danger-dim" style={{ padding: 10 }}>
                 <div className="text-[11px] font-semibold uppercase text-danger-text">{t("script_test_error")}</div>
-                <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">{testResult.errors.join("\n")}</pre>
+                <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">{testResult.errors.map(e => typeof e === 'string' ? e : `${e.scriptName ?? 'Script'}: ${e.error}${e.line ? ` (line ${e.line})` : ''}`).join("\n")}</pre>
               </div>
             )}
             {testResult.errors.length === 0 && (
