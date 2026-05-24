@@ -49,5 +49,8 @@ export function createCharacterRoutes(runtime: RuntimeApi) {
       runtime.deleteCharacter(c.req.param("characterId"));
       return c.body(null, 204);
     })
+    .post("/api/characters/:characterId/duplicate", async (c) => {
+      return c.json(await runtime.duplicateCharacter(c.req.param("characterId")), 201);
+    })
   ;
 }

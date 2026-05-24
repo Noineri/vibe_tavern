@@ -185,4 +185,89 @@ export class PersonaRuntime {
 		}
 		return defaultPersona.id as PersonaId;
 	}
+
+	async duplicate(personaId: string): Promise<{
+		id: string;
+		name: string;
+		description: string;
+		pronouns: string | null;
+		avatarAssetId: string | null;
+		avatarFullAssetId: string | null;
+	}> {
+		const source = await this.deps.stores.personas.getById(brandId<PersonaId>(personaId));
+		if (!source) {
+			throw notFound("Persona", `Persona '${personaId}' was not found.`);
+		}
+
+		const persona = await this.deps.stores.personas.create({
+			name: source.name + " (copy)",
+			description: source.description,
+			pronouns: source.pronouns,
+			avatarAssetId: source.avatarAssetId,
+			avatarFullAssetId: source.avatarFullAssetId,
+		});
+
+		// Duplicate persona-scoped lorebooks
+		const sourceLorebooks = await this.deps.stores.lorebooks.listLorebooksByScope("persona", personaId);
+		for (const lb of sourceLorebooks) {
+			const entries = await this.deps.stores.lorebooks.listEntries(lb.id);
+			const newLb = await this.deps.stores.lorebooks.createLorebook({
+				name: lb.name,
+				description: lb.description,
+				scopeType: "persona",
+				personaId: persona.id,
+				scanDepth: lb.scanDepth,
+				recursiveScanning: lb.recursiveScanning,
+				enabled: lb.enabled,
+			});
+			await this.deps.stores.lorebooks.bulkCreateEntries(newLb.id, entries.map(e => ({
+				keys: e.keys,
+				secondaryKeys: e.secondaryKeys,
+				content: e.content,
+				logic: e.logic,
+				position: e.position,
+				depth: e.depth,
+				priority: e.priority,
+				probability: e.probability,
+				constant: e.constant,
+				enabled: e.enabled,
+				groupName: e.group,
+				groupWeight: e.groupWeight,
+				cooldownWindow: e.cooldownWindow,
+				delayWindow: e.delayWindow,
+				stickyWindow: e.stickyWindow,
+				scanDepthOverride: e.scanDepthOverride,
+				matchWholeWords: e.matchWholeWords,
+				matchSources: e.matchSources,
+				triggers: e.triggers,
+				characterFilter: e.characterFilter,
+				excludeRecursion: e.excludeRecursion,
+				preventRecursion: e.preventRecursion,
+				caseSensitive: e.caseSensitive,
+			})));
+		}
+
+		// Duplicate persona-scoped scripts
+		const sourceScripts = await this.deps.stores.scripts.listByScope("persona", personaId);
+		for (const sc of sourceScripts) {
+			await this.deps.stores.scripts.create({
+				name: sc.name,
+				description: sc.description,
+				code: sc.code,
+				scopeType: "persona",
+				personaId: persona.id,
+				enabled: sc.enabled,
+				sortOrder: sc.sortOrder,
+			});
+		}
+
+		return {
+			id: persona.id,
+			name: persona.name,
+			description: persona.description,
+			pronouns: persona.pronouns,
+			avatarAssetId: persona.avatarAssetId,
+			avatarFullAssetId: persona.avatarFullAssetId,
+		};
+	}
 }

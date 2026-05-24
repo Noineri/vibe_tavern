@@ -123,6 +123,9 @@ export class RuntimeApiAdapter {
 
 	exportCharacter = (characterId: string) => this.sessionRuntime.exportCharacter(characterId);
 
+	duplicateCharacter = (characterId: string) =>
+		this.sessionRuntime.character.duplicate(brandId<CharacterId>(characterId));
+
 	// ─── Persona ──────────────────────────────────────────────────────────
 
 	listPersonas = () => this.sessionRuntime.persona.list();
@@ -162,6 +165,9 @@ export class RuntimeApiAdapter {
 		if (persona?.avatarAssetId) this.assetService.cleanup(persona.avatarAssetId);
 		await this.sessionRuntime.persona.delete(personaId);
 	};
+
+	duplicatePersona = (personaId: string) =>
+		this.sessionRuntime.persona.duplicate(personaId);
 
 	setChatPersona = (chatId: string, personaId: string) =>
 		this.sessionRuntime.persona.setChatPersona(brandId<ChatId>(chatId), personaId);

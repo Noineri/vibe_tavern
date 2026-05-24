@@ -30,5 +30,8 @@ export function createPersonaRoutes(runtime: RuntimeApi) {
       const enabled = body.enabled === true;
       return c.json(await runtime.setPersonalLorebookEnabled(c.req.param("personaId"), enabled));
     })
+    .post("/api/personas/:personaId/duplicate", async (c) => {
+      return c.json(await runtime.duplicatePersona(c.req.param("personaId")), 201);
+    })
   ;
 }

@@ -383,4 +383,116 @@ export class CharacterRuntime {
 
     return this.deps.getSnapshot(targetChatId);
   }
+
+  async duplicate(characterId: CharacterId): Promise<ImportResult> {
+    const source = await this.deps.stores.characters.getById(characterId);
+    if (!source) {
+      throw notFound("Character", `Character '${characterId}' was not found.`);
+    }
+
+    const character = await this.deps.stores.characters.create({
+      name: source.name + " (copy)",
+      description: source.description,
+      personalitySummary: source.personalitySummary,
+      defaultScenario: source.defaultScenario,
+      firstMessage: source.firstMessage,
+      mesExample: source.mesExample,
+      mesExampleMode: source.mesExampleMode,
+      mesExampleDepth: source.mesExampleDepth,
+      alternateGreetings: source.alternateGreetings,
+      postHistoryInstructions: source.postHistoryInstructions,
+      creatorNotes: source.creatorNotes,
+      characterBook: source.characterBook,
+      depthPrompt: source.depthPrompt,
+      depthPromptDepth: source.depthPromptDepth,
+      depthPromptRole: source.depthPromptRole,
+      extensions: source.extensions,
+      systemPrompt: source.systemPrompt,
+      tags: source.tags,
+      avatarAssetId: source.avatarAssetId,
+      avatarFullAssetId: source.avatarFullAssetId,
+    });
+
+    const newCharacterId = character.id as CharacterId;
+
+    // Duplicate character-scoped lorebooks
+    const sourceLorebooks = await this.deps.stores.lorebooks.listLorebooksByScope("character", characterId);
+    for (const lb of sourceLorebooks) {
+      const entries = await this.deps.stores.lorebooks.listEntries(lb.id);
+      const newLb = await this.deps.stores.lorebooks.createLorebook({
+        name: lb.name,
+        description: lb.description,
+        scopeType: "character",
+        characterId: newCharacterId,
+        scanDepth: lb.scanDepth,
+        recursiveScanning: lb.recursiveScanning,
+        enabled: lb.enabled,
+      });
+      await this.deps.stores.lorebooks.bulkCreateEntries(newLb.id, entries.map(e => ({
+        keys: e.keys,
+        secondaryKeys: e.secondaryKeys,
+        content: e.content,
+        logic: e.logic,
+        position: e.position,
+        depth: e.depth,
+        priority: e.priority,
+        probability: e.probability,
+        constant: e.constant,
+        enabled: e.enabled,
+        groupName: e.group,
+        groupWeight: e.groupWeight,
+        cooldownWindow: e.cooldownWindow,
+        delayWindow: e.delayWindow,
+        stickyWindow: e.stickyWindow,
+        scanDepthOverride: e.scanDepthOverride,
+        matchWholeWords: e.matchWholeWords,
+        matchSources: e.matchSources,
+        triggers: e.triggers,
+        characterFilter: e.characterFilter,
+        excludeRecursion: e.excludeRecursion,
+        preventRecursion: e.preventRecursion,
+        caseSensitive: e.caseSensitive,
+      })));
+    }
+
+    // Duplicate character-scoped scripts
+    const sourceScripts = await this.deps.stores.scripts.listByScope("character", characterId);
+    for (const sc of sourceScripts) {
+      await this.deps.stores.scripts.create({
+        name: sc.name,
+        description: sc.description,
+        code: sc.code,
+        scopeType: "character",
+        characterId: newCharacterId,
+        enabled: sc.enabled,
+        sortOrder: sc.sortOrder,
+      });
+    }
+
+    const created = await this.deps.chatApp.createChat({
+      characterId: newCharacterId,
+      personaId: await this.deps.resolveDefaultPersonaId(),
+      title: character.name,
+      promptPresetId: await this.deps.resolveDefaultPromptPresetId(),
+    });
+
+    const createdChatId = created.id;
+    this.deps.chatOrder.add(createdChatId);
+
+    if (source.firstMessage?.trim()) {
+      await this.deps.seedImportedOpening(createdChatId, source.firstMessage);
+    }
+
+    return {
+      activeChatId: createdChatId,
+      snapshot: await this.deps.getSnapshot(createdChatId),
+      imported: {
+        kind: "character",
+        name: character.name,
+        fileName: "",
+        warningCount: 0,
+        warnings: [],
+      },
+    };
+  }
 }

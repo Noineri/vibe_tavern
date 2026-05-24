@@ -8,6 +8,7 @@ import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { AvatarCropModal } from "./shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "./shared/AvatarCropModal.js";
 import { cn } from "../lib/cn.js";
+import { AutoTextarea } from "./shared/auto-textarea.js";
 import { Modal } from "./shared/Modal.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { uploadAsset } from "../app-client.js";
@@ -30,6 +31,7 @@ interface PersonaModalProps {
   onSaveEdit: (personaId: string, draft: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null; avatarFullAssetId?: string | null }) => void;
   onSetActive: (personaId: string) => void;
   onCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
+  onDuplicatePersona: (personaId: string) => Promise<void>;
   onDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
@@ -340,9 +342,11 @@ export function PersonaModal(input: PersonaModalProps) {
                           )}
                         </div>
                       </div>
-                      <textarea
-                        className="mb-1 w-full min-h-[60px] resize-y rounded border border-border bg-s2 py-2 px-2.5 font-ui text-xs text-t1 outline-none transition-colors focus:border-accent"
-                        {...form.register("description")}
+                      <AutoTextarea
+                        className="mb-1 w-full resize-none rounded border border-border bg-s2 py-2 px-2.5 font-ui text-xs text-t1 outline-none transition-colors focus:border-accent"
+                        style={{ minHeight: 60 }}
+                        value={form.watch("description")}
+                        onChange={(e) => form.setValue("description", e.target.value, { shouldDirty: true })}
                         placeholder={t("persona_desc_placeholder")}
                       />
                       <PersonaTokenBadge text={editDescription} />
@@ -394,11 +398,11 @@ export function PersonaModal(input: PersonaModalProps) {
                             <Icons.Edit /> {t("persona_edit")}
                           </div>
                           <div
-                            className="mt-2 flex cursor-not-allowed items-center gap-1 rounded py-[3px] px-[7px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 opacity-45 transition-all hover:bg-s2 hover:text-t2"
+                            className="mt-2 flex cursor-pointer items-center gap-1 rounded py-[3px] px-[7px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:bg-s2 hover:text-t2"
                             role="button"
                             tabIndex={0}
-                            title={t("duplicate_not_implemented")}
-                            onClick={(e) => e.stopPropagation()}
+                            onClick={(e) => { e.stopPropagation(); input.onDuplicatePersona(persona.id); }}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); input.onDuplicatePersona(persona.id); } }}
                           >
                             <Icons.Copy /> {t("persona_duplicate")}
                           </div>

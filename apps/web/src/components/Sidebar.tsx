@@ -345,6 +345,17 @@ export function Sidebar() {
                           </div>
 
                           <div
+                            className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
+                            role="menuitem"
+                            onClick={() => {
+                              setCharMenuId(null); setCharMenuPos(null);
+                              character.handleDuplicateCharacter(tab.id);
+                            }}
+                          >
+                            <Icons.Copy /> {t("duplicate")}
+                          </div>
+
+                          <div
                             className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-danger-text transition-colors duration-100 hover:bg-danger-dim hover:text-danger-text [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
                             role="menuitem"
                             onClick={() => {
