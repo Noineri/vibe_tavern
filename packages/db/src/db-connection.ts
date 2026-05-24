@@ -116,6 +116,52 @@ async function baselineLegacyDb(sqlite: Database, migrationsFolder: string): Pro
   return true;
 }
 
+/**
+ * Post-migration repair: if older builds incorrectly stamped migrations
+ * as applied (baselineLegacyDb bug), new tables won't exist. This function
+ * reads each migration's SQL, checks if its tables exist, and applies the
+ * SQL directly if they don't.
+ */
+async function repairMissingTables(sqlite: Database, migrationsFolder: string): Promise<void> {
+  const existingRows = sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+    .all() as { name: string }[];
+  const existing = new Set(existingRows.map(r => r.name.toLowerCase()));
+
+  const journalPath = resolve(migrationsFolder, 'meta', '_journal.json');
+  if (!await Bun.file(journalPath).exists()) return;
+  const journal = JSON.parse(await Bun.file(journalPath).text());
+
+  let repaired = 0;
+  for (const entry of journal.entries) {
+    const sqlPath = resolve(migrationsFolder, `${entry.tag}.sql`);
+    const sqlContent = await Bun.file(sqlPath).text();
+
+    // Extract table names from this migration
+    const createdTables = [...sqlContent.matchAll(/CREATE\s+TABLE\s+[`"']?(\w+)/gmi)]
+      .map(m => m[1])
+      .filter(t => !t.startsWith('__drizzle'));
+
+    // Check if any table from this migration is missing
+    const missing = createdTables.filter(t => !existing.has(t.toLowerCase()));
+    if (missing.length === 0) continue;
+
+    console.log(`[db] Repair: migration ${entry.tag} missing tables (${missing.join(', ')}), applying...`);
+    try {
+      sqlite.exec(sqlContent);
+      repaired++;
+      // Update existing set
+      for (const t of createdTables) existing.add(t.toLowerCase());
+    } catch (err) {
+      console.error(`[db] Repair: failed to apply ${entry.tag}:`, err);
+    }
+  }
+
+  if (repaired > 0) {
+    console.log(`[db] Repair: applied ${repaired} missing migration(s).`);
+  }
+}
+
 export async function createDb(dbPath: string): Promise<AppDb> {
   await mkdir(resolve(dbPath, '..'), { recursive: true });
   const sqlite = new Database(dbPath);
@@ -128,6 +174,11 @@ export async function createDb(dbPath: string): Promise<AppDb> {
   console.log(`[db] Migrations folder: ${migrationsFolder}`);
   await baselineLegacyDb(sqlite, migrationsFolder);
   migrate(db, { migrationsFolder });
+
+  // Post-migration integrity check: if migrations were incorrectly
+  // stamped as applied (e.g. old baselineLegacyDb bug), apply missing
+  // tables directly. This heals databases from older builds.
+  await repairMissingTables(sqlite, migrationsFolder);
 
   return db;
 }
