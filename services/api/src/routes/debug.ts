@@ -15,8 +15,8 @@ export function createDebugRoutes(runtime: RuntimeApi) {
       return c.json(await runtime.bootstrap());
     })
     .get("/api/defaults/script-ai-prompt", async (c) => {
-      const { DEFAULT_SCRIPT_AI_PROMPT } = await import("../script-ai-assistant.js");
-      return c.json({ prompt: DEFAULT_SCRIPT_AI_PROMPT });
+      const { getDefaultScriptAiPrompt } = await import("../script-ai-assistant.js");
+      return c.json({ prompt: await getDefaultScriptAiPrompt() });
     })
   ;
 }
