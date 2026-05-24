@@ -674,7 +674,7 @@ export function Sidebar() {
                   </div>
                   <Icons.Caret direction={charSwitcherOpen ? "u" : "d"} />
                 </div>
-                {charSwitcherOpen && (
+                {charSwitcherOpen && characterTabs.length > 1 && (
                   <div className="absolute left-0 right-0 top-full z-[200] mt-1 max-h-[240px] overflow-y-auto rounded-lg border border-border bg-surface py-1 shadow-theme-md">
                     {characterTabs.map(tab => (
                       <div
