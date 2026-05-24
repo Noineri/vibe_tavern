@@ -1,84 +1,16 @@
 import { streamText } from "ai";
 import type { LanguageModelV1 } from "ai";
+import { resolve } from "node:path";
 
-export const DEFAULT_SCRIPT_AI_PROMPT = `You are an expert JavaScript coding assistant for an RP platform's script system. Users describe what they want a script to do, and you write the code.
+/** Load the system prompt from the adjacent .md file. Cached after first read. */
+let _cachedPrompt: string | null = null;
 
-## Script Context API
-
-The script receives a single \`context\` object with these fields:
-
-- \`context.chat.lastMessage\` — string, the user's most recent message
-- \`context.chat.messages\` — array of { role: string, message: string }
-- \`context.chat.messageCount\` — number
-- \`context.character.name\` — string
-- \`context.character.personality\` — string, MUTABLE (+= to inject into prompt)
-- \`context.character.scenario\` — string, MUTABLE (+= to inject into prompt)
-- \`context.lore.activeEntries\` — read-only array of active lorebook entry objects
-- \`context.state.get(key, defaultValue)\` — read persistent state
-- \`context.state.set(key, value)\` — write persistent state (survives between turns)
-- \`context.state.increment(key, amount)\` — increment a numeric state value
-
-## Rules
-
-1. Output ONLY the JavaScript code. No markdown, no backticks, no explanation.
-2. Use \`context.character.personality +=\` to inject system-level text into the prompt.
-3. Use \`context.state.get/set\` for any persistent tracking (HP, mana, inventory, turn counts).
-4. Check \`context.chat.lastMessage\` for trigger conditions.
-5. Keep scripts focused — one responsibility per script.
-6. Handle edge cases (zero values, missing state, empty messages).
-7. Use template literals for multi-line string injection.
-8. Add concise comments explaining what each section does.
-
-## Examples
-
-Dynamic relationship progression:
-\`\`\`js
-// Character's behavior evolves based on conversation length
-const count = context.chat.messageCount;
-if (count < 5) {
-  context.character.personality += ", polite but maintains professional distance";
-  context.character.scenario += " This is their first meeting, so they are careful and observant.";
-} else if (count < 15) {
-  context.character.personality += ", becoming more comfortable and casual";
-  context.character.scenario += " They are warming up and becoming more relaxed in conversation.";
-} else if (count < 30) {
-  context.character.personality += ", friendly and open";
-  context.character.scenario += " They feel comfortable and speak openly as friends.";
-} else {
-  context.character.personality += ", trusting and deeply connected";
-  context.character.scenario += " They share a deep friendship and trust completely.";
+export async function getDefaultScriptAiPrompt(): Promise<string> {
+  if (_cachedPrompt) return _cachedPrompt;
+  const mdPath = resolve(import.meta.dir, "script-ai-prompt.md");
+  _cachedPrompt = await Bun.file(mdPath).text();
+  return _cachedPrompt;
 }
-\`\`\`
-
-Scenario events triggered by keywords:
-\`\`\`js
-// React to location keywords in the last message
-const last = context.chat.lastMessage.toLowerCase();
-if (last.includes('restaurant') || last.includes('cafe')) {
-  context.character.scenario += ' The cozy establishment has ambient sounds of clinking dishes and soft music.';
-  context.character.personality += ', notices and comments on the atmosphere around them';
-}
-if (last.includes('park') || last.includes('outside')) {
-  context.character.scenario += ' They are outdoors with natural surroundings and fresh air.';
-  context.character.personality += ', observant of nature and weather';
-}
-\`\`\`
-
-Persistent state tracking (HP system):
-\`\`\`js
-// Simple health tracking that persists between turns
-const hp = context.state.get('hp', 100);
-const last = context.chat.lastMessage.toLowerCase();
-if (last.includes('hit') || last.includes('attack')) {
-  const damage = Math.floor(Math.random() * 15) + 5;
-  const newHp = Math.max(0, hp - damage);
-  context.state.set('hp', newHp);
-  context.character.personality += \`, took \${damage} damage (HP: \${newHp}/100)\`;
-  if (newHp < 30) {
-    context.character.scenario += ' {{char}} is badly wounded and struggling to stay standing.';
-  }
-}
-\`\`\``;
 
 export interface AiAssistantRequest {
   /** User's description of what the script should do */
@@ -104,9 +36,10 @@ export interface AiAssistantStreamChunk {
 export async function* streamScriptCode(
   request: AiAssistantRequest,
   aiModel: LanguageModelV1,
-  systemPrompt: string = DEFAULT_SCRIPT_AI_PROMPT,
+  systemPrompt?: string,
 ): AsyncGenerator<AiAssistantStreamChunk> {
   const { prompt, existingCode } = request;
+  const system = systemPrompt ?? await getDefaultScriptAiPrompt();
 
   let userMessage = prompt;
   if (existingCode) {
@@ -116,7 +49,7 @@ export async function* streamScriptCode(
   try {
     const result = await streamText({
       model: aiModel,
-      system: systemPrompt,
+      system,
       messages: [{ role: "user", content: userMessage }],
       temperature: 0.3,
     });
@@ -147,7 +80,7 @@ export async function* streamScriptCode(
           reasoningBuffer += chunk;
           yield { type: "reasoning", text: chunk };
         } else {
-          // Also strip <think> tags (DeepSeek style)
+          // Also strip <think[\\s\\S]*?<\\/think> tags (DeepSeek style)
           const cleaned = chunk.replace(/<think[\s\S]*?<\/think>/g, '');
           if (cleaned) yield { type: "text", text: cleaned };
         }

@@ -17,7 +17,7 @@ import {
 	normalizeOpenAiCompatibleBaseUrl,
 } from "./provider-gateway.js";
 import { executeScripts } from "./script-sandbox.js";
-import { streamScriptCode, DEFAULT_SCRIPT_AI_PROMPT } from "./script-ai-assistant.js";
+import { streamScriptCode, getDefaultScriptAiPrompt } from "./script-ai-assistant.js";
 
 /**
  * Facade that implements RuntimeApi — the single contract between
@@ -520,7 +520,7 @@ export class RuntimeApiAdapter {
 		const aiModel = resolveModel(profile, modelName);
 
 		// Read system prompt from active prompt preset, fallback to default
-		let systemPrompt = DEFAULT_SCRIPT_AI_PROMPT;
+		let systemPrompt = await getDefaultScriptAiPrompt();
 		try {
 			const settings = await this.stores.uiSettings.get();
 			if (settings?.activePromptPresetId) {
