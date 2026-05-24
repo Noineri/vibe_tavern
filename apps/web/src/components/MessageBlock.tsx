@@ -66,20 +66,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const renderCountRef = useRef(0);
   renderCountRef.current++;
 
-  if (!msg || !chatMeta) return null;
-
-  const isUser = msg.role === "user";
-  const messageTokens = msg.tokenCount;
-
-  // Metadata
-  const characterName = chatMeta.character.name;
-  const characterAvatarAssetId = chatMeta.character.avatarAssetId;
-  const personaName = chatMeta.persona?.name ?? "";
-  const personaAvatarAssetId = chatMeta.persona?.avatarAssetId ?? null;
-
-  // UI State
-  const isEditing = editingMessageId === input.messageId;
-  const isBusy = isSending || messageActionId === input.messageId;
+  // ── ALL hooks must be called before any early return (React Rules of Hooks) ──
 
   // Find first assistant message ID for greeting logic
   const firstAssistantMsgId = useMemo(() => {
@@ -90,46 +77,33 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     return null;
   }, [messageOrder]);
 
-  const isGreeting = input.messageId === firstAssistantMsgId;
-  const isLast = input.index === messageOrder.length - 1;
-  const isLastAssistant = isLast && msg.role === "assistant";
-
-  const isGenerating =
-    !isGreeting &&
-    msg.role === "assistant" &&
-    isSending &&
-    !pendingUserMessageContent &&
-    isLastAssistant;
-
-  const canBranch = !isGreeting;
-  const canRegenerate = !isGreeting && isLastAssistant;
-  const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
-  const canSwitchVariant = isLast;
-
-  // Macros for variants
+  // Macros for variants — use safe defaults when msg is null
   const variants = useMemo(() => {
-    if (!msg.variants || !macroContext) return msg.variants ?? [];
+    if (!msg?.variants || !macroContext) return msg?.variants ?? [];
     return msg.variants.map(v => ({
       ...v,
       content: replaceUiMacros(v.content, macroContext),
     }));
-  }, [msg.variants, macroContext]);
+  }, [msg?.variants, macroContext]);
 
+  const selectedVariantIndex = msg?.selectedVariantIndex ?? 0;
   const variantCount = variants.length;
-  const selectedVariantIndex = msg.selectedVariantIndex ?? 0;
 
   // Greeting logic
+  const isGreeting = !!msg && input.messageId === firstAssistantMsgId;
+
   const alternateGreetings = useMemo(() => {
-    if (!isGreeting || !macroContext) return [];
+    if (!isGreeting || !macroContext || !chatMeta) return [];
     return chatMeta.character.alternateGreetings.map(g => replaceUiMacros(g, macroContext));
-  }, [isGreeting, macroContext, chatMeta.character.alternateGreetings]);
+  }, [isGreeting, macroContext, chatMeta?.character?.alternateGreetings]);
 
   const greetingOptions = useMemo(() => {
-    if (!isGreeting) return undefined;
+    if (!isGreeting || !msg) return undefined;
     return [msg.displayContent, ...alternateGreetings];
-  }, [isGreeting, msg.displayContent, alternateGreetings]);
+  }, [isGreeting, msg?.displayContent, alternateGreetings]);
 
-  const greetingActive = !isUser && greetingOptions && greetingOptions.length > 1;
+  const isUser = msg?.role === "user";
+  const greetingActive = !isUser && !!greetingOptions && greetingOptions.length > 1;
 
   // -- Variant slide: direction derived locally to prevent phantom renders --
   const prevVariantIndexRef = useRef(selectedVariantIndex);
@@ -173,6 +147,51 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     lastBottomRef.current = el.getBoundingClientRect().bottom;
   });
 
+  // Streaming text for regeneration
+  const globalStreamingText = useChatStore((s) => s.streamingText);
+  const globalStreamingReasoning = useChatStore((s) => s.streamingReasoningText);
+
+  // Separator logic
+  const showSeparator = useMemo(() => {
+    if (input.index === 0) return false;
+    const state = useChatDataStore.getState();
+    const prevId = messageOrder[input.index - 1];
+    const prev = state.messagesById[prevId];
+    if (!prev || !msg) return false;
+    return !isBreakoutRole(prev.role) && !isBreakoutRole(msg.role);
+  }, [input.index, messageOrder, msg?.role]);
+
+  // ── EARLY RETURN — after all hooks ──
+  if (!msg || !chatMeta) return null;
+
+  // ── Derived values (non-hook, safe to be after return) ──
+  const messageTokens = msg.tokenCount;
+
+  // Metadata
+  const characterName = chatMeta.character.name;
+  const characterAvatarAssetId = chatMeta.character.avatarAssetId;
+  const personaName = chatMeta.persona?.name ?? "";
+  const personaAvatarAssetId = chatMeta.persona?.avatarAssetId ?? null;
+
+  // UI State
+  const isEditing = editingMessageId === input.messageId;
+  const isBusy = isSending || messageActionId === input.messageId;
+
+  const isLast = input.index === messageOrder.length - 1;
+  const isLastAssistant = isLast && msg.role === "assistant";
+
+  const isGenerating =
+    !isGreeting &&
+    msg.role === "assistant" &&
+    isSending &&
+    !pendingUserMessageContent &&
+    isLastAssistant;
+
+  const canBranch = !isGreeting;
+  const canRegenerate = !isGreeting && isLastAssistant;
+  const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
+  const canSwitchVariant = isLast;
+
   // Server sets message.content = selected variant's content at load time,
   // but client-side switching only changes selectedVariantIndex.
   // Read the actual variant text directly.
@@ -203,9 +222,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     key: greetingActive ? `g-${greetingIndex}` : `v-${selectedVariantIndex}`,
   });
 
-  // Streaming text for regeneration — only shown on the specific message being regenerated
-  const globalStreamingText = useChatStore((s) => s.streamingText);
-  const globalStreamingReasoning = useChatStore((s) => s.streamingReasoningText);
   const isStreamingHere = !isUser && messageActionId === input.messageId && (globalStreamingText || globalStreamingReasoning);
   const activeStreamingText = isStreamingHere ? globalStreamingText : null;
   const activeStreamingReasoning = isStreamingHere ? globalStreamingReasoning : null;
@@ -220,16 +236,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // Reasoning from persisted variant data only (not streaming)
   const reasoningText = selectedVariant?.reasoning || null;
   const reasoningDuration = selectedVariant?.reasoningDurationMs ?? null;
-
-  // Separator logic
-  const showSeparator = useMemo(() => {
-    if (input.index === 0) return false;
-    const state = useChatDataStore.getState();
-    const prevId = messageOrder[input.index - 1];
-    const prev = state.messagesById[prevId];
-    if (!prev) return false;
-    return !isBreakoutRole(prev.role) && !isBreakoutRole(msg.role);
-  }, [input.index, messageOrder, msg.role]);
 
   return (
     <>
