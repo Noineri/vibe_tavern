@@ -10,7 +10,7 @@ import { useActiveTrace } from "../stores/chat-selectors.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 import { useChatDataStore } from "../stores/chat-data-store.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
-import { CustomTooltip, TooltipProvider } from "./shared/Tooltip.js";
+import { CustomTooltip } from "./shared/Tooltip.js";
 
 export function TopBar() {
   const { t } = useT();
@@ -64,8 +64,7 @@ export function TopBar() {
   const setMode = useNavigationStore((s) => s.setMode);
 
   return (
-    <TooltipProvider delayDuration={200}>
-      <div className="sticky top-0 z-50 flex h-[60px] shrink-0 items-center gap-3.5 border-b border-border bg-surface px-[22px]">
+    <div className="sticky top-0 z-50 flex h-[60px] shrink-0 items-center gap-3.5 border-b border-border bg-surface px-[22px]">
         <div className="flex min-w-[90px] max-w-[220px] flex-none items-center gap-2.5">
           <div className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border-[1.5px] border-transparent bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t2 transition-opacity duration-150 hover:border-accent hover:opacity-85 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top"
             onClick={() => useModalStore.getState().setAvatarOpen(true)}>
@@ -152,7 +151,6 @@ export function TopBar() {
           </CustomTooltip>
         </div>
       </div>
-    </TooltipProvider>
   );
 }
 

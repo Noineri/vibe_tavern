@@ -214,7 +214,12 @@ export function CharacterForm({
               <img src={displayAvatar} alt="" className="block max-w-[180px]" style={{ maxHeight: 250, objectFit: "contain" }} />
               <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
             </>
-          ) : <div className="flex h-20 w-28 items-center justify-center"><Ic.plus /></div>}
+          ) : (
+            <div className="flex h-20 w-28 flex-col items-center justify-center gap-1.5 text-t3 transition-colors group-hover:text-accent-t">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              <span className="font-ui text-[10px] tracking-wide">{t("upload_avatar")}</span>
+            </div>
+          )}
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-3">
           <div>

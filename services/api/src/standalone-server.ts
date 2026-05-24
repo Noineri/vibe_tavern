@@ -119,8 +119,8 @@ configureLogDir(paths.logsDir);
 		console.log(`[standalone] Frontend not found. Install the web/ directory next to the executable.`);
 	}
 
-	// Graceful shutdown on Ctrl+C / SIGTERM
-	for (const signal of ["SIGINT", "SIGTERM"] as const) {
+	// Graceful shutdown on Ctrl+C / SIGTERM / window close
+	for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
 		process.on(signal, () => {
 			console.log(`\n[standalone] Received ${signal}, shutting down...`);
 			server.stop(true);
