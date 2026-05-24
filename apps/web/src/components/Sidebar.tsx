@@ -14,7 +14,7 @@ import { useChatDataStore } from "../stores/chat-data-store.js";
 import { useNavigationStore, useChatStore, useCharacterStore, useModalStore } from "../stores/index.js";
 import { buildCharacterTabs } from "../lib/character-tabs.js";
 import { useMemo } from "react";
-import { CustomTooltip, TooltipProvider } from "./shared/Tooltip.js";
+import { CustomTooltip } from "./shared/Tooltip.js";
 import { useBuildPanels } from "../hooks/use-build-panels.js";
 
 export function Sidebar() {
@@ -103,8 +103,7 @@ export function Sidebar() {
   }
 
   return (
-    <TooltipProvider delayDuration={200}>
-      <div className={cn(
+    <div className={cn(
         sidebarCollapsed ? 'w-[54px] min-w-[54px]' : 'w-[var(--sw)] min-w-[var(--sw)]',
         'shrink-0 overflow-hidden border-r border-border bg-surface flex flex-col transition-all duration-[180ms] ease-out'
       )}>
@@ -675,7 +674,7 @@ export function Sidebar() {
                   </div>
                   <Icons.Caret direction={charSwitcherOpen ? "u" : "d"} />
                 </div>
-                {charSwitcherOpen && (
+                {charSwitcherOpen && characterTabs.length > 1 && (
                   <div className="absolute left-0 right-0 top-full z-[200] mt-1 max-h-[240px] overflow-y-auto rounded-lg border border-border bg-surface py-1 shadow-theme-md">
                     {characterTabs.map(tab => (
                       <div
@@ -761,6 +760,5 @@ export function Sidebar() {
           />
         )}
       </div>
-    </TooltipProvider>
   );
 }

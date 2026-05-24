@@ -12,7 +12,7 @@ import { TranslateErrorBoundary } from "./TranslateErrorBoundary.js";
 import { initials } from "./app-shell-helpers.jsx";
 import { useT } from "../i18n/context.js";
 import { Icons } from "./shared/icons.js";
-import { CustomTooltip, TooltipProvider } from "./shared/Tooltip.js";
+import { CustomTooltip } from "./shared/Tooltip.js";
 
 const msgWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7";
 const sepWrap = msgWrap + " my-[6px] mt-2";
@@ -45,21 +45,7 @@ export function MessageList() {
 
   // When a user message is pending (being streamed), it's rendered in the
   // pending-message footer.  If React Query refetches the snapshot mid-stream,
-  // the message appears in `messages` too — causing a ghost duplicate.
-  // Filter it out here.
-  const lastUserMsgId = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user") return messages[i].id;
-    }
-    return null;
-  }, [messages]);
-
-  const displayMessageIds = useMemo(() => {
-    if (pendingUserMessageContent && lastUserMsgId) {
-      return messageOrder.filter(id => id !== lastUserMsgId);
-    }
-    return messageOrder;
-  }, [messageOrder, pendingUserMessageContent, lastUserMsgId]);
+  const displayMessageIds = messageOrder;
 
   const displayPendingUserMessageContent = useMemo(
     () => pendingUserMessageContent && macroContext
@@ -96,8 +82,8 @@ export function MessageList() {
           )}
           <div className={msgWrap}>
             <div className="relative group py-2.5">
-              <div className="mb-[5px] flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
+              <div className="mb-[12px] flex items-center gap-[10px] text-[calc(var(--ui-fs)-2px)] font-semibold tracking-[0.04em] text-t3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
                   {personaAvatarAssetId
                     ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
                     : (personaName ? initials(personaName) : "Y")}
@@ -116,8 +102,8 @@ export function MessageList() {
           </div>
           <div className={msgWrap} aria-label={t("generating_response")}>
             <div className="relative group py-2.5">
-              <div className="mb-[5px] flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
+              <div className="mb-[12px] flex items-center gap-[10px] text-[calc(var(--ui-fs)-2px)] font-semibold tracking-[0.04em] text-t3 text-accent-t opacity-85">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
                   {characterAvatarAssetId
                     ? <img src={avatarUrl(characterAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
                     : (characterName ? initials(characterName) : "")}
@@ -144,8 +130,8 @@ export function MessageList() {
               </div>
               <div className={msgWrap} aria-label={t("generating_response")}>
                 <div className="relative group py-2.5">
-                  <div className="mb-[5px] flex items-center gap-[7px] text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.04em] text-t3 text-accent-t opacity-85">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[12px] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
+                  <div className="mb-[12px] flex items-center gap-[10px] text-[calc(var(--ui-fs)-2px)] font-semibold tracking-[0.04em] text-t3 text-accent-t opacity-85">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
                       {characterAvatarAssetId
                         ? <img src={avatarUrl(characterAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
                         : (characterName ? initials(characterName) : "")}
@@ -165,14 +151,14 @@ export function MessageList() {
 
   return (
     <TranslateErrorBoundary>
-      <TooltipProvider delayDuration={200}>
         <div className="relative flex-1 flex flex-col min-h-0">
           <Virtuoso
             ref={virtuosoRef}
+            computeItemKey={(index) => displayMessageIds[index]}
             totalCount={displayMessageIds.length}
             initialTopMostItemIndex={Math.max(0, displayMessageIds.length - 1)}
             followOutput="smooth"
-            overscan={5}
+            overscan={{ main: 4000, reverse: 4000 }}
             itemContent={itemContent}
             components={{ Footer }}
             className="flex-1 pt-7 pb-3"
@@ -190,7 +176,6 @@ export function MessageList() {
             </CustomTooltip>
           )}
         </div>
-      </TooltipProvider>
     </TranslateErrorBoundary>
   );
 }
