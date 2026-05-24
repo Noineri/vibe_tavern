@@ -40,6 +40,16 @@ interface ScriptPanelProps {
 
 // Templates are imported from scriptTemplates.ts
 
+/** Strip markdown code fences that AI models sometimes wrap their output in */
+function cleanAiCode(raw: string): string {
+  let code = raw.trim();
+  // Remove opening fence: ```js, ```javascript, ```
+  code = code.replace(/^```(?:js|javascript)?\s*\n?/i, '');
+  // Remove closing fence
+  code = code.replace(/\n?```\s*$/,'');
+  return code.trim();
+}
+
 export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEditor, onBackToList }: ScriptPanelProps) {
   const { t } = useT();
 
@@ -213,8 +223,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   };
 
   const handleAiStop = () => { aiAbortRef.current?.abort(); setAiStreaming(false); };
-  const handleAiInsert = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: (activeScript?.code || "") + "\n\n" + aiStreamedCode }); setAiHelperOpen(false); setAiStreamedCode(""); setAiStreamedReasoning(""); setAiPrompt(""); };
-  const handleAiReplace = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: aiStreamedCode }); setAiHelperOpen(false); setAiStreamedCode(""); setAiStreamedReasoning(""); setAiPrompt(""); };
+  const handleAiInsert = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: (activeScript?.code || "") + "\n\n" + cleanAiCode(aiStreamedCode) }); setAiHelperOpen(false); setAiStreamedCode(""); setAiStreamedReasoning(""); setAiPrompt(""); };
+  const handleAiReplace = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: cleanAiCode(aiStreamedCode) }); setAiHelperOpen(false); setAiStreamedCode(""); setAiStreamedReasoning(""); setAiPrompt(""); };
 
   // ── Modals ───────────────────────────────────────────────
   const modals = (
