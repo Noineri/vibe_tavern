@@ -286,12 +286,16 @@ function BlockRow({ mapping, index, onToggle, onTarget }: {
       "grid grid-cols-[24px_1fr_130px] gap-2.5 border-b border-border2 px-5 py-2.5 hover:bg-s2/50 transition-colors",
       !enabled && "opacity-40"
     )}>
-      <input
-        type="checkbox"
-        className="mt-1 h-3.5 w-3.5 cursor-pointer accent-accent"
-        checked={enabled}
-        onChange={() => onToggle(index)}
-      />
+      <button
+        className={cn(
+          "mt-1 flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center rounded text-[14px] transition-colors",
+          enabled ? "text-accent hover:bg-accent/10" : "text-t4 hover:text-t2"
+        )}
+        onClick={() => onToggle(index)}
+        type="button"
+      >
+        {enabled ? "●" : "○"}
+      </button>
       <div className="min-w-0 overflow-hidden">
         <div className="truncate font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{block.name}</div>
         <div className="mt-0.5 truncate font-mono text-[10px] text-t4">{preview}</div>
