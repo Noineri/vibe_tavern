@@ -10,6 +10,7 @@ import { createProviderRoutes } from "./provider.js";
 import { createPresetRoutes } from "./preset.js";
 import { createImportRoutes } from "./import.js";
 import { createAssetRoutes } from "./asset.js";
+import { createSettingsRoutes } from "./settings.js";
 
 export type { RuntimeApi } from "./types.js";
 
@@ -25,6 +26,7 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createPresetRoutes(runtime))
     .route("/", createImportRoutes(runtime))
     .route("/", createAssetRoutes(runtime))
+    .route("/", createSettingsRoutes(runtime))
   ;
 }
 

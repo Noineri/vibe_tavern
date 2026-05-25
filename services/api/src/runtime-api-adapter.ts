@@ -10,6 +10,7 @@ import type { LiveChatOrchestrator } from "./live-chat-orchestrator.js";
 import type { ChatSummaryService } from "./chat-summary-service.js";
 import type { PromptPresetService } from "./prompt-preset-service.js";
 import type { AssetService } from "./asset-service.js";
+import type { MobileAccessService } from "./mobile-access-service.js";
 import {
 	probeProviderConnection,
 	testProviderChat,
@@ -33,6 +34,7 @@ export class RuntimeApiAdapter {
 		private readonly sessionRuntime: SessionRuntime,
 		private readonly promptPresetService: PromptPresetService,
 		private readonly assetService: AssetService,
+		private readonly mobileAccessService: MobileAccessService,
 	) {}
 
 	// ─── Private helpers ──────────────────────────────────────────────────
@@ -669,4 +671,22 @@ export class RuntimeApiAdapter {
 
 	uploadAsset = (file: File) => this.assetService.upload(file);
 	serveAsset = (assetId: string) => this.assetService.serve(assetId);
+
+	// ── Mobile Access ──────────────────────────────────────────────────
+
+	async getMobileAccessInfo() {
+		const port = Number(process.env.RP_PLATFORM_PORT ?? "8787");
+		const tlsEnabled = !!(process.env.RP_PLATFORM_TLS_KEY && process.env.RP_PLATFORM_TLS_CERT);
+		return this.mobileAccessService.getMobileAccessInfo(port, tlsEnabled);
+	}
+
+	async regenerateMobileAccessToken(): Promise<{ token: string }> {
+		const token = this.mobileAccessService.regenerateToken();
+		return { token };
+	}
+
+	async revokeMobileAccess(): Promise<{ token: null }> {
+		this.mobileAccessService.revokeToken();
+		return { token: null };
+	}
 }
