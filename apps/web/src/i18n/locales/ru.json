@@ -559,6 +559,8 @@
   "mobile_access_restart_note": "Изменение может потребовать перезапуска сервера",
   "mobile_access_enable": "Включить",
   "mobile_access_loading": "Загрузка...",
+  "mobile_token_required": "Требуется токен доступа",
+  "mobile_token_required_desc": "Отсканируйте QR-код в десктопном приложении для подключения",
 
   "back": "← Назад",
   "confirm_delete": "Подтвердить удаление",

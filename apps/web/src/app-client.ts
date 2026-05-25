@@ -4,8 +4,16 @@ import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto, Pro
 import type { AppType } from "@rp-platform/api";
 import { getGatewayBaseUrl } from "./gateway-client.js";
 import { parseSSEStream } from "./lib/sse-parser.js";
+import { getMobileToken, appendTokenQuery } from "./lib/mobile-token.js";
 
-const client = hc<AppType>(getGatewayBaseUrl());
+const client = hc<AppType>(getGatewayBaseUrl(), {
+  headers: () => {
+    const token = getMobileToken();
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+  },
+});
 
 export interface ChatListItem {
   id: ChatId;
@@ -430,7 +438,7 @@ export async function sendChatMessageStream(
 ): Promise<{ finishReason: string; usage?: Record<string, number> }> {
   const baseUrl = getGatewayBaseUrl();
   opts.onStatus("preparing");
-  const response = await fetch(`${baseUrl}/api/chats/${chatId}/messages/stream`, {
+  const response = await fetch(appendTokenQuery(`${baseUrl}/api/chats/${chatId}/messages/stream`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -466,7 +474,7 @@ export async function regenerateChatMessageStream(
 ): Promise<{ finishReason: string; usage?: Record<string, number> }> {
   const baseUrl = getGatewayBaseUrl();
   opts.onStatus("preparing");
-  const response = await fetch(`${baseUrl}/api/chats/${chatId}/messages/${messageId}/regenerate/stream`, {
+  const response = await fetch(appendTokenQuery(`${baseUrl}/api/chats/${chatId}/messages/${messageId}/regenerate/stream`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     signal: opts.signal,
@@ -512,7 +520,7 @@ export async function generateReplyStream(
 ): Promise<{ finishReason: string; usage?: Record<string, number> }> {
   const baseUrl = getGatewayBaseUrl();
   opts.onStatus("preparing");
-  const response = await fetch(`${baseUrl}/api/chats/${chatId}/generate-reply/stream`, {
+  const response = await fetch(appendTokenQuery(`${baseUrl}/api/chats/${chatId}/generate-reply/stream`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     signal: opts.signal,
@@ -899,7 +907,7 @@ export async function* streamScriptAiAssistant(body: {
   providerProfileId: string;
   model?: string;
 }): AsyncGenerator<AiAssistantChunk> {
-  const response = await fetch(`${getGatewayBaseUrl()}/api/scripts/ai-assistant`, {
+  const response = await fetch(appendTokenQuery(`${getGatewayBaseUrl()}/api/scripts/ai-assistant`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
