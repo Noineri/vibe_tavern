@@ -259,6 +259,7 @@ export function PersonaModal(input: PersonaModalProps) {
                         {/* AvatarPicker */}
                         {/* AvatarPicker — outer wrapper carries 'group' so remove button is visible */}
                         <div className="group relative shrink-0">
+                          <CustomTooltip content={t("upload_avatar")}>
                           <div
                             className={cn(
                               "relative flex h-16 w-16 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-dashed border-border2 bg-s2 transition-all hover:border-accent hover:text-accent-t",
@@ -294,8 +295,10 @@ export function PersonaModal(input: PersonaModalProps) {
                             </div>
                           )}
                           </div>
+                          </CustomTooltip>
                           {/* Remove button — outside the overflow-hidden circle */}
                           {(editAvatarPreview || editAvatarAssetId) && (
+                            <CustomTooltip content={t("remove_avatar")}>
                             <button
                               type="button"
                               className="absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full bg-surface border border-border text-t4 opacity-0 transition-all hover:text-danger group-hover:opacity-100 z-10"
@@ -308,6 +311,7 @@ export function PersonaModal(input: PersonaModalProps) {
                             >
                               <svg width="10" height="10" viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
                             </button>
+                            </CustomTooltip>
                           )}
                         </div>
                         <div className="flex-1">
@@ -405,6 +409,7 @@ export function PersonaModal(input: PersonaModalProps) {
                           >
                             <Icons.Copy /> {t("persona_duplicate")}
                           </div>
+                          <CustomTooltip content={isLastPersona ? t("cannot_delete_last_persona") : t("delete_persona_title")}>
                           <div
                             className="mt-2 flex cursor-pointer items-center gap-1 rounded py-[3px] px-[7px] font-ui text-[calc(var(--ui-fs)-3px)] transition-all hover:bg-s2"
                             role="button"
@@ -415,6 +420,7 @@ export function PersonaModal(input: PersonaModalProps) {
                           >
                             <Icons.Trash /> {t("delete")}
                           </div>
+                          </CustomTooltip>
                         </div>
                       </div>
                     </>

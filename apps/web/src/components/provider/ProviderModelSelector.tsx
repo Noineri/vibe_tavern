@@ -3,6 +3,7 @@ import { useT } from '../../i18n/context.js';
 import type { FormState } from '../ProviderModal.js';
 import { Icons } from '../shared/icons.js';
 import { cn } from '../../lib/cn.js';
+import { CustomTooltip } from '../shared/Tooltip.js';
 
 const labelCls =
   'block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3';
@@ -140,10 +141,10 @@ export function ProviderModelSelector({
                               : 'text-t2 hover:bg-s2 hover:text-t1'
                           )}
                         >
+                          <CustomTooltip content={isFavorite ? t("remove_from_favorites") : t("add_to_favorites")}>
                           <button
                             type="button"
                             className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 transition-colors hover:bg-s3 hover:text-warning-text', isFavorite && 'text-warning-text')}
-                            title={isFavorite ? t("remove_from_favorites") : t("add_to_favorites")}
                             onClick={(event) => {
                               event.stopPropagation();
                               onToggleFavoriteModel(m);
@@ -151,20 +152,25 @@ export function ProviderModelSelector({
                           >
                             {isFavorite ? <Icons.StarFilled /> : <Icons.Star />}
                           </button>
+                          </CustomTooltip>
                           <div className="min-w-0 flex-1">
                             <div className="flex min-w-0 items-center gap-2">
                               <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-t1">
                                 {m.label || m.id}
                               </span>
                               {m.capabilities?.vision && (
-                                <span className="shrink-0 text-t3" title={t('cap_vision')}>
+                                <CustomTooltip content={t('cap_vision')}>
+                                <span className="shrink-0 text-t3">
                                   <Icons.Eye />
                                 </span>
+                                </CustomTooltip>
                               )}
                               {m.capabilities?.premium && (
-                                <span className="shrink-0 text-t3" title={t('cap_premium')}>
+                                <CustomTooltip content={t('cap_premium')}>
+                                <span className="shrink-0 text-t3">
                                   <Icons.Crown />
                                 </span>
+                                </CustomTooltip>
                               )}
                               {formatContext(m.contextLength) && (
                                 <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 text-[10px] font-medium text-t2">

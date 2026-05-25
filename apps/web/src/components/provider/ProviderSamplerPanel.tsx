@@ -3,6 +3,7 @@ import { useT } from '../../i18n/context.js';
 import type { FormState } from '../ProviderModal.js';
 import { Icons } from '../shared/icons.js';
 import { cn } from '../../lib/cn.js';
+import { CustomTooltip } from '../shared/Tooltip.js';
 
 /* ── SamplerField sub-component ────────────────────────────────────── */
 
@@ -205,9 +206,11 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
       <div className="grid grid-cols-2 gap-x-6 gap-y-4">
         {/* Max tokens */}
         <div>
-          <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3" title={t("sampler_max_context_hint")}>
+          <CustomTooltip content={t("sampler_max_context_hint")}>
+          <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
             {t("sampler_max_context")}
           </label>
+          </CustomTooltip>
           <InlineNumField
             value={form.maxTokens}
             placeholder="-1"

@@ -6,6 +6,7 @@ import { Ic } from './shared/icons';
 import { cn } from '../lib/cn';
 import { Modal } from "./shared/Modal.js";
 import { AvatarCropModal } from './shared/AvatarCropModal.js';
+import { CustomTooltip } from './shared/Tooltip.js';
 import type { AvatarCropResult } from './shared/AvatarCropModal.js';
 import { useT } from '../i18n/context.js';
 
@@ -190,7 +191,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <div>
               <div className="flex items-center font-body text-[calc(var(--ui-fs)+4px)] font-medium text-t1">
                 {t("create_character_manual")}
-                {dirty && <span className="dirty-dot" title={t("unsaved_changes_title")} />}
+                {dirty && <CustomTooltip content={t("unsaved_changes_title")}><span className="dirty-dot" /></CustomTooltip>}
               </div>
             </div>
             <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={onClose}>
@@ -203,10 +204,10 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
         <div className="flex-1 overflow-y-auto p-5">
           {/* Avatar + Name row */}
           <div className="flex gap-4 mb-5">
+            <CustomTooltip content={t("upload_avatar")}>
             <div
               className="group relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t"
               onClick={() => avaInputRef.current?.click()}
-              title={t("upload_avatar")}
             >
               <input
                 ref={avaInputRef}
@@ -224,6 +225,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                 Ic.plus()
               )}
             </div>
+            </CustomTooltip>
             <div className="flex-1">
               <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ws_name_label")}</label>
               <input
