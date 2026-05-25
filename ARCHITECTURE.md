@@ -728,6 +728,24 @@ This means:
 
 Native checkboxes are only acceptable for functional filter toggles (e.g., "Show only selected"), not for per-row selection.
 
+### UI review workflow
+
+Use `screenshot_review` to get Gemini's eyes on every UI change:
+
+```
+screenshot_review(url, prompt, actions?, code_paths?) → Gemini analysis → code fix
+```
+
+**How it works:** Playwright runs inline in the pi agent extension — no external scripts, no subprocess timeouts. It opens the URL, performs optional click/fill actions, takes a screenshot, and sends it to Gemini with the relevant source code for context-aware review. Gemini returns specific line-level fixes.
+
+**When to use:**
+- After any CSS/spacing/layout change
+- Before committing UI work
+- When debugging a visual issue reported by a user
+- To verify Russian text doesn't overflow
+
+**The pi extension** is at `~/.pi/agent/extensions/gemini-tool.ts`. It uses `import { chromium } from 'playwright'` directly (installed in the extensions directory). No `agent-browser`, no `pi-agent-browser` npm package, no external `.cjs` scripts.
+
 ### Frontend data architecture
 
 The frontend uses **Zustand as single source of truth**. React Query was fully removed — it caused dual-state sync bugs (React Query cache + Zustand store fighting over re-render timing, especially with framer-motion animations).
