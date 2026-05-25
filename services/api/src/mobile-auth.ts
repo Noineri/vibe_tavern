@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 /** Creates a conditional auth middleware.
  *  If no token is provided, returns a pass-through middleware (no auth).
  *  If token is provided, validates Bearer header OR ?token= query param on /api/* only.
+ *  Loopback connections (127.0.0.1, ::1) are always allowed through.
  */
 export function createMobileAuthMiddleware(token: string | undefined): MiddlewareHandler {
 	if (!token) {
@@ -14,16 +15,15 @@ export function createMobileAuthMiddleware(token: string | undefined): Middlewar
 	}
 
 	return async (c, next) => {
-		// Skip auth for loopback (desktop/local access)
-		const url = new URL(c.req.url);
-		// Hono/Bun: c.req.header('x-forwarded-for') for proxied, or check host from URL
-		const loopbackHosts = ["127.0.0.1", "localhost", "::1"];
-		if (loopbackHosts.includes(url.hostname)) {
+		// Skip auth for loopback connections (real TCP remote IP from Bun)
+		const remoteIp = (c as any).remoteIp as string | undefined;
+		if (remoteIp === "127.0.0.1" || remoteIp === "::1") {
 			return await next();
 		}
 
 		// Only protect /api/* routes
-		if (!url.pathname.startsWith("/api/")) {
+		const path = new URL(c.req.url).pathname;
+		if (!path.startsWith("/api/")) {
 			return await next();
 		}
 
