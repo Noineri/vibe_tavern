@@ -673,6 +673,40 @@ This means:
 | `destructive-confirm-modal.tsx` | Destructive action confirm dialog (e.g., delete lorebook). Uses shared `<Modal>` with `z-[700]`. |
 | `empty-state.tsx` | Empty state placeholder component |
 
+### UI/UX conventions
+
+**Why this matters:** RP Platform exists as an alternative to clunky tools. Every interaction must feel polished — this is the product's competitive advantage.
+
+**Tooltips:** Always use `<CustomTooltip>` (Radix-based, dark tooltip with arrow) instead of native `title="..."` attributes. Native titles are invisible on touch devices, have zero styling, and look amateurish.
+
+```tsx
+// DO:
+<CustomTooltip content={t("hint_text")}>
+  <button>...</button>
+</CustomTooltip>
+
+// DON'T:
+<button title={t("hint_text")}>...</button>
+```
+
+**Dropdowns:** Use `<DropdownSelect>` from `shared/DropdownSelect.tsx` (Radix Select wrapper with search filter, keyboard nav, portal support) — not native `<select>`. Native selects break in modals (z-index issues), can't be styled consistently across browsers, and can't have search.
+
+**Toggles:** Use `<Toggle>` from `shared/Toggle.tsx` for boolean switches — not native checkboxes. The Toggle component has proper transition animations and consistent cross-platform rendering.
+
+**Number inputs:** Avoid native `<input type="number">` steppers. The native up/down arrows are unstylable, behave differently across browsers, and look dated. Use plain text inputs with manual validation or `<Toggle>` for boolean flags.
+
+**Destructive actions:** Always use `<DestructiveConfirmModal>` ("Are you sure? This cannot be undone.") before any delete/discard operation. The primary action button ("Keep editing") should be the visually dominant one (solid accent color), while the destructive action ("Close without saving") should be an outline/secondary button.
+
+**Modal hierarchy:** Use the shared `<Modal>` component (Radix Dialog) for all modals — provides focus trap, scroll lock, Escape-to-close. Nesting modals (e.g., confirm-close inside prompt manager) should use `overlayClassName="z-[700]"` to layer correctly.
+
+**Progressive disclosure:** Complex features (e.g., custom injections in presets) should be hidden behind a "Advanced mode" toggle — normal users see the simple version, power users opt in.
+
+**Hover visibility:** For row-based UIs (lists, tables), show action buttons on hover via `group-hover:opacity-100` pattern. Delete buttons should always be visible (not hover-only) but dim — safety requires discoverability.
+
+**Consistent button heights:** All buttons in a row must share the same height. Use `h-[38px]` or `h-10` consistently — never mix `h-8` and `h-[37px]` in the same footer.
+
+**Russian text:** Russian words are 20-30% longer than English. Always test UI with Russian locale. Use `whitespace-nowrap` on buttons with Russian text, and prefer `px-4` over `px-2` for horizontal padding.
+
 ### Frontend data architecture
 
 The frontend uses **Zustand as single source of truth**. React Query was fully removed — it caused dual-state sync bugs (React Query cache + Zustand store fighting over re-render timing, especially with framer-motion animations).
