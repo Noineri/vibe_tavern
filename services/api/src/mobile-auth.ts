@@ -21,9 +21,9 @@ export function createMobileAuthMiddleware(token: string | undefined): Middlewar
 			return await next();
 		}
 
-		// Only protect /api/* routes
+		// Only protect /api/* routes (except public assets)
 		const path = new URL(c.req.url).pathname;
-		if (!path.startsWith("/api/")) {
+		if (!path.startsWith("/api/") || path.startsWith("/api/assets/")) {
 			return await next();
 		}
 
