@@ -12,6 +12,7 @@ import { PresetList, PromptFields } from "./prompt/index.js";
 import { InjectionTable } from "./prompt/InjectionTable.js";
 import { Toggle } from "./shared/Toggle.js";
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
+import { CustomTooltip } from "./shared/Tooltip.js";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -226,10 +227,11 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             <div className="font-body mb-0.5 text-[calc(var(--ui-fs)+4px)] font-medium text-t1">
               {t("prompt_manager_title")}
               {dirty && (
+                <CustomTooltip content={t("unsaved_changes_title")}>
                 <span
                   className="ml-1.5 inline-block h-[7px] w-[7px] shrink-0 rounded-full bg-accent align-middle"
-                  title={t("unsaved_changes_title")}
                 />
+                </CustomTooltip>
               )}
             </div>
             <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">

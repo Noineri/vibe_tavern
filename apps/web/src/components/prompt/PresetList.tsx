@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { EmptyState } from "../shared/empty-state.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
 import { useT } from "../../i18n/context.js";
 
 interface PresetListProps {
@@ -64,7 +65,7 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename,
         <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3 pt-1 pb-[5px]">
           {t("presets")}
         </div>
-        <div className="mb-2 flex items-center gap-1.5 rounded-md border border-border bg-s2 px-[9px] py-1.5" title={t("search_presets")}>
+        <div className="mb-2 flex items-center gap-1.5 rounded-md border border-border bg-s2 px-[9px] py-1.5">
           <Icons.Search />
           <input
             className="min-w-0 flex-1 border-0 bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t4"
@@ -122,17 +123,20 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename,
                 isActive ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2"
               )}
             >
-              <span className={cn("truncate pr-2 font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isActive ? "text-accent-t" : "text-t2")} title={p.name}>
+              <CustomTooltip content={p.name}>
+              <span className={cn("truncate pr-2 font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isActive ? "text-accent-t" : "text-t2")}>
                 {p.name}
               </span>
+              </CustomTooltip>
+              <CustomTooltip content={t("rename")}>
               <button
                 onClick={(e) => startEditing(p, e)}
                 className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100", isActive ? "text-accent" : "text-t4 hover:text-t1")}
                 type="button"
-                title={t("rename")}
               >
                 <Icons.Edit />
               </button>
+              </CustomTooltip>
             </div>
           );
         })}
