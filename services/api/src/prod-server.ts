@@ -122,17 +122,17 @@ await mkdir(resolve(rootDir, "data", "assets"), { recursive: true });
 		console.log(`[prod] TLS enabled.`);
 	}
 
-	// Open browser
+	// Open browser — always use 127.0.0.1 even when bound to 0.0.0.0
 	if (staticEnabled && process.env.RP_PLATFORM_OPEN_BROWSER !== "0") {
-		const url = `http://${host}:${port}`;
-		console.log(`[prod] Opening browser at ${url}`);
+		const browserUrl = `http://127.0.0.1:${port}`;
+		console.log(`[prod] Opening browser at ${browserUrl}`);
 		const args =
-			process.platform === "win32" ? ["cmd", "/c", "start", "", url]
-			: process.platform === "darwin" ? ["open", url]
-			: ["xdg-open", url];
+			process.platform === "win32" ? ["cmd", "/c", "start", "", browserUrl]
+			: process.platform === "darwin" ? ["open", browserUrl]
+			: ["xdg-open", browserUrl];
 		Bun.spawn(args, { stdout: "ignore", stderr: "ignore", stdin: "ignore", detached: true });
 	} else if (staticEnabled) {
-		console.log(`[prod] Open http://${host}:${port} in your browser.`);
+		console.log(`[prod] Open http://127.0.0.1:${port} in your browser.`);
 	} else {
 		console.log(`[prod] Frontend not built. Run "bun run build:web" first, or use dev mode.`);
 	}

@@ -123,17 +123,17 @@ configureLogDir(paths.logsDir);
 		console.log(`[standalone] Mobile access enabled — accepting connections from all interfaces.`);
 	}
 
-	// Open browser
+	// Open browser — always use 127.0.0.1 even when bound to 0.0.0.0
 	if (paths.webEnabled && process.env.RP_PLATFORM_OPEN_BROWSER !== "0") {
-		const url = `http://${paths.host}:${paths.port}`;
-		console.log(`[standalone] Opening browser at ${url}`);
+		const browserUrl = `http://127.0.0.1:${paths.port}`;
+		console.log(`[standalone] Opening browser at ${browserUrl}`);
 		const args =
-			process.platform === "win32" ? ["cmd", "/c", "start", "", url]
-			: process.platform === "darwin" ? ["open", url]
-			: ["xdg-open", url];
+			process.platform === "win32" ? ["cmd", "/c", "start", "", browserUrl]
+			: process.platform === "darwin" ? ["open", browserUrl]
+			: ["xdg-open", browserUrl];
 		Bun.spawn(args, { stdout: "ignore", stderr: "ignore", stdin: "ignore", detached: true });
 	} else if (paths.webEnabled) {
-		console.log(`[standalone] Open http://${paths.host}:${paths.port} in your browser.`);
+		console.log(`[standalone] Open http://127.0.0.1:${paths.port} in your browser.`);
 	} else {
 		console.log(`[standalone] Frontend not found. Install the web/ directory next to the executable.`);
 	}
