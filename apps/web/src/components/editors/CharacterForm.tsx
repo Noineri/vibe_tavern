@@ -24,6 +24,7 @@ export interface CharacterFormProps {
   onExportPng: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  hasAvatar: boolean;
 }
 
 function parseCardToDraft(raw: unknown): Partial<BuildCharacterDraft> {
@@ -69,7 +70,7 @@ function TokenBadge({ text }: { text: string }) {
 
 export function CharacterForm({
   form, avatarPreview, setAvatarPreview, isDirty, isSaving, avatarUrl, onSave, onReset, onAvatarUpload,
-  onExportJson, onExportPng, onDuplicate, onDelete,
+  onExportJson, onExportPng, onDuplicate, onDelete, hasAvatar,
 }: CharacterFormProps) {
   const { t } = useT();
   const { register, formState: { errors }, watch, setValue, handleSubmit } = form;
@@ -178,15 +179,17 @@ export function CharacterForm({
           >
             {Ic.download()}
           </button>
-          <button
-            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
-            style={{ height: 28, width: 28 }}
-            title={t("char_export_png")}
-            onClick={onExportPng}
-            disabled={isSaving}
-          >
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="8" cy="8" r="2"/><circle cx="5" cy="5" r="0.8" fill="currentColor"/></svg>
-          </button>
+          {hasAvatar && (
+            <button
+              className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
+              style={{ height: 28, width: 28 }}
+              title={t("char_export_png")}
+              onClick={onExportPng}
+              disabled={isSaving}
+            >
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="8" cy="8" r="2"/><circle cx="5" cy="5" r="0.8" fill="currentColor"/></svg>
+            </button>
+          )}
           <button
             className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
             style={{ height: 28, width: 28 }}

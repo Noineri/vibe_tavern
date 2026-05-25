@@ -63,6 +63,7 @@ export function BuildMode() {
         onConfirm: () => { void character.handleDeleteCharacter(charData.id); },
       });
     }}
+    hasAvatar={!!(charData.avatarFullAssetId || charData.avatarAssetId)}
   />;
 }
 
@@ -103,9 +104,10 @@ interface BuildModeInnerProps {
   onExportPng: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  hasAvatar: boolean;
 }
 
-function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete }: BuildModeInnerProps) {
+function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete, hasAvatar }: BuildModeInnerProps) {
   const { t } = useT();
   const panels = useBuildPanels();
 
@@ -175,6 +177,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
             onExportPng={onExportPng}
             onDuplicate={onDuplicate}
             onDelete={onDelete}
+            hasAvatar={hasAvatar}
           />
         </div>
       );

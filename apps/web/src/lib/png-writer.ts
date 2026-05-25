@@ -1,177 +1,143 @@
 /**
  * PNG chunk writer — embeds character card metadata into PNG files.
  *
- * Character Card V3 spec: insert a `tEXt` chunk with keyword "chara"
- * containing the base64-encoded card JSON. The chunk goes right before IEND.
+ * Character Card V3 spec: inserts `tEXt` chunks with keywords "chara" (v2) and
+ * "ccv3" (v3) containing base64-encoded card JSON. Chunks go before IEND.
  *
- * PNG structure: Signature | IHDR | ... | tEXt (ours) | IEND
- * Each chunk: 4B length (big-endian) | 4B type | data | 4B CRC32
+ * Based on SillyTavern's character-card-parser.js approach:
+ *   decode chunks → remove old chara/ccv3 → insert new → re-encode
  */
 
-const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+const PNG_SIG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 
-function toBase64(str: string): string {
+function utf8ToBase64(str: string): string {
   const bytes = new TextEncoder().encode(str);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
 }
 
-function crc32(buf: Uint8Array): number {
-  let c = 0xffffffff;
-  for (let i = 0; i < buf.length; i++) {
-    c ^= buf[i];
-    for (let j = 0; j < 8; j++) {
-      c = (c >>> 1) ^ (c & 1 ? 0xedb88320 : 0);
-    }
+function crc32(data: Uint8Array, startCrc = 0): number {
+  let c = (startCrc ^ 0xffffffff) >>> 0;
+  for (let i = 0; i < data.length; i++) {
+    c ^= data[i];
+    for (let j = 0; j < 8; j++) c = (c >>> 1) ^ (c & 1 ? 0xedb88320 : 0);
   }
   return (c ^ 0xffffffff) >>> 0;
 }
 
-function packChunk(type: string, data: Uint8Array): Uint8Array {
-  const typeBytes = new TextEncoder().encode(type);
-  const length = data.byteLength;
-  const chunk = new Uint8Array(4 + 4 + length + 4);
-  const view = new DataView(chunk.buffer);
-  view.setUint32(0, length, false); // big-endian length
-  chunk.set(typeBytes, 4);
-  chunk.set(data, 8);
-  const crc = crc32(new Uint8Array(chunk.buffer, 4, 4 + length));
-  view.setUint32(8 + length, crc, false);
-  return chunk;
+interface PngChunk { name: string; data: Uint8Array }
+
+function isPNG(bytes: Uint8Array): boolean {
+  if (bytes.length < 8) return false;
+  for (let i = 0; i < 8; i++) if (bytes[i] !== PNG_SIG[i]) return false;
+  return true;
 }
+
+function extractChunks(png: Uint8Array): PngChunk[] {
+  if (!isPNG(png)) throw new Error("Not a valid PNG file");
+  const chunks: PngChunk[] = [];
+  let offset = 8;
+  const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+  while (offset + 8 <= png.length) {
+    const len = view.getUint32(offset, false);
+    const type = String.fromCharCode(png[offset + 4], png[offset + 5], png[offset + 6], png[offset + 7]);
+    chunks.push({ name: type, data: png.subarray(offset + 8, offset + 8 + len) });
+    offset += 12 + len;
+  }
+  return chunks;
+}
+
+function encodeChunks(chunks: PngChunk[]): Uint8Array {
+  let totalSize = 8;
+  for (const c of chunks) totalSize += 12 + c.data.length;
+  const out = new Uint8Array(totalSize);
+  const view = new DataView(out.buffer, out.byteOffset, out.byteLength);
+  out.set(PNG_SIG, 0);
+  let pos = 8;
+  for (const c of chunks) {
+    view.setUint32(pos, c.data.length, false); pos += 4;
+    const typeBytes = new Uint8Array(4);
+    for (let i = 0; i < 4; i++) { out[pos] = c.name.charCodeAt(i); typeBytes[i] = out[pos]; pos++; }
+    out.set(c.data, pos); pos += c.data.length;
+    view.setUint32(pos, crc32(c.data, crc32(typeBytes)), false); pos += 4;
+  }
+  return out;
+}
+
+function decodeText(data: Uint8Array): { keyword: string; text: string } {
+  const nul = data.indexOf(0);
+  if (nul < 0) throw new Error("Invalid tEXt chunk");
+  return {
+    keyword: new TextDecoder().decode(data.subarray(0, nul)),
+    text: new TextDecoder().decode(data.subarray(nul + 1)),
+  };
+}
+
+function encodeText(keyword: string, text: string): Uint8Array {
+  const kw = new TextEncoder().encode(keyword);
+  const txt = new TextEncoder().encode(text);
+  const out = new Uint8Array(kw.length + 1 + txt.length);
+  out.set(kw, 0); out[kw.length] = 0; out.set(txt, kw.length + 1);
+  return out;
+}
+
+// ── Public API ─────────────────────────────────────────────────────────────
 
 /**
  * Embed character card JSON into a PNG buffer.
- *
- * @param pngBytes  Original PNG bytes (raw file buffer)
- * @param json      Character card JSON string to embed
- * @returns         New PNG buffer with tEXt chunk inserted before IEND
+ * Inserts "chara" (v2) + "ccv3" (v3) tEXt chunks before IEND.
+ * Removes existing chara/ccv3 chunks first.
  */
 export function embedCharaMetadata(pngBytes: Uint8Array, json: string): Uint8Array {
-  // Validate PNG signature
-  for (let i = 0; i < 8; i++) {
-    if (pngBytes[i] !== PNG_SIGNATURE[i]) {
-      throw new Error("Not a valid PNG file");
+  const chunks = extractChunks(pngBytes);
+  for (let i = chunks.length - 1; i >= 0; i--) {
+    if (chunks[i].name !== "tEXt") continue;
+    if (["chara", "ccv3"].includes(decodeText(chunks[i].data).keyword.toLowerCase())) {
+      chunks.splice(i, 1);
     }
   }
-
-  // Build tEXt chunk: keyword "chara"\0 + base64 JSON
-  const keyword = "chara";
-  const b64 = toBase64(json);
-  const textData = new TextEncoder().encode(keyword + "\0" + b64);
-  const textChunk = packChunk("tEXt", textData);
-
-  // Find IEND chunk — scan chunks from the start instead of assuming position
-  // Each chunk: 4B len | 4B type | data | 4B CRC
-  let pos = 8; // skip PNG signature
-  while (pos + 8 <= pngBytes.length) {
-    const clen = new DataView(pngBytes.buffer, pngBytes.byteOffset + pos, 4).getUint32(0, false);
-    const ctype = new TextDecoder().decode(pngBytes.subarray(pos + 4, pos + 8));
-    if (ctype === "IEND") {
-      const iendStart = pos;
-      // Build output: everything before IEND + our tEXt chunk + IEND
-      const iendSize = 4 + 4 + clen + 4;
-      const output = new Uint8Array(iendStart + textChunk.byteLength + iendSize);
-      output.set(pngBytes.subarray(0, iendStart), 0);
-      output.set(textChunk, iendStart);
-      output.set(pngBytes.subarray(iendStart, iendStart + iendSize), iendStart + textChunk.byteLength);
-      return output;
-    }
-    pos += 4 + 4 + clen + 4;
-  }
-  throw new Error("PNG missing IEND chunk");
+  // ccv3 first (v3 spec), then chara (v2 compat)
+  try {
+    const v3 = JSON.parse(json);
+    v3.spec = "chara_card_v3"; v3.spec_version = "3.0";
+    chunks.splice(-1, 0, { name: "tEXt", data: encodeText("ccv3", utf8ToBase64(JSON.stringify(v3))) });
+  } catch { /* skip ccv3 */ }
+  chunks.splice(-1, 0, { name: "tEXt", data: encodeText("chara", utf8ToBase64(json)) });
+  return encodeChunks(chunks);
 }
 
 /**
- * Create a minimal PNG with embedded character data (no avatar image).
- * Generates a 1×1 transparent pixel PNG with metadata.
+ * Convert any image to PNG with embedded character card metadata.
+ * If already PNG → embed directly (preserves quality).
+ * If JPEG/WebP/GIF → convert via Canvas first.
  */
-export function createMetadataPng(json: string): Uint8Array {
-  // 1×1 RGBA transparent pixel — raw image data (filter byte + pixel)
-  const filter = 0; // None filter
-  const pixel = new Uint8Array([0, 0, 0, 0]); // transparent black
-  const rawData = new Uint8Array(1 + 4);
-  rawData[0] = filter;
-  rawData.set(pixel, 1);
-
-  // Deflate raw image data
-  // Minimal deflate: 1-byte header | compressed data | adler32
-  const deflated = deflateMinimal(rawData);
-
-  const header = packChunk("IHDR", buildIhdr(1, 1));
-  const idat = packChunk("IDAT", deflated);
-
-  // Build keyword bytes
-  const keyword = "chara";
-  const b64 = toBase64(json);
-  const textBytes = new TextEncoder().encode(keyword + "\0" + b64);
-  const textChunk = packChunk("tEXt", textBytes);
-
-  const iend = packChunk("IEND", new Uint8Array(0));
-
-  // Assemble
-  const totalSize = 8 + header.byteLength + idat.byteLength + textChunk.byteLength + iend.byteLength;
-  const output = new Uint8Array(totalSize);
-  let offset = 0;
-  output.set(PNG_SIGNATURE, offset); offset += 8;
-  output.set(header, offset); offset += header.byteLength;
-  output.set(idat, offset); offset += idat.byteLength;
-  output.set(textChunk, offset); offset += textChunk.byteLength;
-  output.set(iend, offset);
-  return output;
-}
-
-function buildIhdr(width: number, height: number): Uint8Array {
-  const buf = new Uint8Array(13);
-  const view = new DataView(buf.buffer);
-  view.setUint32(0, width, false);
-  view.setUint32(4, height, false);
-  view.setUint8(8, 8); // bit depth
-  view.setUint8(9, 6); // color type: RGBA
-  view.setUint8(10, 0); // compression
-  view.setUint8(11, 0); // filter
-  view.setUint8(12, 0); // interlace
-  return buf;
-}
-
-/**
- * Minimal RFC 1950 zlib/deflate for tiny payloads.
- * Produces valid compressed data without needing a full deflate library.
- */
-function deflateMinimal(data: Uint8Array): Uint8Array {
-  // Store block (type 00) — no compression, just raw
-  // RFC 1951: 3-bit header + aligned to byte + LEN + NLEN + data
-  // We use a single "final" stored block
-  const len = data.byteLength;
-  const nlen = (~len) & 0xffff; // one's complement
-
-  // Calculate adler32
-  let a = 1, b = 0;
-  for (let i = 0; i < len; i++) {
-    a = (a + data[i]) % 65521;
-    b = (b + a) % 65521;
+export async function exportCharaCardPng(imageBytes: Uint8Array, json: string): Promise<Uint8Array> {
+  if (isPNG(imageBytes)) {
+    return embedCharaMetadata(imageBytes, json);
   }
-  const adler = ((b << 16) | a) >>> 0;
+  // Non-PNG: convert via Canvas
+  const blob = new Blob([imageBytes.buffer.slice(imageBytes.byteOffset, imageBytes.byteOffset + imageBytes.byteLength) as ArrayBuffer]);
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await loadImage(url);
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+    canvas.getContext("2d")!.drawImage(img, 0, 0);
+    const pngBlob = await new Promise<Blob>((res, rej) => {
+      canvas.toBlob((b) => b ? res(b) : rej(new Error("Canvas toBlob failed")), "image/png");
+    });
+    return embedCharaMetadata(new Uint8Array(await pngBlob.arrayBuffer()), json);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
-  // zlib wrapper: CMF(0x78) + FLG + compressed + adler32
-  // CMF=0x78 → deflate, window=32K. FLG=0x01 → level=0, check bits
-  const zlib = new Uint8Array(2 + 1 + 4 + len + 4); // CMF + FLG + bfinal+type + len/nlen + data + adler
-  let pos = 0;
-  zlib[pos++] = 0x78; // CMF
-  zlib[pos++] = 0x01; // FLG
-  zlib[pos++] = 0x01; // BFINAL=1, BTYPE=00 (stored)
-  zlib[pos++] = len & 0xff;
-  zlib[pos++] = (len >> 8) & 0xff;
-  zlib[pos++] = nlen & 0xff;
-  zlib[pos++] = (nlen >> 8) & 0xff;
-  zlib.set(data, pos); pos += len;
-  zlib[pos++] = (adler >> 24) & 0xff;
-  zlib[pos++] = (adler >> 16) & 0xff;
-  zlib[pos++] = (adler >> 8) & 0xff;
-  zlib[pos++] = adler & 0xff;
-
-  return zlib;
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = () => rej(new Error("Failed to load image"));
+    img.src = url;
+  });
 }
