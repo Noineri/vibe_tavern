@@ -9,6 +9,7 @@ import { Icons } from "./shared/icons.js";
 import { SaveButton } from "./shared/SaveBar.js";
 import { useModalStore } from "../stores/modal-store.js";
 import { PresetList, PromptFields } from "./prompt/index.js";
+import { InjectionTable } from "./prompt/InjectionTable.js";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -23,6 +24,7 @@ type DraftData = {
   summary: string;
   tools: string;
   scriptAiSystemPrompt: string;
+  customInjections: Array<{ name: string; content: string; depth: number; role: 'system' | 'user' | 'assistant'; enabled: boolean }>;
 };
 
 interface PromptManagerModalProps {
@@ -53,6 +55,7 @@ interface PromptManagerModalProps {
 const emptyDraft: DraftData = {
   name: "", bindModel: "", system: "", jailbreak: "",
   prefill: "", authorsNote: "", authorsNoteDepth: 4, summary: "", tools: "", scriptAiSystemPrompt: "",
+  customInjections: [],
 };
 
 export function PromptManagerModal(input: PromptManagerModalProps) {
@@ -65,6 +68,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [advancedMode, setAdvancedMode] = useState(false);
   const activePreset = input.presets.find((p) => p.id === input.activePresetId) ?? null;
 
   useEffect(() => {
@@ -80,6 +84,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         summary: activePreset.summary,
         tools: activePreset.tools,
         scriptAiSystemPrompt: activePreset.scriptAiSystemPrompt ?? "",
+        customInjections: (activePreset as PromptPresetDto).customInjections ?? [],
       });
     } else {
       setDraft({ ...emptyDraft });
@@ -223,12 +228,34 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             onAdd={handleAdd}
             onRename={handleRename}
           />
-          <PromptFields
-            draft={activePreset ? draft : null}
-            onUpdateField={updateDraft}
-            prefillSupported={input.prefillSupported}
-            resetKey={activePreset?.id ?? null}
-          />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex items-center gap-2 px-1 pt-1 shrink-0">
+              <label className="flex cursor-pointer items-center gap-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 select-none">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 cursor-pointer accent-accent"
+                  checked={advancedMode}
+                  onChange={(e) => setAdvancedMode(e.target.checked)}
+                />
+                {t("preset_advanced_mode")}
+              </label>
+              <span className="font-ui text-[10px] text-t4">{t("preset_advanced_mode_hint")}</span>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <PromptFields
+                draft={activePreset ? draft : null}
+                onUpdateField={updateDraft}
+                prefillSupported={input.prefillSupported}
+                resetKey={activePreset?.id ?? null}
+              />
+              {advancedMode && (
+                <InjectionTable
+                  injections={draft.customInjections}
+                  onChange={(injections) => { setDraft((d) => ({ ...d, customInjections: injections })); setDirty(true); setSaveState("idle"); }}
+                />
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-2.5 border-t border-border py-3.5 px-5">
