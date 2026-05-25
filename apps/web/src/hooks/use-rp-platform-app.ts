@@ -15,6 +15,7 @@ import {
   type TweaksSettings,
   MESSAGE_WIDTH_MAP,
 } from "../lib/local-storage.js";
+import { extractTokenFromHash, saveMobileToken, clearMobileToken } from "../lib/mobile-token.js";
 
 function createInitialConnectionState(): ConnectionState {
   const envDefaults = {
@@ -72,11 +73,21 @@ export function useRpPlatformApp() {
   useEffect(() => {
     async function load() {
       try {
+        // Extract mobile token from URL hash if present
+        const hashToken = extractTokenFromHash();
+        if (hashToken) {
+          saveMobileToken(hashToken);
+        }
+
         await Promise.all([
           fetchBootstrapAction(),
           fetchPersonasAction(),
         ]);
       } catch (err) {
+        // If 401 and we have a stored token, it's invalid — clear it
+        if (err instanceof Error && (err.message.includes("401") || err.message.includes("Unauthorized"))) {
+          clearMobileToken();
+        }
         setLoadError(err instanceof Error ? err.message : getT()("could_not_load_app_state"));
       }
     }

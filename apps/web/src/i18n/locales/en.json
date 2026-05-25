@@ -562,6 +562,8 @@
   "mobile_access_restart_note": "Changing this setting may require a server restart",
   "mobile_access_enable": "Enable",
   "mobile_access_loading": "Loading...",
+  "mobile_token_required": "Access token required",
+  "mobile_token_required_desc": "Scan the QR code from the desktop app to connect",
 
   "back": "← Back",
   "confirm_delete": "Confirm deletion",
