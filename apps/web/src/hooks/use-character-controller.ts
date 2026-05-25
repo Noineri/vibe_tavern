@@ -14,7 +14,7 @@ import { useChatStore } from "../stores/chat-store.js";
 import { useNavigationStore } from "../stores/navigation-store.js";
 import { useCharacterStore } from "../stores/character-store.js";
 import { useChatDataStore } from "../stores/chat-data-store.js";
-import { embedCharaMetadata } from "../lib/png-writer.js";
+import { embedCharaMetadata, createMetadataPng } from "../lib/png-writer.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import {
   saveCharacterAction,
@@ -447,7 +447,6 @@ export function useCharacterController(): CharacterControllerActions {
       if (pngBytes) {
         outputPng = embedCharaMetadata(pngBytes, json);
       } else {
-        const { createMetadataPng } = await import("../lib/png-writer.js");
         outputPng = createMetadataPng(json);
       }
 
