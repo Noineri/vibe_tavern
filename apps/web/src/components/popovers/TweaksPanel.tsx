@@ -1,6 +1,7 @@
 import React from 'react';
 import { Toggle } from '../shared/Toggle.js';
 import { useT } from '../../i18n/context.js';
+import { Icons } from '../shared/icons.js';
 
 interface TweaksSettings {
   theme: 'dark' | 'light';
@@ -13,9 +14,10 @@ interface TweaksSettings {
 interface TweaksPanelProps {
   settings: TweaksSettings;
   setSetting: <K extends keyof TweaksSettings>(key: K, value: TweaksSettings[K]) => void;
+  onOpenMobileAccess: () => void;
 }
 
-export function TweaksPanel({ settings, setSetting }: TweaksPanelProps) {
+export function TweaksPanel({ settings, setSetting, onOpenMobileAccess }: TweaksPanelProps) {
   const { t } = useT();
   return (
     <div className="fixed right-4 top-[68px] z-[300] w-[260px] rounded-lg border border-border2 bg-surface shadow-[0_12px_28px_rgba(0,0,0,0.45)] p-3">
@@ -54,6 +56,18 @@ export function TweaksPanel({ settings, setSetting }: TweaksPanelProps) {
           <option value="en">EN</option>
           <option value="ru">RU</option>
         </select>
+      </div>
+      <div className="mt-2 border-t border-border2 pt-2">
+        <div className="flex items-center justify-between gap-3 py-2">
+          <span className="flex items-center gap-1.5 text-[calc(var(--ui-fs)-2px)] text-t2">
+            <Icons.Phone />
+            {t("mobile_access")}
+          </span>
+          <button
+            className="rounded bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] text-on-accent hover:opacity-90"
+            onClick={onOpenMobileAccess}
+          >{t("mobile_access_enable")}</button>
+        </div>
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ export interface ModalState {
   isContextMemoryOpen: boolean;
   tweaksOpen: boolean;
   avatarOpen: boolean;
+  mobileAccessOpen: boolean;
 }
 
 export interface ModalActions {
@@ -18,6 +19,7 @@ export interface ModalActions {
   setContextMemoryOpen: (open: boolean) => void;
   setTweaksOpen: (open: boolean) => void;
   setAvatarOpen: (open: boolean) => void;
+  setMobileAccessOpen: (open: boolean) => void;
 }
 
 export type ModalStore = ModalState & ModalActions;
@@ -30,6 +32,7 @@ export const useModalStore = create<ModalStore>()((set) => ({
   isContextMemoryOpen: false,
   tweaksOpen: false,
   avatarOpen: false,
+  mobileAccessOpen: false,
 
   setIsProviderModalOpen: (open) => set({ isProviderModalOpen: open }),
   setIsPromptManagerOpen: (open) => set({ isPromptManagerOpen: open }),
@@ -38,4 +41,5 @@ export const useModalStore = create<ModalStore>()((set) => ({
   setContextMemoryOpen: (open) => set({ isContextMemoryOpen: open }),
   setTweaksOpen: (open) => set({ tweaksOpen: open }),
   setAvatarOpen: (open) => set({ avatarOpen: open }),
+  setMobileAccessOpen: (open) => set({ mobileAccessOpen: open }),
 }));

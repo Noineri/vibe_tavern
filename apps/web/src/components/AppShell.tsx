@@ -22,6 +22,7 @@ import { ProviderModal } from "./ProviderModal.js";
 import { WelcomeScreen } from "./WelcomeScreen.js";
 import { ShellDestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { TweaksPanel } from "./popovers/TweaksPanel.js";
+import { MobileAccessModal } from "./modals/MobileAccessModal.js";
 import { AvatarPanel } from "./popovers/AvatarPanel.js";
 import type { AppSnapshot } from "../app-client.js";
 import type { TweaksSettings } from "../lib/local-storage.js";
@@ -57,6 +58,8 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
   const setTweaksOpen = useModalStore((s) => s.setTweaksOpen);
   const avatarOpen = useModalStore((s) => s.avatarOpen);
   const setAvatarOpen = useModalStore((s) => s.setAvatarOpen);
+  const mobileAccessOpen = useModalStore((s) => s.mobileAccessOpen);
+  const setMobileAccessOpen = useModalStore((s) => s.setMobileAccessOpen);
   const isContextMemoryOpen = useModalStore((s) => s.isContextMemoryOpen);
   const setContextMemoryOpen = useModalStore((s) => s.setContextMemoryOpen);
   const isProviderModalOpen = useModalStore((s) => s.isProviderModalOpen);
@@ -162,7 +165,8 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
         {shellSurface}
       </main>
 
-      {tweaksOpen && <TweaksPanel settings={tweaksPanelSettings} setSetting={handleSetTweak} />}
+      {tweaksOpen && <TweaksPanel settings={tweaksPanelSettings} setSetting={handleSetTweak} onOpenMobileAccess={() => setMobileAccessOpen(true)} />}
+      {mobileAccessOpen && <MobileAccessModal open={mobileAccessOpen} onClose={() => setMobileAccessOpen(false)} onDisabled={() => {}} />}
       {avatarOpen && avatarSrc && <AvatarPanel src={avatarSrc} onClose={() => setAvatarOpen(false)} />}
 
       <ContextMemoryModal
