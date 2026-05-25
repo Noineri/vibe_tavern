@@ -14,6 +14,8 @@ import { useChatStore } from "../stores/chat-store.js";
 import { useNavigationStore } from "../stores/navigation-store.js";
 import { useCharacterStore } from "../stores/character-store.js";
 import { useChatDataStore } from "../stores/chat-data-store.js";
+import { embedCharaMetadata } from "../lib/png-writer.js";
+import { getGatewayBaseUrl } from "../gateway-client.js";
 import {
   saveCharacterAction,
   createCharacterAction,
@@ -63,6 +65,7 @@ export interface CharacterControllerActions {
   handleCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string; mesExample?: string; alternateGreetings?: string[]; postHistoryInstructions?: string; creatorNotes?: string; systemPrompt?: string; depthPrompt?: string; depthPromptDepth?: number; depthPromptRole?: string; tags?: string[] }, avatarFile?: File | null, avatarOriginalFile?: File | null) => Promise<{ characterId: string; chatId: string } | null>;
   handleFreeChat: () => Promise<void>;
   handleExportCharacter: (characterId: string) => Promise<void>;
+  handleExportPng: (characterId: string) => Promise<void>;
   handleExportChatJsonl: (chatId: ChatId) => Promise<void>;
   handleExportPromptTrace: (traceId: string) => Promise<void>;
   isSavingCharacter: boolean;
@@ -416,6 +419,52 @@ export function useCharacterController(): CharacterControllerActions {
     }
   }
 
+  async function handleExportPng(characterId: string): Promise<void> {
+    try {
+      const data = await exportCharacterAction(characterId);
+      const name = getSnapshot()?.character.name ?? "character";
+      const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const json = JSON.stringify(data);
+
+      // Try to get avatar PNG bytes
+      const char = getSnapshot()?.character;
+      const avatarId = char?.avatarFullAssetId ?? char?.avatarAssetId;
+      let pngBytes: Uint8Array | null = null;
+
+      if (avatarId) {
+        try {
+          const avatarUrl = `${getGatewayBaseUrl()}/api/assets/${avatarId}`;
+          const resp = await fetch(avatarUrl);
+          if (resp.ok) {
+            pngBytes = new Uint8Array(await resp.arrayBuffer());
+          }
+        } catch {
+          // avatar fetch failed — fall through to metadata-only PNG
+        }
+      }
+
+      let outputPng: Uint8Array;
+      if (pngBytes) {
+        outputPng = embedCharaMetadata(pngBytes, json);
+      } else {
+        const { createMetadataPng } = await import("../lib/png-writer.js");
+        outputPng = createMetadataPng(json);
+      }
+
+      const blob = new Blob([outputPng.buffer as ArrayBuffer], { type: "image/png" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${safeName}.chara_card_v3.png`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : getT()("failed_to_export_png"));
+    }
+  }
+
   async function handleExportChatJsonl(chatId: ChatId): Promise<void> {
     try {
       const text = await exportChatJsonlAction(chatId);
@@ -460,6 +509,7 @@ export function useCharacterController(): CharacterControllerActions {
     handleCreateCharacter,
     handleFreeChat,
     handleExportCharacter,
+    handleExportPng,
     handleExportChatJsonl,
     handleExportPromptTrace,
     isSavingCharacter,

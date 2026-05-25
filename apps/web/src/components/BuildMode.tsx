@@ -31,6 +31,8 @@ export function BuildMode() {
   const charData = chatMeta?.character ?? null;
   const isSaving = useCharacterStore((s) => s.isSavingCharacter);
   const buildTab = useCharacterStore((s) => s.buildTab);
+  const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
+  const { t } = useT();
 
   const activeTrace = useActiveTrace(useChatStore((s) => s.selectedTraceId));
   const promptPayloadText = JSON.stringify(activeTrace?.finalPayload ?? {}, null, 2);
@@ -50,6 +52,17 @@ export function BuildMode() {
     characterId={charData.id}
     activeChatId={chatMeta.activeChat?.id ?? null}
     personaId={chatMeta.persona?.id ?? null}
+    onExportJson={() => { void character.handleExportCharacter(charData.id); }}
+    onExportPng={() => { void character.handleExportPng(charData.id); }}
+    onDuplicate={() => { void character.handleDuplicateCharacter(charData.id); }}
+    onDelete={() => {
+      setConfirmDestroy({
+        title: t("char_delete"),
+        body: <>{t("char_delete_confirm").replace("{name}", charData.name)}</>,
+        confirmLabel: t("delete"),
+        onConfirm: () => { void character.handleDeleteCharacter(charData.id); },
+      });
+    }}
   />;
 }
 
@@ -86,9 +99,13 @@ interface BuildModeInnerProps {
   characterId: string;
   activeChatId: string | null;
   personaId: string | null;
+  onExportJson: () => void;
+  onExportPng: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
 }
 
-function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, onSave, onAvatarUpload, characterId, activeChatId, personaId }: BuildModeInnerProps) {
+function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete }: BuildModeInnerProps) {
   const { t } = useT();
   const panels = useBuildPanels();
 
@@ -154,6 +171,10 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
             onSave={handleSave}
             onReset={resetDraft}
             onAvatarUpload={handleAvatarUpload}
+            onExportJson={onExportJson}
+            onExportPng={onExportPng}
+            onDuplicate={onDuplicate}
+            onDelete={onDelete}
           />
         </div>
       );
