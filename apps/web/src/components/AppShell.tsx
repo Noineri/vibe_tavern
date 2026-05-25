@@ -158,7 +158,7 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-bg text-t1 font-ui" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+    <div className="flex bg-bg text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
       <Sidebar />
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar />
