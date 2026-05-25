@@ -165,7 +165,17 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
         {shellSurface}
       </main>
 
-      {tweaksOpen && <TweaksPanel settings={tweaksPanelSettings} setSetting={handleSetTweak} onOpenMobileAccess={() => setMobileAccessOpen(true)} />}
+      {tweaksOpen && <TweaksPanel settings={tweaksPanelSettings} setSetting={handleSetTweak} onOpenMobileAccess={async () => {
+          // Ensure a token exists before opening the modal
+          try {
+            const resp = await fetch("/api/settings/mobile-access");
+            if (resp.ok) {
+              const data = await resp.json();
+              if (!data.token) await fetch("/api/settings/mobile-access/regenerate", { method: "POST" });
+            }
+          } catch { /* ignore */ }
+          setMobileAccessOpen(true);
+        }} />}
       {mobileAccessOpen && <MobileAccessModal open={mobileAccessOpen} onClose={() => setMobileAccessOpen(false)} onDisabled={() => {}} />}
       {avatarOpen && avatarSrc && <AvatarPanel src={avatarSrc} onClose={() => setAvatarOpen(false)} />}
 
