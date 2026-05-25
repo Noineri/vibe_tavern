@@ -82,6 +82,10 @@ configureLogDir(paths.logsDir);
 	const assetService = new AssetService(paths.assetsDir);
 	const mobileAccessService = new MobileAccessService(paths.dataDir);
 
+	// Resolve listen host: 0.0.0.0 when mobile access is active, else default
+	// Explicit RP_PLATFORM_HOST always wins.
+	const resolvedHost = process.env.RP_PLATFORM_HOST ?? (mobileAccessService.getToken() ? "0.0.0.0" : paths.host);
+
 	// RuntimeApi adapter
 	const runtime = new RuntimeApiAdapter(
 		stores,
@@ -105,14 +109,18 @@ configureLogDir(paths.logsDir);
 	const server = Bun.serve({
 		fetch: app.fetch,
 		port: paths.port,
-		hostname: paths.host,
+		hostname: resolvedHost,
 		idleTimeout: 255,
 		...tlsOptions,
 	});
 
-	console.log(`[standalone] Listening on http://${paths.host}:${paths.port}`);
+	const proto = tlsConfig ? "https" : "http";
+	console.log(`[standalone] Listening on ${proto}://${resolvedHost}:${paths.port}`);
 	if (tlsConfig) {
 		console.log(`[standalone] TLS enabled.`);
+	}
+	if (resolvedHost === "0.0.0.0") {
+		console.log(`[standalone] Mobile access enabled — accepting connections from all interfaces.`);
 	}
 
 	// Open browser
