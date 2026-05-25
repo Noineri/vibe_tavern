@@ -10,6 +10,7 @@ import { SaveButton } from "./shared/SaveBar.js";
 import { useModalStore } from "../stores/modal-store.js";
 import { PresetList, PromptFields } from "./prompt/index.js";
 import { InjectionTable } from "./prompt/InjectionTable.js";
+import { Toggle } from "./shared/Toggle.js";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -228,33 +229,30 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             onAdd={handleAdd}
             onRename={handleRename}
           />
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex items-center gap-2 px-1 pt-1 shrink-0">
-              <label className="flex cursor-pointer items-center gap-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 select-none">
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 cursor-pointer accent-accent"
-                  checked={advancedMode}
-                  onChange={(e) => setAdvancedMode(e.target.checked)}
-                />
-                {t("preset_advanced_mode")}
-              </label>
-              <span className="font-ui text-[10px] text-t4">{t("preset_advanced_mode_hint")}</span>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              <PromptFields
-                draft={activePreset ? draft : null}
-                onUpdateField={updateDraft}
-                prefillSupported={input.prefillSupported}
-                resetKey={activePreset?.id ?? null}
-              />
-              {advancedMode && (
+          <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+            {/* Advanced mode accordion */}
+            <details open={advancedMode} onToggle={(e) => setAdvancedMode((e.target as HTMLDetailsElement).open)} className="mx-5 mt-4">
+              <summary className="flex cursor-pointer items-center gap-3 rounded-md border border-border2 bg-s2 px-4 py-3 select-none">
+                <Toggle checked={advancedMode} onChange={setAdvancedMode} />
+                <div>
+                  <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">{t("preset_advanced_mode")}</span>
+                  <span className="ml-2 font-ui text-[11px] text-t4">{t("preset_advanced_mode_hint")}</span>
+                </div>
+              </summary>
+              <div className="rounded-b-md border-x border-b border-border2 bg-s1 px-4 py-3">
                 <InjectionTable
                   injections={draft.customInjections}
                   onChange={(injections) => { setDraft((d) => ({ ...d, customInjections: injections })); setDirty(true); setSaveState("idle"); }}
                 />
-              )}
-            </div>
+              </div>
+            </details>
+
+            <PromptFields
+              draft={activePreset ? draft : null}
+              onUpdateField={updateDraft}
+              prefillSupported={input.prefillSupported}
+              resetKey={activePreset?.id ?? null}
+            />
           </div>
         </div>
 
