@@ -664,11 +664,11 @@ This means:
 | `AvatarCropModal.tsx` | react-easy-crop circular crop tool. Outputs 480×480 PNG. Uses shared `<Modal>` wrapper. |
 | `AutoTextarea.tsx` | Auto-resizing textarea. Finds scroll parent, adjusts height on input/change, respects `maxHeight`. Used in chat input, persona editor, prompt fields. |
 | `icons.tsx` | All UI icons as React components (`Icons.*` system — no emojis). |
-| `Tooltip.tsx` | Custom tooltip component |
+| `Tooltip.tsx` | `<CustomTooltip>` — Radix-based tooltip with dark styling and arrow. Use instead of native `title` attribute. |
 | `TokenCounter.tsx` | Token count badge display |
 | `SaveBar.tsx` | Sticky save bar with unsaved changes indicator |
 | `save-btn.tsx` | Save button component |
-| `Toggle.tsx` | Toggle switch component |
+| `Toggle.tsx` | `<Toggle>` — animated toggle switch. Use for boolean settings instead of native checkboxes. |
 | `confirm-close-modal.tsx` | Small "discard changes?" confirm dialog. Uses shared `<Modal>` with `z-[700]`. |
 | `destructive-confirm-modal.tsx` | Destructive action confirm dialog (e.g., delete lorebook). Uses shared `<Modal>` with `z-[700]`. |
 | `empty-state.tsx` | Empty state placeholder component |
