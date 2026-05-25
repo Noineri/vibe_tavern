@@ -28,6 +28,7 @@ import { AssetService } from "./asset-service.js";
 import { RuntimeApiAdapter } from "./runtime-api-adapter.js";
 import { createApp } from "./app-factory.js";
 import { resolveTlsConfig } from "./mobile-auth.js";
+import { MobileAccessService } from "./mobile-access-service.js";
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -78,6 +79,7 @@ await mkdir(resolve(rootDir, "data", "assets"), { recursive: true });
 	const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime.chatRuntime, providerOrchestrator);
 	const chatSummaryService = new ChatSummaryService(sessionRuntime, providerProfileService);
 	const assetService = new AssetService(resolve(rootDir, "data", "assets"));
+	const mobileAccessService = new MobileAccessService(resolve(rootDir, "data"));
 
 	// RuntimeApi adapter
 	const runtime = new RuntimeApiAdapter(
@@ -88,13 +90,14 @@ await mkdir(resolve(rootDir, "data", "assets"), { recursive: true });
 		sessionRuntime,
 		promptPresetService,
 		assetService,
+		mobileAccessService,
 	);
 
 	// Hono app — with static frontend if available
 	const app = await createApp({
 		runtime,
 		staticDir: staticEnabled ? staticDir : undefined,
-		mobileAccessToken: undefined, // wired in MOB-ACC-B2
+		mobileAccessToken: mobileAccessService.getToken() ?? undefined,
 	});
 
 	const tlsOptions = tlsConfig ? { tls: tlsConfig } : {};

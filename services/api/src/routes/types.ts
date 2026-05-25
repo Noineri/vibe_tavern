@@ -114,4 +114,9 @@ export interface RuntimeApi {
 
   scanSillyTavernDirectory: (dirPath: string) => Promise<unknown>;
   importSillyTavernDirectory: (dirPath: string) => Promise<unknown>;
+
+  // ── Mobile Access ──
+  getMobileAccessInfo: () => Promise<unknown>;
+  regenerateMobileAccessToken: () => Promise<{ token: string }>;
+  revokeMobileAccess: () => Promise<{ token: null }>;
 }
