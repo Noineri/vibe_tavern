@@ -3,6 +3,7 @@ import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
 import { useT } from "../../i18n/context.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
 
 const textareaCls = "w-full rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent resize-none";
 const labelCls = "block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3 mb-[7px]";
@@ -113,6 +114,7 @@ export function SummaryTab({
             >
               {/* Context toggle checkbox */}
               {onToggleContext && (
+                <CustomTooltip content={t('toggle_context_summary')}>
                 <button
                   className={cn(
                     "flex h-[18px] w-[18px] shrink-0 cursor-pointer items-center justify-center rounded border transition-colors mr-1",
@@ -120,23 +122,24 @@ export function SummaryTab({
                       ? "border-accent bg-accent text-white"
                       : "border-border2 bg-transparent hover:border-t3",
                   )}
-                  title={t('toggle_context_summary')}
                   onClick={e => { e.stopPropagation(); onToggleContext(s.id); }}
                 >
                   {s.includeInContext && <Icons.Check />}
                 </button>
+                </CustomTooltip>
               )}
               <div className="min-w-0 flex-1">
                 <div className={cn("truncate font-ui text-[12px]", activeSummaryId === s.id ? "font-medium text-accent-t" : "text-t2")}>{s.label}</div>
                 <div className="truncate font-ui text-[10px] text-t4">{s.timestamp}</div>
               </div>
+              <CustomTooltip content={t('delete_summary')}>
               <button
                 className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-t4 opacity-0 transition-all hover:bg-danger-dim hover:text-danger group-hover:opacity-100"
-                title={t('delete_summary')}
                 onClick={e => { e.stopPropagation(); onDeleteSummary(s.id); }}
               >
                 <Icons.Close />
               </button>
+              </CustomTooltip>
             </div>
           ))}
         </div>

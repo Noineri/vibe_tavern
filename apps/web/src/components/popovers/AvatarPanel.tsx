@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Icons } from '../shared/icons.js';
 import { useT } from '../../i18n/context.js';
+import { CustomTooltip } from '../shared/Tooltip.js';
 
 interface AvatarPanelProps {
   src: string;
@@ -197,15 +198,16 @@ export function AvatarPanel({ src, onClose }: AvatarPanelProps) {
           requestAnimationFrame(() => setIsReady(true));
         }}
       />
+      <CustomTooltip content={t('close')}>
       <button
         className="absolute right-2 top-2 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white opacity-0 shadow transition-opacity duration-150 hover:bg-black/75 group-hover:opacity-100 [&_svg]:h-4 [&_svg]:w-4"
         style={{ transform: `scale(${1 / zoom})`, transformOrigin: 'top right' }}
         onMouseDown={(event) => event.stopPropagation()}
         onClick={onClose}
-        title={t('close')}
       >
         <Icons.close />
       </button>
+      </CustomTooltip>
     </div>
   );
 }

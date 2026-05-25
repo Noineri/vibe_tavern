@@ -6,6 +6,7 @@ import { useTokenCount } from "../hooks/use-token-count.js";
 import { useT } from "../i18n/context.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
 import { useCharacterController } from "../hooks/use-character-controller.js";
+import { CustomTooltip } from "./shared/Tooltip.js";
 import { useProviderProfiles } from "../hooks/use-provider-profiles.js";
 
 import { useChatStore, useProviderStore } from "../stores/index.js";
@@ -13,7 +14,6 @@ import { useActiveTrace } from "../stores/chat-selectors.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 import { useChatDataStore } from "../stores/chat-data-store.js";
 import type { PromptLayerDto } from "@rp-platform/domain";
-import { CustomTooltip } from "./shared/Tooltip.js";
 
 export function InputArea() {
   const { t } = useT();
@@ -165,9 +165,15 @@ export function InputArea() {
                   {availableBudget > 0 && (
                     <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-s3">
                       <div className="flex h-full">
-                        <div className="bg-accent" style={{ width: `${Math.min(100, permanent / availableBudget * 100)}%` }} title={`${t("context_permanent")}: ${permanent.toLocaleString()}`} />
-                        <div className="bg-t3" style={{ width: `${Math.min(100, buckets.history / availableBudget * 100)}%` }} title={`${t("context_history")}: ${buckets.history.toLocaleString()}`} />
-                        <div className="bg-accent-t" style={{ width: `${Math.min(100, inputTokens / availableBudget * 100)}%` }} title={`${t("context_current_input")}: ${inputTokens.toLocaleString()}`} />
+                        <CustomTooltip content={`${t("context_permanent")}: ${permanent.toLocaleString()}`}>
+                        <div className="bg-accent" style={{ width: `${Math.min(100, permanent / availableBudget * 100)}%` }} />
+                        </CustomTooltip>
+                        <CustomTooltip content={`${t("context_history")}: ${buckets.history.toLocaleString()}`}>
+                        <div className="bg-t3" style={{ width: `${Math.min(100, buckets.history / availableBudget * 100)}%` }} />
+                        </CustomTooltip>
+                        <CustomTooltip content={`${t("context_current_input")}: ${inputTokens.toLocaleString()}`}>
+                        <div className="bg-accent-t" style={{ width: `${Math.min(100, inputTokens / availableBudget * 100)}%` }} />
+                        </CustomTooltip>
                       </div>
                     </div>
                   )}

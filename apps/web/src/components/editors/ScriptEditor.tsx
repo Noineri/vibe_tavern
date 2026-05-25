@@ -5,6 +5,7 @@ import { fetchProviderModelsAction } from "../../stores/api-actions/provider-act
 import { Ic } from "../shared/icons.js";
 import { CodeEditor } from "../shared/CodeEditor.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
 import { SCRIPT_TEMPLATES } from "./scriptTemplates.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
@@ -406,7 +407,9 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         >
           <div className="rounded-full transition-all" style={{ position: "absolute", top: 3, left: activeScript.enabled ? 19 : 3, width: 14, height: 14, backgroundColor: activeScript.enabled ? "#fff" : "var(--t3)" }} />
         </div>
-        <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2" title={t("delete_script_confirm")} onClick={() => setConfirmDeleteId(activeScript.id)}><Ic.del /></div>
+        <CustomTooltip content={t("delete_script_confirm")}>
+        <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2" onClick={() => setConfirmDeleteId(activeScript.id)}><Ic.del /></div>
+        </CustomTooltip>
       </div>
 
       {/* Description */}
