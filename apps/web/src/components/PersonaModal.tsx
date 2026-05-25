@@ -8,6 +8,7 @@ import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { AvatarCropModal } from "./shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "./shared/AvatarCropModal.js";
 import { cn } from "../lib/cn.js";
+import { CustomTooltip } from "./shared/Tooltip.js";
 import { AutoTextarea } from "./shared/auto-textarea.js";
 import { Modal } from "./shared/Modal.js";
 import { avatarUrl } from "../lib/avatar.js";
@@ -264,7 +265,6 @@ export function PersonaModal(input: PersonaModalProps) {
                               avatarUploading && "pointer-events-none opacity-60"
                             )}
                             onClick={() => !avatarUploading && avatarInputRef.current?.click()}
-                            title={t("upload_avatar")}
                           >
                           <input
                             type="file"
@@ -305,7 +305,6 @@ export function PersonaModal(input: PersonaModalProps) {
                                 form.setValue("avatarPreview", null);
                                 if (avatarInputRef.current) avatarInputRef.current.value = "";
                               }}
-                              title={t("remove_avatar")}
                             >
                               <svg width="10" height="10" viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
                             </button>
@@ -411,7 +410,6 @@ export function PersonaModal(input: PersonaModalProps) {
                             role="button"
                             tabIndex={0}
                             style={{ color: isLastPersona ? "var(--t3)" : "oklch(0.6 0.15 25)", cursor: isLastPersona ? "not-allowed" : "pointer", opacity: isLastPersona ? 0.6 : 1 }}
-                            title={isLastPersona ? t("cannot_delete_last_persona") : t("delete_persona_title")}
                             onClick={(e) => { e.stopPropagation(); handleDelete(persona.id); }}
                             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); handleDelete(persona.id); } }}
                           >

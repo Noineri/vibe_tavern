@@ -2,6 +2,7 @@ import React, { useCallback, useLayoutEffect, useRef } from "react";
 import { cn } from "../../lib/cn.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
 import { PrefillField } from "./PrefillField.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
 import { useT } from "../../i18n/context.js";
 
 function SectionHeader({ title }: { title: string }) {
@@ -188,15 +189,16 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey 
           <label className={labelCls + " mb-0"}>{t("authors_note_label")}</label>
           <div className="flex items-center gap-2">
             <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{t("insert_depth_label")}</label>
+            <CustomTooltip content={t("insert_depth_hint")}>
             <input
               className="h-[30px] w-16 rounded-md border border-border bg-s2 px-2 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors focus:border-accent disabled:opacity-60"
               type="number"
               min={0}
-              title={t("insert_depth_hint")}
               value={draft?.authorsNoteDepth ?? 4}
               onChange={(e) => onUpdateField("authorsNoteDepth", Number(e.target.value))}
               disabled={disabled}
             />
+            </CustomTooltip>
           </div>
         </div>
         {ta("authorsNote", t("authors_note_placeholder"), 100)}
