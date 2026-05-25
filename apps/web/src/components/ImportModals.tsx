@@ -231,6 +231,18 @@ interface ImportError {
         SillyTavern
       </div>
 
+      <details className="mb-3">
+        <summary className="cursor-pointer font-ui text-xs text-t3 hover:text-t2 transition-colors">
+          {t("st_where_to_find")}
+        </summary>
+        <div className="mt-1.5 rounded border border-border2 bg-surface p-2.5 font-mono text-[calc(var(--ui-fs)-2px)] text-t3 leading-relaxed">
+          <div>SillyTavern/data/default-user <span className="text-t4">← {t("st_hint_root")}</span></div>
+          <div>SillyTavern/data/default-user/characters <span className="text-t4">← {t("st_hint_characters")}</span></div>
+          <div>SillyTavern/data/default-user/chats <span className="text-t4">← {t("st_hint_chats")}</span></div>
+          <div>SillyTavern/data/default-user/worlds <span className="text-t4">← {t("st_hint_worlds")}</span></div>
+        </div>
+      </details>
+
       {!scanResult && !scanning && (
         <>
           <div className="mb-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("st_select_folder")}</div>
