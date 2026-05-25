@@ -147,11 +147,11 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
     <Modal open={true} onClose={onClose}>
       <div className="flex max-h-[calc(100vh-60px)] w-[640px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">
         {/* Header */}
-        <div className="shrink-0 px-5 pt-[18px]">
+        <div className="shrink-0 px-5 pt-[18px] pb-1">
           <div className="flex items-start justify-between">
             <div>
               <div className="mb-0.5 font-body text-[calc(var(--ui-fs)+4px)] font-medium text-t1">{t("preset_import_title")}</div>
-              <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("preset_import_sub")}</div>
+              <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3 mb-6">{t("preset_import_sub")}</div>
             </div>
             <button className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={onClose}><Icons.Close /></button>
           </div>
