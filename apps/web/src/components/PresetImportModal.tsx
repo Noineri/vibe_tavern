@@ -279,30 +279,31 @@ function BlockRow({ mapping, index, onToggle, onTarget }: {
   const { t } = useT();
   const { block, enabled, target } = mapping;
   const preview = block.content.slice(0, 80).replace(/\n/g, " ").trim() + (block.content.length > 80 ? "…" : "");
+  const hasMeta = target === "injection" && enabled;
 
   return (
     <div className={cn(
-      "grid grid-cols-[24px_1fr_130px] items-center gap-2.5 border-b border-border2 px-5 py-2 hover:bg-s2/50 transition-colors",
+      "grid grid-cols-[24px_1fr_130px] gap-2.5 border-b border-border2 px-5 py-2.5 hover:bg-s2/50 transition-colors",
       !enabled && "opacity-40"
     )}>
       <input
         type="checkbox"
-        className="h-3.5 w-3.5 cursor-pointer accent-accent"
+        className="mt-1 h-3.5 w-3.5 cursor-pointer accent-accent"
         checked={enabled}
         onChange={() => onToggle(index)}
       />
       <div className="min-w-0 overflow-hidden">
-        <div className="truncate font-ui text-[calc(var(--ui-fs)-1px)] text-t1">{block.name}</div>
-        <div className="truncate font-mono text-[10px] text-t4">{preview}</div>
-        {target === "injection" && enabled && (
-          <div className="mt-0.5 flex items-center gap-2 font-ui text-[10px] text-t4">
+        <div className="truncate font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{block.name}</div>
+        <div className="mt-0.5 truncate font-mono text-[10px] text-t4">{preview}</div>
+        {hasMeta && (
+          <div className="mt-0.5 flex items-center gap-3 font-mono text-[10px] text-t4">
             <span>role: <span className="text-t3">{block.role}</span></span>
             <span>depth: <span className="text-t3">{block.injectionDepth}</span></span>
           </div>
         )}
       </div>
       <select
-        className="h-[24px] cursor-pointer rounded border border-border bg-s2 px-1.5 font-ui text-[10px] text-t2 outline-none disabled:cursor-default"
+        className="mt-1 h-[24px] cursor-pointer rounded border border-border bg-s2 px-1.5 font-ui text-[10px] text-t2 outline-none disabled:cursor-default"
         value={target}
         disabled={!enabled}
         onChange={(e) => onTarget(index, e.target.value as TargetMapping)}
