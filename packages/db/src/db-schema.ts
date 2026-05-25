@@ -217,6 +217,7 @@ export const promptPresets = sqliteTable('prompt_presets', {
   summaryPrompt: text('summary_prompt').notNull().default(''),
   toolsPrompt: text('tools_prompt').notNull().default(''),
   scriptAiSystemPrompt: text('script_ai_system_prompt').notNull().default(''),
+  customInjectionsJson: text('custom_injections_json').notNull().default('[]'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

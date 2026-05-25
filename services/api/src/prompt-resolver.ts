@@ -43,6 +43,8 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 	async getPromptPreset(presetId: string) {
 		const preset = await this.stores.presets.getById(presetId);
 		if (!preset) return null;
+		let customInjections: Array<{ name: string; content: string; depth: number; role: string; enabled: boolean }> = [];
+		try { customInjections = JSON.parse(preset.customInjectionsJson); } catch {}
 		return {
 			id: preset.id,
 			name: preset.name,
@@ -53,6 +55,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			prefill: preset.assistantPrefix,
 			authorsNote: preset.authorsNote,
 			authorsNoteDepth: preset.authorsNoteDepth,
+			customInjections,
 		};
 	}
 

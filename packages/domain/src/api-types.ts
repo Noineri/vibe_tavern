@@ -56,9 +56,20 @@ export interface PromptPresetDto {
   authorsNoteDepth: number;
   summary: string;
   tools: string;
+  customInjections: CustomInjection[];
   scriptAiSystemPrompt: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── Custom Injections (attached to PromptPreset) ───────────────────────────
+
+export interface CustomInjection {
+  name: string;
+  content: string;
+  depth: number;
+  role: 'system' | 'user' | 'assistant';
+  enabled: boolean;
 }
 
 export interface ProviderProbeResponse {

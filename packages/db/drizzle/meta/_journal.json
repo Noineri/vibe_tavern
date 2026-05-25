@@ -57,6 +57,13 @@
       "when": 1779600000000,
       "tag": "0007_messages_model_id",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1779650000000,
+      "tag": "0008_preset_injections",
+      "breakpoints": true
     }
   ]
 }

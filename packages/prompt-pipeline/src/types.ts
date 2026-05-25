@@ -78,6 +78,8 @@ export interface PromptAssemblyContext {
     authorsNote?: string | null;
     /** How many messages from the end of history to insert the author's note at. Defaults to 4. */
     authorsNoteDepth?: number | null;
+    /** Custom injection blocks (advanced mode). */
+    customInjections?: Array<{ name: string; content: string; depth: number; role: string; enabled: boolean }>;
   } | null;
   /** Assembly mode. Defaults to `"chat"` when not specified. */
   mode?: AssemblyMode;

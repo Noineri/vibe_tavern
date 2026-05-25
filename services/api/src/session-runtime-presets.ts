@@ -2,6 +2,10 @@ import type { PresetStore } from "@rp-platform/db";
 import type { PromptPresetId, PromptPresetDto } from "@rp-platform/domain";
 import { validation, notFound, conflict, isDomainError } from "./errors.js";
 
+function safeParseJson<T>(json: string, fallback: T): T {
+  try { return JSON.parse(json); } catch { return fallback; }
+}
+
 export interface PresetModuleDeps {
   presets: PresetStore;
 }
@@ -19,6 +23,7 @@ export async function listPromptPresets(deps: PresetModuleDeps): Promise<PromptP
     authorsNoteDepth: p.authorsNoteDepth,
     summary: p.summaryPrompt,
     tools: p.toolsPrompt,
+    customInjections: safeParseJson(p.customInjectionsJson, []),
     scriptAiSystemPrompt: p.scriptAiSystemPrompt ?? "",
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
@@ -35,6 +40,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
   authorsNoteDepth?: number;
   summary?: string;
   tools?: string;
+  customInjections?: unknown[];
   scriptAiSystemPrompt?: string;
 }): Promise<PromptPresetDto> {
   const trimmed = (input.name ?? "").trim();
@@ -51,6 +57,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
     authorsNoteDepth: input.authorsNoteDepth ?? 4,
     summaryPrompt: input.summary ?? "",
     toolsPrompt: input.tools ?? "",
+    customInjectionsJson: input.customInjections != null ? JSON.stringify(input.customInjections) : undefined,
     scriptAiSystemPrompt: input.scriptAiSystemPrompt ?? "",
   });
   return {
@@ -64,6 +71,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
     authorsNoteDepth: created.authorsNoteDepth,
     summary: created.summaryPrompt,
     tools: created.toolsPrompt,
+    customInjections: safeParseJson(created.customInjectionsJson, []),
     scriptAiSystemPrompt: created.scriptAiSystemPrompt ?? "",
     createdAt: created.createdAt,
     updatedAt: created.updatedAt,
@@ -80,6 +88,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
   authorsNoteDepth?: number;
   summary?: string;
   tools?: string;
+  customInjections?: unknown[];
   scriptAiSystemPrompt?: string;
 }): Promise<PromptPresetDto> {
   try {
@@ -93,6 +102,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
       authorsNoteDepth: patch.authorsNoteDepth,
       summaryPrompt: patch.summary,
       toolsPrompt: patch.tools,
+      customInjectionsJson: patch.customInjections != null ? JSON.stringify(patch.customInjections) : undefined,
       scriptAiSystemPrompt: patch.scriptAiSystemPrompt,
     });
     return {
@@ -106,6 +116,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
       authorsNoteDepth: updated.authorsNoteDepth,
       summary: updated.summaryPrompt,
       tools: updated.toolsPrompt,
+      customInjections: safeParseJson(updated.customInjectionsJson, []),
       scriptAiSystemPrompt: updated.scriptAiSystemPrompt ?? "",
       createdAt: updated.createdAt,
       updatedAt: updated.updatedAt,
