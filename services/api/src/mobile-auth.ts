@@ -14,9 +14,16 @@ export function createMobileAuthMiddleware(token: string | undefined): Middlewar
 	}
 
 	return async (c, next) => {
+		// Skip auth for loopback (desktop/local access)
+		const url = new URL(c.req.url);
+		// Hono/Bun: c.req.header('x-forwarded-for') for proxied, or check host from URL
+		const loopbackHosts = ["127.0.0.1", "localhost", "::1"];
+		if (loopbackHosts.includes(url.hostname)) {
+			return await next();
+		}
+
 		// Only protect /api/* routes
-		const path = new URL(c.req.url).pathname;
-		if (!path.startsWith("/api/")) {
+		if (!url.pathname.startsWith("/api/")) {
 			return await next();
 		}
 
