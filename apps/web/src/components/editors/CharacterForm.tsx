@@ -9,6 +9,7 @@ import { CharacterImportModal } from "../ImportModals.js";
 import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader";
 import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useT } from "../../i18n/context.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
 
 export interface CharacterFormProps {
   form: UseFormReturn<BuildCharacterDraft>;
@@ -170,53 +171,58 @@ export function CharacterForm({
           <span className="font-ui text-[11px] tabular-nums text-t3">
             {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
           </span>
+          <CustomTooltip content={t("char_export_json")}>
           <button
             className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
             style={{ height: 28, width: 28 }}
-            title={t("char_export_json")}
             onClick={onExportJson}
             disabled={isSaving}
           >
             {Ic.download()}
           </button>
+          </CustomTooltip>
           {hasAvatar && (
+            <CustomTooltip content={t("char_export_png")}>
             <button
               className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
               style={{ height: 28, width: 28 }}
-              title={t("char_export_png")}
               onClick={onExportPng}
               disabled={isSaving}
             >
               <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="8" cy="8" r="2"/><circle cx="5" cy="5" r="0.8" fill="currentColor"/></svg>
             </button>
+            </CustomTooltip>
           )}
+          <CustomTooltip content={t("char_duplicate")}>
           <button
             className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
             style={{ height: 28, width: 28 }}
-            title={t("char_duplicate")}
             onClick={onDuplicate}
             disabled={isSaving}
           >
             {Ic.copy()}
           </button>
+          </CustomTooltip>
+          <CustomTooltip content={t("char_delete")}>
           <button
             className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-danger hover:text-danger"
             style={{ height: 28, width: 28 }}
-            title={t("char_delete")}
             onClick={onDelete}
             disabled={isSaving}
           >
             {Ic.del()}
           </button>
+          </CustomTooltip>
+          <CustomTooltip content={t("char_import_to_draft")}>
           <button
             className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
             style={{ height: 28, width: 28 }}
-            title={t("char_import_to_draft")}
             onClick={() => setImportModalOpen(true)}
             disabled={isSaving}
           >
             {Ic.import()}
           </button>
+          </CustomTooltip>
           <button
             className="cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
             style={{ height: 28, padding: "0 14px" }}
@@ -246,11 +252,11 @@ export function CharacterForm({
 
       {/* Avatar + Name + Tags */}
       <div className="mb-5 flex gap-5">
+        <CustomTooltip content={t("change_avatar")}>
         <div
           className="group relative shrink-0 cursor-pointer rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t"
           style={{ maxWidth: 180, maxHeight: 250 }}
           onClick={() => avaInputRef.current?.click()}
-          title={t("change_avatar")}
         >
           <input ref={avaInputRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleAvatarPick(e.target.files)} />
           {displayAvatar ? (
@@ -265,6 +271,7 @@ export function CharacterForm({
             </div>
           )}
         </div>
+        </CustomTooltip>
         <div className="flex min-w-0 flex-1 flex-col gap-3">
           <div>
             <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
@@ -347,17 +354,18 @@ export function CharacterForm({
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1">
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("activation_label")}</span>
+              <CustomTooltip content={t(`mes_example_mode_tooltip_${mesExampleMode || "always"}`)}>
               <select
                 className={selectCls}
                 value={mesExampleMode || "always"}
                 disabled={isSaving}
-                title={t(`mes_example_mode_tooltip_${mesExampleMode || "always"}`)}
                 onChange={(e) => setValue("mesExampleMode", e.target.value as "always" | "once" | "depth", { shouldDirty: true })}
               >
                 <option value="always">{t("activation_always")}</option>
                 <option value="once">{t("activation_once")}</option>
                 <option value="depth">{t("activation_depth")}</option>
               </select>
+              </CustomTooltip>
             </div>
             <div className={"flex items-center gap-1" + ((mesExampleMode || "always") !== "depth" ? " opacity-30 pointer-events-none" : "")}>
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>

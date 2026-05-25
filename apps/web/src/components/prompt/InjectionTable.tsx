@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useT } from "../../i18n/context.js";
 import { Ic } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
 
 export interface InjectionRow {
   name: string;
@@ -71,16 +72,17 @@ function InjectionRowView({ injection, index, onUpdate, onRemove }: {
         onClick={() => setExpanded(!expanded)}
       >
         {/* Enable toggle */}
+        <CustomTooltip content={enabled ? t("preset_injection_enabled") : t("preset_injection_disabled")}>
         <button
           className={cn(
             "flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center rounded text-[14px] transition-colors",
             enabled ? "text-accent hover:bg-accent/10" : "text-t4 hover:text-t2"
           )}
-          title={enabled ? t("preset_injection_enabled") : t("preset_injection_disabled")}
           onClick={(e) => { e.stopPropagation(); onUpdate(index, { enabled: !enabled }); }}
         >
           {enabled ? "●" : "○"}
         </button>
+        </CustomTooltip>
 
         {/* Name */}
         <input
@@ -107,13 +109,14 @@ function InjectionRowView({ injection, index, onUpdate, onRemove }: {
         </span>
 
         {/* Delete */}
+        <CustomTooltip content={t("preset_injection_delete")}>
         <button
           className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-t4 transition-all hover:bg-danger-dim hover:text-danger"
           onClick={(e) => { e.stopPropagation(); onRemove(index); }}
-          title={t("preset_injection_delete")}
         >
           {Ic.del()}
         </button>
+        </CustomTooltip>
       </div>
 
       {/* Expanded content */}
