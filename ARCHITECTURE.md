@@ -707,6 +707,27 @@ This means:
 
 **Russian text:** Russian words are 20-30% longer than English. Always test UI with Russian locale. Use `whitespace-nowrap` on buttons with Russian text, and prefer `px-4` over `px-2` for horizontal padding.
 
+**Selection toggles (●/○ circles):** For row-based selection lists (preset import, injection table), use the circle toggle pattern instead of native checkboxes:
+
+```tsx
+// DO: circle toggle button
+<button
+  className={cn(
+    "flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center rounded text-[14px] transition-colors",
+    enabled ? "text-accent hover:bg-accent/10" : "text-t4 hover:text-t2"
+  )}
+  onClick={() => toggle(index)}
+  type="button"
+>
+  {enabled ? "●" : "○"}
+</button>
+
+// DON'T:
+<input type="checkbox" className="accent-accent" checked={enabled} onChange={...} />
+```
+
+Native checkboxes are only acceptable for functional filter toggles (e.g., "Show only selected"), not for per-row selection.
+
 ### Frontend data architecture
 
 The frontend uses **Zustand as single source of truth**. React Query was fully removed — it caused dual-state sync bugs (React Query cache + Zustand store fighting over re-render timing, especially with framer-motion animations).
