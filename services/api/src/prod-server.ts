@@ -33,7 +33,7 @@ import { MobileAccessService } from "./mobile-access-service.js";
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 const rootDir = process.env.RP_PLATFORM_ROOT_DIR ?? resolve(import.meta.dir, '..', '..', '..');
-const host = process.env.RP_PLATFORM_HOST ?? "127.0.0.1";
+const explicitHost = process.env.RP_PLATFORM_HOST;
 const port = Number(process.env.RP_PLATFORM_PORT ?? "8787");
 
 const staticDir = resolve(import.meta.dir, '..', '..', '..', 'apps', 'web', 'dist');
@@ -81,6 +81,10 @@ await mkdir(resolve(rootDir, "data", "assets"), { recursive: true });
 	const assetService = new AssetService(resolve(rootDir, "data", "assets"));
 	const mobileAccessService = new MobileAccessService(resolve(rootDir, "data"));
 
+	// Resolve listen host: 0.0.0.0 when mobile access is active, else 127.0.0.1
+	// Explicit RP_PLATFORM_HOST always wins.
+	const host = explicitHost ?? (mobileAccessService.getToken() ? "0.0.0.0" : "127.0.0.1");
+
 	// RuntimeApi adapter
 	const runtime = new RuntimeApiAdapter(
 		stores,
@@ -109,7 +113,11 @@ await mkdir(resolve(rootDir, "data", "assets"), { recursive: true });
 		...tlsOptions,
 	});
 
-	console.log(`[prod] Listening on http://${host}:${port}`);
+	const proto = tlsConfig ? "https" : "http";
+	console.log(`[prod] Listening on ${proto}://${host}:${port}`);
+	if (host === "0.0.0.0") {
+		console.log(`[prod] Mobile access enabled — accepting connections from all interfaces.`);
+	}
 	if (tlsConfig) {
 		console.log(`[prod] TLS enabled.`);
 	}
