@@ -84,7 +84,7 @@ configureLogDir(paths.logsDir);
 
 	// Resolve listen host: 0.0.0.0 when mobile access is active, else default
 	// Explicit RP_PLATFORM_HOST always wins.
-	const resolvedHost = process.env.RP_PLATFORM_HOST ?? (mobileAccessService.getToken() ? "0.0.0.0" : paths.host);
+	const resolvedHost = process.env.RP_PLATFORM_HOST ?? "0.0.0.0";
 
 	// RuntimeApi adapter
 	const runtime = new RuntimeApiAdapter(

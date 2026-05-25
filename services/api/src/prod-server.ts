@@ -35,6 +35,9 @@ import { MobileAccessService } from "./mobile-access-service.js";
 const rootDir = process.env.RP_PLATFORM_ROOT_DIR ?? resolve(import.meta.dir, '..', '..', '..');
 const explicitHost = process.env.RP_PLATFORM_HOST;
 const port = Number(process.env.RP_PLATFORM_PORT ?? "8787");
+// Always listen on all interfaces — mobile access needs LAN reachability.
+// Auth middleware protects /api/* when a token is set.
+const defaultHost = "0.0.0.0";
 
 const staticDir = resolve(import.meta.dir, '..', '..', '..', 'apps', 'web', 'dist');
 const tlsConfig = resolveTlsConfig();
@@ -83,7 +86,7 @@ await mkdir(resolve(rootDir, "data", "assets"), { recursive: true });
 
 	// Resolve listen host: 0.0.0.0 when mobile access is active, else 127.0.0.1
 	// Explicit RP_PLATFORM_HOST always wins.
-	const host = explicitHost ?? (mobileAccessService.getToken() ? "0.0.0.0" : "127.0.0.1");
+	const host = explicitHost ?? defaultHost;
 
 	// RuntimeApi adapter
 	const runtime = new RuntimeApiAdapter(
