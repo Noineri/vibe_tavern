@@ -15,6 +15,13 @@ import { useNavigationStore } from "../stores/navigation-store.js";
 import { useCharacterStore } from "../stores/character-store.js";
 import { useChatDataStore } from "../stores/chat-data-store.js";
 import { embedCharaMetadata, createMetadataPng } from "../lib/png-writer.js";
+
+const PNG_SIG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+function isPng(buf: Uint8Array): boolean {
+  if (buf.length < 8) return false;
+  for (let i = 0; i < 8; i++) { if (buf[i] !== PNG_SIG[i]) return false; }
+  return true;
+}
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import {
   saveCharacterAction,
@@ -444,7 +451,7 @@ export function useCharacterController(): CharacterControllerActions {
       }
 
       let outputPng: Uint8Array;
-      if (pngBytes) {
+      if (pngBytes && isPng(pngBytes)) {
         outputPng = embedCharaMetadata(pngBytes, json);
       } else {
         outputPng = createMetadataPng(json);
