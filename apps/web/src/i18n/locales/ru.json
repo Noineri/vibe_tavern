@@ -345,6 +345,8 @@
   "preset_injection_delete": "Удалить",
   "preset_injection_content": "Текст промпта...",
   "preset_injection_content_empty": "(пусто)",
+  "preset_injection_enabled": "Включено — нажмите чтобы отключить",
+  "preset_injection_disabled": "Отключено — нажмите чтобы включить",
   "delete_preset_title": "Удалить пресет",
   "delete_preset_body": "Вы уверены? Пресет \"{name}\" будет удалён навсегда.",
   "presets": "Пресеты",
