@@ -102,17 +102,19 @@ export class ChatRuntime {
     const { chats, assemblePrompt, getSnapshot } = this.deps;
     const chat = (await chats.getById(chatId))!;
 
+    const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId as ChatBranchId);
+
     const assistantMessage = await chats.addMessage({
       chatId,
       branchId: chat.activeBranchId,
       role: "assistant",
       authorType: "assistant",
       content,
+      modelId: pending?.draft.model ?? null,
       reasoning: reasoningData?.reasoning,
       reasoningDurationMs: reasoningData?.reasoningDurationMs,
     });
 
-    const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId as ChatBranchId);
     if (pending) {
       await chats.saveTrace({
         chatId,
@@ -155,16 +157,18 @@ export class ChatRuntime {
       return await getSnapshot(chatId);
     }
 
+    const chat = (await chats.getById(chatId))!;
+    const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId as ChatBranchId);
+
     await chats.addVariant(
       messageId,
       trimmed,
       input.finishReason ?? undefined,
       input.reasoning,
       input.reasoningDurationMs,
+      pending?.draft.model ?? null,
     );
 
-    const chat = (await chats.getById(chatId))!;
-    const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId as ChatBranchId);
     if (pending) {
       await chats.saveTrace({
         chatId,

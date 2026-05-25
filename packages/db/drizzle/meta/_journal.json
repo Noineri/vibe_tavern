@@ -50,6 +50,13 @@
       "when": 1779550000000,
       "tag": "0006_script_ai_prompt",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1779600000000,
+      "tag": "0007_messages_model_id",
+      "breakpoints": true
     }
   ]
 }

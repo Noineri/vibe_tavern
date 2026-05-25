@@ -55,6 +55,7 @@ export interface FavoriteProviderModelRecord {
 export interface MessageDto extends Message {
   variants: MessageVariant[];
   selectedVariantIndex: number | null;
+  modelId: string | null;
 }
 
 export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto {
@@ -89,6 +90,7 @@ export function mapMessageDto(message: Message | DbMessage, variants: MessageVar
     authorType: message.authorType as Message['authorType'],
     position: message.position,
     content: selectedVariant?.content ?? message.content,
+    modelId: selectedVariant?.modelId ?? null,
     state: message.state as Message['state'],
     createdAt: message.createdAt,
     updatedAt: message.updatedAt,

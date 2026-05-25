@@ -197,6 +197,7 @@ export const messageVariants = sqliteTable('message_variants', {
   finishReason: text('finish_reason'),
   reasoning: text('reasoning'),
   reasoningDurationMs: integer('reasoning_duration_ms'),
+  modelId: text('model_id'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   uniqueVariant: uniqueIndex('idx_message_variants_unique').on(table.messageId, table.variantIndex),

@@ -118,6 +118,11 @@ export const useChatDataStore = create<ChatDataStore>()(
         const existing = state.messagesById[messageId];
         if (existing) {
           existing.selectedVariantIndex = variantIndex;
+          const variant = existing.variants[variantIndex];
+          if (variant) {
+            existing.content = variant.content;
+            existing.modelId = variant.modelId ?? null;
+          }
         }
         state.swipeDirection = direction;
       }),

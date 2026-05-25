@@ -83,6 +83,7 @@ export interface AppSnapshot {
 export interface AppMessage extends Message {
   variants: MessageVariant[];
   selectedVariantIndex: number | null;
+  modelId: string | null;
 }
 
 export interface ImportJsonResponse {
