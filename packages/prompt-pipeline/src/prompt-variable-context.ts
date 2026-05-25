@@ -46,6 +46,9 @@ export interface PromptPresetContext {
   summary: string;
   tools: string;
   prefill: string | null;
+  authorsNote: string | null;
+  authorsNoteDepth: number | null;
+  customInjections: Array<{ name: string; content: string; depth: number; role: string; enabled: boolean }>;
   original: string | null;
   contextBudget: number | null;
   maxResponseTokens: number | null;
@@ -197,6 +200,9 @@ export function buildPromptVariableContext(input: BuildPromptVariableContextInpu
       summary: input.prompt?.summary ?? "",
       tools: input.prompt?.tools ?? "",
       prefill: input.prompt?.prefill ?? null,
+      authorsNote: input.prompt?.authorsNote ?? null,
+      authorsNoteDepth: input.prompt?.authorsNoteDepth ?? null,
+      customInjections: input.prompt?.customInjections ?? [],
       original: input.prompt?.original ?? null,
       contextBudget: input.prompt?.contextBudget ?? null,
       maxResponseTokens: input.prompt?.maxResponseTokens ?? null,

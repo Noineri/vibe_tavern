@@ -230,6 +230,21 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     layers.push(layer);
   }
 
+  // Custom injections (advanced mode)
+  for (const injection of (context.preset?.customInjections ?? [])) {
+    if (!injection.enabled || !injection.content?.trim()) continue;
+    const layer = makeLayer({
+      id: `preset_injection_${injection.name}`,
+      sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+      sourceId: context.preset?.id ?? "",
+      position: "in_chat",
+      priority: (PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote ?? 170) - (injection.depth ?? 0),
+      text: injection.content,
+    });
+    layer.injectionDepth = injection.depth ?? 0;
+    layers.push(layer);
+  }
+
   if (context.preset?.summary?.trim()) {
     layers.push(
       makeLayer({

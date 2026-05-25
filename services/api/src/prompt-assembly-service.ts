@@ -55,6 +55,7 @@ export interface PromptAssemblyResolver {
       prefill: string;
       authorsNote: string;
       authorsNoteDepth: number;
+      customInjections: Array<{ name: string; content: string; depth: number; role: string; enabled: boolean }>;
     } | null>;
   listActiveLoreEntries(input: {
     chatId: ChatId;
@@ -208,6 +209,7 @@ export class PromptAssemblyService {
             prefill: promptPreset.prefill,
             authorsNote: promptPreset.authorsNote,
             authorsNoteDepth: promptPreset.authorsNoteDepth,
+            customInjections: promptPreset.customInjections,
           }
         : null,
       mode: input.mode,

@@ -16,6 +16,7 @@ export interface CreatePresetData {
   summaryPrompt?: string;
   toolsPrompt?: string;
   scriptAiSystemPrompt?: string;
+  customInjectionsJson?: string;
 }
 
 export type UpdatePresetData = Partial<CreatePresetData>;
@@ -34,6 +35,7 @@ export interface PromptPreset {
   summaryPrompt: string;
   toolsPrompt: string;
   scriptAiSystemPrompt: string;
+  customInjectionsJson: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -84,6 +86,7 @@ export class PresetStore {
         summaryPrompt: data.summaryPrompt ?? '',
         toolsPrompt: data.toolsPrompt ?? '',
         scriptAiSystemPrompt: data.scriptAiSystemPrompt ?? '',
+        customInjectionsJson: data.customInjectionsJson ?? '[]',
         createdAt: now,
         updatedAt: now,
       })
@@ -108,6 +111,7 @@ export class PresetStore {
     if (data.summaryPrompt !== undefined) values.summaryPrompt = data.summaryPrompt;
     if (data.toolsPrompt !== undefined) values.toolsPrompt = data.toolsPrompt;
     if (data.scriptAiSystemPrompt !== undefined) values.scriptAiSystemPrompt = data.scriptAiSystemPrompt;
+    if (data.customInjectionsJson !== undefined) values.customInjectionsJson = data.customInjectionsJson;
 
     const [row] = await this.db
       .update(promptPresets)
@@ -148,6 +152,7 @@ export class PresetStore {
         summaryPrompt: original.summaryPrompt,
         toolsPrompt: original.toolsPrompt,
         scriptAiSystemPrompt: original.scriptAiSystemPrompt ?? '',
+        customInjectionsJson: original.customInjectionsJson,
         createdAt: now,
         updatedAt: now,
       })
@@ -177,6 +182,7 @@ export class PresetStore {
       summaryPrompt: '',
       toolsPrompt: '',
       scriptAiSystemPrompt: '',
+      customInjectionsJson: '[]',
       bindProviderPresetId: null,
     });
   }
@@ -196,6 +202,7 @@ export class PresetStore {
       summaryPrompt: row.summaryPrompt,
       toolsPrompt: row.toolsPrompt,
       scriptAiSystemPrompt: row.scriptAiSystemPrompt ?? '',
+      customInjectionsJson: row.customInjectionsJson,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

@@ -416,6 +416,7 @@ export interface ImportResult {
 			authorsNoteDepth: preset.authorsNoteDepth,
 			summary: preset.summaryPrompt,
 			tools: preset.toolsPrompt,
+			customInjections: (() => { try { return JSON.parse(preset.customInjectionsJson); } catch { return []; } })(),
 			scriptAiSystemPrompt: preset.scriptAiSystemPrompt ?? "",
 			createdAt: preset.createdAt,
 			updatedAt: preset.updatedAt,
