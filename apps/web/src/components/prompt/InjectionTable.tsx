@@ -67,7 +67,7 @@ function InjectionRowView({ injection, index, onUpdate, onRemove }: {
     <div className={cn("rounded-md border transition-colors", enabled ? "border-border bg-surface" : "border-border2 bg-s1 opacity-60")}>
       {/* Header row */}
       <div
-        className="flex items-center gap-2.5 px-3 py-2 cursor-pointer select-none"
+        className="group flex items-center gap-2.5 px-3 py-2 cursor-pointer select-none"
         onClick={() => setExpanded(!expanded)}
       >
         {/* Enable toggle */}
@@ -109,7 +109,6 @@ function InjectionRowView({ injection, index, onUpdate, onRemove }: {
         {/* Delete */}
         <button
           className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-t4 opacity-0 transition-all hover:bg-danger-dim hover:text-danger group-hover:opacity-100"
-          style={{ opacity: undefined }}
           onClick={(e) => { e.stopPropagation(); onRemove(index); }}
           title={t("preset_injection_delete")}
         >
