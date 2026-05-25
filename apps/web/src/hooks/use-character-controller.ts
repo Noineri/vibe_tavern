@@ -450,7 +450,9 @@ export function useCharacterController(): CharacterControllerActions {
         outputPng = createMetadataPng(json);
       }
 
-      const blob = new Blob([outputPng.buffer as ArrayBuffer], { type: "image/png" });
+      // Uint8Array not directly BlobPart in Bun's typings — slice to ArrayBuffer
+      const buf = outputPng.buffer.slice(outputPng.byteOffset, outputPng.byteOffset + outputPng.byteLength) as ArrayBuffer;
+      const blob = new Blob([buf], { type: "image/png" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
