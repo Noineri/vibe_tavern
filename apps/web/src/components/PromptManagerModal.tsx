@@ -11,6 +11,7 @@ import { useModalStore } from "../stores/modal-store.js";
 import { PresetList, PromptFields } from "./prompt/index.js";
 import { InjectionTable } from "./prompt/InjectionTable.js";
 import { Toggle } from "./shared/Toggle.js";
+import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -70,6 +71,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [dirty, setDirty] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [advancedMode, setAdvancedMode] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const activePreset = input.presets.find((p) => p.id === input.activePresetId) ?? null;
 
   useEffect(() => {
@@ -167,8 +169,29 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     void input.onDelete(deleteId);
   };
 
+  const handleImportPreset = (result: PresetImportResult) => {
+    setDraft((d) => {
+      const next = { ...d };
+      if (result.system.length) next.system = d.system + (d.system ? "\n\n" : "") + result.system.join("\n\n");
+      if (result.post.length) next.jailbreak = d.jailbreak + (d.jailbreak ? "\n\n" : "") + result.post.join("\n\n");
+      if (result.authors.length) next.authorsNote = d.authorsNote + (d.authorsNote ? "\n\n" : "") + result.authors.join("\n\n");
+      if (result.injections.length) next.customInjections = [...d.customInjections, ...result.injections];
+      return next;
+    });
+    setDirty(true);
+    setSaveState("idle");
+    setImportModalOpen(false);
+  };
+
   return (
     <Modal open={true} onClose={handleClose}>
+      {importModalOpen && (
+        <PresetImportModal
+          onClose={() => setImportModalOpen(false)}
+          onImport={handleImportPreset}
+        />
+      )}
+
       {confirmCloseOpen && (
         <ConfirmCloseModal
           onCancel={() => setConfirmCloseOpen(false)}
@@ -228,6 +251,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             onSelect={(id) => input.setActivePresetId(id)}
             onAdd={handleAdd}
             onRename={handleRename}
+            onImportPreset={() => setImportModalOpen(true)}
           />
           <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
             {/* Advanced mode accordion */}

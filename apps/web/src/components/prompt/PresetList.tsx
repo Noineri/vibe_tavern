@@ -10,9 +10,10 @@ interface PresetListProps {
   onSelect: (id: string) => void;
   onAdd: (name: string) => void;
   onRename: (id: string, newName: string) => void;
+  onImportPreset?: () => void;
 }
 
-export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename }: PresetListProps) {
+export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename, onImportPreset }: PresetListProps) {
   const { t } = useT();
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -169,6 +170,15 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename 
         >
           <Icons.Plus /> {t("new_preset_btn")}
         </button>
+        {onImportPreset && (
+          <button
+            onClick={onImportPreset}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
+            type="button"
+          >
+            <Icons.Import /> {t("import_preset_btn")}
+          </button>
+        )}
       </div>
     </div>
   );
