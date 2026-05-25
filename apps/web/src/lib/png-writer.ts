@@ -10,6 +10,15 @@
 
 const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 
+function toBase64(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 function crc32(buf: Uint8Array): number {
   let c = 0xffffffff;
   for (let i = 0; i < buf.length; i++) {
@@ -51,29 +60,29 @@ export function embedCharaMetadata(pngBytes: Uint8Array, json: string): Uint8Arr
 
   // Build tEXt chunk: keyword "chara"\0 + base64 JSON
   const keyword = "chara";
-  const b64 = btoa(json);
+  const b64 = toBase64(json);
   const textData = new TextEncoder().encode(keyword + "\0" + b64);
   const textChunk = packChunk("tEXt", textData);
 
-  // Find IEND chunk (last chunk) — scan from the end
-  // IEND is always 12 bytes: 4B len (0) | 4B "IEND" | 4B CRC
-  // Total PNG: 8B signature + chunks ... + 12B IEND
-
-  const iendStart = pngBytes.length - 12;
-
-  // Verify it's actually IEND
-  const iendType = new TextDecoder().decode(pngBytes.subarray(iendStart + 4, iendStart + 8));
-  if (iendType !== "IEND") {
-    throw new Error("PNG missing IEND chunk at expected position");
+  // Find IEND chunk — scan chunks from the start instead of assuming position
+  // Each chunk: 4B len | 4B type | data | 4B CRC
+  let pos = 8; // skip PNG signature
+  while (pos + 8 <= pngBytes.length) {
+    const clen = new DataView(pngBytes.buffer, pngBytes.byteOffset + pos, 4).getUint32(0, false);
+    const ctype = new TextDecoder().decode(pngBytes.subarray(pos + 4, pos + 8));
+    if (ctype === "IEND") {
+      const iendStart = pos;
+      // Build output: everything before IEND + our tEXt chunk + IEND
+      const iendSize = 4 + 4 + clen + 4;
+      const output = new Uint8Array(iendStart + textChunk.byteLength + iendSize);
+      output.set(pngBytes.subarray(0, iendStart), 0);
+      output.set(textChunk, iendStart);
+      output.set(pngBytes.subarray(iendStart, iendStart + iendSize), iendStart + textChunk.byteLength);
+      return output;
+    }
+    pos += 4 + 4 + clen + 4;
   }
-
-  // Build output: everything before IEND + our tEXt chunk + IEND
-  const output = new Uint8Array(iendStart + textChunk.byteLength + 12);
-  output.set(pngBytes.subarray(0, iendStart), 0);
-  output.set(textChunk, iendStart);
-  output.set(pngBytes.subarray(iendStart), iendStart + textChunk.byteLength);
-
-  return output;
+  throw new Error("PNG missing IEND chunk");
 }
 
 /**
@@ -97,7 +106,7 @@ export function createMetadataPng(json: string): Uint8Array {
 
   // Build keyword bytes
   const keyword = "chara";
-  const b64 = btoa(json);
+  const b64 = toBase64(json);
   const textBytes = new TextEncoder().encode(keyword + "\0" + b64);
   const textChunk = packChunk("tEXt", textBytes);
 
