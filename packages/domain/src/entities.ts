@@ -254,6 +254,7 @@ export interface MessageVariant {
   finishReason: string | null;
   reasoning?: string;
   reasoningDurationMs?: number;
+  modelId?: string | null;
   createdAt: Timestamp;
 }
 

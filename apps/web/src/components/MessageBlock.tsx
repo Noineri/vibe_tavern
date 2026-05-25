@@ -13,6 +13,7 @@ import { useT } from "../i18n/context.js";
 import { MessageReasoning } from "./MessageReasoning.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
 import { replaceUiMacros } from "../lib/macros.js";
+import { resolveModelLabel } from "../lib/model-resolve.js";
 
 const msgWrap = "relative group py-2.5";
 const sepWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7 my-[6px] mt-2";
@@ -386,6 +387,9 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
             <div className="mt-1 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-4px)] text-t3/50">
               {createdLabel}
               <span className="tabular-nums">{messageTokens} {t("tokens_label")}</span>
+              {!isUser && msg.modelId && (
+                <span>{resolveModelLabel(msg.modelId)}</span>
+              )}
             </div>
           )}
 

@@ -23,6 +23,7 @@ RP Platform is a self-hosted roleplay chat application — a local alternative t
 - Stream responses with reasoning support (DeepSeek R1 thinking, Claude extended thinking)
 - Import thinking tags from SillyTavern chat exports as reasoning variants
 - Budget-aware context compaction: reserves tokens for model response, trims history to fit
+- **Secure mobile access** — QR code + token auth for LAN/mobile clients, optional TLS
 
 **Stack:** Bun · Hono · Drizzle ORM / SQLite · Vercel AI SDK · Vite / React · TypeScript monorepo
 
@@ -36,6 +37,8 @@ rp_platform/
 │   └── src/
 │       ├── components/
 │       │   ├── editors/         # Build Mode editors (Lorebook, Script, Character)
+│       │   ├── modals/          # Modals: MobileAccessModal
+│       │   ├── popovers/        # Popovers: TweaksPanel
 │       │   └── shared/          # Reusable components (CodeEditor, DropdownSelect, icons)
 │       ├── hooks/               # useBuildPanels, use-chat-controller, use-provider-profiles, etc.
 │       ├── lib/                 # build-panel-registry, cn, avatar, macros, markdown, sse-parser
@@ -48,9 +51,15 @@ rp_platform/
 │   └── import-export/           # Character card and chat import/export (ST formats)
 ├── services/api/
 │   └── src/
-│       ├── routes/              # Domain-split route modules (10 files)
+│       ├── routes/              # Domain-split route modules (11 files)
 │       ├── ai/                  # Provider execution, tokenizer, sampler mapping
-│       └── session-runtime*.ts  # Session coordination sub-runtimes
+│       ├── session-runtime*.ts  # Session coordination sub-runtimes
+│       ├── mobile-auth.ts       # Auth middleware + TLS config for mobile access
+│       ├── mobile-access-service.ts  # Token management + IP detection
+│       ├── standalone-paths.ts  # OS-specific path resolution for .exe distribution
+│       ├── prod-server.ts       # Production server entry point
+│       ├── standalone-server.ts # Standalone .exe server entry point
+│       └── script-ai-prompt.md  # AI script assistant system prompt (loaded at runtime)
 ├── scripts/                     # Build, dev supervisor, static serving
 ├── data/                        # Runtime data (SQLite DB, assets, traces)
 └── docker-compose.yml + Dockerfile
@@ -82,7 +91,7 @@ apps/web
 └──────────────┬───────────────────────────────────────────┘
                │ HTTP / SSE
 ┌──────────────▼───────────────────────────────────────────┐
-│  routes/ — 10 domain modules, composed via Hono app.route │
+│  routes/ — 11 domain modules, composed via Hono app.route │
 │  validates via zod schemas from @rp-platform/api-contracts│
 └──────────────┬───────────────────────────────────────────┘
                │ delegates to RuntimeApi interface
@@ -251,8 +260,12 @@ Drizzle ORM schema over SQLite with automatic migration on startup.
 | `0004_trace_enrichment.sql` | Additional trace fields |
 | `0005_lorebook_enabled.sql` | `enabled` column on `lorebooks` table |
 | `0006_script_ai_prompt.sql` | `script_ai_system_prompt` column on `prompt_presets` table |
+| `0007_messages_model_id.sql` | `model_id` column on `message_variants` table |
 
-**Key constraint:** The `_journal.json` entries must match the `__drizzle_migrations` rows in the DB. If a migration is in the journal but not in the DB, drizzle applies it. If a migration hash changes (edited SQL file), drizzle will prompt about data loss — never edit committed migration files.
+**Key constraints:**
+
+1. **`when` must be monotonically increasing.** Drizzle's `migrate()` compares `_journal.json`'s `when` field against `__drizzle_migrations.created_at` using `ORDER BY created_at DESC LIMIT 1`. If a new entry's `when` ≤ the last applied migration's `created_at`, the migration is **silently skipped**. Always set `when` to a value larger than all previous entries. Use the pattern: increment by ~5,000,000 from the previous entry.
+2. **The `_journal.json` entries must match the `__drizzle_migrations` rows in the DB.** If a migration is in the journal but not in the DB, drizzle applies it. If a migration hash changes (edited SQL file), drizzle will re-apply with potential errors — never edit committed migration files.
 
 **Key tables:**
 
@@ -316,21 +329,89 @@ The backend. Single Bun process serving HTTP API and static frontend.
 
 | File | Role |
 |------|------|
-| `routes/index.ts` | Composes 10 domain sub-routers via `Hono.app.route()`. Defines `createApiRouter()`. |
+| `routes/index.ts` | Composes 11 domain sub-routers via `Hono.app.route()`. Defines `createApiRouter()`. |
 | `routes/types.ts` | `RuntimeApi` interface — contract between routes and business logic. |
 | `routes/helpers.ts` | Shared utilities (`readOptionalJson`). |
 | `routes/debug.ts` | Debug log + bootstrap + defaults endpoints. |
 | `routes/chat.ts` | Chat CRUD, messages, branches, summaries, forking, regeneration (streaming + non-streaming). Largest domain (~25 endpoints). |
-| `routes/character.ts` | Character CRUD, archive, export. |
-| `routes/persona.ts` | Persona CRUD, personal lorebook toggle. |
+| `routes/character.ts` | Character CRUD (create, update, delete, duplicate, archive), export. |
+| `routes/persona.ts` | Persona CRUD (create, update, delete, duplicate), personal lorebook toggle. |
 | `routes/lorebook.ts` | Lorebook CRUD, entry CRUD, test activation, import. |
 | `routes/script.ts` | Script CRUD, test, import, AI assistant SSE endpoint. |
 | `routes/provider.ts` | Provider CRUD, test, model fetching, favorites. |
 | `routes/preset.ts` | Prompt preset CRUD. |
+| `routes/settings.ts` | Mobile access settings: status, regenerate token, revoke. |
 | `routes/import.ts` | JSON import, SillyTavern directory scan + bulk import. |
 | `routes/asset.ts` | Asset upload/serve. |
-| `app-factory.ts` | Wires Hono app: CORS, error handling, health check, API routes, SPA static serving. |
-| `runtime-api-adapter.ts` | Implements `RuntimeApi`. Thin delegation layer — no business logic. Resolves active provider, handles asset cleanup. |
+| `app-factory.ts` | Wires Hono app: CORS, error handling, auth middleware, health check, API routes, SPA static serving. |
+| `mobile-auth.ts` | Conditional auth middleware + TLS config resolver. |
+| `mobile-access-service.ts` | Token lifecycle (generate/regenerate/revoke), IP detection via UDP + interface scan. |
+| `runtime-api-adapter.ts` | Implements `RuntimeApi`. Thin delegation layer — no business logic. Resolves active provider, handles asset cleanup, delegates to `MobileAccessService`. |
+
+### Mobile Access
+
+The platform supports secure access from mobile devices and other LAN clients through token-based authentication with optional TLS encryption.
+
+**Architecture:**
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Mobile device / LAN client                              │
+│  https://192.168.1.5:8787/#token=<uuid>                 │
+└──────────────┬───────────────────────────────────────────┘
+               │ HTTP / SSE + { Authorization: Bearer <token> }
+               │               or ?token=<uuid> query param
+┌──────────────▼───────────────────────────────────────────┐
+│  createMobileAuthMiddleware(token)                        │
+│  ├─ No token configured → pass-through (no auth)         │
+│  ├─ Loopback (127.0.0.1, ::1) → always allowed           │
+│  ├─ /api/assets/* → public (img tags can't send headers) │
+│  └─ All other /api/* → validate Bearer / ?token=         │
+└──────────────┬───────────────────────────────────────────┘
+               │
+┌──────────────▼───────────────────────────────────────────┐
+│  MobileAccessService                                      │
+│  ├─ Token lifecycle: generate / regenerate / revoke       │
+│  ├─ Persists token to data/mobile-access.json             │
+│  └─ IP detection via UDP + os.networkInterfaces()        │
+│       ├─ Primary: UDP socket connect trick (default route)│
+│       ├─ Tailscale: 100.x.x.x addresses                  │
+│       └─ Fallback: other private IPs (192.168.x.x, etc.) │
+└──────────────────────────────────────────────────────────┘
+```
+
+**TLS:** When `RP_PLATFORM_TLS_KEY` and `RP_PLATFORM_TLS_CERT` env vars point to valid cert files, the server starts with HTTPS. This enables secure WebSocket/SSE on mobile browsers which block mixed content. Self-signed certs work — the user accepts the warning once.
+
+**QR code flow:**
+1. User clicks "Enable Mobile Access" in TweaksPanel
+2. Backend generates a UUID token, returns IP + port + token
+3. Frontend renders QR code (`qrcode` npm) with `http://IP:PORT/#token=UUID`
+4. User scans QR on mobile → browser opens with token in URL hash
+5. Frontend reads hash, stores token in localStorage, authenticates all subsequent API calls
+6. Token appears in URL only once (hash is not sent to server) — subsequent requests use `Authorization: Bearer` header
+
+**Frontend components:**
+
+| Component | Role |
+|-----------|------|
+| `MobileAccessModal` | QR code display, URL copy, token show/hide, regenerate/disable buttons, tailscale IP, fallback IPs, firewall warning |
+| `TweaksPanel` | "Enable Mobile Access" button → opens `MobileAccessModal` |
+
+**Routes** (`routes/settings.ts`):
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/settings/mobile-access` | GET | Get IPs, port, token status, TLS flag |
+| `/api/settings/mobile-access/regenerate` | POST | Rotate token (old token invalidated immediately) |
+| `/api/settings/mobile-access` | DELETE | Revoke token, disable mobile access |
+
+**Security properties:**
+- Token is a UUID v4 — not brute-forceable over LAN
+- Token stored in `data/mobile-access.json` (same dir as SQLite DB)
+- Loopback always bypasses auth — local dev UX unchanged
+- `/api/assets/` is public — `<img>` tags can't send auth headers
+- Auth applies only to `/api/*` routes; static frontend files are always public
+- Regenerate invalidates old token immediately
 
 #### Session core
 
@@ -339,8 +420,8 @@ The backend. Single Bun process serving HTTP API and static frontend.
 | `session-runtime.ts` | `SessionRuntime` — top-level coordinator. Creates and wires all sub-runtimes via constructor injection + callback functions. |
 | `session-runtime-chat.ts` | `ChatRuntime` — live chat orchestration: prepare turn, append reply, manage variants, pending prompt traces. |
 | `session-runtime-chat-lifecycle.ts` | `ChatLifecycleRuntime` — create/delete/switch chats, seed opening messages, assemble summary prompts. |
-| `session-runtime-character.ts` | `CharacterRuntime` — CRUD characters, archive/unarchive, promote system character on first edit. |
-| `session-runtime-persona.ts` | `PersonaRuntime` — CRUD personas, resolve defaults. |
+| `session-runtime-character.ts` | `CharacterRuntime` — CRUD characters, archive/unarchive, duplicate, delete, promote system character on first edit. |
+| `session-runtime-persona.ts` | `PersonaRuntime` — CRUD personas, duplicate, delete, resolve defaults. |
 | `session-runtime-chat-order.ts` | `ChatOrderService` — in-memory ordered list of chat IDs, seeded from DB by `lastAccessedAt`. |
 | `session-runtime-lorebook.ts` | Lorebook module — CRUD lorebooks and entries, scope-aware listing, lorebook import. |
 | `session-runtime-store.ts` | Store creation and wiring. |
@@ -408,9 +489,10 @@ The backend. Single Bun process serving HTTP API and static frontend.
 
 The AI assistant is a **separate LLM call**, not a prompt layer. It reuses the existing provider infrastructure (any configured provider/model). Key features:
 
-- System prompt includes full `context` API reference + coding rules + examples (`DEFAULT_SCRIPT_AI_PROMPT`)
+- System prompt loaded at runtime from `script-ai-prompt.md` (version-controlled, editable without recompilation)
+- Prompt includes full `context` API reference + coding rules + examples
 - Accepts `existingCode` for refinement/modification of current scripts
-- Customizable system prompt via `prompt_presets.script_ai_system_prompt` (editable in Prompt Manager)
+- Customizable system prompt via `prompt_presets.script_ai_system_prompt` (editable in Prompt Manager) — overrides the default
 - Temperature: 0.3, max tokens: 4096
 
 #### Prompt and AI
@@ -508,6 +590,7 @@ React SPA built with Vite. Communicates exclusively via the HTTP API defined in 
 - **Build Mode** — unified editor panel with dynamic tab registration
 - **Lorebook editor** — scope tabs, lorebook accordions, entry editor (Simple + Advanced modes), import wizard, activation tester
 - **Script editor** — script list, CodeMirror 6 code editor, AI assistant modal, script templates, API reference
+- **Mobile access** — QR code flow, token-based auth, TLS support, IP auto-detection
 - Multi-language support (en, ru) via i18n
 - Asset upload for character avatars (cropped thumbnail + original full-size)
 - Avatar crop modal (react-easy-crop library, circular crop, zoom, pan-to-crop)
@@ -641,6 +724,57 @@ Message variant switching (swipes) uses `framer-motion`:
 - Swipe callbacks read `selectedVariantIndex` directly from store via `useChatDataStore.getState()` — avoids stale closure from memoized `itemContent`
 
 `MessageBlock` is wrapped in `React.memo` and reads all message data from `useDisplayMessage(messageId)` — no message object prop. This ensures streaming text only re-renders the `StreamingContent` component, not existing message blocks.
+
+---
+
+## Server entry points
+
+The platform has two server entry points for different deployment scenarios.
+
+### `prod-server.ts` — Development / Docker / direct Bun
+
+Standard production server. Serves the built frontend from `apps/web/dist/` plus the API from a single Bun process on a single port.
+
+**Usage:** `bun services/api/src/prod-server.ts`
+
+**Paths:** Resolved relative to the source tree:
+- Data: `data/` in project root
+- Frontend: `apps/web/dist/` (must be built first: `bun run build:web`)
+
+**Config:**
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `RP_PLATFORM_ROOT_DIR` | Two levels up from `import.meta.dir` | Project root |
+| `RP_PLATFORM_HOST` | `0.0.0.0` | Listen host (all interfaces for mobile access) |
+| `RP_PLATFORM_PORT` | `8787` | Listen port |
+| `RP_PLATFORM_OPEN_BROWSER` | `1` | Auto-open browser on startup |
+
+### `standalone-server.ts` — Compiled .exe (Claw Tavern)
+
+Target for `bun build --compile`. Uses OS-specific data directories instead of project-relative paths.
+
+**Usage:** `claw-tavern.exe` (compiled) or `bun services/api/src/standalone-server.ts`
+
+**Paths** (resolved by `standalone-paths.ts`):
+
+| OS | Data directory |
+|----|---------------|
+| Windows | `%LOCALAPPDATA%\ClawTavern` |
+| macOS | `~/Library/Application Support/ClawTavern` |
+| Linux | `~/.local/share/claw-tavern` |
+
+Override with `RP_PLATFORM_DATA_DIR` and `RP_PLATFORM_WEB_DIR` env vars.
+
+The standalone server looks for `web/` directory next to the executable for frontend static files; falls back to the source tree `apps/web/dist/`.
+
+**Both entry points** share the same bootstrap sequence:
+1. Create/store initialization (`createRuntimeStore`)
+2. Seed data (system character, default persona, default preset, UI settings defaults)
+3. Tokenizer warmup + registration with prompt pipeline
+4. Service construction (provider profiles, presets, session runtime, orchestrators, mobile access)
+5. Hono app creation with auth middleware
+6. Bun.serve with optional TLS
+7. Graceful shutdown on SIGINT/SIGTERM
 
 ---
 

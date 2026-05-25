@@ -53,6 +53,7 @@ export interface MessageVariant {
   finishReason: string | null;
   reasoning: string | null;
   reasoningDurationMs: number | null;
+  modelId: string | null;
   createdAt: string;
 }
 
@@ -423,6 +424,7 @@ export class ChatStore {
   async addMessage(data: {
     chatId: string; branchId: string; role: string; authorType: string; content: string;
     reasoning?: string; reasoningDurationMs?: number;
+    modelId?: string | null;
   }): Promise<Message> {
     const id = this.idGen.next('msg');
     const now = this.clock.now();
@@ -443,6 +445,7 @@ export class ChatStore {
         content: data.content, isSelected: 1, finishReason: null,
         reasoning: data.reasoning ?? null,
         reasoningDurationMs: data.reasoningDurationMs ?? null,
+        modelId: data.modelId ?? null,
         createdAt: now,
       }).run();
     });
@@ -577,6 +580,7 @@ export class ChatStore {
     finishReason?: string,
     reasoning?: string,
     reasoningDurationMs?: number,
+    modelId?: string | null,
   ): Promise<MessageVariant> {
     // Find max variantIndex
     const lastVariant = await this.db
@@ -611,6 +615,7 @@ export class ChatStore {
           finishReason: finishReason ?? null,
           reasoning: reasoning ?? null,
           reasoningDurationMs: reasoningDurationMs ?? null,
+          modelId: modelId ?? null,
           createdAt: now,
         })
         .run();
@@ -878,6 +883,7 @@ export class ChatStore {
       finishReason: row.finishReason,
       reasoning: row.reasoning,
       reasoningDurationMs: row.reasoningDurationMs,
+      modelId: row.modelId,
       createdAt: row.createdAt,
     };
   }
