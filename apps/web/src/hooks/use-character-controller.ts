@@ -14,14 +14,7 @@ import { useChatStore } from "../stores/chat-store.js";
 import { useNavigationStore } from "../stores/navigation-store.js";
 import { useCharacterStore } from "../stores/character-store.js";
 import { useChatDataStore } from "../stores/chat-data-store.js";
-import { embedCharaMetadata, createMetadataPng } from "../lib/png-writer.js";
-
-const PNG_SIG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
-function isPng(buf: Uint8Array): boolean {
-  if (buf.length < 8) return false;
-  for (let i = 0; i < 8; i++) { if (buf[i] !== PNG_SIG[i]) return false; }
-  return true;
-}
+import { exportCharaCardPng } from "../lib/png-writer.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import {
   saveCharacterAction,
@@ -433,33 +426,18 @@ export function useCharacterController(): CharacterControllerActions {
       const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
       const json = JSON.stringify(data);
 
-      // Try to get avatar PNG bytes
       const char = getSnapshot()?.character;
       const avatarId = char?.avatarFullAssetId ?? char?.avatarAssetId;
-      let pngBytes: Uint8Array | null = null;
+      if (!avatarId) throw new Error("No avatar");
 
-      if (avatarId) {
-        try {
-          const avatarUrl = `${getGatewayBaseUrl()}/api/assets/${avatarId}`;
-          const resp = await fetch(avatarUrl);
-          if (resp.ok) {
-            pngBytes = new Uint8Array(await resp.arrayBuffer());
-          }
-        } catch {
-          // avatar fetch failed — fall through to metadata-only PNG
-        }
-      }
+      const avatarUrl = `${getGatewayBaseUrl()}/api/assets/${avatarId}`;
+      const resp = await fetch(avatarUrl);
+      if (!resp.ok) throw new Error(`Avatar fetch failed: ${resp.status}`);
 
-      let outputPng: Uint8Array;
-      if (pngBytes && isPng(pngBytes)) {
-        outputPng = embedCharaMetadata(pngBytes, json);
-      } else {
-        outputPng = createMetadataPng(json);
-      }
+      const imageBytes = new Uint8Array(await resp.arrayBuffer());
+      const outputPng = await exportCharaCardPng(imageBytes, json);
 
-      // Uint8Array not directly BlobPart in Bun's typings — slice to ArrayBuffer
-      const buf = outputPng.buffer.slice(outputPng.byteOffset, outputPng.byteOffset + outputPng.byteLength) as ArrayBuffer;
-      const blob = new Blob([buf], { type: "image/png" });
+      const blob = new Blob([outputPng.buffer.slice(outputPng.byteOffset, outputPng.byteOffset + outputPng.byteLength) as ArrayBuffer], { type: "image/png" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
