@@ -27,6 +27,7 @@ import { ChatSummaryService } from "./chat-summary-service.js";
 import { AssetService } from "./asset-service.js";
 import { RuntimeApiAdapter } from "./runtime-api-adapter.js";
 import { createApp } from "./app-factory.js";
+import { resolveTlsConfig } from "./mobile-auth.js";
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -35,6 +36,7 @@ const host = process.env.RP_PLATFORM_HOST ?? "127.0.0.1";
 const port = Number(process.env.RP_PLATFORM_PORT ?? "8787");
 
 const staticDir = resolve(import.meta.dir, '..', '..', '..', 'apps', 'web', 'dist');
+const tlsConfig = resolveTlsConfig();
 
 // ─── Bootstrap ───────────────────────────────────────────────────────────────
 
@@ -92,16 +94,22 @@ await mkdir(resolve(rootDir, "data", "assets"), { recursive: true });
 	const app = await createApp({
 		runtime,
 		staticDir: staticEnabled ? staticDir : undefined,
+		mobileAccessToken: undefined, // wired in MOB-ACC-B2
 	});
 
+	const tlsOptions = tlsConfig ? { tls: tlsConfig } : {};
 	const server = Bun.serve({
 		fetch: app.fetch,
 		port,
 		hostname: host,
 		idleTimeout: 255,
+		...tlsOptions,
 	});
 
 	console.log(`[prod] Listening on http://${host}:${port}`);
+	if (tlsConfig) {
+		console.log(`[prod] TLS enabled.`);
+	}
 
 	// Open browser
 	if (staticEnabled && process.env.RP_PLATFORM_OPEN_BROWSER !== "0") {

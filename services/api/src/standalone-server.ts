@@ -25,11 +25,13 @@ import { ChatSummaryService } from "./chat-summary-service.js";
 import { AssetService } from "./asset-service.js";
 import { RuntimeApiAdapter } from "./runtime-api-adapter.js";
 import { createApp } from "./app-factory.js";
+import { resolveTlsConfig } from "./mobile-auth.js";
 import { configureLogDir } from "./send-debug-log.js";
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 const paths = await resolveStandalonePaths();
+const tlsConfig = resolveTlsConfig();
 
 console.log(`[standalone] Starting Claw Tavern...`);
 console.log(`[standalone] Data:  ${paths.dataDir}`);
@@ -93,16 +95,22 @@ configureLogDir(paths.logsDir);
 	const app = await createApp({
 		runtime,
 		staticDir: paths.webEnabled ? paths.webDir : undefined,
+		mobileAccessToken: undefined, // wired in MOB-ACC-B2
 	});
 
+	const tlsOptions = tlsConfig ? { tls: tlsConfig } : {};
 	const server = Bun.serve({
 		fetch: app.fetch,
 		port: paths.port,
 		hostname: paths.host,
 		idleTimeout: 255,
+		...tlsOptions,
 	});
 
 	console.log(`[standalone] Listening on http://${paths.host}:${paths.port}`);
+	if (tlsConfig) {
+		console.log(`[standalone] TLS enabled.`);
+	}
 
 	// Open browser
 	if (paths.webEnabled && process.env.RP_PLATFORM_OPEN_BROWSER !== "0") {
