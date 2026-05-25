@@ -211,8 +211,8 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
                   {t("preset_import_filter_selected")}
                 </label>
                 <div className="ml-auto flex items-center gap-1.5">
-                  <button className="h-[24px] cursor-pointer rounded border border-border bg-s2 px-2 font-ui text-[10px] text-t3 hover:text-t1" onClick={selectAll}>{t("preset_import_select_all")}</button>
-                  <button className="h-[24px] cursor-pointer rounded border border-border bg-s2 px-2 font-ui text-[10px] text-t3 hover:text-t1" onClick={deselectAll}>{t("preset_import_deselect_all")}</button>
+                  <button className="h-[24px] cursor-pointer whitespace-nowrap rounded border border-border bg-s2 px-3 font-ui text-[10px] text-t3 hover:text-t1" onClick={selectAll}>{t("preset_import_select_all")}</button>
+                  <button className="h-[24px] cursor-pointer whitespace-nowrap rounded border border-border bg-s2 px-3 font-ui text-[10px] text-t3 hover:text-t1" onClick={deselectAll}>{t("preset_import_deselect_all")}</button>
                   <select
                     className="h-[24px] cursor-pointer rounded border border-border bg-s2 px-1.5 font-ui text-[10px] text-t2 outline-none"
                     onChange={(e) => { if (e.target.value) bulkSetTarget(e.target.value as TargetMapping); e.target.value = ""; }}
