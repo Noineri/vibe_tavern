@@ -27,6 +27,20 @@ RP Platform is a self-hosted roleplay chat application — a local alternative t
 
 **Stack:** Bun · Hono · Drizzle ORM / SQLite · Vercel AI SDK · Vite / React · TypeScript monorepo
 
+### Key dependencies
+
+| Category | Tools |
+|---|---|
+| **Runtime** | Bun (build, test, serve, file ops, crypto), TypeScript ^6 |
+| **Backend** | Hono, `@hono/zod-validator`, Vercel AI SDK (`ai`, `@ai-sdk/anthropic`, `@ai-sdk/google`, `@ai-sdk/openai`), `@agnai/web-tokenizers`, `js-tiktoken` |
+| **DB** | Drizzle ORM, drizzle-kit, SQLite |
+| **Frontend state** | Zustand, Immer, Reselect |
+| **Frontend UI** | React 19, Tailwind CSS 4, Framer Motion, Radix UI (dialog, select, tooltip), React Virtuoso, React Markdown + remark-gfm, React Hook Form + `@hookform/resolvers`, React Easy Crop, Sonner, qrcode, CodeMirror |
+| **Validation** | Zod (front + back) |
+| **Node builtins** | `node:vm` (script sandbox), `node:crypto` (SHA-256), `node:fs`, `node:path` |
+| **Dev** | Vite, `@vitejs/plugin-react`, `@tailwindcss/vite`, autoprefixer |
+| **Deploy** | Docker, docker-compose |
+
 ---
 
 ## Repository structure
