@@ -24,7 +24,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     db,
     content,
     characters: new CharacterStore(db),
-    personas: new PersonaStore(db),
+    personas: new PersonaStore(db, { content }),
     providers: new ProviderStore(db),
     chats: new ChatStore(db),
     presets: new PresetStore(db),

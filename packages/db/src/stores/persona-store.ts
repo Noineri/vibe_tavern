@@ -2,6 +2,8 @@ import { eq, sql } from 'drizzle-orm';
 import { personas } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
+import type { ContentStore } from '../content-store.js';
+import { STORAGE_FOLDERS } from '../file-store.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -36,19 +38,33 @@ export class PersonaStore {
   private readonly db: AppDb;
   private readonly clock: StoreClock;
   private readonly idGen: StoreIdGenerator;
+  private readonly content: ContentStore | null;
 
-  constructor(db: AppDb, options?: { clock?: StoreClock; idGenerator?: StoreIdGenerator }) {
+  constructor(db: AppDb, options?: { clock?: StoreClock; idGenerator?: StoreIdGenerator; content?: ContentStore | null }) {
     this.db = db;
     const runtime = resolveStoreRuntime(options);
     this.clock = runtime.clock;
     this.idGen = runtime.idGenerator;
+    this.content = options?.content ?? null;
   }
 
   // ─── Read operations ───────────────────────────────────────────────────────
 
   async getById(id: string): Promise<Persona | null> {
     const row = await this.db.select().from(personas).where(eq(personas.id, id)).get();
-    return row ? this.mapRow(row) : null;
+    if (!row) return null;
+
+    // Lazy migration: generate file if it doesn't exist on disk
+    if (this.content && !row.hasFileOnDisk) {
+      const fileData = this.toFilePayload(row);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.personas, id, fileData);
+      await this.db.update(personas)
+        .set({ contentHash: hash, hasFileOnDisk: 1 })
+        .where(eq(personas.id, id))
+        .run();
+    }
+
+    return this.mapRow(row);
   }
 
   async listAll(): Promise<Persona[]> {
@@ -86,6 +102,16 @@ export class PersonaStore {
       })
       .returning();
 
+    // Dual-write: write canonical JSON file
+    if (this.content) {
+      const fileData = this.toFilePayload(row!);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.personas, id, fileData);
+      await this.db.update(personas)
+        .set({ contentHash: hash, hasFileOnDisk: 1 })
+        .where(eq(personas.id, id))
+        .run();
+    }
+
     return this.mapRow(row!);
   }
 
@@ -111,6 +137,17 @@ export class PersonaStore {
     if (!row) {
       throw new Error(`Persona '${id}' not found after update`);
     }
+
+    // Dual-write: update canonical JSON file
+    if (this.content) {
+      const fileData = this.toFilePayload(row);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.personas, id, fileData);
+      await this.db.update(personas)
+        .set({ contentHash: hash, hasFileOnDisk: 1 })
+        .where(eq(personas.id, id))
+        .run();
+    }
+
     return this.mapRow(row);
   }
 
@@ -123,6 +160,11 @@ export class PersonaStore {
 
     if (countRow && countRow.count <= 1) {
       throw new Error('Cannot delete the last persona');
+    }
+
+    // Delete file from disk
+    if (this.content) {
+      await this.content.deleteEntity(STORAGE_FOLDERS.personas, id);
     }
 
     await this.db.delete(personas).where(eq(personas.id, id)).run();
@@ -157,6 +199,16 @@ export class PersonaStore {
       avatarAssetId: null,
       defaultForNewChats: true,
     });
+  }
+
+  // ─── File payload ──────────────────────────────────────────────────────────
+
+  private toFilePayload(row: typeof personas.$inferSelect): Record<string, unknown> {
+    return {
+      name: row.name,
+      description: row.description,
+      pronouns: row.pronouns,
+    };
   }
 
   // ─── Row mapper ────────────────────────────────────────────────────────────
