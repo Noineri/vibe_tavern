@@ -2,6 +2,8 @@ import { eq, and, or } from 'drizzle-orm';
 import { lorebooks, loreEntries } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
+import type { ContentStore } from '../content-store.js';
+import { STORAGE_FOLDERS } from '../file-store.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -124,19 +126,28 @@ export class LorebookStore {
   private readonly db: AppDb;
   private readonly clock: StoreClock;
   private readonly idGen: StoreIdGenerator;
+  private readonly content: ContentStore | null;
 
-  constructor(db: AppDb, options?: { clock?: StoreClock; idGenerator?: StoreIdGenerator }) {
+  constructor(db: AppDb, options?: { clock?: StoreClock; idGenerator?: StoreIdGenerator; content?: ContentStore | null }) {
     this.db = db;
     const runtime = resolveStoreRuntime(options);
     this.clock = runtime.clock;
     this.idGen = runtime.idGenerator;
+    this.content = options?.content ?? null;
   }
 
   // ─── Lorebook CRUD ─────────────────────────────────────────────────────────
 
   async getLorebook(id: string): Promise<Lorebook | null> {
     const row = await this.db.select().from(lorebooks).where(eq(lorebooks.id, id)).get();
-    return row ? this.mapLorebookRow(row) : null;
+    if (!row) return null;
+
+    // Lazy migration: generate file if it doesn't exist on disk
+    if (this.content && !row.hasFileOnDisk) {
+      await this.syncFile(id);
+    }
+
+    return this.mapLorebookRow(row);
   }
 
   async listLorebooksByScope(scopeType: string, ownerId?: string): Promise<Lorebook[]> {
@@ -183,6 +194,12 @@ export class LorebookStore {
         updatedAt: now,
       })
       .returning();
+
+    // Dual-write: write canonical JSON file (entries will be empty at this point)
+    if (this.content) {
+      await this.syncFile(id);
+    }
+
     return this.mapLorebookRow(row!);
   }
 
@@ -209,15 +226,30 @@ export class LorebookStore {
       .where(eq(lorebooks.id, id))
       .returning();
     if (!row) throw new Error(`Lorebook '${id}' not found after update`);
+
+    // Dual-write: update canonical JSON file
+    if (this.content) {
+      await this.syncFile(id);
+    }
+
     return this.mapLorebookRow(row);
   }
 
   async deleteLorebook(id: string): Promise<void> {
+    // Delete file from disk
+    if (this.content) {
+      await this.content.deleteEntity(STORAGE_FOLDERS.lorebooks, id);
+    }
     await this.db.delete(lorebooks).where(eq(lorebooks.id, id)).run();
   }
 
   async deleteAllEntries(lorebookId: string): Promise<void> {
     await this.db.delete(loreEntries).where(eq(loreEntries.lorebookId, lorebookId)).run();
+
+    // Sync file: all entries removed
+    if (this.content) {
+      await this.syncFile(lorebookId);
+    }
   }
 
   async bulkCreateEntries(lorebookId: string, entries: CreateLoreEntryData[]): Promise<number> {
@@ -288,6 +320,12 @@ export class LorebookStore {
         updatedAt: now,
       })
       .returning();
+
+    // Sync file: entry added
+    if (this.content) {
+      await this.syncFile(lorebookId);
+    }
+
     return this.mapEntryRow(row!);
   }
 
@@ -334,11 +372,29 @@ export class LorebookStore {
       .where(eq(loreEntries.id, id))
       .returning();
     if (!row) throw new Error(`LoreEntry '${id}' not found after update`);
+
+    // Sync file: entry updated
+    if (this.content) {
+      await this.syncFile(row.lorebookId);
+    }
+
     return this.mapEntryRow(row);
   }
 
   async deleteEntry(id: string): Promise<void> {
+    // Fetch entry first to get lorebookId for file sync
+    const entry = await this.db.select({ lorebookId: loreEntries.lorebookId })
+      .from(loreEntries)
+      .where(eq(loreEntries.id, id))
+      .get();
+    const lorebookId = entry?.lorebookId;
+
     await this.db.delete(loreEntries).where(eq(loreEntries.id, id)).run();
+
+    // Sync file: entry removed
+    if (this.content && lorebookId) {
+      await this.syncFile(lorebookId);
+    }
   }
 
   // ─── Scope-aware listing (pipeline entry point) ────────────────────────────
@@ -396,6 +452,85 @@ export class LorebookStore {
     }
 
     return result;
+  }
+
+  // ─── Dual-write helpers ────────────────────────────────────────────────────
+
+  /**
+   * Regenerate the canonical lorebook JSON file (lorebook metadata + all entries).
+   * Reads latest state from SQLite, builds payload, writes to ContentStore,
+   * and updates contentHash + hasFileOnDisk on the lorebook row.
+   */
+  private async syncFile(lorebookId: string): Promise<void> {
+    if (!this.content) return;
+
+    const row = await this.db.select().from(lorebooks).where(eq(lorebooks.id, lorebookId)).get();
+    if (!row) return;
+
+    const entryRows = await this.db.select().from(loreEntries).where(eq(loreEntries.lorebookId, lorebookId)).all();
+    const fileData = this.toFilePayload(row, entryRows);
+    const hash = await this.content.writeEntity(STORAGE_FOLDERS.lorebooks, lorebookId, fileData);
+
+    await this.db.update(lorebooks)
+      .set({ contentHash: hash, hasFileOnDisk: 1 })
+      .where(eq(lorebooks.id, lorebookId))
+      .run();
+  }
+
+  private toFilePayload(
+    row: typeof lorebooks.$inferSelect,
+    entryRows: Array<typeof loreEntries.$inferSelect>,
+  ): Record<string, unknown> {
+    return {
+      name: row.name,
+      description: row.description,
+      scopeType: row.scopeType,
+      scanDepth: row.scanDepth,
+      tokenBudget: row.tokenBudget,
+      recursiveScanning: row.recursiveScanning === 1,
+      sortOrder: row.sortOrder,
+      enabled: row.enabled === 1,
+      characterId: row.characterId,
+      personaId: row.personaId,
+      chatId: row.chatId,
+      extensions: JSON.parse(row.extensionsJson),
+      entries: entryRows.map((e) => ({
+        id: e.id,
+        title: e.title,
+        content: e.content,
+        keys: JSON.parse(e.keysJson),
+        secondaryKeys: JSON.parse(e.secondaryKeysJson),
+        logic: e.logic,
+        position: e.position,
+        depth: e.depth,
+        priority: e.priority,
+        stickyWindow: e.stickyWindow,
+        cooldownWindow: e.cooldownWindow,
+        delayWindow: e.delayWindow,
+        constant: e.constant === 1,
+        probability: e.probability,
+        role: e.role,
+        group: e.groupName,
+        groupWeight: e.groupWeight,
+        prioritizeInclusion: e.prioritizeInclusion === 1,
+        excludeRecursion: e.excludeRecursion === 1,
+        preventRecursion: e.preventRecursion === 1,
+        delayUntilRecursion: e.delayUntilRecursion === 1,
+        recursionLevel: e.recursionLevel,
+        scanDepthOverride: e.scanDepthOverride,
+        caseSensitive: e.caseSensitive === 1,
+        matchWholeWords: e.matchWholeWords === 1,
+        characterFilter: JSON.parse(e.characterFilterJson),
+        characterFilterExclude: e.characterFilterExclude === 1,
+        triggers: JSON.parse(e.triggersJson),
+        matchSources: JSON.parse(e.matchSourcesJson),
+        enabled: e.enabled === 1,
+        sortOrder: e.sortOrder,
+        metadata: JSON.parse(e.metadataJson),
+        createdAt: e.createdAt,
+        updatedAt: e.updatedAt,
+      })),
+    };
   }
 
   // ─── Row mappers ───────────────────────────────────────────────────────────

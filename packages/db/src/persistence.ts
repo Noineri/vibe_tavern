@@ -29,7 +29,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     chats: new ChatStore(db),
     presets: new PresetStore(db),
     uiSettings: new UiSettingsStore(db),
-    lorebooks: new LorebookStore(db),
+    lorebooks: new LorebookStore(db, { content }),
     scripts: new ScriptStore(db),
   };
 }
