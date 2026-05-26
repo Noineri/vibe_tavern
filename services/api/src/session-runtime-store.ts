@@ -13,5 +13,5 @@ export async function createRuntimeStore(dataDir?: string): Promise<StoreContain
     dbPath = resolve(rootDir, process.env.RP_PLATFORM_DB_PATH ?? 'data/rp-platform.db');
   }
 
-  return await createStoreContainer(dbPath);
+  return await createStoreContainer(dbPath, dataDir);
 }

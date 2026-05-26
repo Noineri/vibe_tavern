@@ -1,4 +1,4 @@
-import { type PromptPreset, type StoreContainer, createFileStore } from "@rp-platform/db";
+import { type PromptPreset, type StoreContainer } from "@rp-platform/db";
 import type { PromptPresetDto, PromptTraceRecordDto } from "@rp-platform/domain";
 import {
 	type CharacterId,
@@ -106,7 +106,6 @@ export interface ImportResult {
 	private readonly chatApp: ChatApplicationService;
 	private readonly promptService: PromptAssemblyService;
 	private readonly chatOrder: ChatOrderService;
-	private readonly fileStore: ReturnType<typeof createFileStore>;
 	private defaultsEnsured = false;
 	private readonly getActiveProviderProfile: () => Promise<StoredProviderProfileRecord | null>;
 
@@ -123,10 +122,9 @@ export interface ImportResult {
 		},
 	) {
 		this.stores = stores;
-		this.fileStore = createFileStore(options?.dataDir);
 		this.resolver = new StaticPromptResolver(stores);
 		this.chatApp = new ChatApplicationService(stores.chats);
-		this.promptService = new PromptAssemblyService(stores, this.resolver, options?.dataDir);
+		this.promptService = new PromptAssemblyService(stores, this.resolver, this.stores.content.fileStore);
 		this.getActiveProviderProfile =
 			options?.getActiveProviderProfile ?? (async () => null);
 		this.chatOrder = new ChatOrderService(stores.chats);
@@ -278,7 +276,7 @@ export interface ImportResult {
 			resolver: this.resolver as unknown as importExportModule.ImportExportResolver,
 			chatApp: this.chatApp,
 			chatOrder: this.chatOrder,
-			fileStore: this.fileStore,
+			fileStore: this.stores.content.fileStore,
 			resolveDefaultPersonaId: () => this.persona.resolveDefaultId(),
 			resolveDefaultPromptPresetId: () => this.ensureDefaultPresetId(),
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
