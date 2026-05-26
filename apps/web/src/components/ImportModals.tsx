@@ -7,6 +7,7 @@ import { importJson, uploadAsset, updateCharacterAvatar } from "../app-client.js
 import { cn } from "../lib/cn.js";
 import { Icons } from "./shared/icons.js";
 import { Modal } from "./shared/Modal.js";
+import { useIsMobile } from "../hooks/use-mobile.js";
 import { useT, getT } from "../i18n/context.js";
 
 interface ImportModalCommonProps {
@@ -512,16 +513,17 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
 
 function ImportModalFrame(props: { title: string; subtitle: string; onClose: () => void; children: React.ReactNode }) {
   const { t } = useT();
+  const isMobile = useIsMobile();
   return (
     <Modal open={true} onClose={props.onClose}>
-      <div className="flex max-h-[calc(100vh-60px)] w-[500px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">
-        <div className="shrink-0 px-5 pt-[18px]">
+      <div className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[calc(100vh-60px)] w-[500px] max-w-[calc(100vw-32px)] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
+        <div className={cn("shrink-0", isMobile ? "px-4 pt-4" : "px-5 pt-[18px]")}>
           <div className="flex items-start justify-between">
             <div>
-              <div className="mb-0.5 font-body text-[calc(var(--ui-fs)+4px)] font-medium text-t1">{props.title}</div>
-              <div className="mb-3.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{props.subtitle}</div>
+              <div className={cn("mb-0.5 font-body font-medium text-t1", isMobile ? "text-lg" : "text-[calc(var(--ui-fs)+4px)]")}>{props.title}</div>
+              <div className={cn("mb-3.5 font-ui text-t3", isMobile ? "text-xs" : "text-[calc(var(--ui-fs)-2px)]")}>{props.subtitle}</div>
             </div>
-            <button className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={props.onClose} aria-label={t("close")}><Icons.Close /></button>
+            <button className={cn("flex shrink-0 cursor-pointer items-center justify-center text-t3 transition-all hover:bg-s2 hover:text-t1", isMobile ? "h-10 w-10 rounded-lg active:bg-s2" : "h-8 w-8 rounded-[5px]")} onClick={props.onClose} aria-label={t("close")}><Icons.Close /></button>
           </div>
         </div>
         {props.children}

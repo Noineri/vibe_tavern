@@ -8,6 +8,7 @@ import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { AvatarCropModal } from "./shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "./shared/AvatarCropModal.js";
 import { cn } from "../lib/cn.js";
+import { useIsMobile } from "../hooks/use-mobile.js";
 import { CustomTooltip } from "./shared/Tooltip.js";
 import { AutoTextarea } from "./shared/auto-textarea.js";
 import { Modal } from "./shared/Modal.js";
@@ -66,6 +67,7 @@ export function PersonaModal(input: PersonaModalProps) {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; error: string } | null>(null);
+  const isMobile = useIsMobile();
 
   // ── Avatar crop modal state ──
   const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
@@ -214,24 +216,24 @@ export function PersonaModal(input: PersonaModalProps) {
         />
       )}
       <div
-        className="flex max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] w-[500px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]"
+        className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] w-[500px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}
         onClick={(event) => event.stopPropagation()}
       >
         {/* Header */}
-        <div className="shrink-0 px-5 pt-[18px]">
+        <div className={cn("shrink-0", isMobile ? "px-4 pt-4" : "px-5 pt-[18px]")}>
           <div className="flex items-start justify-between">
             <div>
-              <div className="font-body mb-0.5 text-[calc(var(--ui-fs)+4px)] font-medium text-t1">{t("persona_manager_title")}</div>
-              <div className="font-ui mb-3.5 text-[calc(var(--ui-fs)-2px)] text-t3">{t("persona_manager_sub")}</div>
+              <div className={cn("font-body mb-0.5 font-medium text-t1", isMobile ? "text-lg" : "text-[calc(var(--ui-fs)+4px)]")}>{t("persona_manager_title")}</div>
+              <div className={cn("font-ui mb-3.5 text-t3", isMobile ? "text-xs" : "text-[calc(var(--ui-fs)-2px)]")}>{t("persona_manager_sub")}</div>
             </div>
-            <div className="flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={onClose}>
+            <div className={cn("shrink-0 cursor-pointer items-center justify-center text-t3 transition-all hover:bg-s2 hover:text-t1", isMobile ? "flex h-10 w-10 rounded-lg active:bg-s2" : "flex h-[32px] w-[32px] rounded-[5px]")} onClick={onClose}>
               <Icons.Close />
             </div>
           </div>
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className={cn("flex-1 overflow-y-auto", isMobile ? "p-4" : "p-5")}>
           <div className="mb-4 flex flex-col gap-2">
             {input.personas.length === 0 && (
               <EmptyState

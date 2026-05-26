@@ -4,6 +4,7 @@ import { cn } from '../lib/cn';
 import { useT } from '../i18n/context.js';
 import { useCharacterController } from '../hooks/use-character-controller.js';
 import { useBootstrapStore } from '../stores/api-actions/bootstrap-actions.js';
+import { useIsMobile } from '../hooks/use-mobile.js';
 
 interface WelcomeScreenProps {
   onCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string }) => Promise<void>;
@@ -15,6 +16,7 @@ export function WelcomeScreen() {
   const { t } = useT();
   const character = useCharacterController();
   const bootstrapData = useBootstrapStore((s) => s.data);
+  const isMobile = useIsMobile();
   const isFirstRun = (bootstrapData?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === 'true';
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -55,14 +57,14 @@ export function WelcomeScreen() {
 
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]">
-      <div className="flex max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] w-[540px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">
-        <div className="text-center px-7 pt-7">
+      <div className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] w-[540px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
+        <div className={cn("text-center", isMobile ? "px-4 pt-5" : "px-7 pt-7")}>
           <div className="mb-1.5 font-ui text-[1.35rem] font-bold text-t1">{t("ws_title")}</div>
           <div className="mb-6 font-ui text-[0.88rem] text-t2">{t("ws_sub")}</div>
         </div>
 
         {!creating ? (
-          <div className="flex flex-col gap-3 px-7 pb-7">
+          <div className={cn("flex flex-col gap-3", isMobile ? "px-4 pb-5" : "px-7 pb-7")}>
             <button className={cardBase} onClick={() => setCreating(true)}>
               <div className="text-[1.4rem] text-accent">{Ic.edit()}</div>
               <div className="font-ui text-[0.95rem] font-semibold">{t("ws_create")}</div>
@@ -82,11 +84,11 @@ export function WelcomeScreen() {
             </button>
           </div>
         ) : (
-          <div className="flex flex-col gap-3.5 px-7 pb-7">
+          <div className={cn("flex flex-col gap-3.5", isMobile ? "px-4 pb-5" : "px-7 pb-7")}>
             <label className="flex flex-col gap-1">
               <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_name_label")}</span>
               <input
-                className="w-full rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-[0.9rem] text-t1 outline-none transition-colors focus:border-accent"
+                className={cn("w-full rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base min-h-[44px]" : "text-[0.9rem]")}
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -97,7 +99,7 @@ export function WelcomeScreen() {
             <label className="flex flex-col gap-1">
               <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_desc_label")}</span>
               <textarea
-                className="w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-[0.9rem] text-t1 outline-none transition-colors focus:border-accent"
+                className={cn("w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
                 value={desc}
                 onChange={(e) => setDesc(e.target.value)}
                 rows={3}
@@ -106,7 +108,7 @@ export function WelcomeScreen() {
             <label className="flex flex-col gap-1">
               <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_first_msg_label")}</span>
               <textarea
-                className="w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-[0.9rem] text-t1 outline-none transition-colors focus:border-accent"
+                className={cn("w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
                 value={firstMsg}
                 onChange={(e) => setFirstMsg(e.target.value)}
                 rows={3}

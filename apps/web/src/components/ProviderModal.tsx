@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../i18n/context.js";
 import { Modal } from "./shared/Modal.js";
+import { cn } from "../lib/cn.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../app-client.js";
 import type { ProviderProbeResponse } from "@rp-platform/domain";
 import { saveProviderDraftSchema } from "@rp-platform/api-contracts";
@@ -16,6 +17,7 @@ import {
 } from "./provider/index.js";
 import { ConfirmCloseModal } from "./shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
+import { useIsMobile } from "../hooks/use-mobile.js";
 import { useModalStore } from "../stores/modal-store.js";
 
 export interface FormState {
@@ -174,6 +176,8 @@ export function ProviderModal({
   const [profileSearch, setProfileSearch] = useState("");
   const [dirty, setDirty] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
   // ── Header mode: edit vs view ──
   const [isNew, setIsNew] = useState(false);
@@ -375,30 +379,44 @@ export function ProviderModal({
         />
       )}
 
-      <div className="flex max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[680px] w-[860px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">
+      <div className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[680px] w-[860px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
 
         {/* ═══ HEADER ═══ */}
-        <div className="shrink-0 border-b border-border px-6 pt-5 pb-4">
+        <div className={cn("shrink-0 border-b border-border", isMobile ? "px-4 pt-4 pb-3" : "px-6 pt-5 pb-4")}>
           <div className="flex items-start justify-between">
-            <div>
-              <div className="mb-1 flex items-center gap-2 font-body text-[18px] font-semibold text-t1">
-                {t("provider_settings_title")}
+            <div className="flex items-center gap-2">
+              {isMobile && mobileDetailOpen && (
+                <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-t3 active:bg-s2" onClick={() => setMobileDetailOpen(false)}>
+                  <Icons.Caret direction="l" />
+                </button>
+              )}
+              <div>
+                <div className={cn("font-body font-semibold text-t1", isMobile ? "text-base" : "text-[18px] mb-1")}>
+                  {t("provider_settings_title")}
+                </div>
+                {!isMobile && <div className="font-ui text-[13px] text-t3">{t("provider_settings_desc")}</div>}
               </div>
-              <div className="font-ui text-[13px] text-t3">{t("provider_settings_desc")}</div>
             </div>
-            <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1" onClick={handleClose}><Icons.Close /></div>
+            <div className={cn("shrink-0 cursor-pointer items-center justify-center text-t3 transition-colors hover:bg-s2 hover:text-t1", isMobile ? "flex h-10 w-10 rounded-lg active:bg-s2" : "flex h-8 w-8 rounded-md")} onClick={handleClose}><Icons.Close /></div>
           </div>
         </div>
 
         {/* ═══ BODY ═══ */}
         <div className="flex min-h-0 flex-1 overflow-hidden">
+          {/* On mobile: show list when no detail, hide when detail open */}
+          {(!isMobile || !mobileDetailOpen) && (
           <ProviderProfileList
             filteredProfiles={filteredProfiles} editingId={editingId}
             activeProviderProfileId={activeProviderProfileId} profileSearch={profileSearch}
-            onProfileSearchChange={setProfileSearch} onSelectProfile={handleSelect} onAddProfile={handleAdd}
+            onProfileSearchChange={setProfileSearch}
+            onSelectProfile={(id) => { handleSelect(id); if (isMobile) setMobileDetailOpen(true); }}
+            onAddProfile={() => { void handleAdd(); if (isMobile) setMobileDetailOpen(true); }}
           />
+          )}
 
-          <div className="flex-1 overflow-y-auto p-6">
+          {/* On mobile: show detail when open; on desktop: always show */}
+          {(!isMobile || mobileDetailOpen) && (
+          <div className={cn("flex-1 overflow-y-auto", isMobile ? "p-4" : "p-6")}>
             {!form ? (
               <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
                 {t("provider_select_profile")}
@@ -466,10 +484,11 @@ export function ProviderModal({
               </>
             )}
           </div>
+          )}
         </div>
 
         {/* ═══ FOOTER ═══ */}
-        <div className="flex shrink-0 items-center justify-between border-t border-border px-6 py-4">
+        <div className={cn("shrink-0 items-center justify-between border-t border-border", isMobile ? "flex px-4 py-3" : "flex px-6 py-4")}>
           <div className="flex gap-4">
             <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>
               <Icons.Copy /> {t("duplicate")}

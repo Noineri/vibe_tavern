@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { Ic } from './shared/icons';
 import { cn } from '../lib/cn';
 import { Modal } from "./shared/Modal.js";
+import { useIsMobile } from '../hooks/use-mobile.js';
 import { AvatarCropModal } from './shared/AvatarCropModal.js';
 import { CustomTooltip } from './shared/Tooltip.js';
 import type { AvatarCropResult } from './shared/AvatarCropModal.js';
@@ -54,6 +55,7 @@ interface CreateCharacterModalProps {
 
 export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalProps) {
   const { t } = useT();
+  const isMobile = useIsMobile();
   const form = useForm<CreateCharacterFormData>({
     resolver: zodResolver(createCharacterFormSchema),
     defaultValues: {
@@ -184,9 +186,9 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           onCancel={handleAvatarCropCancel}
         />
       )}
-      <div className="flex max-h-[90vh] w-[600px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">
+      <div className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[90vh] w-[600px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
         {/* Header */}
-        <div className="shrink-0 border-b border-border px-5 pt-[18px] pb-4">
+        <div className={cn("shrink-0 border-b border-border", isMobile ? "px-4 pt-4 pb-3" : "px-5 pt-[18px] pb-4")}>
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center font-body text-[calc(var(--ui-fs)+4px)] font-medium text-t1">
@@ -201,9 +203,9 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className={cn("flex-1 overflow-y-auto", isMobile ? "p-4" : "p-5")}>
           {/* Avatar + Name row */}
-          <div className="flex gap-4 mb-5">
+          <div className={cn("flex gap-4 mb-5", isMobile && "flex-col items-center")}>
             <CustomTooltip content={t("upload_avatar")}>
             <div
               className="group relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t"
@@ -230,7 +232,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ws_name_label")}</label>
               <input
                 type="text"
-                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+                className={cn("w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent", isMobile && "text-base min-h-[44px]")}
                 {...register('name')}
                 autoFocus
               />
