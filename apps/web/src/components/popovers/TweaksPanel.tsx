@@ -2,6 +2,7 @@ import React from 'react';
 import { Toggle } from '../shared/Toggle.js';
 import { useT } from '../../i18n/context.js';
 import { Icons } from '../shared/icons.js';
+import { useIsMobile } from '../../hooks/use-mobile.js';
 
 interface TweaksSettings {
   theme: 'dark' | 'light';
@@ -19,6 +20,8 @@ interface TweaksPanelProps {
 
 export function TweaksPanel({ settings, setSetting, onOpenMobileAccess }: TweaksPanelProps) {
   const { t } = useT();
+  const isMobile = useIsMobile();
+  if (isMobile) return null;
   return (
     <div className="fixed right-4 top-[68px] z-[300] w-[260px] rounded-lg border border-border2 bg-surface shadow-[0_12px_28px_rgba(0,0,0,0.45)] p-3">
       <div className="mb-3 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t1">{t("tweaks_title")}</div>

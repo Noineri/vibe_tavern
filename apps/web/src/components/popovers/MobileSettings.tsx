@@ -1,0 +1,166 @@
+import { Toggle } from "../shared/Toggle.js";
+import { useT } from "../../i18n/context.js";
+import { Icons } from "../shared/icons.js";
+
+interface TweaksSettings {
+	theme: 'dark' | 'light';
+	fontSize: number;
+	uiFontSize: number;
+	messageWidth: 'narrow' | 'medium' | 'wide';
+	lang: string;
+}
+
+interface MobileSettingsProps {
+	open: boolean;
+	onClose: () => void;
+	settings: TweaksSettings;
+	setSetting: (key: string, value: unknown) => void;
+	onOpenMobileAccess: () => void;
+}
+
+export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobileAccess }: MobileSettingsProps) {
+	const { t } = useT();
+	if (!open) return null;
+
+	return (
+		<div className="fixed inset-0 z-[400] flex flex-col bg-bg">
+			{/* Header */}
+			<div className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-4">
+				<button
+					className="flex h-9 w-9 cursor-pointer items-center justify-center rounded text-t3 active:bg-s2"
+					onClick={onClose}
+				>
+					<Icons.Caret direction="l" />
+				</button>
+				<span className="font-ui text-[length:var(--ui-fs)] font-semibold text-t1">{t("tweaks_title")}</span>
+			</div>
+
+			{/* Content */}
+			<div className="flex-1 overflow-y-auto overscroll-y-none" style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
+
+				{/* Appearance */}
+				<div className="px-5 pt-5 pb-2">
+					<div className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.08em] text-t3">{t("tweaks_theme")}</div>
+				</div>
+
+				{/* Theme toggle */}
+				<div className="px-5 py-2.5">
+					<div className="flex min-h-[44px] items-center justify-between">
+						<div className="flex items-center gap-3">
+							<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
+								{settings.theme === "dark" ? <Icons.Moon /> : <Icons.Sun />}
+							</div>
+							<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_dark_theme")}</span>
+						</div>
+						<Toggle checked={settings.theme === "dark"} onChange={(checked) => setSetting("theme", checked ? "dark" : "light")} />
+					</div>
+				</div>
+
+				{/* Chat font size */}
+				<div className="px-5 py-2.5">
+					<div className="flex items-center gap-3 mb-2">
+						<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
+							<span className="font-body text-[16px] font-bold">A</span>
+						</div>
+						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_font_size")}</span>
+						<span className="ml-auto font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3">{settings.fontSize}px</span>
+					</div>
+					<input
+						type="range" min={14} max={22} step={1}
+						className="w-full accent-accent h-2"
+						value={settings.fontSize}
+						onChange={(e) => setSetting("fontSize", parseInt(e.target.value))}
+					/>
+				</div>
+
+				{/* UI font size */}
+				<div className="px-5 py-2.5">
+					<div className="flex items-center gap-3 mb-2">
+						<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
+							<Icons.Sliders />
+						</div>
+						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_ui_font_size")}</span>
+						<span className="ml-auto font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3">{settings.uiFontSize}px</span>
+					</div>
+					<input
+						type="range" min={14} max={20} step={1}
+						className="w-full accent-accent h-2"
+						value={settings.uiFontSize}
+						onChange={(e) => setSetting("uiFontSize", parseInt(e.target.value))}
+					/>
+				</div>
+
+				{/* Message width */}
+				<div className="px-5 py-2.5">
+					<div className="flex min-h-[44px] items-center justify-between gap-3">
+						<div className="flex items-center gap-3">
+							<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
+								<Icons.Chat />
+							</div>
+							<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_message_width")}</span>
+						</div>
+						<select
+							className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none pl-[7px] sel-arrow min-h-[36px]"
+							value={settings.messageWidth}
+							onChange={(e) => setSetting("messageWidth", e.target.value as "narrow" | "medium" | "wide")}
+						>
+							<option value="narrow">{t("tweaks_narrow")}</option>
+							<option value="medium">{t("tweaks_medium")}</option>
+							<option value="wide">{t("tweaks_wide")}</option>
+						</select>
+					</div>
+				</div>
+
+				{/* Language */}
+				<div className="px-5 pt-5 pb-2">
+					<div className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.08em] text-t3">{t("tweaks_language")}</div>
+				</div>
+
+				<div className="px-5 py-2.5">
+					<div className="flex items-center gap-3 mb-2.5">
+						<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
+							<Icons.Help />
+						</div>
+						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_language")}</span>
+					</div>
+					<div className="flex rounded-lg border border-border bg-s2 p-0.5">
+						{([
+							{ value: "en", label: "English" },
+							{ value: "ru", label: "Русский" },
+						] as const).map((l) => (
+							<button
+								key={l.value}
+								className={`flex flex-1 cursor-pointer items-center justify-center rounded-md py-2.5 font-ui text-[calc(var(--ui-fs)-3px)] transition-colors min-h-[40px] ${
+									settings.lang === l.value
+										? "bg-surface text-t1 font-medium shadow-sm"
+										: "text-t3 active:text-t2"
+								}`}
+								onClick={() => setSetting("lang", l.value)}
+							>
+								{l.label}
+							</button>
+						))}
+					</div>
+				</div>
+
+				{/* Mobile access */}
+				<div className="px-5 pt-5 pb-2">
+					<div className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.08em] text-t3">{t("mobile_access")}</div>
+				</div>
+				<div className="px-5 py-2.5">
+					<button
+						className="flex w-full min-h-[44px] cursor-pointer items-center justify-center gap-2 rounded-lg bg-accent px-4 font-ui text-[length:var(--ui-fs)] font-medium text-on-accent active:opacity-90"
+						onClick={onOpenMobileAccess}
+					>
+						<Icons.Phone />
+						{t("mobile_access_enable")}
+					</button>
+				</div>
+
+				{/* Safe area spacer */}
+				<div className="h-[env(safe-area-inset-bottom,0px)]" />
+				<div className="h-4" />
+			</div>
+		</div>
+	);
+}

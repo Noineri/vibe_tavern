@@ -24,6 +24,7 @@ import { ProviderModal } from "./ProviderModal.js";
 import { WelcomeScreen } from "./WelcomeScreen.js";
 import { ShellDestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
 import { TweaksPanel } from "./popovers/TweaksPanel.js";
+import { MobileSettings } from "./popovers/MobileSettings.js";
 import { MobileAccessModal } from "./modals/MobileAccessModal.js";
 import { AvatarPanel } from "./popovers/AvatarPanel.js";
 import type { AppSnapshot } from "../app-client.js";
@@ -179,6 +180,22 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
           } catch { /* ignore */ }
           setMobileAccessOpen(true);
         }} />}
+      {isMobile && <MobileSettings
+        open={tweaksOpen}
+        onClose={() => setTweaksOpen(false)}
+        settings={tweaksPanelSettings}
+        setSetting={handleSetTweak}
+        onOpenMobileAccess={async () => {
+          try {
+            const resp = await fetch("/api/settings/mobile-access");
+            if (resp.ok) {
+              const data = await resp.json();
+              if (!data.token) await fetch("/api/settings/mobile-access/regenerate", { method: "POST" });
+            }
+          } catch { /* ignore */ }
+          setMobileAccessOpen(true);
+        }}
+      />}
       {mobileAccessOpen && <MobileAccessModal open={mobileAccessOpen} onClose={() => setMobileAccessOpen(false)} onDisabled={() => {}} />}
       {avatarOpen && avatarSrc && <AvatarPanel src={avatarSrc} onClose={() => setAvatarOpen(false)} />}
 
@@ -243,7 +260,7 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
       <ShellDestructiveConfirmModal />
       <WelcomeScreen />
       <Toaster
-        position="bottom-right"
+        position={isMobile ? "top-center" : "bottom-right"}
         toastOptions={{ style: { background: "var(--s2)", color: "var(--t1)", border: "1px solid var(--border)" } }}
       />
     </div>
