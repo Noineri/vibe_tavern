@@ -16,7 +16,7 @@ import type {
 import type { StoreContainer } from "@rp-platform/db";
 import { assemblePrompt, setModelHint } from "@rp-platform/prompt-pipeline";
 import { logSendDebug } from "./send-debug-log.js";
-import { createFileStore, STORAGE_FOLDERS } from "@rp-platform/db";
+import { type FileStore, STORAGE_FOLDERS } from "@rp-platform/db";
 
 export interface PromptAssemblyResolver {
   getCharacter(
@@ -107,7 +107,7 @@ export class PromptAssemblyService {
   constructor(
     private readonly stores: StoreContainer,
     private readonly resolver: PromptAssemblyResolver,
-    private readonly dataDir?: string,
+    private readonly fileStore: FileStore,
   ) {}
 
   async assembleForChat(input: AssemblePromptForChatInput): Promise<AssemblePromptForChatResult> {
@@ -308,12 +308,11 @@ export class PromptAssemblyService {
     }
     // data/traces/{yyyy-mm-dd}/{promptTraceId}.json
     const date = trace.createdAt.split("T")[0];
-    const fileStore = createFileStore(this.dataDir);
-    const filePath = fileStore.resolvePath(
+    const filePath = this.fileStore.resolvePath(
       STORAGE_FOLDERS.traces,
       `${date}/${traceId}.json`,
     );
-    await fileStore.writeJson(filePath, trace);
+    await this.fileStore.writeJson(filePath, trace);
     return filePath;
   }
 }

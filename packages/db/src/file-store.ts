@@ -6,6 +6,7 @@ export const STORAGE_FOLDERS = {
 	personas: "personas",
 	promptPresets: "promptPresets",
 	lorebooks: "lorebooks",
+	scripts: "scripts",
 	chatMirrors: "chatMirrors",
 	assets: "assets",
 	traces: "traces",

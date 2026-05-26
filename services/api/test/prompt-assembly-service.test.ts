@@ -66,12 +66,20 @@ const mockResolver: PromptAssemblyResolver = {
   getToolInstructions: () => null,
 };
 
+const mockFileStore = {
+  dataRoot: "/mock",
+  resolvePath: (_folder: string, relativePath: string) => `/mock/${relativePath}`,
+  readJson: async <T>() => null as T,
+  writeJson: async () => {},
+  asyncWriteJson: async () => {},
+};
+
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 describe("PromptAssemblyService", () => {
   it("assembles a prompt with system, character, persona, and history layers", async () => {
     const stores = createMockStores();
-    const service = new PromptAssemblyService(stores, mockResolver);
+    const service = new PromptAssemblyService(stores, mockResolver, mockFileStore);
     const result = await service.assembleForChat({
       chatId: "chat_1" as ChatId,
       model: "test-model",
@@ -96,7 +104,7 @@ describe("PromptAssemblyService", () => {
 
   it("resolves macros in assembled prompt", async () => {
     const stores = createMockStores();
-    const service = new PromptAssemblyService(stores, mockResolver);
+    const service = new PromptAssemblyService(stores, mockResolver, mockFileStore);
     const result = await service.assembleForChat({
       chatId: "chat_1" as ChatId,
       model: "test-model",
@@ -117,7 +125,7 @@ describe("PromptAssemblyService", () => {
     const stores = createMockStores({
       getById: async () => null,
     });
-    const service = new PromptAssemblyService(stores, mockResolver);
+    const service = new PromptAssemblyService(stores, mockResolver, mockFileStore);
 
     expect(
       service.assembleForChat({ chatId: "missing" as ChatId, model: "x" }),
@@ -126,7 +134,7 @@ describe("PromptAssemblyService", () => {
 
   it("excludes messages by ID when excludeMessageIds provided", async () => {
     const stores = createMockStores();
-    const service = new PromptAssemblyService(stores, mockResolver);
+    const service = new PromptAssemblyService(stores, mockResolver, mockFileStore);
     const result = await service.assembleForChat({
       chatId: "chat_1" as ChatId,
       model: "test-model",
@@ -141,7 +149,7 @@ describe("PromptAssemblyService", () => {
 
   it("produces a prompt trace draft with correct metadata", async () => {
     const stores = createMockStores();
-    const service = new PromptAssemblyService(stores, mockResolver);
+    const service = new PromptAssemblyService(stores, mockResolver, mockFileStore);
     const result = await service.assembleForChat({
       chatId: "chat_1" as ChatId,
       model: "test-model",
@@ -156,7 +164,7 @@ describe("PromptAssemblyService", () => {
 
   it("returns branchId from the active branch", async () => {
     const stores = createMockStores();
-    const service = new PromptAssemblyService(stores, mockResolver);
+    const service = new PromptAssemblyService(stores, mockResolver, mockFileStore);
     const result = await service.assembleForChat({
       chatId: "chat_1" as ChatId,
       model: "test-model",
@@ -179,7 +187,7 @@ describe("PromptAssemblyService", () => {
         updatedAt: "2025-01-01T00:00:00Z",
       }),
     });
-    const service = new PromptAssemblyService(stores, mockResolver);
+    const service = new PromptAssemblyService(stores, mockResolver, mockFileStore);
     const result = await service.assembleForChat({
       chatId: "chat_1" as ChatId,
       model: "test-model",
@@ -206,7 +214,7 @@ describe("PromptAssemblyService", () => {
       }),
     };
     const stores = createMockStores();
-    const service = new PromptAssemblyService(stores, resolver);
+    const service = new PromptAssemblyService(stores, resolver, mockFileStore);
     const result = await service.assembleForChat({
       chatId: "chat_1" as ChatId,
       model: "test-model",
@@ -226,7 +234,7 @@ describe("PromptAssemblyService", () => {
     const stores = createMockStores({
       getMessages: async () => manyMessages,
     });
-    const service = new PromptAssemblyService(stores, mockResolver);
+    const service = new PromptAssemblyService(stores, mockResolver, mockFileStore);
     const result = await service.assembleForChat({
       chatId: "chat_1" as ChatId,
       model: "test-model",

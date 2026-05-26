@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
-import { type StoreContainer, type createFileStore, STORAGE_FOLDERS } from "@rp-platform/db";
+import { type StoreContainer, type FileStore, STORAGE_FOLDERS } from "@rp-platform/db";
 import type {
 	ChatId,
 	PersonaId,
@@ -28,7 +28,7 @@ export interface ImportExportModuleDeps {
 	resolver: ImportExportResolver;
 	chatApp: ChatApplicationService;
 	chatOrder: IChatOrder;
-	fileStore: ReturnType<typeof createFileStore>;
+	fileStore: FileStore;
 	resolveDefaultPersonaId(): Promise<PersonaId>;
 	resolveDefaultPromptPresetId(): Promise<PromptPresetId>;
 	getSnapshot(chatId: ChatId): Promise<import("./session-runtime.js").SessionSnapshot>;
