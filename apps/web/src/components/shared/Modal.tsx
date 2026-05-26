@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { cn } from "../../lib/cn.js";
+import { useIsMobile } from "../../hooks/use-mobile.js";
 
 export interface ModalProps {
   /** Controls open state */
@@ -11,6 +12,8 @@ export interface ModalProps {
   children: ReactNode;
   /** Optional extra class on overlay div */
   overlayClassName?: string;
+  /** When true, modal stays centered on mobile (for confirm/delete dialogs). Default: fullscreen on mobile. */
+  compact?: boolean;
 }
 
 /**
@@ -28,17 +31,23 @@ export function getModalPortal(): HTMLElement | null {
  * Provides: focus trap, scroll lock, Escape-to-close, overlay click dismiss.
  * Visual: same `bg-black/55 backdrop-blur-[2px]` overlay, centered content.
  */
-export function Modal({ open, onClose, children, overlayClassName }: ModalProps) {
+export function Modal({ open, onClose, children, overlayClassName, compact }: ModalProps) {
+  const isMobile = useIsMobile();
   return (
     <Dialog.Root open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <Dialog.Portal>
         <Dialog.Overlay
           className={cn(
-            "fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]",
+            "fixed inset-0 z-[500] flex bg-black/55 backdrop-blur-[2px]",
+            !compact && isMobile ? "items-start justify-start" : "items-center justify-center",
             overlayClassName,
           )}
         >
           <Dialog.Content
+            className={cn(
+              !compact && isMobile && "w-full h-full rounded-none",
+              compact && "max-w-sm",
+            )}
             onPointerDownOutside={(e) => e.preventDefault()}
             onInteractOutside={(e) => e.preventDefault()}
           >

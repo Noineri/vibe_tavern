@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import type { ChatId } from "@rp-platform/domain";
 import { Icons } from "./shared/icons.js";
 import { Modal } from "./shared/Modal.js";
+import { useIsMobile } from "../hooks/use-mobile.js";
 import { SummaryTab, ContextFooter } from "./context/index.js";
 import type { SavedSummary } from "./context/SummaryTab.js";
 import { cn } from "../lib/cn.js";
@@ -43,6 +44,7 @@ export function ContextMemoryModal({
   onFetchModelsForProfile,
 }: ContextMemoryModalProps) {
   const { t } = useT();
+  const isMobile = useIsMobile();
   const [topTab, setTopTab] = useState<'summary' | 'memory'>('summary');
   const [summaryText, setSummaryText] = useState(currentSummary);
   const [activeSummaryId, setActiveSummaryId] = useState<string | null>(null);
@@ -274,14 +276,14 @@ export function ContextMemoryModal({
 
   return (
     <Modal open={true} onClose={onClose}>
-      <div className="flex h-[min(85vh,680px)] max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[820px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">
-        <div className="shrink-0 border-b border-border px-5 pt-[18px]">
+      <div className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "h-[min(85vh,680px)] max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[820px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
+        <div className={cn("shrink-0 border-b border-border", isMobile ? "px-4 pt-4" : "px-5 pt-[18px]")}>
           <div className="flex items-start justify-between pb-3">
             <div>
-              <div className="font-body mb-0.5 text-[calc(var(--ui-fs)+4px)] font-medium text-t1">{t("context_memory_title")}</div>
-              <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("context_memory_sub")}</div>
+              <div className={cn("font-body font-medium text-t1", isMobile ? "text-base" : "text-[calc(var(--ui-fs)+4px)] mb-0.5")}>{t("context_memory_title")}</div>
+              {!isMobile && <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("context_memory_sub")}</div>}
             </div>
-            <div className="flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={onClose}><Icons.Close /></div>
+            <div className={cn("shrink-0 cursor-pointer items-center justify-center text-t3 transition-all hover:bg-s2 hover:text-t1", isMobile ? "flex h-10 w-10 rounded-lg active:bg-s2" : "flex h-[32px] w-[32px] rounded-[5px]")} onClick={onClose}><Icons.Close /></div>
           </div>
           <div className="flex gap-0 mt-1">
             <div className={cn("cursor-pointer border-b-2 border-b-transparent px-4 py-2 font-ui text-xs font-medium text-t3 transition-all select-none hover:text-t2", topTab === 'summary' && "border-b-accent text-accent-t")} onClick={() => setTopTab('summary')}>{t("memory_v1_tab")}</div>

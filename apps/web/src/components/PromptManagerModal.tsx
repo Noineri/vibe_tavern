@@ -5,6 +5,7 @@ import { useT } from "../i18n/context.js";
 import { Modal } from "./shared/Modal.js";
 import { ConfirmCloseModal } from "./shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "./shared/destructive-confirm-modal.js";
+import { useIsMobile } from "../hooks/use-mobile.js";
 import { Icons } from "./shared/icons.js";
 import { SaveButton } from "./shared/SaveBar.js";
 import { useModalStore } from "../stores/modal-store.js";
@@ -73,6 +74,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [advancedMode, setAdvancedMode] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const isMobile = useIsMobile();
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const activePreset = input.presets.find((p) => p.id === input.activePresetId) ?? null;
 
   useEffect(() => {
@@ -219,27 +222,36 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       )}
 
       <div
-        className="flex max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] w-[880px] h-[760px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]"
+        className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] w-[880px] h-[760px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex shrink-0 items-start justify-between border-b border-border pt-[18px] px-5 pb-[14px]">
-          <div>
-            <div className="font-body mb-0.5 text-[calc(var(--ui-fs)+4px)] font-medium text-t1">
-              {t("prompt_manager_title")}
-              {dirty && (
-                <CustomTooltip content={t("unsaved_changes_title")}>
-                <span
-                  className="ml-1.5 inline-block h-[7px] w-[7px] shrink-0 rounded-full bg-accent align-middle"
-                />
-                </CustomTooltip>
+        <div className={cn("shrink-0 items-start justify-between border-b border-border", isMobile ? "flex pt-4 px-4 pb-3" : "flex pt-[18px] px-5 pb-[14px]")}>
+          <div className="flex items-center gap-2">
+            {isMobile && mobileDetailOpen && (
+              <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-t3 active:bg-s2" onClick={() => setMobileDetailOpen(false)}>
+                <Icons.Caret direction="l" />
+              </button>
+            )}
+            <div>
+              <div className={cn("font-body font-medium text-t1", isMobile ? "text-base" : "text-[calc(var(--ui-fs)+4px)] mb-0.5")}>
+                {t("prompt_manager_title")}
+                {dirty && (
+                  <CustomTooltip content={t("unsaved_changes_title")}>
+                  <span
+                    className="ml-1.5 inline-block h-[7px] w-[7px] shrink-0 rounded-full bg-accent align-middle"
+                  />
+                  </CustomTooltip>
+                )}
+              </div>
+              {!isMobile && (
+              <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
+                {t("prompt_manager_sub")}
+              </div>
               )}
-            </div>
-            <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
-              {t("prompt_manager_sub")}
             </div>
           </div>
           <div
-            className="flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1"
+            className={cn("shrink-0 cursor-pointer items-center justify-center text-t3 transition-all hover:bg-s2 hover:text-t1", isMobile ? "flex h-10 w-10 rounded-lg active:bg-s2" : "flex h-[32px] w-[32px] rounded-[5px]")}
             onClick={handleClose}
           >
             <Icons.Close />
@@ -247,14 +259,17 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         </div>
 
         <div className="flex min-h-0 flex-1">
+          {(!isMobile || !mobileDetailOpen) && (
           <PresetList
             presets={input.presets.map((p) => ({ id: p.id, name: p.name }))}
             activePresetId={input.activePresetId}
-            onSelect={(id) => input.setActivePresetId(id)}
+            onSelect={(id) => { input.setActivePresetId(id); if (isMobile) setMobileDetailOpen(true); }}
             onAdd={handleAdd}
             onRename={handleRename}
             onImportPreset={() => setImportModalOpen(true)}
           />
+          )}
+          {(!isMobile || mobileDetailOpen) && (
           <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
             {/* Advanced mode accordion */}
             <details open={advancedMode} onToggle={(e) => setAdvancedMode((e.target as HTMLDetailsElement).open)} className="mx-5 mt-4">
@@ -280,6 +295,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               resetKey={activePreset?.id ?? null}
             />
           </div>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-2.5 border-t border-border py-3.5 px-5">
