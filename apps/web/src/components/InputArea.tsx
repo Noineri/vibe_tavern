@@ -2,16 +2,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PersonaQuickSwitch } from "./PersonaQuickSwitch.js";
 import { Icons } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
+import { avatarUrl } from "../lib/avatar.js";
 import { useTokenCount } from "../hooks/use-token-count.js";
 import { useT } from "../i18n/context.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
 import { useCharacterController } from "../hooks/use-character-controller.js";
 import { CustomTooltip } from "./shared/Tooltip.js";
 import { useProviderProfiles } from "../hooks/use-provider-profiles.js";
+import { useIsMobile } from "../hooks/use-mobile.js";
 
 import { useChatStore, useProviderStore } from "../stores/index.js";
 import { useActiveTrace } from "../stores/chat-selectors.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
+import { useModalStore } from "../stores/modal-store.js";
 import { useChatDataStore } from "../stores/chat-data-store.js";
 import type { PromptLayerDto } from "@rp-platform/domain";
 
@@ -21,6 +24,8 @@ export function InputArea() {
   const [modelDropOpen, setModelDropOpen] = useState(false);
   const tokenPopRef = useRef<HTMLDivElement>(null);
   const modelDropRef = useRef<HTMLDivElement>(null);
+  const [mobilePersonaOpen, setMobilePersonaOpen] = useState(false);
+  const mobilePersonaRef = useRef<HTMLDivElement>(null);
 
   // --- Sub-hooks ---
   const chat = useChatController();
@@ -90,10 +95,14 @@ export function InputArea() {
   const availableBudget = Math.max(0, contextSize - maxTokens);
   const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
   const tokenState = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
+  const isMobile = useIsMobile();
 
   useEffect(() => {
-    if (!tokenPopOpen && !modelDropOpen) return;
+    if (!mobilePersonaOpen && !tokenPopOpen && !modelDropOpen) return;
     function handleClick(e: MouseEvent) {
+      if (mobilePersonaRef.current && !mobilePersonaRef.current.contains(e.target as Node)) {
+        setMobilePersonaOpen(false);
+      }
       if (tokenPopRef.current && !tokenPopRef.current.contains(e.target as Node)) {
         setTokenPopOpen(false);
       }
@@ -103,10 +112,103 @@ export function InputArea() {
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [tokenPopOpen, modelDropOpen]);
+  }, [mobilePersonaOpen, tokenPopOpen, modelDropOpen]);
 
   const sendButtonText = canSend || !draft.trim() ? t("send") : sendLabel || t("send_unavailable");
 
+  // ── Mobile: compact two-row input ──
+  if (isMobile) {
+    return (
+      <div className={cn(
+        "relative z-10 shrink-0 border-t border-border bg-surface px-1.5 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2",
+        activeChatId ? '' : 'pointer-events-none opacity-45'
+      )}>
+        <div className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
+          {/* Toolbar row: persona + starred models */}
+          <div className="flex items-center justify-between">
+            <div className="relative" ref={mobilePersonaRef}>
+              <button onClick={() => setMobilePersonaOpen(o => !o)} className="flex items-center gap-1.5 rounded-md bg-s3 px-2.5 py-2 min-h-[44px] font-ui text-[calc(var(--ui-fs)-2px)] text-t2 active:bg-s2">
+                {activePersonaId ? (
+                  <PersonaAvatar assetId={personas.find(p => p.id === activePersonaId)?.avatarAssetId ?? null} size={20} />
+                ) : (
+                  <Icons.User />
+                )}
+                <span className="max-w-[120px] min-w-0 truncate">{activePersonaId ? (personas.find(p => p.id === activePersonaId)?.name ?? t("no_persona")) : t("no_persona")}</span>
+                <Icons.Caret direction="d" />
+              </button>
+              {mobilePersonaOpen && (
+                <div className="absolute bottom-[calc(100%+4px)] left-0 z-[220] w-[240px] rounded-lg border border-border2 bg-surface py-2 shadow-theme-md">
+                  <div className="px-4 pb-2 text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1">{t("persona_selection")}</div>
+                  {personas.map(p => (
+                    <button key={p.id} className="flex w-full min-h-[44px] cursor-pointer items-center gap-2 px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2" onClick={() => { void character.handleSetChatPersona(p.id); setMobilePersonaOpen(false); }}>
+                      <div className="w-4 shrink-0 flex justify-center text-accent-t">{activePersonaId === p.id && <Icons.Check/>}</div>
+                      <PersonaAvatar assetId={p.avatarAssetId} size={22} />
+                      <div className="min-w-0 truncate">{p.name}</div>
+                    </button>
+                  ))}
+                  <div className="pt-1 px-2 mt-1 border-t border-border">
+                    <button className="flex w-full min-h-[44px] cursor-pointer items-center gap-1.5 rounded-md px-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 active:bg-s2" onClick={() => { setMobilePersonaOpen(false); useModalStore.getState().setIsPersonaModalOpen(true); }}><Icons.Edit/> {t("manage_personas")}</button>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="relative" ref={modelDropRef}>
+              <button onClick={() => setModelDropOpen(o => !o)} className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2">
+                <Icons.StarFilled />
+              </button>
+              {modelDropOpen && (
+                <div className="absolute bottom-[calc(100%+4px)] right-0 z-[220] w-[240px] rounded-lg border border-border2 bg-surface py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
+                  <div className="px-4 pb-2 text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1">{t("starred_models")}</div>
+                  {favoriteModels.length > 0 ? (
+                    favoriteModels.map(model => (
+                      <div key={model.modelId} className="flex min-h-[44px] cursor-pointer items-center gap-2 px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2" onClick={() => {
+                        if (provider.activeProviderProfile) void provider.handleSelectFavoriteProviderModel(provider.activeProviderProfile.id, model.modelId);
+                        setModelDropOpen(false);
+                      }}>
+                        <div className="w-4 shrink-0 flex justify-center text-accent-t">{activeModelId === model.modelId && <Icons.Check/>}</div>
+                        <div className="min-w-0 truncate">{model.label || model.modelId}</div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-4 py-3 text-[calc(var(--ui-fs)-2px)] text-t3">{t("no_starred_models")}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          {/* Input row */}
+          <div className="flex items-end gap-2">
+            <textarea
+              className="max-h-[40vh] min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 pr-1 font-body text-[15px] leading-[1.4] text-t1 outline-none placeholder:text-t4 overflow-y-auto"
+              placeholder={t("placeholder")}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  if (canSend) void chat.handleSend();
+                }
+              }}
+              rows={1}
+            />
+            <div className="flex shrink-0 items-center">
+              {isSending ? (
+                <button className="flex h-9 w-9 items-center justify-center rounded-lg border border-danger text-danger-text active:bg-danger/10" onClick={chat.handleCancelGeneration}>
+                  <span className="text-[11px] font-bold">✕</span>
+                </button>
+              ) : (
+                <button className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-on-accent disabled:opacity-45 active:scale-95" disabled={!canSend} onClick={() => void chat.handleSend()}>
+                  <Icons.Caret direction="r" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Desktop ──
   return (
     <div
         className="relative z-10 shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3.5 transition-opacity duration-200"
@@ -244,4 +346,17 @@ export function InputArea() {
         </div>
       </div>
     );
+}
+
+function PersonaAvatar({ assetId, size }: { assetId: string | null; size: number }) {
+  if (!assetId) {
+    return (
+      <div className="shrink-0 rounded-full bg-s3 flex items-center justify-center text-[calc(var(--ui-fs)-3px)] text-t2 font-ui" style={{ width: size, height: size }}>
+        <Icons.User />
+      </div>
+    );
+  }
+  return (
+    <img src={avatarUrl(assetId)} alt="" className="shrink-0 rounded-full object-cover object-top" style={{ width: size, height: size }} />
+  );
 }
