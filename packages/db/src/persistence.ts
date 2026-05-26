@@ -27,7 +27,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     personas: new PersonaStore(db, { content }),
     providers: new ProviderStore(db),
     chats: new ChatStore(db),
-    presets: new PresetStore(db),
+    presets: new PresetStore(db, { content }),
     uiSettings: new UiSettingsStore(db),
     lorebooks: new LorebookStore(db, { content }),
     scripts: new ScriptStore(db, { content }),

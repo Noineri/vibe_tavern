@@ -2,6 +2,8 @@ import { eq, sql } from 'drizzle-orm';
 import { promptPresets } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
+import type { ContentStore } from '../content-store.js';
+import { STORAGE_FOLDERS } from '../file-store.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -46,19 +48,33 @@ export class PresetStore {
   private readonly db: AppDb;
   private readonly clock: StoreClock;
   private readonly idGen: StoreIdGenerator;
+  private readonly content: ContentStore | null;
 
-  constructor(db: AppDb, options?: { clock?: StoreClock; idGenerator?: StoreIdGenerator }) {
+  constructor(db: AppDb, options?: { clock?: StoreClock; idGenerator?: StoreIdGenerator; content?: ContentStore | null }) {
     this.db = db;
     const runtime = resolveStoreRuntime(options);
     this.clock = runtime.clock;
     this.idGen = runtime.idGenerator;
+    this.content = options?.content ?? null;
   }
 
   // ─── Read operations ───────────────────────────────────────────────────────
 
   async getById(id: string): Promise<PromptPreset | null> {
     const row = await this.db.select().from(promptPresets).where(eq(promptPresets.id, id)).get();
-    return row ? this.mapRow(row) : null;
+    if (!row) return null;
+
+    // Lazy migration: generate file if it doesn't exist on disk
+    if (this.content && !row.hasFileOnDisk) {
+      const fileData = this.toFilePayload(row);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.promptPresets, id, fileData);
+      await this.db.update(promptPresets)
+        .set({ contentHash: hash, hasFileOnDisk: 1 })
+        .where(eq(promptPresets.id, id))
+        .run();
+    }
+
+    return this.mapRow(row);
   }
 
   async listAll(): Promise<PromptPreset[]> {
@@ -92,6 +108,16 @@ export class PresetStore {
       })
       .returning();
 
+    // Dual-write: write canonical JSON file
+    if (this.content) {
+      const fileData = this.toFilePayload(row!);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.promptPresets, id, fileData);
+      await this.db.update(promptPresets)
+        .set({ contentHash: hash, hasFileOnDisk: 1 })
+        .where(eq(promptPresets.id, id))
+        .run();
+    }
+
     return this.mapRow(row!);
   }
 
@@ -122,10 +148,26 @@ export class PresetStore {
     if (!row) {
       throw new Error(`Preset '${id}' not found after update`);
     }
+
+    // Dual-write: update canonical JSON file
+    if (this.content) {
+      const fileData = this.toFilePayload(row);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.promptPresets, id, fileData);
+      await this.db.update(promptPresets)
+        .set({ contentHash: hash, hasFileOnDisk: 1 })
+        .where(eq(promptPresets.id, id))
+        .run();
+    }
+
     return this.mapRow(row);
   }
 
   async delete(id: string): Promise<void> {
+    // Delete file from disk
+    if (this.content) {
+      await this.content.deleteEntity(STORAGE_FOLDERS.promptPresets, id);
+    }
+
     await this.db.delete(promptPresets).where(eq(promptPresets.id, id)).run();
   }
 
@@ -158,6 +200,16 @@ export class PresetStore {
       })
       .returning();
 
+    // Dual-write: write canonical JSON file for duplicate
+    if (this.content) {
+      const fileData = this.toFilePayload(row!);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.promptPresets, newId, fileData);
+      await this.db.update(promptPresets)
+        .set({ contentHash: hash, hasFileOnDisk: 1 })
+        .where(eq(promptPresets.id, newId))
+        .run();
+    }
+
     return this.mapRow(row!);
   }
 
@@ -185,6 +237,23 @@ export class PresetStore {
       customInjectionsJson: '[]',
       bindProviderPresetId: null,
     });
+  }
+
+  // ─── File payload ──────────────────────────────────────────────────────────
+
+  private toFilePayload(row: typeof promptPresets.$inferSelect): Record<string, unknown> {
+    return {
+      name: row.name,
+      systemPrompt: row.systemPrompt,
+      postHistoryInstructions: row.postHistoryInstructions,
+      assistantPrefix: row.assistantPrefix,
+      authorsNote: row.authorsNote,
+      authorsNoteDepth: row.authorsNoteDepth,
+      summaryPrompt: row.summaryPrompt,
+      toolsPrompt: row.toolsPrompt,
+      scriptAiSystemPrompt: row.scriptAiSystemPrompt,
+      customInjections: JSON.parse(row.customInjectionsJson || '[]'),
+    };
   }
 
   // ─── Row mapper ────────────────────────────────────────────────────────────
