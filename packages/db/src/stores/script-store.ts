@@ -2,6 +2,8 @@ import { eq, and, or } from 'drizzle-orm';
 import { scripts } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
+import type { ContentStore } from '../content-store.js';
+import { STORAGE_FOLDERS } from '../file-store.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -44,19 +46,33 @@ export class ScriptStore {
   private readonly db: AppDb;
   private readonly clock: StoreClock;
   private readonly idGen: StoreIdGenerator;
+  private readonly content: ContentStore | null;
 
-  constructor(db: AppDb, options?: { clock?: StoreClock; idGenerator?: StoreIdGenerator }) {
+  constructor(db: AppDb, options?: { clock?: StoreClock; idGenerator?: StoreIdGenerator; content?: ContentStore | null }) {
     this.db = db;
     const runtime = resolveStoreRuntime(options);
     this.clock = runtime.clock;
     this.idGen = runtime.idGenerator;
+    this.content = options?.content ?? null;
   }
 
   // ─── Read operations ───────────────────────────────────────────────────────
 
   async getById(id: string): Promise<Script | null> {
     const row = await this.db.select().from(scripts).where(eq(scripts.id, id)).get();
-    return row ? this.mapRow(row) : null;
+    if (!row) return null;
+
+    // Lazy migration: generate file if it doesn't exist on disk
+    if (this.content && !row.hasFileOnDisk) {
+      const fileData = this.toFilePayload(row);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.scripts, id, fileData);
+      await this.db.update(scripts)
+        .set({ contentHash: hash, hasFileOnDisk: 1 })
+        .where(eq(scripts.id, id))
+        .run();
+    }
+
+    return this.mapRow(row);
   }
 
   async listByScope(scopeType: string, ownerId?: string): Promise<Script[]> {
@@ -103,6 +119,17 @@ export class ScriptStore {
         updatedAt: now,
       })
       .returning();
+
+    // Dual-write: write canonical JSON file
+    if (this.content) {
+      const fileData = this.toFilePayload(row!);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.scripts, id, fileData);
+      await this.db.update(scripts)
+        .set({ contentHash: hash, hasFileOnDisk: 1 })
+        .where(eq(scripts.id, id))
+        .run();
+    }
+
     return this.mapRow(row!);
   }
 
@@ -127,10 +154,26 @@ export class ScriptStore {
       .where(eq(scripts.id, id))
       .returning();
     if (!row) throw new Error(`Script '${id}' not found after update`);
+
+    // Dual-write: update canonical JSON file
+    if (this.content) {
+      const fileData = this.toFilePayload(row);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.scripts, id, fileData);
+      await this.db.update(scripts)
+        .set({ contentHash: hash, hasFileOnDisk: 1 })
+        .where(eq(scripts.id, id))
+        .run();
+    }
+
     return this.mapRow(row);
   }
 
   async delete(id: string): Promise<void> {
+    // Delete file from disk
+    if (this.content) {
+      await this.content.deleteEntity(STORAGE_FOLDERS.scripts, id);
+    }
+
     await this.db.delete(scripts).where(eq(scripts.id, id)).run();
   }
 
@@ -173,6 +216,23 @@ export class ScriptStore {
     return rows
       .map((r) => this.mapRow(r))
       .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  // ─── File payload ──────────────────────────────────────────────────────────
+
+  private toFilePayload(row: typeof scripts.$inferSelect): Record<string, unknown> {
+    return {
+      name: row.name,
+      description: row.description,
+      code: row.code,
+      enabled: row.enabled === 1,
+      scopeType: row.scopeType,
+      sortOrder: row.sortOrder,
+      characterId: row.characterId,
+      personaId: row.personaId,
+      chatId: row.chatId,
+      extensions: JSON.parse(row.extensionsJson),
+    };
   }
 
   // ─── Row mapper ────────────────────────────────────────────────────────────
