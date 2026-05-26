@@ -38,20 +38,22 @@ export function Modal({ open, onClose, children, overlayClassName, compact }: Mo
       <Dialog.Portal>
         <Dialog.Overlay
           className={cn(
-            "fixed inset-0 z-[500] flex bg-black/55 backdrop-blur-[2px]",
-            !compact && isMobile ? "items-start justify-start" : "items-center justify-center",
+            "fixed inset-0 z-[500] bg-black/55 backdrop-blur-[2px]",
             overlayClassName,
           )}
+        />
+        <Dialog.Content
+          className={cn(
+            "fixed z-[501]",
+            !compact && isMobile
+              ? "inset-0 w-full h-full rounded-none flex items-center justify-center"
+              : "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2",
+            compact && "max-w-sm left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2",
+          )}
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
         >
-          <Dialog.Content
-            className={cn(
-              !compact && isMobile && "w-full h-full rounded-none",
-              compact && "max-w-sm",
-            )}
-            onPointerDownOutside={(e) => e.preventDefault()}
-            onInteractOutside={(e) => e.preventDefault()}
-          >
-            {children}
+          {children}
             {/* Portal anchor for nested Radix components (Select, Popover).
                 Positioned as a zero-size fixed element inside Dialog.Content.
                 Select.Portal uses this as container to stay within focus trap. */}
@@ -60,7 +62,6 @@ export function Modal({ open, onClose, children, overlayClassName, compact }: Mo
               style={{ position: "fixed", top: 0, left: 0, width: 0, height: 0 }}
             />
           </Dialog.Content>
-        </Dialog.Overlay>
       </Dialog.Portal>
     </Dialog.Root>
   );

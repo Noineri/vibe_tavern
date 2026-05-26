@@ -13,7 +13,7 @@ import { useChatDataStore } from "../stores/chat-data-store.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { CustomTooltip } from "./shared/Tooltip.js";
 
-export function TopBar() {
+export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onShowRail?: () => void }) {
   const { t } = useT();
   const isMobile = useIsMobile();
 
@@ -65,28 +65,49 @@ export function TopBar() {
   // --- Store actions ---
   const setMode = useNavigationStore((s) => s.setMode);
 
-  return (
-    <div className={cn("sticky top-0 z-50 flex shrink-0 items-center gap-3.5 border-b border-border bg-surface", isMobile ? "h-[48px] px-3" : "h-[60px] px-[22px]")}>
-        {isMobile && (
-          <div className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-t3 transition-colors active:bg-s3"
-               onClick={() => useNavigationStore.getState().triggerRailOpen()}>
+  // ── Mobile: compact TopBar ──
+  if (isMobile) {
+    return (
+      <div className="sticky top-0 z-50 flex h-[48px] shrink-0 items-center gap-2.5 border-b border-border bg-surface px-3">
+        {railHidden && (
+          <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-t3 transition-colors active:bg-s3"
+               onClick={onShowRail}>
             <Icons.Menu />
           </div>
         )}
-        <div className="flex min-w-[90px] max-w-[220px] flex-none items-center gap-2.5">
-          <div className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border-[1.5px] border-transparent bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t2 transition-opacity duration-150 hover:border-accent hover:opacity-85 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top"
-            onClick={() => useModalStore.getState().setAvatarOpen(true)}>
-            {characterAvatar
-              ? <img src={characterAvatar} alt={characterName}/>
-              : <>{initials(characterName)}</>}
-          </div>
-          <div className="min-w-0 overflow-hidden">
-            <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[length:var(--ui-fs)] font-medium leading-[1.2] text-t1">{characterName}</div>
-            <div className="mt-px max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] text-t3">{characterSubtitle}</div>
-          </div>
+        <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border-[1.5px] border-transparent bg-s3 font-body text-[calc(var(--ui-fs)-2px)] italic text-t2 transition-opacity duration-150 hover:border-accent hover:opacity-85 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top"
+          onClick={() => useModalStore.getState().setAvatarOpen(true)}>
+          {characterAvatar
+            ? <img src={characterAvatar} alt={characterName}/>
+            : <>{initials(characterName)}</>}
         </div>
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[length:var(--ui-fs)] font-medium leading-[1.2] text-t1">{characterName}</div>
+        </div>
+        <div className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-accent-t transition-colors duration-150 hover:bg-accent-hover"
+          onClick={() => setMode(mode === 'play' ? 'build' : 'play')}>
+          {mode === 'play' ? t("topbar_build_mode") : t("topbar_play_mode")}
+        </div>
+      </div>
+    );
+  }
 
-        <div className="flex min-w-0 shrink items-center gap-[5px] flex-1 overflow-visible">
+  // ── Desktop ──
+  return (
+    <div className="sticky top-0 z-50 flex h-[60px] shrink-0 items-center gap-3.5 border-b border-border bg-surface px-[22px]">
+      <div className="flex min-w-[90px] max-w-[220px] flex-none items-center gap-2.5">
+        <div className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border-[1.5px] border-transparent bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t2 transition-opacity duration-150 hover:border-accent hover:opacity-85 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top"
+          onClick={() => useModalStore.getState().setAvatarOpen(true)}>
+          {characterAvatar
+            ? <img src={characterAvatar} alt={characterName}/>
+            : <>{initials(characterName)}</>}
+        </div>
+        <div className="min-w-0 overflow-hidden">
+          <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[length:var(--ui-fs)] font-medium leading-[1.2] text-t1">{characterName}</div>
+          <div className="mt-px max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] text-t3">{characterSubtitle}</div>
+        </div>
+      </div>
+      <div className="flex min-w-0 shrink items-center gap-[5px] flex-1 overflow-visible">
           {mode === 'play' && (
             <MemBadge label={t("topbar_memory")} onClick={() => useModalStore.getState().setContextMemoryOpen(true)} />
           )}
@@ -154,7 +175,7 @@ export function TopBar() {
             <div className={cn("flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t1", tweaksOpen && "bg-accent-dim text-accent-t")}
               tabIndex={0}
               onClick={() => useModalStore.getState().setTweaksOpen(!tweaksOpen)}>
-              <Icons.Settings />
+              <Icons.settings />
             </div>
           </CustomTooltip>
         </div>

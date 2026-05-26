@@ -41,6 +41,7 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
 
   // --- Store subscriptions (reactive) ---
   const isMobile = useIsMobile();
+  const showRail = tweaksSettings.showRail;
   const mode = useNavigationStore((s) => s.mode);
   const theme = useNavigationStore((s) => s.theme);
   const setTheme = useNavigationStore((s) => s.setTheme);
@@ -152,10 +153,12 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
     uiFontSize: tweaksSettings.uiFontSize,
     messageWidth: tweaksSettings.messageWidth,
     lang: tweaksSettings.lang,
+    showRail: tweaksSettings.showRail,
   };
 
   const handleSetTweak = (key: string, value: unknown) => {
     if (key === 'theme') setTheme(value as 'dark' | 'light');
+    else if (key === 'showRail') updateTweak(key, value as boolean);
     else if (key === 'fontSize' || key === 'uiFontSize') updateTweak(key, value as number);
     else if (key === 'messageWidth') updateTweak(key, value as 'narrow' | 'medium' | 'wide');
     else if (key === 'lang') { updateTweak(key, value as string); setLocale(value as 'en' | 'ru'); }
@@ -163,9 +166,9 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
 
   return (
     <div className="flex bg-bg text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
-      {isMobile ? <Rail /> : <Sidebar />}
+      {isMobile ? <Rail hidden={!showRail} /> : <Sidebar />}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <TopBar />
+        <TopBar railHidden={isMobile && !showRail} onShowRail={() => updateTweak("showRail", true)} />
         {shellSurface}
       </main>
 

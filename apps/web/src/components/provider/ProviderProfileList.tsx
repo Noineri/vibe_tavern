@@ -27,7 +27,7 @@ export function ProviderProfileList({
   const { t } = useT();
   return (
     <div
-      className="flex w-[220px] shrink-0 flex-col border-r border-border bg-surface pt-5 pb-2.5"
+      className="flex w-full sm:w-[220px] shrink-0 flex-col border-r border-border bg-surface pt-5 pb-2.5"
     >
       <div
         className="mb-1.5 px-4 font-ui text-[12px] font-medium uppercase tracking-[0.05em] text-t3"

@@ -10,10 +10,11 @@ export interface TweaksSettings {
   uiFontSize: number;
   messageWidth: "narrow" | "medium" | "wide";
   lang: string;
+  showRail: boolean;
 }
 
 export const MESSAGE_WIDTH_MAP: Record<string, string> = { narrow: "680px", medium: "820px", wide: "960px" };
-export const DEFAULT_TWEAKS: TweaksSettings = { fontSize: 17, uiFontSize: 16, messageWidth: "medium", lang: "en" };
+export const DEFAULT_TWEAKS: TweaksSettings = { fontSize: 17, uiFontSize: 16, messageWidth: "medium", lang: "en", showRail: false };
 
 export function readSavedTheme(): ThemeMode {
   try {
