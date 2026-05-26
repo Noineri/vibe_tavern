@@ -69,7 +69,9 @@ Created with amazing open-source projects:
 - [Bun](https://bun.sh)
 - [Drizzle ORM](https://orm.drizzle.team)
 - [React](https://react.dev)
+- [Hono](https://hono.dev/)
 - [Tailwind CSS](https://tailwindcss.com)
+- [Vercel AI SDK](https://ai-sdk.dev/)
 
 <div align="center">
   <p>We, the Claw Tavern team, hope that you enjoy reloplaying in our rp platform</p>
