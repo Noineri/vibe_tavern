@@ -20,13 +20,19 @@ function findScrollParent(el: HTMLElement): HTMLElement | null {
  * When false, only grows (while typing).
  * Preserves scroll position of the nearest scrollable ancestor.
  */
-export function resizeTextarea(el: HTMLTextAreaElement, allowShrink: boolean): void {
+export function resizeTextarea(el: HTMLTextAreaElement, allowShrink: boolean, maxHeight?: number): void {
   const scrollParent = findScrollParent(el);
   const scrollTop = scrollParent?.scrollTop ?? 0;
 
   if (allowShrink) el.style.height = "auto";
   const min = parseFloat(getComputedStyle(el).minHeight) || 0;
-  const next = Math.max(el.scrollHeight, min);
+  let next = Math.max(el.scrollHeight, min);
+  if (maxHeight && next > maxHeight) {
+    next = maxHeight;
+    el.style.overflowY = "auto";
+  } else {
+    el.style.overflowY = "hidden";
+  }
   if (allowShrink || next > el.getBoundingClientRect().height) {
     el.style.height = `${next}px`;
   }
@@ -53,6 +59,8 @@ export interface AutoTextareaProps extends AutoTextareaPassthrough {
   value?: string;
   /** Change handler for controlled mode */
   onChange?: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  /** Max height in pixels — textarea stops growing and scrolls internally. Default: Infinity (no cap). */
+  maxHeight?: number;
 }
 
 /**
@@ -72,6 +80,7 @@ export function AutoTextarea({
   register,
   value,
   onChange,
+  maxHeight,
   ...rest
 }: AutoTextareaProps) {
   const elRef = useRef<HTMLTextAreaElement | null>(null);
@@ -80,12 +89,12 @@ export function AutoTextarea({
   useLayoutEffect(() => {
     const el = elRef.current;
     if (!el) return;
-    resizeTextarea(el, true);
+    resizeTextarea(el, true, maxHeight);
   });
 
   const handleRegisterChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      resizeTextarea(e.currentTarget, false);
+      resizeTextarea(e.currentTarget, false, maxHeight);
       register?.onChange?.(e);
     },
     [register],
@@ -93,7 +102,7 @@ export function AutoTextarea({
 
   const handleControlledChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      resizeTextarea(e.currentTarget, false);
+      resizeTextarea(e.currentTarget, false, maxHeight);
       onChange?.(e);
     },
     [onChange],

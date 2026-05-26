@@ -67,6 +67,9 @@
   --font-ui: 'Inter', system-ui, sans-serif;
   --font-body: 'Alegreya', Georgia, serif;
   --animate-genp: genp 1.3s ease-in-out infinite;
+  --mfs: var(--mfs);       /* message font size — set in theme files */
+  --ui-fs: var(--ui-fs);   /* UI font size — set in theme files */
+  --mw: var(--mw);         /* max message width — set in theme files */
 }
 
 @layer base {
