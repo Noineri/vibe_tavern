@@ -447,8 +447,8 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
             </div>
           )}
 
-          {!isEditing && !isGenerating && (
-            <div className={isMobile ? "relative flex items-center gap-px mt-1.5" : "relative flex items-center gap-px mt-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100"}>
+          {!isEditing && !isGenerating && !isMobile && (
+            <div className="relative flex items-center gap-px mt-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
               <span
                 className={cn('flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all duration-150 hover:bg-s2 hover:text-t2', copied && 'translate-y-[-1px] bg-success-dim text-success-text')}
                 onClick={() => { if (isBusy) return; void navigator.clipboard?.writeText(msg.displayContent); setCopied(true); setTimeout(() => setCopied(false), 1000); }}

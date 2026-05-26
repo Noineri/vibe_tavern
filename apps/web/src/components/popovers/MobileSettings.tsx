@@ -8,6 +8,7 @@ interface TweaksSettings {
 	uiFontSize: number;
 	messageWidth: 'narrow' | 'medium' | 'wide';
 	lang: string;
+	showRail: boolean;
 }
 
 interface MobileSettingsProps {
@@ -53,6 +54,19 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 							<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_dark_theme")}</span>
 						</div>
 						<Toggle checked={settings.theme === "dark"} onChange={(checked) => setSetting("theme", checked ? "dark" : "light")} />
+					</div>
+				</div>
+
+				{/* Show Rail toggle */}
+				<div className="px-5 py-2.5">
+					<div className="flex min-h-[44px] items-center justify-between">
+						<div className="flex items-center gap-3">
+							<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
+								<Icons.Menu />
+							</div>
+							<span className="font-body text-[length:var(--ui-fs)] text-t1">{settings.showRail ? t("hide_rail") : t("show_rail")}</span>
+						</div>
+						<Toggle checked={settings.showRail} onChange={(checked) => setSetting("showRail", checked)} />
 					</div>
 				</div>
 

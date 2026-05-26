@@ -11,7 +11,7 @@ import { useNavigationStore, useChatStore, useModalStore } from "../stores/index
 import { useBuildPanels } from "../hooks/use-build-panels.js";
 import type { ChatListItem } from "../app-client.js";
 
-export function Rail() {
+export function Rail({ hidden }: { hidden?: boolean }) {
   const { t } = useT();
   const mode = useNavigationStore((s) => s.mode);
   const activeChatId = useChatStore((s) => s.activeChatId);
@@ -125,7 +125,7 @@ export function Rail() {
     </div>
   );
 
-  return (
+  return (hidden ? null : (
     <>
       {/* ═══ COLLAPSED RAIL ═══ */}
       <div
@@ -135,7 +135,7 @@ export function Rail() {
         onTouchEnd={onTouchEnd}
       >
         {/* Hamburger */}
-        <div className="flex h-[52px] w-full shrink-0 items-center justify-center border-b border-border">
+        <div className="flex h-[48px] w-full shrink-0 items-center justify-center border-b border-border">
           <div className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-[6px] text-t3 transition-colors duration-100 active:bg-s3"
                onClick={toggle}>
             <Ic.menu />
@@ -164,8 +164,8 @@ export function Rail() {
                 </div>
               </div>
               <div className="h-px w-8 shrink-0 bg-border" />
-              {/* Character avatars */}
-              {visibleChars.map((c) => (
+              {/* Character avatars (max 5, +N more) */}
+              {visibleChars.slice(0, 5).map((c) => (
                 <div
                   key={c.id}
                   className={cn(
@@ -182,6 +182,15 @@ export function Rail() {
                   )}
                 </div>
               ))}
+              {visibleChars.length > 5 && (
+                <div
+                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-s3 font-ui text-[11px] font-medium text-t2 transition-all duration-150 active:rounded-xl active:bg-s2 active:scale-95"
+                  onClick={() => setExpanded(true)}
+                  title={t("more_characters") ?? `${visibleChars.length - 5} more`}
+                >
+                  +{visibleChars.length - 5}
+                </div>
+              )}
               <div className="my-0.5 h-px w-8 shrink-0 bg-border" />
               {/* Chat indicators for active character */}
               {activeCharChats.map((ch) => {
@@ -208,7 +217,7 @@ export function Rail() {
           <Ico icon={<Ic.terminal />} onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)} title={t("prompt_manager")} />
           <Ico icon={<Ic.stack />} onClick={() => { /* Memory modal skipped */ }} title={t("scenario_memory")} />
           <Ico icon={<Ic.plug />} onClick={() => useModalStore.getState().setIsProviderModalOpen(true)} title={t("provider_settings_tooltip")} />
-          <Ico icon={<Ic.sliders />} onClick={() => { /* Settings not yet wired */ }} title={t("interface_settings_tooltip")} />
+          <Ico icon={<Ic.sliders />} onClick={() => useModalStore.getState().setTweaksOpen(true)} title={t("interface_settings_tooltip")} />
         </div>
       </div>
 
@@ -231,7 +240,7 @@ export function Rail() {
             onTouchEnd={onPanelTouchEnd}
           >
             {/* Header */}
-            <div className="flex h-[52px] shrink-0 items-center border-b border-border px-3">
+            <div className="flex h-[48px] shrink-0 items-center border-b border-border px-3">
               <div className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-[6px] text-t3 transition-colors active:bg-s3"
                    onClick={toggle}>
                 <Ic.menu />
@@ -311,11 +320,11 @@ export function Rail() {
               <NavRow icon={<Ic.terminal />} label={t("prompt_manager")} onClick={() => { useModalStore.getState().setIsPromptManagerOpen(true); close(); }} />
               <NavRow icon={<Ic.stack />} label={t("scenario_memory")} onClick={() => { close(); }} />
               <NavRow icon={<Ic.plug />} label={t("provider_settings_tooltip")} onClick={() => { useModalStore.getState().setIsProviderModalOpen(true); close(); }} />
-              <NavRow icon={<Ic.sliders />} label={t("interface_settings_tooltip")} onClick={() => { close(); }} />
+              <NavRow icon={<Ic.sliders />} label={t("interface_settings_tooltip")} onClick={() => { useModalStore.getState().setTweaksOpen(true); close(); }} />
             </div>
           </div>
         </>
       )}
     </>
-  );
+  ));
 }

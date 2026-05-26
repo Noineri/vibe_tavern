@@ -62,7 +62,7 @@ export function ProviderForm({
   return (
     <>
       {/* Row 1: profile name + provider preset */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="mb-4">
           <label className={labelCls + " mb-[7px]"}>{t("profile_name")}</label>
           <input
@@ -105,7 +105,7 @@ export function ProviderForm({
       </div>
 
       {/* Row 2: API format + preset endpoint */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="mb-4">
           <label className={labelCls + " mb-[7px]"}>{t("api_format_label")}</label>
           <select
