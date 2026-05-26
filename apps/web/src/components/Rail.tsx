@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatId } from "@rp-platform/domain";
 import { Ic } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
@@ -23,6 +23,12 @@ export function Rail() {
 
   const [expanded, setExpanded] = useState(false);
   const [closing, setClosing] = useState(false);
+
+  // Hamburger force-open from TopBar
+  const forceOpen = useNavigationStore((s) => s.railForceOpen);
+  useEffect(() => {
+    if (forceOpen > 0) setExpanded(true);
+  }, [forceOpen]);
 
   // Filter: only non-archived characters
   const visibleChars = allCharacters.filter((c) => {

@@ -10,7 +10,9 @@ import { useChatController } from "../hooks/use-chat-controller.js";
 import { useCharacterController } from "../hooks/use-character-controller.js";
 import { useProviderProfiles } from "../hooks/use-provider-profiles.js";
 import { usePresetController } from "../hooks/use-preset-controller.js";
+import { useIsMobile } from "../hooks/use-mobile.js";
 import { Sidebar } from "./Sidebar.js";
+import { Rail } from "./Rail.js";
 import { TopBar } from "./TopBar.js";
 import { PlayMode } from "./PlayMode.js";
 import { BuildMode } from "./BuildMode.js";
@@ -37,6 +39,7 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
   const { t, setLocale } = useT();
 
   // --- Store subscriptions (reactive) ---
+  const isMobile = useIsMobile();
   const mode = useNavigationStore((s) => s.mode);
   const theme = useNavigationStore((s) => s.theme);
   const setTheme = useNavigationStore((s) => s.setTheme);
@@ -159,7 +162,7 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
 
   return (
     <div className="flex bg-bg text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
-      <Sidebar />
+      {isMobile ? <Rail /> : <Sidebar />}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar />
         {shellSurface}
