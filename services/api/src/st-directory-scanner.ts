@@ -9,12 +9,13 @@
  *   OpenAI Settings/ ← .json (prompt presets, optional)
  */
 
-import { readdir, stat } from "node:fs/promises";
+import { readdir, stat, mkdir } from "node:fs/promises";
 import { join, extname, basename, resolve } from "node:path";
 import { importCharacterCardV3Json } from "../../../packages/import-export/src/index.js";
 import { importStLorebookJson } from "../../../packages/import-export/src/index.js";
 import { parseSillyTavernChat } from "../../../packages/import-export/src/chats/st-chat.js";
 import type { ImportExportModuleDeps, ImportResult } from "./session-runtime-import-export.js";
+import { STORAGE_FOLDERS } from "@rp-platform/db";
 import type { CharacterId, ChatId } from "@rp-platform/domain";
 import { brandId } from "@rp-platform/domain";
 
@@ -251,6 +252,15 @@ export async function importSillyTavernDirectory(
 					tags: imported.character.tags,
 				});
 				characterId = created.id;
+			}
+
+			// Save original PNG bytes for lossless round-trip
+			if (ext === ".png") {
+				const pngBuffer = await Bun.file(filePath).arrayBuffer();
+				const pngPath = deps.stores.content.fileStore.resolvePath(STORAGE_FOLDERS.characters, `${characterId}/original.png`);
+				const dir = resolve(pngPath, "..");
+				await mkdir(dir, { recursive: true });
+				await Bun.write(pngPath, Buffer.from(pngBuffer));
 			}
 
 			// Create a chat for the character and seed first message

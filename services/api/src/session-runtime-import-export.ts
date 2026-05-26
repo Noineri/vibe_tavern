@@ -81,6 +81,18 @@ export async function exportCharacter(
 		tags: character.tags,
 	};
 
+	// Merge original unknown fields for lossless round-trip
+	const original = await deps.stores.content.readEntity<Record<string, unknown>>(
+		STORAGE_FOLDERS.characters,
+		`${characterId}/original`,
+	);
+	if (original) {
+		// Original wins for unknown fields, current data wins for known fields
+		const origData = (original as Record<string, unknown>).data as Record<string, unknown> | undefined;
+		const mergedData = { ...(origData ?? {}), ...data };
+		return { ...(original as Record<string, unknown>), data: mergedData };
+	}
+
 	return {
 		spec: "chara_card_v3",
 		spec_version: "3.0",
@@ -272,6 +284,8 @@ export async function importJson(
 				systemPrompt: imported.character.systemPrompt,
 				tags: imported.character.tags,
 			});
+			// Save original JSON for lossless round-trip
+			await deps.stores.content.writeEntity(STORAGE_FOLDERS.characters, `${imported.character.id}/original`, parsed);
 
 			return {
 				activeChatId: chatId as ChatId,
@@ -306,6 +320,8 @@ export async function importJson(
 				systemPrompt: imported.character.systemPrompt,
 				tags: imported.character.tags,
 			});
+			// Save original JSON for lossless round-trip
+			await deps.stores.content.writeEntity(STORAGE_FOLDERS.characters, `${characterId}/original`, parsed);
 			} else {
 			const created = await deps.stores.characters.create({
 				name: imported.character.name,
@@ -326,6 +342,8 @@ export async function importJson(
 				tags: imported.character.tags,
 			});
 			characterId = created.id;
+			// Save original JSON for lossless round-trip
+			await deps.stores.content.writeEntity(STORAGE_FOLDERS.characters, `${characterId}/original`, parsed);
 			}
 
 		const chat = await deps.chatApp.createChat({
