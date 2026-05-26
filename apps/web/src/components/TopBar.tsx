@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Icons } from "./shared/icons.js";
+import { useIsMobile } from "../hooks/use-mobile.js";
 import { MemBadge } from "./popovers/MemBadge.js";
 import { cn } from "../lib/cn.js";
 import { useT } from "../i18n/context.js";
@@ -14,6 +15,7 @@ import { CustomTooltip } from "./shared/Tooltip.js";
 
 export function TopBar() {
   const { t } = useT();
+  const isMobile = useIsMobile();
 
   // --- Sub-hooks ---
   const provider = useProviderProfiles();
@@ -64,7 +66,13 @@ export function TopBar() {
   const setMode = useNavigationStore((s) => s.setMode);
 
   return (
-    <div className="sticky top-0 z-50 flex h-[60px] shrink-0 items-center gap-3.5 border-b border-border bg-surface px-[22px]">
+    <div className={cn("sticky top-0 z-50 flex shrink-0 items-center gap-3.5 border-b border-border bg-surface", isMobile ? "h-[48px] px-3" : "h-[60px] px-[22px]")}>
+        {isMobile && (
+          <div className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-t3 transition-colors active:bg-s3"
+               onClick={() => useNavigationStore.getState().triggerRailOpen()}>
+            <Icons.Menu />
+          </div>
+        )}
         <div className="flex min-w-[90px] max-w-[220px] flex-none items-center gap-2.5">
           <div className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border-[1.5px] border-transparent bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t2 transition-opacity duration-150 hover:border-accent hover:opacity-85 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top"
             onClick={() => useModalStore.getState().setAvatarOpen(true)}>
