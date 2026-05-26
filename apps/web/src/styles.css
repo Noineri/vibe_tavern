@@ -197,6 +197,8 @@ select option{padding:2px 6px}
 @keyframes slideOutLeft{from{transform:translateX(0)}to{transform:translateX(-100%)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes fadeOut{from{opacity:1}to{opacity:0}}
+@keyframes swipeInRight{from{transform:translateX(-30px);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes swipeInLeft{from{transform:translateX(30px);opacity:0}to{transform:translateX(0);opacity:1}}
 
 /* ── Responsive ── */
 @media(max-width:768px){

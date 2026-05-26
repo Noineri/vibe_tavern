@@ -13,6 +13,8 @@ import { initials } from "./app-shell-helpers.jsx";
 import { useT } from "../i18n/context.js";
 import { Icons } from "./shared/icons.js";
 import { CustomTooltip } from "./shared/Tooltip.js";
+import { useIsMobile } from "../hooks/use-mobile.js";
+import { cn } from "../lib/cn.js";
 
 const msgWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7";
 const sepWrap = msgWrap + " my-[6px] mt-2";
@@ -30,6 +32,7 @@ export function MessageList() {
   const pendingUserMessageContent = useChatStore((s) => s.pendingUserMessageContent);
 
   const [atBottom, setAtBottom] = useState(true);
+  const isMobile = useIsMobile();
 
   // Read from normalized store selectors
   const messageOrder = useMessageOrder();
@@ -151,7 +154,7 @@ export function MessageList() {
 
   return (
     <TranslateErrorBoundary>
-        <div className="relative flex-1 flex flex-col min-h-0">
+        <div className={cn("relative flex-1 flex flex-col min-h-0", isMobile && "overscroll-y-none")}>
           <Virtuoso
             ref={virtuosoRef}
             computeItemKey={(index) => displayMessageIds[index]}
@@ -162,7 +165,7 @@ export function MessageList() {
             itemContent={itemContent}
             components={{ Footer }}
             className="flex-1 pt-7 pb-3"
-            style={{ overflowY: "auto" }}
+            style={{ overflowY: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
             atBottomStateChange={setAtBottom}
           />
           {!atBottom && displayMessageIds.length > 0 && (
