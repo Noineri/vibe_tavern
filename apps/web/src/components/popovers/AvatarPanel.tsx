@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Icons } from '../shared/icons.js';
 import { useT } from '../../i18n/context.js';
 import { CustomTooltip } from '../shared/Tooltip.js';
+import { useIsMobile } from '../../hooks/use-mobile.js';
 
 interface AvatarPanelProps {
   src: string;
@@ -36,6 +37,14 @@ function getFitZoom(naturalWidth: number, naturalHeight: number): number {
 
 export function AvatarPanel({ src, onClose }: AvatarPanelProps) {
   const { t } = useT();
+  const isMobile = useIsMobile();
+
+  // ── Mobile: fullscreen lightbox with pinch-to-zoom ──
+  if (isMobile) {
+    return <MobileLightbox src={src} onClose={onClose} t={t} />;
+  }
+
+  // ── Desktop: draggable floating panel ──
   const [pos, setPos] = useState(() => getAttachedPosition());
   const [zoom, setZoom] = useState(1);
   const [isReady, setIsReady] = useState(false);
@@ -208,6 +217,120 @@ export function AvatarPanel({ src, onClose }: AvatarPanelProps) {
         <Icons.close />
       </button>
       </CustomTooltip>
+    </div>
+  );
+}
+
+// ── Mobile fullscreen lightbox with pinch-to-zoom ──
+
+interface MobileLightboxProps {
+  src: string;
+  onClose: () => void;
+  t: (key: string) => string;
+}
+
+function MobileLightbox({ src, onClose, t }: MobileLightboxProps) {
+  const [scale, setScale] = useState(1);
+  const [translate, setTranslate] = useState({ x: 0, y: 0 });
+  const lastTouchDist = useRef<number | null>(null);
+  const lastTouchCenter = useRef<{ x: number; y: number } | null>(null);
+  const lastTapRef = useRef<number>(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Escape key
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Pinch-to-zoom touch handlers
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      lastTouchDist.current = Math.sqrt(dx * dx + dy * dy);
+      lastTouchCenter.current = {
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+      };
+    }
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2 && lastTouchDist.current !== null) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const ratio = dist / lastTouchDist.current;
+      lastTouchDist.current = dist;
+
+      const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+
+      setScale((prev) => clamp(prev * ratio, 0.5, 5));
+      if (lastTouchCenter.current) {
+        setTranslate((prev) => ({
+          x: prev.x + (centerX - lastTouchCenter.current!.x),
+          y: prev.y + (centerY - lastTouchCenter.current!.y),
+        }));
+      }
+      lastTouchCenter.current = { x: centerX, y: centerY };
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    lastTouchDist.current = null;
+    lastTouchCenter.current = null;
+  }, []);
+
+  // Double-tap toggle
+  const handleTap = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      // Double tap
+      setScale((prev) => {
+        if (Math.abs(prev - 1) < 0.1) {
+          setTranslate({ x: 0, y: 0 });
+          return 2.5;
+        }
+        setTranslate({ x: 0, y: 0 });
+        return 1;
+      });
+    }
+    lastTapRef.current = now;
+  }, []);
+
+  return (
+    <div
+      ref={containerRef}
+      className="fixed inset-0 z-[600] flex items-center justify-center bg-black/95"
+      onClick={onClose}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Close button */}
+      <button
+        className="absolute right-3 top-3 z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white active:bg-black/75"
+        onClick={(e) => { e.stopPropagation(); onClose(); }}
+      >
+        <Icons.close />
+      </button>
+
+      {/* Image */}
+      <img
+        src={src}
+        alt={t("character_avatar_alt")}
+        className="max-h-full max-w-full object-contain select-none"
+        style={{
+          transform: `scale(${scale}) translate(${translate.x / scale}px, ${translate.y / scale}px)`,
+          transition: lastTouchDist.current !== null ? "none" : "transform 0.15s ease-out",
+        }}
+        draggable={false}
+        onClick={(e) => { e.stopPropagation(); handleTap(); }}
+      />
     </div>
   );
 }
