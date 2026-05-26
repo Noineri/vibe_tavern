@@ -14,12 +14,10 @@
 
 Claw Tavern is a local-first AI roleplay platform for building characters, managing lore and personas, assembling prompts, and chatting through OpenAI-compatible providers.
 
-The project is currently in **Phase 1: Minimum Viable Roleplay**. The core chat loop works, and development is focused on reaching a stable Beta-1 experience.
-
 >[!NOTE]
 >Claw Tavern is in active development, so breaking changes or bugs are to be expected. Don't forget to make a backups of your data directory before any update
 
-The project already supports the basic local RP workflow: character import and creation, provider profiles, prompt assembly, SQLite-backed chats, and common message actions. Current work focuses on completing the Beta-1 roleplay experience, improving the character editor, onboarding, prompt presets, UI polish, provider handling, and hardening.
+The project already supports the basic local RP workflow: character creationa and import, provider profiles, prompt assembly, and common message actions. Current work focuses on completing the Beta-1 roleplay experience, improving the character editor, onboarding, prompt presets, UI polish, provider handling, and hardening.
 
 ## Quick Start
 
@@ -56,32 +54,6 @@ Download latest executable from [Releases](https://github.com/Noineri/rp_platfor
 >[!NOTE]
 >This option is experimental. It works but definitely need more tests. 
 
-## Development Phases
-
-### Phase 1 - Minimum Viable Roleplay
-
-Goal: make the local single-user RP experience complete enough for regular use.
-
-This phase covers the core loop: characters, personas, lorebooks, prompt presets, provider profiles, chat storage, message editing and regeneration, onboarding, import flows, and UI cleanup.
-
-Current status: **WIP**. The main chat loop works, but Beta-1 polish and hardening are still in progress.
-
-### Phase 2 - Advanced Roleplay
-
-Goal: make conversations richer, faster, and more resilient.
-
-Planned work includes streaming responses, memory consolidation, better provider routing, rate-limit handling, provider error UI, and reasoning/thinking block support.
-
-Current status: **planned**.
-
-### Phase 3 - Agentic / Retrieval
-
-Goal: connect the platform to tools, local retrieval, and more agentic workflows.
-
-Planned work includes MCP integration, local retrieval services, tool permissions, parallel dispatch, and more advanced routing.
-
-Current status: **future**.
-
 ## Known Limits
 
 - Local single-user developer runtime, not a production SaaS.
@@ -89,3 +61,21 @@ Current status: **future**.
 - Main live generation path is OpenAI-compatible provider flow.
 - Streaming, provider routing, memory consolidation, and agentic tooling are planned for later phases.
 - Beta-1 testing, logging, and hardening are still in progress.
+
+## Acknowledgments
+
+Created with amazing open-source projects:
+
+- [Bun](https://bun.sh)
+- [Drizzle ORM](https://orm.drizzle.team)
+- [React](https://react.dev)
+- [Tailwind CSS](https://tailwindcss.com)
+
+<div align="center">
+  <p>We, the Claw Tavern team, hope that you enjoy reloplaying in our rp platform</p>
+  <p>
+    <a href="https://github.com/Noineri/rp_platform">GitHub</a> •
+    <a href="https://github.com/Noineri/rp_platform/issues">Issues</a> •
+    <a href="https://github.com/Noineri/rp_platform/discussions">Discussions</a>
+  </p>
+</div>
