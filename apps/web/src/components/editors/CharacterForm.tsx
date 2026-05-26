@@ -10,6 +10,7 @@ import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader
 import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useT } from "../../i18n/context.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
+import { useIsMobile } from "../../hooks/use-mobile.js";
 
 export interface CharacterFormProps {
   form: UseFormReturn<BuildCharacterDraft>;
@@ -102,6 +103,8 @@ export function CharacterForm({
   const tags = watch("tags") || [];
 
   const canSave = !isSaving && (name || "").trim();
+  const isMobile = useIsMobile();
+  const mInput = isMobile ? " text-base" : "";
 
   function handleAvatarPick(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -163,10 +166,11 @@ export function CharacterForm({
   return (
     <div>
       {/* Header row */}
-      <div className="mb-1.5 flex items-center justify-between">
-        <div className="mb-1.5 font-body text-[22px] font-medium text-t1">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <div className="mb-1.5 font-body text-[22px] font-medium text-t1 min-w-0 truncate">
           {name || t("unnamed")}
         </div>
+        {!isMobile && (
         <div className="flex items-center gap-2">
           <span className="font-ui text-[11px] tabular-nums text-t3">
             {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
@@ -232,7 +236,44 @@ export function CharacterForm({
             {isSaving ? t("saving") : t("save")}
           </button>
         </div>
+        )}
       </div>
+      {/* Mobile action bar */}
+      {isMobile && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <button
+            className="min-h-[44px] cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:opacity-40"
+            disabled={!canSave || !isDirty}
+            onClick={onSave}
+          >
+            {isSaving ? t("saving") : t("save")}
+          </button>
+          <button
+            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
+            onClick={() => setImportModalOpen(true)}
+            disabled={isSaving}
+          >
+            {Ic.import()}
+          </button>
+          <button
+            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
+            onClick={onExportJson}
+            disabled={isSaving}
+          >
+            {Ic.download()}
+          </button>
+          <button
+            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-danger active:bg-danger/10"
+            onClick={onDelete}
+            disabled={isSaving}
+          >
+            {Ic.del()}
+          </button>
+          <span className="font-ui text-[11px] tabular-nums text-t3">
+            {permanentTokens.toLocaleString()}+{greetingTokens.toLocaleString()} {t("tokens_label")}
+          </span>
+        </div>
+      )}
 
       {importError && (
         <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-red-400">
@@ -251,35 +292,35 @@ export function CharacterForm({
       </div>
 
       {/* Avatar + Name + Tags */}
-      <div className="mb-5 flex gap-5">
+      <div className={cn("mb-5 gap-5", isMobile ? "flex flex-col items-center" : "flex")}>
         <CustomTooltip content={t("change_avatar")}>
         <div
           className="group relative shrink-0 cursor-pointer rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t"
-          style={{ maxWidth: 180, maxHeight: 250 }}
+          style={{ maxWidth: isMobile ? 120 : 180, maxHeight: isMobile ? 160 : 250 }}
           onClick={() => avaInputRef.current?.click()}
         >
           <input ref={avaInputRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleAvatarPick(e.target.files)} />
           {displayAvatar ? (
             <>
-              <img src={displayAvatar} alt="" className="block max-w-[180px]" style={{ maxHeight: 250, objectFit: "contain" }} />
+              <img src={displayAvatar} alt="" className="block max-w-[180px]" style={{ maxHeight: isMobile ? 160 : 250, objectFit: "contain" }} />
               <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
             </>
           ) : (
-            <div className="flex h-20 w-28 flex-col items-center justify-center gap-1.5 text-t3 transition-colors group-hover:text-accent-t">
+            <div className={cn("flex flex-col items-center justify-center gap-1.5 text-t3 transition-colors group-hover:text-accent-t", isMobile ? "h-20 w-28" : "h-20 w-28")}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
               <span className="font-ui text-[10px] tracking-wide">{t("upload_avatar")}</span>
             </div>
           )}
         </div>
         </CustomTooltip>
-        <div className="flex min-w-0 flex-1 flex-col gap-3">
+        <div className={cn("flex min-w-0 flex-1 flex-col gap-3", isMobile && "w-full")}>
           <div>
             <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
-            <input type="text" className={inputCls} style={inputPad} disabled={isSaving} {...register("name")} />
+            <input type="text" className={inputCls + mInput} style={inputPad} disabled={isSaving} {...register("name")} />
           </div>
           <div>
             <label className={lblCls + " mb-1.5 block"}>{t("char_tags_label")}</label>
-            <input type="text" className={inputCls} style={inputPad} value={tagInput} disabled={isSaving} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagKey} placeholder={t("tags_enter")} />
+            <input type="text" className={inputCls + mInput} style={inputPad} value={tagInput} disabled={isSaving} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagKey} placeholder={t("tags_enter")} />
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {tags.map((tag: string) => (
                 <span key={tag} className="cursor-pointer rounded bg-accent-dim px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => toggleTag(tag)}>
@@ -294,14 +335,14 @@ export function CharacterForm({
       {/* Description */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("char_desc_label")}</label>
-        <AutoTextarea className={inputCls} style={{ ...inputPad, minHeight: 100 }} disabled={isSaving} register={register("description")} />
+        <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 100 }} disabled={isSaving} register={register("description")} />
         <TokenBadge text={description || ""} />
       </div>
 
       {/* First Message */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("first_message_greeting")}</label>
-        <AutoTextarea className={inputCls} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} placeholder={t("first_message_placeholder")} register={register("firstMessage")} />
+        <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} placeholder={t("first_message_placeholder")} register={register("firstMessage")} />
         <TokenBadge text={firstMessage || ""} />
       </div>
 
@@ -315,6 +356,7 @@ export function CharacterForm({
               className={cn(
                 "inline-flex items-center gap-1 rounded border border-border bg-s2 px-2.5 py-[2px] font-ui text-xs text-t2 cursor-pointer transition-all",
                 idx === altGreetIdx && "border-accent bg-accent-dim text-accent-t",
+                isMobile && "min-h-[44px] px-3 py-1",
               )}
               onClick={() => setAltGreetIdx(idx)}
             >
@@ -338,7 +380,7 @@ export function CharacterForm({
         </div>
         {alternateGreetings.length > 0 && (
           <div className="relative">
-            <AutoTextarea className={inputCls} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
+            <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
               const next = [...alternateGreetings]; next[altGreetIdx] = e.target.value;
               setValue("alternateGreetings", next, { shouldDirty: true });
             }} placeholder={t("alternate_greeting_placeholder")} />
@@ -381,21 +423,21 @@ export function CharacterForm({
             </div>
           </div>
         </div>
-        <AutoTextarea className={monoCls} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} placeholder="<START>..." register={register("mesExample")} />
+        <AutoTextarea className={monoCls + mInput} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} placeholder="<START>..." register={register("mesExample")} />
         <TokenBadge text={mesExample || ""} />
       </div>
 
       {/* Scenario */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("scenario")}</label>
-        <AutoTextarea className={inputCls} style={{ ...inputPad, minHeight: 100 }} disabled={isSaving} register={register("scenario")} />
+        <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 100 }} disabled={isSaving} register={register("scenario")} />
         <TokenBadge text={scenario || ""} />
       </div>
 
       {/* Personality Summary */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("char_personality_label")}</label>
-        <AutoTextarea className={inputCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} register={register("personalitySummary")} />
+        <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} register={register("personalitySummary")} />
         <TokenBadge text={personalitySummary || ""} />
       </div>
 
@@ -407,14 +449,14 @@ export function CharacterForm({
       {/* Post-History Instructions */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("post_history_instructions")}</label>
-        <AutoTextarea className={monoCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("post_history_placeholder")} register={register("postHistoryInstructions")} />
+        <AutoTextarea className={monoCls + mInput} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("post_history_placeholder")} register={register("postHistoryInstructions")} />
         <TokenBadge text={postHistoryInstructions || ""} />
       </div>
 
       {/* Creator Notes */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("creator_notes")}</label>
-        <AutoTextarea className={inputCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("creator_notes_placeholder")} register={register("creatorNotes")} />
+        <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("creator_notes_placeholder")} register={register("creatorNotes")} />
         <TokenBadge text={creatorNotes || ""} />
       </div>
 
@@ -450,20 +492,20 @@ export function CharacterForm({
             </div>
           </div>
         </div>
-        <AutoTextarea className={monoCls} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("depth_prompt_placeholder")} register={register("depthPrompt")} />
+        <AutoTextarea className={monoCls + mInput} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("depth_prompt_placeholder")} register={register("depthPrompt")} />
         <TokenBadge text={depthPrompt || ""} />
       </div>
 
       {/* System Prompt Override */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("system_prompt_override")}</label>
-        <AutoTextarea className={monoCls} style={{ ...inputPad, minHeight: 80 }} disabled={isSaving} placeholder={t("system_prompt_override_placeholder")} register={register("systemPrompt")} />
+        <AutoTextarea className={monoCls + mInput} style={{ ...inputPad, minHeight: 80 }} disabled={isSaving} placeholder={t("system_prompt_override_placeholder")} register={register("systemPrompt")} />
         <TokenBadge text={systemPrompt || ""} />
       </div>
 
       {/* Footer */}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <button className="h-7 cursor-pointer rounded-md bg-transparent px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" disabled={isSaving || !isDirty} onClick={onReset}>{t("reset")}</button>
+      <div className={cn("mt-2 flex flex-wrap items-center gap-2", isMobile && "pb-8")}>
+        <button className={cn("cursor-pointer rounded-md bg-transparent px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1", isMobile && "min-h-[44px]")} disabled={isSaving || !isDirty} onClick={onReset}>{t("reset")}</button>
         <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{isDirty ? t("unsaved_changes") : t("saved_state")}</span>
       </div>
 
