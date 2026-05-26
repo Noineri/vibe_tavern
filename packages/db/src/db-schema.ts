@@ -26,6 +26,8 @@ export const characters = sqliteTable('characters', {
   mesExampleMode: text('mes_example_mode').notNull().default('always'),
   mesExampleDepth: integer('mes_example_depth').notNull().default(4),
   status: text('status').notNull().default('active'),
+  contentHash: text('content_hash'),
+  hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
@@ -40,6 +42,8 @@ export const personas = sqliteTable('personas', {
   avatarAssetId: text('avatar_asset_id'),
   avatarFullAssetId: text('avatar_full_asset_id'),
   defaultForNewChats: integer('default_for_new_chats').notNull().default(0),
+  contentHash: text('content_hash'),
+  hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
@@ -82,6 +86,8 @@ export const lorebooks = sqliteTable('lorebooks', {
   chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
   enabled: integer('enabled').notNull().default(1),
   extensionsJson: text('extensions_json').notNull().default('{}'),
+  contentHash: text('content_hash'),
+  hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
@@ -127,6 +133,8 @@ export const loreEntries = sqliteTable('lore_entries', {
   enabled: integer('enabled').notNull().default(1),
   sortOrder: integer('sort_order').notNull().default(0),
   metadataJson: text('metadata_json').notNull().default('{}'),
+  contentHash: text('content_hash'),
+  hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
@@ -147,6 +155,8 @@ export const scripts = sqliteTable('scripts', {
   personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
   chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
   extensionsJson: text('extensions_json').notNull().default('{}'),
+  contentHash: text('content_hash'),
+  hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
@@ -218,6 +228,8 @@ export const promptPresets = sqliteTable('prompt_presets', {
   toolsPrompt: text('tools_prompt').notNull().default(''),
   scriptAiSystemPrompt: text('script_ai_system_prompt').notNull().default(''),
   customInjectionsJson: text('custom_injections_json').notNull().default('[]'),
+  contentHash: text('content_hash'),
+  hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
