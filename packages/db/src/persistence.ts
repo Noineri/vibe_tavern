@@ -30,7 +30,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     presets: new PresetStore(db),
     uiSettings: new UiSettingsStore(db),
     lorebooks: new LorebookStore(db, { content }),
-    scripts: new ScriptStore(db),
+    scripts: new ScriptStore(db, { content }),
   };
 }
 
