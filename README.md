@@ -1,120 +1,58 @@
-# Claw Tavern
+<div align="center">
+  <h1>Claw Tavern</h1>
+  <p><strong>A lightweight, self-hosted AI releplay platform</strong></p>
+  
+  [![Version](https://img.shields.io/github/v/release/Noineri/rp_platform)](https://github.com/Noineri/rp_platform/releases)
+  [![License](https://img.shields.io/github/license/Noineri/rp_platform)](LICENSE)
+  [![Downloads](https://img.shields.io/github/downloads/Noineri/rp_platform/total)](https://github.com/Noineri/rp_platform/releases)
+  [![Last Commit](https://img.shields.io/github/last-commit/Noineri/rp_platform)](https://github.com/Noineri/rp_platform/commits)
+  
+  [![Bun](https://img.shields.io/badge/Bun-v1.3.14-green.svg)](https://bun.sh)
+</div>
+
+## What is Claw Tavern?
 
 Claw Tavern is a local-first AI roleplay platform for building characters, managing lore and personas, assembling prompts, and chatting through OpenAI-compatible providers.
 
-The project is currently in **Phase 1: Minimum Viable Roleplay**. The core chat loop works, and development is focused on reaching a stable Beta-1 experience.
+>[!NOTE]
+>Claw Tavern is in active development, so breaking changes or bugs are to be expected. Don't forget to make a backups of your data directory before any update
 
-## Current Status
-
-Claw Tavern is in active development.
-
-The project already supports the basic local RP workflow: character import and creation, provider profiles, prompt assembly, SQLite-backed chats, and common message actions. Current work focuses on completing the Beta-1 roleplay experience, improving the character editor, onboarding, prompt presets, UI polish, provider handling, and hardening.
+The project already supports the basic local RP workflow: character creationa and import, provider profiles, prompt assembly, and common message actions. Current work focuses on completing the Beta-1 roleplay experience, improving the character editor, onboarding, prompt presets, UI polish, provider handling, and hardening.
 
 ## Quick Start
 
-Requirements:
+Claw Tavern is a web app, so it support any OS. Just choose method that you like from list below
 
-- [Bun](https://bun.sh) >= 1.0
+### Linux:
 
-Install dependencies and start the local dev environment:
+#### Option 1. Directly run this project with bun
+
+Install bun, grab latest [Release](https://github.com/Noineri/rp_platform/releases) or clone this repo with git, then:
 
 ```bash
 bun install
 bun run dev
 ```
+#### Option 2. Docker compose
 
-Or run it with Docker Compose
-
-```bash
-docker compose up --build -d
-```
-
-After startup:
-
-- Web app: `http://localhost:4173`
-- API: `http://127.0.0.1:8787`
-- API healthcheck: `http://127.0.0.1:8787/health`
-
-On Windows, `Start RP Platform.bat` starts the same local environment, installs dependencies if needed, sets the frontend API URL, and writes logs to `logs/`.
-
-Useful commands:
+This repo include ```docker-compose.yml``` file. So just start the container
 
 ```bash
-bun run dev:web
-bun run dev:api
-bun run build
-bun run typecheck
+docker compose up -d
 ```
 
-Basic smoke test:
+### Windows
 
-1. Open `http://localhost:4173`.
-2. Create or import a character card.
-3. Save and activate an OpenAI-compatible provider profile.
-4. Select a model.
-5. Start a chat and send a message.
+#### Option 1. Launch this project with .bat file
 
-Local data is stored in `data/app.sqlite` by default. Runtime logs are written to `logs/`.
+Just launch ```Start RP Platfrom.bat```
 
-## Development Phases
+#### Opetion 2. Standalone executable
 
-### Phase 1 - Minimum Viable Roleplay
+Download latest executable from [Releases](https://github.com/Noineri/rp_platform/releases) and install Claw Tavern
 
-Goal: make the local single-user RP experience complete enough for regular use.
-
-This phase covers the core loop: characters, personas, lorebooks, prompt presets, provider profiles, chat storage, message editing and regeneration, onboarding, import flows, and UI cleanup.
-
-Current status: **WIP**. The main chat loop works, but Beta-1 polish and hardening are still in progress.
-
-### Phase 2 - Advanced Roleplay
-
-Goal: make conversations richer, faster, and more resilient.
-
-Planned work includes streaming responses, memory consolidation, better provider routing, rate-limit handling, provider error UI, and reasoning/thinking block support.
-
-Current status: **planned**.
-
-### Phase 3 - Agentic / Retrieval
-
-Goal: connect the platform to tools, local retrieval, and more agentic workflows.
-
-Planned work includes MCP integration, local retrieval services, tool permissions, parallel dispatch, and more advanced routing.
-
-Current status: **future**.
-
-## Project Layout
-
-- `apps/web` - React/Vite frontend.
-- `services/api` - local Bun HTTP API and runtime orchestration.
-- `packages/domain` - shared domain models.
-- `packages/api-contracts` - frontend/backend DTO contracts.
-- `packages/prompt-pipeline` - prompt assembly and prompt trace logic.
-- `packages/db` - SQLite and in-memory storage implementations.
-- `packages/import-export` - character, lorebook, and chat import/export helpers.
-- `scripts` - local development launcher scripts.
-
-## Configuration
-
-Common environment variables:
-
-- `RP_PLATFORM_API_HOST` - API host, default `127.0.0.1`
-- `RP_PLATFORM_API_PORT` - API port, default `8787`
-- `RP_PLATFORM_WEB_URL` - web dev URL, default `http://localhost:4173`
-- `RP_PLATFORM_CHAT_STORE` - `sqlite` or `memory`
-- `RP_PLATFORM_DB_PATH` - SQLite file path, default `data/app.sqlite`
-- `VITE_RP_API_URL` - API base URL used by the frontend
-- `VITE_RP_DEFAULT_PROVIDER_LABEL` - default provider label shown in the UI
-- `VITE_RP_DEFAULT_BASE_URL` - default provider base URL shown in the UI
-- `VITE_RP_DEFAULT_MODEL` - default provider model shown in the UI
-
-Do not commit provider API keys or local secrets.
-
-## Planning
-
-The README is only the project entrypoint. Detailed planning lives in:
-
-- `../rp_platform_plan/ROADMAP.md`
-- `../rp_platform_plan/agent_tasks/active/DISPATCH.md`
+>[!NOTE]
+>This option is experimental. It works but definitely need more tests. 
 
 ## Known Limits
 
@@ -123,3 +61,23 @@ The README is only the project entrypoint. Detailed planning lives in:
 - Main live generation path is OpenAI-compatible provider flow.
 - Streaming, provider routing, memory consolidation, and agentic tooling are planned for later phases.
 - Beta-1 testing, logging, and hardening are still in progress.
+
+## Acknowledgments
+
+Created with amazing open-source projects:
+
+- [Bun](https://bun.sh)
+- [Drizzle ORM](https://orm.drizzle.team)
+- [React](https://react.dev)
+- [Hono](https://hono.dev/)
+- [Tailwind CSS](https://tailwindcss.com)
+- [Vercel AI SDK](https://ai-sdk.dev/)
+
+<div align="center">
+  <p>We, the Claw Tavern team, hope that you enjoy reloplaying in our rp platform</p>
+  <p>
+    <a href="https://github.com/Noineri/rp_platform">GitHub</a> •
+    <a href="https://github.com/Noineri/rp_platform/issues">Issues</a> •
+    <a href="https://github.com/Noineri/rp_platform/discussions">Discussions</a>
+  </p>
+</div>
