@@ -6,6 +6,7 @@ import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@rp-platfor
 import type { AssemblePromptResponse, PromptTraceRecordDto } from "@rp-platform/domain";
 import type { AppSnapshot } from "../app-client.js";
 import { cn } from "../lib/cn.js";
+import { Icons } from "./shared/icons.js";
 import { CharacterForm } from "./editors/CharacterForm.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { useT } from "../i18n/context.js";
@@ -17,6 +18,7 @@ import { useBuildPanels } from "../hooks/use-build-panels.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 import { useChatDataStore } from "../stores/chat-data-store.js";
 import { useChatStore } from "../stores/index.js";
+import { useIsMobile } from "../hooks/use-mobile.js";
 
 export type BuildTab = string;
 
@@ -109,7 +111,9 @@ interface BuildModeInnerProps {
 
 function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete, hasAvatar }: BuildModeInnerProps) {
   const { t } = useT();
+  const isMobile = useIsMobile();
   const panels = useBuildPanels();
+  const setBuildTab = useCharacterStore((s) => s.setBuildTab);
 
   const form = useForm<BuildCharacterDraft>({
     resolver: zodResolver(buildCharacterDraftSchema),
@@ -294,6 +298,28 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
     );
   }
 
+  // ── Mobile: fullscreen editor with back button ──
+  if (isMobile) {
+    const activePanelLabel = activePanel?.labelKey ? t(activePanel.labelKey) : t("build");
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-3 py-2">
+          <button
+            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md text-t2 active:bg-s2"
+            onClick={() => setBuildTab("" as BuildTab)}
+          >
+            <Icons.Caret direction="l" />
+          </button>
+          <span className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{activePanelLabel}</span>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          {renderPanelContent()}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Desktop ──
   return (
     <div
       className={cn(
