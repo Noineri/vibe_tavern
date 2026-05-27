@@ -23,7 +23,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
   return {
     db,
     content,
-    characters: new CharacterStore(db),
+    characters: new CharacterStore(db, { content }),
     personas: new PersonaStore(db, { content }),
     providers: new ProviderStore(db),
     chats: new ChatStore(db),
