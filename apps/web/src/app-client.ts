@@ -23,6 +23,7 @@ export interface ChatListItem {
   subtitle: string;
   activeBranchLabel: string;
   messageCount: number;
+  updatedAt: string;
 }
 
 export interface PersonaRecord {

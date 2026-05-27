@@ -15,7 +15,7 @@ import {
   type ImportJsonResponse,
 } from "../../app-client.js";
 import type { ChatId } from "@vibe-tavern/domain";
-import { useChatDataStore } from "../chat-data-store.js";
+import { useSnapshotStore } from "../snapshot-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
 
 // ---------------------------------------------------------------------------
@@ -27,7 +27,7 @@ export async function saveCharacterAction(input: {
   patch: Parameters<typeof updateCharacter>[1];
 }): Promise<void> {
   const snapshot = await updateCharacter(input.characterId, input.patch);
-  useChatDataStore.getState().setSnapshot(snapshot);
+  useSnapshotStore.getState().ingestSnapshot(snapshot);
 }
 
 export async function createCharacterAction(
@@ -35,7 +35,7 @@ export async function createCharacterAction(
 ): Promise<{ snapshot: AppSnapshot | null; activeChatId: string }> {
   const result = await createCharacter(input);
   if (result.snapshot) {
-    useChatDataStore.getState().setSnapshot(result.snapshot);
+    useSnapshotStore.getState().ingestSnapshot(result.snapshot);
   }
   void fetchBootstrapAction();
   return result;
@@ -72,7 +72,7 @@ export async function avatarUploadAction(input: {
     croppedAsset.assetId,
     originalAsset?.assetId,
   );
-  useChatDataStore.getState().setSnapshot(snapshot);
+  useSnapshotStore.getState().ingestSnapshot(snapshot);
   void fetchBootstrapAction();
 }
 
@@ -83,7 +83,7 @@ export async function importCharacterAction(input: {
 }): Promise<ImportJsonResponse> {
   const result = await importJson(input);
   if (result.snapshot) {
-    useChatDataStore.getState().setSnapshot(result.snapshot);
+    useSnapshotStore.getState().ingestSnapshot(result.snapshot);
   }
   void fetchBootstrapAction();
   return result;

@@ -47,6 +47,7 @@ export interface ChatListItem {
 	subtitle: string;
 	activeBranchLabel: string;
 	messageCount: number;
+	updatedAt: string;
 }
 
 export interface SessionSnapshot {
@@ -439,6 +440,7 @@ export interface ImportResult {
 			subtitle,
 			activeBranchLabel: chatState.branch.label,
 			messageCount: chatState.messages.length,
+			updatedAt: chat.updatedAt,
 		};
 	}
 

@@ -1,10 +1,9 @@
 /**
  * Streaming reveal — gradually reveals streaming text character-by-character
- * with adaptive speed. Tightly coupled to chat-store (by design — this is
- * a UI animation concern, and Zustand is the app's stable state layer).
+ * with adaptive speed. Updates per-chat generation state via useChatStore.
  *
  * Usage:
- *   const reveal = new StreamingReveal();
+ *   const reveal = new StreamingReveal(chatId);
  *   reveal.pushDelta("Hello ");
  *   reveal.pushDelta("World");
  *   await reveal.waitForReveal();
@@ -14,10 +13,15 @@
 import { useChatStore } from "../stores/chat-store.js";
 
 export class StreamingReveal {
+  private chatId: string;
   private target = "";
   private shown = "";
   private timer: ReturnType<typeof setTimeout> | null = null;
   private flushResolve: (() => void) | null = null;
+
+  constructor(chatId: string) {
+    this.chatId = chatId;
+  }
 
   /** Append a delta chunk to the target text and schedule reveal animation. */
   pushDelta(delta: string): void {
@@ -42,7 +46,7 @@ export class StreamingReveal {
     this.timer = null;
     this.flushResolve?.();
     this.flushResolve = null;
-    useChatStore.getState().setStreamingText("");
+    useChatStore.getState().setStreamingText(this.chatId, "");
   }
 
   /** Current fully-revealed text so far. */
@@ -67,7 +71,7 @@ export class StreamingReveal {
       // Adaptive speed: reveal more characters per tick when far behind
       const step = remaining > 240 ? 8 : remaining > 120 ? 5 : 3;
       this.shown = this.target.slice(0, this.shown.length + step);
-      useChatStore.getState().setStreamingText(this.shown);
+      useChatStore.getState().setStreamingText(this.chatId, this.shown);
       this.timer = setTimeout(tick, 24);
     };
 

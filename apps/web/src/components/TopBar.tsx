@@ -7,9 +7,8 @@ import { useT } from "../i18n/context.js";
 import { useProviderProfiles } from "../hooks/use-provider-profiles.js";
 import { usePresetController } from "../hooks/use-preset-controller.js";
 import { useNavigationStore, useProviderStore, useChatStore, useModalStore } from "../stores/index.js";
-import { useActiveTrace } from "../stores/chat-selectors.js";
+import { useActiveTrace, useChatMeta } from "../stores/chat-selectors.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
-import { useChatDataStore } from "../stores/chat-data-store.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { CustomTooltip } from "./shared/Tooltip.js";
 
@@ -27,7 +26,7 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
   const theme = useNavigationStore((s) => s.theme);
   const connection = useProviderStore((s) => s.connection);
   const activeChatId = useChatStore((s) => s.activeChatId);
-  const chatMeta = useChatDataStore((s) => s.chatMeta);
+  const chatMeta = useChatMeta();
 
   const promptPresets = bootstrapData?.promptPresets ?? [];
   const activePromptPresetId = chatMeta?.activeChat.promptPresetId ?? null;

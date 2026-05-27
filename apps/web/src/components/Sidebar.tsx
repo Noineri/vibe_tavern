@@ -10,7 +10,7 @@ import { useT } from "../i18n/context.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
 import { useCharacterController } from "../hooks/use-character-controller.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
-import { useChatDataStore } from "../stores/chat-data-store.js";
+import { useChatMeta } from "../stores/chat-selectors.js";
 import { useNavigationStore, useChatStore, useCharacterStore, useModalStore } from "../stores/index.js";
 import { buildCharacterTabs } from "../lib/character-tabs.js";
 import { useMemo } from "react";
@@ -31,7 +31,7 @@ export function Sidebar() {
   const setBuildTab = useCharacterStore((s) => s.setBuildTab);
   const activeChatId = useChatStore((s) => s.activeChatId);
   const selectedCharacterId = useChatStore((s) => s.selectedCharacterId);
-  const chatMeta = useChatDataStore((s) => s.chatMeta);
+  const chatMeta = useChatMeta();
   const snapshot = chatMeta;
   const renamingChatId = useCharacterStore((s) => s.renamingChatId);
   const renameDraft = useCharacterStore((s) => s.renameDraft);

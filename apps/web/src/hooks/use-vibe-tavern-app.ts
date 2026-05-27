@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useState, useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { PROVIDER_TYPE } from "@vibe-tavern/domain";
 import { getT } from "../i18n/context.js";
 import type { ConnectionState } from "../components/app-shell-types.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import { useNavigationStore, useProviderStore, useChatStore, useModalStore } from "../stores/index.js";
 import { useBootstrapStore, fetchBootstrapAction, fetchPersonasAction } from "../stores/api-actions/bootstrap-actions.js";
-import { useChatDataStore } from "../stores/chat-data-store.js";
+import { useSnapshotStore } from "../stores/snapshot-store.js";
 import type { AppMessage } from "../app-client.js";
 import {
   readSavedTheme,
@@ -96,14 +97,26 @@ export function useRpPlatformApp() {
 
   // Reactive snapshot for AppShell effects
   const activeChatId = useChatStore((s) => s.activeChatId);
-  const snapshotRaw = useChatDataStore((s) => s.chatMeta);
-  const messagesById = useChatDataStore((s) => s.messagesById);
-  const promptTrace = useChatDataStore((s) => s.promptTrace);
-  const promptTraceHistory = useChatDataStore((s) => s.promptTraceHistory);
-  const contextPreview = useChatDataStore((s) => s.contextPreview);
+  const snapshotRaw = useSnapshotStore(
+    useShallow((s) => ({
+      character: s.character,
+      persona: s.persona,
+      activeChat: s.activeChat,
+      activeBranch: s.activeBranch,
+      branches: s.branches,
+      summaries: s.summaries,
+      chats: s.chatIds.map((id) => s.chatsById[id]).filter(Boolean),
+      allCharacters: s.allCharacters,
+    })),
+  );
+  const messagesById = useSnapshotStore((s) => s.messagesById);
+  const messageOrder = useSnapshotStore((s) => s.messageOrder);
+  const promptTrace = useSnapshotStore((s) => s.promptTrace);
+  const promptTraceHistory = useSnapshotStore((s) => s.promptTraceHistory);
+  const contextPreview = useSnapshotStore((s) => s.contextPreview);
 
   const snapshot = useMemo(() => {
-    if (!activeChatId || !snapshotRaw) return null;
+    if (!activeChatId || !snapshotRaw.activeChat || !snapshotRaw.character || !snapshotRaw.activeBranch) return null;
     if (snapshotRaw.activeChat.id !== activeChatId) return null; // Avoid returning old snapshot for new activeChatId until loaded
     return {
       character: snapshotRaw.character,
@@ -112,14 +125,16 @@ export function useRpPlatformApp() {
       activeBranch: snapshotRaw.activeBranch,
       branches: snapshotRaw.branches,
       summaries: snapshotRaw.summaries,
-      messages: Object.values(messagesById),
+      messages: messageOrder
+        .map((id) => messagesById[id])
+        .filter((message): message is AppMessage => Boolean(message)),
       chats: snapshotRaw.chats, // chats list is in snapshot!
       allCharacters: snapshotRaw.allCharacters,
       promptTrace,
       promptTraceHistory,
       contextPreview,
     };
-  }, [activeChatId, snapshotRaw, messagesById, promptTrace, promptTraceHistory, contextPreview]);
+  }, [activeChatId, snapshotRaw, messagesById, messageOrder, promptTrace, promptTraceHistory, contextPreview]);
 
   const selectedTraceId = useChatStore((s) => s.selectedTraceId);
   const editingMessageId = useChatStore((s) => s.editingMessageId);

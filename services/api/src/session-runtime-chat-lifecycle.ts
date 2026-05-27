@@ -124,8 +124,8 @@ export class ChatLifecycleRuntime {
 	}
 
 	async switchChat(chatId: ChatId): Promise<SessionSnapshot> {
-		await this.deps.stores.chats.touchLastAccessed(chatId);
-		this.deps.chatOrder.moveToFront(chatId);
+		// Chat order is managed server-side (updatedAt DESC).
+		// No touch/move-to-front on selection — prevents chat list jumping.
 		return this.deps.getSnapshot(chatId);
 	}
 

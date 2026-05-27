@@ -16,7 +16,8 @@ import { useCharacterController } from "../hooks/use-character-controller.js";
 import { useBuildPanels } from "../hooks/use-build-panels.js";
 
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
-import { useChatDataStore } from "../stores/chat-data-store.js";
+import { useChatMeta } from "../stores/chat-selectors.js";
+import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { useChatStore } from "../stores/index.js";
 import { useIsMobile } from "../hooks/use-mobile.js";
 
@@ -28,8 +29,8 @@ export function BuildMode() {
   const character = useCharacterController();
   const bootstrapData = useBootstrapStore((s) => s.data);
   const activeChatId = useChatStore((s) => s.activeChatId);
-  const chatMeta = useChatDataStore((s) => s.chatMeta);
-  const promptTraceHistory = useChatDataStore((s) => s.promptTraceHistory);
+  const chatMeta = useChatMeta();
+  const promptTraceHistory = useSnapshotStore((s) => s.promptTraceHistory);
   const charData = chatMeta?.character ?? null;
   const isSaving = useCharacterStore((s) => s.isSavingCharacter);
   const buildTab = useCharacterStore((s) => s.buildTab);

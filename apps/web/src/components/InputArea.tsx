@@ -11,11 +11,10 @@ import { CustomTooltip } from "./shared/Tooltip.js";
 import { useProviderProfiles } from "../hooks/use-provider-profiles.js";
 import { useIsMobile } from "../hooks/use-mobile.js";
 
-import { useChatStore, useProviderStore } from "../stores/index.js";
-import { useActiveTrace } from "../stores/chat-selectors.js";
+import { useChatStore, useProviderStore, useIsSending } from "../stores/index.js";
+import { useActiveTrace, useChatMeta } from "../stores/chat-selectors.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 import { useModalStore } from "../stores/modal-store.js";
-import { useChatDataStore } from "../stores/chat-data-store.js";
 import type { PromptLayerDto } from "@vibe-tavern/domain";
 
 export function InputArea() {
@@ -35,9 +34,9 @@ export function InputArea() {
 
   // --- Store subscriptions ---
   const draft = useChatStore((s) => s.draft);
-  const isSending = useChatStore((s) => s.isSending);
+  const isSending = useIsSending();
   const activeChatId = useChatStore((s) => s.activeChatId);
-  const chatMeta = useChatDataStore((s) => s.chatMeta);
+  const chatMeta = useChatMeta();
   const connection = useProviderStore((s) => s.connection);
 
   const personas = useBootstrapStore((s) => s.personas) ?? [];
