@@ -9,7 +9,7 @@ interface ConfirmCloseModalProps {
 export function ConfirmCloseModal(input: ConfirmCloseModalProps) {
   const { t } = useT();
   return (
-    <Modal open={true} onClose={input.onCancel} overlayClassName="z-[700]">
+    <Modal open={true} onClose={input.onCancel} overlayClassName="z-[700]" hideOverlay>
       <div
         className="w-[440px] rounded-lg border border-border bg-surface p-8 text-center shadow-xl"
       >

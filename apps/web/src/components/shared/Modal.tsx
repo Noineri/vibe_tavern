@@ -14,6 +14,8 @@ export interface ModalProps {
   overlayClassName?: string;
   /** When true, modal stays centered on mobile (for confirm/delete dialogs). Default: fullscreen on mobile. */
   compact?: boolean;
+  /** When true, overlay is not rendered (caller provides its own or it's nested). */
+  hideOverlay?: boolean;
 }
 
 /**
@@ -31,17 +33,19 @@ export function getModalPortal(): HTMLElement | null {
  * Provides: focus trap, scroll lock, Escape-to-close, overlay click dismiss.
  * Visual: same `bg-black/55 backdrop-blur-[2px]` overlay, centered content.
  */
-export function Modal({ open, onClose, children, overlayClassName, compact }: ModalProps) {
+export function Modal({ open, onClose, children, overlayClassName, compact, hideOverlay }: ModalProps) {
   const isMobile = useIsMobile();
   return (
     <Dialog.Root open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <Dialog.Portal>
+        {!hideOverlay && (
         <Dialog.Overlay
           className={cn(
             "fixed inset-0 z-[500] bg-black/55 backdrop-blur-[2px]",
             overlayClassName,
           )}
         />
+        )}
         <Dialog.Content
           className={cn(
             "fixed z-[501]",
