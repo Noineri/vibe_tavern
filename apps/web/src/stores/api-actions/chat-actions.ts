@@ -18,12 +18,12 @@ import {
   setChatPersona,
   type AppSnapshot,
 } from "../../app-client.js";
-import { useChatDataStore } from "../chat-data-store.js";
+import { useSnapshotStore } from "../snapshot-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
 
-// Helper to sync snapshot to zustand
+// Single canonical backend snapshot cache.
 function syncSnapshot(snapshot: AppSnapshot) {
-  useChatDataStore.getState().setSnapshot(snapshot);
+  useSnapshotStore.getState().ingestSnapshot(snapshot);
 }
 
 // ---------------------------------------------------------------------------
@@ -78,7 +78,6 @@ export async function deleteMessageAction(chatId: ChatId, messageId: string): Pr
 }
 
 export async function switchChatAction(chatId: ChatId): Promise<void> {
-  useChatDataStore.getState().clear();
   const snapshot = await fetchChat(chatId);
   syncSnapshot(snapshot);
 }

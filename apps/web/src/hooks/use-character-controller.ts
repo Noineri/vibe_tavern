@@ -13,7 +13,7 @@ import { useCharacterImport } from "./use-character-import.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useNavigationStore } from "../stores/navigation-store.js";
 import { useCharacterStore } from "../stores/character-store.js";
-import { useChatDataStore } from "../stores/chat-data-store.js";
+import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { exportCharaCardPng } from "../lib/png-writer.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import {
@@ -95,28 +95,31 @@ export function useCharacterController(): CharacterControllerActions {
   function getActiveChatId(): ChatId | null { return useChatStore.getState().activeChatId; }
 
   function getSnapshot(): AppSnapshot | null {
-    const chatMeta = useChatDataStore.getState().chatMeta;
-    if (!chatMeta) return null;
-    
-    // Create a mock AppSnapshot for reads. We mostly need character and activeChat.
-    // Full snapshot writes are handled by action helpers.
+    const state = useSnapshotStore.getState();
+    if (!state.character || !state.activeChat) return null;
+
     return {
-      character: chatMeta.character,
-      persona: chatMeta.persona,
-      activeChat: chatMeta.activeChat,
-      activeBranch: chatMeta.activeBranch,
-      branches: chatMeta.branches,
-      summaries: chatMeta.summaries,
-      messages: Object.values(useChatDataStore.getState().messagesById),
-      chats: [], // we don't have full chats list here, but it's typically in bootstrap
-      promptTrace: useChatDataStore.getState().promptTrace,
-      promptTraceHistory: useChatDataStore.getState().promptTraceHistory,
-      contextPreview: useChatDataStore.getState().contextPreview,
-    } as unknown as AppSnapshot;
+      character: state.character,
+      persona: state.persona,
+      activeChat: state.activeChat,
+      activeBranch: state.activeBranch,
+      branches: state.branches,
+      summaries: state.summaries,
+      messages: state.messageOrder
+        .map((id) => state.messagesById[id])
+        .filter((message): message is AppSnapshot["messages"][number] => Boolean(message)),
+      chats: state.chatIds
+        .map((id) => state.chatsById[id])
+        .filter((chat): chat is AppSnapshot["chats"][number] => Boolean(chat)),
+      allCharacters: state.allCharacters,
+      promptTrace: state.promptTrace,
+      promptTraceHistory: state.promptTraceHistory,
+      contextPreview: state.contextPreview,
+    } as AppSnapshot;
   }
 
   function writeSnapshot(chatId: ChatId, next: AppSnapshot): void {
-    useChatDataStore.getState().setSnapshot(next);
+    useSnapshotStore.getState().ingestSnapshot(next);
     if (useChatStore.getState().activeChatId !== chatId) {
       useChatStore.getState().setActiveChatId(chatId);
     }
@@ -454,7 +457,7 @@ export function useCharacterController(): CharacterControllerActions {
   async function handleExportChatJsonl(chatId: ChatId): Promise<void> {
     try {
       const text = await exportChatJsonlAction(chatId);
-      const title = useChatDataStore.getState().chatMeta?.activeChat.title ?? "chat";
+      const title = useSnapshotStore.getState().activeChat?.title ?? "chat";
       const safeTitle = title.replace(/[^a-zA-Z0-9_-]/g, "_");
       downloadTextFile(`${safeTitle}.jsonl`, text, "application/x-ndjson");
     } catch (error) {

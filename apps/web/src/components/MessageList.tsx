@@ -1,11 +1,11 @@
 import { useMemo, useRef, useCallback, useState } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
-import type { AppMessage } from "../app-client.js";
 import { Markdown } from "../lib/markdown.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { replaceUiMacros } from "../lib/macros.js";
-import { useChatStore } from "../stores/chat-store.js";
-import { useMessageOrder, useMacroContext, useChatDataStore } from "../stores/index.js";
+import { useActiveGeneration, useIsSending } from "../stores/chat-store.js";
+import { useMessageOrder, useMacroContext, useChatMeta } from "../stores/index.js";
+import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { MessageBlock } from "./MessageBlock.js";
 import { MessageReasoning } from "./MessageReasoning.js";
 import { TranslateErrorBoundary } from "./TranslateErrorBoundary.js";
@@ -23,15 +23,16 @@ const sepWrapM = msgWrapM + " my-[6px] mt-2";
 
 export function MessageList() {
   const { t } = useT();
-  const chatMeta = useChatDataStore((s) => s.chatMeta);
+  const chatMeta = useChatMeta();
   const snapshot = chatMeta ? {
     character: chatMeta.character,
     persona: chatMeta.persona,
   } : null;
   const virtuosoRef = useRef<VirtuosoHandle>(null);
 
-  const isSending = useChatStore((s) => s.isSending);
-  const pendingUserMessageContent = useChatStore((s) => s.pendingUserMessageContent);
+  const activeGen = useActiveGeneration();
+  const isSending = useIsSending();
+  const pendingUserMessageContent = activeGen?.pendingUserMessageContent ?? null;
 
   const [atBottom, setAtBottom] = useState(true);
   const isMobile = useIsMobile();
@@ -39,14 +40,6 @@ export function MessageList() {
   // Read from normalized store selectors
   const messageOrder = useMessageOrder();
   const macroContext = useMacroContext();
-
-  // Raw messages list (no macro resolution here for performance)
-  const messages = useMemo(() => {
-    const state = useChatDataStore.getState();
-    return messageOrder
-      .map((id) => state.messagesById[id])
-      .filter((msg): msg is AppMessage => Boolean(msg));
-  }, [messageOrder]);
 
   // When a user message is pending (being streamed), it's rendered in the
   // pending-message footer.  If React Query refetches the snapshot mid-stream,
@@ -123,7 +116,7 @@ export function MessageList() {
 
       {!displayPendingUserMessageContent && isSending && displayMessageIds.length > 0 && (
         (() => {
-          const state = useChatDataStore.getState();
+          const state = useSnapshotStore.getState();
           const lastMsgId = displayMessageIds[displayMessageIds.length - 1];
           const lastMsg = state.messagesById[lastMsgId];
           if (lastMsg?.role !== "user") return null;
@@ -203,8 +196,9 @@ const _dots = (
 );
 
 function StreamingContent(_props: { characterName: string }) {
-  const streamingText = useChatStore((s) => s.streamingText);
-  const streamingReasoning = useChatStore((s) => s.streamingReasoningText);
+  const gen = useActiveGeneration();
+  const streamingText = gen?.streamingText ?? "";
+  const streamingReasoning = gen?.streamingReasoningText ?? "";
   if (streamingText) {
     return (
       <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">

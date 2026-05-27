@@ -7,7 +7,7 @@ import { initials } from "./app-shell-helpers.js";
 import { useT } from "../i18n/context.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 import { activateBranchAction } from "../stores/api-actions/chat-actions.js";
-import { useChatDataStore } from "../stores/chat-data-store.js";
+import { useChatMeta } from "../stores/chat-selectors.js";
 import { useNavigationStore, useChatStore, useModalStore } from "../stores/index.js";
 import { useCharacterStore } from "../stores/character-store.js";
 import { useBuildPanels } from "../hooks/use-build-panels.js";
@@ -19,7 +19,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const activeChatId = useChatStore((s) => s.activeChatId);
   const selectedCharacterId = useChatStore((s) => s.selectedCharacterId);
   const allCharacters = useBootstrapStore((s) => s.data)?.allCharacters ?? [];
-  const chatMeta = useChatDataStore((s) => s.chatMeta);
+  const chatMeta = useChatMeta();
   const chats: ChatListItem[] = chatMeta?.chats ?? [];
   const branches = chatMeta?.branches ?? [];
   const activeBranchId = chatMeta?.activeBranch?.id ?? null;

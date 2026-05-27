@@ -2,7 +2,7 @@ import { bootstrapApp, listPersonas } from "../../app-client.js";
 import type { AppSnapshot, PersonaRecord } from "../../app-client.js";
 import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
 import { useChatStore } from "../chat-store.js";
-import { useChatDataStore } from "../chat-data-store.js";
+import { useSnapshotStore } from "../snapshot-store.js";
 import { create } from "zustand";
 
 export interface BootstrapData {
@@ -33,9 +33,9 @@ export async function fetchBootstrapAction(): Promise<void> {
     // Update the bootstrap store with the new data
     useBootstrapStore.setState({ data: boot });
 
-    // Sync snapshot if present
+    // Sync snapshot if present into the canonical snapshot store.
     if (boot.initialChatId && boot.snapshot) {
-      useChatDataStore.getState().setSnapshot(boot.snapshot);
+      useSnapshotStore.getState().ingestSnapshot(boot.snapshot);
     }
     
     // Assuming useChatStore is used to set the active chat ID during bootstrap

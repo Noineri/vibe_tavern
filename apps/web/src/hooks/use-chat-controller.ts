@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useRef } from "react";
-import { useChatDataStore } from "../stores/chat-data-store.js";
 import { toast } from "sonner";
 import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { getT } from "../i18n/context.js";
@@ -11,10 +10,11 @@ import {
   type AppMessage,
   type ChatGenerationStatus,
 } from "../app-client.js";
-import { useChatStore, getAbortController, setAbortController, abortGeneration } from "../stores/chat-store.js";
+import { useChatStore } from "../stores/chat-store.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { StreamingReveal } from "../lib/streaming-reveal.js";
+import { useSnapshotStore } from "../stores/snapshot-store.js";
 import {
   fetchChatAction,
   sendChatMessageAction,
@@ -61,18 +61,23 @@ export function useChatController(): ChatControllerActions {
   const streamResponseRef = useRef(streamResponse);
   streamResponseRef.current = streamResponse;
 
-  // AbortController is a module-level singleton in chat-store.ts.
-  // Any hook instance can cancel via abortGeneration().
-  const streamingReveal = useRef(new StreamingReveal());
+  // StreamingReveal is created per-generation, re-created when needed
+  const streamingRevealRef = useRef<StreamingReveal | null>(null);
 
   // --- Store helpers (imperative reads via getState, not subscriptions) ---
 
   function getActiveChatId(): ChatId | null { return useChatStore.getState().activeChatId; }
   function getDraft(): string { return useChatStore.getState().draft; }
-  function getIsSending(): boolean { return useChatStore.getState().isSending; }
   function getEditingDraft(): string { return useChatStore.getState().editingDraft; }
   function getEditingMessageId(): string | null { return useChatStore.getState().editingMessageId; }
-  function getGenerationStatus(): ChatGenerationStatus { return useChatStore.getState().generationStatus; }
+
+  // Per-chat helpers
+  function getIsSending(chatId: string): boolean {
+    return useChatStore.getState().generations[chatId]?.isSending ?? false;
+  }
+  function getGenerationStatus(chatId: string): ChatGenerationStatus {
+    return useChatStore.getState().generations[chatId]?.generationStatus ?? "idle";
+  }
 
   // --- Snapshot cache helpers ---
 
@@ -83,13 +88,77 @@ export function useChatController(): ChatControllerActions {
 
   /**
    * After an abort, the backend needs a moment to save the partial variant
-   * before we fetch the snapshot. Without this pause, the snapshot may be
-   * stale (missing the just-saved partial), causing the variant counter to
-   * lag behind (e.g. shows 5/5 instead of 6/6).
+   * before we fetch the snapshot.
    */
   async function refreshAfterAbort(chatId: ChatId): Promise<void> {
     await new Promise((r) => setTimeout(r, 200));
     await refreshChatSnapshotCache(chatId);
+  }
+
+  // --- Common streaming helper ---
+
+  /**
+   * Execute a streaming action (send, regenerate, generateReply) with
+   * per-chat generation state management.
+   */
+  async function executeStreamAction(
+    chatId: ChatId,
+    streamFn: (opts: {
+      signal: AbortSignal;
+      onStatus: (status: ChatGenerationStatus) => void;
+      onChunk: (delta: string) => void;
+      onReasoningChunk?: (delta: string) => void;
+      onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
+    }) => Promise<{ finishReason: string; usage?: Record<string, number> }>,
+    pendingUserContent?: string | null,
+  ): Promise<void> {
+    const controller = useChatStore.getState().startGeneration(chatId, pendingUserContent);
+    const store = useChatStore.getState();
+    store.setDraft("");
+
+    // Create a new StreamingReveal for this generation
+    const reveal = new StreamingReveal(chatId);
+    streamingRevealRef.current = reveal;
+
+    try {
+      let collected = "";
+      await streamFn({
+        signal: controller.signal,
+        onStatus: (status) => useChatStore.getState().setGenerationStatus(chatId, status),
+        onChunk: (delta) => {
+          collected += delta;
+          reveal.pushDelta(delta);
+        },
+        onReasoningChunk: (delta) => {
+          useChatStore.getState().appendReasoningText(chatId, delta);
+        },
+        onReasoningDone: () => {
+          // Reasoning complete — text stays until snapshot refresh
+        },
+      });
+
+      await reveal.waitForReveal();
+      useChatStore.getState().setPendingContent(chatId, null);
+      await refreshChatSnapshotCache(chatId);
+      void logClientSendDebug("web.hook.stream.success", { chatId, replyLength: collected.length });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        void logClientSendDebug("web.hook.stream.cancelled", { chatId });
+        await refreshAfterAbort(chatId);
+        toast.info(getT()("generation_cancelled"));
+        return;
+      }
+      void logClientSendDebug("web.hook.stream.error", {
+        chatId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      await refreshChatSnapshotCache(chatId);
+      toast.error(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
+    } finally {
+      useChatStore.getState().finishGeneration(chatId);
+      reveal.clear();
+      streamingRevealRef.current = null;
+    }
   }
 
   // --- Actions ---
@@ -103,85 +172,63 @@ export function useChatController(): ChatControllerActions {
       activeChatId,
       draftLength: draft.length,
       trimmedLength: trimmed.length,
-      isSending: getIsSending(),
+      isSending: activeChatId ? getIsSending(activeChatId) : false,
       canSendViaActiveProfile: canSendRef.current,
     });
 
-    if (!trimmed || getIsSending() || !activeChatId) {
+    if (!trimmed || !activeChatId || getIsSending(activeChatId)) {
       void logClientSendDebug("web.hook.handleSend.blocked.basic", {
         activeChatId,
         trimmedLength: trimmed.length,
-        isSending: getIsSending(),
+        isSending: activeChatId ? getIsSending(activeChatId) : false,
       });
       return;
     }
 
     if (!canSendRef.current) {
-      void logClientSendDebug("web.hook.handleSend.blocked.provider", {
-        activeChatId,
-      });
+      void logClientSendDebug("web.hook.handleSend.blocked.provider", { activeChatId });
       toast.error(getT()("message_unavailable_no_provider"));
       return;
     }
 
-    const controller = new AbortController();
-    setAbortController(controller);
-    const cs = useChatStore.getState();
-
-    cs.setDraft("");
-    cs.setPendingUserMessageContent(trimmed);
-    cs.setIsSending(true);
-
-    try {
-      if (streamResponseRef.current) {
-        void logClientSendDebug("web.hook.handleSend.stream-request", { activeChatId, generationStatus: getGenerationStatus() });
-        let collected = "";
-        await sendChatMessageStream(activeChatId, { content: trimmed }, {
-          signal: controller.signal,
-          onStatus: cs.setGenerationStatus,
-          onChunk: (delta) => {
-            collected += delta;
-            streamingReveal.current.pushDelta(delta);
-          },
-          onReasoningChunk: (delta) => {
-            const s = useChatStore.getState();
-            s.setStreamingReasoningText(s.streamingReasoningText + delta);
-          },
-          onReasoningDone: () => {
-            // Reasoning complete — text stays until snapshot refresh
-          },
-        });
-        await streamingReveal.current.waitForReveal();
-        useChatStore.getState().setPendingUserMessageContent(null);
-        await refreshChatSnapshotCache(activeChatId);
-        void logClientSendDebug("web.hook.handleSend.stream-success", { activeChatId, replyLength: collected.length });
-      } else {
-        void logClientSendDebug("web.hook.handleSend.request", { activeChatId });
-        await sendChatMessageAction(activeChatId, trimmed, controller.signal);
-        const nextSnapshotTrace = useChatDataStore.getState().promptTrace;
-        const nextSnapshotTraceHistory = useChatDataStore.getState().promptTraceHistory;
-        cs.setSelectedTraceId(nextSnapshotTrace?.id ?? nextSnapshotTraceHistory[0]?.id ?? null);
-        void logClientSendDebug("web.hook.handleSend.success", { activeChatId });
-      }
-    } catch (error) {
-      if (controller.signal.aborted) {
-        void logClientSendDebug("web.hook.handleSend.cancelled", { activeChatId });
-        await refreshAfterAbort(activeChatId);
-        toast.info(getT()("generation_cancelled"));
-        return;
-      }
-      void logClientSendDebug("web.hook.handleSend.error", {
+    if (streamResponseRef.current) {
+      void logClientSendDebug("web.hook.handleSend.stream-request", {
         activeChatId,
-        message: error instanceof Error ? error.message : String(error),
+        generationStatus: getGenerationStatus(activeChatId),
       });
-      await refreshChatSnapshotCache(activeChatId);
-      toast.error(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
-    } finally {
-      useChatStore.getState().setPendingUserMessageContent(null);
-      useChatStore.getState().setIsSending(false);
-      useChatStore.getState().setStreamingReasoningText("");
-      setAbortController(null);
-      streamingReveal.current.clear();
+      await executeStreamAction(
+        activeChatId,
+        (opts) => sendChatMessageStream(activeChatId, { content: trimmed }, opts),
+        trimmed,
+      );
+    } else {
+      void logClientSendDebug("web.hook.handleSend.request", { activeChatId });
+      const controller = useChatStore.getState().startGeneration(activeChatId, trimmed);
+      const cs = useChatStore.getState();
+      cs.setDraft("");
+      try {
+        await sendChatMessageAction(activeChatId, trimmed, controller.signal);
+        const snapshot = useSnapshotStore.getState();
+        cs.setSelectedTraceId(
+          snapshot.promptTrace?.id ?? snapshot.promptTraceHistory[0]?.id ?? null,
+        );
+        void logClientSendDebug("web.hook.handleSend.success", { activeChatId });
+      } catch (error) {
+        if (controller.signal.aborted) {
+          void logClientSendDebug("web.hook.handleSend.cancelled", { activeChatId });
+          await refreshAfterAbort(activeChatId);
+          toast.info(getT()("generation_cancelled"));
+          return;
+        }
+        void logClientSendDebug("web.hook.handleSend.error", {
+          activeChatId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        await refreshChatSnapshotCache(activeChatId);
+        toast.error(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
+      } finally {
+        useChatStore.getState().finishGeneration(activeChatId);
+      }
     }
   }, []);
 
@@ -194,63 +241,44 @@ export function useChatController(): ChatControllerActions {
       return;
     }
 
-    const controller = new AbortController();
-    setAbortController(controller);
-    const cs = useChatStore.getState();
-    cs.setIsSending(true);
-
-    try {
-      if (streamResponseRef.current) {
-        void logClientSendDebug("web.hook.handleResend.stream-request", { activeChatId, generationStatus: getGenerationStatus() });
-        let collected = "";
-        await generateReplyStream(activeChatId, {
-          signal: controller.signal,
-          onStatus: cs.setGenerationStatus,
-          onChunk: (delta) => {
-            collected += delta;
-            streamingReveal.current.pushDelta(delta);
-          },
-          onReasoningChunk: (delta) => {
-            const s = useChatStore.getState();
-            s.setStreamingReasoningText(s.streamingReasoningText + delta);
-          },
-          onReasoningDone: () => {},
-        });
-        await streamingReveal.current.waitForReveal();
-        await refreshChatSnapshotCache(activeChatId);
-        void logClientSendDebug("web.hook.handleResend.stream-success", { activeChatId, replyLength: collected.length });
-      } else {
-        void logClientSendDebug("web.hook.handleResend.request", { activeChatId });
-        await generateReplyAction(activeChatId, controller.signal);
-        const nextSnapshotTrace = useChatDataStore.getState().promptTrace;
-        const nextSnapshotTraceHistory = useChatDataStore.getState().promptTraceHistory;
-        cs.setSelectedTraceId(nextSnapshotTrace?.id ?? nextSnapshotTraceHistory[0]?.id ?? null);
-        void logClientSendDebug("web.hook.handleResend.success", { activeChatId });
-      }
-    } catch (error) {
-      if (controller.signal.aborted) {
-        void logClientSendDebug("web.hook.handleResend.cancelled", { activeChatId });
-        await refreshAfterAbort(activeChatId);
-        toast.info(getT()("generation_cancelled"));
-        return;
-      }
-      void logClientSendDebug("web.hook.handleResend.error", {
+    if (streamResponseRef.current) {
+      void logClientSendDebug("web.hook.handleResend.stream-request", {
         activeChatId,
-        message: error instanceof Error ? error.message : String(error),
+        generationStatus: getGenerationStatus(activeChatId),
       });
-      await refreshChatSnapshotCache(activeChatId);
-      toast.error(error instanceof Error && error.message ? error.message : getT()("resend_failed"));
-    } finally {
-      useChatStore.getState().setIsSending(false);
-      useChatStore.getState().setStreamingReasoningText("");
-      setAbortController(null);
-      streamingReveal.current.clear();
+      await executeStreamAction(
+        activeChatId,
+        (opts) => generateReplyStream(activeChatId, opts),
+      );
+    } else {
+      const controller = useChatStore.getState().startGeneration(activeChatId);
+      try {
+        await generateReplyAction(activeChatId, controller.signal);
+        const snapshot = useSnapshotStore.getState();
+        useChatStore.getState().setSelectedTraceId(
+          snapshot.promptTrace?.id ?? snapshot.promptTraceHistory[0]?.id ?? null,
+        );
+        void logClientSendDebug("web.hook.handleResend.success", { activeChatId });
+      } catch (error) {
+        if (controller.signal.aborted) {
+          void logClientSendDebug("web.hook.handleResend.cancelled", { activeChatId });
+          await refreshAfterAbort(activeChatId);
+          toast.info(getT()("generation_cancelled"));
+          return;
+        }
+        await refreshChatSnapshotCache(activeChatId);
+        toast.error(error instanceof Error ? error.message : getT()("resend_failed"));
+      } finally {
+        useChatStore.getState().finishGeneration(activeChatId);
+      }
     }
   }, []);
 
   const handleCancelGeneration = useCallback((): void => {
-    abortGeneration();
-    setAbortController(null);
+    const chatId = getActiveChatId();
+    if (chatId) {
+      useChatStore.getState().abortGeneration(chatId);
+    }
     toast.info(getT()("cancelling_generation"));
   }, []);
 
@@ -314,86 +342,67 @@ export function useChatController(): ChatControllerActions {
       return;
     }
 
-    const controller = new AbortController();
-    setAbortController(controller);
+    useChatStore.getState().setMessageActionId(messageId);
 
-    const cs = useChatStore.getState();
-    cs.setIsSending(true);
-    cs.setMessageActionId(messageId);
-
-    try {
-      if (streamResponseRef.current) {
-        void logClientSendDebug("web.hook.handleRegenerate.stream-request", { activeChatId, messageId, generationStatus: getGenerationStatus() });
-        let collected = "";
-        await regenerateChatMessageStream(activeChatId, messageId, {
-          signal: controller.signal,
-          onStatus: cs.setGenerationStatus,
-          onChunk: (delta) => {
-            collected += delta;
-            streamingReveal.current.pushDelta(delta);
-          },
-          onReasoningChunk: (delta) => {
-            const s = useChatStore.getState();
-            s.setStreamingReasoningText(s.streamingReasoningText + delta);
-          },
-          onReasoningDone: () => {},
-        });
-        await streamingReveal.current.waitForReveal();
-        await refreshChatSnapshotCache(activeChatId);
-        void logClientSendDebug("web.hook.handleRegenerate.stream-success", { activeChatId, messageId, replyLength: collected.length });
-      } else {
+    if (streamResponseRef.current) {
+      void logClientSendDebug("web.hook.handleRegenerate.stream-request", {
+        activeChatId, messageId,
+        generationStatus: getGenerationStatus(activeChatId),
+      });
+      await executeStreamAction(
+        activeChatId,
+        (opts) => regenerateChatMessageStream(activeChatId, messageId, opts),
+      );
+    } else {
+      const controller = useChatStore.getState().startGeneration(activeChatId);
+      try {
         await regenerateMessageAction(activeChatId, messageId, controller.signal);
-        const nextSnapshotTrace = useChatDataStore.getState().promptTrace;
-        const nextSnapshotTraceHistory = useChatDataStore.getState().promptTraceHistory;
-        cs.setSelectedTraceId(nextSnapshotTrace?.id ?? nextSnapshotTraceHistory[0]?.id ?? null);
+        const snapshot = useSnapshotStore.getState();
+        useChatStore.getState().setSelectedTraceId(
+          snapshot.promptTrace?.id ?? snapshot.promptTraceHistory[0]?.id ?? null,
+        );
+      } catch (error) {
+        if (controller.signal.aborted) {
+          void logClientSendDebug("web.hook.handleRegenerate.cancelled", { activeChatId, messageId });
+          await refreshAfterAbort(activeChatId);
+          toast.info(getT()("generation_cancelled"));
+          return;
+        }
+        await refreshChatSnapshotCache(activeChatId);
+        toast.error(error instanceof Error ? error.message : getT()("regen_failed"));
+      } finally {
+        useChatStore.getState().finishGeneration(activeChatId);
       }
-    } catch (error) {
-      if (controller.signal.aborted) {
-        void logClientSendDebug("web.hook.handleRegenerate.cancelled", { activeChatId, messageId });
-        await refreshAfterAbort(activeChatId);
-        toast.info(getT()("generation_cancelled"));
-        return;
-      }
-      await refreshChatSnapshotCache(activeChatId);
-      toast.error(error instanceof Error ? error.message : getT()("regen_failed"));
-    } finally {
-      useChatStore.getState().setIsSending(false);
-      useChatStore.getState().setStreamingReasoningText("");
-      useChatStore.getState().setMessageActionId(null);
-      setAbortController(null);
-      streamingReveal.current.clear();
     }
+
+    useChatStore.getState().setMessageActionId(null);
   }
 
   async function handleSelectMessageVariant(messageId: string, variantIndex: number): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId || variantIndex < 0) return;
-    // Store already updated optimistically via selectVariant() in MessageBlock.
-    // Fire-and-forget server persist (no syncSnapshot).
     void selectVariantAction(activeChatId, messageId, variantIndex);
   }
 
   async function handleFork(messageId?: string): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
-
     await forkBranchAction(activeChatId, messageId);
   }
 
   async function handleActivateBranch(branchId: ChatBranchId): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
-
     await activateBranchAction(activeChatId, branchId);
   }
 
   async function handleDeleteActiveBranch(): Promise<void> {
     const activeChatId = getActiveChatId();
-    const chatMeta = useChatDataStore.getState().chatMeta;
-    if (!activeChatId || !chatMeta) return;
+    const snapshot = useSnapshotStore.getState();
+    if (!activeChatId || !snapshot.activeBranch) return;
 
-    const activeBranch = chatMeta.activeBranch;
-    const rootBranch = chatMeta.branches.find((b) => b.parentBranchId === null);
+    const activeBranch = snapshot.activeBranch;
+    const rootBranch = snapshot.branches.find((b) => b.parentBranchId === null);
     if (!rootBranch || activeBranch.id === rootBranch.id) {
       toast.error(getT()("cannot_delete_main_branch"));
       return;

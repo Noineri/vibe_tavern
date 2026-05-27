@@ -1,4 +1,13 @@
-export { useChatStore, type ChatStore, type ChatState, type ChatActions } from "./chat-store.js";
+export {
+  useChatStore,
+  useActiveGeneration,
+  useIsSending,
+  abortActiveGeneration,
+  type ChatStore,
+  type ChatState,
+  type ChatActions,
+  type ChatGenerationState,
+} from "./chat-store.js";
 export {
   useCharacterStore,
   type CharacterStore,
@@ -26,14 +35,6 @@ export {
   type ModalState,
   type ModalActions,
 } from "./modal-store.js";
-
-export {
-  useChatDataStore,
-  type ChatDataStore,
-  type ChatDataState,
-  type ChatDataActions,
-  type MacroContext,
-} from "./chat-data-store.js";
 
 export {
   useDisplayMessage,

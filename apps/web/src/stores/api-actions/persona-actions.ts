@@ -6,7 +6,7 @@ import {
   type AppSnapshot,
 } from "../../app-client.js";
 import type { ChatId } from "@vibe-tavern/domain";
-import { useChatDataStore } from "../chat-data-store.js";
+import { useSnapshotStore } from "../snapshot-store.js";
 import { fetchPersonasAction } from "./bootstrap-actions.js";
 import type { PersonaRecord } from "../../app-client.js";
 
@@ -30,7 +30,7 @@ export async function updatePersonaAction(input: {
   };
 }): Promise<AppSnapshot> {
   const snapshot = await updatePersona(input.personaId, input.patch);
-  useChatDataStore.getState().setSnapshot(snapshot);
+  useSnapshotStore.getState().ingestSnapshot(snapshot);
   void fetchPersonasAction();
   return snapshot;
 }

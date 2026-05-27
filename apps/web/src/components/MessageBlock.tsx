@@ -5,8 +5,9 @@ import { cn } from "../lib/cn.js";
 import { Markdown } from "../lib/markdown.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { initials } from "./app-shell-helpers.js";
-import { useDisplayMessage, useChatMeta, useMessageOrder } from "../stores/chat-selectors.js";
-import { useChatStore, useChatDataStore } from "../stores/index.js";
+import { useDisplayMessage, useChatMeta, useMessageOrder, useMacroContext } from "../stores/chat-selectors.js";
+import { useChatStore, useActiveGeneration, useIsSending } from "../stores/index.js";
+import { useSnapshotStore } from "../stores/snapshot-store.js";
 import type { MessageBlockProps } from "./play-mode-types.js";
 import { Icons } from "./shared/icons.js";
 import { AutoTextarea } from "./shared/auto-textarea.js";
@@ -59,13 +60,14 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const msg = useDisplayMessage(input.messageId);
   const chatMeta = useChatMeta();
   const messageOrder = useMessageOrder();
-  const macroContext = useChatDataStore(s => s.macroContext);
+  const macroContext = useMacroContext();
 
   const editingMessageId = useChatStore(s => s.editingMessageId);
   const editingDraft = useChatStore(s => s.editingDraft);
-  const isSending = useChatStore(s => s.isSending);
+  const isSending = useIsSending();
   const messageActionId = useChatStore(s => s.messageActionId);
-  const pendingUserMessageContent = useChatStore(s => s.pendingUserMessageContent);
+  const activeGen = useActiveGeneration();
+  const pendingUserMessageContent = activeGen?.pendingUserMessageContent ?? null;
 
   // Diagnostics: render counter
   const renderCountRef = useRef(0);
@@ -75,7 +77,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   // Find first assistant message ID for greeting logic
   const firstAssistantMsgId = useMemo(() => {
-    const state = useChatDataStore.getState();
+    const state = useSnapshotStore.getState();
     for (const id of messageOrder) {
       if (state.messagesById[id]?.role === "assistant") return id;
     }
@@ -153,13 +155,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   });
 
   // Streaming text for regeneration
-  const globalStreamingText = useChatStore((s) => s.streamingText);
-  const globalStreamingReasoning = useChatStore((s) => s.streamingReasoningText);
+  const globalStreamingText = activeGen?.streamingText ?? "";
+  const globalStreamingReasoning = activeGen?.streamingReasoningText ?? "";
 
   // Separator logic
   const showSeparator = useMemo(() => {
     if (input.index === 0) return false;
-    const state = useChatDataStore.getState();
+    const state = useSnapshotStore.getState();
     const prevId = messageOrder[input.index - 1];
     const prev = state.messagesById[prevId];
     if (!prev || !msg) return false;
@@ -277,13 +279,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                 <button
                   className={cn("cursor-pointer text-t3 transition-colors duration-100", isMobile ? "active:text-accent" : "hover:text-accent")}
                   disabled={!canSwitchVariant || greetingIndex <= 0}
-                  onClick={() => { if (!isGreeting) isSwipingRef.current = true; _logSwipe('click:prevGreeting', { greetingIndex, target: Math.max(0, greetingIndex - 1) }); useChatDataStore.getState().setSwipeDirection(-1); setGreetingIndex(Math.max(0, greetingIndex - 1)); }}
+                  onClick={() => { if (!isGreeting) isSwipingRef.current = true; _logSwipe('click:prevGreeting', { greetingIndex, target: Math.max(0, greetingIndex - 1) }); useSnapshotStore.getState().setSwipeDirection(-1); setGreetingIndex(Math.max(0, greetingIndex - 1)); }}
                 >◀</button>
                 {t("greeting_counter").replace("{n}", String(greetingIndex + 1)).replace("{total}", String(greetingOptions!.length))}
                 <button
                   className={cn("cursor-pointer text-t3 transition-colors duration-100", isMobile ? "active:text-accent" : "hover:text-accent")}
                   disabled={!canSwitchVariant || greetingIndex >= greetingOptions!.length - 1}
-                  onClick={() => { if (!isGreeting) isSwipingRef.current = true; _logSwipe('click:nextGreeting', { greetingIndex, target: Math.min(greetingOptions!.length - 1, greetingIndex + 1) }); useChatDataStore.getState().setSwipeDirection(1); setGreetingIndex(Math.min(greetingOptions!.length - 1, greetingIndex + 1)); }}
+                  onClick={() => { if (!isGreeting) isSwipingRef.current = true; _logSwipe('click:nextGreeting', { greetingIndex, target: Math.min(greetingOptions!.length - 1, greetingIndex + 1) }); useSnapshotStore.getState().setSwipeDirection(1); setGreetingIndex(Math.min(greetingOptions!.length - 1, greetingIndex + 1)); }}
                 >▶</button>
               </span>
             )}
@@ -488,7 +490,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                     onClick={() => {
                       isSwipingRef.current = true;
                       _logSwipe('click:prevVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex - 1 });
-                      useChatDataStore.getState().selectVariant(msg.id, selectedVariantIndex - 1, -1);
+                      useSnapshotStore.getState().selectVariant(msg.id, selectedVariantIndex - 1, -1);
                       chat.handleSelectMessageVariant(msg.id, selectedVariantIndex - 1);
                     }}
                   ><Icons.Caret direction="l" /></button>
@@ -499,7 +501,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                     onClick={() => {
                       isSwipingRef.current = true;
                       _logSwipe('click:nextVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex + 1 });
-                      useChatDataStore.getState().selectVariant(msg.id, selectedVariantIndex + 1, 1);
+                      useSnapshotStore.getState().selectVariant(msg.id, selectedVariantIndex + 1, 1);
                       chat.handleSelectMessageVariant(msg.id, selectedVariantIndex + 1);
                     }}
                   ><Icons.Caret direction="r" /></button>
@@ -535,9 +537,9 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               {!isUser && variantCount > 1 && canSwitchVariant && (
                 <>
                   <div className="mx-1 h-4 w-px bg-border"/>
-                  <div className="flex h-7 w-7 cursor-pointer items-center justify-center rounded text-t3 active:bg-s2" onClick={() => { isSwipingRef.current = true; useChatDataStore.getState().selectVariant(msg.id, selectedVariantIndex - 1, -1); chat.handleSelectMessageVariant(msg.id, selectedVariantIndex - 1); }}><Icons.Caret direction="l" /></div>
+                  <div className="flex h-7 w-7 cursor-pointer items-center justify-center rounded text-t3 active:bg-s2" onClick={() => { isSwipingRef.current = true; useSnapshotStore.getState().selectVariant(msg.id, selectedVariantIndex - 1, -1); chat.handleSelectMessageVariant(msg.id, selectedVariantIndex - 1); }}><Icons.Caret direction="l" /></div>
                   <span className="min-w-6 text-center text-[12px] tabular-nums text-t3">{selectedVariantIndex + 1}/{variantCount}</span>
-                  <div className="flex h-7 w-7 cursor-pointer items-center justify-center rounded text-t3 active:bg-s2" onClick={() => { isSwipingRef.current = true; useChatDataStore.getState().selectVariant(msg.id, selectedVariantIndex + 1, 1); chat.handleSelectMessageVariant(msg.id, selectedVariantIndex + 1); }}><Icons.Caret direction="r" /></div>
+                  <div className="flex h-7 w-7 cursor-pointer items-center justify-center rounded text-t3 active:bg-s2" onClick={() => { isSwipingRef.current = true; useSnapshotStore.getState().selectVariant(msg.id, selectedVariantIndex + 1, 1); chat.handleSelectMessageVariant(msg.id, selectedVariantIndex + 1); }}><Icons.Caret direction="r" /></div>
                 </>
               )}
             </div>

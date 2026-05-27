@@ -169,7 +169,7 @@ export class ChatStore {
   }
 
   async listAll(): Promise<Chat[]> {
-    const rows = await this.db.select().from(chats).orderBy(desc(chats.lastAccessedAt)).all();
+    const rows = await this.db.select().from(chats).orderBy(desc(chats.updatedAt)).all();
     return rows.map((row) => this.mapRow(row));
   }
 
