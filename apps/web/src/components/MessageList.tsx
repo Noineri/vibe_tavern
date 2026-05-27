@@ -130,10 +130,10 @@ export function MessageList() {
 
           return (
             <>
-              <div className={sepWrap}>
+              <div className={isMobile ? sepWrapM : sepWrap}>
                 <div className="h-px bg-border opacity-40"/>
               </div>
-              <div className={msgWrap} aria-label={t("generating_response")}>
+              <div className={isMobile ? msgWrapM : msgWrap} aria-label={t("generating_response")}>
                 <div className="relative group py-2.5">
                   <div className="mb-[12px] flex items-center gap-[10px] text-[calc(var(--ui-fs)-2px)] font-semibold tracking-[0.04em] text-t3 text-accent-t opacity-85">
                     <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
