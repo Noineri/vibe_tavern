@@ -116,6 +116,7 @@
   "build_prompt_trace": "Prompt Trace",
   "editor": "Editor",
   "more_characters": "+{n} more",
+  "characters": "Characters",
   "trace_total_tokens": "Total: {n} tokens",
   "trace_no_active": "No active trace.",
   "trace_recorded_count": "Recorded: {n} traces",
