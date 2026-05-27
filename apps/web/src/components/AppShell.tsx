@@ -168,7 +168,7 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
     <div className="flex bg-bg text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
       {isMobile ? <Rail hidden={!showRail} /> : <Sidebar />}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <TopBar railHidden={isMobile && !showRail} onShowRail={() => updateTweak("showRail", true)} />
+        <TopBar railHidden={isMobile && !showRail} onShowRail={() => useNavigationStore.getState().triggerRailOpen()} />
         {shellSurface}
       </main>
 

@@ -43,3 +43,5 @@ export const useModalStore = create<ModalStore>()((set) => ({
   setAvatarOpen: (open) => set({ avatarOpen: open }),
   setMobileAccessOpen: (open) => set({ mobileAccessOpen: open }),
 }));
+
+if (typeof window !== "undefined") (window as any).__useModalStore = useModalStore;

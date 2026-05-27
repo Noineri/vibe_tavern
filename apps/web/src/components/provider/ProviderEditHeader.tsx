@@ -52,7 +52,7 @@ export function ProviderEditHeader({
       </div>
 
       {/* Row 1: profile name + preset group */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="mb-4">
           <label className={labelCls + " mb-[7px]"}>{t("profile_name")}</label>
           <input type="text" value={form.name} onChange={(e) => updateForm('name', e.target.value)} placeholder={t("profile_name_placeholder")} className={inputCls} />
@@ -73,7 +73,7 @@ export function ProviderEditHeader({
       </div>
 
       {/* Row 2: API format + preset endpoint */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="mb-4">
           <label className={labelCls + " mb-[7px]"}>{t("api_format_label")}</label>
           <select value={form.providerPreset || ''} onChange={(e) => { const val = e.target.value; if (val) applyPreset(val); }} className={selectCls}>

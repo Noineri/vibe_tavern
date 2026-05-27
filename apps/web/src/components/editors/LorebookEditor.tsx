@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Ic, Icons } from "../shared/icons.js";
+import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import {
@@ -588,7 +589,9 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
 
       <div style={{ marginBottom: 20 }}>
         <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_entry_content")}</label>
-        <textarea className="w-full min-h-[180px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent leading-[1.6]" value={activeEntry.content} onChange={e => updateAct("content", e.target.value)} placeholder={t("lore_entry_content_placeholder")} />
+        <MobileExpandTextarea value={activeEntry.content} onChange={(v) => updateAct("content", v)} label={t("lore_entry_content")}>
+          <textarea className="w-full min-h-[180px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent leading-[1.6]" value={activeEntry.content} onChange={e => updateAct("content", e.target.value)} placeholder={t("lore_entry_content_placeholder")} />
+        </MobileExpandTextarea>
       </div>
 
       <button className="mb-4 flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-accent-t transition-all hover:text-accent" onClick={() => setAdvancedOpen(v => !v)}>

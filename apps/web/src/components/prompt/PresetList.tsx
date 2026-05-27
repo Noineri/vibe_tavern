@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { EmptyState } from "../shared/empty-state.js";
@@ -9,13 +10,66 @@ interface PresetListProps {
   presets: Array<{ id: string; name: string }>;
   activePresetId: string | null;
   onSelect: (id: string) => void;
+  onDrillDown?: (id: string) => void;
   onAdd: (name: string) => void;
   onRename: (id: string, newName: string) => void;
   onImportPreset?: () => void;
 }
 
-export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename, onImportPreset }: PresetListProps) {
+const PresetRow = React.memo(({ p, isActive, onSelect, isMobile, onDrillDown, startEditing }: {
+  p: { id: string; name: string };
+  isActive: boolean;
+  onSelect: (id: string) => void;
+  isMobile: boolean;
+  onDrillDown?: (id: string) => void;
+  startEditing: (preset: { id: string; name: string }, e: React.MouseEvent) => void;
+}) => {
+  return (
+    <div
+      onPointerDown={() => onSelect(p.id)}
+      className={cn(
+        "group flex cursor-pointer items-center gap-2 border-l-2 min-h-[56px] px-4 sm:transition-colors touch-manipulation",
+        isActive ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2"
+      )}
+    >
+      <div className={cn("h-[6px] w-[6px] shrink-0 rounded-full sm:transition-colors", isActive ? "bg-accent" : "bg-transparent")} />
+      {isMobile ? (
+        <span className={cn("truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isActive ? "text-accent-t" : "text-t2")}>{p.name}</span>
+      ) : (
+        <CustomTooltip content={p.name}>
+          <span className={cn("truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isActive ? "text-accent-t" : "text-t2")}>{p.name}</span>
+        </CustomTooltip>
+      )}
+      {isMobile && (
+        <button
+          onClick={(e) => startEditing(p, e)}
+          className={cn("ml-1 shrink-0 transition-colors", isActive ? "text-accent" : "text-t4 hover:text-t1")}
+          type="button"
+        ><Icons.Edit /></button>
+      )}
+      <div className="ml-auto flex items-center gap-1">
+        {!isMobile && (
+        <button
+          onClick={(e) => startEditing(p, e)}
+          className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100", isActive ? "text-accent" : "text-t4 hover:text-t1")}
+          type="button"
+        ><Icons.Edit /></button>
+        )}
+        {onDrillDown && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onDrillDown(p.id); }}
+          className="shrink-0 px-2 py-1 text-t3 transition-colors hover:text-t1"
+          type="button"
+        ><Icons.Caret direction="r" /></button>
+        )}
+      </div>
+    </div>
+  );
+}, (prev, next) => prev.isActive === next.isActive && prev.p.id === next.p.id);
+
+export function PresetList({ presets, activePresetId, onSelect, onDrillDown, onAdd, onRename, onImportPreset }: PresetListProps) {
   const { t } = useT();
+  const isMobile = useIsMobile();
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -115,29 +169,15 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename,
           }
 
           return (
-            <div
+            <PresetRow
               key={p.id}
-              onClick={() => onSelect(p.id)}
-              className={cn(
-                "group flex cursor-pointer items-center justify-between border-l-2 px-4 py-2.5 transition-colors",
-                isActive ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2"
-              )}
-            >
-              <CustomTooltip content={p.name}>
-              <span className={cn("truncate pr-2 font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isActive ? "text-accent-t" : "text-t2")}>
-                {p.name}
-              </span>
-              </CustomTooltip>
-              <CustomTooltip content={t("rename")}>
-              <button
-                onClick={(e) => startEditing(p, e)}
-                className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100", isActive ? "text-accent" : "text-t4 hover:text-t1")}
-                type="button"
-              >
-                <Icons.Edit />
-              </button>
-              </CustomTooltip>
-            </div>
+              p={p}
+              isActive={isActive}
+              onSelect={onSelect}
+              isMobile={isMobile}
+              onDrillDown={onDrillDown}
+              startEditing={startEditing}
+            />
           );
         })}
 
