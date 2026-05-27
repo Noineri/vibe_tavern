@@ -154,6 +154,8 @@ export function importStLorebookJson(
     includeNames: false,
     minActivations: 0,
     minActivationsDepthMax: 0,
+    overflowAlert: false,
+    characterStrategy: 0,
     sortOrder: 0,
     enabled: true,
     characterId: null,
@@ -218,6 +220,7 @@ export function importStLorebookJson(
       matchSources: [] as LoreMatchSource[],
       enabled: !asBoolean(entry.disable, false),
       sortOrder: asNumber(entry.order, 100),
+      automationId: asString(entry.automationId),
       metadata: {
         stUid: entry.uid ?? index,
         stComment: entry.comment ?? "",

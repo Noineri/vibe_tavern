@@ -18,6 +18,8 @@ export interface CreateLorebookData {
   includeNames?: boolean;
   minActivations?: number;
   minActivationsDepthMax?: number;
+  overflowAlert?: boolean;
+  characterStrategy?: number;
   sortOrder?: number;
   enabled?: boolean;
   characterId?: string | null;
@@ -63,6 +65,7 @@ export interface CreateLoreEntryData {
   matchSources?: string[];
   enabled?: boolean;
   sortOrder?: number;
+  automationId?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -82,6 +85,8 @@ export interface Lorebook {
   includeNames: boolean;
   minActivations: number;
   minActivationsDepthMax: number;
+  overflowAlert: boolean;
+  characterStrategy: number;
   sortOrder: number;
   enabled: boolean;
   characterId: string | null;
@@ -127,6 +132,7 @@ export interface LoreEntry {
   matchSources: string[];
   enabled: boolean;
   sortOrder: number;
+  automationId: string;
   metadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
@@ -200,6 +206,8 @@ export class LorebookStore {
         includeNames: data.includeNames ? 1 : 0,
         minActivations: data.minActivations ?? 0,
         minActivationsDepthMax: data.minActivationsDepthMax ?? 0,
+        overflowAlert: data.overflowAlert ? 1 : 0,
+        characterStrategy: data.characterStrategy ?? 0,
         sortOrder: data.sortOrder ?? 0,
         enabled: (data.enabled ?? true) ? 1 : 0,
         characterId: data.characterId ?? null,
@@ -233,6 +241,8 @@ export class LorebookStore {
     if (data.includeNames !== undefined) values.includeNames = data.includeNames ? 1 : 0;
     if (data.minActivations !== undefined) values.minActivations = data.minActivations;
     if (data.minActivationsDepthMax !== undefined) values.minActivationsDepthMax = data.minActivationsDepthMax;
+    if (data.overflowAlert !== undefined) values.overflowAlert = data.overflowAlert ? 1 : 0;
+    if (data.characterStrategy !== undefined) values.characterStrategy = data.characterStrategy;
     if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
     if (data.enabled !== undefined) values.enabled = data.enabled ? 1 : 0;
     if (data.characterId !== undefined) values.characterId = data.characterId;
@@ -337,6 +347,7 @@ export class LorebookStore {
         matchSourcesJson: JSON.stringify(data.matchSources ?? []),
         enabled: (data.enabled ?? true) ? 1 : 0,
         sortOrder: data.sortOrder ?? 0,
+        automationId: data.automationId ?? "",
         metadataJson: JSON.stringify(data.metadata ?? {}),
         createdAt: now,
         updatedAt: now,
@@ -388,6 +399,7 @@ export class LorebookStore {
     if (data.matchSources !== undefined) values.matchSourcesJson = JSON.stringify(data.matchSources);
     if (data.enabled !== undefined) values.enabled = data.enabled ? 1 : 0;
     if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
+    if (data.automationId !== undefined) values.automationId = data.automationId;
     if (data.metadata !== undefined) values.metadataJson = JSON.stringify(data.metadata);
 
     const [row] = await this.db
@@ -516,6 +528,8 @@ export class LorebookStore {
       includeNames: row.includeNames === 1,
       minActivations: row.minActivations,
       minActivationsDepthMax: row.minActivationsDepthMax,
+      overflowAlert: row.overflowAlert === 1,
+      characterStrategy: row.characterStrategy,
       sortOrder: row.sortOrder,
       enabled: row.enabled === 1,
       characterId: row.characterId,
@@ -577,6 +591,8 @@ export class LorebookStore {
       includeNames: row.includeNames === 1,
       minActivations: row.minActivations,
       minActivationsDepthMax: row.minActivationsDepthMax,
+      overflowAlert: row.overflowAlert === 1,
+      characterStrategy: row.characterStrategy,
       sortOrder: row.sortOrder,
       enabled: row.enabled === 1,
       characterId: row.characterId,
@@ -624,6 +640,7 @@ export class LorebookStore {
       matchSources: JSON.parse(row.matchSourcesJson),
       enabled: row.enabled === 1,
       sortOrder: row.sortOrder,
+      automationId: row.automationId,
       metadata: JSON.parse(row.metadataJson),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

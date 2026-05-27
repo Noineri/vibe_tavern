@@ -126,6 +126,8 @@ export interface Lorebook {
   includeNames: boolean;
   minActivations: number;
   minActivationsDepthMax: number;
+  overflowAlert: boolean;
+  characterStrategy: number;
   sortOrder: number;
   enabled: boolean;
   characterId: string | null;
@@ -185,6 +187,7 @@ export interface LoreEntry {
   // Meta
   enabled: boolean;
   sortOrder: number;
+  automationId: string;
   metadata: Record<string, unknown>;
 }
 
