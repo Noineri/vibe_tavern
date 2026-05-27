@@ -7,6 +7,7 @@ import type { AvatarCropResult } from "./shared/AvatarCropModal.js";
 import { cn } from "../lib/cn.js";
 import { useIsMobile } from "../hooks/use-mobile.js";
 import { CustomTooltip } from "./shared/Tooltip.js";
+import { AutoTextarea } from "./shared/auto-textarea.js";
 import { Modal } from "./shared/Modal.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { uploadAsset } from "../app-client.js";
@@ -277,8 +278,9 @@ export function PersonaModal(input: PersonaModalProps) {
             </div>
             {/* Description */}
             <div className="relative mb-3">
-              <textarea
+              <AutoTextarea
                 className="w-full min-h-[60px] rounded border border-border bg-s2 py-2 px-2.5 font-ui text-xs text-t1 outline-none resize-none focus:border-accent"
+                style={{ minHeight: 60 }}
                 value={editDescription}
                 onChange={(e) => form.setValue("description", e.target.value, { shouldDirty: true })}
                 placeholder={t("persona_desc_placeholder")}
