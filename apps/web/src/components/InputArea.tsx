@@ -125,6 +125,10 @@ export function InputArea() {
       ta.style.height = `${Math.min(ta.scrollHeight, window.innerHeight * 0.4)}px`;
     }
   };
+  // Shrink textarea back when draft is cleared (after send)
+  useEffect(() => {
+    if (isMobile && !draft) adjustTextareaHeight();
+  }, [draft, isMobile]);
 
   // ── Mobile: compact two-row input ──
   if (isMobile) {
