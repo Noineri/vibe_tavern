@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { fetchProviderModelsAction } from "../../stores/api-actions/provider-actions.js";
 import { Ic } from "../shared/icons.js";
+import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { CodeEditor } from "../shared/CodeEditor.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
@@ -254,7 +255,9 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             </div>
             <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
               <div className="mb-3 text-[13px] text-t2">{t("script_import_paste")}</div>
-              <textarea className="w-full min-h-[200px] rounded-md border border-border bg-bg px-3 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent" placeholder={t("script_import_placeholder")} value={importCode} onChange={e => setImportCode(e.target.value)} />
+              <MobileExpandTextarea value={importCode} onChange={setImportCode} label={t("script_import_import")}>
+                <textarea className="w-full min-h-[200px] rounded-md border border-border bg-bg px-3 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent" placeholder={t("script_import_placeholder")} value={importCode} onChange={e => setImportCode(e.target.value)} />
+              </MobileExpandTextarea>
               {importCode.trim() && (
                 <div className="mt-2 text-[11px] text-accent-t">
                   {(importCode.trim().startsWith("{") || importCode.trim().startsWith("[")) ? t("script_import_detect_json") : t("script_import_detect_js")}
@@ -312,7 +315,9 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                   </div>
                   <div style={{ marginBottom: 16 }}>
                     <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_prompt")}</label>
-                    <textarea className="w-full min-h-[100px] rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent resize-none" placeholder={t("script_ai_prompt")} value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
+                    <MobileExpandTextarea value={aiPrompt} onChange={setAiPrompt} label={t("script_ai_helper")}>
+                      <textarea className="w-full min-h-[100px] rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent resize-none" placeholder={t("script_ai_prompt")} value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
+                    </MobileExpandTextarea>
                     <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("script_ai_prompt_hint")}</div>
                   </div>
                   {aiStreamedReasoning && (
