@@ -18,7 +18,7 @@
       },
     },
     "apps/web": {
-      "name": "@rp-platform/web",
+      "name": "@vibe-tavern/web",
       "version": "0.1.0",
       "dependencies": {
         "@codemirror/lang-javascript": "^6.2.5",
@@ -28,10 +28,10 @@
         "@radix-ui/react-dialog": "^1.1.15",
         "@radix-ui/react-select": "^2.2.6",
         "@radix-ui/react-tooltip": "^1.2.8",
-        "@rp-platform/api": "0.1.0",
-        "@rp-platform/db": "0.1.0",
-        "@rp-platform/domain": "0.1.0",
-        "@rp-platform/prompt-pipeline": "0.1.0",
+        "@vibe-tavern/api": "0.1.0",
+        "@vibe-tavern/db": "0.1.0",
+        "@vibe-tavern/domain": "0.1.0",
+        "@vibe-tavern/prompt-pipeline": "0.1.0",
         "codemirror": "^6.0.2",
         "framer-motion": "^12.40.0",
         "hono": "^4.7.10",
@@ -65,10 +65,10 @@
       },
     },
     "packages/api-contracts": {
-      "name": "@rp-platform/api-contracts",
+      "name": "@vibe-tavern/api-contracts",
       "version": "0.1.0",
       "dependencies": {
-        "@rp-platform/domain": "0.1.0",
+        "@vibe-tavern/domain": "0.1.0",
         "zod": "^3.24.4",
       },
       "devDependencies": {
@@ -76,10 +76,10 @@
       },
     },
     "packages/db": {
-      "name": "@rp-platform/db",
+      "name": "@vibe-tavern/db",
       "version": "0.1.0",
       "dependencies": {
-        "@rp-platform/domain": "0.1.0",
+        "@vibe-tavern/domain": "0.1.0",
         "drizzle-orm": "^0.36.0",
       },
       "devDependencies": {
@@ -88,34 +88,34 @@
       },
     },
     "packages/domain": {
-      "name": "@rp-platform/domain",
+      "name": "@vibe-tavern/domain",
       "version": "0.1.0",
       "devDependencies": {
         "@types/bun": "^1.3.13",
       },
     },
     "packages/import-export": {
-      "name": "@rp-platform/import-export",
+      "name": "@vibe-tavern/import-export",
       "version": "0.1.0",
       "dependencies": {
-        "@rp-platform/domain": "0.1.0",
+        "@vibe-tavern/domain": "0.1.0",
       },
       "devDependencies": {
         "@types/bun": "^1.2.10",
       },
     },
     "packages/prompt-pipeline": {
-      "name": "@rp-platform/prompt-pipeline",
+      "name": "@vibe-tavern/prompt-pipeline",
       "version": "0.1.0",
       "dependencies": {
-        "@rp-platform/domain": "0.1.0",
+        "@vibe-tavern/domain": "0.1.0",
       },
       "devDependencies": {
         "@types/bun": "^1.3.13",
       },
     },
     "services/api": {
-      "name": "@rp-platform/api",
+      "name": "@vibe-tavern/api",
       "version": "0.1.0",
       "dependencies": {
         "@agnai/web-tokenizers": "^0.1.6-pre3",
@@ -123,11 +123,11 @@
         "@ai-sdk/google": "^1.2.12",
         "@ai-sdk/openai": "^1.3.19",
         "@hono/zod-validator": "^0.4.2",
-        "@rp-platform/api-contracts": "0.1.0",
-        "@rp-platform/db": "0.1.0",
-        "@rp-platform/domain": "0.1.0",
-        "@rp-platform/import-export": "0.1.0",
-        "@rp-platform/prompt-pipeline": "0.1.0",
+        "@vibe-tavern/api-contracts": "0.1.0",
+        "@vibe-tavern/db": "0.1.0",
+        "@vibe-tavern/domain": "0.1.0",
+        "@vibe-tavern/import-export": "0.1.0",
+        "@vibe-tavern/prompt-pipeline": "0.1.0",
         "ai": "^4.3.16",
         "hono": "^4.7.10",
         "js-tiktoken": "^1.0.21",
@@ -367,20 +367,6 @@
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.0-rc.7", "", {}, "sha512-qujRfC8sFVInYSPPMLQByRh7zhwkGFS4+tyMQ83srV1qrxL4g8E2tyxVVyxd0+8QeBM1mIk9KbWxkegRr76XzA=="],
 
-    "@rp-platform/api": ["@rp-platform/api@workspace:services/api"],
-
-    "@rp-platform/api-contracts": ["@rp-platform/api-contracts@workspace:packages/api-contracts"],
-
-    "@rp-platform/db": ["@rp-platform/db@workspace:packages/db"],
-
-    "@rp-platform/domain": ["@rp-platform/domain@workspace:packages/domain"],
-
-    "@rp-platform/import-export": ["@rp-platform/import-export@workspace:packages/import-export"],
-
-    "@rp-platform/prompt-pipeline": ["@rp-platform/prompt-pipeline@workspace:packages/prompt-pipeline"],
-
-    "@rp-platform/web": ["@rp-platform/web@workspace:apps/web"],
-
     "@standard-schema/utils": ["@standard-schema/utils@0.3.0", "", {}, "sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g=="],
 
     "@tailwindcss/node": ["@tailwindcss/node@4.2.4", "", { "dependencies": { "@jridgewell/remapping": "^2.3.5", "enhanced-resolve": "^5.19.0", "jiti": "^2.6.1", "lightningcss": "1.32.0", "magic-string": "^0.30.21", "source-map-js": "^1.2.1", "tailwindcss": "4.2.4" } }, "sha512-Ai7+yQPxz3ddrDQzFfBKdHEVBg0w3Zl83jnjuwxnZOsnH9pGn93QHQtpU0p/8rYWxvbFZHneni6p1BSLK4DkGA=="],
@@ -444,6 +430,20 @@
     "@types/unist": ["@types/unist@3.0.3", "", {}, "sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q=="],
 
     "@ungap/structured-clone": ["@ungap/structured-clone@1.3.1", "", {}, "sha512-mUFwbeTqrVgDQxFveS+df2yfap6iuP20NAKAsBt5jDEoOTDew+zwLAOilHCeQJOVSvmgCX4ogqIrA0mnyr08yQ=="],
+
+    "@vibe-tavern/api": ["@vibe-tavern/api@workspace:services/api"],
+
+    "@vibe-tavern/api-contracts": ["@vibe-tavern/api-contracts@workspace:packages/api-contracts"],
+
+    "@vibe-tavern/db": ["@vibe-tavern/db@workspace:packages/db"],
+
+    "@vibe-tavern/domain": ["@vibe-tavern/domain@workspace:packages/domain"],
+
+    "@vibe-tavern/import-export": ["@vibe-tavern/import-export@workspace:packages/import-export"],
+
+    "@vibe-tavern/prompt-pipeline": ["@vibe-tavern/prompt-pipeline@workspace:packages/prompt-pipeline"],
+
+    "@vibe-tavern/web": ["@vibe-tavern/web@workspace:apps/web"],
 
     "@vitejs/plugin-react": ["@vitejs/plugin-react@6.0.1", "", { "dependencies": { "@rolldown/pluginutils": "1.0.0-rc.7" }, "peerDependencies": { "@rolldown/plugin-babel": "^0.1.7 || ^0.2.0", "babel-plugin-react-compiler": "^1.0.0", "vite": "^8.0.0" }, "optionalPeers": ["@rolldown/plugin-babel", "babel-plugin-react-compiler"] }, "sha512-l9X/E3cDb+xY3SWzlG1MOGt2usfEHGMNIaegaUGFsLkb3RCn/k8/TOXBcab+OndDI4TBtktT8/9BwwW8Vi9KUQ=="],
 
