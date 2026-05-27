@@ -10,7 +10,7 @@ export async function createRuntimeStore(dataDir?: string): Promise<StoreContain
   } else {
     // Dev/prod mode: resolve from source tree root (backward compat)
     const rootDir = process.env.RP_PLATFORM_ROOT_DIR ?? resolve(import.meta.dir, '..', '..', '..');
-    dbPath = resolve(rootDir, process.env.RP_PLATFORM_DB_PATH ?? 'data/vibe-tavern.db');
+    dbPath = resolve(rootDir, process.env.VIBE_TAVERN_DB_PATH ?? 'data/vibe-tavern.db');
   }
 
   return await createStoreContainer(dbPath, dataDir);
