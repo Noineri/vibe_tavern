@@ -981,12 +981,12 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
           savingState === "error" ? "bg-danger-dim text-danger-text cursor-pointer" :
           Object.keys(dirtyFields).length > 0 ? "bg-accent text-on-accent" : "bg-s3 text-t3"
         )}
-        onClick={savingState === "error" ? flushSave : undefined}
+        onClick={savingState === "error" || Object.keys(dirtyFields).length > 0 ? flushSave : undefined}
       >
-        {savingState === "saving" ? "Saving..." :
-         savingState === "saved" ? "Saved" :
-         savingState === "error" ? "Retry" :
-         Object.keys(dirtyFields).length > 0 ? "Save" : "Saved"}
+        {savingState === "saving" ? t("lore_saving") :
+         savingState === "saved" ? t("lore_saved") :
+         savingState === "error" ? t("retry") :
+         Object.keys(dirtyFields).length > 0 ? t("lore_save_entry") : t("lore_saved")}
       </button>
     </div>
   );
