@@ -137,3 +137,5 @@ export const useChatDataStore = create<ChatDataStore>()(
     }),
   }))
 );
+
+if (typeof window !== "undefined") (window as any).__useChatDataStore = useChatDataStore;
