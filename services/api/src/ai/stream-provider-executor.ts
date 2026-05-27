@@ -142,6 +142,15 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       providerType: input.profile.providerPreset as ProviderType,
     });
 
+    // DEBUG: log what actually goes to the provider
+    const systemLen = systemPrompt?.length ?? 0;
+    const convLen = conversationMessages.reduce((s, m) => s + m.content.length, 0);
+    console.log(`[stream-executor] ${messages.length} msgs from toSdkMessages → system=${systemLen} chars + ${conversationMessages.length} conv msgs (${convLen} chars) = ${systemLen + convLen} chars total`);
+    console.log(`[stream-executor] messages detail:`);
+    for (const m of messages) {
+      console.log(`  [msg] role=${m.role} len=${m.content.length}`);
+    }
+
     const samplerConfig = buildSamplerConfig(input.profile);
     const result = streamText({
       model,

@@ -520,6 +520,11 @@ async function listOpenAiCompatModels(
 	input: Omit<ProviderConnectionInput, "model">,
 ): Promise<ProviderModelOption[]> {
 	const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
+
+	if (!baseUrl || !tryParseUrl(baseUrl)) {
+		throw new Error(`Invalid provider endpoint: ${input.baseUrl}`);
+	}
+
 	const isNanoGpt = /nano-gpt\.com/.test(baseUrl);
 	const isElectronHub = /electronhub\.ai/.test(baseUrl);
 

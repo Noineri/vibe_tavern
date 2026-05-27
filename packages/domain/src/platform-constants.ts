@@ -223,8 +223,10 @@ export type LoreTriggerType = typeof LORE_TRIGGER_TYPE[keyof typeof LORE_TRIGGER
 export const LORE_MATCH_SOURCE = {
   chatMessages: "chat_messages",
   characterDesc: "character_desc",
-  personaDesc: "persona_desc",
+  characterPersonality: "character_personality",
   characterNote: "character_note",
+  personaDesc: "persona_desc",
+  scenario: "scenario",
   creatorNotes: "creator_notes",
 } as const;
 

@@ -14,6 +14,7 @@ export interface CreateLorebookData {
   scanDepth?: number;
   tokenBudget?: number;
   recursiveScanning?: boolean;
+  maxRecursionSteps?: number;
   sortOrder?: number;
   enabled?: boolean;
   characterId?: string | null;
@@ -38,6 +39,7 @@ export interface CreateLoreEntryData {
   delayWindow?: number;
   constant?: boolean;
   probability?: number;
+  ignoreBudget?: boolean;
   role?: string;
   group?: string;
   /** Alias accepted from API (Zod schema uses groupName) */
@@ -72,6 +74,7 @@ export interface Lorebook {
   scanDepth: number;
   tokenBudget: number;
   recursiveScanning: boolean;
+  maxRecursionSteps: number;
   sortOrder: number;
   enabled: boolean;
   characterId: string | null;
@@ -98,6 +101,7 @@ export interface LoreEntry {
   delayWindow: number;
   constant: boolean;
   probability: number;
+  ignoreBudget: boolean;
   role: string;
   group: string;
   groupWeight: number;
@@ -184,6 +188,7 @@ export class LorebookStore {
         scanDepth: data.scanDepth ?? 50,
         tokenBudget: data.tokenBudget ?? 1000,
         recursiveScanning: (data.recursiveScanning ?? false) ? 1 : 0,
+        maxRecursionSteps: data.maxRecursionSteps ?? 5,
         sortOrder: data.sortOrder ?? 0,
         enabled: (data.enabled ?? true) ? 1 : 0,
         characterId: data.characterId ?? null,
@@ -213,6 +218,7 @@ export class LorebookStore {
     if (data.scanDepth !== undefined) values.scanDepth = data.scanDepth;
     if (data.tokenBudget !== undefined) values.tokenBudget = data.tokenBudget;
     if (data.recursiveScanning !== undefined) values.recursiveScanning = data.recursiveScanning ? 1 : 0;
+    if (data.maxRecursionSteps !== undefined) values.maxRecursionSteps = data.maxRecursionSteps;
     if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
     if (data.enabled !== undefined) values.enabled = data.enabled ? 1 : 0;
     if (data.characterId !== undefined) values.characterId = data.characterId;
@@ -298,6 +304,7 @@ export class LorebookStore {
         delayWindow: data.delayWindow ?? 0,
         constant: (data.constant ?? false) ? 1 : 0,
         probability: data.probability ?? 100,
+        ignoreBudget: data.ignoreBudget ? 1 : 0,
         role: data.role ?? 'system',
         groupName: data.group ?? '',
         groupWeight: data.groupWeight ?? 100,
@@ -346,6 +353,7 @@ export class LorebookStore {
     if (data.delayWindow !== undefined) values.delayWindow = data.delayWindow;
     if (data.constant !== undefined) values.constant = data.constant ? 1 : 0;
     if (data.probability !== undefined) values.probability = data.probability;
+    if (data.ignoreBudget !== undefined) values.ignoreBudget = data.ignoreBudget ? 1 : 0;
     if (data.role !== undefined) values.role = data.role;
     if (data.group !== undefined) values.groupName = data.group;
     if (data.groupName !== undefined) values.groupName = data.groupName;
@@ -488,6 +496,7 @@ export class LorebookStore {
       scanDepth: row.scanDepth,
       tokenBudget: row.tokenBudget,
       recursiveScanning: row.recursiveScanning === 1,
+      maxRecursionSteps: row.maxRecursionSteps,
       sortOrder: row.sortOrder,
       enabled: row.enabled === 1,
       characterId: row.characterId,
@@ -509,6 +518,7 @@ export class LorebookStore {
         delayWindow: e.delayWindow,
         constant: e.constant === 1,
         probability: e.probability,
+        ignoreBudget: e.ignoreBudget ?? false,
         role: e.role,
         group: e.groupName,
         groupWeight: e.groupWeight,
@@ -544,6 +554,7 @@ export class LorebookStore {
       scanDepth: row.scanDepth,
       tokenBudget: row.tokenBudget,
       recursiveScanning: row.recursiveScanning === 1,
+      maxRecursionSteps: row.maxRecursionSteps,
       sortOrder: row.sortOrder,
       enabled: row.enabled === 1,
       characterId: row.characterId,
@@ -572,6 +583,7 @@ export class LorebookStore {
       delayWindow: row.delayWindow,
       constant: row.constant === 1,
       probability: row.probability,
+      ignoreBudget: row.ignoreBudget === 1,
       role: row.role,
       group: row.groupName,
       groupWeight: row.groupWeight,
@@ -618,6 +630,7 @@ export class LorebookStore {
                       typeof parsed.ext_scan_depth === 'number' ? parsed.ext_scan_depth : 50;
     const tokenBudget = typeof parsed.token_budget === 'number' ? parsed.token_budget : 2048;
     const recursiveScanning = typeof parsed.recursive_scanning === 'boolean' ? parsed.recursive_scanning : false;
+    const maxRecursionSteps = typeof parsed.ext_max_recursion_steps === 'number' ? parsed.ext_max_recursion_steps : 5;
 
     // Check if this character already has a character-scoped lorebook
     const existing = await this.listLorebooksByScope('character', characterId);
@@ -632,6 +645,7 @@ export class LorebookStore {
       scanDepth,
       tokenBudget,
       recursiveScanning,
+      maxRecursionSteps,
     });
 
     // Parse entries from the blob
@@ -661,6 +675,7 @@ export class LorebookStore {
         sortOrder: typeof entry.order === 'number' ? entry.order : 0,
         constant: typeof entry.constant === 'boolean' ? entry.constant : false,
         probability: typeof entry.probability === 'number' ? entry.probability : 100,
+        ignoreBudget: typeof entry.ignore_budget === 'boolean' ? entry.ignore_budget : false,
         role: typeof entry.role === 'number' ? this.mapRoleNumber(entry.role) : (typeof entry.role === 'string' ? entry.role : 'system'),
         group: typeof entry.group === 'string' ? entry.group : (typeof entry.groupName === 'string' ? entry.groupName as string : ''),
         groupWeight: typeof entry.group_weight === 'number' ? entry.group_weight : (typeof entry.groupWeight === 'number' ? entry.groupWeight : 1),

@@ -122,6 +122,7 @@ export interface Lorebook {
   scanDepth: number;
   tokenBudget: number;
   recursiveScanning: boolean;
+  maxRecursionSteps: number;
   sortOrder: number;
   enabled: boolean;
   characterId: string | null;
@@ -158,6 +159,7 @@ export interface LoreEntry {
   // Extended ST fields
   constant: boolean;
   probability: number;
+  ignoreBudget: boolean;
   role: LoreEntryRole;
   // Inclusion group
   group: string;

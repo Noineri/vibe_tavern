@@ -1,4 +1,5 @@
 import type { StoreContainer } from "@vibe-tavern/db";
+import { countTokens } from "./ai/tokenizer-service.js";
 import {
 	type ChatBranchId,
 	type ChatId,
@@ -109,6 +110,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				scanDepth: lb.lorebook.scanDepth,
 				tokenBudget: lb.lorebook.tokenBudget,
 				recursiveScanning: lb.lorebook.recursiveScanning,
+				maxRecursionSteps: lb.lorebook.maxRecursionSteps,
 				entries: lb.entries,
 			})),
 			messages: recentMessages,
@@ -117,8 +119,13 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			characterName: character.name,
 			characterDescription: character.description,
 			personaDescription: persona?.description,
+			characterPersonality: character.personalitySummary ?? undefined,
+			characterNote: character.depthPrompt ?? undefined,
+			scenario: character.defaultScenario ?? undefined,
+			creatorNotes: character.creatorNotes ?? undefined,
 			activationState,
 			currentTurn,
+			estimateTokenCount: countTokens,
 		});
 
 		// 8. Persist updated activation state
@@ -145,6 +152,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				delayWindow: e.delayWindow,
 				constant: e.constant,
 				probability: e.probability,
+				ignoreBudget: e.ignoreBudget,
 				role: e.role as LoreEntry['role'],
 				group: e.group,
 				groupWeight: e.groupWeight,

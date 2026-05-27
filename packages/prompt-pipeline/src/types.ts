@@ -34,6 +34,11 @@ export interface PromptLayer {
    * Undefined = active in all modes (backward compat).
    */
   modes?: AssemblyMode[];
+  /**
+   * Message role for in_chat layers inserted into history.
+   * Defaults to "system" if not specified.
+   */
+  role?: "system" | "user" | "assistant";
 }
 
 export interface RecentMessage {
@@ -88,7 +93,11 @@ export interface PromptAssemblyContext {
     title: string;
     content: string;
     priority: number;
-    position?: PromptLayerPosition;
+    position?: string;
+    /** Injection depth for at_depth position. Defaults to 4. */
+    depth?: number;
+    /** Message role (system, user, assistant). Defaults to system. */
+    role?: string;
   }>;
   memory?: {
     summary?: Array<{
