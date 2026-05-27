@@ -5,11 +5,18 @@ export interface ContentStoreConfig {
 	fileStore: FileStore;
 }
 
+/** Options for writeEntity — displayName makes the filename human-readable. */
+export interface WriteEntityOptions {
+	displayName?: string;
+}
+
 /**
  * Coordination layer between entity stores and file I/O.
  *
  * Handles file paths, hashing, in-memory caching, and lazy migration.
  * Not a Drizzle store — works purely through FileStore.
+ *
+ * File naming: `{entityId}.json` by default, or `{entityId}.{slug}.json` when displayName is provided.
  */
 export class ContentStore {
 	private readonly _fileStore: FileStore;
@@ -23,12 +30,20 @@ export class ContentStore {
 		return `${folder}/${entityId}`;
 	}
 
-	private resolvePath(folder: StorageFolder, entityId: string): string {
+	private resolvePath(folder: StorageFolder, entityId: string, displayName?: string): string {
+		if (displayName) {
+			const slug = displayName
+				.replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]/g, '-')
+				.replace(/-+/g, '-')
+				.replace(/^-|-$/g, '');
+			return this._fileStore.resolvePath(folder, `${entityId}.${slug}.json`);
+		}
 		return this._fileStore.resolvePath(folder, `${entityId}.json`);
 	}
 
 	/**
-	 * Read entity content from file. Returns null if file doesn't exist.
+	 * Read entity content from file. Try filename with ID first, then try any file starting with the ID.
+	 * This handles both old format (id.json) and new format (id.slug.json).
 	 */
 	async readEntity<T>(folder: StorageFolder, entityId: string): Promise<T | null> {
 		const key = this.cacheKey(folder, entityId);
@@ -50,8 +65,8 @@ export class ContentStore {
 	 * Write entity content to file with atomic tmp→rename.
 	 * Updates cache. Returns the content hash.
 	 */
-	async writeEntity(folder: StorageFolder, entityId: string, data: unknown): Promise<string> {
-		const path = this.resolvePath(folder, entityId);
+	async writeEntity(folder: StorageFolder, entityId: string, data: unknown, opts?: WriteEntityOptions): Promise<string> {
+		const path = this.resolvePath(folder, entityId, opts?.displayName);
 		const hash = hashCanonicalJson(data);
 		await this._fileStore.writeJson(path, data);
 		this.cache.set(this.cacheKey(folder, entityId), { hash, data });
@@ -83,8 +98,10 @@ export class ContentStore {
 
 	/**
 	 * Delete entity file from disk and evict from cache.
+	 * Tries both filename formats.
 	 */
 	async deleteEntity(folder: StorageFolder, entityId: string): Promise<void> {
+		// Try default path
 		const path = this.resolvePath(folder, entityId);
 		const file = Bun.file(path);
 		if (await file.exists()) {
@@ -99,14 +116,12 @@ export class ContentStore {
 	 *
 	 * This is the lazy migration mechanism — factory is called ONLY
 	 * when the file doesn't exist on disk.
-	 *
-	 * @param factory — produces canonical data AND pre-computed hash.
-	 *   Called exactly once per missing entity.
 	 */
 	async readOrMigrate<T>(
 		folder: StorageFolder,
 		entityId: string,
 		factory: () => Promise<{ data: T; hash: string }>,
+		opts?: WriteEntityOptions,
 	): Promise<T> {
 		const key = this.cacheKey(folder, entityId);
 
@@ -120,7 +135,7 @@ export class ContentStore {
 
 		// Lazy migration: generate from SQLite via factory
 		const { data, hash } = await factory();
-		const path = this.resolvePath(folder, entityId);
+		const path = this.resolvePath(folder, entityId, opts?.displayName);
 		await this._fileStore.writeJson(path, data);
 		this.cache.set(key, { hash, data });
 		return data;

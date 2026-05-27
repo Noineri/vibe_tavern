@@ -90,7 +90,7 @@ export class CharacterStore {
     // Lazy migration: if not yet on disk, write now
     if (this.content && !row.hasFileOnDisk) {
       const fileData = this.toFileData(char);
-      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, id, fileData);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, id, fileData, { displayName });
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -175,7 +175,8 @@ export class CharacterStore {
     // Dual write: persist content to file store
     if (this.content) {
       const fileData = this.toFileData(char);
-      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, id, fileData);
+      const displayName = char.name || char.slug;
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, id, fileData, { displayName });
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -227,7 +228,8 @@ export class CharacterStore {
     // Dual write: update content file
     if (this.content) {
       const fileData = this.toFileData(updated);
-      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, id, fileData);
+      const displayName = updated.name || updated.slug;
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, id, fileData, { displayName });
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -298,7 +300,8 @@ export class CharacterStore {
     // Dual write: persist copy to file store
     if (this.content) {
       const fileData = this.toFileData(copy);
-      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, newId, fileData);
+      const displayName = copy.name || copy.slug;
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, newId, fileData, { displayName });
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
