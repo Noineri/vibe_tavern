@@ -1,9 +1,9 @@
-import { brandId, type ChatId, type ChatBranchId, type MessageId, type PromptTraceRecordDto } from "@rp-platform/domain";
-import type { LoreEntry, Message, MessageVariant } from "@rp-platform/domain";
-import type { PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@rp-platform/db";
+import { brandId, type ChatId, type ChatBranchId, type MessageId, type PromptTraceRecordDto } from "@vibe-tavern/domain";
+import type { LoreEntry, Message, MessageVariant } from "@vibe-tavern/domain";
+import type { PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
 
 // Re-export canonical domain type — single source of truth
-export type { StoredProviderProfileRecord } from "@rp-platform/domain";
+export type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 
 export interface ClientProviderProfileRecord {
   id: string;
@@ -134,7 +134,7 @@ export function entryMatchesRecentText(entry: LoreEntry, lowerText: string): boo
   }
 }
 
-export function toClientProviderProfile(profile: import("@rp-platform/domain").StoredProviderProfileRecord): ClientProviderProfileRecord {
+export function toClientProviderProfile(profile: import("@vibe-tavern/domain").StoredProviderProfileRecord): ClientProviderProfileRecord {
   return {
     id: profile.id,
     name: profile.name,

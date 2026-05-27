@@ -5,6 +5,6 @@ export default defineConfig({
   out: './drizzle',
   dialect: 'sqlite',
   dbCredentials: {
-    url: '../../data/rp-platform.db',
+    url: '../../data/vibe-tavern.db',
   },
 });

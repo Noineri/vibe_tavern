@@ -1,6 +1,6 @@
-import type { AssemblePromptResponse, Message, PromptTrace } from "@rp-platform/domain";
-import { brandId, type ChatBranchId, type ChatId, type MessageId } from "@rp-platform/domain";
-import type { ChatStore } from "@rp-platform/db";
+import type { AssemblePromptResponse, Message, PromptTrace } from "@vibe-tavern/domain";
+import { brandId, type ChatBranchId, type ChatId, type MessageId } from "@vibe-tavern/domain";
+import type { ChatStore } from "@vibe-tavern/db";
 import type { ChatApplicationService } from "./chat-application-service.js";
 import type { SessionSnapshot } from "./session-runtime.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";

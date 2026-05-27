@@ -1,5 +1,5 @@
-import { type PromptPreset, type StoreContainer } from "@rp-platform/db";
-import type { PromptPresetDto, PromptTraceRecordDto } from "@rp-platform/domain";
+import { type PromptPreset, type StoreContainer } from "@vibe-tavern/db";
+import type { PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import {
 	type CharacterId,
 	type ChatBranchId,
@@ -9,7 +9,7 @@ import {
 	type PromptPresetId,
 	type StoredProviderProfileRecord,
 	SYSTEM_RESOURCE_ID,
-} from "@rp-platform/domain";
+} from "@vibe-tavern/domain";
 import { ChatApplicationService } from "./chat-application-service.js";
 import {
 	internal,
@@ -52,9 +52,9 @@ export interface ChatListItem {
 export interface SessionSnapshot {
 	chats: ChatListItem[];
 	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null }>;
-	activeChat: import("@rp-platform/db").Chat;
-	activeBranch: import("@rp-platform/db").ChatBranch;
-	branches: import("@rp-platform/db").ChatBranch[];
+	activeChat: import("@vibe-tavern/db").Chat;
+	activeBranch: import("@vibe-tavern/db").ChatBranch;
+	branches: import("@vibe-tavern/db").ChatBranch[];
 	messages: import("./session-runtime-dto.js").MessageDto[];
 	summaries: Array<{
 		id: string;
@@ -63,7 +63,7 @@ export interface SessionSnapshot {
 	}>;
 	promptTrace: PromptTraceRecordDto | null;
 	promptTraceHistory: PromptTraceRecordDto[];
-	contextPreview: import("@rp-platform/domain").AssemblePromptResponse | null;
+	contextPreview: import("@vibe-tavern/domain").AssemblePromptResponse | null;
 	character: CharacterRecord;
 	persona: PersonaRecord | null;
 }
@@ -234,7 +234,7 @@ export interface ImportResult {
 			persona,
 		};
 	}
-	private async assembleContextPreview(chatId: ChatId, branchId: ChatBranchId): Promise<import("@rp-platform/domain").AssemblePromptResponse | null> {
+	private async assembleContextPreview(chatId: ChatId, branchId: ChatBranchId): Promise<import("@vibe-tavern/domain").AssemblePromptResponse | null> {
 		try {
 			const profile = await this.getActiveProviderProfile();
 			const assembled = await this.assemblePrompt(chatId, branchId, {
@@ -242,7 +242,7 @@ export interface ImportResult {
 				responseReserve: profile?.maxTokens ?? 0,
 			});
 			return {
-				layers: assembled.promptTraceDraft.assembledLayers as import("@rp-platform/domain").PromptLayerDto[],
+				layers: assembled.promptTraceDraft.assembledLayers as import("@vibe-tavern/domain").PromptLayerDto[],
 				tokenAccounting: assembled.promptTraceDraft.tokenAccounting,
 				activatedLoreEntries: assembled.promptTraceDraft.activatedLoreEntries,
 				scriptInjections: assembled.promptTraceDraft.scriptInjections,

@@ -1,5 +1,5 @@
 /**
- * Standalone path resolution for Claw Tavern.
+ * Standalone path resolution for Vibe Tavern.
  *
  * Centralizes all directory resolution for the standalone .exe build.
  * Priority: environment variable → OS convention → throw.
@@ -13,7 +13,7 @@
  * OS convention defaults:
  *   Windows: %LOCALAPPDATA%\ClawTavern
  *   macOS:   ~/Library/Application Support/ClawTavern
- *   Linux:   ~/.local/share/claw-tavern
+ *   Linux:   ~/.local/share/vibe-tavern
  */
 
 import { homedir } from "node:os";
@@ -58,9 +58,9 @@ function defaultDataDir(): string {
 	// Linux and other POSIX
 	const xdgData = process.env.XDG_DATA_HOME;
 	if (xdgData) {
-		return resolve(xdgData, "claw-tavern");
+		return resolve(xdgData, "vibe-tavern");
 	}
-	return resolve(homedir(), ".local", "share", "claw-tavern");
+	return resolve(homedir(), ".local", "share", "vibe-tavern");
 }
 
 async function defaultWebDir(): Promise<string> {
@@ -86,7 +86,7 @@ export async function resolveStandalonePaths(): Promise<StandalonePaths> {
 
 	return {
 		dataDir,
-		dbPath: resolve(dataDir, "rp-platform.db"),
+		dbPath: resolve(dataDir, "vibe-tavern.db"),
 		assetsDir: resolve(dataDir, "assets"),
 		traceDir: resolve(dataDir, "traces"),
 		logsDir: resolve(dataDir, "logs"),

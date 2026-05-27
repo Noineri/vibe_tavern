@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { ReactNode } from "react";
-import type { ChatId } from "@rp-platform/domain";
+import type { ChatId } from "@vibe-tavern/domain";
 import type { BuildTab } from "../components/BuildMode.js";
 
 export interface ConfirmDestroyDialog {

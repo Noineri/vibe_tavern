@@ -78,7 +78,7 @@ export function useMacroContext() {
  */
 export function useActiveTrace(
   selectedTraceId: string | null,
-): import("@rp-platform/domain").PromptTraceRecordDto | import("@rp-platform/domain").AssemblePromptResponse | null {
+): import("@vibe-tavern/domain").PromptTraceRecordDto | import("@vibe-tavern/domain").AssemblePromptResponse | null {
   return useChatDataStore(
     useShallow((state) => {
       const fromHistory =

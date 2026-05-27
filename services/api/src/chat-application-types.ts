@@ -13,7 +13,7 @@ import type {
   PromptPresetId,
   SummaryKind,
   ToolProfileId,
-} from "@rp-platform/domain";
+} from "@vibe-tavern/domain";
 
 export interface CreateChatRequest {
   characterId: CharacterId;

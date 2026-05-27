@@ -6,7 +6,7 @@
  * and are flipped to true only when verified or explicitly implemented.
  */
 
-import type { ProviderType } from "@rp-platform/domain";
+import type { ProviderType } from "@vibe-tavern/domain";
 import type { SdkSupportKind } from "./provider-profile-mapper.js";
 
 export type { SdkSupportKind };

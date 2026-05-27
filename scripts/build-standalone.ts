@@ -1,8 +1,8 @@
 /**
- * Standalone build pipeline for Claw Tavern.
+ * Standalone build pipeline for Vibe Tavern.
  *
  * Produces a self-contained dist/ directory with:
- *   - claw-tavern.exe (compiled standalone server)
+ *   - vibe-tavern.exe (compiled standalone server)
  *   - web/index.html + assets (pre-built frontend)
  *
  * Usage:
@@ -14,7 +14,7 @@
  *
  * Output:
  *   dist/
- *     claw-tavern.exe
+ *     vibe-tavern.exe
  *     web/
  *       index.html
  *       assets/
@@ -45,7 +45,7 @@ async function step(label: string, fn: () => Promise<void>) {
 }
 
 async function main() {
-	console.log("📦 Claw Tavern — Standalone Build\n");
+	console.log("📦 Vibe Tavern — Standalone Build\n");
 	console.log(`   Root: ${ROOT}`);
 	console.log(`   Output: ${DIST}`);
 
@@ -112,7 +112,7 @@ async function main() {
 	await step("Compiling standalone binary (bun build --compile)", async () => {
 		const entrypoint = join(ROOT, "services", "api", "src", "standalone-server.ts");
 		const ext = process.platform === "win32" ? ".exe" : "";
-		const binName = `claw-tavern${ext}`;
+		const binName = `vibe-tavern${ext}`;
 		const outfile = join(DIST, binName);
 
 		if (!(await Bun.file(entrypoint).exists())) {
@@ -147,7 +147,7 @@ async function main() {
 
 	const ext = process.platform === "win32" ? ".exe" : "";
 	console.log("\n✅ Standalone build complete!");
-	console.log(`   Run: ${join(DIST, `claw-tavern${ext}`)}`);
+	console.log(`   Run: ${join(DIST, `vibe-tavern${ext}`)}`);
 }
 
 main();

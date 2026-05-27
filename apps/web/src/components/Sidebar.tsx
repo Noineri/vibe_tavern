@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ChatId } from "@rp-platform/domain";
+import type { ChatId } from "@vibe-tavern/domain";
 import { initials } from "./app-shell-helpers.js";
 import { Icons } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { RuntimeApi } from "./types.js";
 import { zValidator } from "@hono/zod-validator";
-import * as schemas from "@rp-platform/api-contracts";
+import * as schemas from "@vibe-tavern/api-contracts";
 import { isDomainError, providerError } from "../errors.js";
 
 export function createProviderRoutes(runtime: RuntimeApi) {

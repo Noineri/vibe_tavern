@@ -1,10 +1,10 @@
-import type { StoreContainer } from "@rp-platform/db";
+import type { StoreContainer } from "@vibe-tavern/db";
 import {
 	brandId,
 	type ChatBranchId,
 	type ChatId,
 	type PersonaId,
-} from "@rp-platform/domain";
+} from "@vibe-tavern/domain";
 import {
 	conflict,
 	internal,

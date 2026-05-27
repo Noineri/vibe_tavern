@@ -5,8 +5,8 @@ import {
   toClientProviderProfile,
   resolveStoredApiKey,
 } from "../src/session-runtime-dto.js";
-import type { LoreEntry } from "@rp-platform/domain";
-import type { StoredProviderProfileRecord } from "@rp-platform/domain";
+import type { LoreEntry } from "@vibe-tavern/domain";
+import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 
 // ─── mapMessageDto ───────────────────────────────────────────────────────
 

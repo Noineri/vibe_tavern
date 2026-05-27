@@ -1,18 +1,18 @@
 /**
- * Standalone server entry point for Claw Tavern .exe distribution.
+ * Standalone server entry point for Vibe Tavern .exe distribution.
  *
  * Uses resolveStandalonePaths() for all directory resolution.
  * Data lives in %LOCALAPPDATA%\ClawTavern (Windows) or OS-equivalent.
  * Program files (exe + web/) live in the installation directory.
  *
  * Usage:
- *   claw-tavern.exe          (compiled with bun build --compile)
+ *   vibe-tavern.exe          (compiled with bun build --compile)
  *   bun services/api/src/standalone-server.ts
  */
 
 import { resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
-import { setTokenCountFn } from "@rp-platform/prompt-pipeline";
+import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { resolveStandalonePaths } from "./standalone-paths.js";
 import { createRuntimeStore } from "./session-runtime-store.js";
 import { warmupTokenizers, countTokens } from "./ai/tokenizer-service.js";
@@ -34,7 +34,7 @@ import { configureLogDir } from "./send-debug-log.js";
 const paths = await resolveStandalonePaths();
 const tlsConfig = resolveTlsConfig();
 
-console.log(`[standalone] Starting Claw Tavern...`);
+console.log(`[standalone] Starting Vibe Tavern...`);
 console.log(`[standalone] Data:  ${paths.dataDir}`);
 console.log(`[standalone] Web:   ${paths.webEnabled ? paths.webDir : "(not found — API-only mode)"}`);
 console.log(`[standalone] Host:  ${paths.host}:${paths.port}`);

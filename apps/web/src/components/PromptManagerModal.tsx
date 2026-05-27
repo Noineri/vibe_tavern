@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { PromptPresetDto } from "@rp-platform/domain";
+import type { PromptPresetDto } from "@vibe-tavern/domain";
 import { cn } from "../lib/cn.js";
 import { useT } from "../i18n/context.js";
 import { Modal } from "./shared/Modal.js";

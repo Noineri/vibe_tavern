@@ -9,8 +9,8 @@ import type {
   LoreTriggerType,
   LoreMatchSource,
   PromptLayerPosition,
-} from "@rp-platform/domain";
-import { brandId, ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
+} from "@vibe-tavern/domain";
+import { brandId, ENTITY_ID_NAMESPACE } from "@vibe-tavern/domain";
 
 import {
   asBoolean,

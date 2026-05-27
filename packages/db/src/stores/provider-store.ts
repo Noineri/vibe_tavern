@@ -1,4 +1,4 @@
-import type { StoredProviderProfileRecord } from '@rp-platform/domain';
+import type { StoredProviderProfileRecord } from '@vibe-tavern/domain';
 import { and, eq } from 'drizzle-orm';
 import { providerProfiles, cachedModels, providerModelFavorites } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';

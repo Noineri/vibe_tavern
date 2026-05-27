@@ -1,4 +1,4 @@
-import type { AssemblePromptResponse } from "@rp-platform/domain";
+import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 
 export function buildEmptyPromptTrace(): AssemblePromptResponse {
   return {

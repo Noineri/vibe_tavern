@@ -1,6 +1,6 @@
-import type { StoreContainer } from "@rp-platform/db";
-import type { CreateLoreEntryData, UpdateLoreEntryData } from "@rp-platform/db";
-import { brandId, type CharacterId, type ChatId, type ChatBranchId, type MessageId, type LoreScopeType } from "@rp-platform/domain";
+import type { StoreContainer } from "@vibe-tavern/db";
+import type { CreateLoreEntryData, UpdateLoreEntryData } from "@vibe-tavern/db";
+import { brandId, type CharacterId, type ChatId, type ChatBranchId, type MessageId, type LoreScopeType } from "@vibe-tavern/domain";
 import { validation, notFound } from "./errors.js";
 import { logSendDebug } from "./send-debug-log.js";
 import type { SessionRuntime } from "./session-runtime.js";
@@ -374,7 +374,7 @@ export class RuntimeApiAdapter {
 	};
 
 	importLorebook = async (lorebookId: string | null, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string }) => {
-		const { importStLorebookJson } = await import("@rp-platform/import-export");
+		const { importStLorebookJson } = await import("@vibe-tavern/import-export");
 		const parsed = importStLorebookJson(body.data as Record<string, unknown>, {
 			scopeType: (body.scopeType as LoreScopeType | undefined) ?? "character",
 			fallbackName: body.fallbackName,

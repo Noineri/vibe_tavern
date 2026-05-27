@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { ChatId } from "@rp-platform/domain";
+import type { ChatId } from "@vibe-tavern/domain";
 import { Icons } from "./shared/icons.js";
 import { Modal } from "./shared/Modal.js";
 import { MobileExpandTextarea } from "./shared/MobileExpandTextarea.js";

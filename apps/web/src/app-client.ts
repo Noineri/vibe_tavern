@@ -1,7 +1,7 @@
 import { hc } from "hono/client";
-import type { Chat, ChatBranch, ChatBranchId, ChatId, Message, MessageVariant } from "@rp-platform/domain";
-import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto, ProviderProbeResponse } from "@rp-platform/domain";
-import type { AppType } from "@rp-platform/api";
+import type { Chat, ChatBranch, ChatBranchId, ChatId, Message, MessageVariant } from "@vibe-tavern/domain";
+import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto, ProviderProbeResponse } from "@vibe-tavern/domain";
+import type { AppType } from "@vibe-tavern/api";
 import { getGatewayBaseUrl } from "./gateway-client.js";
 import { parseSSEStream } from "./lib/sse-parser.js";
 import { getMobileToken, appendTokenQuery } from "./lib/mobile-token.js";
@@ -376,13 +376,13 @@ export async function setPersonalLorebookEnabled(personaId: string, enabled: boo
   return unwrapRpc<{ enabled: boolean; lorebookId: string | null }>(response);
 }
 
-export async function setChatPersona(chatId: import("@rp-platform/domain").ChatId, personaId: string): Promise<AppSnapshot> {
+export async function setChatPersona(chatId: import("@vibe-tavern/domain").ChatId, personaId: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"]["set-persona"].$post({ param: { chatId }, json: { personaId } });
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);
 }
 
-export async function setChatPromptPreset(chatId: import("@rp-platform/domain").ChatId, promptPresetId: string): Promise<AppSnapshot> {
+export async function setChatPromptPreset(chatId: import("@vibe-tavern/domain").ChatId, promptPresetId: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"]["set-prompt-preset"].$post({ param: { chatId }, json: { promptPresetId } });
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);

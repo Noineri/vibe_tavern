@@ -1,6 +1,6 @@
 services:
-  rp_platform:
-    container_name: rp_platform
+  vibe_tavern:
+    container_name: vibe_tavern
     build: .
     ports:
       - "8787:8787"

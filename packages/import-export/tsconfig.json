@@ -7,7 +7,7 @@
       "bun"
     ],
     "paths": {
-      "@rp-platform/domain": [
+      "@vibe-tavern/domain": [
         "../domain/src/index.ts"
       ]
     }

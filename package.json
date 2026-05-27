@@ -1,5 +1,5 @@
 {
-  "name": "rp-platform",
+  "name": "vibe-tavern",
   "version": "0.1.8",
   "private": true,
   "workspaces": [
@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "build": "bun run --filter '*' build",
-    "build:api-stack": "bun run --filter @rp-platform/domain build && bun run --filter @rp-platform/prompt-pipeline build && bun run --filter @rp-platform/db build && bun run --filter @rp-platform/import-export build && bun run --filter @rp-platform/api build",
+    "build:api-stack": "bun run --filter @vibe-tavern/domain build && bun run --filter @vibe-tavern/prompt-pipeline build && bun run --filter @vibe-tavern/db build && bun run --filter @vibe-tavern/import-export build && bun run --filter @vibe-tavern/api build",
     "build:prod": "bun scripts/build.ts api-stack",
     "build:standalone": "bun scripts/build-standalone.ts",
     "build:installer": "bun scripts/build-installer.ts",
@@ -17,10 +17,10 @@
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun run --filter '*' test",
     "check": "bun run typecheck && bun run test",
-    "dev:api": "bun run --filter @rp-platform/api dev",
-    "dev:web": "bun run --filter @rp-platform/web dev",
-    "db:generate": "bun run --filter @rp-platform/db db:generate",
-    "db:push": "bun run --filter @rp-platform/db db:push"
+    "dev:api": "bun run --filter @vibe-tavern/api dev",
+    "dev:web": "bun run --filter @vibe-tavern/web dev",
+    "db:generate": "bun run --filter @vibe-tavern/db db:generate",
+    "db:push": "bun run --filter @vibe-tavern/db db:push"
   },
   "devDependencies": {
     "@types/bun": "latest",

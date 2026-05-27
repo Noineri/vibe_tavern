@@ -11,8 +11,8 @@
  * provider uses its own defaults.
  */
 
-import { PROVIDER_TYPE } from "@rp-platform/domain";
-import type { StoredProviderProfileRecord } from "@rp-platform/domain";
+import { PROVIDER_TYPE } from "@vibe-tavern/domain";
+import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 
 // ---------------------------------------------------------------------------
 // Public interface

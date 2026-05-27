@@ -1,4 +1,4 @@
-import type { Message } from "@rp-platform/domain";
+import type { Message } from "@vibe-tavern/domain";
 
 export interface CompactionConfig {
   preserveRecentMessages: number;

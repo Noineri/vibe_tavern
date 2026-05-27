@@ -1,7 +1,7 @@
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { ChatId } from "@rp-platform/domain";
+import type { ChatId } from "@vibe-tavern/domain";
 import { extractPngMetadata, parseCharacterMetadata } from "../lib/png-reader.js";
 import { importJson, uploadAsset, updateCharacterAvatar } from "../app-client.js";
 import { cn } from "../lib/cn.js";

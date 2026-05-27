@@ -8,7 +8,7 @@ import "./styles.css";
 function detectLocale(): Locale {
   // 1. Explicit user choice (saved in TweaksPanel) takes priority
   try {
-    const raw = localStorage.getItem("rp-platform.tweaks");
+    const raw = localStorage.getItem("vibe-tavern.tweaks");
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed.lang === "ru" || parsed.lang === "en") return parsed.lang;

@@ -1,4 +1,4 @@
-import type { StoreContainer } from "@rp-platform/db";
+import type { StoreContainer } from "@vibe-tavern/db";
 import {
 	brandId,
 	type CharacterId,
@@ -7,7 +7,7 @@ import {
 	type PersonaId,
 	type PromptPresetId,
 	SYSTEM_RESOURCE_ID,
-} from "@rp-platform/domain";
+} from "@vibe-tavern/domain";
 import { notFound } from "./errors.js";
 import type { ChatApplicationService } from "./chat-application-service.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
@@ -26,7 +26,7 @@ export interface ChatLifecycleRuntimeDeps {
 		chatId: ChatId,
 		branchId?: ChatBranchId,
 		options?: {
-			excludeMessageIds?: import("@rp-platform/domain").MessageId[];
+			excludeMessageIds?: import("@vibe-tavern/domain").MessageId[];
 			model?: string;
 			recentMessageLimit?: number;
 			mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call";
@@ -35,8 +35,8 @@ export interface ChatLifecycleRuntimeDeps {
 		},
 	) => Promise<{
 		branchId: ChatBranchId;
-		prompt: import("@rp-platform/domain").AssemblePromptResponse;
-		promptTraceDraft: Omit<import("@rp-platform/domain").PromptTrace, "id" | "messageId" | "createdAt">;
+		prompt: import("@vibe-tavern/domain").AssemblePromptResponse;
+		promptTraceDraft: Omit<import("@vibe-tavern/domain").PromptTrace, "id" | "messageId" | "createdAt">;
 	}>;
 }
 

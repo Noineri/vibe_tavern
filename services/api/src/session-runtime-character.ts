@@ -1,10 +1,10 @@
-import type { Character, CharacterVersion, CharacterId, ChatId, PersonaId, PromptPresetId } from "@rp-platform/domain";
-import type { ChatStore, CharacterStore, StoreContainer } from "@rp-platform/db";
+import type { Character, CharacterVersion, CharacterId, ChatId, PersonaId, PromptPresetId } from "@vibe-tavern/domain";
+import type { ChatStore, CharacterStore, StoreContainer } from "@vibe-tavern/db";
 import type { ChatApplicationService } from "./chat-application-service.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
 import type { SessionSnapshot, ImportResult } from "./session-runtime.js";
 import { notFound, validation } from "./errors.js";
-import { brandId } from "@rp-platform/domain";
+import { brandId } from "@vibe-tavern/domain";
 
 export type CharacterRecord = {
   id: string;

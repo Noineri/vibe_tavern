@@ -1,9 +1,9 @@
-import { brandId } from "@rp-platform/domain";
-import type { ChatId, MessageId } from "@rp-platform/domain";
+import { brandId } from "@vibe-tavern/domain";
+import type { ChatId, MessageId } from "@vibe-tavern/domain";
 import type { ChatRuntime } from "./session-runtime-chat.js";
 import type { SessionSnapshot } from "./session-runtime.js";
 import type { ProviderOrchestrator } from "./provider-orchestrator.js";
-import type { StoredProviderProfileRecord } from "@rp-platform/domain";
+import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ProviderStreamResult } from "./ai/provider-execution-types.js";
 import { nonstreamingProviderExecute } from "./ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "./ai/stream-provider-executor.js";

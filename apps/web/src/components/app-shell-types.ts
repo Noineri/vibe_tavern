@@ -1,4 +1,4 @@
-import type { ChatId } from "@rp-platform/domain";
+import type { ChatId } from "@vibe-tavern/domain";
 import type { OpenAiModelOption } from "../openai-compatible.js";
 
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "error";

@@ -7,9 +7,9 @@
  * unchanged until FW-AI2 swaps it.
  */
 
-import type { AssemblePromptResponse } from "@rp-platform/domain";
-import type { ProviderType } from "@rp-platform/domain";
-import type { StoredProviderProfileRecord } from "@rp-platform/domain";
+import type { AssemblePromptResponse } from "@vibe-tavern/domain";
+import type { ProviderType } from "@vibe-tavern/domain";
+import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ToolSet } from "ai";
 
 // ---------------------------------------------------------------------------
@@ -18,7 +18,7 @@ import type { ToolSet } from "ai";
 
 /** Lightweight profile reference passed into the execution boundary. */
 /**
- * @deprecated Use StoredProviderProfileRecord from @rp-platform/domain instead.
+ * @deprecated Use StoredProviderProfileRecord from @vibe-tavern/domain instead.
  * Kept for backward compatibility with existing non-streaming path.
  */
 export interface ProviderProfileRef {

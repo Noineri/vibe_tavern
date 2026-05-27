@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
-import type { BuildCharacterDraft } from "@rp-platform/api-contracts";
+import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import { Ic } from "../shared/icons";
 
 import { cn } from "../../lib/cn";

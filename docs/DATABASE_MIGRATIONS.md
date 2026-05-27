@@ -4,8 +4,8 @@
 
 ## Context
 
-Claw Tavern is a local-first desktop application. User data lives in
-`%LOCALAPPDATA%\ClawTavern\rp-platform.db` (SQLite). The DB is created via
+Vibe Tavern is a local-first desktop application. User data lives in
+`%LOCALAPPDATA%\ClawTavern\vibe-tavern.db` (SQLite). The DB is created via
 `ensureSchema()` (`CREATE TABLE IF NOT EXISTS`) on first launch.
 
 Pre-release: schema changes → users delete the DB, start fresh.

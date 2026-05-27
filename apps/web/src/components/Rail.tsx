@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatId } from "@rp-platform/domain";
+import type { ChatId } from "@vibe-tavern/domain";
 import { Ic } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
 import { avatarUrl } from "../lib/avatar.js";

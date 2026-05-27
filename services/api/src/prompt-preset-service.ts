@@ -1,5 +1,5 @@
-import type { PresetStore } from "@rp-platform/db";
-import type { PromptPresetDto } from "@rp-platform/domain";
+import type { PresetStore } from "@vibe-tavern/db";
+import type { PromptPresetDto } from "@vibe-tavern/domain";
 import {
   listPromptPresets,
   createPromptPreset,

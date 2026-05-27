@@ -1,4 +1,4 @@
-import type { MessageRole } from "@rp-platform/domain";
+import type { MessageRole } from "@vibe-tavern/domain";
 
 export interface ImportedVariant {
   content: string;

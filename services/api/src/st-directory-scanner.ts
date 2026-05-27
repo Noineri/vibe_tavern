@@ -15,9 +15,9 @@ import { importCharacterCardV3Json } from "../../../packages/import-export/src/i
 import { importStLorebookJson } from "../../../packages/import-export/src/index.js";
 import { parseSillyTavernChat } from "../../../packages/import-export/src/chats/st-chat.js";
 import type { ImportExportModuleDeps, ImportResult } from "./session-runtime-import-export.js";
-import { STORAGE_FOLDERS } from "@rp-platform/db";
-import type { CharacterId, ChatId } from "@rp-platform/domain";
-import { brandId } from "@rp-platform/domain";
+import { STORAGE_FOLDERS } from "@vibe-tavern/db";
+import type { CharacterId, ChatId } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

@@ -9,7 +9,7 @@ import { streamText } from "ai";
 import type { ProviderExecutor, ProviderStreamResult, ProviderStreamChunk, ProviderStreamFinish } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
-import type { ProviderType } from "@rp-platform/domain";
+import type { ProviderType } from "@vibe-tavern/domain";
 import { cancelled, providerError } from "../errors.js";
 import { REASONING_START_MARKER, REASONING_END_MARKER } from "./openai-reasoning-fetch.js";
 import { logSendDebug } from "../send-debug-log.js";

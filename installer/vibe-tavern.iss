@@ -1,7 +1,7 @@
-; Claw Tavern — Inno Setup Installer Script
+; Vibe Tavern — Inno Setup Installer Script
 ;
 ; Usage:
-;   iscc installer\claw-tavern.iss
+;   iscc installer\vibe-tavern.iss
 ;   bun scripts/build-installer.ts
 ;
 ; Prerequisites:
@@ -9,21 +9,21 @@
 ;   - Run "bun scripts/build-standalone.ts" first to produce dist/
 ;
 ; Output:
-;   installer\output\claw-tavern-setup.exe
+;   installer\output\vibe-tavern-setup.exe
 ;
 ; NOTE: All Source paths are relative to ProjectRoot (passed via /D or defaulting
 ; to the repo root). This allows ISCC to find dist/ regardless of cwd.
 
-; Allow overriding from command line: iscc /DProjectRoot=N:\path installer\claw-tavern.iss
+; Allow overriding from command line: iscc /DProjectRoot=N:\path installer\vibe-tavern.iss
 #if !Defined(ProjectRoot)
   #define ProjectRoot ".."
 #endif
 
-#define AppName "Claw Tavern"
+#define AppName "Vibe Tavern"
 #define AppVersion "0.1.0"
-#define AppPublisher "Claw Tavern"
-#define AppExeName "claw-tavern.exe"
-#define AppURL "https://github.com/user/claw-tavern"
+#define AppPublisher "Vibe Tavern"
+#define AppExeName "vibe-tavern.exe"
+#define AppURL "https://github.com/user/vibe-tavern"
 
 [Setup]
 AppId={{B7E8F1A2-3D4C-5E6F-8A9B-0C1D2E3F4A5B}
@@ -35,7 +35,7 @@ DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 AllowNoIcons=yes
 OutputDir={#ProjectRoot}\installer\output
-OutputBaseFilename=claw-tavern-setup
+OutputBaseFilename=vibe-tavern-setup
 SetupIconFile=
 Compression=lzma2/ultra64
 SolidCompression=yes
