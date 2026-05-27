@@ -112,6 +112,8 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				recursiveScanning: lb.lorebook.recursiveScanning,
 				maxRecursionSteps: lb.lorebook.maxRecursionSteps,
 				includeNames: lb.lorebook.includeNames,
+				minActivations: lb.lorebook.minActivations,
+				minActivationsDepthMax: lb.lorebook.minActivationsDepthMax,
 				entries: lb.entries,
 			})),
 			messages: recentMessages,

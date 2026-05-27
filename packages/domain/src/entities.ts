@@ -124,6 +124,8 @@ export interface Lorebook {
   recursiveScanning: boolean;
   maxRecursionSteps: number;
   includeNames: boolean;
+  minActivations: number;
+  minActivationsDepthMax: number;
   sortOrder: number;
   enabled: boolean;
   characterId: string | null;

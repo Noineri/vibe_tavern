@@ -152,6 +152,8 @@ export function importStLorebookJson(
     recursiveScanning: normalized.recursiveScanning,
     maxRecursionSteps: normalized.maxRecursionSteps ?? 5,
     includeNames: false,
+    minActivations: 0,
+    minActivationsDepthMax: 0,
     sortOrder: 0,
     enabled: true,
     characterId: null,
