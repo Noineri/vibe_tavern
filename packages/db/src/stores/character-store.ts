@@ -2,6 +2,9 @@ import { eq, and, sql } from 'drizzle-orm';
 import { characters } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
+import type { ContentStore } from '../content-store.js';
+import { STORAGE_FOLDERS } from '../file-store.js';
+import { hashCanonicalJson } from '../file-store.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -67,19 +70,35 @@ export class CharacterStore {
   private readonly db: AppDb;
   private readonly clock: StoreClock;
   private readonly idGen: StoreIdGenerator;
+  private readonly content: ContentStore | null;
 
-  constructor(db: AppDb, options?: { clock?: StoreClock; idGenerator?: StoreIdGenerator }) {
+  constructor(db: AppDb, options?: { clock?: StoreClock; idGenerator?: StoreIdGenerator; content?: ContentStore | null }) {
     this.db = db;
     const runtime = resolveStoreRuntime(options);
     this.clock = runtime.clock;
     this.idGen = runtime.idGenerator;
+    this.content = options?.content ?? null;
   }
 
   // ─── Read operations ───────────────────────────────────────────────────────
 
   async getById(id: string): Promise<Character | null> {
     const row = await this.db.select().from(characters).where(eq(characters.id, id)).get();
-    return row ? this.mapRow(row) : null;
+    if (!row) return null;
+    const char = this.mapRow(row);
+
+    // Lazy migration: if not yet on disk, write now
+    if (this.content && !row.hasFileOnDisk) {
+      const fileData = this.toFileData(char);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, id, fileData);
+      await this.db
+        .update(characters)
+        .set({ contentHash: hash, hasFileOnDisk: 1 })
+        .where(eq(characters.id, id))
+        .run();
+    }
+
+    return char;
   }
 
   async listAll(): Promise<Character[]> {
@@ -151,7 +170,20 @@ export class CharacterStore {
       })
       .returning();
 
-    return this.mapRow(row!);
+    const char = this.mapRow(row!);
+
+    // Dual write: persist content to file store
+    if (this.content) {
+      const fileData = this.toFileData(char);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, id, fileData);
+      await this.db
+        .update(characters)
+        .set({ contentHash: hash, hasFileOnDisk: 1 })
+        .where(eq(characters.id, id))
+        .run();
+    }
+
+    return char;
   }
 
   async update(id: string, data: UpdateCharacterData): Promise<Character> {
@@ -190,11 +222,27 @@ export class CharacterStore {
     if (!row) {
       throw new Error(`Character '${id}' not found after update`);
     }
-    return this.mapRow(row);
+    const updated = this.mapRow(row);
+
+    // Dual write: update content file
+    if (this.content) {
+      const fileData = this.toFileData(updated);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, id, fileData);
+      await this.db
+        .update(characters)
+        .set({ contentHash: hash, hasFileOnDisk: 1 })
+        .where(eq(characters.id, id))
+        .run();
+    }
+
+    return updated;
   }
 
   async delete(id: string): Promise<void> {
     await this.db.delete(characters).where(eq(characters.id, id)).run();
+    if (this.content) {
+      await this.content.deleteEntity(STORAGE_FOLDERS.characters, id);
+    }
   }
 
   async updateIsSystem(id: string, isSystem: boolean): Promise<void> {
@@ -245,7 +293,20 @@ export class CharacterStore {
       })
       .returning();
 
-    return this.mapRow(row!);
+    const copy = this.mapRow(row!);
+
+    // Dual write: persist copy to file store
+    if (this.content) {
+      const fileData = this.toFileData(copy);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, newId, fileData);
+      await this.db
+        .update(characters)
+        .set({ contentHash: hash, hasFileOnDisk: 1 })
+        .where(eq(characters.id, newId))
+        .run();
+    }
+
+    return copy;
   }
 
   // ─── Status operations ─────────────────────────────────────────────────────
@@ -312,6 +373,35 @@ export class CharacterStore {
       .get();
 
     return this.mapRow(created!);
+  }
+
+  // ─── File data helpers ────────────────────────────────────────────────────
+
+  private toFileData(char: Character): Record<string, unknown> {
+    return {
+      spec: 'chara_card_v3',
+      spec_version: '3.0',
+      data: {
+        name: char.name,
+        description: char.description,
+        personality: char.personalitySummary ?? '',
+        scenario: char.defaultScenario ?? '',
+        first_mes: char.firstMessage ?? '',
+        mes_example: char.mesExample ?? '',
+        system_prompt: char.systemPrompt ?? '',
+        creator_notes: char.creatorNotes ?? '',
+        post_history_instructions: char.postHistoryInstructions ?? '',
+        alternate_greetings: char.alternateGreetings,
+        tags: char.tags,
+        character_book: char.characterBook ?? undefined,
+        extensions: char.extensions,
+        depth_prompt: {
+          prompt: char.depthPrompt ?? '',
+          depth: char.depthPromptDepth ?? 4,
+          role: char.depthPromptRole ?? 'system',
+        },
+      },
+    };
   }
 
   // ─── Row mapper ────────────────────────────────────────────────────────────
