@@ -296,18 +296,21 @@ export function CharacterForm({
       <div className={cn("mb-5 gap-5", isMobile ? "flex flex-col items-center" : "flex")}>
         <CustomTooltip content={t("change_avatar")}>
         <div
-          className="group relative shrink-0 cursor-pointer rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t"
-          style={{ maxWidth: isMobile ? 120 : 180, maxHeight: isMobile ? 160 : 250 }}
+          className={cn(
+            "group relative shrink-0 cursor-pointer rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t",
+            isMobile ? "w-full max-w-[280px]" : "max-w-[180px]"
+          )}
+          style={isMobile ? { aspectRatio: "auto" } : { maxWidth: 180, maxHeight: 250 }}
           onClick={() => avaInputRef.current?.click()}
         >
           <input ref={avaInputRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleAvatarPick(e.target.files)} />
           {displayAvatar ? (
             <>
-              <img src={displayAvatar} alt="" className="block max-w-[180px]" style={{ maxHeight: isMobile ? 160 : 250, objectFit: "contain" }} />
+              <img src={displayAvatar} alt="" className={cn("block", isMobile ? "w-full" : "max-w-[180px]")} style={isMobile ? undefined : { maxHeight: 250, objectFit: "contain" }} />
               <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
             </>
           ) : (
-            <div className={cn("flex flex-col items-center justify-center gap-1.5 text-t3 transition-colors group-hover:text-accent-t", isMobile ? "h-20 w-28" : "h-20 w-28")}>
+            <div className={cn("flex flex-col items-center justify-center gap-1.5 text-t3 transition-colors group-hover:text-accent-t", isMobile ? "min-h-[120px] w-full" : "h-20 w-28")}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
               <span className="font-ui text-[10px] tracking-wide">{t("upload_avatar")}</span>
             </div>
