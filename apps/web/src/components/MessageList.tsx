@@ -17,7 +17,9 @@ import { useIsMobile } from "../hooks/use-mobile.js";
 import { cn } from "../lib/cn.js";
 
 const msgWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7";
+const msgWrapM = "w-full px-3";
 const sepWrap = msgWrap + " my-[6px] mt-2";
+const sepWrapM = msgWrapM + " my-[6px] mt-2";
 
 export function MessageList() {
   const { t } = useT();
@@ -79,11 +81,11 @@ export function MessageList() {
       {displayPendingUserMessageContent && (
         <>
           {displayMessageIds.length > 0 && (
-            <div className={sepWrap}>
+            <div className={isMobile ? sepWrapM : sepWrap}>
               <div className="h-px bg-border opacity-40"/>
             </div>
           )}
-          <div className={msgWrap}>
+          <div className={isMobile ? msgWrapM : msgWrap}>
             <div className="relative group py-2.5">
               <div className="mb-[12px] flex items-center gap-[10px] text-[calc(var(--ui-fs)-2px)] font-semibold tracking-[0.04em] text-t3 flex-row-reverse">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
@@ -100,10 +102,10 @@ export function MessageList() {
               </div>
             </div>
           </div>
-          <div className={sepWrap}>
+          <div className={isMobile ? sepWrapM : sepWrap}>
             <div className="h-px bg-border opacity-40"/>
           </div>
-          <div className={msgWrap} aria-label={t("generating_response")}>
+          <div className={isMobile ? msgWrapM : msgWrap} aria-label={t("generating_response")}>
             <div className="relative group py-2.5">
               <div className="mb-[12px] flex items-center gap-[10px] text-[calc(var(--ui-fs)-2px)] font-semibold tracking-[0.04em] text-t3 text-accent-t opacity-85">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
@@ -150,7 +152,7 @@ export function MessageList() {
       )}
     </>
   ), [displayPendingUserMessageContent, displayMessageIds, isSending,
-      personaAvatarAssetId, personaName, characterAvatarAssetId, characterName, t]);
+      personaAvatarAssetId, personaName, characterAvatarAssetId, characterName, t, isMobile]);
 
   return (
     <TranslateErrorBoundary>
