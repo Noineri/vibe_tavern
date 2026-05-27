@@ -174,6 +174,9 @@ async function repairMissingTables(sqlite: Database, migrationsFolder: string): 
     console.log(`[db] Repair: migration ${entry.tag} missing ${reasons.join(' and ')}, applying...`);
     try {
       sqlite.exec(sqlContent);
+      // Stamp this migration as applied so migrate() skips it next time
+      const hash = new Bun.CryptoHasher('sha256').update(sqlContent).digest('hex');
+      sqlite.prepare('INSERT OR IGNORE INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)').run(hash, entry.when);
       repaired++;
       // Update existing set
       for (const t of createdTables) existing.add(t.toLowerCase());
