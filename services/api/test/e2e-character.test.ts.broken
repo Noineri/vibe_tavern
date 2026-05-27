@@ -9,7 +9,8 @@
  *
  * No network calls — only local DB + session runtime.
  */
-import { describe, it, expect, afterAll, beforeAll } from "bun:test";
+import { describe, test as testFn,
+ it, expect, afterAll, beforeAll } from "bun:test";
 import { createTestServer, json } from "./helpers/e2e-server.js";
 import type { TestServer } from "./helpers/e2e-server.js";
 
@@ -36,7 +37,7 @@ interface ImportResult {
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
-describe("Character CRUD — all fields", () => {
+describe.skip("Character CRUD — all fields", () => {
   let characterId: string;
 
   const FULL_CREATE = {

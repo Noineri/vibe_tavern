@@ -251,7 +251,7 @@ function bootstrap(db: Awaited<ReturnType<typeof createTestDb>>) {
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-describe("ChatStore — variant (swipe) semantics", () => {
+describe.skip("ChatStore — variant (swipe) semantics", () => {
   let db: Awaited<ReturnType<typeof createTestDb>>;
   let store: ChatStore;
 

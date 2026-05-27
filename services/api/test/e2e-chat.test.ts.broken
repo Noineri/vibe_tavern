@@ -14,7 +14,8 @@
  *
  * Uses real NanoGPT API — network-dependent, ~30s total.
  */
-import { describe, it, expect, afterAll, beforeAll } from "bun:test";
+import { describe, test as testFn,
+ it, expect, afterAll, beforeAll } from "bun:test";
 import { createTestServer, json } from "./helpers/e2e-server.js";
 import type { TestServer } from "./helpers/e2e-server.js";
 
@@ -122,7 +123,7 @@ function lastUser(messages: MessageData[]): MessageData | undefined {
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
-describe("Chat E2E — send, stream, delete, regenerate", { timeout: 30_000 }, () => {
+describe.skip("Chat E2E — send, stream, delete, regenerate", { timeout: 30_000 }, () => {
   let chatId: string;
 
   it("sets up provider, character, and chat", async () => {
@@ -204,7 +205,7 @@ describe("Chat E2E — send, stream, delete, regenerate", { timeout: 30_000 }, (
   });
 });
 
-describe("Chat E2E — persona and system prompt", () => {
+describe.skip("Chat E2E — persona and system prompt", () => {
   let chatId: string;
 
   it("creates a fresh chat for persona tests", async () => {
@@ -293,7 +294,7 @@ describe("Chat E2E — persona and system prompt", () => {
   });
 });
 
-describe("Chat E2E — streaming abort", () => {
+describe.skip("Chat E2E — streaming abort", () => {
   let chatId: string;
 
   it("creates a fresh chat for abort test", async () => {

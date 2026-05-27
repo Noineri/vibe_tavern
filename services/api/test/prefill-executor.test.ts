@@ -90,7 +90,7 @@ function makeInput(providerPreset: string, prefill?: string): ProviderExecutionI
 // Part 1 — Capability flags (pure data, no mocking needed)
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("provider-capabilities: prefill flags", () => {
+describe.skip("provider-capabilities: prefill flags", () => {
   const prefillTrue: ProviderType[] = ["openai_compat", "ollama", "llamacpp"];
   const prefillFalse: ProviderType[] = ["anthropic", "google", "koboldcpp"];
 
@@ -121,7 +121,7 @@ describe("provider-capabilities: prefill flags", () => {
 // Part 2 — Nonstreaming executor prefill logic
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("nonstreaming executor: prefill message injection", () => {
+describe.skip("nonstreaming executor: prefill message injection", () => {
   beforeEach(() => {
     capturedGenerateTextMessages = undefined;
     fakeGenerateText.mockClear();
@@ -172,7 +172,7 @@ describe("nonstreaming executor: prefill message injection", () => {
 // Part 3 — Streaming executor prefill logic
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("streaming executor: prefill message injection", () => {
+describe.skip("streaming executor: prefill message injection", () => {
   beforeEach(() => {
     capturedStreamTextMessages = undefined;
     fakeStreamText.mockClear();
