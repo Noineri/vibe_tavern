@@ -359,7 +359,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               </div>
             </>
           ) : isUser ? (
-            <div className={isMobile ? "my-0.5 rounded-md bg-user-bg" : "my-0.5 rounded-md bg-user-bg px-4 py-[13px]"} style={isMobile ? { padding: '10px 12px' } : undefined}>
+            <div className={isMobile ? "my-0.5 rounded-md bg-user-bg w-fit ml-auto" : "my-0.5 rounded-md bg-user-bg px-4 py-[13px]"} style={isMobile ? { padding: '10px 12px' } : undefined}>
               <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 opacity-88 [&_em]:italic [&_em]:text-msg-t2">
                 <Markdown text={renderContent} />
               </div>
