@@ -15,7 +15,7 @@ interface DestructiveConfirmModalProps {
 export function DestructiveConfirmModal(input: DestructiveConfirmModalProps) {
   const { t } = useT();
   return (
-    <Modal open={true} onClose={input.onCancel} overlayClassName="z-[700]">
+    <Modal open={true} onClose={input.onCancel} overlayClassName="z-[700]" hideOverlay>
       <div
         className="w-[380px] rounded-lg border border-border bg-surface p-7 text-center shadow-xl"
       >
@@ -53,7 +53,7 @@ export function ShellDestructiveConfirmModal() {
   if (!confirmDestroy) return null;
 
   return (
-    <Modal open={true} onClose={() => setConfirmDestroy(null)} overlayClassName="z-[700]">
+    <Modal open={true} onClose={() => setConfirmDestroy(null)} overlayClassName="z-[700]" hideOverlay>
       <div
         className="w-[380px] rounded-lg border border-border bg-surface p-7 text-center shadow-xl"
       >
