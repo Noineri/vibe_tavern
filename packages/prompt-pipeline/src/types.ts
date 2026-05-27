@@ -30,6 +30,13 @@ export interface PromptLayer {
    */
   injectionDepth?: number;
   /**
+   * Sub-position for finer ordering within the same position group.
+   * Lower = earlier in the prompt. Used for ST WI Anchor compatibility
+   * (e.g. after_char=10, top_an=15, author_note=20, bottom_an=25, before_examples=30).
+   * Layers without subPosition sort after those with it (by priority).
+   */
+  subPosition?: number;
+  /**
    * Which {@link AssemblyMode}s this layer is active in.
    * Undefined = active in all modes (backward compat).
    */
