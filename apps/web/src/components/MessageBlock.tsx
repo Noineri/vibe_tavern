@@ -260,7 +260,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
           )}>
             <div className={cn(
               "shrink-0 overflow-hidden rounded-full bg-s3 font-body italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top",
-              isMobile ? "flex h-5 w-5 items-center justify-center text-[9px]" : "flex h-11 w-11 items-center justify-center text-[calc(var(--ui-fs)+1px)]",
+                isMobile ? "flex h-11 w-11 items-center justify-center text-[calc(var(--ui-fs)+1px)]" : "flex h-11 w-11 items-center justify-center text-[calc(var(--ui-fs)+1px)]",
             )}>
               {isUser
                 ? (personaAvatarAssetId
