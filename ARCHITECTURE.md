@@ -1,8 +1,8 @@
-# RP Platform — Architecture
+# Vibe Tavern — Architecture
 
 ## What is this?
 
-RP Platform is a self-hosted roleplay chat application — a local alternative to SillyTavern and similar tools. It lets you import character cards, chat with AI characters through any LLM provider, and manage prompts, personas, and chat history — all running locally with zero cloud dependency.
+Vibe Tavern is a self-hosted roleplay chat application — a local alternative to SillyTavern and similar tools. It lets you import character cards, chat with AI characters through any LLM provider, and manage prompts, personas, and chat history — all running locally with zero cloud dependency.
 
 **What it does:**
 
@@ -59,7 +59,7 @@ vibe_tavern/
 │       └── stores/              # Zustand stores + API actions (chat, character, bootstrap, provider)
 ├── packages/
 │   ├── domain/                  # Shared types, branded IDs, constants — zero logic
-│   ├── api-contracts/           # Zod schemas for HTTP request validation
+│   ├── api-contracts/           # Zod schemas for HTTP request validation. Note: create and update schemas are separate for lore entries (update has .optional() without .default() to prevent field wipe on partial PATCH)
 │   ├── db/                      # Drizzle ORM schema, SQLite stores, persistence
 │   ├── prompt-pipeline/         # Pure prompt assembly function — no I/O, no DB
 │   └── import-export/           # Character card and chat import/export (ST formats)
@@ -261,7 +261,9 @@ Drizzle ORM schema over SQLite with automatic migration on startup.
 1. Open SQLite with WAL mode and foreign keys enabled
 2. Resolve migrations folder: env var `RP_PLATFORM_MIGRATIONS_DIR` → exe-relative `drizzle/` → source-tree walk-up
 3. `baselineLegacyDb()` — if DB has user tables but no `__drizzle_migrations` tracking table (pre-migration DB), reads `_journal.json`, computes SHA-256 hash of each `.sql` file, and inserts them as already-applied so `migrate()` skips them
-4. `migrate()` — apply any unapplied `.sql` files from `drizzle/` in journal order
+4. `ensureAlterColumns()` — **pre-flight check**: scans ALL migration SQL files for `ALTER TABLE ADD COLUMN` statements, checks if those columns exist in the current DB, and applies any missing ones BEFORE drizzle sees the schema. Prevents "no such column" errors on startup.
+5. `repairMissingTables()` — scans journal entries for tables/columns not present in the DB and applies them, then stamps the migration as applied.
+6. `migrate()` — apply any unapplied `.sql` files from `drizzle/` in journal order
 
 **Migrations:**
 
@@ -275,6 +277,8 @@ Drizzle ORM schema over SQLite with automatic migration on startup.
 | `0005_lorebook_enabled.sql` | `enabled` column on `lorebooks` table |
 | `0006_script_ai_prompt.sql` | `script_ai_system_prompt` column on `prompt_presets` table |
 | `0007_messages_model_id.sql` | `model_id` column on `message_variants` table |
+| `0008_custom_injections.sql` | `custom_injections_json` column on `prompt_presets` |
+| `0009_content_hash.sql` | `content_hash` + `has_file_on_disk` columns on characters, personas, lorebooks, lore_entries, scripts, prompt_presets (DUAL storage migration) |
 
 **Key constraints:**
 
@@ -403,6 +407,10 @@ The platform supports secure access from mobile devices and other LAN clients th
 4. User scans QR on mobile → browser opens with token in URL hash
 5. Frontend reads hash, stores token in localStorage, authenticates all subsequent API calls
 6. Token appears in URL only once (hash is not sent to server) — subsequent requests use `Authorization: Bearer` header
+
+**API base URL resolution** (`gateway-client.ts`): Uses `window.location.origin` in browser context. This ensures mobile clients on LAN IP (`192.168.x.x`) make API calls to the correct server origin rather than hardcoded `127.0.0.1`. Falls back to `http://127.0.0.1:8787` only when `window` is unavailable (SSR). Does NOT use `import.meta.env.DEV` — Vite's dev mode flag was unreliable in the monorepo build pipeline.
+
+**Mobile token storage:** Frontend persists the token to localStorage under key `vibe_mobile_token`. The `app-client.ts` Hono RPC client reads this token on every request via a `headers()` function and sends it as `Authorization: Bearer <token>`.
 
 **Frontend components:**
 
@@ -642,7 +650,7 @@ interface BuildPanelDescriptor {
 
 | File | Role |
 |------|------|
-| `LorebookEditor.tsx` | World & Logic panel. Scope column (vertical icons) → lorebook list (accordions) → entry list → entry editor. Two modes: Simple (keys + content + test) and Advanced (all ST fields). Full-bleed layout. |
+| `LorebookEditor.tsx` | World & Logic panel. Scope column (vertical icons) → lorebook list (accordions) → entry list → entry editor. Two modes: Simple (keys + content + test) and Advanced (all ST fields). Full-bleed layout. **Save mechanism:** Uses `dirtyFieldsRef` (useRef) + debounced auto-save (1s after last change) + explicit Save button in editor header. Ref-based approach avoids stale closures from useState. On back navigation, unsaved changes are flushed before leaving. |
 | `ScriptEditor.tsx` | Exports `useScriptPanel()` hook (not a component!). Returns `{ scriptListContent, scriptEditorPanel, modals, ... }`. Embedded inside LorebookEditor as a co-equal tab. |
 | `CharacterForm.tsx` | Character editing form with avatar upload, all character fields. Centered layout with `max-w-4xl`. |
 | `scriptTemplates.ts` | 7 RP-relevant script templates: relationship progression, scenario events, memory tracking, dynamic lorebook, advanced lorebook, HP tracker, random event. Inserted into current script or create new. |
@@ -689,7 +697,7 @@ This means:
 
 ### UI/UX conventions
 
-**Why this matters:** RP Platform exists as an alternative to clunky tools. Every interaction must feel polished — this is the product's competitive advantage.
+**Why this matters:** Vibe Tavern exists as an alternative to clunky tools. Every interaction must feel polished — this is the product's competitive advantage.
 
 **Tooltips:** Always use `<CustomTooltip>` (Radix-based, dark tooltip with arrow) instead of native `title="..."` attributes. Native titles are invisible on touch devices, have zero styling, and look amateurish.
 
@@ -829,6 +837,8 @@ Standard production server. Serves the built frontend from `apps/web/dist/` plus
 - Frontend: `apps/web/dist/` (must be built first: `bun run build:web`)
 
 **Config:**
+> **Note:** Env vars use the legacy `RP_PLATFORM_` prefix. A future rename to `VIBE_TAVERN_` is planned but not yet implemented.
+
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `RP_PLATFORM_ROOT_DIR` | Two levels up from `import.meta.dir` | Project root |
@@ -846,8 +856,8 @@ Target for `bun build --compile`. Uses OS-specific data directories instead of p
 
 | OS | Data directory |
 |----|---------------|
-| Windows | `%LOCALAPPDATA%\ClawTavern` |
-| macOS | `~/Library/Application Support/ClawTavern` |
+| Windows | `%LOCALAPPDATA%\VibeTavern` |
+| macOS | `~/Library/Application Support/VibeTavern` |
 | Linux | `~/.local/share/vibe-tavern` |
 
 Override with `RP_PLATFORM_DATA_DIR` and `RP_PLATFORM_WEB_DIR` env vars.
