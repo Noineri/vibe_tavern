@@ -22,6 +22,8 @@ export const createLorebookSchema = z.object({
   includeNames: z.boolean().optional().default(false),
   minActivations: z.number().optional().default(0),
   minActivationsDepthMax: z.number().optional().default(0),
+  overflowAlert: z.boolean().optional().default(false),
+  characterStrategy: z.number().optional().default(0),
   enabled: z.boolean().optional().default(true),
 });
 
@@ -35,6 +37,8 @@ export const updateLorebookMetaSchema = z.object({
   includeNames: z.boolean().optional(),
   minActivations: z.number().optional(),
   minActivationsDepthMax: z.number().optional(),
+  overflowAlert: z.boolean().optional(),
+  characterStrategy: z.number().optional(),
   scopeType: z.string().optional(),
   enabled: z.boolean().optional(),
 });

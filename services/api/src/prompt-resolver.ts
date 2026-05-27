@@ -174,6 +174,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				matchSources: e.matchSources as LoreEntry['matchSources'],
 				enabled: e.enabled,
 				sortOrder: e.sortOrder,
+				automationId: e.automationId,
 				metadata: e.metadata,
 			}));
 	}
