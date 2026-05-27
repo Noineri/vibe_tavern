@@ -149,6 +149,7 @@ export interface LoreEntryRecord {
   groupName: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
+  useGroupScoring: boolean;
   excludeRecursion: boolean;
   preventRecursion: boolean;
   delayUntilRecursion: boolean;

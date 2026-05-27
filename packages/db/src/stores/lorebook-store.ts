@@ -15,6 +15,7 @@ export interface CreateLorebookData {
   tokenBudget?: number;
   recursiveScanning?: boolean;
   maxRecursionSteps?: number;
+  includeNames?: boolean;
   sortOrder?: number;
   enabled?: boolean;
   characterId?: string | null;
@@ -46,6 +47,7 @@ export interface CreateLoreEntryData {
   groupName?: string;
   groupWeight?: number;
   prioritizeInclusion?: boolean;
+  useGroupScoring?: boolean;
   excludeRecursion?: boolean;
   preventRecursion?: boolean;
   delayUntilRecursion?: boolean;
@@ -75,6 +77,7 @@ export interface Lorebook {
   tokenBudget: number;
   recursiveScanning: boolean;
   maxRecursionSteps: number;
+  includeNames: boolean;
   sortOrder: number;
   enabled: boolean;
   characterId: string | null;
@@ -106,6 +109,7 @@ export interface LoreEntry {
   group: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
+  useGroupScoring: boolean;
   excludeRecursion: boolean;
   preventRecursion: boolean;
   delayUntilRecursion: boolean;
@@ -189,6 +193,7 @@ export class LorebookStore {
         tokenBudget: data.tokenBudget ?? 1000,
         recursiveScanning: (data.recursiveScanning ?? false) ? 1 : 0,
         maxRecursionSteps: data.maxRecursionSteps ?? 5,
+        includeNames: data.includeNames ? 1 : 0,
         sortOrder: data.sortOrder ?? 0,
         enabled: (data.enabled ?? true) ? 1 : 0,
         characterId: data.characterId ?? null,
@@ -219,6 +224,7 @@ export class LorebookStore {
     if (data.tokenBudget !== undefined) values.tokenBudget = data.tokenBudget;
     if (data.recursiveScanning !== undefined) values.recursiveScanning = data.recursiveScanning ? 1 : 0;
     if (data.maxRecursionSteps !== undefined) values.maxRecursionSteps = data.maxRecursionSteps;
+    if (data.includeNames !== undefined) values.includeNames = data.includeNames ? 1 : 0;
     if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
     if (data.enabled !== undefined) values.enabled = data.enabled ? 1 : 0;
     if (data.characterId !== undefined) values.characterId = data.characterId;
@@ -309,6 +315,7 @@ export class LorebookStore {
         groupName: data.group ?? '',
         groupWeight: data.groupWeight ?? 100,
         prioritizeInclusion: (data.prioritizeInclusion ?? false) ? 1 : 0,
+        useGroupScoring: (data.useGroupScoring ?? false) ? 1 : 0,
         excludeRecursion: (data.excludeRecursion ?? false) ? 1 : 0,
         preventRecursion: (data.preventRecursion ?? false) ? 1 : 0,
         delayUntilRecursion: (data.delayUntilRecursion ?? false) ? 1 : 0,
@@ -359,6 +366,7 @@ export class LorebookStore {
     if (data.groupName !== undefined) values.groupName = data.groupName;
     if (data.groupWeight !== undefined) values.groupWeight = data.groupWeight;
     if (data.prioritizeInclusion !== undefined) values.prioritizeInclusion = data.prioritizeInclusion ? 1 : 0;
+    if (data.useGroupScoring !== undefined) values.useGroupScoring = data.useGroupScoring ? 1 : 0;
     if (data.excludeRecursion !== undefined) values.excludeRecursion = data.excludeRecursion ? 1 : 0;
     if (data.preventRecursion !== undefined) values.preventRecursion = data.preventRecursion ? 1 : 0;
     if (data.delayUntilRecursion !== undefined) values.delayUntilRecursion = data.delayUntilRecursion ? 1 : 0;
@@ -497,6 +505,7 @@ export class LorebookStore {
       tokenBudget: row.tokenBudget,
       recursiveScanning: row.recursiveScanning === 1,
       maxRecursionSteps: row.maxRecursionSteps,
+      includeNames: row.includeNames === 1,
       sortOrder: row.sortOrder,
       enabled: row.enabled === 1,
       characterId: row.characterId,
@@ -555,6 +564,7 @@ export class LorebookStore {
       tokenBudget: row.tokenBudget,
       recursiveScanning: row.recursiveScanning === 1,
       maxRecursionSteps: row.maxRecursionSteps,
+      includeNames: row.includeNames === 1,
       sortOrder: row.sortOrder,
       enabled: row.enabled === 1,
       characterId: row.characterId,
@@ -588,6 +598,7 @@ export class LorebookStore {
       group: row.groupName,
       groupWeight: row.groupWeight,
       prioritizeInclusion: row.prioritizeInclusion === 1,
+      useGroupScoring: row.useGroupScoring === 1,
       excludeRecursion: row.excludeRecursion === 1,
       preventRecursion: row.preventRecursion === 1,
       delayUntilRecursion: row.delayUntilRecursion === 1,
@@ -646,6 +657,7 @@ export class LorebookStore {
       tokenBudget,
       recursiveScanning,
       maxRecursionSteps,
+      includeNames: false,
     });
 
     // Parse entries from the blob

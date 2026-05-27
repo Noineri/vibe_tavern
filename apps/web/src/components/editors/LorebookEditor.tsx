@@ -389,6 +389,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
       groupName: "",
       groupWeight: 100,
       prioritizeInclusion: false,
+      useGroupScoring: false,
       excludeRecursion: false,
       preventRecursion: false,
       delayUntilRecursion: false,
@@ -756,6 +757,9 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
             <div className="mt-3 flex flex-wrap gap-x-6 gap-y-3">
               <CustomTooltip content={t("prioritize_inclusion_hint")}>
                 <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.prioritizeInclusion} onChange={e => updateAct("prioritizeInclusion", e.target.checked)} /> {t("lore_prioritize_inclusion")}</label>
+              </CustomTooltip>
+              <CustomTooltip content={t("group_scoring_hint")}>
+                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.useGroupScoring} onChange={e => updateAct("useGroupScoring", e.target.checked)} /> {t("lore_use_group_scoring")}</label>
               </CustomTooltip>
             </div>
           </div>

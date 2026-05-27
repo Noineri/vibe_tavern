@@ -18,6 +18,8 @@ export const createLorebookSchema = z.object({
   scanDepth: z.number().optional().default(50),
   tokenBudget: z.number().optional().default(2048),
   recursiveScanning: z.boolean().optional().default(false),
+  maxRecursionSteps: z.number().optional().default(5),
+  includeNames: z.boolean().optional().default(false),
   enabled: z.boolean().optional().default(true),
 });
 
@@ -27,6 +29,8 @@ export const updateLorebookMetaSchema = z.object({
   scanDepth: z.number().optional(),
   tokenBudget: z.number().optional(),
   recursiveScanning: z.boolean().optional(),
+  maxRecursionSteps: z.number().optional(),
+  includeNames: z.boolean().optional(),
   scopeType: z.string().optional(),
   enabled: z.boolean().optional(),
 });
