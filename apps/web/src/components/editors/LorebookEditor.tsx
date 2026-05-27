@@ -425,7 +425,8 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
   // ── Debounced auto-save + explicit save button ────────────
   const [savingState, setSavingState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const [dirtyFields, setDirtyFields] = useState<Record<string, unknown>>({});
+  const dirtyFieldsRef = useRef<Record<string, unknown>>({});
+  const [dirtyCount, setDirtyCount] = useState(0);
 
   // Apply locally immediately, debounce save to server
   const updateAct = (field: string, value: unknown) => {
@@ -434,8 +435,9 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
     setEntries(prev => prev.map(e =>
       e.id === activeEntryId ? { ...e, [field]: value } : e
     ));
-    // Track dirty fields
-    setDirtyFields(prev => ({ ...prev, [field]: value }));
+    // Track dirty fields (ref for reliability)
+    dirtyFieldsRef.current[field] = value;
+    setDirtyCount(c => c + 1);
     setSavingState("idle");
 
     // Debounced auto-save (1s after last change)
@@ -444,13 +446,18 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
   };
 
   const flushSave = async () => {
-    if (!activeEntryId || !activeLorebookIdForEntry || Object.keys(dirtyFields).length === 0) return;
+    if (!activeEntryId || !activeLorebookIdForEntry) return;
+    const fields = { ...dirtyFieldsRef.current };
+    if (Object.keys(fields).length === 0) return;
     setSavingState("saving");
     try {
-      await updateLoreEntry(activeLorebookIdForEntry, activeEntryId, dirtyFields as Partial<LoreEntryRecord>);
-      setDirtyFields({});
+      await updateLoreEntry(activeLorebookIdForEntry, activeEntryId, fields as Partial<LoreEntryRecord>);
+      dirtyFieldsRef.current = {};
+      setDirtyCount(0);
       setSavingState("saved");
       setTimeout(() => setSavingState(prev => prev === "saved" ? "idle" : prev), 2000);
+      // Refresh entries to confirm server state
+      void refreshEntries();
     } catch {
       setSavingState("error");
     }
@@ -979,14 +986,14 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
           savingState === "saving" ? "bg-s3 text-t3" :
           savingState === "saved" ? "bg-success-dim text-success-text" :
           savingState === "error" ? "bg-danger-dim text-danger-text cursor-pointer" :
-          Object.keys(dirtyFields).length > 0 ? "bg-accent text-on-accent" : "bg-s3 text-t3"
+          dirtyCount > 0 ? "bg-accent text-on-accent" : "bg-s3 text-t3"
         )}
-        onClick={savingState === "error" || Object.keys(dirtyFields).length > 0 ? flushSave : undefined}
+        onClick={savingState === "error" || dirtyCount > 0 ? flushSave : undefined}
       >
         {savingState === "saving" ? t("lore_saving") :
          savingState === "saved" ? t("lore_saved") :
          savingState === "error" ? t("retry") :
-         Object.keys(dirtyFields).length > 0 ? t("lore_save_entry") : t("lore_saved")}
+         dirtyCount > 0 ? t("lore_save_entry") : t("lore_saved")}
       </button>
     </div>
   );
