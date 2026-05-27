@@ -6,7 +6,7 @@ import type { ConnectionState } from "../components/app-shell-types.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import { useNavigationStore, useProviderStore, useChatStore, useModalStore } from "../stores/index.js";
 import { useBootstrapStore, fetchBootstrapAction, fetchPersonasAction } from "../stores/api-actions/bootstrap-actions.js";
-import { useSnapshotStore } from "../stores/snapshot-store.js";
+import { useChatList, useSnapshotStore } from "../stores/snapshot-store.js";
 import type { AppMessage } from "../app-client.js";
 import {
   readSavedTheme,
@@ -105,10 +105,10 @@ export function useRpPlatformApp() {
       activeBranch: s.activeBranch,
       branches: s.branches,
       summaries: s.summaries,
-      chats: s.chatIds.map((id) => s.chatsById[id]).filter(Boolean),
       allCharacters: s.allCharacters,
     })),
   );
+  const chats = useChatList();
   const messagesById = useSnapshotStore((s) => s.messagesById);
   const messageOrder = useSnapshotStore((s) => s.messageOrder);
   const promptTrace = useSnapshotStore((s) => s.promptTrace);
@@ -128,15 +128,14 @@ export function useRpPlatformApp() {
       messages: messageOrder
         .map((id) => messagesById[id])
         .filter((message): message is AppMessage => Boolean(message)),
-      chats: snapshotRaw.chats, // chats list is in snapshot!
+      chats, // chats list is in snapshot!
       allCharacters: snapshotRaw.allCharacters,
       promptTrace,
       promptTraceHistory,
       contextPreview,
     };
-  }, [activeChatId, snapshotRaw, messagesById, messageOrder, promptTrace, promptTraceHistory, contextPreview]);
+  }, [activeChatId, snapshotRaw, messagesById, messageOrder, chats, promptTrace, promptTraceHistory, contextPreview]);
 
-  const selectedTraceId = useChatStore((s) => s.selectedTraceId);
   const editingMessageId = useChatStore((s) => s.editingMessageId);
 
   const theme = useNavigationStore((s) => s.theme);
@@ -161,18 +160,26 @@ export function useRpPlatformApp() {
     persistTheme(theme);
   }, [tweaksSettings, theme]);
 
-  // --- Keep selectedTraceId in sync with snapshot ---
+  const promptTraceId = promptTrace?.id ?? null;
+  const firstPromptTraceHistoryId = promptTraceHistory[0]?.id ?? null;
+
+  // --- Keep selectedTraceId/editing state in sync with primitive snapshot facts ---
   useEffect(() => {
-    useChatStore.getState().setSelectedTraceId(
-      snapshot?.promptTrace?.id ?? snapshot?.promptTraceHistory[0]?.id ?? null,
-    );
-    if (!editingMessageId || !snapshot) return;
-    const stillExists = snapshot.messages.some((message: AppMessage) => message.id === editingMessageId);
-    if (!stillExists) {
-      useChatStore.getState().setEditingMessageId(null);
-      useChatStore.getState().setEditingDraft("");
+    const nextSelectedTraceId = promptTraceId ?? firstPromptTraceHistoryId ?? null;
+    const chatState = useChatStore.getState();
+    if (chatState.selectedTraceId !== nextSelectedTraceId) {
+      chatState.setSelectedTraceId(nextSelectedTraceId);
     }
-  }, [snapshot?.promptTrace?.id, snapshot?.promptTraceHistory, editingMessageId, snapshot]);
+
+    if (!editingMessageId) return;
+    const stillExists = messageOrder.includes(editingMessageId);
+    if (!stillExists) {
+      chatState.setEditingMessageId(null);
+      if (chatState.editingDraft !== "") {
+        chatState.setEditingDraft("");
+      }
+    }
+  }, [promptTraceId, firstPromptTraceHistoryId, editingMessageId, messageOrder]);
 
   return {
     isLoading,
