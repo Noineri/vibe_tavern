@@ -123,6 +123,7 @@ export interface Lorebook {
   tokenBudget: number;
   recursiveScanning: boolean;
   maxRecursionSteps: number;
+  includeNames: boolean;
   sortOrder: number;
   enabled: boolean;
   characterId: string | null;
@@ -165,6 +166,7 @@ export interface LoreEntry {
   group: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
+  useGroupScoring: boolean;
   // Recursion
   excludeRecursion: boolean;
   preventRecursion: boolean;

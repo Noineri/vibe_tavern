@@ -30,6 +30,7 @@ export interface ActivationInput {
     tokenBudget: number;
     recursiveScanning: boolean;
     maxRecursionSteps: number;
+    includeNames: boolean;
     entries: Array<{
       id: string;
       title: string;
@@ -50,6 +51,7 @@ export interface ActivationInput {
       group: string;
       groupWeight: number;
       prioritizeInclusion: boolean;
+      useGroupScoring: boolean;
       /** If true, this entry is skipped during recursion scan passes. */
       excludeRecursion: boolean;
       /** If true, this entry's content is NOT added to the recursion buffer. */
@@ -108,6 +110,7 @@ export interface ActivationResult {
     depth: number;
     role: string;
     ignoreBudget: boolean;
+    matchCount: number;
     matchedKeys: string[];
   }>;
   /** Updated activation state (to persist back to chat) */
@@ -151,6 +154,7 @@ interface FlatEntry {
   group: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
+  useGroupScoring: boolean;
 }
 
 // ─── Main function ───────────────────────────────────────────────────────────
@@ -204,7 +208,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       normalActivated++;
       console.debug("[lore]   activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
       activatedIds.add(entry.id);
-      activated.push(toActivatedEntry(entry));
+      activated.push(toActivatedEntry(entry, [], 0));
       if (!entry.preventRecursion) {
         recurseBuffer += entry.content + "\n";
       }
@@ -244,7 +248,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         if (result === "activated") {
           console.debug("[lore]   [recursion] activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
           activatedIds.add(entry.id);
-          activated.push(toActivatedEntry(entry));
+          activated.push(toActivatedEntry(entry, [], 0));
           newActivations++;
           if (!entry.preventRecursion) {
             newRecurseText += entry.content + "\n";
@@ -271,6 +275,15 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         // No more delay levels and no new activations — stop
         break;
       }
+    }
+  }
+
+  // ── Include names ────────────────────────────────────────────────────────
+  // Build lorebookId → includeNames map
+  const includeNamesMap = new Map(input.lorebooks.map(lb => [lb.id, lb.includeNames]));
+  for (const entry of activated) {
+    if (includeNamesMap.get(entry.lorebookId)) {
+      entry.content = `[${entry.title}] ${entry.content}`;
     }
   }
 
@@ -342,6 +355,18 @@ function tryActivateEntry(ctx: {
     }
   }
 
+  // 3b. Decorators — @@activate / @@dont_activate at start of content
+  let decoratorActive = false;
+  const rawContent = entry.content.trimStart();
+  if (rawContent.startsWith("@@")) {
+    const firstLine = rawContent.split("\n")[0].trim();
+    if (firstLine === "@@activate" || firstLine === "@@@activate") {
+      decoratorActive = true;
+    } else if (firstLine === "@@dont_activate" || firstLine === "@@@dont_activate") {
+      return reason("@@dont_activate decorator");
+    }
+  }
+
   // 4. Constant entries — always active
   if (entry.constant) {
     const state = updatedState[entry.id];
@@ -378,17 +403,21 @@ function tryActivateEntry(ctx: {
     return "activated";
   }
 
-  // 8. Key matching
-  const resolvedKeys = entry.keys.map(k => applyMacros(k, macroMap));
-  const resolvedSecondaryKeys = entry.secondaryKeys.map(k => applyMacros(k, macroMap));
+  // 8. Key matching (skip if @@activate decorator forces activation)
+  if (!decoratorActive) {
+    const resolvedKeys = entry.keys.map(k => applyMacros(k, macroMap));
+    const resolvedSecondaryKeys = entry.secondaryKeys.map(k => applyMacros(k, macroMap));
 
-  const matchedKeys = matchKeys(resolvedKeys, scanText, entry.caseSensitive, entry.matchWholeWords);
-  if (matchedKeys.length === 0) return reason("no key match");
+    const matchedKeys = matchKeys(resolvedKeys, scanText, entry.caseSensitive, entry.matchWholeWords);
+    if (matchedKeys.length === 0) return reason("no key match");
 
-  // 9. Secondary key logic
-  if (entry.secondaryKeys.length > 0) {
-    const secondaryMatches = matchKeys(resolvedSecondaryKeys, scanText, entry.caseSensitive, entry.matchWholeWords);
-    if (!checkLogic(entry.logic, secondaryMatches.length, entry.secondaryKeys.length)) return reason("secondary keys fail");
+    // 9. Secondary key logic
+    if (entry.secondaryKeys.length > 0) {
+      const secondaryMatches = matchKeys(resolvedSecondaryKeys, scanText, entry.caseSensitive, entry.matchWholeWords);
+      if (!checkLogic(entry.logic, secondaryMatches.length, entry.secondaryKeys.length)) return reason("secondary keys fail");
+    }
+  } else {
+    console.debug("[lore]   actv %s: @@activate decorator | title=%s", entry.id, entry.title);
   }
 
   // 10. Probability check
@@ -499,7 +528,7 @@ function checkLogic(logic: string, matchCount: number, totalCount: number): bool
   }
 }
 
-function toActivatedEntry(entry: FlatEntry): ActivationResult["activatedEntries"][number] {
+function toActivatedEntry(entry: FlatEntry, matchedKeys: string[], matchCount: number): ActivationResult["activatedEntries"][number] {
   return {
     id: entry.id,
     lorebookId: entry.lorebookId,
@@ -510,7 +539,8 @@ function toActivatedEntry(entry: FlatEntry): ActivationResult["activatedEntries"
     depth: entry.depth,
     role: entry.role,
     ignoreBudget: entry.ignoreBudget,
-    matchedKeys: [], // matchedKeys are not tracked per-entry in the refactored version
+    matchCount,
+    matchedKeys,
   };
 }
 
@@ -553,6 +583,23 @@ function applyInclusionGroups(
       console.debug("[lore]   group '%s': prio winner=%s, removing %d others", groupName, entryMap.get(prioWinner.id)?.title, groupEntries.length - 1);
       for (const e of groupEntries) {
         if (e.id !== prioWinner.id) removeIds.add(e.id);
+      }
+      continue;
+    }
+
+    // useGroupScoring — highest matchCount wins
+    const anyGroupScoring = groupEntries.some(e => entryMap.get(e.id)?.useGroupScoring);
+    if (anyGroupScoring) {
+      const maxScore = Math.max(...groupEntries.map(e => entryMap.get(e.id)?.keys?.length ?? 0));
+      console.debug("[lore]   group '%s': score-based, maxScore=%d", groupName, maxScore);
+      let foundWinner = false;
+      for (const e of groupEntries) {
+        const score = entryMap.get(e.id)?.keys?.length ?? 0;
+        if (!foundWinner && score >= maxScore) {
+          foundWinner = true;
+        } else {
+          removeIds.add(e.id);
+        }
       }
       continue;
     }

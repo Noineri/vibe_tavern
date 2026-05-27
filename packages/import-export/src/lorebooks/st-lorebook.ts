@@ -60,6 +60,7 @@ export interface StLorebookNormalized {
   tokenBudget: number;
   recursiveScanning: boolean;
   maxRecursionSteps?: number;
+  includeNames?: boolean;
   extensions: Record<string, unknown>;
 }
 
@@ -150,6 +151,7 @@ export function importStLorebookJson(
     tokenBudget: normalized.tokenBudget,
     recursiveScanning: normalized.recursiveScanning,
     maxRecursionSteps: normalized.maxRecursionSteps ?? 5,
+    includeNames: false,
     sortOrder: 0,
     enabled: true,
     characterId: null,
@@ -200,6 +202,7 @@ export function importStLorebookJson(
       group: asString(entry.group),
       groupWeight: 0,
       prioritizeInclusion: false,
+      useGroupScoring: asBoolean(entry.useGroupScoring, false),
       excludeRecursion: asBoolean(entry.excludeRecursion, false),
       preventRecursion: asBoolean(entry.preventRecursion, false),
       delayUntilRecursion: asBoolean(entry.delayUntilRecursion, false),
