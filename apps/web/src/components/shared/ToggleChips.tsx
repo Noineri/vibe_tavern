@@ -46,8 +46,8 @@ export function ToggleChips({
               "cursor-pointer rounded-full border font-ui transition-all duration-150 select-none",
               "px-3 py-1 text-[12px]",
               active
-                ? "border-accent bg-accent/10 text-accent font-medium"
-                : "border-border bg-s3 text-t3 hover:border-t3 hover:text-t2",
+                ? "border-accent bg-accent/15 text-accent-t font-medium"
+                : "border-border bg-s3 text-t2 hover:border-t3 hover:text-t1",
             )}
           >
             {opt.label}
