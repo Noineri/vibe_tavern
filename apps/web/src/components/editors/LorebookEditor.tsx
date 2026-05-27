@@ -422,16 +422,42 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
     if (activeLorebookIdForEntry) void refreshEntries();
   }, [activeLorebookIdForEntry, refreshEntries]);
 
-  // Optimistic update: apply locally immediately, fire API in background
+  // ── Debounced auto-save + explicit save button ────────────
+  const [savingState, setSavingState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [dirtyFields, setDirtyFields] = useState<Record<string, unknown>>({});
+
+  // Apply locally immediately, debounce save to server
   const updateAct = (field: string, value: unknown) => {
     if (!activeEntryId || !activeLorebookIdForEntry) return;
     // Optimistic local update
     setEntries(prev => prev.map(e =>
       e.id === activeEntryId ? { ...e, [field]: value } : e
     ));
-    // Fire-and-forget server update
-    void updateLoreEntry(activeLorebookIdForEntry, activeEntryId, { [field]: value } as Partial<LoreEntryRecord>);
+    // Track dirty fields
+    setDirtyFields(prev => ({ ...prev, [field]: value }));
+    setSavingState("idle");
+
+    // Debounced auto-save (1s after last change)
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => flushSave(), 1000);
   };
+
+  const flushSave = async () => {
+    if (!activeEntryId || !activeLorebookIdForEntry || Object.keys(dirtyFields).length === 0) return;
+    setSavingState("saving");
+    try {
+      await updateLoreEntry(activeLorebookIdForEntry, activeEntryId, dirtyFields as Partial<LoreEntryRecord>);
+      setDirtyFields({});
+      setSavingState("saved");
+      setTimeout(() => setSavingState(prev => prev === "saved" ? "idle" : prev), 2000);
+    } catch {
+      setSavingState("error");
+    }
+  };
+
+  // Cleanup timer
+  useEffect(() => () => clearTimeout(saveTimer.current), []);
 
   const handleKeyAdd = (e: React.KeyboardEvent, type: "keys" | "secondaryKeys") => {
     if (e.key !== "Enter") return;
@@ -944,8 +970,24 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
 
   const editorHeader = (
     <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface" style={{ padding: isMobile ? "10px 12px" : "10px 20px" }}>
-      <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={() => { setView("list"); setActiveEntryId(null); scriptPanel.setActiveScriptId(null); }}>{Ic.caret("l")}</div>
+      <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={() => { flushSave(); setView("list"); setActiveEntryId(null); scriptPanel.setActiveScriptId(null); }}>{Ic.caret("l")}</div>
       <span className="flex-1 truncate font-ui text-[14px] font-semibold text-t1">{tab === "lorebooks" ? (activeEntry?.title || "") : ""}</span>
+      {/* Save status */}
+      <button
+        className={cn(
+          "h-8 cursor-pointer rounded-md px-3 font-ui text-xs font-medium transition-all select-none",
+          savingState === "saving" ? "bg-s3 text-t3" :
+          savingState === "saved" ? "bg-success-dim text-success-text" :
+          savingState === "error" ? "bg-danger-dim text-danger-text cursor-pointer" :
+          Object.keys(dirtyFields).length > 0 ? "bg-accent text-on-accent" : "bg-s3 text-t3"
+        )}
+        onClick={savingState === "error" ? flushSave : undefined}
+      >
+        {savingState === "saving" ? "Saving..." :
+         savingState === "saved" ? "Saved" :
+         savingState === "error" ? "Retry" :
+         Object.keys(dirtyFields).length > 0 ? "Save" : "Saved"}
+      </button>
     </div>
   );
 
