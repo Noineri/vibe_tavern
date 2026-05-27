@@ -5,6 +5,10 @@ import { Ic, Icons } from "../shared/icons.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { cn } from "../../lib/cn.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
+import { Checkbox } from "../shared/Checkbox.js";
+import { SegmentedControl } from "../shared/SegmentedControl.js";
+import { ToggleChips } from "../shared/ToggleChips.js";
+import { Toggle } from "../shared/Toggle.js";
 import { useT } from "../../i18n/context.js";
 import {
   listLorebooks,
@@ -601,227 +605,360 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
 
   // ── Entry editor ──────────────────────────────────────────
   const entryEditor = activeEntry ? (
-    <div className="mx-auto max-w-[860px]">
-      <div className="flex items-center gap-3" style={{ marginBottom: 20 }}>
-        <div className="flex-1"><input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[15px] font-semibold text-t1 outline-none focus:border-accent" type="text" value={activeEntry.title} onChange={e => updateAct("title", e.target.value)} placeholder={t("lore_entry_title")} /></div>
-        <div className="flex shrink-0 items-center gap-2">
-          <div
-            className="shrink-0 cursor-pointer rounded-full transition-all"
-            style={{
-              width: 36,
-              height: 20,
-              backgroundColor: activeEntry.enabled ? 'var(--accent)' : 'var(--s3)',
-              position: 'relative',
-            }}
-            onClick={() => updateAct("enabled", !activeEntry.enabled)}
+    <div className="mx-auto max-w-[860px] flex flex-col gap-6">
+      {/* ── Header: title + enabled toggle + delete ── */}
+      <div className="flex items-center gap-3">
+        <input
+          className="flex-1 rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[15px] font-semibold text-t1 outline-none focus:border-accent"
+          type="text"
+          value={activeEntry.title}
+          onChange={e => updateAct("title", e.target.value)}
+          placeholder={t("lore_entry_title")}
+        />
+        <Toggle
+          checked={activeEntry.enabled}
+          onChange={v => updateAct("enabled", v)}
+          className="ml-1"
+        />
+        <CustomTooltip content={t("lore_save_entry")}>
+          <button
+            type="button"
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-danger"
+            onClick={() => setConfirmDeleteEntry(activeEntryId)}
           >
-            <div
-              className="rounded-full transition-all"
-              style={{
-                position: 'absolute',
-                top: 3,
-                left: activeEntry.enabled ? 19 : 3,
-                width: 14,
-                height: 14,
-                backgroundColor: activeEntry.enabled ? '#fff' : 'var(--t3)',
-              }}
-            />
-          </div>
-          <CustomTooltip content={t("lore_save_entry")}>
-            <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={() => setConfirmDeleteEntry(activeEntryId)}><Ic.del /></div>
-          </CustomTooltip>
+            <Ic.del />
+          </button>
+        </CustomTooltip>
+      </div>
+
+      {/* ── Keys ── */}
+      <div>
+        <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_entry_keys")}</label>
+        <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5" style={{ minHeight: 38 }}>
+          {activeEntry.keys.map(k => (
+            <span key={k} className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => removeKey("keys", k)}>
+              {k} <Icons.Close />
+            </span>
+          ))}
+          <input
+            className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none"
+            value={keyInput}
+            onChange={e => setKeyInput(e.target.value)}
+            onKeyDown={e => handleKeyAdd(e, "keys")}
+            placeholder={activeEntry.keys.length === 0 ? t("lore_entry_keys_placeholder") : ""}
+          />
         </div>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_entry_keys")}</label>
-        <div className="flex flex-1 flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2" style={{ padding: "6px 10px", minHeight: 38 }}>
-          {activeEntry.keys.map(k => <span key={k} className="cursor-pointer flex items-center gap-1 rounded bg-accent-dim px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => removeKey("keys", k)}>{k} <Icons.Close /></span>)}
-          <input className="min-w-[80px] flex-1 border-0 bg-transparent font-ui text-t1 outline-none" style={{ fontSize: "calc(var(--ui-fs) - 1px)" }} value={keyInput} onChange={e => setKeyInput(e.target.value)} onKeyDown={e => handleKeyAdd(e, "keys")} placeholder={activeEntry.keys.length === 0 ? t("lore_entry_keys_placeholder") : ""} />
-        </div>
-      </div>
-
-      <div style={{ marginBottom: 20 }}>
-        <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_entry_content")}</label>
+      {/* ── Content + Test Activation (always visible) ── */}
+      <div>
+        <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_entry_content")}</label>
         <MobileExpandTextarea value={activeEntry.content} onChange={(v) => updateAct("content", v)} label={t("lore_entry_content")}>
-          <textarea className="w-full min-h-[180px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent leading-[1.6]" value={activeEntry.content} onChange={e => updateAct("content", e.target.value)} placeholder={t("lore_entry_content_placeholder")} />
+          <textarea
+            className="w-full min-h-[180px] rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[13px] text-t1 outline-none focus:border-accent leading-[1.6]"
+            value={activeEntry.content}
+            onChange={e => updateAct("content", e.target.value)}
+            placeholder={t("lore_entry_content_placeholder")}
+          />
         </MobileExpandTextarea>
         <TokenCounter text={activeEntry.content} />
       </div>
 
-      <button className="mb-4 flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-accent-t transition-all hover:text-accent" onClick={() => setAdvancedOpen(v => !v)}>
-        {advancedOpen ? "\u25B2" : "\u25BC"} {advancedOpen ? t("lore_cancel_edit") : t("lore_advanced_settings")}
+      {/* Test activation — right under content, always accessible */}
+      <div className="flex gap-2">
+        <input
+          className="h-8 flex-1 rounded-md border border-border bg-s2 px-3 text-[13px] text-t1 outline-none focus:border-accent"
+          type="text"
+          value={testText}
+          onChange={e => setTestText(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && runTest()}
+          placeholder={t("lore_test_placeholder")}
+        />
+        <button
+          className="h-8 cursor-pointer rounded-md bg-accent px-4 text-[12px] font-medium text-on-accent transition-all hover:opacity-90"
+          onClick={runTest}
+        >
+          {t("lore_test_run")}
+        </button>
+      </div>
+      {testResult && (
+        <div className={cn("flex items-center gap-2 rounded-md text-[12px] font-medium px-3 py-2", testResult.ok ? "border border-success bg-success-dim text-success-text" : "border border-danger bg-danger-dim text-danger-text")}>
+          {testResult.ok ? <Ic.check /> : <Ic.close />} {testResult.msg}
+        </div>
+      )}
+      {testMutData && (
+        <div className="flex items-center gap-2 rounded-md border border-success bg-success-dim px-3 py-2 text-[12px] font-medium text-success-text">
+          <Ic.check /> Activated: {testMutData.activatedIds.length} / {testMutData.totalEntries} entries
+        </div>
+      )}
+
+      {/* ── Advanced toggle ── */}
+      <button
+        className="flex items-center gap-1.5 text-[13px] font-medium text-accent-t transition-all hover:text-accent"
+        onClick={() => setAdvancedOpen(v => !v)}
+      >
+        <span className="text-[10px]">{advancedOpen ? "▲" : "▼"}</span>
+        {advancedOpen ? t("lore_cancel_edit") : t("lore_advanced_settings")}
       </button>
 
       {advancedOpen && (
-        <div className="mb-5 flex flex-col gap-4">
-          {/* Activation */}
-          <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-            <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_activation_section")}</div>
+        <div className="flex flex-col gap-0">
+
+          {/* ══════ Group 1: Triggering & Matching ══════ */}
+          <div className="pb-5 border-b border-border/50">
+            <div className="mb-3 text-[13px] font-medium text-t1">{t("lore_activation_section")}</div>
+
+            {/* Secondary keys */}
             <div className="mb-4">
-              <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_entry_secondary_keys")}</label>
-              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-bg" style={{ padding: "6px 10px", minHeight: 38 }}>
-                {activeEntry.secondaryKeys.map(k => <span key={k} className="cursor-pointer flex items-center gap-1 rounded bg-accent-dim px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => removeKey("secondaryKeys", k)}>{k} <Icons.Close /></span>)}
-                <input className="min-w-[80px] flex-1 border-0 bg-transparent font-ui text-t1 outline-none" style={{ fontSize: "calc(var(--ui-fs) - 1px)" }} value={secKeyInput} onChange={e => setSecKeyInput(e.target.value)} onKeyDown={e => handleKeyAdd(e, "secondaryKeys")} />
+              <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_entry_secondary_keys")}</label>
+              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5" style={{ minHeight: 38 }}>
+                {activeEntry.secondaryKeys.map(k => (
+                  <span key={k} className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => removeKey("secondaryKeys", k)}>
+                    {k} <Icons.Close />
+                  </span>
+                ))}
+                <input
+                  className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none"
+                  value={secKeyInput}
+                  onChange={e => setSecKeyInput(e.target.value)}
+                  onKeyDown={e => handleKeyAdd(e, "secondaryKeys")}
+                />
               </div>
             </div>
-            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
-              <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_logic_label")}</label><select className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none" value={activeEntry.logic} onChange={e => updateAct("logic", e.target.value)}><option value="AND_ANY">AND ANY</option><option value="AND_ALL">AND ALL</option><option value="NOT_ANY">NOT ANY</option><option value="NOT_ALL">NOT ALL</option></select></div>
-              <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_position_label")}</label><div className="flex flex-wrap gap-1">{(["before_char", "after_char", "before_examples", "after_examples", "top_an", "bottom_an", "at_depth", "outlet"] as const).map(pos => (<button key={pos} type="button" onClick={() => updateAct("position", pos)} className={cn("rounded-md border px-2 py-1 text-[11px] font-ui font-medium transition-all", activeEntry.position === pos ? "border-accent bg-accent-dim text-accent-t" : "border-border bg-bg text-t3 hover:border-t3 hover:text-t2")}>{t("pos_" + pos)}</button>))}</div></div>
-              {(activeEntry.position === "at_depth" || activeEntry.position === "top_an" || activeEntry.position === "bottom_an") && <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_depth_label")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.depth} onChange={e => updateAct("depth", parseInt(e.target.value))} /></div>}
-              <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_priority_label")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.priority} onChange={e => updateAct("priority", parseInt(e.target.value))} /></div>
+
+            {/* Logic + Role segmented controls */}
+            <div className="flex flex-wrap gap-4 mb-4">
+              <div>
+                <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_logic_label")}</label>
+                <SegmentedControl
+                  value={activeEntry.logic}
+                  options={[
+                    { value: "AND_ANY", label: "AND ANY" },
+                    { value: "AND_ALL", label: "AND ALL" },
+                    { value: "NOT_ANY", label: "NOT ANY" },
+                    { value: "NOT_ALL", label: "NOT ALL" },
+                  ]}
+                  onChange={v => updateAct("logic", v)}
+                  compact
+                />
+              </div>
               <CustomTooltip content={t("role_hint")}>
-                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_role_label")}</label><select className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none" value={activeEntry.role} onChange={e => updateAct("role", e.target.value)}><option value="system">System</option><option value="user">User</option><option value="assistant">Assistant</option></select></div>
+                <div>
+                  <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_role_label")}</label>
+                  <SegmentedControl
+                    value={activeEntry.role}
+                    options={[
+                      { value: "system", label: "System" },
+                      { value: "user", label: "User" },
+                      { value: "assistant", label: "Assistant" },
+                    ]}
+                    onChange={v => updateAct("role", v)}
+                    compact
+                  />
+                </div>
               </CustomTooltip>
+            </div>
+
+            {/* Triggers as toggle chips */}
+            <div className="mb-4">
+              <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_triggers_section")}</label>
+              <ToggleChips
+                selected={activeEntry.triggers}
+                options={(["normal", "continue", "impersonate", "swipe", "regenerate", "quiet"] as const).map(trig => ({
+                  value: trig,
+                  label: t("trigger_" + trig),
+                }))}
+                onChange={v => updateAct("triggers", v)}
+              />
+            </div>
+
+            {/* Match sources as toggle chips */}
+            <div className="mb-4">
+              <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_matchsources_section")}</label>
+              <ToggleChips
+                selected={activeEntry.matchSources}
+                options={(["character_desc", "character_personality", "character_note", "persona_desc", "scenario", "creator_notes"] as const).map(src => ({
+                  value: src,
+                  label: t("match_src_" + src),
+                }))}
+                onChange={v => updateAct("matchSources", v)}
+              />
+            </div>
+
+            {/* Character filter */}
+            <div>
+              <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_charfilter_section")}</label>
+              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5" style={{ minHeight: 38 }}>
+                {activeEntry.characterFilter.map(c => (
+                  <span key={c} className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => updateAct("characterFilter", activeEntry.characterFilter.filter(x => x !== c))}>
+                    {c} ✕
+                  </span>
+                ))}
+                <input
+                  className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none"
+                  placeholder="Add character..."
+                  onKeyDown={e => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const v = (e.target as HTMLInputElement).value.trim();
+                      if (v && !activeEntry.characterFilter.includes(v)) {
+                        updateAct("characterFilter", [...activeEntry.characterFilter, v]);
+                      }
+                      (e.target as HTMLInputElement).value = "";
+                    }
+                  }}
+                />
+              </div>
+              <div className="mt-2">
+                <Checkbox
+                  checked={activeEntry.characterFilterExclude}
+                  onChange={v => updateAct("characterFilterExclude", v)}
+                  label={t("lore_char_filter_exclude")}
+                />
+              </div>
             </div>
           </div>
 
-          {/* Strategy */}
-          <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-            <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_strategy_section")}</div>
-            <div className="flex flex-wrap gap-x-6 gap-y-3">
+          {/* ══════ Group 2: Placement & Formatting ══════ */}
+          <div className="py-5 border-b border-border/50">
+            <div className="mb-3 text-[13px] font-medium text-t1">{t("lore_position_label")}</div>
+
+            {/* Position as grid of pill buttons */}
+            <div className="grid grid-cols-4 gap-1.5 mb-4">
+              {(["before_char", "after_char", "before_examples", "after_examples", "top_an", "bottom_an", "at_depth", "outlet"] as const).map(pos => (
+                <button
+                  key={pos}
+                  type="button"
+                  onClick={() => updateAct("position", pos)}
+                  className={cn(
+                    "rounded-md border px-2 py-1.5 text-[11px] font-ui font-medium transition-all",
+                    activeEntry.position === pos
+                      ? "border-accent bg-accent-dim text-accent-t"
+                      : "border-border bg-s2 text-t3 hover:border-t3 hover:text-t2",
+                  )}
+                >
+                  {t("pos_" + pos)}
+                </button>
+              ))}
+            </div>
+
+            {/* Number fields row */}
+            <div className="flex flex-wrap gap-4">
+              {(activeEntry.position === "at_depth" || activeEntry.position === "top_an" || activeEntry.position === "bottom_an") && (
+                <div className="w-28">
+                  <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_depth_label")}</label>
+                  <input className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.depth} onChange={e => updateAct("depth", parseInt(e.target.value))} />
+                </div>
+              )}
+              <div className="w-28">
+                <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_priority_label")}</label>
+                <input className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.priority} onChange={e => updateAct("priority", parseInt(e.target.value))} />
+              </div>
+              <div className="w-28">
+                <CustomTooltip content={t("probability_hint")}>
+                  <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_probability")}</label>
+                </CustomTooltip>
+                <input className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent" type="number" min="0" max="100" value={activeEntry.probability} onChange={e => updateAct("probability", parseInt(e.target.value))} />
+              </div>
+              <div className="w-28">
+                <CustomTooltip content={t("scan_depth_override_hint")}>
+                  <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_scan_depth_override")}</label>
+                </CustomTooltip>
+                <input className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent" type="number" min="-1" value={activeEntry.scanDepthOverride ?? -1} onChange={e => updateAct("scanDepthOverride", parseInt(e.target.value))} />
+              </div>
+            </div>
+
+            {/* Strategy checkboxes */}
+            <div className="mt-4 grid grid-cols-2 gap-3">
               <CustomTooltip content={t("constant_hint")}>
-                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.constant} onChange={e => updateAct("constant", e.target.checked)} /> {t("lore_constant")}</label>
+                <Checkbox checked={activeEntry.constant} onChange={v => updateAct("constant", v)} label={t("lore_constant")} />
               </CustomTooltip>
               <CustomTooltip content={t("case_sensitive_hint")}>
-                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.caseSensitive} onChange={e => updateAct("caseSensitive", e.target.checked)} /> {t("lore_case_sensitive")}</label>
+                <Checkbox checked={activeEntry.caseSensitive} onChange={v => updateAct("caseSensitive", v)} label={t("lore_case_sensitive")} />
               </CustomTooltip>
               <CustomTooltip content={t("match_whole_words_hint")}>
-                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.matchWholeWords} onChange={e => updateAct("matchWholeWords", e.target.checked)} /> {t("lore_match_whole_words")}</label>
+                <Checkbox checked={activeEntry.matchWholeWords} onChange={v => updateAct("matchWholeWords", v)} label={t("lore_match_whole_words")} />
               </CustomTooltip>
               <CustomTooltip content={t("ignore_budget_hint")}>
-                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.ignoreBudget} onChange={e => updateAct("ignoreBudget", e.target.checked)} /> {t("lore_ignore_budget")}</label>
-              </CustomTooltip>
-            </div>
-            <div className="mt-3 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
-              <CustomTooltip content={t("probability_hint")}>
-                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_probability")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" max="100" value={activeEntry.probability} onChange={e => updateAct("probability", parseInt(e.target.value))} /></div>
-              </CustomTooltip>
-              <CustomTooltip content={t("scan_depth_override_hint")}>
-                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_scan_depth_override")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="-1" value={activeEntry.scanDepthOverride ?? -1} onChange={e => updateAct("scanDepthOverride", parseInt(e.target.value))} /></div>
+                <Checkbox checked={activeEntry.ignoreBudget} onChange={v => updateAct("ignoreBudget", v)} label={t("lore_ignore_budget")} />
               </CustomTooltip>
             </div>
           </div>
 
-          {/* Timed Effects */}
-          <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-            <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_timed_section")}</div>
-            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
+          {/* ══════ Group 3: Advanced Logic ══════ */}
+          <div className="py-5">
+            <div className="mb-3 text-[13px] font-medium text-t1">{t("lore_timed_section")}</div>
+
+            {/* Timed effects — compact number row */}
+            <div className="flex flex-wrap gap-4 mb-5">
               <CustomTooltip content={t("sticky_win_hint")}>
-                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_sticky_window")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.stickyWindow} onChange={e => updateAct("stickyWindow", parseInt(e.target.value))} /></div>
+                <div className="w-28">
+                  <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_sticky_window")}</label>
+                  <input className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.stickyWindow} onChange={e => updateAct("stickyWindow", parseInt(e.target.value))} />
+                </div>
               </CustomTooltip>
               <CustomTooltip content={t("cooldown_hint")}>
-                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_cooldown_window")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.cooldownWindow} onChange={e => updateAct("cooldownWindow", parseInt(e.target.value))} /></div>
+                <div className="w-28">
+                  <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_cooldown_window")}</label>
+                  <input className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.cooldownWindow} onChange={e => updateAct("cooldownWindow", parseInt(e.target.value))} />
+                </div>
               </CustomTooltip>
               <CustomTooltip content={t("delay_hint")}>
-                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_delay_window")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.delayWindow} onChange={e => updateAct("delayWindow", parseInt(e.target.value))} /></div>
+                <div className="w-28">
+                  <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_delay_window")}</label>
+                  <input className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.delayWindow} onChange={e => updateAct("delayWindow", parseInt(e.target.value))} />
+                </div>
               </CustomTooltip>
             </div>
-          </div>
 
-          {/* Recursion */}
-          <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-            <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_recursion_section")}</div>
-            <div className="flex flex-wrap gap-x-6 gap-y-3">
-              <CustomTooltip content={t("exclude_recursion_hint")}>
-                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.excludeRecursion} onChange={e => updateAct("excludeRecursion", e.target.checked)} /> {t("lore_exclude_recursion")}</label>
-              </CustomTooltip>
-              <CustomTooltip content={t("prevent_recursion_hint")}>
-                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.preventRecursion} onChange={e => updateAct("preventRecursion", e.target.checked)} /> {t("lore_prevent_recursion")}</label>
-              </CustomTooltip>
-              <CustomTooltip content={t("delay_until_recursion_hint")}>
-                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.delayUntilRecursion} onChange={e => updateAct("delayUntilRecursion", e.target.checked)} /> {t("lore_delay_until_recursion")}</label>
-              </CustomTooltip>
-            </div>
-            {activeEntry.delayUntilRecursion && (
-              <div className="mt-3" style={{ maxWidth: 200 }}>
-                <CustomTooltip content={t("recursion_level_hint")}>
-                  <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_recursion_label")}</label>
+            {/* Recursion */}
+            <div className="mb-5 pb-5 border-b border-border/50">
+              <div className="mb-2 text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_recursion_section")}</div>
+              <div className="flex flex-wrap gap-4">
+                <CustomTooltip content={t("exclude_recursion_hint")}>
+                  <Checkbox checked={activeEntry.excludeRecursion} onChange={v => updateAct("excludeRecursion", v)} label={t("lore_exclude_recursion")} />
                 </CustomTooltip>
-                <input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.recursionLevel} onChange={e => updateAct("recursionLevel", parseInt(e.target.value))} />
+                <CustomTooltip content={t("prevent_recursion_hint")}>
+                  <Checkbox checked={activeEntry.preventRecursion} onChange={v => updateAct("preventRecursion", v)} label={t("lore_prevent_recursion")} />
+                </CustomTooltip>
+                <CustomTooltip content={t("delay_until_recursion_hint")}>
+                  <Checkbox checked={activeEntry.delayUntilRecursion} onChange={v => updateAct("delayUntilRecursion", v)} label={t("lore_delay_until_recursion")} />
+                </CustomTooltip>
               </div>
-            )}
-          </div>
-
-          {/* Inclusion Group */}
-          <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-            <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_inclusion_section")}</div>
-            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
-              <CustomTooltip content={t("group_hint")}>
-                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_group_name")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="text" value={activeEntry.groupName} onChange={e => updateAct("groupName", e.target.value)} /></div>
-              </CustomTooltip>
-              <CustomTooltip content={t("group_weight_hint")}>
-                <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_group_weight")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.groupWeight} onChange={e => updateAct("groupWeight", parseInt(e.target.value))} /></div>
-              </CustomTooltip>
+              {activeEntry.delayUntilRecursion && (
+                <div className="mt-3 w-28">
+                  <CustomTooltip content={t("recursion_level_hint")}>
+                    <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_recursion_label")}</label>
+                  </CustomTooltip>
+                  <input className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.recursionLevel} onChange={e => updateAct("recursionLevel", parseInt(e.target.value))} />
+                </div>
+              )}
             </div>
-            <div className="mt-3 flex flex-wrap gap-x-6 gap-y-3">
+
+            {/* Inclusion group */}
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="w-40">
+                <CustomTooltip content={t("group_hint")}>
+                  <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_group_name")}</label>
+                </CustomTooltip>
+                <input className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent" type="text" value={activeEntry.groupName} onChange={e => updateAct("groupName", e.target.value)} />
+              </div>
+              <div className="w-28">
+                <CustomTooltip content={t("group_weight_hint")}>
+                  <label className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_group_weight")}</label>
+                </CustomTooltip>
+                <input className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.groupWeight} onChange={e => updateAct("groupWeight", parseInt(e.target.value))} />
+              </div>
               <CustomTooltip content={t("prioritize_inclusion_hint")}>
-                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.prioritizeInclusion} onChange={e => updateAct("prioritizeInclusion", e.target.checked)} /> {t("lore_prioritize_inclusion")}</label>
+                <Checkbox checked={activeEntry.prioritizeInclusion} onChange={v => updateAct("prioritizeInclusion", v)} label={t("lore_prioritize_inclusion")} />
               </CustomTooltip>
               <CustomTooltip content={t("group_scoring_hint")}>
-                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.useGroupScoring} onChange={e => updateAct("useGroupScoring", e.target.checked)} /> {t("lore_use_group_scoring")}</label>
+                <Checkbox checked={activeEntry.useGroupScoring} onChange={v => updateAct("useGroupScoring", v)} label={t("lore_use_group_scoring")} />
               </CustomTooltip>
-            </div>
-          </div>
-
-          {/* Triggers */}
-          <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-            <CustomTooltip content={t("trigger_hint")}>
-              <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_triggers_section")} <span className="font-normal text-t3">(?)</span></div>
-            </CustomTooltip>
-            <div className="flex flex-wrap gap-x-5 gap-y-3">
-              {(["normal", "continue", "impersonate", "swipe", "regenerate", "quiet"] as const).map(trig => (
-                <label key={trig} className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.triggers.includes(trig)} onChange={e => { const next = e.target.checked ? [...activeEntry.triggers, trig] : activeEntry.triggers.filter((t2) => t2 !== trig); updateAct("triggers", next); }} /> {t("trigger_" + trig)}</label>
-              ))}
-            </div>
-          </div>
-
-          {/* Character Filter */}
-          <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-            <CustomTooltip content={t("char_filter_hint")}>
-              <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_charfilter_section")} <span className="font-normal text-t3">(?)</span></div>
-            </CustomTooltip>
-            <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-bg" style={{ padding: "6px 10px", minHeight: 38 }}>
-              {activeEntry.characterFilter.map(c => <span key={c} className="cursor-pointer rounded bg-accent-dim px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => updateAct("characterFilter", activeEntry.characterFilter.filter(x => x !== c))}>{c} \u2715</span>)}
-              <input className="min-w-[80px] flex-1 border-0 bg-transparent font-ui text-t1 outline-none" style={{ fontSize: "calc(var(--ui-fs) - 1px)" }} placeholder="Add character..." onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); const v = (e.target as HTMLInputElement).value.trim(); if (v && !activeEntry.characterFilter.includes(v)) { updateAct("characterFilter", [...activeEntry.characterFilter, v]); } (e.target as HTMLInputElement).value = ""; } }} />
-            </div>
-            <CustomTooltip content={t("char_filter_exclude_hint")}>
-              <label className="mt-2 flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.characterFilterExclude} onChange={e => updateAct("characterFilterExclude", e.target.checked)} /> {t("lore_char_filter_exclude")}</label>
-            </CustomTooltip>
-          </div>
-
-          {/* Match Sources */}
-          <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-            <CustomTooltip content={t("match_sources_hint")}>
-              <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_matchsources_section")} <span className="font-normal text-t3">(?)</span></div>
-            </CustomTooltip>
-            <div className="flex flex-wrap gap-x-5 gap-y-3">
-              {(["character_desc", "character_personality", "character_note", "persona_desc", "scenario", "creator_notes"] as const).map(src => (
-                <label key={src} className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.matchSources.includes(src)} onChange={e => { const next = e.target.checked ? [...activeEntry.matchSources, src] : activeEntry.matchSources.filter(s2 => s2 !== src); updateAct("matchSources", next); }} /> {t("match_src_" + src)}</label>
-              ))}
             </div>
           </div>
         </div>
       )}
-
-      {/* Test panel */}
-      <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-        <div className="font-ui text-[13px] font-medium text-t1" style={{ marginBottom: 8 }}>{t("lore_test_activation")}</div>
-        <div className="flex gap-2.5">
-          <input className="h-9 flex-1 rounded-md border border-border bg-bg px-3 font-ui text-t1 outline-none" type="text" value={testText} onChange={e => setTestText(e.target.value)} onKeyDown={e => e.key === "Enter" && runTest()} placeholder={t("lore_test_placeholder")} />
-          <button className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-3.5 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={runTest}>{t("lore_test_run")}</button>
-        </div>
-        {testResult && (
-          <div className={cn("mt-3 flex items-center gap-2 rounded-md font-ui text-xs font-medium", testResult.ok ? "border border-success bg-success-dim text-success-text" : "border border-danger bg-danger-dim text-danger-text")} style={{ padding: 10 }}>
-            {testResult.ok ? <Ic.check /> : <Ic.close />} {testResult.msg}
-          </div>
-        )}
-        {testMutData && (
-          <div className="mt-3 rounded-md border border-success bg-success-dim font-ui text-xs font-medium text-success-text" style={{ padding: 10 }}>
-            <Ic.check /> Activated: {testMutData.activatedIds.length} / {testMutData.totalEntries} entries
-          </div>
-        )}
-      </div>
     </div>
   ) : null;
 
