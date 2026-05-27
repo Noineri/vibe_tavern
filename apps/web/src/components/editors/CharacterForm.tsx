@@ -171,7 +171,11 @@ export function CharacterForm({
         <div className="mb-1.5 font-body text-[22px] font-medium text-t1 min-w-0 truncate">
           {name || t("unnamed")}
         </div>
-        {!isMobile && (
+        {isMobile ? (
+          <span className="shrink-0 font-ui text-[11px] tabular-nums text-t3">
+            {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
+          </span>
+        ) : (
         <div className="flex items-center gap-2">
           <span className="font-ui text-[11px] tabular-nums text-t3">
             {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
@@ -263,6 +267,22 @@ export function CharacterForm({
           >
             {Ic.download()}
           </button>
+          {hasAvatar && (
+            <button
+              className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
+              onClick={onExportPng}
+              disabled={isSaving}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="8" cy="8" r="2"/><circle cx="5" cy="5" r="0.8" fill="currentColor"/></svg>
+            </button>
+          )}
+          <button
+            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
+            onClick={onDuplicate}
+            disabled={isSaving}
+          >
+            {Ic.copy()}
+          </button>
           <button
             className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-danger active:bg-danger/10"
             onClick={onDelete}
@@ -270,9 +290,6 @@ export function CharacterForm({
           >
             {Ic.del()}
           </button>
-          <span className="font-ui text-[11px] tabular-nums text-t3">
-            {permanentTokens.toLocaleString()}+{greetingTokens.toLocaleString()} {t("tokens_label")}
-          </span>
         </div>
       )}
 
