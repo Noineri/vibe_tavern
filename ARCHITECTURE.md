@@ -758,45 +758,49 @@ Use `screenshot_review` to get Gemini's eyes on every UI change:
 screenshot_review(url, prompt, actions?, code_paths?) → Gemini analysis → code fix
 ```
 
-**How it works:** Playwright runs inline in the pi agent extension — no external scripts, no subprocess timeouts. It opens the URL, performs optional click/fill actions, takes a screenshot, and sends it to Gemini with the relevant source code for context-aware review. Gemini returns specific line-level fixes.
+**How it works:** Playwright runs inline in pi extension tools — no `agent-browser` / `pi-agent-browser` package. For local-only checks, `ui_screenshot` opens the URL, performs optional actions, saves a PNG, and reports console/page errors without sending the image externally. For second-opinion visual review, `screenshot_review` / `animation_review` may send the screenshot/video to Gemini.
 
 **When to use:**
 - After any CSS/spacing/layout change
 - Before committing UI work
 - When debugging a visual issue reported by a user
 - To verify Russian text doesn't overflow
+- To verify runtime crashes such as React update-depth errors
 
-**The pi extension** is at `~/.pi/agent/extensions/gemini-tool.ts`. It uses `import { chromium } from 'playwright'` directly (installed in the extensions directory). No `agent-browser`, no `pi-agent-browser` npm package, no external `.cjs` scripts.
+**Pi extensions:** `~/.pi/agent/extensions/ui-screenshot.ts` is the local Playwright screenshot tool. `~/.pi/agent/extensions/gemini-tool.ts` provides Gemini-backed screenshot/animation review. Both use `import { chromium } from 'playwright'` directly (installed in the extensions directory).
 
 ### Frontend data architecture
 
-The frontend uses **Zustand as single source of truth**. React Query was fully removed — it caused dual-state sync bugs (React Query cache + Zustand store fighting over re-render timing, especially with framer-motion animations).
+The frontend uses **Zustand as single source of truth**. React Query is intentionally not used for app state; the app receives monolithic backend snapshots and normalizes them into Zustand.
 
 **Data stores (Zustand):**
 
 | Store | Location | Content |
 |-------|----------|---------|
-| `useChatDataStore` | `stores/chat-data-store.ts` | Messages by ID, message order, chat meta (character, persona, branches, chats list), macro context, prompt trace/history, context preview |
-| `useBootstrapStore` | `stores/api-actions/bootstrap-actions.ts` | Bootstrap data (allCharacters, promptPresets), personas, loading state |
+| `useSnapshotStore` | `stores/snapshot-store.ts` | Canonical backend-confirmed data: chats by ID, chat order, messages by ID, message order, active chat/character/persona/branch, summaries, prompt trace/history, context preview |
+| `useChatStore` | `stores/chat-store.ts` | UI/runtime state: active chat ID, selected character ID, draft, editing state, selected trace ID, per-chat generation state |
+| `useBootstrapStore` | `stores/api-actions/bootstrap-actions.ts` | Bootstrap/reference data: prompt presets, personas, first-run/loading state |
 | `useProviderDataStore` | `stores/provider-data-store.ts` | Provider profiles, favorites by profile |
-| `useChatStore` | `stores/chat-store.ts` | UI state — active chat ID, editing, draft, streaming text/reasoning, pending user message, sending state |
-| `useCharacterStore` | `stores/character-store.ts` | Character list for sidebar, confirm-destroy dialog state |
-| `useNavigationStore` | `stores/navigation-store.ts` | Theme, sidebar width |
-| `useProviderStore` | `stores/provider-store.ts` | Connection UI state, generation status |
+| `useCharacterStore` | `stores/character-store.ts` | Build-mode UI state, rename/confirm-destroy dialog state |
+| `useNavigationStore` | `stores/navigation-store.ts` | Theme, mode, sidebar/rail UI state |
+| `useProviderStore` | `stores/provider-store.ts` | Connection UI state |
 | `useModalStore` | `stores/modal-store.ts` | Modal open/close state |
 
-**API actions** (`stores/api-actions/`) are plain async functions that call the API, then call `syncSnapshot()` or targeted store updates. No try/catch inside actions — errors propagate to callers. Actions write to Zustand directly.
+**API actions** (`stores/api-actions/`) are plain async functions that call the API, then write backend snapshots through `useSnapshotStore.getState().ingestSnapshot(snapshot)` or targeted snapshot-store updates. No legacy `useChatDataStore` exists.
 
-**Action modules:** `bootstrap-actions.ts` (initial load), `character-actions.ts`, `chat-actions.ts`, `persona-actions.ts`, `preset-actions.ts`, `provider-actions.ts`.
+**Selector rules:**
 
-**Memoized selectors** (`stores/chat-selectors.ts`) use `reselect` for lazy derived data:
+- Components subscribe to focused slices, not a top-level `AppSnapshot` prop.
+- Selectors must not return freshly allocated nested arrays/objects unless they are memoized or use `useShallow` correctly.
+- Effects that write to Zustand must use primitive dependencies and equality guards.
+- `AppShell` no longer receives a large `snapshot` prop; it reads exact fields from stores.
 
-- `useDisplayMessage(id)` — resolves macros + counts tokens for a single message. Cache hit when content unchanged.
-- `useMessageOrder()` — ordered message ID list from store.
-- `useMacroContext()` — character name + persona name/description for macro resolution.
-- `useActiveTrace(selectedTraceId)` — active prompt trace from trace history.
+**Selector modules:**
 
-Each component subscribes to the minimal slice it needs — e.g. `MessageBlock` only subscribes to `useDisplayMessage(id)`, so switching a variant or streaming only re-renders the affected block.
+- `stores/snapshot-store.ts` exposes canonical selectors such as `useChatList()`, `useOrderedMessages()`, `useActiveCharacter()`, `useActivePersona()`.
+- `stores/chat-selectors.ts` contains compatibility/derived selectors such as `useDisplayMessage(id)`, `useMessageOrder()`, `useMacroContext()`, and `useActiveTrace(selectedTraceId)`.
+
+Each message component subscribes to the minimal slice it needs — e.g. `MessageBlock` reads display data by `messageId`, so streaming and variant changes avoid broad app-shell rerenders.
 
 ### Message list virtualization
 
@@ -816,7 +820,7 @@ Message variant switching (swipes) uses `framer-motion`:
 - `motion.div key={selectedVariantIndex}` — direction-aware slide (left/right) + blur transition
 - No `motion.div layout` wrapper — layout animations conflict with Virtuoso's measurement
 - Variant content read from `variants[selectedVariantIndex].content` (not `message.content`) — server sets `message.content` to selected variant at load time, but client-side switching only changes `selectedVariantIndex`
-- Swipe callbacks read `selectedVariantIndex` directly from store via `useChatDataStore.getState()` — avoids stale closure from memoized `itemContent`
+- Swipe callbacks update `useSnapshotStore.getState().selectVariant(...)` optimistically, then persist the selected variant through chat actions
 
 `MessageBlock` is wrapped in `React.memo` and reads all message data from `useDisplayMessage(messageId)` — no message object prop. This ensures streaming text only re-renders the `StreamingContent` component, not existing message blocks.
 
