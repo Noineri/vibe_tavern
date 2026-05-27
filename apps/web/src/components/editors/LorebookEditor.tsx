@@ -111,6 +111,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [confirmDeleteEntry, setConfirmDeleteEntry] = useState<string | null>(null);
   const [confirmDeleteLorebook, setConfirmDeleteLorebook] = useState<string | null>(null);
+  const [actionMenuLorebookId, setActionMenuLorebookId] = useState<string | null>(null);
 
   // ── Import state ─────────────────────────────────────────
   const [importOpen, setImportOpen] = useState(false);
@@ -461,13 +462,21 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
   ) : null;
 
   const scopeBarMobile = isMobile ? (
-    <div className="flex shrink-0 gap-1 border-b border-border" style={{ padding: "8px 12px" }}>
+    <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border scrollbar-hide" style={{ padding: "8px 12px" }}>
       {scopeItems.map(s => (
-        <CustomTooltip content={s.label} key={s.id}>
-          <div className={cn("flex flex-1 cursor-pointer items-center justify-center rounded-lg font-ui text-[10px] transition-all", scope === s.id ? "bg-accent-dim text-accent-t font-medium" : "text-t3 hover:bg-s2")} style={{ padding: "6px 2px", gap: 3 }} onClick={() => setScope(s.id)}>
-            {s.icon}
-          </div>
-        </CustomTooltip>
+        <div
+          key={s.id}
+          className={cn(
+            "flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 font-ui text-[11px] font-medium transition-all select-none",
+            scope === s.id
+              ? "bg-accent text-white"
+              : "text-t3 bg-transparent hover:bg-s2 active:bg-s3"
+          )}
+          onClick={() => setScope(s.id)}
+        >
+          <span className="flex h-4 w-4 items-center justify-center">{s.icon}</span>
+          <span className="whitespace-nowrap">{s.label}</span>
+        </div>
       ))}
     </div>
   ) : null;
@@ -518,6 +527,9 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
             editLbName={editLbName}
             editLbScope={editLbScope}
             activeEntryId={view === "editor" ? activeEntryId : null}
+            isMobile={isMobile}
+            actionMenuOpen={actionMenuLorebookId === lb.id}
+            onToggleActionMenu={() => setActionMenuLorebookId(prev => prev === lb.id ? null : lb.id)}
             t={t}
             onToggle={() => toggleLorebook(lb.id)}
             onStartEdit={() => { setEditingLorebookId(lb.id); setEditLbName(lb.name); setEditLbScope(lb.scopeType as Scope); }}
@@ -893,7 +905,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
 
   // ── Header bar ───────────────────────────────────────────
   const headerBar = (
-    <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface" style={{ padding: "10px 20px" }}>
+    <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface" style={{ padding: isMobile ? "10px 12px" : "10px 20px" }}>
       <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={handleBackToPick}>{Ic.caret("l")}</div>
       <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t">{tab === "lorebooks" ? <Ic.book /> : <Ic.terminal />}</div>
       <span className="font-ui text-[14px] font-semibold text-t1">{tab === "lorebooks" ? t("lorebooks_card_title") : t("scripts_card_title")}</span>
@@ -923,7 +935,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
   );
 
   const editorHeader = (
-    <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface" style={{ padding: "10px 20px" }}>
+    <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface" style={{ padding: isMobile ? "10px 12px" : "10px 20px" }}>
       <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={() => { setView("list"); setActiveEntryId(null); scriptPanel.setActiveScriptId(null); }}>{Ic.caret("l")}</div>
       <span className="flex-1 truncate font-ui text-[14px] font-semibold text-t1">{tab === "lorebooks" ? (activeEntry?.title || "") : ""}</span>
     </div>
@@ -935,27 +947,47 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
 
   if (view === "pick") return <div className="flex h-full w-full flex-col overflow-hidden">{pickView}</div>;
 
+  const modals = <>{scriptPanel.modals}{importModal}{confirmDeleteEntryModal}{confirmDeleteLorebookModal}</>;
+
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden">
-      {scriptPanel.modals}
-      {importModal}
-      {confirmDeleteEntryModal}{confirmDeleteLorebookModal}
-      {view === "list" && (
-        <div className={cn("flex flex-1 flex-col overflow-hidden", listAnim)}>
-          <div className={headerAnim}>{headerBar}</div>
-          <div className="flex flex-1 overflow-hidden">
-            {scopeColumn}
-            {tab === "lorebooks" ? lorebookListContent : scriptPanel.scriptListContent}
-          </div>
-        </div>
-      )}
-      {view === "editor" && (
-        <div className="flex flex-1 flex-col overflow-hidden">
-          {editorHeader}
-          <div className="flex flex-1 overflow-hidden">
-            <div className="flex-1 overflow-y-auto" style={{ padding: "24px 32px" }}>{tab === "lorebooks" ? entryEditor : scriptPanel.scriptEditorPanel}</div>
-          </div>
-        </div>
+      {modals}
+      {isMobile ? (
+        <>
+          {view === "list" && (
+            <div className={cn("flex flex-1 flex-col overflow-hidden", listAnim)}>
+              <div className={headerAnim}>{headerBar}</div>
+              {scopeBarMobile}
+              {tab === "lorebooks" ? lorebookListContent : scriptPanel.scriptListContent}
+            </div>
+          )}
+          {view === "editor" && (
+            <div className="flex flex-1 flex-col overflow-hidden">
+              {editorHeader}
+              <div className="flex-1 overflow-y-auto pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]" style={{ padding: "12px" }}>{tab === "lorebooks" ? entryEditor : scriptPanel.scriptEditorPanel}</div>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {view === "list" && (
+            <div className={cn("flex flex-1 flex-col overflow-hidden", listAnim)}>
+              <div className={headerAnim}>{headerBar}</div>
+              <div className="flex flex-1 overflow-hidden">
+                {scopeColumn}
+                {tab === "lorebooks" ? lorebookListContent : scriptPanel.scriptListContent}
+              </div>
+            </div>
+          )}
+          {view === "editor" && (
+            <div className="flex flex-1 flex-col overflow-hidden">
+              {editorHeader}
+              <div className="flex flex-1 overflow-hidden">
+                <div className="flex-1 overflow-y-auto" style={{ padding: "24px 32px" }}>{tab === "lorebooks" ? entryEditor : scriptPanel.scriptEditorPanel}</div>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -970,6 +1002,9 @@ interface LorebookAccordionProps {
   editLbName: string;
   editLbScope: string;
   activeEntryId: string | null;
+  isMobile: boolean;
+  actionMenuOpen: boolean;
+  onToggleActionMenu: () => void;
   t: (key: string) => string;
   onToggle: () => void;
   onStartEdit: () => void;
@@ -984,7 +1019,7 @@ interface LorebookAccordionProps {
 }
 
 function LorebookAccordion({
-  lorebook, expanded, editing, editLbName, editLbScope, activeEntryId, t,
+  lorebook, expanded, editing, editLbName, editLbScope, activeEntryId, isMobile, actionMenuOpen, onToggleActionMenu, t,
   onToggle, onStartEdit, onSaveEdit, onCancelEdit, onEditLbName, onEditLbScope,
   onDelete, onAddEntry, onEntryClick, onToggleEnabled,
 }: LorebookAccordionProps) {
@@ -999,7 +1034,7 @@ function LorebookAccordion({
 
   return (
     <div className="mb-3 rounded-xl border border-border bg-surface">
-      <div className="flex items-center gap-1.5" style={{ padding: "10px 12px", borderRadius: expanded ? "12px 12px 0 0" : 12 }}>
+      <div className="flex items-center gap-1.5" style={{ padding: isMobile ? "12px 12px" : "10px 12px", borderRadius: expanded ? "12px 12px 0 0" : 12 }}>
         <div className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2" onClick={onToggle}>
           {expanded ? <span className="text-[10px]">{"\u25BC"}</span> : <span className="text-[10px]">{"\u25B6"}</span>}
         </div>
@@ -1030,6 +1065,35 @@ function LorebookAccordion({
               />
             </div>
             <span className="shrink-0 rounded-full bg-s3 px-2 py-0.5 font-ui text-[11px] text-t3">{entries.length}</span>
+            {isMobile ? (
+              <div className="relative ml-1">
+                <div
+                  className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded text-t2 text-xl leading-none transition-all hover:bg-s2 select-none"
+                  onClick={e => { e.stopPropagation(); onToggleActionMenu(); }}
+                >
+                  ⋮
+                </div>
+                {actionMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-[99]" onClick={e => { e.stopPropagation(); onToggleActionMenu(); }} />
+                    <div
+                      className="absolute right-0 top-full z-[100] mt-1 min-w-[160px] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-theme-lg"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <div className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 transition-colors hover:bg-s2 active:bg-s3" onClick={e => { e.stopPropagation(); onAddEntry(); onToggleActionMenu(); }}>
+                        <Ic.plus /> {t("lore_add_entry")}
+                      </div>
+                      <div className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 transition-colors hover:bg-s2 active:bg-s3" onClick={e => { e.stopPropagation(); onStartEdit(); onToggleActionMenu(); }}>
+                        <Ic.edit /> Edit
+                      </div>
+                      <div className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-danger transition-colors hover:bg-s2 active:bg-s3" onClick={e => { e.stopPropagation(); onDelete(); onToggleActionMenu(); }}>
+                        <Ic.del /> {t("delete_lorebook_confirm")}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
             <div className="flex shrink-0 items-center gap-0.5 ml-1">
               <CustomTooltip content={t("lore_add_entry")}>
                 <div className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={e => { e.stopPropagation(); onAddEntry(); }}><Ic.plus /></div>
@@ -1041,6 +1105,7 @@ function LorebookAccordion({
                 <div className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-danger" onClick={e => { e.stopPropagation(); onDelete(); }}><Ic.del /></div>
               </CustomTooltip>
             </div>
+            )}
           </>
         )}
       </div>
@@ -1048,7 +1113,7 @@ function LorebookAccordion({
         <div className="flex flex-col gap-2 border-t border-border" style={{ padding: "10px 12px" }}>
           {entries.length === 0 && <div className="py-3 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("lore_no_entries")}</div>}
           {entries.map(e => (
-            <div key={e.id} className={cn("cursor-pointer rounded-lg border transition-all", e.id === activeEntryId ? "border-accent bg-accent-dim" : "border-border bg-surface hover:bg-s2")} style={{ padding: "10px 14px" }} onClick={() => onEntryClick(e.id)}>
+            <div key={e.id} className={cn("cursor-pointer rounded-lg border transition-all min-h-[44px]", e.id === activeEntryId ? "border-accent bg-accent-dim" : "border-border bg-surface hover:bg-s2")} style={{ padding: "10px 14px" }} onClick={() => onEntryClick(e.id)}>
               <div className="flex items-center gap-2">
                 <div className={cn("h-2 w-2 shrink-0 rounded-full", e.enabled ? "bg-success" : "bg-t3")} />
                 <span className={cn("flex-1 truncate text-[13px] font-medium", e.enabled ? "text-t1" : "text-t3 line-through")}>{e.title || t("lore_no_entries")}</span>
