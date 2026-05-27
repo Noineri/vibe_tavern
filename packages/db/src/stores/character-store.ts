@@ -90,6 +90,7 @@ export class CharacterStore {
     // Lazy migration: if not yet on disk, write now
     if (this.content && !row.hasFileOnDisk) {
       const fileData = this.toFileData(char);
+      const displayName = char.name || char.slug;
       const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, id, fileData, { displayName });
       await this.db
         .update(characters)
