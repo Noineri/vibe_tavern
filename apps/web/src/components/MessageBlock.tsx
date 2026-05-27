@@ -359,13 +359,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               </div>
             </>
           ) : isUser ? (
-            <div className={isMobile ? "my-0.5 rounded-md bg-user-bg w-fit ml-auto" : "my-0.5 rounded-md bg-user-bg px-4 py-[13px]"} style={isMobile ? { padding: '10px 12px' } : undefined}>
+            <div className={isMobile ? "my-0.5 rounded-md bg-user-bg ml-auto max-w-[85%]" : "my-0.5 rounded-md bg-user-bg px-4 py-[13px]"} style={isMobile ? { padding: '10px 12px' } : undefined}>
               <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 opacity-88 [&_em]:italic [&_em]:text-msg-t2">
                 <Markdown text={renderContent} />
               </div>
             </div>
           ) : isGenerating && !renderContent?.trim() ? (
-            <div className={cn("min-w-0", isMobile && "my-0.5")}>
+            <div className={isMobile ? "my-0.5" : ""}>
               {(reasoningText || reasoningDuration) && (
                 <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
               )}
@@ -378,7 +378,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               </div>
             </div>
           ) : isStreamingHere ? (
-            <div className={cn("min-w-0", isMobile && "my-0.5")}>
+            <div className={isMobile ? "my-0.5" : ""}>
               {(activeStreamingReasoning || reasoningDuration) && (
                 <MessageReasoning reasoning={activeStreamingReasoning || reasoningText} reasoningDurationMs={reasoningDuration} />
               )}
