@@ -59,6 +59,7 @@ export interface StLorebookNormalized {
   scanDepth: number;
   tokenBudget: number;
   recursiveScanning: boolean;
+  maxRecursionSteps?: number;
   extensions: Record<string, unknown>;
 }
 
@@ -131,6 +132,7 @@ export function importStLorebookJson(
     scanDepth: asNumber(root.scan_depth, 50),
     tokenBudget: asNumber(root.token_budget, 1000),
     recursiveScanning: asBoolean(root.recursive_scanning, false),
+    maxRecursionSteps: asNumber((root.extensions as Record<string, unknown>)?.max_recursion_steps, 5),
     extensions: isRecord(root.extensions) ? root.extensions : {},
   };
 
@@ -147,6 +149,7 @@ export function importStLorebookJson(
     scanDepth: normalized.scanDepth,
     tokenBudget: normalized.tokenBudget,
     recursiveScanning: normalized.recursiveScanning,
+    maxRecursionSteps: normalized.maxRecursionSteps ?? 5,
     sortOrder: 0,
     enabled: true,
     characterId: null,
@@ -192,6 +195,7 @@ export function importStLorebookJson(
       delayWindow: asNumber(entry.delay, 0),
       constant: asBoolean(entry.constant, false),
       probability: asNumber(entry.probability, 100),
+      ignoreBudget: asBoolean(entry.ignoreBudget, false),
       role: (asString(entry.role) || "system") as LoreEntryRole,
       group: asString(entry.group),
       groupWeight: 0,
@@ -216,6 +220,7 @@ export function importStLorebookJson(
         stPosition: entry.position ?? 0,
         stConstant: asBoolean(entry.constant, false),
         stProbability: asNumber(entry.probability, 100),
+        stIgnoreBudget: asBoolean(entry.ignoreBudget, false),
         stUseProbability: asBoolean(entry.useProbability, false),
         stRole: entry.role ?? null,
         stGroup: asString(entry.group),

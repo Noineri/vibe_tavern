@@ -66,7 +66,10 @@ export function toSdkMessages(
       if (!record || typeof record !== "object") return null;
       const r = record as { role?: unknown; content?: unknown };
       if (typeof r.role !== "string" || typeof r.content !== "string") return null;
-      if (r.role !== "system" && r.role !== "user" && r.role !== "assistant") return null;
+      if (r.role !== "system" && r.role !== "user" && r.role !== "assistant") {
+        console.warn(`[toSdkMessages] FILTERED out role="${r.role}", content.length=${(r.content as string)?.length ?? 0}`);
+        return null;
+      }
       return { role: r.role as SdkMessage["role"], content: r.content };
     })
     .filter((m): m is SdkMessage => m !== null);

@@ -144,6 +144,7 @@ export interface LoreEntryRecord {
   enabled: boolean;
   constant: boolean;
   probability: number;
+  ignoreBudget: boolean;
   role: string;
   groupName: string;
   groupWeight: number;

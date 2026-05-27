@@ -48,6 +48,7 @@ function makeLayer(input: {
   priority?: number;
   enabled?: boolean;
   reason?: string;
+  role?: string;
   text: string;
 }): PromptLayer {
   return {
@@ -60,6 +61,7 @@ function makeLayer(input: {
     reason: input.reason ?? PROMPT_LAYER_REASON.included,
     tokenCount: estimateTokens(input.text),
     text: input.text.trim(),
+    ...(input.role ? { role: input.role as "system" | "user" | "assistant" } : {}),
   };
 }
 
@@ -242,6 +244,9 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       text: injection.content,
     });
     layer.injectionDepth = injection.depth ?? 0;
+    if (injection.role === "user" || injection.role === "assistant") {
+      layer.role = injection.role;
+    }
     layers.push(layer);
   }
 
@@ -315,17 +320,41 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       droppedLayers.push({ id: loreEntry.id, reason: PROMPT_LAYER_REASON.emptyLoreContent });
       continue;
     }
-    layers.push(
-      makeLayer({
-        id: createLoreLayerId(loreEntry.id),
-        sourceType: PROMPT_LAYER_SOURCE_TYPE.loreEntry,
-        sourceId: loreEntry.id,
-        position: loreEntry.position ?? "in_prompt",
-        priority: loreEntry.priority,
-        reason: PROMPT_LAYER_REASON.activatedLoreEntry,
-        text: joinNonEmpty([loreEntry.title ? PROMPT_FORMAT.loreHeader(loreEntry.title) : null, loreEntry.content]),
-      }),
-    );
+
+    // Map legacy lorebook position strings to pipeline positions.
+    // SillyTavern positions: before_char, after_char, before_examples,
+    // after_examples, top_an, bottom_an, at_depth, outlet
+    const resolvedPosition = (() => {
+      switch (loreEntry.position) {
+        case "before_char":    return "before_prompt";
+        case "after_char":     return "in_prompt";
+        case "before_examples": return "in_prompt";
+        case "after_examples":  return "in_prompt";
+        case "top_an":         return "in_chat";
+        case "bottom_an":      return "in_chat";
+        case "at_depth":       return "in_chat";
+        case "outlet":         return "hidden_system";
+        default:                return "in_prompt";
+      }
+    })();
+
+    const layer = makeLayer({
+      id: createLoreLayerId(loreEntry.id),
+      sourceType: PROMPT_LAYER_SOURCE_TYPE.loreEntry,
+      sourceId: loreEntry.id,
+      position: resolvedPosition,
+      priority: loreEntry.priority,
+      role: loreEntry.role,
+      reason: PROMPT_LAYER_REASON.activatedLoreEntry,
+      text: joinNonEmpty([loreEntry.title ? PROMPT_FORMAT.loreHeader(loreEntry.title) : null, loreEntry.content]),
+    });
+
+    // at_depth and top_an/bottom_an inject into chat history at a specific depth
+    if (loreEntry.position === "at_depth" || loreEntry.position === "top_an" || loreEntry.position === "bottom_an") {
+      layer.injectionDepth = loreEntry.depth ?? 4;
+    }
+
+    layers.push(layer);
   }
 
   for (const memory of context.memory?.summary ?? []) {
@@ -524,6 +553,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   const nonHiddenLayers = orderedLayers.filter(
     (layer) => layer.position !== "hidden_system" && layer.sourceType !== PROMPT_LAYER_SOURCE_TYPE.chatHistory,
   );
+
   const beforePrompt = nonHiddenLayers.filter((l) => l.position === "before_prompt");
   const inPrompt = nonHiddenLayers.filter((l) => l.position === "in_prompt");
   const inChat = nonHiddenLayers.filter((l) => l.position === "in_chat");
@@ -553,7 +583,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   for (const layer of inChatWithDepth) {
     const insertAt = Math.max(0, historyMessages.length - layer.injectionDepth!);
     historyMessages.splice(insertAt, 0, {
-      role: "system" as const,
+      role: layer.role ?? ("system" as const),
       content: layer.text,
       layerId: layer.id,
     });

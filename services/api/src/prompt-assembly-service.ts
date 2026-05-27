@@ -219,6 +219,8 @@ export class PromptAssemblyService {
         content: entry.content,
         priority: entry.priority,
         position: entry.position,
+        depth: entry.depth,
+        role: entry.role,
       })),
       memory: {
         summary: chat.summary?.trim()

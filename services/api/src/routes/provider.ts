@@ -57,7 +57,12 @@ export function createProviderRoutes(runtime: RuntimeApi) {
       return c.json(await runtime.testProviderChatByEndpoint({ baseUrl, apiKey, model, providerType: body?.providerType }));
     })
     .post("/api/providers/:providerId/models", async (c) => {
-      return c.json(await runtime.fetchProviderModels(c.req.param("providerId")));
+      try {
+        return c.json(await runtime.fetchProviderModels(c.req.param("providerId")));
+      } catch (err) {
+        if (isDomainError(err)) throw err;
+        throw providerError(err instanceof Error ? err.message : "Failed to fetch provider models.");
+      }
     })
     .get("/api/providers/:providerId/model-favorites", async (c) => {
       return c.json(await runtime.listFavoriteProviderModels(c.req.param("providerId")));

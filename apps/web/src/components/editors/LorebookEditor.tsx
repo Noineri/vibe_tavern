@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Ic, Icons } from "../shared/icons.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { cn } from "../../lib/cn.js";
+import { TokenCounter } from "../shared/TokenCounter.js";
 import { useT } from "../../i18n/context.js";
 import {
   listLorebooks,
@@ -383,6 +384,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
       enabled: true,
       constant: false,
       probability: 100,
+      ignoreBudget: false,
       role: "system",
       groupName: "",
       groupWeight: 100,
@@ -467,7 +469,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
   const handleKeyAdd = (e: React.KeyboardEvent, type: "keys" | "secondaryKeys") => {
     if (e.key !== "Enter") return;
     e.preventDefault();
-    const val = (type === "keys" ? keyInput : secKeyInput).trim().toLowerCase();
+    const val = (type === "keys" ? keyInput : secKeyInput).trim();
     if (!val || !activeEntry) return;
     const arr = activeEntry[type];
     if (!arr.includes(val)) updateAct(type, [...arr, val]);
@@ -643,6 +645,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
         <MobileExpandTextarea value={activeEntry.content} onChange={(v) => updateAct("content", v)} label={t("lore_entry_content")}>
           <textarea className="w-full min-h-[180px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent leading-[1.6]" value={activeEntry.content} onChange={e => updateAct("content", e.target.value)} placeholder={t("lore_entry_content_placeholder")} />
         </MobileExpandTextarea>
+        <TokenCounter text={activeEntry.content} />
       </div>
 
       <button className="mb-4 flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-accent-t transition-all hover:text-accent" onClick={() => setAdvancedOpen(v => !v)}>
@@ -663,8 +666,8 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
             </div>
             <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
               <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_logic_label")}</label><select className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none" value={activeEntry.logic} onChange={e => updateAct("logic", e.target.value)}><option value="AND_ANY">AND ANY</option><option value="AND_ALL">AND ALL</option><option value="NOT_ANY">NOT ANY</option><option value="NOT_ALL">NOT ALL</option></select></div>
-              <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_position_label")}</label><select className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none" value={activeEntry.position} onChange={e => updateAct("position", e.target.value)}><option value="before_char">Before Char</option><option value="after_char">After Char</option><option value="before_examples">Before Examples</option><option value="after_examples">After Examples</option><option value="top_an">Top of AN</option><option value="bottom_an">Bottom of AN</option><option value="at_depth">@ Depth</option><option value="outlet">Outlet</option></select></div>
-              <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_depth_label")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.depth} onChange={e => updateAct("depth", parseInt(e.target.value))} /></div>
+              <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_position_label")}</label><div className="flex flex-wrap gap-1">{(["before_char", "after_char", "before_examples", "after_examples", "top_an", "bottom_an", "at_depth", "outlet"] as const).map(pos => (<button key={pos} type="button" onClick={() => updateAct("position", pos)} className={cn("rounded-md border px-2 py-1 text-[11px] font-ui font-medium transition-all", activeEntry.position === pos ? "border-accent bg-accent-dim text-accent-t" : "border-border bg-bg text-t3 hover:border-t3 hover:text-t2")}>{t("pos_" + pos)}</button>))}</div></div>
+              {(activeEntry.position === "at_depth" || activeEntry.position === "top_an" || activeEntry.position === "bottom_an") && <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_depth_label")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.depth} onChange={e => updateAct("depth", parseInt(e.target.value))} /></div>}
               <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_priority_label")}</label><input className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none focus:border-accent" type="number" min="0" value={activeEntry.priority} onChange={e => updateAct("priority", parseInt(e.target.value))} /></div>
               <CustomTooltip content={t("role_hint")}>
                 <div><label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_role_label")}</label><select className="h-[38px] w-full rounded-md border border-border bg-bg px-2.5 font-ui text-t1 outline-none" value={activeEntry.role} onChange={e => updateAct("role", e.target.value)}><option value="system">System</option><option value="user">User</option><option value="assistant">Assistant</option></select></div>
@@ -684,6 +687,9 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
               </CustomTooltip>
               <CustomTooltip content={t("match_whole_words_hint")}>
                 <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.matchWholeWords} onChange={e => updateAct("matchWholeWords", e.target.checked)} /> {t("lore_match_whole_words")}</label>
+              </CustomTooltip>
+              <CustomTooltip content={t("ignore_budget_hint")}>
+                <label className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.ignoreBudget} onChange={e => updateAct("ignoreBudget", e.target.checked)} /> {t("lore_ignore_budget")}</label>
               </CustomTooltip>
             </div>
             <div className="mt-3 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
@@ -786,7 +792,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
               <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("lore_matchsources_section")} <span className="font-normal text-t3">(?)</span></div>
             </CustomTooltip>
             <div className="flex flex-wrap gap-x-5 gap-y-3">
-              {(["char_desc", "char_personality", "scenario", "persona_desc", "char_note", "creator_notes"] as const).map(src => (
+              {(["character_desc", "character_personality", "character_note", "persona_desc", "scenario", "creator_notes"] as const).map(src => (
                 <label key={src} className="flex items-center gap-2 text-[13px] text-t1"><input type="checkbox" checked={activeEntry.matchSources.includes(src)} onChange={e => { const next = e.target.checked ? [...activeEntry.matchSources, src] : activeEntry.matchSources.filter(s2 => s2 !== src); updateAct("matchSources", next); }} /> {t("match_src_" + src)}</label>
               ))}
             </div>
@@ -1175,6 +1181,7 @@ function LorebookAccordion({
               </div>
               <div className="mt-1 truncate font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{e.keys.length > 0 ? `keys: ${e.keys.join(", ")}` : t("lore_no_entries")}</div>
               {e.content && <div className="mt-1.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{e.content}</div>}
+              {e.content && <TokenCounter text={e.content} className="mt-1" />}
             </div>
           ))}
         </div>
