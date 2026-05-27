@@ -4,7 +4,7 @@ import type { AppMessage } from "../app-client.js";
 import { replaceUiMacros } from "../lib/macros.js";
 import { countTokens } from "../utils/tokenizer.js";
 import type { MacroContext } from "./snapshot-store.js";
-import { useSnapshotStore } from "./snapshot-store.js";
+import { useChatList, useSnapshotStore } from "./snapshot-store.js";
 
 // ---------------------------------------------------------------------------
 // Backward-compatible selectors — now delegate to snapshot-store
@@ -33,23 +33,30 @@ export function useMessageOrder(): string[] {
   return useSnapshotStore((s) => s.messageOrder);
 }
 
-/** @deprecated Use useSnapshotStore directly */
+/** @deprecated Use focused snapshot-store selectors directly */
 export function useChatMeta() {
-  return useSnapshotStore(
-    useShallow((s) => {
-      if (!s.character || !s.activeChat) return null;
-      return {
-        character: s.character,
-        persona: s.persona,
-        activeChat: s.activeChat,
-        activeBranch: s.activeBranch,
-        branches: s.branches,
-        summaries: s.summaries,
-        chats: s.chatIds.map((id) => s.chatsById[id]).filter(Boolean),
-        allCharacters: s.allCharacters,
-      };
-    }),
-  );
+  const character = useSnapshotStore((s) => s.character);
+  const persona = useSnapshotStore((s) => s.persona);
+  const activeChat = useSnapshotStore((s) => s.activeChat);
+  const activeBranch = useSnapshotStore((s) => s.activeBranch);
+  const branches = useSnapshotStore((s) => s.branches);
+  const summaries = useSnapshotStore((s) => s.summaries);
+  const chats = useChatList();
+  const allCharacters = useSnapshotStore((s) => s.allCharacters);
+
+  return useMemo(() => {
+    if (!character || !activeChat) return null;
+    return {
+      character,
+      persona,
+      activeChat,
+      activeBranch,
+      branches,
+      summaries,
+      chats,
+      allCharacters,
+    };
+  }, [character, persona, activeChat, activeBranch, branches, summaries, chats, allCharacters]);
 }
 
 /** @deprecated Use useSnapshotStore selectors for macro context */

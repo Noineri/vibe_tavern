@@ -21,33 +21,6 @@ import { useIsMobile } from "../hooks/use-mobile.js";
 const msgWrap = "relative group py-2.5";
 const sepWrap = "max-w-[min(calc(var(--mw)_+_160px),calc(100vw_-_var(--sw)_-_64px))] mx-auto px-7 my-[6px] mt-2";
 
-// ── Swipe animation diagnostic logger ──────────────────────────────────────
-const _swipeLog: string[] = [];
-const MAX_LOG = 200;
-function _logSwipe(event: string, data: Record<string, unknown>) {
-  const ts = performance.now().toFixed(1);
-  const entry = `[${ts}ms] ${event} ${JSON.stringify(data)}`;
-  _swipeLog.push(entry);
-  if (_swipeLog.length > MAX_LOG) _swipeLog.shift();
-  console.log(`%c[SWIPE] ${entry}`, 'color: #0af', data);
-}
-
-(window as unknown as Record<string, unknown>).getSwipeLog = () => {
-  const text = _swipeLog.join('\n');
-  console.log(text);
-  return text;
-};
-(window as unknown as Record<string, unknown>).downloadSwipeLog = () => {
-  const blob = new Blob([_swipeLog.join('\n')], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'swipe-log.txt';
-  a.click();
-  URL.revokeObjectURL(url);
-};
-// ────────────────────────────────────────────────────────────────────────────
-
 export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps) {
   const { t } = useT();
   const chat = useChatController();
@@ -68,10 +41,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const messageActionId = useChatStore(s => s.messageActionId);
   const activeGen = useActiveGeneration();
   const pendingUserMessageContent = activeGen?.pendingUserMessageContent ?? null;
-
-  // Diagnostics: render counter
-  const renderCountRef = useRef(0);
-  renderCountRef.current++;
 
   // ── ALL hooks must be called before any early return (React Rules of Hooks) ──
 
@@ -208,28 +177,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   const renderContent = greetingActive ? (greetingOptions[greetingIndex] ?? msg.displayContent) : activeContent;
 
-  if (isGreeting) {
-    _logSwipe(`render-greeting #${renderCountRef.current}`, {
-      greetingIndex,
-      contentLen: renderContent?.length,
-      rect: msgWrapRef.current?.getBoundingClientRect()
-    });
-  }
-
-  // Diagnostics: log every render with key animation state
-  _logSwipe(`render #${renderCountRef.current}`, {
-    msgId: input.messageId.slice(0, 8),
-    variant: selectedVariantIndex,
-    greeting: greetingIndex,
-    dir: direction,
-    contentLen: renderContent?.length ?? 0,
-    activeContentLen: activeContent?.length ?? 0,
-    msgDisplayContentLen: msg.displayContent?.length ?? 0,
-    variantsLen: variants.length,
-    rawVariantsLen: msg.variants?.length ?? 0,
-    key: greetingActive ? `g-${greetingIndex}` : `v-${selectedVariantIndex}`,
-  });
-
   const isStreamingHere = !isUser && messageActionId === input.messageId && (globalStreamingText || globalStreamingReasoning);
   const activeStreamingText = isStreamingHere ? globalStreamingText : null;
   const activeStreamingReasoning = isStreamingHere ? globalStreamingReasoning : null;
@@ -279,13 +226,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                 <button
                   className={cn("cursor-pointer text-t3 transition-colors duration-100", isMobile ? "active:text-accent" : "hover:text-accent")}
                   disabled={!canSwitchVariant || greetingIndex <= 0}
-                  onClick={() => { if (!isGreeting) isSwipingRef.current = true; _logSwipe('click:prevGreeting', { greetingIndex, target: Math.max(0, greetingIndex - 1) }); useSnapshotStore.getState().setSwipeDirection(-1); setGreetingIndex(Math.max(0, greetingIndex - 1)); }}
+                  onClick={() => { if (!isGreeting) isSwipingRef.current = true; useSnapshotStore.getState().setSwipeDirection(-1); setGreetingIndex(Math.max(0, greetingIndex - 1)); }}
                 >◀</button>
                 {t("greeting_counter").replace("{n}", String(greetingIndex + 1)).replace("{total}", String(greetingOptions!.length))}
                 <button
                   className={cn("cursor-pointer text-t3 transition-colors duration-100", isMobile ? "active:text-accent" : "hover:text-accent")}
                   disabled={!canSwitchVariant || greetingIndex >= greetingOptions!.length - 1}
-                  onClick={() => { if (!isGreeting) isSwipingRef.current = true; _logSwipe('click:nextGreeting', { greetingIndex, target: Math.min(greetingOptions!.length - 1, greetingIndex + 1) }); useSnapshotStore.getState().setSwipeDirection(1); setGreetingIndex(Math.min(greetingOptions!.length - 1, greetingIndex + 1)); }}
+                  onClick={() => { if (!isGreeting) isSwipingRef.current = true; useSnapshotStore.getState().setSwipeDirection(1); setGreetingIndex(Math.min(greetingOptions!.length - 1, greetingIndex + 1)); }}
                 >▶</button>
               </span>
             )}
@@ -489,7 +436,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                     disabled={isBusy || selectedVariantIndex <= 0}
                     onClick={() => {
                       isSwipingRef.current = true;
-                      _logSwipe('click:prevVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex - 1 });
                       useSnapshotStore.getState().selectVariant(msg.id, selectedVariantIndex - 1, -1);
                       chat.handleSelectMessageVariant(msg.id, selectedVariantIndex - 1);
                     }}
@@ -500,7 +446,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                     disabled={isBusy || selectedVariantIndex >= variantCount - 1}
                     onClick={() => {
                       isSwipingRef.current = true;
-                      _logSwipe('click:nextVariant', { msgId: msg.id.slice(0, 8), currentIdx: selectedVariantIndex, targetIdx: selectedVariantIndex + 1 });
                       useSnapshotStore.getState().selectVariant(msg.id, selectedVariantIndex + 1, 1);
                       chat.handleSelectMessageVariant(msg.id, selectedVariantIndex + 1);
                     }}

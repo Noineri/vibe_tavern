@@ -50,6 +50,7 @@ desktop.ini
 # Temporary files
 *.tmp
 *.temp
+.pi/
 vibe_tavern_plan/
 
 # Drizzle generated output
