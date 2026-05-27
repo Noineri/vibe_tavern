@@ -365,7 +365,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               </div>
             </div>
           ) : isGenerating && !renderContent?.trim() ? (
-            <div>
+            <div className={isMobile ? "my-0.5 rounded-md bg-s2 px-3 py-2.5" : ""}>
               {(reasoningText || reasoningDuration) && (
                 <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
               )}
@@ -378,7 +378,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               </div>
             </div>
           ) : isStreamingHere ? (
-            <>
+            <div className={isMobile ? "my-0.5 rounded-md bg-s2 px-3 py-2.5" : ""}>
               {(activeStreamingReasoning || reasoningDuration) && (
                 <MessageReasoning reasoning={activeStreamingReasoning || reasoningText} reasoningDurationMs={reasoningDuration} />
               )}
@@ -390,7 +390,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                   <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
                 </span>
               </div>
-            </>
+            </div>
           ) : (
             <div>
               {!isUser && (reasoningText || reasoningDuration) && (
