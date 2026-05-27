@@ -302,7 +302,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
   if (isMobile) {
     return (
       <div className={cn("flex h-full flex-col", !isFullBleed && "p-4")}>
-        <div className={cn("flex-1", !isFullBleed && "overflow-y-auto")}>
+        <div className={cn("flex-1 min-h-0", !isFullBleed && "overflow-y-auto")}>
           {renderPanelContent()}
         </div>
       </div>
