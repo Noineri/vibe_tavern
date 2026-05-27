@@ -792,7 +792,7 @@
   "script_import_detect_js": "Обнаружено: JavaScript",
   "script_import_detect_json": "Обнаружено: JSON",
   "script_import_import": "Импорт",
-  "create_manual": "Создать вручную",
+  "create_manual": "Создать",
   "import_char_short": "Импорт",
   "scroll_to_bottom": "В конец",
   "prompt_manager": "Менеджер промптов",
