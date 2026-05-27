@@ -8,21 +8,10 @@ import { getMobileToken, appendTokenQuery } from "./lib/mobile-token.js";
 
 const client = hc<AppType>(getGatewayBaseUrl(), {
   headers: () => {
-    try {
-      const token = getMobileToken();
-      const headers: Record<string, string> = {};
-      if (token) headers.Authorization = `Bearer ${token}`;
-      return headers;
-    } catch (e) {
-      console.error("[mobile] headers error:", e);
-      return {};
-    }
-  },
-  fetch: (input: RequestInfo | URL, init?: RequestInit) => {
-    return fetch(input, init).then(r => r).catch(e => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input instanceof Request ? input.url : String(input);
-      throw new Error(`Fetch ${url}: ${(e as Error).message || String(e)}`);
-    });
+    const token = getMobileToken();
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
   },
 });
 
