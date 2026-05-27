@@ -1,5 +1,6 @@
 import React from 'react';
 import { useT } from '../../i18n/context.js';
+import { useIsMobile } from '../../hooks/use-mobile.js';
 import type { FormState } from '../ProviderModal.js';
 import { Icons } from '../shared/icons.js';
 import { cn } from '../../lib/cn.js';
@@ -56,6 +57,7 @@ export function ProviderModelSelector({
   requiresAuthForModels,
 }: ProviderModelSelectorProps) {
   const { t } = useT();
+  const isMobile = useIsMobile();
   const favoriteIds = new Set(favoriteModels.map((model) => model.modelId));
   const selectedModel = models.find((model) => model.id === form.model);
   const formatContext = (contextLength?: number) => {
@@ -225,22 +227,22 @@ export function ProviderModelSelector({
         <button
           onClick={() => void onFetchModels()}
           disabled={fetching}
-          className="flex h-[37px] shrink-0 items-center gap-2 rounded-md border border-border bg-s2 px-4 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50"
+          className={cn(
+            "shrink-0 items-center gap-2 rounded-md border border-border bg-s2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50",
+            isMobile ? "flex h-[37px] w-[37px] justify-center px-0" : "flex h-[37px] px-4 font-ui text-[13px] font-medium text-t2"
+          )}
+          title={t("refresh_models")}
         >
           {fetching ? (
-            <>
-              <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle">
-                <span className="h-1 w-1 rounded-full bg-accent animate-genp" />
-                <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]" />
-                <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]" />
-              </span>{' '}
-              Loading...
-            </>
+            <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle">
+              <span className="h-1 w-1 rounded-full bg-accent animate-genp" />
+              <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]" />
+              <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]" />
+            </span>
           ) : (
-            <>
-              <Icons.Regen /> {t("refresh_models")}
-            </>
+            <Icons.Regen />
           )}
+          {!isMobile && <> {t("refresh_models")}</>}
         </button>
       </div>
       {fetchError && (

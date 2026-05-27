@@ -1,5 +1,6 @@
 import React from 'react';
 import { useT } from '../../i18n/context.js';
+import { useIsMobile } from '../../hooks/use-mobile.js';
 import type { ProviderProfileRecord } from '../../app-client.js';
 import { TYPE_LABELS } from '../../provider-presets.js';
 import { Icons } from '../shared/icons.js';
@@ -25,6 +26,7 @@ export function ProviderProfileList({
   onAddProfile,
 }: ProviderProfileListProps) {
   const { t } = useT();
+  const isMobile = useIsMobile();
   return (
     <div
       className="flex w-full sm:w-[220px] shrink-0 flex-col border-r border-border bg-surface pt-5 pb-2.5"
@@ -52,14 +54,14 @@ export function ProviderProfileList({
           <div
             key={p.id}
             className={cn(
-              'cursor-pointer overflow-hidden whitespace-nowrap border-l-[3px] text-ellipsis px-4 py-2.5 transition-colors hover:bg-s2',
+              'cursor-pointer border-l-[3px] px-4 min-h-[56px] flex items-center active:bg-s2 sm:overflow-hidden sm:whitespace-nowrap sm:text-ellipsis sm:transition-colors',
               editingId === p.id
                 ? 'border-l-accent bg-accent-dim text-accent-t'
                 : 'border-l-transparent text-t2'
             )}
             onClick={() => onSelectProfile(p.id)}
           >
-            <div className="flex items-center gap-3">
+            <div className="flex w-full items-center gap-3">
               <div
                 className={cn(
                   'h-2 w-2 shrink-0 rounded-full transition-colors',
@@ -71,7 +73,7 @@ export function ProviderProfileList({
                 )}
               />
               <div className="min-w-0 flex-1">
-                <div className="max-w-[150px] cursor-default overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium">
+                <div className="truncate text-[13px] font-medium">
                   {activeProviderProfileId === p.id ? '★ ' : ''}
                   {p.name}
                 </div>
@@ -84,6 +86,7 @@ export function ProviderProfileList({
                   {TYPE_LABELS[p.providerPreset] || p.providerPreset}
                 </div>
               </div>
+              {isMobile && <div className="ml-auto shrink-0 text-t3"><Icons.Caret direction="r" /></div>}
             </div>
           </div>
         ))}

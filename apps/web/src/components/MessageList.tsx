@@ -169,14 +169,23 @@ export function MessageList() {
             atBottomStateChange={setAtBottom}
           />
           {!atBottom && displayMessageIds.length > 0 && (
-            <CustomTooltip content={t("scroll_to_bottom")} side="left">
+            isMobile ? (
               <button
-                className="absolute bottom-6 right-8 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-on-accent shadow-lg transition-transform hover:scale-110 active:scale-95 z-10"
-                onClick={() => virtuosoRef.current?.scrollToIndex({ index: displayMessageIds.length - 1, behavior: "smooth" })}
+                className="absolute bottom-4 right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-surface/80 backdrop-blur-sm border border-border shadow-lg transition-all duration-300 active:scale-95"
+                onClick={() => virtuosoRef.current?.scrollToIndex({ index: 999999, behavior: "smooth", align: "end" })}
               >
                 <Icons.Caret direction="d" />
               </button>
-            </CustomTooltip>
+            ) : (
+              <CustomTooltip content={t("scroll_to_bottom")} side="left">
+                <button
+                  className="absolute bottom-6 right-8 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-on-accent shadow-lg transition-transform hover:scale-110 active:scale-95"
+                  onClick={() => virtuosoRef.current?.scrollToIndex({ index: 999999, behavior: "smooth", align: "end" })}
+                >
+                  <Icons.Caret direction="d" />
+                </button>
+              </CustomTooltip>
+            )
           )}
         </div>
     </TranslateErrorBoundary>

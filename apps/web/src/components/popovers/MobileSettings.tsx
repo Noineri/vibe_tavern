@@ -38,6 +38,49 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 
 			{/* Content */}
 			<div className="flex-1 overflow-y-auto overscroll-y-none" style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
+			{/* ── Live Preview ── */}
+			<div className="border-b border-border">
+				<div className="px-5 pt-4 pb-2">
+					<div className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.08em] text-t3">{t("preview")}</div>
+				</div>
+				<div className="px-4 pb-4">
+					<div className="overflow-hidden rounded-lg border border-border2 bg-surface">
+						<div className="px-3 pt-3 pb-1">
+							<div className="mb-1.5 flex items-center gap-2">
+								<div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-accent font-body text-[9px] font-semibold text-on-accent">S</div>
+								<span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2">Silvius</span>
+								<span className="ml-auto font-ui text-[calc(var(--ui-fs)-5px)] text-t3">12:45</span>
+							</div>
+							<div className="font-body text-[length:var(--mfs)] leading-[1.55] text-t1 opacity-90">
+								"The door groans as a tall figure steps from the shadows, silver eyes catching what little light remains."
+							</div>
+							<div className="mt-1.5 flex gap-3">
+								<Icons.Regen />
+								<Icons.Branch />
+							</div>
+						</div>
+						<div className="px-3 pt-2 pb-3">
+							<div className="mb-1.5 flex items-center gap-2">
+								<div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[9px] italic text-t3">U</div>
+								<span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2">You</span>
+							</div>
+							<div className="my-0.5 rounded-md bg-user-bg px-3 py-2.5">
+								<div className="font-body text-[length:var(--mfs)] leading-[1.55] text-t1 opacity-90">
+									Hello? Are you... are you hurt?
+								</div>
+							</div>
+						</div>
+						<div className="border-t border-border px-3 py-2.5">
+							<div className="flex items-center gap-2">
+								<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-s3 text-t3"><Icons.User /></div>
+								<div className="flex-1 rounded-md border border-border bg-s2 px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">Type a message...</div>
+								<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent"><Icons.Caret direction="r" /></div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
 
 				{/* Appearance */}
 				<div className="px-5 pt-5 pb-2">
@@ -46,27 +89,27 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 
 				{/* Theme toggle */}
 				<div className="px-5 py-2.5">
-					<div className="flex min-h-[44px] items-center justify-between">
+					<div className="flex min-h-[48px] items-center justify-between">
 						<div className="flex items-center gap-3">
 							<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
 								{settings.theme === "dark" ? <Icons.Moon /> : <Icons.Sun />}
 							</div>
 							<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_dark_theme")}</span>
 						</div>
-						<Toggle checked={settings.theme === "dark"} onChange={(checked) => setSetting("theme", checked ? "dark" : "light")} />
+						<Toggle checked={settings.theme === "dark"} onChange={(checked) => setSetting("theme", checked ? "dark" : "light")} className="text-[18px]" />
 					</div>
 				</div>
 
 				{/* Show Rail toggle */}
 				<div className="px-5 py-2.5">
-					<div className="flex min-h-[44px] items-center justify-between">
+					<div className="flex min-h-[48px] items-center justify-between">
 						<div className="flex items-center gap-3">
 							<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
 								<Icons.Menu />
 							</div>
 							<span className="font-body text-[length:var(--ui-fs)] text-t1">{settings.showRail ? t("hide_rail") : t("show_rail")}</span>
 						</div>
-						<Toggle checked={settings.showRail} onChange={(checked) => setSetting("showRail", checked)} />
+						<Toggle checked={settings.showRail} onChange={(checked) => setSetting("showRail", checked)} className="text-[18px]" />
 					</div>
 				</div>
 
@@ -106,7 +149,7 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 
 				{/* Message width */}
 				<div className="px-5 py-2.5">
-					<div className="flex min-h-[44px] items-center justify-between gap-3">
+					<div className="flex min-h-[48px] items-center justify-between gap-3">
 						<div className="flex items-center gap-3">
 							<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
 								<Icons.Chat />
@@ -163,7 +206,7 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 				</div>
 				<div className="px-5 py-2.5">
 					<button
-						className="flex w-full min-h-[44px] cursor-pointer items-center justify-center gap-2 rounded-lg bg-accent px-4 font-ui text-[length:var(--ui-fs)] font-medium text-on-accent active:opacity-90"
+						className="flex w-full min-h-[48px] cursor-pointer items-center justify-center gap-2 rounded-lg bg-accent px-4 font-ui text-[length:var(--ui-fs)] font-medium text-on-accent active:opacity-90"
 						onClick={onOpenMobileAccess}
 					>
 						<Icons.Phone />

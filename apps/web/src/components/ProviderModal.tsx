@@ -382,23 +382,28 @@ export function ProviderModal({
       <div className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[680px] w-[860px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
 
         {/* ═══ HEADER ═══ */}
-        <div className={cn("shrink-0 border-b border-border", isMobile ? "px-4 pt-4 pb-3" : "px-6 pt-5 pb-4")}>
-          <div className="flex items-start justify-between">
+        <div className={cn("shrink-0 border-b border-border", isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4")}>
+          {isMobile && mobileDetailOpen ? (
             <div className="flex items-center gap-2">
-              {isMobile && mobileDetailOpen && (
-                <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-t3 active:bg-s2" onClick={() => setMobileDetailOpen(false)}>
-                  <Icons.Caret direction="l" />
-                </button>
-              )}
-              <div>
-                <div className={cn("font-body font-semibold text-t1", isMobile ? "text-base" : "text-[18px] mb-1")}>
-                  {t("provider_settings_title")}
-                </div>
-                {!isMobile && <div className="font-ui text-[13px] text-t3">{t("provider_settings_desc")}</div>}
+              <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 hover:bg-s2 hover:text-t1" onClick={() => setMobileDetailOpen(false)}>
+                <span className="text-lg leading-none">←</span>
               </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-body text-[calc(var(--ui-fs)+2px)] font-medium text-t1">{form?.name ?? t("provider_settings_title")}</div>
+              </div>
+              <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 hover:bg-s2 hover:text-t1" onClick={handleClose}><Icons.Close /></div>
             </div>
-            <div className={cn("shrink-0 cursor-pointer items-center justify-center text-t3 transition-colors hover:bg-s2 hover:text-t1", isMobile ? "flex h-10 w-10 rounded-lg active:bg-s2" : "flex h-8 w-8 rounded-md")} onClick={handleClose}><Icons.Close /></div>
+          ) : (
+          <div className="flex items-start justify-between">
+            <div>
+              <div className={cn("font-body font-semibold text-t1", isMobile ? "text-base" : "text-[18px] mb-1")}>
+                {t("provider_settings_title")}
+              </div>
+              {!isMobile && <div className="font-ui text-[13px] text-t3">{t("provider_settings_desc")}</div>}
+            </div>
+            <div className={cn("shrink-0 cursor-pointer items-center justify-center text-t3 transition-colors hover:bg-s2 hover:text-t1", isMobile ? "flex h-8 w-8 rounded-[5px]" : "flex h-8 w-8 rounded-md")} onClick={handleClose}><Icons.Close /></div>
           </div>
+          )}
         </div>
 
         {/* ═══ BODY ═══ */}
@@ -488,6 +493,7 @@ export function ProviderModal({
         </div>
 
         {/* ═══ FOOTER ═══ */}
+        {(!isMobile || mobileDetailOpen) && (
         <div className={cn("shrink-0 items-center justify-between border-t border-border", isMobile ? "flex px-4 py-3" : "flex px-6 py-4")}>
           <div className="flex gap-4">
             <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>
@@ -503,6 +509,7 @@ export function ProviderModal({
             <Icons.Floppy /> {t("autosaving")}
           </div>
         </div>
+        )}
       </div>
     </Modal>
   );

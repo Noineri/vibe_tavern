@@ -203,7 +203,7 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
         {t("sampler_basic_settings")}
       </div>
 
-      <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
         {/* Max tokens */}
         <div>
           <CustomTooltip content={t("sampler_max_context_hint")}>
@@ -258,7 +258,7 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
       </div>
 
       {/* Toggles: Streaming, Reasoning */}
-      <div className="mt-6 grid grid-cols-2 gap-4">
+      <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Toggle
           label={t("stream_response")}
           checked={form.streamResponse !== false}
@@ -300,7 +300,7 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
         {advOpen && (
           <div className="border-t border-border2 bg-surface p-4">
             {/* Two-column sampler grid */}
-            <div className={cn("grid grid-cols-2 gap-x-6 gap-y-4", disabled && "opacity-40 pointer-events-none")}>
+            <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4", disabled && "opacity-40 pointer-events-none")}>
               {/* Left column: topP, topK, topA, minP */}
               <SamplerField
                 label={t("sampler_top_p")}

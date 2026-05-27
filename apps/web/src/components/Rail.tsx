@@ -6,8 +6,10 @@ import { avatarUrl } from "../lib/avatar.js";
 import { initials } from "./app-shell-helpers.js";
 import { useT } from "../i18n/context.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
+import { activateBranchAction } from "../stores/api-actions/chat-actions.js";
 import { useChatDataStore } from "../stores/chat-data-store.js";
 import { useNavigationStore, useChatStore, useModalStore } from "../stores/index.js";
+import { useCharacterStore } from "../stores/character-store.js";
 import { useBuildPanels } from "../hooks/use-build-panels.js";
 import type { ChatListItem } from "../app-client.js";
 
@@ -19,10 +21,13 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const allCharacters = useBootstrapStore((s) => s.data)?.allCharacters ?? [];
   const chatMeta = useChatDataStore((s) => s.chatMeta);
   const chats: ChatListItem[] = chatMeta?.chats ?? [];
+  const branches = chatMeta?.branches ?? [];
+  const activeBranchId = chatMeta?.activeBranch?.id ?? null;
   const buildPanels = useBuildPanels();
 
   const [expanded, setExpanded] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [branchesOpen, setBranchesOpen] = useState<string | null>(null);
 
   // Hamburger force-open from TopBar
   const forceOpen = useNavigationStore((s) => s.railForceOpen);
@@ -125,9 +130,10 @@ export function Rail({ hidden }: { hidden?: boolean }) {
     </div>
   );
 
-  return (hidden ? null : (
+  return (
     <>
-      {/* ═══ COLLAPSED RAIL ═══ */}
+      {/* ═══ COLLAPSED RAIL (hidden when rail is not visible) ═══ */}
+      {!hidden && (
       <div
         className="relative z-[200] flex w-[56px] min-w-[56px] shrink-0 flex-col items-center border-r border-border bg-surface"
         onTouchStart={onTouchStart}
@@ -146,7 +152,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
         <div className="flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-y-scroll overflow-x-hidden py-2">
           {mode === "build" ? (
             buildPanels.map((panel) => (
-              <Ico key={panel.id} icon={panel.icon} onClick={() => close()} title={t(panel.labelKey)} />
+              <Ico key={panel.id} icon={panel.icon} onClick={() => { useCharacterStore.getState().setBuildTab(panel.id); useNavigationStore.getState().setMode('build'); }} title={t(panel.labelKey)} />
             ))
           ) : (
             <>
@@ -215,11 +221,12 @@ export function Rail({ hidden }: { hidden?: boolean }) {
         {/* Bottom quick actions */}
         <div className="flex shrink-0 flex-col items-center gap-1 border-t border-border py-2">
           <Ico icon={<Ic.terminal />} onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)} title={t("prompt_manager")} />
-          <Ico icon={<Ic.stack />} onClick={() => { /* Memory modal skipped */ }} title={t("scenario_memory")} />
+          <Ico icon={<Ic.stack />} onClick={() => useModalStore.getState().setContextMemoryOpen(true)} title={t("scenario_memory")} />
           <Ico icon={<Ic.plug />} onClick={() => useModalStore.getState().setIsProviderModalOpen(true)} title={t("provider_settings_tooltip")} />
           <Ico icon={<Ic.sliders />} onClick={() => useModalStore.getState().setTweaksOpen(true)} title={t("interface_settings_tooltip")} />
         </div>
       </div>
+      )}
 
       {/* ═══ EXPANDED OVERLAY PANEL ═══ */}
       {expanded && (
@@ -255,7 +262,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
               {mode === "build" ? (
                 buildPanels.map((panel) => (
                   <Row key={panel.id} icon={panel.icon} label={t(panel.labelKey)}
-                       onClick={() => { close(); }} />
+                       onClick={() => { useCharacterStore.getState().setBuildTab(panel.id); close(); }} />
                 ))
               ) : (
                 <>
@@ -305,6 +312,35 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                               <span className="min-w-0 truncate text-[calc(var(--ui-fs)-4px)] text-t3">
                                 {ch.subtitle}
                               </span>
+
+                              {/* Branches toggle */}
+                              {branches.length > 0 && (
+                                <>
+                                <button
+                                  className="mt-1 flex min-h-[36px] items-center gap-1 text-[calc(var(--ui-fs)-4px)] text-t4 hover:text-t3"
+                                  onClick={(e) => { e.stopPropagation(); setBranchesOpen(branchesOpen === ch.id ? null : ch.id); }}
+                                >
+                                  <Ic.branch /> {branches.length} {t("branches")}
+                                </button>
+                                {branchesOpen === ch.id && (
+                                  <div className="mt-1 ml-2 flex flex-col gap-0.5 border-l border-border/30 pl-2">
+                                    {branches.map((b) => (
+                                      <div
+                                        key={b.id}
+                                        className={cn(
+                                          "flex cursor-pointer items-center gap-1.5 rounded-sm px-2 min-h-[40px] text-[calc(var(--ui-fs)-3px)] transition-colors active:bg-s3",
+                                          b.id === activeBranchId ? "text-accent-t font-medium" : "text-t3"
+                                        )}
+                                        onClick={(e) => { e.stopPropagation(); void activateBranchAction(ch.id as any, b.id as any); }}
+                                      >
+                                        <span className={cn("inline-block h-1.5 w-1.5 rounded-full shrink-0", b.id === activeBranchId ? "bg-accent" : "bg-border2")} />
+                                        <span className="truncate">{b.label}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                </>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -318,7 +354,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
             {/* Bottom quick actions */}
             <div className="flex shrink-0 flex-col gap-0.5 border-t border-border bg-s2/30 px-2 py-3">
               <NavRow icon={<Ic.terminal />} label={t("prompt_manager")} onClick={() => { useModalStore.getState().setIsPromptManagerOpen(true); close(); }} />
-              <NavRow icon={<Ic.stack />} label={t("scenario_memory")} onClick={() => { close(); }} />
+              <NavRow icon={<Ic.stack />} label={t("scenario_memory")} onClick={() => { useModalStore.getState().setContextMemoryOpen(true); close(); }} />
               <NavRow icon={<Ic.plug />} label={t("provider_settings_tooltip")} onClick={() => { useModalStore.getState().setIsProviderModalOpen(true); close(); }} />
               <NavRow icon={<Ic.sliders />} label={t("interface_settings_tooltip")} onClick={() => { useModalStore.getState().setTweaksOpen(true); close(); }} />
             </div>
@@ -326,5 +362,5 @@ export function Rail({ hidden }: { hidden?: boolean }) {
         </>
       )}
     </>
-  ));
+  );
 }

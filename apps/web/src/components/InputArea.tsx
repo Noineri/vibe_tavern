@@ -116,6 +116,16 @@ export function InputArea() {
 
   const sendButtonText = canSend || !draft.trim() ? t("send") : sendLabel || t("send_unavailable");
 
+  // ── Auto-expand textarea (mobile) ──
+  const mobileTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const adjustTextareaHeight = () => {
+    const ta = mobileTextareaRef.current;
+    if (ta) {
+      ta.style.height = 'auto';
+      ta.style.height = `${Math.min(ta.scrollHeight, window.innerHeight * 0.4)}px`;
+    }
+  };
+
   // ── Mobile: compact two-row input ──
   if (isMobile) {
     return (
@@ -179,16 +189,11 @@ export function InputArea() {
           {/* Input row */}
           <div className="flex items-end gap-2">
             <textarea
+              ref={mobileTextareaRef}
               className="max-h-[40vh] min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 pr-1 font-body text-[15px] leading-[1.4] text-t1 outline-none placeholder:text-t4 overflow-y-auto"
               placeholder={t("placeholder")}
               value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  if (canSend) void chat.handleSend();
-                }
-              }}
+              onChange={(event) => { setDraft(event.target.value); adjustTextareaHeight(); }}
               rows={1}
             />
             <div className="flex shrink-0 items-center">

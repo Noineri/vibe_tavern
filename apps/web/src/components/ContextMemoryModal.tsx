@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import type { ChatId } from "@rp-platform/domain";
 import { Icons } from "./shared/icons.js";
 import { Modal } from "./shared/Modal.js";
+import { MobileExpandTextarea } from "./shared/MobileExpandTextarea.js";
 import { useIsMobile } from "../hooks/use-mobile.js";
 import { SummaryTab, ContextFooter } from "./context/index.js";
 import type { SavedSummary } from "./context/SummaryTab.js";
@@ -47,6 +48,7 @@ export function ContextMemoryModal({
   const isMobile = useIsMobile();
   const [topTab, setTopTab] = useState<'summary' | 'memory'>('summary');
   const [summaryText, setSummaryText] = useState(currentSummary);
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [activeSummaryId, setActiveSummaryId] = useState<string | null>(null);
   const effectiveMax = Math.max(messageCount, 1);
   const [msgCount, setMsgCount] = useState(Math.min(Math.max(messageCount || 10, 1), effectiveMax));
@@ -244,6 +246,7 @@ export function ContextMemoryModal({
     if (record) {
       setSummaryText(record.text);
       setActiveSummaryId(id);
+      if (isMobile) setMobileDetailOpen(true);
     }
   };
 
@@ -274,55 +277,199 @@ export function ContextMemoryModal({
     persistRecords(updated);
   };
 
+  const activeSummaryName = activeSummaryId
+    ? savedSummaries.find(s => s.id === activeSummaryId)?.label ?? ''
+    : '';
+
   return (
     <Modal open={true} onClose={onClose}>
       <div className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "h-[min(85vh,680px)] max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[820px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
-        <div className={cn("shrink-0 border-b border-border", isMobile ? "px-4 pt-4" : "px-5 pt-[18px]")}>
-          <div className="flex items-start justify-between pb-3">
-            <div>
-              <div className={cn("font-body font-medium text-t1", isMobile ? "text-base" : "text-[calc(var(--ui-fs)+4px)] mb-0.5")}>{t("context_memory_title")}</div>
-              {!isMobile && <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("context_memory_sub")}</div>}
+        {/* ── HEADER ── */}
+        <div className={cn("shrink-0 border-b border-border", isMobile ? "px-3 py-2.5" : "px-5 pt-[18px]")}>
+          {isMobile && mobileDetailOpen ? (
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 hover:bg-s2 hover:text-t1" onClick={() => { setMobileDetailOpen(false); setActiveSummaryId(null); }}>
+                <span className="text-lg leading-none">←</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-body text-[calc(var(--ui-fs)+2px)] font-medium text-t1">{activeSummaryName}</div>
+              </div>
             </div>
-            <div className={cn("shrink-0 cursor-pointer items-center justify-center text-t3 transition-all hover:bg-s2 hover:text-t1", isMobile ? "flex h-10 w-10 rounded-lg active:bg-s2" : "flex h-[32px] w-[32px] rounded-[5px]")} onClick={onClose}><Icons.Close /></div>
-          </div>
-          <div className="flex gap-0 mt-1">
-            <div className={cn("cursor-pointer border-b-2 border-b-transparent px-4 py-2 font-ui text-xs font-medium text-t3 transition-all select-none hover:text-t2", topTab === 'summary' && "border-b-accent text-accent-t")} onClick={() => setTopTab('summary')}>{t("memory_v1_tab")}</div>
-          </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <div>
+                <div className={cn("font-body font-medium text-t1", isMobile ? "text-[calc(var(--ui-fs)+2px)]" : "text-[calc(var(--ui-fs)+4px)] mb-0.5")}>{t("context_memory_title")}</div>
+                {!isMobile && <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("context_memory_sub")}</div>}
+              </div>
+              <div
+                className={cn("shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1", isMobile ? "flex h-8 w-8" : "flex h-[32px] w-[32px]")}
+                onClick={onClose}
+              >
+                <Icons.Close />
+              </div>
+            </div>
+          )}
+          {!isMobile && (
+            <div className="flex gap-0 mt-1">
+              <div className={cn("cursor-pointer border-b-2 border-b-transparent px-4 py-2 font-ui text-xs font-medium text-t3 transition-all select-none hover:text-t2", topTab === 'summary' && "border-b-accent text-accent-t")} onClick={() => setTopTab('summary')}>{t("memory_v1_tab")}</div>
+            </div>
+          )}
         </div>
 
-        <SummaryTab
-          summaryText={summaryText}
-          onSummaryTextChange={setSummaryText}
-          msgCount={msgCount}
-          onMsgCountChange={setMsgCount}
-          maxMsgCount={effectiveMax}
-          selectedProviderId={selectedProviderId}
-          selectedModel={selectedModel}
-          onProviderChange={(id) => {
-            setSelectedProviderId(id);
-            setSelectedModel('');
-            setProviderModels([]);
-            handleAutosaveSettings(id, '');
-          }}
-          onModelChange={(model) => {
-            setSelectedModel(model);
-            handleAutosaveSettings(selectedProviderId, model);
-          }}
-          providers={providerOptions}
-          models={providerModels}
-          isLoadingModels={isLoadingModels}
-          onSummarize={handleSummarize}
-          isSummarizing={isSummarizing}
-          savedSummaries={savedSummaries}
-          activeSummaryId={activeSummaryId}
-          onSelectSummary={handleSelectSummary}
-          onDeleteSummary={handleDeleteSummary}
-          onToggleContext={handleToggleContext}
-          onNewSummary={() => { setSummaryText(''); setActiveSummaryId(null); }}
-          disabled={isDisabled}
-          error=""
-        />
+        {/* ── MOBILE: drill-down views ── */}
+        {isMobile ? (
+          <>
+            {mobileDetailOpen ? (
+              /* ── Mobile detail view ── */
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+                <label className="block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3 mb-[7px]">{t('summary_text_label')}</label>
+                <MobileExpandTextarea value={summaryText} onChange={setSummaryText} label={t('summary_text_label')}>
+                  <textarea
+                    className="w-full flex-1 min-h-[120px] resize-none rounded-md border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent"
+                    placeholder={t('summary_placeholder')}
+                    value={summaryText}
+                    disabled={isDisabled}
+                    onChange={e => setSummaryText(e.target.value)}
+                  />
+                </MobileExpandTextarea>
 
+                <div className="shrink-0 mt-3">
+                  <label className="block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3 mb-[7px]">{t('msg_to_summarize_label')}</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range" min={1} max={effectiveMax} value={msgCount}
+                      disabled={isDisabled || isSummarizing}
+                      onChange={e => setMsgCount(Number(e.target.value))}
+                      className="accent-accent h-2 flex-1 cursor-pointer rounded-full bg-s3"
+                    />
+                    <input
+                      type="number" min={1} max={effectiveMax} value={msgCount}
+                      disabled={isDisabled || isSummarizing}
+                      onChange={e => setMsgCount(Math.max(1, Math.min(effectiveMax, Number(e.target.value) || 1)))}
+                      className="h-[32px] w-[52px] rounded border border-border bg-s2 text-center font-ui text-[12px] text-t1 outline-none focus:border-accent px-1"
+                    />
+                  </div>
+                </div>
+
+                <div className="shrink-0 mt-3">
+                  <label className="block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3 mb-[7px]">{t('summarize_provider_label')}</label>
+                  <select
+                    value={selectedProviderId}
+                    disabled={isDisabled || isSummarizing}
+                    onChange={e => { setSelectedProviderId(e.target.value); setSelectedModel(''); setProviderModels([]); }}
+                    className="w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none pl-[13px]"
+                  >
+                    {providerOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+
+                <div className="shrink-0 mt-3">
+                  <label className="block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3 mb-[7px]">{t('summarize_model_label')}</label>
+                  <select
+                    value={selectedModel}
+                    disabled={isDisabled || isSummarizing || isLoadingModels}
+                    onChange={e => setSelectedModel(e.target.value)}
+                    className="w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none pl-[13px] disabled:opacity-60"
+                  >
+                    {isLoadingModels
+                      ? <option>{t('loading_models')}</option>
+                      : providerModels.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                </div>
+
+                <button
+                  className="mt-3 h-[38px] w-full shrink-0 cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-40"
+                  disabled={isDisabled || isSummarizing || !selectedProviderId || !selectedModel.trim()}
+                  onClick={handleSummarize}
+                >
+                  {isSummarizing ? t('summarizing_btn') : t('summarize_btn')}
+                </button>
+              </div>
+            ) : (
+              /* ── Mobile list view ── */
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                <div className="px-[13px] pt-2 pb-2 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.08em] text-t3">{t('saved_summaries_label')}</div>
+                {savedSummaries.length === 0 && (
+                  <div className="px-3 py-4 text-center font-ui text-[11px] text-t4">{t('no_saved_summaries')}</div>
+                )}
+                {savedSummaries.map(s => (
+                  <div
+                    key={s.id}
+                    className={cn(
+                      "group flex cursor-pointer items-center gap-1 border-l-2 border-l-transparent px-4 py-3 transition-colors hover:bg-s2",
+                      activeSummaryId === s.id && "border-l-accent bg-accent-dim",
+                    )}
+                    onClick={() => handleSelectSummary(s.id)}
+                  >
+                    {handleToggleContext && (
+                      <button
+                        className={cn("flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded border transition-colors mr-1",
+                          s.includeInContext ? "border-accent bg-accent text-white" : "border-border2 bg-transparent")}
+                        onClick={e => { e.stopPropagation(); handleToggleContext(s.id); }}
+                      >
+                        {s.includeInContext && <Icons.Check />}
+                      </button>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className={cn("truncate font-ui text-[12px]", activeSummaryId === s.id ? "font-medium text-accent-t" : "text-t2")}>{s.label}</div>
+                      <div className="truncate font-ui text-[10px] text-t4">{s.timestamp}</div>
+                    </div>
+                    <div className="shrink-0 px-2 py-1 text-t3">
+                      <Icons.Caret direction="r" />
+                    </div>
+                  </div>
+                ))}
+                <div className="shrink-0 border-t border-border px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] mt-auto">
+                  <button
+                    className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                    disabled={isDisabled}
+                    onClick={() => { setSummaryText(''); setActiveSummaryId(null); if (isMobile) setMobileDetailOpen(true); }}
+                  >
+                    <Icons.Plus /> {t('new_summary_entry')}
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          /* ── Desktop: two-column SummaryTab ── */
+          <SummaryTab
+            summaryText={summaryText}
+            onSummaryTextChange={setSummaryText}
+            msgCount={msgCount}
+            onMsgCountChange={setMsgCount}
+            maxMsgCount={effectiveMax}
+            selectedProviderId={selectedProviderId}
+            selectedModel={selectedModel}
+            onProviderChange={(id) => {
+              setSelectedProviderId(id);
+              setSelectedModel('');
+              setProviderModels([]);
+              handleAutosaveSettings(id, '');
+            }}
+            onModelChange={(model) => {
+              setSelectedModel(model);
+              handleAutosaveSettings(selectedProviderId, model);
+            }}
+            providers={providerOptions}
+            models={providerModels}
+            isLoadingModels={isLoadingModels}
+            onSummarize={handleSummarize}
+            isSummarizing={isSummarizing}
+            savedSummaries={savedSummaries}
+            activeSummaryId={activeSummaryId}
+            onSelectSummary={handleSelectSummary}
+            onDeleteSummary={handleDeleteSummary}
+            onToggleContext={handleToggleContext}
+            onNewSummary={() => { setSummaryText(''); setActiveSummaryId(null); }}
+            disabled={isDisabled}
+            error=""
+          />
+        )}
+
+        {/* ── FOOTER: only on desktop or mobile detail ── */}
+        {(!isMobile || mobileDetailOpen) && (
+        <div className="shrink-0 pb-[env(safe-area-inset-bottom,0px)]">
         <ContextFooter
           topTab={topTab}
           onClose={onClose}
@@ -332,6 +479,8 @@ export function ContextMemoryModal({
           isSaving={isSaving}
           autoSaveFlash={autosaveFlash}
         />
+        </div>
+        )}
       </div>
     </Modal>
   );

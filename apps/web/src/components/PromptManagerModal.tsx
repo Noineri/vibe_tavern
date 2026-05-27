@@ -263,7 +263,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           <PresetList
             presets={input.presets.map((p) => ({ id: p.id, name: p.name }))}
             activePresetId={input.activePresetId}
-            onSelect={(id) => { input.setActivePresetId(id); if (isMobile) setMobileDetailOpen(true); }}
+            onSelect={(id) => { input.setActivePresetId(id); }}
+            onDrillDown={(id) => { input.setActivePresetId(id); if (isMobile) setMobileDetailOpen(true); }}
             onAdd={handleAdd}
             onRename={handleRename}
             onImportPreset={() => setImportModalOpen(true)}
@@ -298,31 +299,33 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2.5 border-t border-border py-3.5 px-5">
+        {(!isMobile || mobileDetailOpen) && (
+        <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "py-2.5 px-3" : "py-3.5 px-5")}>
+          {activePreset && (
           <span
-            className={cn(
-              "flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1",
-              !activePreset && "pointer-events-none opacity-45"
-            )}
-            onClick={activePreset ? handleDuplicate : undefined}
+            className={cn("flex cursor-pointer items-center gap-1 font-ui text-t3 transition-all hover:text-t1", isMobile ? "text-[12px]" : "text-[calc(var(--ui-fs)-2px)]")}
+            onClick={handleDuplicate}
           >
-            <Icons.Copy /> {t("duplicate_preset")}
+            <Icons.Copy /> {t("duplicate_preset_btn")}
           </span>
+          )}
           {activePreset && input.presets.length > 1 && (
             <span
-              className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
+              className={cn("flex cursor-pointer items-center gap-1 font-ui text-t3 transition-all hover:text-t1", isMobile ? "text-[12px]" : "text-[calc(var(--ui-fs)-2px)]")}
               onClick={() => setConfirmDeleteOpen(true)}
             >
               <Icons.Trash /> {t("delete_preset")}
             </span>
           )}
           <div className="ml-auto flex items-center gap-2.5">
+            {!isMobile && (
             <button
               className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1"
               onClick={handleClose}
             >
               {t("close")}
             </button>
+            )}
             <SaveButton
               dirty={dirty}
               saveState={saveState}
@@ -331,6 +334,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             />
           </div>
         </div>
+        )}
       </div>
     </Modal>
   );

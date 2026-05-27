@@ -1,6 +1,7 @@
 import React, { useCallback, useLayoutEffect, useRef } from "react";
 import { cn } from "../../lib/cn.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
+import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { PrefillField } from "./PrefillField.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { useT } from "../../i18n/context.js";
@@ -153,7 +154,8 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey 
   const { t } = useT();
   const disabled = !draft;
 
-  const ta = useCallback((key: TextDraftKey, placeholder: string, minH = 100) => (
+  const ta = useCallback((key: TextDraftKey, placeholder: string, minH = 100, labelKey?: string) => (
+    <MobileExpandTextarea value={String(draft?.[key] ?? "")} onChange={(v) => onUpdateField(key, v)} label={labelKey ? t(labelKey) : undefined}>
     <AutoResizeTextarea
       fieldKey={key}
       value={String(draft?.[key] ?? "")}
@@ -163,6 +165,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey 
       resetKey={resetKey}
       onChange={(value) => onUpdateField(key, value)}
     />
+    </MobileExpandTextarea>
   ), [draft, disabled, onUpdateField, resetKey]);
 
   return (

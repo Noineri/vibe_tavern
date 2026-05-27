@@ -11,6 +11,7 @@ import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useT } from "../../i18n/context.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
+import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 
 export interface CharacterFormProps {
   form: UseFormReturn<BuildCharacterDraft>;
@@ -335,14 +336,18 @@ export function CharacterForm({
       {/* Description */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("char_desc_label")}</label>
-        <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 100 }} disabled={isSaving} register={register("description")} />
+        <MobileExpandTextarea value={description || ""} onChange={(v) => setValue("description", v)} label={t("char_desc_label")}>
+          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 100 }} disabled={isSaving} register={register("description")} />
+        </MobileExpandTextarea>
         <TokenBadge text={description || ""} />
       </div>
 
       {/* First Message */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("first_message_greeting")}</label>
-        <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} placeholder={t("first_message_placeholder")} register={register("firstMessage")} />
+        <MobileExpandTextarea value={firstMessage || ""} onChange={(v) => setValue("firstMessage", v)} label={t("first_message_label")}>
+          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} placeholder={t("first_message_placeholder")} register={register("firstMessage")} />
+        </MobileExpandTextarea>
         <TokenBadge text={firstMessage || ""} />
       </div>
 
@@ -423,21 +428,27 @@ export function CharacterForm({
             </div>
           </div>
         </div>
-        <AutoTextarea className={monoCls + mInput} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} placeholder="<START>..." register={register("mesExample")} />
+        <MobileExpandTextarea value={mesExample || ""} onChange={(v) => setValue("mesExample", v)} label={t("char_mes_example_label")}>
+          <AutoTextarea className={monoCls + mInput} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} placeholder="<START>..." register={register("mesExample")} />
+        </MobileExpandTextarea>
         <TokenBadge text={mesExample || ""} />
       </div>
 
       {/* Scenario */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("scenario")}</label>
-        <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 100 }} disabled={isSaving} register={register("scenario")} />
+        <MobileExpandTextarea value={scenario || ""} onChange={(v) => setValue("scenario", v)} label={t("char_scenario_label")}>
+          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 100 }} disabled={isSaving} register={register("scenario")} />
+        </MobileExpandTextarea>
         <TokenBadge text={scenario || ""} />
       </div>
 
       {/* Personality Summary */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("char_personality_label")}</label>
-        <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} register={register("personalitySummary")} />
+        <MobileExpandTextarea value={personalitySummary || ""} onChange={(v) => setValue("personalitySummary", v)} label={t("char_personality_summary_label")}>
+          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} register={register("personalitySummary")} />
+        </MobileExpandTextarea>
         <TokenBadge text={personalitySummary || ""} />
       </div>
 
@@ -449,14 +460,18 @@ export function CharacterForm({
       {/* Post-History Instructions */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("post_history_instructions")}</label>
-        <AutoTextarea className={monoCls + mInput} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("post_history_placeholder")} register={register("postHistoryInstructions")} />
+        <MobileExpandTextarea value={postHistoryInstructions || ""} onChange={(v) => setValue("postHistoryInstructions", v)} label={t("post_history_label")}>
+          <AutoTextarea className={monoCls + mInput} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("post_history_placeholder")} register={register("postHistoryInstructions")} />
+        </MobileExpandTextarea>
         <TokenBadge text={postHistoryInstructions || ""} />
       </div>
 
       {/* Creator Notes */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("creator_notes")}</label>
-        <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("creator_notes_placeholder")} register={register("creatorNotes")} />
+        <MobileExpandTextarea value={creatorNotes || ""} onChange={(v) => setValue("creatorNotes", v)} label={t("creator_notes_label")}>
+          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("creator_notes_placeholder")} register={register("creatorNotes")} />
+        </MobileExpandTextarea>
         <TokenBadge text={creatorNotes || ""} />
       </div>
 
@@ -492,14 +507,18 @@ export function CharacterForm({
             </div>
           </div>
         </div>
-        <AutoTextarea className={monoCls + mInput} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("depth_prompt_placeholder")} register={register("depthPrompt")} />
+        <MobileExpandTextarea value={depthPrompt || ""} onChange={(v) => setValue("depthPrompt", v)} label={t("depth_prompt_label")}>
+          <AutoTextarea className={monoCls + mInput} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("depth_prompt_placeholder")} register={register("depthPrompt")} />
+        </MobileExpandTextarea>
         <TokenBadge text={depthPrompt || ""} />
       </div>
 
       {/* System Prompt Override */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("system_prompt_override")}</label>
-        <AutoTextarea className={monoCls + mInput} style={{ ...inputPad, minHeight: 80 }} disabled={isSaving} placeholder={t("system_prompt_override_placeholder")} register={register("systemPrompt")} />
+        <MobileExpandTextarea value={systemPrompt || ""} onChange={(v) => setValue("systemPrompt", v)} label={t("system_prompt_label")}>
+          <AutoTextarea className={monoCls + mInput} style={{ ...inputPad, minHeight: 80 }} disabled={isSaving} placeholder={t("system_prompt_override_placeholder")} register={register("systemPrompt")} />
+        </MobileExpandTextarea>
         <TokenBadge text={systemPrompt || ""} />
       </div>
 
