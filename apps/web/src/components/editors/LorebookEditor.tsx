@@ -509,7 +509,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
 
   // ── Lorebook list ─────────────────────────────────────────
   const lorebookListContent = (
-    <div className={cn("flex-1 overflow-y-auto", isMobile && "[&_button]:min-h-[44px] [&_input]:text-base [&_textarea]:text-base [&_select]:text-base")} style={{ padding: isMobile ? "12px" : "20px 24px" }}>
+    <div className={cn("flex-1 overflow-y-auto pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]", isMobile && "[&_button]:min-h-[44px] [&_input]:text-base [&_textarea]:text-base [&_select]:text-base")} style={{ padding: isMobile ? "12px" : "20px 24px" }}>
       {lorebooks.length === 0 && (
         <div className="py-10 text-center">
           <div className="mb-2 text-[13px] text-t3">{t("lore_no_entries")}</div>
@@ -958,7 +958,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
   const modals = <>{scriptPanel.modals}{importModal}{confirmDeleteEntryModal}{confirmDeleteLorebookModal}</>;
 
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden">
+    <div className="relative flex h-full w-full flex-col overflow-hidden min-h-0">
       {modals}
       {isMobile ? (
         <>
