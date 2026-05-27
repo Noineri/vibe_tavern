@@ -206,3 +206,12 @@ select option{padding:2px 6px}
   .sidebar.mobile-open{transform:translateX(0)}
   .mobile-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199}
 }
+
+/* Scrollable containers — hide scrollbar on mobile */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

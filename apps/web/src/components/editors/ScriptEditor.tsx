@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { fetchProviderModelsAction } from "../../stores/api-actions/provider-actions.js";
 import { Ic } from "../shared/icons.js";
+import { useIsMobile } from "../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { CodeEditor } from "../shared/CodeEditor.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
@@ -54,6 +55,7 @@ function cleanAiCode(raw: string): string {
 
 export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEditor, onBackToList }: ScriptPanelProps) {
   const { t } = useT();
+  const isMobile = useIsMobile();
 
   const [activeScriptId, setActiveScriptIdRaw] = useState<string | null>(null);
   const setActiveScriptId = (id: string | null) => {
@@ -363,7 +365,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
   // ── Script list (for LorebookEditor list view) ────────────
   const scriptListContent = (
-    <div className="flex-1 overflow-y-auto" style={{ padding: "20px 24px" }}>
+    <div className="flex-1 overflow-y-auto" style={{ padding: isMobile ? "12px" : "20px 24px" }}>
       {scripts.length === 0 ? (
         <div className="py-10 text-center">
           <div className="mb-2 text-[13px] text-t3">{t("script_no_scripts")}</div>
