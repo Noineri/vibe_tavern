@@ -27,3 +27,5 @@ export const useNavigationStore = create<NavigationStore>()((set) => ({
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   triggerRailOpen: () => set(s => ({ railForceOpen: s.railForceOpen + 1 })),
 }));
+
+if (typeof window !== "undefined") (window as any).__useNavigationStore = useNavigationStore;

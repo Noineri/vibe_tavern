@@ -45,3 +45,5 @@ export const useCharacterStore = create<CharacterStore>()((set) => ({
   setRenameDraft: (draft) => set({ renameDraft: draft }),
   setIsSavingCharacter: (saving) => set({ isSavingCharacter: saving }),
 }));
+
+if (typeof window !== "undefined") (window as any).__useCharacterStore = useCharacterStore;

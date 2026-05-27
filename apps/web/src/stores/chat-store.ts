@@ -82,3 +82,5 @@ export const useChatStore = create<ChatStore>()((set) => ({
   setStreamingText: (text) => set({ streamingText: text }),
   setStreamingReasoningText: (text) => set({ streamingReasoningText: text }),
 }));
+
+if (typeof window !== "undefined") (window as any).__useChatStore = useChatStore;

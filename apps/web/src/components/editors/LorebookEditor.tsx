@@ -75,6 +75,14 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => { ensureAnimStyle(); return () => clearTimeout(timer.current); }, []);
 
+  // Expose internal state for automated testing/screenshots
+  useEffect(() => {
+    (window as any).__setLorebookView = setView;
+    (window as any).__setLorebookTab = setTab;
+    (window as any).__getLorebookView = () => view;
+    return () => { delete (window as any).__setLorebookView; delete (window as any).__setLorebookTab; delete (window as any).__getLorebookView; };
+  }, [view]);
+
   const handlePick = (target: Tab) => {
     setTab(target);
     setFadingTab(target);
@@ -905,7 +913,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
 
   // ── Header bar ───────────────────────────────────────────
   const headerBar = (
-    <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface" style={{ padding: isMobile ? "10px 12px" : "10px 20px" }}>
+    <div className="w-full flex shrink-0 items-center gap-2 border-b border-border bg-surface" style={{ padding: isMobile ? "10px 12px" : "10px 20px" }}>
       <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={handleBackToPick}>{Ic.caret("l")}</div>
       <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t">{tab === "lorebooks" ? <Ic.book /> : <Ic.terminal />}</div>
       <span className="font-ui text-[14px] font-semibold text-t1">{tab === "lorebooks" ? t("lorebooks_card_title") : t("scripts_card_title")}</span>
@@ -955,8 +963,8 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
       {isMobile ? (
         <>
           {view === "list" && (
-            <div className={cn("flex flex-1 flex-col overflow-hidden", listAnim)}>
-              <div className={headerAnim}>{headerBar}</div>
+            <div className={cn("w-full flex flex-1 flex-col overflow-hidden", listAnim)}>
+              <div className={cn("w-full", headerAnim)}>{headerBar}</div>
               {scopeBarMobile}
               {tab === "lorebooks" ? lorebookListContent : scriptPanel.scriptListContent}
             </div>

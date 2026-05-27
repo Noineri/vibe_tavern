@@ -301,8 +301,8 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
   // ── Mobile: fullscreen editor (navigation via Rail) ──
   if (isMobile) {
     return (
-      <div className="flex h-full flex-col">
-        <div className="flex-1 overflow-y-auto p-4">
+      <div className={cn("flex h-full flex-col", !isFullBleed && "p-4")}>
+        <div className={cn("flex-1", !isFullBleed && "overflow-y-auto")}>
           {renderPanelContent()}
         </div>
       </div>
