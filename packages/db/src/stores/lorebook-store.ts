@@ -16,6 +16,8 @@ export interface CreateLorebookData {
   recursiveScanning?: boolean;
   maxRecursionSteps?: number;
   includeNames?: boolean;
+  minActivations?: number;
+  minActivationsDepthMax?: number;
   sortOrder?: number;
   enabled?: boolean;
   characterId?: string | null;
@@ -78,6 +80,8 @@ export interface Lorebook {
   recursiveScanning: boolean;
   maxRecursionSteps: number;
   includeNames: boolean;
+  minActivations: number;
+  minActivationsDepthMax: number;
   sortOrder: number;
   enabled: boolean;
   characterId: string | null;
@@ -194,6 +198,8 @@ export class LorebookStore {
         recursiveScanning: (data.recursiveScanning ?? false) ? 1 : 0,
         maxRecursionSteps: data.maxRecursionSteps ?? 5,
         includeNames: data.includeNames ? 1 : 0,
+        minActivations: data.minActivations ?? 0,
+        minActivationsDepthMax: data.minActivationsDepthMax ?? 0,
         sortOrder: data.sortOrder ?? 0,
         enabled: (data.enabled ?? true) ? 1 : 0,
         characterId: data.characterId ?? null,
@@ -225,6 +231,8 @@ export class LorebookStore {
     if (data.recursiveScanning !== undefined) values.recursiveScanning = data.recursiveScanning ? 1 : 0;
     if (data.maxRecursionSteps !== undefined) values.maxRecursionSteps = data.maxRecursionSteps;
     if (data.includeNames !== undefined) values.includeNames = data.includeNames ? 1 : 0;
+    if (data.minActivations !== undefined) values.minActivations = data.minActivations;
+    if (data.minActivationsDepthMax !== undefined) values.minActivationsDepthMax = data.minActivationsDepthMax;
     if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
     if (data.enabled !== undefined) values.enabled = data.enabled ? 1 : 0;
     if (data.characterId !== undefined) values.characterId = data.characterId;
@@ -506,6 +514,8 @@ export class LorebookStore {
       recursiveScanning: row.recursiveScanning === 1,
       maxRecursionSteps: row.maxRecursionSteps,
       includeNames: row.includeNames === 1,
+      minActivations: row.minActivations,
+      minActivationsDepthMax: row.minActivationsDepthMax,
       sortOrder: row.sortOrder,
       enabled: row.enabled === 1,
       characterId: row.characterId,
@@ -565,6 +575,8 @@ export class LorebookStore {
       recursiveScanning: row.recursiveScanning === 1,
       maxRecursionSteps: row.maxRecursionSteps,
       includeNames: row.includeNames === 1,
+      minActivations: row.minActivations,
+      minActivationsDepthMax: row.minActivationsDepthMax,
       sortOrder: row.sortOrder,
       enabled: row.enabled === 1,
       characterId: row.characterId,

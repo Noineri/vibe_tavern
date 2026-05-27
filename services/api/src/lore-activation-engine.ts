@@ -31,6 +31,8 @@ export interface ActivationInput {
     recursiveScanning: boolean;
     maxRecursionSteps: number;
     includeNames: boolean;
+    minActivations: number;
+    minActivationsDepthMax: number;
     entries: Array<{
       id: string;
       title: string;
@@ -193,11 +195,22 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   // Recursion buffer: text from activated entries (for recursive scanning)
   let recurseBuffer = "";
 
-  // ── Pass 1: Normal scan ──────────────────────────────────────────────────
-  console.debug("[lore] Pass 1: Normal scan — %d entries, %d messages", allEntries.length, input.messages.length);
-  let normalActivated = 0;
-  for (const entry of allEntries) {
-    const result = tryActivateEntry({
+  // ── Min activations setup ──────────────────────────────────────────────
+  const minActivations = Math.max(0, ...input.lorebooks.map(lb => lb.minActivations || 0));
+  const depthMax = Math.max(0, ...input.lorebooks.map(lb => lb.minActivationsDepthMax || 0));
+  let depthSkew = 0;
+
+  // ── Normal scan (with min-activations retry loop) ──────────────────────
+  let normalScanRetry = true;
+  while (normalScanRetry) {
+    normalScanRetry = false;
+
+    console.debug("[lore] Pass: Normal scan — %d entries, skew=%d", allEntries.length, depthSkew);
+    let normalActivated = 0;
+    for (const entry of allEntries) {
+      if (activatedIds.has(entry.id) || failedProbabilityIds.has(entry.id)) continue;
+
+      const result = tryActivateEntry({
       entry, macroMap, characterName, mode, currentTurn,
       scanText: buildScanText(entry, input.messages, scanDepths, input),
       scanState: "normal",
@@ -215,7 +228,16 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
     } else if (result === "failed_probability") {
       failedProbabilityIds.add(entry.id);
     }
-	console.debug("[lore] Pass 1 done: %d activated, %d total, recurseBuffer=%d chars", normalActivated, activated.length, recurseBuffer.length);
+    }
+
+	console.debug("[lore] Pass done: %d activated, %d total", normalActivated, activated.length);
+
+    // Min activations retry
+    if (minActivations > 0 && activated.length < minActivations && depthSkew < depthMax) {
+      depthSkew++;
+      console.debug("[lore] Min activations not met (%d/%d), advancing depth to +%d", activated.length, minActivations, depthSkew);
+      normalScanRetry = true;
+    }
   }
 
   // ── Pass 2+: Recursive scans ─────────────────────────────────────────────
@@ -447,8 +469,9 @@ function buildScanText(
   messages: Array<{ role: string; content: string }>,
   scanDepths: Map<string, number>,
   input: ActivationInput,
+  depthSkew = 0,
 ): string {
-  const scanDepth = entry.scanDepthOverride ?? (scanDepths.get(entry.lorebookId) ?? 2);
+  const scanDepth = (entry.scanDepthOverride ?? (scanDepths.get(entry.lorebookId) ?? 2)) + depthSkew;
   const effectiveMessages = messages.slice(-scanDepth);
   const parts: string[] = [];
   const sources = entry.matchSources.length > 0 ? entry.matchSources : ["chat_messages"];

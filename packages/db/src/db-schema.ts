@@ -82,6 +82,8 @@ export const lorebooks = sqliteTable('lorebooks', {
   recursiveScanning: integer('recursive_scanning').notNull().default(0),
   maxRecursionSteps: integer('max_recursion_steps').notNull().default(5),
   includeNames: integer('include_names').notNull().default(0),
+  minActivations: integer('min_activations').notNull().default(0),
+  minActivationsDepthMax: integer('min_activations_depth_max').notNull().default(0),
   sortOrder: integer('sort_order').notNull().default(0),
   characterId: text('character_id').references(() => characters.id, { onDelete: 'cascade' }),
   personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
