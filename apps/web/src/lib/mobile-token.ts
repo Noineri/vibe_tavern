@@ -1,4 +1,4 @@
-const STORAGE_KEY = "rp_mobile_token";
+const STORAGE_KEY = "vibe_mobile_token";
 
 /** Extract token from URL hash (#token=...) if present.
  *  Returns the token if found (and removes hash from URL), or null. */
