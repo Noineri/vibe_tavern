@@ -190,6 +190,8 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   let recurseBuffer = "";
 
   // ── Pass 1: Normal scan ──────────────────────────────────────────────────
+  console.debug("[lore] Pass 1: Normal scan — %d entries, %d messages", allEntries.length, input.messages.length);
+  let normalActivated = 0;
   for (const entry of allEntries) {
     const result = tryActivateEntry({
       entry, macroMap, characterName, mode, currentTurn,
@@ -199,6 +201,8 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       updatedState, activatedIds, failedProbabilityIds,
     });
     if (result === "activated") {
+      normalActivated++;
+      console.debug("[lore]   activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
       activatedIds.add(entry.id);
       activated.push(toActivatedEntry(entry));
       if (!entry.preventRecursion) {
@@ -207,18 +211,21 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
     } else if (result === "failed_probability") {
       failedProbabilityIds.add(entry.id);
     }
+	console.debug("[lore] Pass 1 done: %d activated, %d total, recurseBuffer=%d chars", normalActivated, activated.length, recurseBuffer.length);
   }
 
   // ── Pass 2+: Recursive scans ─────────────────────────────────────────────
   if (!anyRecursiveScanning || recurseBuffer.trim().length === 0) {
-    // No recursion needed — skip
+    console.debug("[lore] Recursive scanning skipped (enabled=%s, buffer=%d)", anyRecursiveScanning, recurseBuffer.trim().length);
   } else {
+    console.debug("[lore] Recursive scanning START — maxSteps=%d, delayLevels=%o", maxSteps, recursionDelayLevels);
     let loopCount = 0;
-    let delayLevelIdx = 0; // tracks which delay-until-recursion level we're at
+    let delayLevelIdx = 0;
     let currentRecursionLevel = recursionDelayLevels[0] ?? 1;
 
     while (loopCount < maxSteps) {
       loopCount++;
+      console.debug("[lore]   Recursion pass #%d — level=%d, buffer=%d chars", loopCount, currentRecursionLevel, recurseBuffer.length);
       let newActivations = 0;
       let newRecurseText = "";
 
@@ -235,6 +242,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
           updatedState, activatedIds, failedProbabilityIds,
         });
         if (result === "activated") {
+          console.debug("[lore]   [recursion] activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
           activatedIds.add(entry.id);
           activated.push(toActivatedEntry(entry));
           newActivations++;
@@ -245,6 +253,8 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
           failedProbabilityIds.add(entry.id);
         }
       }
+
+      console.debug("[lore]   Recursion pass #%d done: %d activated", loopCount, newActivations);
 
       // Add new content to recurse buffer for next pass
       if (newRecurseText) {
@@ -274,6 +284,8 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   // Token budget per lorebook
   const budgeted = applyTokenBudget(activated, input.lorebooks, input.estimateTokenCount);
 
+  console.debug("[lore] DONE: %d entries activated, %d after budget, %d after groups", activated.length, budgeted.length, budgeted.length);
+
   return { activatedEntries: budgeted, updatedState };
 }
 
@@ -299,38 +311,33 @@ function tryActivateEntry(ctx: {
   failedProbabilityIds: Set<string>;
 }): "activated" | "failed_probability" | "skipped" {
   const { entry, macroMap, characterName, mode, currentTurn, scanText, scanState, currentRecursionLevel, updatedState, activatedIds } = ctx;
+  const reason = (msg: string): "skipped" => { console.debug("[lore]   skip %s: %s | title=%s", entry.id, msg, entry.title); return "skipped"; };
 
-  if (!entry.enabled) return "skipped";
+  if (!entry.enabled) return reason("disabled");
   if (activatedIds.has(entry.id)) return "skipped";
 
   // 1. Trigger filter
-  if (entry.triggers.length > 0 && !entry.triggers.includes(mode)) return "skipped";
+  if (entry.triggers.length > 0 && !entry.triggers.includes(mode)) return reason("trigger filter");
 
   // 2. Character filter
   if (entry.characterFilter.length > 0) {
     const matches = entry.characterFilter.includes(characterName);
-    if (entry.characterFilterExclude ? matches : !matches) return "skipped";
+    if (entry.characterFilterExclude ? matches : !matches) return reason("character filter");
   }
 
   // 3. Recursion-specific filters
   if (scanState === "recursion") {
-    // excludeRecursion: entry activates in normal scan but is excluded from recursion
-    if (entry.excludeRecursion) return "skipped";
-
-    // delayUntilRecursion: entry ONLY activates during recursion
+    if (entry.excludeRecursion) return reason("exclude recursion");
     if (entry.delayUntilRecursion) {
       const entryLevel = entry.recursionLevel || 1;
-      if (entryLevel > currentRecursionLevel) return "skipped";
-      // Level satisfied — continue to normal activation logic below
+      if (entryLevel > currentRecursionLevel) return reason("recursion level not reached");
     }
   } else {
-    // Normal scan: skip delay-until-recursion entries (unless sticky/constant)
     if (entry.delayUntilRecursion && !entry.constant) {
-      // Check if sticky overrides
       const state = updatedState[entry.id];
       if (!(entry.stickyWindow > 0 && state?.activatedAtTurn != null &&
             currentTurn - state.activatedAtTurn < entry.stickyWindow)) {
-        return "skipped";
+        return reason("delayed until recursion");
       }
     }
   }
@@ -340,8 +347,9 @@ function tryActivateEntry(ctx: {
     const state = updatedState[entry.id];
     if (entry.cooldownWindow > 0 && state?.lastMatchedAtTurn != null) {
       const turnsSince = currentTurn - state.lastMatchedAtTurn;
-      if (turnsSince < entry.cooldownWindow) return "skipped";
+      if (turnsSince < entry.cooldownWindow) return reason("cooldown");
     }
+    console.debug("[lore]   actv %s: constant | title=%s", entry.id, entry.title);
     updatedState[entry.id] = { ...state, activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
     return "activated";
   }
@@ -351,7 +359,7 @@ function tryActivateEntry(ctx: {
   if (entry.stickyWindow > 0 && state?.activatedAtTurn != null) {
     const turnsSinceActivation = currentTurn - state.activatedAtTurn;
     if (turnsSinceActivation < entry.stickyWindow) {
-      // Still sticky — force activate, skip probability
+      console.debug("[lore]   actv %s: sticky | title=%s", entry.id, entry.title);
       updatedState[entry.id] = { ...state, lastMatchedAtTurn: currentTurn };
       return "activated";
     }
@@ -360,13 +368,12 @@ function tryActivateEntry(ctx: {
   // 6. Cooldown check
   if (entry.cooldownWindow > 0 && state?.lastMatchedAtTurn != null) {
     const turnsSince = currentTurn - state.lastMatchedAtTurn;
-    if (turnsSince < entry.cooldownWindow) return "skipped";
+    if (turnsSince < entry.cooldownWindow) return reason("cooldown");
   }
 
   // 7. Delay check
   if (entry.delayWindow > 0 && state?.pendingDelayUntilTurn != null) {
-    if (currentTurn < state.pendingDelayUntilTurn) return "skipped";
-    // Delay satisfied — activate
+    if (currentTurn < state.pendingDelayUntilTurn) return reason("delay pending");
     updatedState[entry.id] = { activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
     return "activated";
   }
@@ -376,26 +383,30 @@ function tryActivateEntry(ctx: {
   const resolvedSecondaryKeys = entry.secondaryKeys.map(k => applyMacros(k, macroMap));
 
   const matchedKeys = matchKeys(resolvedKeys, scanText, entry.caseSensitive, entry.matchWholeWords);
-  if (matchedKeys.length === 0) return "skipped";
+  if (matchedKeys.length === 0) return reason("no key match");
 
   // 9. Secondary key logic
   if (entry.secondaryKeys.length > 0) {
     const secondaryMatches = matchKeys(resolvedSecondaryKeys, scanText, entry.caseSensitive, entry.matchWholeWords);
-    if (!checkLogic(entry.logic, secondaryMatches.length, entry.secondaryKeys.length)) return "skipped";
+    if (!checkLogic(entry.logic, secondaryMatches.length, entry.secondaryKeys.length)) return reason("secondary keys fail");
   }
 
   // 10. Probability check
   if (entry.probability < 100) {
-    if (Math.random() * 100 >= entry.probability) return "failed_probability";
+    if (Math.random() * 100 >= entry.probability) {
+      console.debug("[lore]   fail %s: probability %d%% | title=%s", entry.id, entry.probability, entry.title);
+      return "failed_probability";
+    }
   }
 
   // 11. Delay — if delayWindow > 0 and this is first match, set pending
   if (entry.delayWindow > 0 && state?.activatedAtTurn == null) {
     updatedState[entry.id] = { pendingDelayUntilTurn: currentTurn + entry.delayWindow };
-    return "skipped";
+    return reason("delay window set");
   }
 
   // 12. Activate
+  console.debug("[lore]   actv %s: key match | title=%s", entry.id, entry.title);
   updatedState[entry.id] = { activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
   return "activated";
 }
@@ -516,6 +527,7 @@ function applyInclusionGroups(
   allEntries: FlatEntry[],
 ): void {
   const entryMap = new Map(allEntries.map(e => [e.id, e]));
+  console.debug("[lore] Group filter — %d activated entries with groups", activated.filter(e => entryMap.get(e.id)?.group).length);
 
   // Group activated entries by group name
   const groups = new Map<string, ActivationResult["activatedEntries"]>();
@@ -532,12 +544,13 @@ function applyInclusionGroups(
 
   const removeIds = new Set<string>();
 
-  for (const [, groupEntries] of groups) {
+  for (const [groupName, groupEntries] of groups) {
     if (groupEntries.length <= 1) continue;
 
     // prioritizeInclusion (ST: groupOverride) → auto-wins
     const prioWinner = groupEntries.find(e => entryMap.get(e.id)?.prioritizeInclusion);
     if (prioWinner) {
+      console.debug("[lore]   group '%s': prio winner=%s, removing %d others", groupName, entryMap.get(prioWinner.id)?.title, groupEntries.length - 1);
       for (const e of groupEntries) {
         if (e.id !== prioWinner.id) removeIds.add(e.id);
       }

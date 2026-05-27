@@ -550,6 +550,17 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   const orderedLayers = sortLayers(modeFilteredLayers).filter((layer) => layer.text.length > 0);
   const totalTokenEstimate = orderedLayers.reduce((sum, layer) => sum + layer.tokenCount, 0);
 
+  console.log(`[assemble] ${orderedLayers.length} layers, ${totalTokenEstimate} tokens estimated`);
+  for (const layer of orderedLayers) {
+    console.log(`  [layer] ${layer.id} | ${layer.sourceType} | pos=${layer.position} | pri=${layer.priority} | tokens=${layer.tokenCount} | len=${layer.text.length} | text=${layer.text.slice(0, 80).replace(/\n/g, '↵')}...`);
+  }
+  if (droppedLayers.length > 0) {
+    console.log(`[assemble] ${droppedLayers.length} dropped layers:`);
+    for (const d of droppedLayers) {
+      console.log(`  [dropped] ${d.id} | reason=${d.reason}`);
+    }
+  }
+
   const nonHiddenLayers = orderedLayers.filter(
     (layer) => layer.position !== "hidden_system" && layer.sourceType !== PROMPT_LAYER_SOURCE_TYPE.chatHistory,
   );
