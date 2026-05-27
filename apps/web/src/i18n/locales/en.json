@@ -795,7 +795,7 @@
   "script_import_detect_js": "Detected: JavaScript",
   "script_import_detect_json": "Detected: JSON",
   "script_import_import": "Import",
-  "create_manual": "Create manually",
+  "create_manual": "Create",
   "import_char_short": "Import",
   "scroll_to_bottom": "Scroll to bottom",
   "prompt_manager": "Prompt Manager",
