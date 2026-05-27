@@ -116,6 +116,7 @@
   "build_prompt_trace": "Трассировка промпта",
   "editor": "Редактор",
   "more_characters": "+{n}",
+  "characters": "Персонажи",
   "trace_total_tokens": "Итого: {n} токенов",
   "trace_no_active": "Нет активной трассировки.",
   "trace_recorded_count": "Записано: {n} трассировок",
