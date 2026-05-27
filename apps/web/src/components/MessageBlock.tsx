@@ -517,6 +517,11 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
           {/* Mobile: bottom action row for regen/branch/swipe */}
           {isMobile && !isEditing && !isGenerating && (
             <div className="mt-1.5 flex items-center gap-3">
+              {canResend && (
+                <div className="flex h-7 w-7 cursor-pointer items-center justify-center rounded text-t3 active:bg-s2" onClick={() => { if (!isBusy) void chat.handleResend(); }} title={t("resend")}>
+                  <Icons.Regen />
+                </div>
+              )}
               {canRegenerate && (
                 <div className="flex h-7 w-7 cursor-pointer items-center justify-center rounded text-t3 active:bg-s2" onClick={() => { if (!isBusy) void chat.handleRegenerateMessage(msg.id); }} title={regenLabel}>
                   <Icons.Regen />
