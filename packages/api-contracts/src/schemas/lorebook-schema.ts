@@ -66,7 +66,41 @@ const loreEntryCoreSchema = z.object({
 
 export const createLoreEntrySchema = loreEntryCoreSchema;
 
-export const updateLoreEntrySchema = loreEntryCoreSchema;
+// Update schema: NO defaults — only provided fields are patched
+const loreEntryUpdateSchema = z.object({
+  title: z.string().optional(),
+  content: z.string().optional(),
+  keys: z.array(z.string()).optional(),
+  secondaryKeys: z.array(z.string()).optional(),
+  logic: z.string().optional(),
+  position: z.string().optional(),
+  depth: z.number().optional(),
+  priority: z.number().optional(),
+  order: z.number().optional(),
+  constant: z.boolean().optional(),
+  probability: z.number().optional(),
+  role: z.string().optional(),
+  groupName: z.string().optional(),
+  groupWeight: z.number().optional(),
+  prioritizeInclusion: z.boolean().optional(),
+  excludeRecursion: z.boolean().optional(),
+  preventRecursion: z.boolean().optional(),
+  delayUntilRecursion: z.boolean().optional(),
+  recursionLevel: z.number().optional(),
+  scanDepthOverride: z.number().nullable().optional(),
+  caseSensitive: z.boolean().optional(),
+  matchWholeWords: z.boolean().optional(),
+  characterFilter: z.array(z.string()).optional(),
+  characterFilterExclude: z.boolean().optional(),
+  triggers: z.array(z.string()).optional(),
+  matchSources: z.array(z.string()).optional(),
+  enabled: z.boolean().optional(),
+  stickyWindow: z.number().optional(),
+  cooldownWindow: z.number().optional(),
+  delayWindow: z.number().optional(),
+});
+
+export const updateLoreEntrySchema = loreEntryUpdateSchema;
 
 export const importLorebookSchema = z.object({
   format: z.enum(["st", "janitor"]).optional().default("st"),
