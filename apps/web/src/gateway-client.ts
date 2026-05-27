@@ -1,12 +1,9 @@
-const DEV_API_URL = "http://127.0.0.1:8787";
-
 export function getGatewayBaseUrl(): string {
   const configured = import.meta.env.VITE_RP_API_URL;
   if (typeof configured === "string" && configured.trim()) {
     return configured.trim().replace(/\/+$/, "");
   }
-  // In dev (Vite dev server) fall back to explicit API URL;
-  // in production (single server) use the current page origin.
-  if (import.meta.env.DEV) return DEV_API_URL;
-  return typeof window !== "undefined" ? window.location.origin : "";
+  // Always use page origin in browser (works for localhost AND LAN IP on mobile)
+  // Fall back to explicit dev URL only when SSR/no window
+  return typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8787";
 }
