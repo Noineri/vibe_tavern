@@ -118,15 +118,30 @@ async function baselineLegacyDb(sqlite: Database, migrationsFolder: string): Pro
 
 /**
  * Post-migration repair: if older builds incorrectly stamped migrations
- * as applied (baselineLegacyDb bug), new tables won't exist. This function
- * reads each migration's SQL, checks if its tables exist, and applies the
- * SQL directly if they don't.
+ * as applied (baselineLegacyDb bug), new tables/columns won't exist. This function
+ * reads each migration's SQL, checks if its tables AND columns exist, and applies the
+ * SQL directly if any are missing.
  */
 async function repairMissingTables(sqlite: Database, migrationsFolder: string): Promise<void> {
   const existingRows = sqlite
     .prepare("SELECT name FROM sqlite_master WHERE type='table'")
     .all() as { name: string }[];
   const existing = new Set(existingRows.map(r => r.name.toLowerCase()));
+
+  // Cache column info per table on-demand
+  const columnCache = new Map<string, Set<string>>();
+  function hasColumn(table: string, column: string): boolean {
+    const tbl = table.toLowerCase();
+    if (!columnCache.has(tbl)) {
+      try {
+        const cols = sqlite.prepare(`PRAGMA table_info("${table}")`).all() as { name: string }[];
+        columnCache.set(tbl, new Set(cols.map(c => c.name.toLowerCase())));
+      } catch {
+        columnCache.set(tbl, new Set());
+      }
+    }
+    return columnCache.get(tbl)!.has(column.toLowerCase());
+  }
 
   const journalPath = resolve(migrationsFolder, 'meta', '_journal.json');
   if (!await Bun.file(journalPath).exists()) return;
@@ -142,11 +157,21 @@ async function repairMissingTables(sqlite: Database, migrationsFolder: string): 
       .map(m => m[1])
       .filter(t => !t.startsWith('__drizzle'));
 
-    // Check if any table from this migration is missing
-    const missing = createdTables.filter(t => !existing.has(t.toLowerCase()));
-    if (missing.length === 0) continue;
+    // Extract ALTER TABLE ... ADD COLUMN statements
+    const alterCols = [...sqlContent.matchAll(/ALTER\s+TABLE\s+[`"']?(\w+)\s+ADD\s+COLUMN\s+[`"']?(\w+)/gmi)]
+      .map(m => ({ table: m[1], column: m[2] }));
 
-    console.log(`[db] Repair: migration ${entry.tag} missing tables (${missing.join(', ')}), applying...`);
+    // Check if any table from this migration is missing
+    const missingTables = createdTables.filter(t => !existing.has(t.toLowerCase()));
+    // Check if any ALTER TABLE column is missing
+    const missingCols = alterCols.filter(({ table, column }) => existing.has(table.toLowerCase()) && !hasColumn(table, column));
+
+    if (missingTables.length === 0 && missingCols.length === 0) continue;
+
+    const reasons: string[] = [];
+    if (missingTables.length > 0) reasons.push(`tables (${missingTables.join(', ')})`);
+    if (missingCols.length > 0) reasons.push(`columns (${missingCols.map(c => `${c.table}.${c.column}`).join(', ')})`);
+    console.log(`[db] Repair: migration ${entry.tag} missing ${reasons.join(' and ')}, applying...`);
     try {
       sqlite.exec(sqlContent);
       repaired++;
@@ -158,7 +183,7 @@ async function repairMissingTables(sqlite: Database, migrationsFolder: string): 
   }
 
   if (repaired > 0) {
-    console.log(`[db] Repair: applied ${repaired} missing migration(s).`);
+    console.log(`[db] Repair: applied ${repaired} missing migration(s) (tables + columns).`);
   }
 }
 
