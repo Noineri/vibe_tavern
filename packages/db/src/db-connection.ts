@@ -190,16 +190,86 @@ async function repairMissingTables(sqlite: Database, migrationsFolder: string): 
   }
 }
 
+/**
+ * Pre-flight: ensure ALTER TABLE ADD COLUMN statements from all migrations
+ * have been applied. Unlike repairMissingTables (which only looks at unstamped
+ * migrations), this checks EVERY migration's ALTER TABLE statements against
+ * the actual DB columns, regardless of stamp status.
+ *
+ * This is needed because baselineLegacyDb or older migrate() versions may have
+ * stamped column-only migrations as applied without actually running the SQL.
+ */
+async function ensureAlterColumns(sqlite: Database, migrationsFolder: string): Promise<void> {
+  const journalPath = resolve(migrationsFolder, 'meta', '_journal.json');
+  if (!await Bun.file(journalPath).exists()) return;
+  const journal = JSON.parse(await Bun.file(journalPath).text());
+
+  // Cache column info per table
+  const columnCache = new Map<string, Set<string>>();
+  function hasColumn(table: string, column: string): boolean {
+    const tbl = table.toLowerCase();
+    if (!columnCache.has(tbl)) {
+      try {
+        const cols = sqlite.prepare(`PRAGMA table_info("${table}")`).all() as { name: string }[];
+        columnCache.set(tbl, new Set(cols.map(c => c.name.toLowerCase())));
+      } catch {
+        columnCache.set(tbl, new Set());
+      }
+    }
+    return columnCache.get(tbl)!.has(column.toLowerCase());
+  }
+
+  let fixed = 0;
+  for (const entry of journal.entries) {
+    const sqlPath = resolve(migrationsFolder, `${entry.tag}.sql`);
+    const sqlContent = await Bun.file(sqlPath).text();
+
+    // Only check ALTER TABLE ... ADD COLUMN (CREATE TABLE is handled by migrate)
+    const alterCols = [...sqlContent.matchAll(/ALTER\s+TABLE\s+[`"']?(\w+)\s+ADD\s+COLUMN\s+[`"']?(\w+)/gmi)]
+      .map(m => ({ table: m[1], column: m[2] }));
+
+    for (const { table, column } of alterCols) {
+      if (hasColumn(table, column)) continue;
+      const stmt = `ALTER TABLE "${table}" ADD COLUMN "${column}"`;
+      // Derive column type from the SQL
+      const typeMatch = sqlContent.match(new RegExp(`ALTER\\s+TABLE\\s+[\`"']?${table}[\`"']?\\s+ADD\\s+COLUMN\\s+[\`"']?${column}[\`"']?\\s+(\\S+)`, 'i'));
+      const colType = typeMatch?.[1] ?? 'text';
+      try {
+        sqlite.exec(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${colType}`);
+        console.log(`[db] Pre-flight: added ${table}.${column} (${colType})`);
+        fixed++;
+        // Invalidate column cache for this table
+        columnCache.delete(table.toLowerCase());
+      } catch (err: any) {
+        console.error(`[db] Pre-flight: failed to add ${table}.${column}:`, err.message);
+      }
+    }
+  }
+
+  if (fixed > 0) {
+    console.log(`[db] Pre-flight: fixed ${fixed} missing column(s).`);
+  }
+}
+
 export async function createDb(dbPath: string): Promise<AppDb> {
   await mkdir(resolve(dbPath, '..'), { recursive: true });
   const sqlite = new Database(dbPath);
   sqlite.exec('PRAGMA journal_mode = WAL');
   sqlite.exec('PRAGMA foreign_keys = ON');
 
+  sqlite.exec('PRAGMA foreign_keys = ON');
+
   const db = drizzle(sqlite, { schema });
   const migrationsFolder = await getMigrationsFolder();
 
   console.log(`[db] Migrations folder: ${migrationsFolder}`);
+
+  // Pre-flight: ensure columns from ALTER TABLE migrations exist.
+  // If a previous build incorrectly stamped a migration (e.g. baselineLegacyDb
+  // stamping migrations with no CREATE TABLE), the columns won't exist.
+  // This runs BEFORE migrate() to prevent query crashes from drizzle's own schema checks.
+  await ensureAlterColumns(sqlite, migrationsFolder);
+
   await baselineLegacyDb(sqlite, migrationsFolder);
   migrate(db, { migrationsFolder });
 
