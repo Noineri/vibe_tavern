@@ -1,5 +1,5 @@
-import type { PresetStore } from "@rp-platform/db";
-import type { PromptPresetId, PromptPresetDto } from "@rp-platform/domain";
+import type { PresetStore } from "@vibe-tavern/db";
+import type { PromptPresetId, PromptPresetDto } from "@vibe-tavern/domain";
 import { validation, notFound, conflict, isDomainError } from "./errors.js";
 
 function safeParseJson<T>(json: string, fallback: T): T {

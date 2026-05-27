@@ -1,12 +1,12 @@
 import { resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
-import { type StoreContainer, type FileStore, STORAGE_FOLDERS } from "@rp-platform/db";
+import { type StoreContainer, type FileStore, STORAGE_FOLDERS } from "@vibe-tavern/db";
 import type {
 	ChatId,
 	PersonaId,
 	PromptPresetId,
-} from "@rp-platform/domain";
-import { brandId, type CharacterId } from "@rp-platform/domain";
+} from "@vibe-tavern/domain";
+import { brandId, type CharacterId } from "@vibe-tavern/domain";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
 import { parseSillyTavernChat, serializeSillyTavernChat } from "../../../packages/import-export/src/chats/st-chat.js";
 import {
@@ -136,24 +136,24 @@ export async function exportChatJsonl(
 export async function exportPromptTrace(
 	deps: ImportExportModuleDeps,
 	traceId: string,
-): Promise<import("@rp-platform/domain").PromptTraceRecordDto> {
+): Promise<import("@vibe-tavern/domain").PromptTraceRecordDto> {
 	const trace = await deps.stores.chats.getTrace(traceId);
 	if (!trace) {
 		throw notFound("PromptTrace", `Prompt trace '${traceId}' was not found.`);
 	}
 	return {
 		id: trace.id,
-		chatId: trace.chatId as import("@rp-platform/domain").ChatId,
-		branchId: trace.branchId as import("@rp-platform/domain").ChatBranchId,
-		messageId: trace.messageId as import("@rp-platform/domain").MessageId,
+		chatId: trace.chatId as import("@vibe-tavern/domain").ChatId,
+		branchId: trace.branchId as import("@vibe-tavern/domain").ChatBranchId,
+		messageId: trace.messageId as import("@vibe-tavern/domain").MessageId,
 		model: trace.model,
 		presetName: trace.presetName,
 		latencyMs: trace.latencyMs,
 		createdAt: trace.createdAt,
-		layers: trace.assembledLayers as import("@rp-platform/domain").PromptTraceRecordDto["layers"],
+		layers: trace.assembledLayers as import("@vibe-tavern/domain").PromptTraceRecordDto["layers"],
 		tokenAccounting: trace.tokenAccounting,
 		activatedLoreEntries: trace.activatedLoreEntries as string[],
-		scriptInjections: trace.scriptInjections as import("@rp-platform/domain").PromptTraceRecordDto["scriptInjections"],
+		scriptInjections: trace.scriptInjections as import("@vibe-tavern/domain").PromptTraceRecordDto["scriptInjections"],
 		retrievedMemories: trace.retrievedMemories as Array<Record<string, unknown>>,
 		finalPayload: trace.finalPayload,
 	};

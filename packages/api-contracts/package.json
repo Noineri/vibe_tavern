@@ -1,5 +1,5 @@
 {
-  "name": "@rp-platform/api-contracts",
+  "name": "@vibe-tavern/api-contracts",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,7 +17,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@rp-platform/domain": "0.1.0",
+    "@vibe-tavern/domain": "0.1.0",
     "zod": "^3.24.4"
   },
   "devDependencies": {

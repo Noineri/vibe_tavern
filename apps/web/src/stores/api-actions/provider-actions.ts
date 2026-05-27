@@ -18,7 +18,7 @@ import {
   type ProviderProfileRecord,
   type TestChatResponse,
 } from "../../app-client.js";
-import type { ProviderProbeResponse } from "@rp-platform/domain";
+import type { ProviderProbeResponse } from "@vibe-tavern/domain";
 import { useProviderDataStore } from "../provider-data-store.js";
 
 // ---------------------------------------------------------------------------

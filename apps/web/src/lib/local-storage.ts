@@ -1,7 +1,7 @@
 import type { ConnectionState, ThemeMode } from "../components/app-shell-types.js";
 
-const THEME_STORAGE_KEY = "rp-platform.theme";
-const TWEAKS_STORAGE_KEY = "rp-platform.tweaks";
+const THEME_STORAGE_KEY = "vibe-tavern.theme";
+const TWEAKS_STORAGE_KEY = "vibe-tavern.tweaks";
 
 export { THEME_STORAGE_KEY, TWEAKS_STORAGE_KEY };
 
@@ -54,7 +54,7 @@ export function persistTweaks(settings: TweaksSettings): void {
 
 // ─── Summary modal settings (per-chat) ────────────────────────────────────────
 
-const SUMMARY_SETTINGS_PREFIX = "rp-platform.summary-settings.";
+const SUMMARY_SETTINGS_PREFIX = "vibe-tavern.summary-settings.";
 
 export interface SummarySettings {
   providerId: string;
@@ -91,7 +91,7 @@ export function persistSummarySettings(chatId: string, settings: SummarySettings
 
 // ─── Saved summaries (per-chat) ──────────────────────────────────────────────
 
-const SAVED_SUMMARIES_PREFIX = "rp-platform.saved-summaries.";
+const SAVED_SUMMARIES_PREFIX = "vibe-tavern.saved-summaries.";
 
 export function readSavedSummaries(chatId: string): SavedSummaryRecord[] {
   try {

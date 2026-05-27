@@ -1,6 +1,6 @@
 import { bootstrapApp, listPersonas } from "../../app-client.js";
 import type { AppSnapshot, PersonaRecord } from "../../app-client.js";
-import type { ChatId, PromptPresetDto } from "@rp-platform/domain";
+import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
 import { useChatStore } from "../chat-store.js";
 import { useChatDataStore } from "../chat-data-store.js";
 import { create } from "zustand";

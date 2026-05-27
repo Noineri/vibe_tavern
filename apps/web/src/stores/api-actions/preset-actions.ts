@@ -5,7 +5,7 @@ import {
   setChatPromptPreset,
   updatePromptPreset,
 } from "../../app-client.js";
-import type { ChatId, PromptPresetDto } from "@rp-platform/domain";
+import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
 import { useBootstrapStore } from "./bootstrap-actions.js";
 import { useChatDataStore } from "../chat-data-store.js";
 

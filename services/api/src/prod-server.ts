@@ -15,7 +15,7 @@
 
 import { resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
-import { setTokenCountFn } from "@rp-platform/prompt-pipeline";
+import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { createRuntimeStore } from "./session-runtime-store.js";
 import { warmupTokenizers, countTokens } from "./ai/tokenizer-service.js";
 import { SessionRuntime } from "./session-runtime.js";

@@ -1,7 +1,7 @@
 /**
  * Canonical provider profile type — single source of truth.
  *
- * Matches ProviderStore.ProviderProfile from @rp-platform/db exactly.
+ * Matches ProviderStore.ProviderProfile from @vibe-tavern/db exactly.
  * All layers (DB, services, AI executors, client) use this type directly.
  * No adapters or field renames between layers.
  *

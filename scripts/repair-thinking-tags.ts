@@ -9,7 +9,7 @@
  */
 import { Database } from "bun:sqlite";
 
-const DB_PATH = process.argv[2] || "data/rp-platform.db";
+const DB_PATH = process.argv[2] || "data/vibe-tavern.db";
 
 const db = new Database(DB_PATH);
 db.exec("PRAGMA journal_mode = WAL");

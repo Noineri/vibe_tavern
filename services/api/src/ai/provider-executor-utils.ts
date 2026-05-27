@@ -9,7 +9,7 @@
 import type { LanguageModelV1 } from "ai";
 import { mapProfileToSdkModel } from "./provider-profile-mapper.js";
 import { getProviderCapabilities } from "./provider-capabilities.js";
-import type { ProviderType } from "@rp-platform/domain";
+import type { ProviderType } from "@vibe-tavern/domain";
 
 // ---------------------------------------------------------------------------
 // Types

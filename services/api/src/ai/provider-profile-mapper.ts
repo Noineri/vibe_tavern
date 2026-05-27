@@ -19,8 +19,8 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import type { LanguageModelV1 } from "ai";
-import type { ProviderType } from "@rp-platform/domain";
-import { PROVIDER_TYPE } from "@rp-platform/domain";
+import type { ProviderType } from "@vibe-tavern/domain";
+import { PROVIDER_TYPE } from "@vibe-tavern/domain";
 import { providerError } from "../errors.js";
 import {
   getProviderCapabilities,

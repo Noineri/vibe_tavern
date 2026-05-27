@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ChatId } from "@rp-platform/domain";
+import type { ChatId } from "@vibe-tavern/domain";
 
 export interface ChatState {
   activeChatId: ChatId | null;

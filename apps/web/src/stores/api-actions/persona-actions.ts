@@ -5,7 +5,7 @@ import {
   updatePersona,
   type AppSnapshot,
 } from "../../app-client.js";
-import type { ChatId } from "@rp-platform/domain";
+import type { ChatId } from "@vibe-tavern/domain";
 import { useChatDataStore } from "../chat-data-store.js";
 import { fetchPersonasAction } from "./bootstrap-actions.js";
 import type { PersonaRecord } from "../../app-client.js";

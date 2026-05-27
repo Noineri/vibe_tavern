@@ -1,5 +1,5 @@
-import type { ChatId } from "@rp-platform/domain";
-import type { ChatStore } from "@rp-platform/db";
+import type { ChatId } from "@vibe-tavern/domain";
+import type { ChatStore } from "@vibe-tavern/db";
 
 /**
  * Interface for managing the ordered list of chat IDs.

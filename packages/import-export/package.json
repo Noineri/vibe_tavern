@@ -1,5 +1,5 @@
 {
-  "name": "@rp-platform/import-export",
+  "name": "@vibe-tavern/import-export",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@rp-platform/domain": "0.1.0"
+    "@vibe-tavern/domain": "0.1.0"
   },
   "devDependencies": {
     "@types/bun": "^1.2.10"

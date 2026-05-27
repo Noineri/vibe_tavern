@@ -76,7 +76,7 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 	app.get("/health", (c) => {
 		return c.json({
 			ok: true,
-			service: "rp-platform-api",
+			service: "vibe-tavern-api",
 			time: new Date().toISOString(),
 		});
 	});

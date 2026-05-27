@@ -1,5 +1,5 @@
-import type { Character, CharacterId, CharacterVersion, CharacterVersionId } from "@rp-platform/domain";
-import { brandId, ENTITY_ID_NAMESPACE } from "@rp-platform/domain";
+import type { Character, CharacterId, CharacterVersion, CharacterVersionId } from "@vibe-tavern/domain";
+import { brandId, ENTITY_ID_NAMESPACE } from "@vibe-tavern/domain";
 
 import {
   asOptionalString,

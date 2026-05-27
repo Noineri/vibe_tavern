@@ -7,19 +7,19 @@
       "bun"
     ],
     "paths": {
-      "@rp-platform/api-contracts": [
+      "@vibe-tavern/api-contracts": [
         "../../packages/api-contracts/src/index.ts"
       ],
-      "@rp-platform/db": [
+      "@vibe-tavern/db": [
         "../../packages/db/src/index.ts"
       ],
-      "@rp-platform/domain": [
+      "@vibe-tavern/domain": [
         "../../packages/domain/src/index.ts"
       ],
-      "@rp-platform/import-export": [
+      "@vibe-tavern/import-export": [
         "../../packages/import-export/src/index.ts"
       ],
-      "@rp-platform/prompt-pipeline": [
+      "@vibe-tavern/prompt-pipeline": [
         "../../packages/prompt-pipeline/src/index.ts"
       ]
     }

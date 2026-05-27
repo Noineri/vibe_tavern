@@ -1,5 +1,5 @@
-import { PROVIDER_PRESET_GROUP, PROVIDER_TYPE } from "@rp-platform/domain";
-import type { ProviderPresetGroup } from "@rp-platform/domain";
+import { PROVIDER_PRESET_GROUP, PROVIDER_TYPE } from "@vibe-tavern/domain";
+import type { ProviderPresetGroup } from "@vibe-tavern/domain";
 
 export interface ProviderPreset {
   id: string;

@@ -14,7 +14,7 @@ import {
   type AppSnapshot,
   type ImportJsonResponse,
 } from "../../app-client.js";
-import type { ChatId } from "@rp-platform/domain";
+import type { ChatId } from "@vibe-tavern/domain";
 import { useChatDataStore } from "../chat-data-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
 

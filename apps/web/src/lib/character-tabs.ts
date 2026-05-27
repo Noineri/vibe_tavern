@@ -1,4 +1,4 @@
-import type { ChatId } from "@rp-platform/domain";
+import type { ChatId } from "@vibe-tavern/domain";
 import type { CharacterTab } from "../components/app-shell-types.js";
 
 export function buildCharacterTabs(

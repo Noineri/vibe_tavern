@@ -1,9 +1,9 @@
-import { brandId, type ChatId } from "@rp-platform/domain";
+import { brandId, type ChatId } from "@vibe-tavern/domain";
 import type { SessionRuntime, SessionSnapshot } from "./session-runtime.js";
 import type { ProviderProfileService } from "./provider-profile-service.js";
 import { nonstreamingProviderExecute } from "./ai/nonstreaming-provider-executor.js";
 import { notFound, validation } from "./errors.js";
-import type { AssemblePromptResponse } from "@rp-platform/domain";
+import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import { logSendDebug } from "./send-debug-log.js";
 
 export interface SummarizeChatInput {

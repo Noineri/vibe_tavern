@@ -1,4 +1,4 @@
-import type { StoredProviderProfileRecord } from "@rp-platform/domain";
+import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ProviderProfileService } from "./provider-profile-service.js";
 import { listProviderModels } from "./provider-gateway.js";
 import { normalizeProviderType } from "./ai/provider-profile-mapper.js";

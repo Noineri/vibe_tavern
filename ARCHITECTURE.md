@@ -46,7 +46,7 @@ RP Platform is a self-hosted roleplay chat application — a local alternative t
 ## Repository structure
 
 ```
-rp_platform/
+vibe_tavern/
 ├── apps/web/                    # Frontend SPA (React + Vite)
 │   └── src/
 │       ├── components/
@@ -106,7 +106,7 @@ apps/web
                │ HTTP / SSE
 ┌──────────────▼───────────────────────────────────────────┐
 │  routes/ — 11 domain modules, composed via Hono app.route │
-│  validates via zod schemas from @rp-platform/api-contracts│
+│  validates via zod schemas from @vibe-tavern/api-contracts│
 └──────────────┬───────────────────────────────────────────┘
                │ delegates to RuntimeApi interface
 ┌──────────────▼───────────────────────────────────────────┐
@@ -152,7 +152,7 @@ POST /api/chats/:chatId/messages/stream
   │       │   │   └─ Scripts read/write persistent state
   │       │   └─ Persist activation state + script state to chat row
   │       ├─ Macro resolution ({{user}}, {{char}}, {{scenario}}, etc.)
-  │       └─ assemblePrompt()                            → @rp-platform/prompt-pipeline
+  │       └─ assemblePrompt()                            → @vibe-tavern/prompt-pipeline
   │           ├─ Build layers (preset, character, persona, lore, memory, history)
   │           ├─ Inject activated lore entries at configured positions/depths
   │           ├─ Compact history if context budget exceeded
@@ -836,11 +836,11 @@ Standard production server. Serves the built frontend from `apps/web/dist/` plus
 | `RP_PLATFORM_PORT` | `8787` | Listen port |
 | `RP_PLATFORM_OPEN_BROWSER` | `1` | Auto-open browser on startup |
 
-### `standalone-server.ts` — Compiled .exe (Claw Tavern)
+### `standalone-server.ts` — Compiled .exe (Vibe Tavern)
 
 Target for `bun build --compile`. Uses OS-specific data directories instead of project-relative paths.
 
-**Usage:** `claw-tavern.exe` (compiled) or `bun services/api/src/standalone-server.ts`
+**Usage:** `vibe-tavern.exe` (compiled) or `bun services/api/src/standalone-server.ts`
 
 **Paths** (resolved by `standalone-paths.ts`):
 
@@ -848,7 +848,7 @@ Target for `bun build --compile`. Uses OS-specific data directories instead of p
 |----|---------------|
 | Windows | `%LOCALAPPDATA%\ClawTavern` |
 | macOS | `~/Library/Application Support/ClawTavern` |
-| Linux | `~/.local/share/claw-tavern` |
+| Linux | `~/.local/share/vibe-tavern` |
 
 Override with `RP_PLATFORM_DATA_DIR` and `RP_PLATFORM_WEB_DIR` env vars.
 

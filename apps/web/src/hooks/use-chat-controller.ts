@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from "react";
 import { useChatDataStore } from "../stores/chat-data-store.js";
 import { toast } from "sonner";
-import type { ChatBranchId, ChatId } from "@rp-platform/domain";
+import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { getT } from "../i18n/context.js";
 import {
   generateReplyStream,

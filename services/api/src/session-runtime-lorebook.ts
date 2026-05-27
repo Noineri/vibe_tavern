@@ -1,4 +1,4 @@
-import type { LoreEntry } from "@rp-platform/domain";
+import type { LoreEntry } from "@vibe-tavern/domain";
 
 const NOT_IMPLEMENTED = () => { throw new Error("Not implemented: lorebooks are phase 2"); };
 

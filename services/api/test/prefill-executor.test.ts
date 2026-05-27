@@ -1,6 +1,6 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import { getProviderCapabilities, PROVIDER_CAPABILITIES } from "../src/ai/provider-capabilities.js";
-import type { ProviderType } from "@rp-platform/domain";
+import type { ProviderType } from "@vibe-tavern/domain";
 import type { ProviderExecutionInput } from "../src/ai/provider-execution-types.js";
 
 // ═══════════════════════════════════════════════════════════════════════════

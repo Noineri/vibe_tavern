@@ -8,15 +8,15 @@ import type {
   SleepBranchRequest,
   SleepBranchResponse,
 } from "./chat-application-types.js";
-import { brandId } from "@rp-platform/domain";
+import { brandId } from "@vibe-tavern/domain";
 import type {
   ChatBranchId,
   ChatId,
   Message,
   MessageId,
   SummaryMemorySnapshot,
-} from "@rp-platform/domain";
-import type { ChatStore } from "@rp-platform/db";
+} from "@vibe-tavern/domain";
+import type { ChatStore } from "@vibe-tavern/db";
 import { notFound } from "./errors.js";
 
 export class ChatApplicationService {
@@ -37,9 +37,9 @@ export class ChatApplicationService {
   }
 
   async getChatState(chatId: ChatId, branchId?: ChatBranchId): Promise<{
-    chat: import("@rp-platform/db").Chat;
-    branch: import("@rp-platform/db").ChatBranch;
-    messages: import("@rp-platform/db").Message[];
+    chat: import("@vibe-tavern/db").Chat;
+    branch: import("@vibe-tavern/db").ChatBranch;
+    messages: import("@vibe-tavern/db").Message[];
     summaries: SummaryMemorySnapshot[];
   }> {
     const chat = await this.requireChat(chatId);
@@ -114,7 +114,7 @@ export class ChatApplicationService {
     };
   }
 
-  async activateBranch(chatId: ChatId, branchId: ChatBranchId): Promise<import("@rp-platform/db").Chat> {
+  async activateBranch(chatId: ChatId, branchId: ChatBranchId): Promise<import("@vibe-tavern/db").Chat> {
     return this.chatStore.activateBranch(chatId, branchId);
   }
 
@@ -133,7 +133,7 @@ export class ChatApplicationService {
     };
   }
 
-  private async requireChat(chatId: ChatId): Promise<import("@rp-platform/db").Chat> {
+  private async requireChat(chatId: ChatId): Promise<import("@vibe-tavern/db").Chat> {
     const chat = await this.chatStore.getById(chatId);
     if (!chat) {
       throw notFound("Chat", `Chat '${chatId}' was not found.`);

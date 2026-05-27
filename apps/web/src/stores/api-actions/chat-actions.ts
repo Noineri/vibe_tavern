@@ -1,4 +1,4 @@
-import type { ChatBranchId, ChatId } from "@rp-platform/domain";
+import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import {
   activateBranch,
   createChat,

@@ -1,8 +1,8 @@
-import { brandId } from "@rp-platform/domain";
+import { brandId } from "@vibe-tavern/domain";
 import type {
   AssemblePromptResponse,
   PromptLayerDto,
-} from "@rp-platform/domain";
+} from "@vibe-tavern/domain";
 import type {
   ChatBranchId,
   ChatId,
@@ -12,11 +12,11 @@ import type {
   PromptTrace,
   PromptTraceId,
   RetrievedMemoryHit,
-} from "@rp-platform/domain";
-import type { StoreContainer } from "@rp-platform/db";
-import { assemblePrompt, setModelHint } from "@rp-platform/prompt-pipeline";
+} from "@vibe-tavern/domain";
+import type { StoreContainer } from "@vibe-tavern/db";
+import { assemblePrompt, setModelHint } from "@vibe-tavern/prompt-pipeline";
 import { logSendDebug } from "./send-debug-log.js";
-import { type FileStore, STORAGE_FOLDERS } from "@rp-platform/db";
+import { type FileStore, STORAGE_FOLDERS } from "@vibe-tavern/db";
 
 export interface PromptAssemblyResolver {
   getCharacter(

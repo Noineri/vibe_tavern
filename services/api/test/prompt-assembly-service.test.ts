@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/prompt-assembly-service.js";
-import type { StoreContainer } from "@rp-platform/db";
-import type { ChatId, ChatBranchId, LoreEntry, MessageId, RetrievedMemoryHit } from "@rp-platform/domain";
+import type { StoreContainer } from "@vibe-tavern/db";
+import type { ChatId, ChatBranchId, LoreEntry, MessageId, RetrievedMemoryHit } from "@vibe-tavern/domain";
 
 // ─── Mock helpers ──────────────────────────────────────────────────────────
 

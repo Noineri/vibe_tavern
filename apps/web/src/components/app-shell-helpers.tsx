@@ -1,4 +1,4 @@
-import type { PromptTraceRecordDto } from "@rp-platform/domain";
+import type { PromptTraceRecordDto } from "@vibe-tavern/domain";
 
 export function initials(name: string): string {
   return name

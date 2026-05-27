@@ -1,8 +1,8 @@
-# Packaging Claw Tavern — Standalone Windows Build
+# Packaging Vibe Tavern — Standalone Windows Build
 
 ## Overview
 
-Claw Tavern can be packaged as a standalone Windows application: a single executable (`claw-tavern.exe`) paired with a pre-built frontend (`web/`), wrapped in an Inno Setup installer. The installer places program files in the user's chosen directory (e.g., `Program Files`), while all user data lives in `%LOCALAPPDATA%\ClawTavern` and survives reinstall/upgrade.
+Vibe Tavern can be packaged as a standalone Windows application: a single executable (`vibe-tavern.exe`) paired with a pre-built frontend (`web/`), wrapped in an Inno Setup installer. The installer places program files in the user's chosen directory (e.g., `Program Files`), while all user data lives in `%LOCALAPPDATA%\ClawTavern` and survives reinstall/upgrade.
 
 ## Quick Start
 
@@ -11,7 +11,7 @@ Claw Tavern can be packaged as a standalone Windows application: a single execut
 bun scripts/build-standalone.ts
 
 # 2. Test the executable
-./dist/claw-tavern.exe
+./dist/vibe-tavern.exe
 
 # 3. Build the installer (requires Inno Setup 6+)
 bun scripts/build-installer.ts
@@ -21,8 +21,8 @@ bun scripts/build-installer.ts
 
 | Command | What it does | Output |
 |---------|-------------|--------|
-| `bun run build:standalone` | Builds frontend + compiles standalone exe | `dist/claw-tavern.exe` + `dist/web/` |
-| `bun run build:installer` | Runs standalone build + Inno Setup | `installer/output/claw-tavern-setup.exe` |
+| `bun run build:standalone` | Builds frontend + compiles standalone exe | `dist/vibe-tavern.exe` + `dist/web/` |
+| `bun run build:installer` | Runs standalone build + Inno Setup | `installer/output/vibe-tavern-setup.exe` |
 | `bun run build:prod` | Builds API stack packages (no exe) | Per-package `dist/` directories |
 
 > **Note:** The standalone build pipeline compiles the frontend internally via `bun x vite build apps/web`. There is no separate `build:web` root script — the standalone pipeline handles it.
@@ -33,7 +33,7 @@ After `bun run build:standalone`:
 
 ```
 dist/
-  claw-tavern.exe          ← compiled standalone server
+  vibe-tavern.exe          ← compiled standalone server
   web/
     index.html             ← frontend entry
     assets/                ← JS/CSS bundles
@@ -44,9 +44,9 @@ After `bun run build:installer`:
 
 ```
 installer/
-  claw-tavern.iss          ← Inno Setup script
+  vibe-tavern.iss          ← Inno Setup script
   output/
-    claw-tavern-setup.exe  ← distributable installer
+    vibe-tavern-setup.exe  ← distributable installer
 ```
 
 ## Data Directory Conventions
@@ -55,7 +55,7 @@ The standalone executable resolves data directories from OS conventions. No data
 
 | Data | Location |
 |------|----------|
-| SQLite database | `%LOCALAPPDATA%\ClawTavern\rp-platform.db` |
+| SQLite database | `%LOCALAPPDATA%\ClawTavern\vibe-tavern.db` |
 | Avatar/image assets | `%LOCALAPPDATA%\ClawTavern\assets\` |
 | Prompt traces | `%LOCALAPPDATA%\ClawTavern\traces\` |
 | Debug logs | `%LOCALAPPDATA%\ClawTavern\logs\send-debug.log` |
@@ -66,7 +66,7 @@ The standalone executable resolves data directories from OS conventions. No data
 |----|---------------|
 | Windows | `%LOCALAPPDATA%\ClawTavern` (or `C:\Users\<user>\AppData\Local\ClawTavern`) |
 | macOS | `~/Library/Application Support/ClawTavern` |
-| Linux | `~/.local/share/claw-tavern` (respects `$XDG_DATA_HOME`) |
+| Linux | `~/.local/share/vibe-tavern` (respects `$XDG_DATA_HOME`) |
 
 ## Environment Variable Overrides
 
@@ -95,7 +95,7 @@ bun run build:installer
 
 ### What the installer does
 
-1. Installs `claw-tavern.exe` and `web/` to user-chosen directory
+1. Installs `vibe-tavern.exe` and `web/` to user-chosen directory
 2. Creates desktop shortcut (optional, checked by default)
 3. Creates Start Menu entry
 4. Offers to launch the app after installation
@@ -108,7 +108,7 @@ bun run build:installer
 
 ### Customizing the installer
 
-Edit `installer/claw-tavern.iss` to change:
+Edit `installer/vibe-tavern.iss` to change:
 - `AppVersion` — update for each release
 - `AppPublisher` — your organization name
 - `SetupIconFile` — path to an `.ico` file for the installer and app icon
@@ -148,7 +148,7 @@ standalone-server.ts
 
 ### Exe starts but frontend not found
 
-- Ensure `web/` directory exists next to `claw-tavern.exe`
+- Ensure `web/` directory exists next to `vibe-tavern.exe`
 - Check `RP_PLATFORM_WEB_DIR` env var if overriding
 - The server prints `[standalone] Frontend not found` if `index.html` is missing
 

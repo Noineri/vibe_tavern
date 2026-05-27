@@ -1,5 +1,5 @@
-import type { ProviderStore } from "@rp-platform/db";
-import type { StoredProviderProfileRecord } from "@rp-platform/domain";
+import type { ProviderStore } from "@vibe-tavern/db";
+import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import {
   toClientProviderProfile,
   resolveStoredApiKey,

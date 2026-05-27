@@ -3,8 +3,8 @@ import { useT } from "../i18n/context.js";
 import { Modal } from "./shared/Modal.js";
 import { cn } from "../lib/cn.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../app-client.js";
-import type { ProviderProbeResponse } from "@rp-platform/domain";
-import { saveProviderDraftSchema } from "@rp-platform/api-contracts";
+import type { ProviderProbeResponse } from "@vibe-tavern/domain";
+import { saveProviderDraftSchema } from "@vibe-tavern/api-contracts";
 import { PROVIDER_PRESETS } from "../provider-presets.js";
 import { Icons } from "./shared/icons.js";
 import {

@@ -16,7 +16,7 @@ import { useActiveTrace } from "../stores/chat-selectors.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 import { useModalStore } from "../stores/modal-store.js";
 import { useChatDataStore } from "../stores/chat-data-store.js";
-import type { PromptLayerDto } from "@rp-platform/domain";
+import type { PromptLayerDto } from "@vibe-tavern/domain";
 
 export function InputArea() {
   const { t } = useT();

@@ -1,4 +1,4 @@
-import type { PromptLayerPosition } from "@rp-platform/domain";
+import type { PromptLayerPosition } from "@vibe-tavern/domain";
 
 export type { PromptLayerPosition };
 

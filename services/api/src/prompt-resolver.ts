@@ -1,12 +1,12 @@
-import type { StoreContainer } from "@rp-platform/db";
+import type { StoreContainer } from "@vibe-tavern/db";
 import {
 	type ChatBranchId,
 	type ChatId,
 	type LoreEntry,
 	type RetrievedMemoryHit,
 	type Character,
-} from "@rp-platform/domain";
-import { brandId } from "@rp-platform/domain";
+} from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
 import { notFound } from "./errors.js";
 import {
 	type CharacterRecord,
