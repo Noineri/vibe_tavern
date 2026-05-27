@@ -4,6 +4,7 @@ import { useT } from "../i18n/context.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useActiveGeneration, useIsSending } from "../stores/index.js";
 import { useActiveTrace } from "../stores/chat-selectors.js";
+import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { useBootstrapStore, fetchPersonasAction } from "../stores/api-actions/bootstrap-actions.js";
 import { summarizeChatAction, saveChatSummaryAction } from "../stores/api-actions/chat-actions.js";
 import { useChatController } from "../hooks/use-chat-controller.js";
@@ -27,16 +28,14 @@ import { TweaksPanel } from "./popovers/TweaksPanel.js";
 import { MobileSettings } from "./popovers/MobileSettings.js";
 import { MobileAccessModal } from "./modals/MobileAccessModal.js";
 import { AvatarPanel } from "./popovers/AvatarPanel.js";
-import type { AppSnapshot } from "../app-client.js";
 import type { TweaksSettings } from "../lib/local-storage.js";
 
 interface AppShellProps {
-  snapshot: AppSnapshot | null;
   tweaksSettings: TweaksSettings;
   setTweaksSettings: React.Dispatch<React.SetStateAction<TweaksSettings>>;
 }
 
-export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShellProps) {
+export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const { t, setLocale } = useT();
 
   // --- Store subscriptions (reactive) ---
@@ -46,6 +45,11 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
   const theme = useNavigationStore((s) => s.theme);
   const setTheme = useNavigationStore((s) => s.setTheme);
   const activeChatId = useChatStore((s) => s.activeChatId);
+  const activeChat = useSnapshotStore((s) => s.activeChat);
+  const activeCharacter = useSnapshotStore((s) => s.character);
+  const activePersona = useSnapshotStore((s) => s.persona);
+  const activeBranch = useSnapshotStore((s) => s.activeBranch);
+  const messageCount = useSnapshotStore((s) => s.messageOrder.length);
   const draft = useChatStore((s) => s.draft);
   const isSending = useIsSending();
   const editingDraft = useChatStore((s) => s.editingDraft);
@@ -88,7 +92,13 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
 
   const promptPresets = bootstrapData?.promptPresets ?? [];
   const isFirstRun = (bootstrapData?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === 'true';
-  const activePromptPresetId = snapshot?.activeChat.promptPresetId ?? null;
+  const hasActiveSnapshot = Boolean(
+    activeChatId &&
+    activeChat?.id === activeChatId &&
+    activeCharacter &&
+    activeBranch,
+  );
+  const activePromptPresetId = activeChat?.promptPresetId ?? null;
 
   // Prompt trace from normalized store
   const activePromptTrace = useActiveTrace(useChatStore((s) => s.selectedTraceId));
@@ -119,7 +129,7 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
   }
 
   // --- Derived values for rendering ---
-  const resolvedActiveChatId = activeChatId ?? snapshot?.activeChat.id ?? null;
+  const resolvedActiveChatId = activeChatId ?? activeChat?.id ?? null;
   const contextUsed = activePromptTrace?.tokenAccounting?.total ?? 0;
   const contextLimit = provider.activeProviderProfile?.contextBudget ?? 0;
 
@@ -128,7 +138,7 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
 
   let shellSurface: React.ReactNode;
 
-  if (!snapshot) {
+  if (!hasActiveSnapshot) {
     shellSurface = (
       <div className="flex flex-1 items-center justify-center">
         <div className="scene-note">{isFirstRun ? "" : t("select_character_start_chat")}</div>
@@ -142,10 +152,10 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
 
   // AvatarPanel shows the full-size original image (for zoom/pan preview)
   // Falls back to the cropped avatar if no separate full asset exists
-  const avatarSrc = snapshot?.character.avatarFullAssetId
-    ? `${getGatewayBaseUrl()}/api/assets/${snapshot.character.avatarFullAssetId}`
-    : snapshot?.character.avatarAssetId
-      ? `${getGatewayBaseUrl()}/api/assets/${snapshot.character.avatarAssetId}`
+  const avatarSrc = activeCharacter?.avatarFullAssetId
+    ? `${getGatewayBaseUrl()}/api/assets/${activeCharacter.avatarFullAssetId}`
+    : activeCharacter?.avatarAssetId
+      ? `${getGatewayBaseUrl()}/api/assets/${activeCharacter.avatarAssetId}`
       : undefined;
 
   const tweaksPanelSettings = {
@@ -214,8 +224,8 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
           isActive: p.isActive,
         }))}
         contextWindow={{ used: contextUsed, limit: contextLimit }}
-        currentSummary={snapshot?.activeChat.summary ?? ""}
-        messageCount={snapshot?.messages.length ?? 0}
+        currentSummary={activeChat?.summary ?? ""}
+        messageCount={messageCount}
         onSummarize={handleSummarizeChat} onSaveSummary={handleSaveChatSummary}
         onFetchModelsForProfile={provider.handleFetchModelsForProfile}
       />
@@ -246,7 +256,7 @@ export function AppShell({ snapshot, tweaksSettings, setTweaksSettings }: AppShe
       />
 
       <PersonaModal
-        personas={personas} activePersonaId={snapshot?.persona?.id ?? null}
+        personas={personas} activePersonaId={activePersona?.id ?? null}
         isSaving={character.isSavingCharacter}
         onSaveEdit={(personaId, draft) => void character.handleSavePersona(personaId, draft)}
         onSetActive={(personaId) => void character.handleSetChatPersona(personaId)}

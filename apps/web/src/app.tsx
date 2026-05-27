@@ -6,7 +6,7 @@ import { TooltipProvider } from "./components/shared/Tooltip.js";
 
 export function App() {
   const { t } = useT();
-  const { isLoading, loadError, snapshot, tweaksSettings, setTweaksSettings } = useRpPlatformApp();
+  const { isLoading, loadError, tweaksSettings, setTweaksSettings } = useRpPlatformApp();
 
   if (isLoading) {
     return (
@@ -37,7 +37,6 @@ export function App() {
   return (
     <TooltipProvider delayDuration={200}>
       <AppShell
-        snapshot={snapshot}
         tweaksSettings={tweaksSettings}
         setTweaksSettings={setTweaksSettings}
       />
