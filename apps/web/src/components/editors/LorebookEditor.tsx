@@ -456,8 +456,6 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
       setDirtyCount(0);
       setSavingState("saved");
       setTimeout(() => setSavingState(prev => prev === "saved" ? "idle" : prev), 2000);
-      // Refresh entries to confirm server state
-      void refreshEntries();
     } catch {
       setSavingState("error");
     }
