@@ -19,6 +19,7 @@ import {
   PROMPT_LAYER_REASON,
   PROMPT_LAYER_SOURCE_ID,
   PROMPT_LAYER_SOURCE_TYPE,
+  IN_PROMPT_SUB_POSITION,
   createLoreLayerId,
   createRetrievalMemoryLayerId,
   createSummaryMemoryLayerId,
@@ -49,6 +50,7 @@ function makeLayer(input: {
   enabled?: boolean;
   reason?: string;
   role?: string;
+  subPosition?: number;
   text: string;
 }): PromptLayer {
   return {
@@ -62,6 +64,7 @@ function makeLayer(input: {
     tokenCount: estimateTokens(input.text),
     text: input.text.trim(),
     ...(input.role ? { role: input.role as "system" | "user" | "assistant" } : {}),
+    ...(input.subPosition != null ? { subPosition: input.subPosition } : {}),
   };
 }
 
@@ -73,6 +76,13 @@ function sortLayers(layers: PromptLayer[]): PromptLayer[] {
   return [...layers].sort((a, b) => {
     const posDiff = PROMPT_LAYER_POSITION_RANK[a.position] - PROMPT_LAYER_POSITION_RANK[b.position];
     if (posDiff !== 0) return posDiff;
+    // Within same position, sort by subPosition (lower = earlier), then by priority descending
+    if (a.subPosition != null && b.subPosition != null && a.subPosition !== b.subPosition) {
+      return a.subPosition - b.subPosition;
+    }
+    // Layers without subPosition go after those with it
+    if (a.subPosition != null && b.subPosition == null) return -1;
+    if (a.subPosition == null && b.subPosition != null) return 1;
     return b.priority - a.priority;
   });
 }
@@ -224,11 +234,24 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
       sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
       sourceId: context.preset.id,
-      position: "in_chat",
+      position: "in_prompt",
       priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
+      subPosition: IN_PROMPT_SUB_POSITION.authorNote,
       text: context.preset.authorsNote,
     });
-    layer.injectionDepth = context.preset.authorsNoteDepth ?? 4;
+    // AuthorsNote depth: if > 0, also inject a copy at the specified depth in chat
+    if ((context.preset.authorsNoteDepth ?? 0) > 0) {
+      const depthLayer = makeLayer({
+        id: PROMPT_LAYER_ID.promptPresetAuthorsNote + "_depth",
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+        sourceId: context.preset.id,
+        position: "in_chat",
+        priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
+        text: context.preset.authorsNote,
+      });
+      depthLayer.injectionDepth = context.preset.authorsNoteDepth ?? 4;
+      layers.push(depthLayer);
+    }
     layers.push(layer);
   }
 
@@ -286,6 +309,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
         sourceId: context.character.id,
         priority: PROMPT_LAYER_PRIORITY.characterBase,
+        subPosition: IN_PROMPT_SUB_POSITION.charDesc,
         text: characterBase,
       }),
     );
@@ -298,6 +322,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
         sourceId: context.character.id,
         priority: PROMPT_LAYER_PRIORITY.characterPersonality,
+        subPosition: IN_PROMPT_SUB_POSITION.charDesc,
         text: context.character.personality,
       }),
     );
@@ -322,19 +347,35 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     }
 
     // Map legacy lorebook position strings to pipeline positions.
-    // SillyTavern positions: before_char, after_char, before_examples,
-    // after_examples, top_an, bottom_an, at_depth, outlet
+    // If the position is already a pipeline position, pass through unchanged.
     const resolvedPosition = (() => {
       switch (loreEntry.position) {
         case "before_char":    return "before_prompt";
         case "after_char":     return "in_prompt";
         case "before_examples": return "in_prompt";
         case "after_examples":  return "in_prompt";
-        case "top_an":         return "in_chat";
-        case "bottom_an":      return "in_chat";
+        case "top_an":         return "in_prompt";
+        case "bottom_an":      return "in_prompt";
         case "at_depth":       return "in_chat";
         case "outlet":         return "hidden_system";
+        // Pipeline-native positions pass through unchanged
+        case "before_prompt":  return "before_prompt";
+        case "in_prompt":      return "in_prompt";
+        case "in_chat":        return "in_chat";
+        case "hidden_system":  return "hidden_system";
         default:                return "in_prompt";
+      }
+    })();
+
+    // Map ST position to subPosition for fine-grained WI Anchor ordering
+    const subPos = (() => {
+      switch (loreEntry.position) {
+        case "after_char":     return IN_PROMPT_SUB_POSITION.afterChar;
+        case "top_an":         return IN_PROMPT_SUB_POSITION.beforeAuthorNote;
+        case "bottom_an":      return IN_PROMPT_SUB_POSITION.afterAuthorNote;
+        case "before_examples": return IN_PROMPT_SUB_POSITION.beforeExamples;
+        case "after_examples":  return IN_PROMPT_SUB_POSITION.afterExamples;
+        default:                return undefined;
       }
     })();
 
@@ -345,12 +386,13 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       position: resolvedPosition,
       priority: loreEntry.priority,
       role: loreEntry.role,
+      subPosition: subPos,
       reason: PROMPT_LAYER_REASON.activatedLoreEntry,
       text: joinNonEmpty([loreEntry.title ? PROMPT_FORMAT.loreHeader(loreEntry.title) : null, loreEntry.content]),
     });
 
-    // at_depth and top_an/bottom_an inject into chat history at a specific depth
-    if (loreEntry.position === "at_depth" || loreEntry.position === "top_an" || loreEntry.position === "bottom_an") {
+    // at_depth injects into chat history at a specific depth
+    if (loreEntry.position === "at_depth") {
       layer.injectionDepth = loreEntry.depth ?? 4;
     }
 
@@ -521,6 +563,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
         sourceId: context.character.id,
         priority: PROMPT_LAYER_PRIORITY.postHistoryInstructions,
+        subPosition: IN_PROMPT_SUB_POSITION.postHistoryInstructions,
         text: context.character.postHistoryInstructions,
       }),
     );

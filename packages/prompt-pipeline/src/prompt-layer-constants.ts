@@ -11,6 +11,33 @@ export const PROMPT_LAYER_POSITION_RANK: Record<PromptLayerPosition, number> = {
 };
 
 /**
+ * Sub-positions for fine-grained ordering within the `in_prompt` position.
+ * Corresponds to ST WI Anchors — determines where lorebook entries
+ * are placed relative to character description, Author's Note, and
+ * example messages within the system prompt.
+ */
+export const IN_PROMPT_SUB_POSITION = {
+  /** Character description blocks (character_base, personality, persona) */
+  charDesc: 0,
+  /** WI entries positioned after character description (ST: after_char) */
+  afterChar: 10,
+  /** WI entries positioned before Author's Note (ST: top_an) */
+  beforeAuthorNote: 15,
+  /** Author's Note itself */
+  authorNote: 20,
+  /** WI entries positioned after Author's Note (ST: bottom_an) */
+  afterAuthorNote: 25,
+  /** WI entries positioned before example messages (ST: before_examples) */
+  beforeExamples: 30,
+  /** Example messages */
+  exampleMessages: 40,
+  /** WI entries positioned after example messages (ST: after_examples) */
+  afterExamples: 50,
+  /** Post-history instructions (after everything in system prompt) */
+  postHistoryInstructions: 60,
+} as const;
+
+/**
  * Numeric priority system for prompt layers.
  *
  * Higher values = more important / rendered first within the same position.
