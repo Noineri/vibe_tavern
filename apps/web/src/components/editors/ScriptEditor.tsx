@@ -365,7 +365,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
   // ── Script list (for LorebookEditor list view) ────────────
   const scriptListContent = (
-    <div className="flex-1 overflow-y-auto" style={{ padding: isMobile ? "12px" : "20px 24px" }}>
+    <div className="flex-1 overflow-y-auto pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]" style={{ padding: isMobile ? "12px" : "20px 24px" }}>
       {scripts.length === 0 ? (
         <div className="py-10 text-center">
           <div className="mb-2 text-[13px] text-t3">{t("script_no_scripts")}</div>
