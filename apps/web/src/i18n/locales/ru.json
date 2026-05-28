@@ -757,6 +757,7 @@
   "script_api_chat_lastMessage": "Последнее сообщение пользователя",
   "script_api_chat_messages": "Полная история сообщений",
   "script_api_chat_messageCount": "Общее количество сообщений",
+  "script_api_chat_injectMessage": "Вставить сообщение в конец истории чата (роль по умолчанию: system)",
   "script_api_char_name": "Имя персонажа",
   "script_api_char_personality": "Текст личности — используйте += для вставки в промпт",
   "script_api_char_scenario": "Текст сценария — используйте += для вставки в промпт",

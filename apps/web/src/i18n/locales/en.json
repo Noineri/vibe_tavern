@@ -760,6 +760,7 @@
   "script_api_chat_lastMessage": "User's most recent message",
   "script_api_chat_messages": "Full message history",
   "script_api_chat_messageCount": "Total message count",
+  "script_api_chat_injectMessage": "Inject a message at the end of chat history (default role: system)",
   "script_api_char_name": "Character name",
   "script_api_char_personality": "Personality text — use += to inject into prompt",
   "script_api_char_scenario": "Scenario text — use += to inject into prompt",
