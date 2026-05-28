@@ -261,7 +261,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
                 >
                   <div>
                     <strong>
-                      {index + 1}. {layer.sourceType}
+                      {index + 1}. {layer.sourceName ?? layer.sourceType}
                     </strong>
                     <span className="ml-1.5 text-t3">{layer.sourceId}</span>
                   </div>

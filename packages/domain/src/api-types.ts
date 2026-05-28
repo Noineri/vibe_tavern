@@ -8,6 +8,8 @@ export interface PromptLayerDto {
   id: string;
   sourceType: string;
   sourceId: string;
+  /** Human-readable label for the trace UI. */
+  sourceName: string;
   position: "before_prompt" | "in_prompt" | "in_chat" | "hidden_system";
   priority: number;
   enabled: boolean;
