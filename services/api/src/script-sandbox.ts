@@ -32,12 +32,19 @@ export interface ScriptExecutionInput {
   scriptState: Record<string, Record<string, unknown>>;
 }
 
+export interface InjectedMessage {
+  content: string;
+  role: 'system' | 'user' | 'assistant';
+}
+
 export interface ScriptExecutionResult {
   /** Mutated character fields after all scripts ran */
   character: {
     personality: string;
     scenario: string;
   };
+  /** Messages injected by scripts via context.chat.injectMessage() */
+  injectedMessages: InjectedMessage[];
   /** Updated script state (to persist back to chat) */
   updatedScriptState: Record<string, Record<string, unknown>>;
   /** Errors per script */
@@ -56,6 +63,7 @@ export function executeScripts(input: ScriptExecutionInput): ScriptExecutionResu
     scenario: character.scenario,
   };
 
+  const injectedMessages: InjectedMessage[] = [];
   const updatedScriptState: Record<string, Record<string, unknown>> = {};
   const errors: ScriptExecutionResult["errors"] = [];
 
@@ -64,7 +72,7 @@ export function executeScripts(input: ScriptExecutionInput): ScriptExecutionResu
     const stateBucket: Record<string, unknown> = { ...(scriptState[script.id] ?? {}) };
 
     // Build the context object with getter-based Janitor aliases
-    const chatContext = buildChatContext(chat);
+    const chatContext = buildChatContext(chat, injectedMessages);
     const characterContext = buildCharacterContext(mutableCharacter);
     const loreContext = buildLoreContext(activeLoreEntries);
     const stateContext = buildStateContext(stateBucket);
@@ -130,6 +138,7 @@ export function executeScripts(input: ScriptExecutionInput): ScriptExecutionResu
       personality: mutableCharacter.personality,
       scenario: mutableCharacter.scenario,
     },
+    injectedMessages,
     updatedScriptState,
     errors,
   };
@@ -137,10 +146,13 @@ export function executeScripts(input: ScriptExecutionInput): ScriptExecutionResu
 
 // ─── Context builders ─────────────────────────────────────────────────────
 
-function buildChatContext(chat: ScriptExecutionInput["chat"]) {
+function buildChatContext(chat: ScriptExecutionInput["chat"], injectedMessages: InjectedMessage[]) {
   const messages = chat.messages;
   const ctx: Record<string, unknown> = {
     messages,
+    injectMessage(content: string, role: 'system' | 'user' | 'assistant' = 'system') {
+      injectedMessages.push({ content, role });
+    },
   };
 
   // Primary names
@@ -175,6 +187,8 @@ function buildChatContext(chat: ScriptExecutionInput["chat"]) {
     enumerable: true,
     configurable: false,
   });
+  // Janitor alias for injectMessage
+  ctx.inject_message = ctx.injectMessage;
 
   return ctx;
 }

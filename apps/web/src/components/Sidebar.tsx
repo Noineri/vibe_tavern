@@ -110,7 +110,7 @@ export function Sidebar() {
         {/* DYNAMIC: justifyContent and padding depend on sidebarCollapsed state */}
         <div className="flex h-[60px] shrink-0 items-center gap-2.5 border-b border-border" style={{ justifyContent: sidebarCollapsed ? 'center' : undefined, padding: sidebarCollapsed ? '0 6px' : '0 12px' }}>
           {!sidebarCollapsed && (
-            <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[5px] bg-accent font-body text-[calc(var(--ui-fs)-1px)] font-medium italic text-on-accent">r</div>
+            <img src="/logo.svg" alt="Vibe Tavern" className="flex h-[30px] w-[30px] shrink-0 rounded-[5px] object-contain" />
           )}
           {!sidebarCollapsed && (
             <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap font-body text-[length:var(--ui-fs)] font-medium tracking-[-0.01em] text-t1">{t("app_name")}</span>

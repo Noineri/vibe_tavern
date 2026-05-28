@@ -180,7 +180,7 @@ POST /api/chats/:chatId/messages/stream
 Load entities → resolve lorebooks → activation engine → scripts execute → assemble prompt → LLM call
 ```
 
-Scripts run BEFORE prompt assembly. They can modify `context.character.personality` and `context.character.scenario`, which then flow into the assembled prompt as character data.
+Scripts run BEFORE prompt assembly. They can modify `context.character.personality` and `context.character.scenario`, and inject messages at the end of chat history via `context.chat.injectMessage()`. All mutations flow into the assembled prompt.
 
 ---
 
@@ -490,6 +490,7 @@ The platform supports secure access from mobile devices and other LAN clients th
 5. Scripts receive a `context` object:
    - `context.chat.messages` — full message array
    - `context.chat.lastMessage` — getter for last message content
+   - `context.chat.injectMessage(content, role?)` — inject a message (default role `system`) at the end of chat history, before the model's response
    - `context.character.name` — read-only
    - `context.character.personality` — mutable (scripts can `+=` to inject text)
    - `context.character.scenario` — mutable (scripts can `+=` to inject text)

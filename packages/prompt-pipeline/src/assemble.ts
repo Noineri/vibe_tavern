@@ -569,6 +569,25 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     );
   }
 
+  // --- Script-injected messages (context.chat.injectMessage) ---
+  // These become in_chat layers with injectionDepth=0 (right before the last message)
+  for (let i = 0; i < (context.chat.scriptInjections?.length ?? 0); i++) {
+    const inj = context.chat.scriptInjections![i];
+    if (!inj.content?.trim()) continue;
+    const layer = makeLayer({
+      id: `script_injection_${i}`,
+      sourceType: 'script_injection',
+      sourceId: '__pipeline',
+      position: 'in_chat',
+      priority: 200 + i,
+      role: inj.role,
+      reason: 'injected by script via context.chat.injectMessage()',
+      text: inj.content,
+    });
+    layer.injectionDepth = 0;
+    layers.push(layer);
+  }
+
   // --- Assign modes to built-in layers from LAYER_MODES ---
   for (const layer of layers) {
     const layerModes = LAYER_MODES[layer.id];

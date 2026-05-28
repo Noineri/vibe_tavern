@@ -192,11 +192,13 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 	}): Promise<{
 		personality: string;
 		scenario: string;
+		injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
 		errors: Array<{ scriptId: string; scriptName: string; error: string }>;
 	}> {
 		const defaultResult = {
 			personality: input.characterRecord.personality ?? '',
 			scenario: input.characterRecord.scenario ?? '',
+			injectedMessages: [] as Array<{ content: string; role: 'system' | 'user' | 'assistant' }>,
 			errors: [] as Array<{ scriptId: string; scriptName: string; error: string }>,
 		};
 
@@ -250,6 +252,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		return {
 			personality: result.character.personality,
 			scenario: result.character.scenario,
+			injectedMessages: result.injectedMessages,
 			errors: result.errors.map(e => ({
 				scriptId: e.scriptId,
 				scriptName: e.scriptName,
