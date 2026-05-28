@@ -274,6 +274,29 @@ export function ContextMemoryModal({
     setDirty(false);
   }
 
+  async function createNewSummary() {
+    if (!activeChatId) return;
+    setSaving(true);
+    try {
+      const saved = await createChatSummaryAction(activeChatId, {
+        label: `T1\u2013T${maxMessage}`,
+        content: "",
+        summarizedFrom: 1,
+        summarizedTo: maxMessage,
+        includeInContext: true,
+        excludeSummarized: true,
+        source: "manual",
+      });
+      setSummaries((prev) => upsertSummary(prev, saved));
+      selectSummary(saved);
+      if (isMobile) setMobileDetailOpen(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("summary_save_failed"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function handleRangeChange(nextFrom: number, nextTo: number) {
     setRangeFrom(clamp(nextFrom, 1, maxMessage));
     setRangeTo(clamp(nextTo, 1, maxMessage));
@@ -687,8 +710,8 @@ export function ContextMemoryModal({
                 <button
                   type="button"
                   className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-xs text-t3 hover:border-border hover:bg-s2 hover:text-t1"
-                  onClick={() => { startNewSummary(); setMobileDetailOpen(true); }}
-                  disabled={!activeChatId}
+                  onClick={() => void createNewSummary()}
+                  disabled={!activeChatId || saving}
                 >
                   <Icons.Plus /> {t("new_summary_entry")}
                 </button>
@@ -705,8 +728,8 @@ export function ContextMemoryModal({
                 <button
                   type="button"
                   className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-xs text-t3 hover:border-border hover:bg-s2 hover:text-t1"
-                  onClick={startNewSummary}
-                  disabled={!activeChatId}
+                  onClick={() => void createNewSummary()}
+                  disabled={!activeChatId || saving}
                 >
                   <Icons.Plus /> {t("new_summary_entry")}
                 </button>
