@@ -45,6 +45,15 @@ function DualRangeSlider({ min, max, from, to, disabled, onChange }: {
   }
   const trackPct = (v: number) => max > min ? ((v - min) / (max - min)) * 100 : 0;
 
+  const thumbCls =
+    "absolute inset-x-0 top-0 h-5 w-full appearance-none bg-transparent " +
+    "[&::-webkit-slider-thumb]:h-[16px] [&::-webkit-slider-thumb]:w-[16px] " +
+    "[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full " +
+    "[&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-accent " +
+    "[&::-webkit-slider-thumb]:bg-surface [&::-webkit-slider-thumb]:shadow-sm " +
+    "[&::-webkit-slider-thumb]:transition-shadow [&::-webkit-slider-thumb]:hover:shadow-[0_0_0_3px_var(--accent-dim)] " +
+    "[&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:cursor-pointer";
+
   return (
     <div className="relative h-5 pb-4">
       {/* Track bg */}
@@ -54,24 +63,19 @@ function DualRangeSlider({ min, max, from, to, disabled, onChange }: {
         className="absolute top-[7px] h-[6px] rounded-full bg-accent"
         style={{ left: `${trackPct(from)}%`, width: `${trackPct(to) - trackPct(from)}%` }}
       />
-      {/* Lower thumb */}
+      {/* Both inputs: pointer-events:none on container, auto on thumb via Tailwind */}
       <input
         type="range" min={min} max={max} value={from}
         disabled={disabled}
         onChange={(e) => handleFrom(Number(e.target.value))}
-        className="dual-range-thumb absolute inset-x-0 top-0 z-10 h-5 w-full cursor-pointer appearance-none bg-transparent [&::-webkit-slider-thumb]:h-[16px] [&::-webkit-slider-thumb]:w-[16px] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-accent [&::-webkit-slider-thumb]:bg-surface [&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-thumb]:transition-shadow [&::-webkit-slider-thumb]:hover:shadow-[0_0_0_3px_var(--accent-dim)]"
-        style={{ pointerEvents: "auto" }}
+        className={cn("dual-range-l z-[2] pointer-events-none", thumbCls)}
       />
-      {/* Upper thumb — sits on top, pointer-events only on thumb */}
       <input
         type="range" min={min} max={max} value={to}
         disabled={disabled}
         onChange={(e) => handleTo(Number(e.target.value))}
-        className="dual-range-thumb absolute inset-x-0 top-0 h-5 w-full cursor-pointer appearance-none bg-transparent [&::-webkit-slider-thumb]:h-[16px] [&::-webkit-slider-thumb]:w-[16px] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-accent [&::-webkit-slider-thumb]:bg-surface [&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-thumb]:transition-shadow [&::-webkit-slider-thumb]:hover:shadow-[0_0_0_3px_var(--accent-dim)]"
-        style={{ pointerEvents: "none" }}
+        className={cn("dual-range-u z-[3] pointer-events-none", thumbCls)}
       />
-      {/* Make the upper thumb interactive via a transparent hit area */}
-      <style>{`.dual-range-thumb::-webkit-slider-thumb{pointer-events:auto}`}</style>
     </div>
   );
 }
