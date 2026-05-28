@@ -203,7 +203,7 @@ export class ChatSummaryService {
     const summaries = await this.stores.chatSummaries.listByChatBranch(chat.id, chat.activeBranchId);
     const lastCovered = summaries.reduce((max, summary) => Math.max(max, summary.summarizedTo), 0);
     const messages = await this.stores.chats.getMessages(chat.activeBranchId);
-    const currentLast = messages.reduce((max, message) => Math.max(max, message.position + 1), 0);
+    const currentLast = Math.max(1, messages.reduce((max, message) => Math.max(max, message.position + 1), 0) - 1);
     if (currentLast - lastCovered < config.everyN) return;
 
     const profile = config.useChatModel
