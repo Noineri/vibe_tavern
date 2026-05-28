@@ -6,6 +6,7 @@ export const autoSummaryConfigSchema = z.object({
   enabled: z.boolean().default(false),
   everyN: z.number().int().min(1).max(500).default(20),
   useChatModel: z.boolean().default(true),
+  excludeSummarized: z.boolean().default(true),
   providerProfileId: z.string().trim().optional(),
   model: z.string().trim().optional(),
 });

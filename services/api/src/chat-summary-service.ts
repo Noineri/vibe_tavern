@@ -229,7 +229,7 @@ export class ChatSummaryService {
         summarizedTo: currentLast,
         label: `T${lastCovered + 1}–T${currentLast}`,
         includeInContext: true,
-        excludeSummarized: true,
+        excludeSummarized: config.excludeSummarized,
         source: 'auto',
       });
     } catch (err) {
@@ -260,6 +260,7 @@ function normalizeAutoSummaryConfig(raw: Record<string, unknown>): {
   enabled: boolean;
   everyN: number;
   useChatModel: boolean;
+  excludeSummarized: boolean;
   providerProfileId?: string;
   model?: string;
 } {
@@ -270,6 +271,7 @@ function normalizeAutoSummaryConfig(raw: Record<string, unknown>): {
     enabled: raw.enabled === true,
     everyN,
     useChatModel: raw.useChatModel !== false,
+    excludeSummarized: raw.excludeSummarized !== false,
     providerProfileId: typeof raw.providerProfileId === "string" ? raw.providerProfileId : undefined,
     model: typeof raw.model === "string" ? raw.model : undefined,
   };

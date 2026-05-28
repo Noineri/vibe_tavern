@@ -29,6 +29,7 @@ const DEFAULT_AUTO_CONFIG: AutoSummaryConfig = {
   enabled: false,
   everyN: 20,
   useChatModel: true,
+  excludeSummarized: true,
 };
 
 /* ─── Dual-range slider ─── */
@@ -552,6 +553,13 @@ export function ContextMemoryModal({
           />
           <span>{t("summary_auto_messages")}</span>
         </div>
+        <label className="mt-3 flex items-center gap-2 font-ui text-[13px] text-t2">
+          <Toggle
+            checked={autoConfig.excludeSummarized}
+            onChange={(v) => void commitMemorySettings({ autoConfig: { ...autoConfig, excludeSummarized: v } })}
+          />
+          {t("summary_auto_exclude_toggle")}
+        </label>
       </section>
 
       {/* ── Messages in prompt (mobile: moved here from footer) ── */}
