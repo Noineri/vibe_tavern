@@ -71,6 +71,13 @@
       "when": 1779700000000,
       "tag": "0009_content_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1779750000000,
+      "tag": "0010_lorebook_activation",
+      "breakpoints": true
     }
   ]
 }

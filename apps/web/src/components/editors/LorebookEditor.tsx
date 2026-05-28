@@ -186,7 +186,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
       setExpandedLorebooks(prev => new Set([...prev, newLb.id]));
       setEditingLorebookId(newLb.id);
       setEditLbName(newLb.name);
-    } finally { setCreatingLb(false); }
+    } catch (e) { console.error("[LorebookEditor] createLorebook failed:", e); alert(String(e)); } finally { setCreatingLb(false); }
   };
 
   const handleUpdateLb = async (id: string, body: Parameters<typeof updateLorebookMeta>[1]) => {
@@ -587,6 +587,7 @@ export function LorebookEditor({ characterId, chatId, personaId }: LorebookEdito
             onAddEntry={() => handleAddEntry(lb.id)}
             onEntryClick={(entryId) => handleEntryClick(lb.id, entryId)}
             onToggleEnabled={() => handleUpdateLb(lb.id, { enabled: !lb.enabled })}
+            onUpdateMeta={body => handleUpdateLb(lb.id, body)}
           />
         );
       })}
@@ -1218,12 +1219,13 @@ interface LorebookAccordionProps {
   onAddEntry: () => void;
   onEntryClick: (entryId: string) => void;
   onToggleEnabled: () => void;
+  onUpdateMeta: (body: { scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean }) => void;
 }
 
 function LorebookAccordion({
   lorebook, expanded, editing, editLbName, editLbScope, activeEntryId, isMobile, actionMenuOpen, onToggleActionMenu, t,
   onToggle, onStartEdit, onSaveEdit, onCancelEdit, onEditLbName, onEditLbScope,
-  onDelete, onAddEntry, onEntryClick, onToggleEnabled,
+  onDelete, onAddEntry, onEntryClick, onToggleEnabled, onUpdateMeta,
 }: LorebookAccordionProps) {
   const [entries, setEntries] = useState<LoreEntryRecord[]>([]);
 
@@ -1312,7 +1314,31 @@ function LorebookAccordion({
         )}
       </div>
       {expanded && !editing && (
-        <div className="flex flex-col gap-2 border-t border-border" style={{ padding: "10px 12px" }}>
+        <div className="flex flex-col gap-3 border-t border-border" style={{ padding: "10px 12px" }}>
+          {/* Lorebook settings */}
+          <div className="flex items-end gap-6 rounded-lg border border-border bg-s2/50 px-3 py-2.5">
+            <div className="flex gap-4">
+              <CustomTooltip content={t("lore_token_budget_hint")}>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium uppercase leading-tight tracking-[0.05em] text-t3/70">{t("lore_token_budget")}</label>
+                  <input className="h-8 w-24 rounded-md border border-border bg-surface px-2.5 text-[13px] text-t1 outline-none focus:border-accent" type="number" min={0} value={lorebook.tokenBudget} onChange={e => { const v = Math.max(0, parseInt(e.target.value) || 0); onUpdateMeta({ tokenBudget: v }); }} />
+                </div>
+              </CustomTooltip>
+              <CustomTooltip content={t("lore_scan_depth_hint")}>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium uppercase leading-tight tracking-[0.05em] text-t3/70">{t("lore_scan_depth")}</label>
+                  <input className="h-8 w-24 rounded-md border border-border bg-surface px-2.5 text-[13px] text-t1 outline-none focus:border-accent" type="number" min={0} value={lorebook.scanDepth} onChange={e => { const v = Math.max(0, parseInt(e.target.value) || 0); onUpdateMeta({ scanDepth: v }); }} />
+                </div>
+              </CustomTooltip>
+            </div>
+            <div className="pb-0.5">
+              <CustomTooltip content={t("lore_recursive_scanning_hint")}>
+                <div>
+                  <Checkbox checked={lorebook.recursiveScanning} onChange={v => onUpdateMeta({ recursiveScanning: v })} label={t("lore_recursive_scanning")} />
+                </div>
+              </CustomTooltip>
+            </div>
+          </div>
           {entries.length === 0 && <div className="py-3 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("lore_no_entries")}</div>}
           {entries.map(e => (
             <div key={e.id} className={cn("cursor-pointer rounded-lg border transition-all min-h-[44px]", e.id === activeEntryId ? "border-accent bg-accent-dim" : "border-border bg-surface hover:bg-s2")} style={{ padding: "10px 14px" }} onClick={() => onEntryClick(e.id)}>
@@ -1322,7 +1348,7 @@ function LorebookAccordion({
               </div>
               <div className="mt-1 truncate font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{e.keys.length > 0 ? `keys: ${e.keys.join(", ")}` : t("lore_no_entries")}</div>
               {e.content && <div className="mt-1.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{e.content}</div>}
-              {e.content && <TokenCounter text={e.content} className="mt-1" />}
+              {e.content && <TokenCounter text={e.content} className="mt-1 flex justify-end font-ui text-[11px] tabular-nums text-t3/50" />}
             </div>
           ))}
         </div>

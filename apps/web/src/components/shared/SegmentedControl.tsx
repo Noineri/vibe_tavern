@@ -52,7 +52,7 @@ export function SegmentedControl({
               compact ? "px-2.5 py-1 text-[11px]" : "px-3 py-1.5 text-[13px]",
               active
                 ? "bg-s2 text-accent shadow-sm font-medium"
-                : "text-t3 hover:text-t2",
+                : "text-t2 hover:text-t1",
             )}
           >
             {opt.label}
