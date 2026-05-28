@@ -20,6 +20,7 @@ Vibe Tavern is a self-hosted roleplay chat application — a local alternative t
 - **Build Mode** — unified editor panel for character, lorebooks, scripts, and prompt trace inspection
 - Record full prompt traces for debugging (which layers activated, token counts, final payload)
 - Summarize chat history via AI
+- **Memory system** — ranged summaries with auto-summary, message history limit, exclusion of summarized messages from context, branch-scoped storage (text in `.md` files, meta in SQLite)
 - Stream responses with reasoning support (DeepSeek R1 thinking, Claude extended thinking)
 - Import thinking tags from SillyTavern chat exports as reasoning variants
 - Budget-aware context compaction: reserves tokens for model response, trims history to fit
@@ -140,6 +141,10 @@ POST /api/chats/:chatId/messages/stream
   │   └─ PromptAssemblyService.assembleForChat()
   │       ├─ StaticPromptResolver: load character, persona, preset from DB
   │       │   ├─ listAllActiveForChat() → load lorebooks + entries
+  │       │   ├─ loadEnabledSummaries() → load ranged summaries for chat+branch
+  │       │   ├─ Exclude summarized ranges from message history
+  │       │   ├─ Always preserve last user message (prevent empty prompt)
+  │       │   ├─ Apply messageHistoryLimit
   │       │   ├─ resolveActivatedEntries()                → lore-activation-engine
   │       │   │   ├─ Keyword matching (AND/OR/NOT logic)
   │       │   │   ├─ Scan depth, recursive scanning, probability
@@ -171,13 +176,14 @@ POST /api/chats/:chatId/messages/stream
   └─ ChatRuntime.appendAssistantReply()
       ├─ ChatStore.addMessage()                          → DB: INSERT assistant message
       ├─ ChatStore.saveTrace()                           → DB: INSERT prompt trace
+      ├─ ChatSummaryService.triggerAutoSummary()        → fire-and-forget background (if enabled)
       └─ SessionRuntime.getSnapshot()                    → full state for frontend
 ```
 
 **Pipeline order (summary):**
 
 ```
-Load entities → resolve lorebooks → activation engine → scripts execute → assemble prompt → LLM call
+Load entities → load summaries → exclude summarized ranges → resolve lorebooks → activation engine → scripts execute → assemble prompt → LLM call
 ```
 
 Scripts run BEFORE prompt assembly. They can modify `context.character.personality` and `context.character.scenario`, and inject messages at the end of chat history via `context.chat.injectMessage()`. All mutations flow into the assembled prompt.
@@ -190,7 +196,7 @@ Scripts run BEFORE prompt assembly. They can modify `context.character.personali
 
 Shared types and constants. No logic, no imports from other packages.
 
-- **`entities.ts`** — `Character`, `Chat`, `Message`, `MessageVariant`, `ChatBranch`, `LoreEntry`, `Persona`, `PromptTrace`, `PromptPreset`, `ToolProfile`, `SummaryMemorySnapshot`, `RetrievedMemoryHit`, `CharacterVersion`. Characters and personas carry both `avatarAssetId` (cropped thumbnail) and `avatarFullAssetId` (original full-size image for zoom preview).
+- **`entities.ts`** — `Character`, `Chat`, `Message`, `MessageVariant`, `ChatBranch`, `LoreEntry`, `Persona`, `PromptTrace`, `PromptPreset`, `ToolProfile`, `SummaryMemorySnapshot`, `RetrievedMemoryHit`, `CharacterVersion`, `ChatAutoSummaryConfig`. Characters and personas carry both `avatarAssetId` (cropped thumbnail) and `avatarFullAssetId` (original full-size image for zoom preview).
 - **`ids.ts`** — Branded ID types (`Brand<"ChatId">`) to prevent accidental ID swaps
 - **`platform-constants.ts`** — Enum-like const objects: `PROVIDER_TYPE`, `CHAT_STATUS`, `MESSAGE_ROLE`, `MESSAGE_STATE`, `LORE_LOGIC`, `PROMPT_LAYER_POSITION`, `CARD_FORMAT`, `SUMMARY_KIND`, `TOOL_PROFILE_MODE`
 - **`api-types.ts`** — DTOs for API responses: `AssemblePromptResponse`, `PromptTraceRecordDto`, `PromptPresetDto`, `PromptLayerDto`
@@ -261,9 +267,10 @@ Drizzle ORM schema over SQLite with automatic migration on startup.
 1. Open SQLite with WAL mode and foreign keys enabled
 2. Resolve migrations folder: env var `RP_PLATFORM_MIGRATIONS_DIR` → exe-relative `drizzle/` → source-tree walk-up
 3. `baselineLegacyDb()` — if DB has user tables but no `__drizzle_migrations` tracking table (pre-migration DB), reads `_journal.json`, computes SHA-256 hash of each `.sql` file, and inserts them as already-applied so `migrate()` skips them
-4. `ensureAlterColumns()` — **pre-flight check**: scans ALL migration SQL files for `ALTER TABLE ADD COLUMN` statements, checks if those columns exist in the current DB, and applies any missing ones BEFORE drizzle sees the schema. Prevents "no such column" errors on startup.
-5. `repairMissingTables()` — scans journal entries for tables/columns not present in the DB and applies them, then stamps the migration as applied.
-6. `migrate()` — apply any unapplied `.sql` files from `drizzle/` in journal order
+4. `ensureAlterColumns()` — **post-migration repair only**: scans ALL migration SQL files for `ALTER TABLE ADD COLUMN` statements, checks if those columns exist in the current DB, and applies any missing ones AFTER drizzle `migrate()` completes.
+5. `healPartialMigrations()` — handles partial migration state (e.g. from pre-flight column additions that ran before `migrate()`). Splits unstamped migration SQL into individual statements, tolerates `already exists`/`duplicate column` errors, stamps the hash. Called on `migrate()` failure with automatic retry.
+6. `repairMissingTables()` — scans journal entries for tables/columns not present in the DB and applies them, then stamps the migration as applied.
+7. `migrate()` — apply any unapplied `.sql` files from `drizzle/` in journal order. Wrapped in try/catch with `healPartialMigrations()` + retry on failure.
 
 **Migrations:**
 
@@ -279,6 +286,9 @@ Drizzle ORM schema over SQLite with automatic migration on startup.
 | `0007_messages_model_id.sql` | `model_id` column on `message_variants` table |
 | `0008_custom_injections.sql` | `custom_injections_json` column on `prompt_presets` |
 | `0009_content_hash.sql` | `content_hash` + `has_file_on_disk` columns on characters, personas, lorebooks, lore_entries, scripts, prompt_presets (DUAL storage migration) |
+| `0010_lorebook_activation.sql` | Lorebook activation features: scan depth, recursive scanning, probability, cooldown/delay/sticky windows, group weights, character filters, match sources, triggers. Per-entry overrides for scan depth, logic, and keys. |
+| `0010_max_recursion_steps.sql` | `max_recursion_steps` column on lorebooks table |
+| `0011_chat_summaries.sql` | `chat_summaries` table (ranged summaries with branch scope, source, include/exclude toggles). `auto_summary_config_json` column on chats. `message_history_limit` column on chats. |
 
 **Key constraints:**
 
@@ -296,6 +306,7 @@ characters ←── chats ──→ personas
            messages ←── messageVariants
                │
            promptTraces
+           chatSummaries (scoped by chatId + branchId)
 
 promptPresets ──→ providerProfiles
                       │
@@ -316,7 +327,7 @@ chatId:      FK → chats      (nullable, cascade delete)
 
 Global scope: all three FKs null. Character scope: `characterId` set, etc.
 
-Exposed via **store classes** (`CharacterStore`, `ChatStore`, `PersonaStore`, `PresetStore`, `ProviderStore`, `UiSettingsStore`, `LorebookStore`, `ScriptStore`) behind a `StoreContainer` facade created by `createStoreContainer(dbPath)`.
+Exposed via **store classes** (`CharacterStore`, `ChatStore`, `PersonaStore`, `PresetStore`, `ProviderStore`, `UiSettingsStore`, `LorebookStore`, `ScriptStore`, `ChatSummaryStore`) behind a `StoreContainer` facade created by `createStoreContainer(dbPath)`.
 
 **File storage** (`packages/db/src/file-store.ts`) — `FileStore` provides structured JSON file I/O under a `data/` root with per-type subfolders:
 
@@ -329,6 +340,7 @@ Exposed via **store classes** (`CharacterStore`, `ChatStore`, `PersonaStore`, `P
 | `chatMirrors` | Chat transcript exports (JSONL per branch) |
 | `assets` | Avatar images |
 | `traces` | Prompt trace JSON files |
+| `summaries` | Summary `.md` text files (ranged summaries via `ContentStore`) |
 
 Currently used for: chat transcript mirrors (`mirrorChatTranscript()`), prompt trace persistence, and asset storage. Character/persona/preset/lorebook folders are defined but not yet wired as primary storage.
 
@@ -525,7 +537,66 @@ The AI assistant is a **separate LLM call**, not a prompt layer. It reuses the e
 | `prompt-assembly-service.ts` | `PromptAssemblyService` — loads context from DB, calls `assemblePrompt()`, returns assembled prompt + trace draft. |
 | `prompt-resolver.ts` | `StaticPromptResolver` — reads character/persona/preset/lore from stores. Orchestrates lorebook activation and script execution. |
 | `live-chat-orchestrator.ts` | `LiveChatOrchestrator` — coordinates prepare → execute → append for all generation paths (send, generate, regenerate, streaming and non-streaming). Passes `contextBudget` and `responseReserve` from provider profile to prompt assembly. |
-| `chat-summary-service.ts` | `ChatSummaryService` — summarize chat via AI, using summary-mode prompt assembly. |
+| `chat-summary-service.ts` | `ChatSummaryService` — summarize chat via AI, using summary-mode prompt assembly. Also manages ranged summaries (CRUD, generation) and auto-summary trigger after assistant replies. |
+
+#### Memory system (ranged summaries)
+
+Vibe Tavern stores chat summaries as ranged records — each summary covers a specific message range (e.g. T1–T40) within a chat branch. Summaries can be created manually or automatically.
+
+**Storage:**
+- Summary metadata lives in SQLite (`chat_summaries` table)
+- Summary text stored as `.md` files under `data/summaries/{id}.md` via `ContentStore` text APIs
+- Scoped by `chatId` + `branchId` (summaries follow branch forks)
+
+**Key files:**
+
+| File | Role |
+|------|------|
+| `packages/db/src/stores/chat-summary-store.ts` | `ChatSummaryStore` — CRUD for summaries. `listByChatBranch()` loads all summaries for a branch. Uses `ContentStore` for `.md` text read/write/delete. |
+| `packages/db/src/content-store.ts` | `ContentStore` — generic text file I/O under `data/summaries/`. `readText()` / `writeText()` / `deleteText()`. |
+| `services/api/src/chat-summary-service.ts` | `ChatSummaryService` — ranged summary generation (calls LLM in `summary` mode), auto-summary trigger, CRUD operations. |
+| `packages/api-contracts/src/schemas/summarize-schema.ts` | Zod schemas for summary API contracts + `autoSummaryConfigSchema`. |
+
+**Summary record fields:**
+- `summarizedFrom` / `summarizedTo` — 1-based message position range
+- `includeInContext` — whether this summary is injected into the prompt (toggle in UI)
+- `excludeSummarized` — whether messages in the summary range are excluded from chat history
+- `source` — `"manual"` or `"auto"`
+- `content` — the summary text (stored as `.md` file)
+
+**Exclusion filtering** (in `PromptAssemblyService`):
+1. Load all summaries for the active chat + branch where `includeInContext=true` and `excludeSummarized=true`
+2. Build exclusion ranges from `summarizedFrom`/`summarizedTo`
+3. Filter messages whose `position + 1` falls within any exclusion range
+4. **Always preserve the last user message** — even if covered by a range (prevents empty prompt on regenerate)
+5. Apply `messageHistoryLimit` to the remaining messages
+
+**Auto-summary** (`triggerAutoSummary()`):
+- Fire-and-forget background task, triggered after `appendAssistantReply()`
+- Config: `enabled`, `everyN`, `useChatModel`, `excludeSummarized`, `providerProfileId`, `model`
+- Guards: checks `enabled`, concurrent run lock per chat+branch, message count threshold
+- Creates a NEW summary record covering messages since the last summary's `summarizedTo`
+- Range capped at `lastMessagePosition - 1` (excludes the user's last message)
+- Default: every 20 messages, using chat model, with excludeSummarized=true
+
+**Frontend UI** (`ContextMemoryModal.tsx`):
+- Desktop: two-column layout (archive sidebar + detail editor)
+- Mobile: drill-down pattern (archive list → tap → detail editor with back nav)
+- Summary editor: label, range (DualRangeSlider), content textarea with auto-resize, include/exclude toggles, provider/model selection with star-pin, generate button
+- Settings: message history limit (slider + number input in footer), auto-summary config
+- Footer: two-row layout — context bar + token stats (row 1), messages-in-prompt slider desktop-only (row 2)
+
+**Auto-summary config schema** (`ChatAutoSummaryConfig`):
+```ts
+interface ChatAutoSummaryConfig {
+  enabled: boolean;
+  everyN: number;           // trigger every N new messages
+  useChatModel: boolean;    // use chat's active model
+  excludeSummarized: boolean; // exclude summarized messages from context
+  providerProfileId?: string; // pinned provider (when useChatModel=false)
+  model?: string;           // pinned model (star button in UI)
+}
+```
 
 #### AI execution layer (`services/api/src/ai/`)
 
@@ -575,11 +646,11 @@ The AI assistant is a **separate LLM call**, not a prompt layer. It reuses the e
 
 ## Database conventions
 
-- **IDs:** Prefixed strings (`char_...`, `chat_...`, `msg_...`, `branch_...`, `variant_...`, `persona_...`, `provider_...`, `prompt_preset_...`, `trace_...`, `lb_...` for lorebooks, `le_...` for lore entries, `script_...` for scripts)
+- **IDs:** Prefixed strings (`char_...`, `chat_...`, `msg_...`, `branch_...`, `variant_...`, `persona_...`, `provider_...`, `prompt_preset_...`, `trace_...`, `lb_...` for lorebooks, `le_...` for lore entries, `script_...` for scripts, `summary_...` for chat summaries)
 - **JSON columns:** Stored as text, suffixed `Json` in schema (e.g. `tagsJson`, `alternateGreetingsJson`, `keysJson`, `scriptStateJson`). Parsed on read.
 - **Timestamps:** ISO 8601 strings, not Unix timestamps.
 - **Deletion:** Cascading where appropriate (character → chats → messages, lorebook → entries). `set null` for persona references.
-- **Message history:** `messageHistoryLimit` on chats (0 = unlimited, all messages passed to pipeline). Pipeline compaction handles actual trimming.
+- **Message history:** `messageHistoryLimit` on chats (0 = unlimited, capped in prompt assembly after exclusion filtering). Pipeline compaction handles actual trimming.
 - **Batch queries:** `getVariantsByBranch(branchId)` loads all variants for a branch in a single JOIN query instead of N+1 individual queries.
 - **Scope FKs:** Lorebooks and scripts use separate nullable FKs (`characterId`, `personaId`, `chatId`) rather than polymorphic associations. Each scope level is a separate query, unioned.
 
@@ -619,6 +690,7 @@ React SPA built with Vite. Communicates exclusively via the HTTP API defined in 
 - Avatar crop modal (react-easy-crop library, circular crop, zoom, pan-to-crop)
 - Avatar panel (floating draggable, zoomable full-size avatar preview)
 - Context usage display: permanent vs temporary token breakdown from assembled prompt layers
+- **Memory modal** — ranged summary management with archive sidebar, dual-range slider, auto-resize textarea, auto-summary settings, provider/model selection with star-pin, mobile drill-down pattern
 - Build mode: field-based token counting for character cards (no dependency on sending messages)
 
 ### BuildPanel registry
@@ -691,7 +763,9 @@ This means:
 | `TokenCounter.tsx` | Token count badge display |
 | `SaveBar.tsx` | Sticky save bar with unsaved changes indicator |
 | `save-btn.tsx` | Save button component |
-| `Toggle.tsx` | `<Toggle>` — animated toggle switch. Use for boolean settings instead of native checkboxes. |
+| `Toggle.tsx` | `<Toggle>` — animated toggle switch (36×20px). Use for boolean settings instead of native checkboxes. |
+| `DualRangeSlider` | Two-thumb range slider (in `ContextMemoryModal.tsx`). Both thumbs draggable via `pointer-events:none` container + `auto` on thumb. |
+| `MobileExpandTextarea` | Fullscreen textarea overlay for mobile text editing in modals. |
 | `confirm-close-modal.tsx` | Small "discard changes?" confirm dialog. Uses shared `<Modal>` with `z-[700]`. |
 | `destructive-confirm-modal.tsx` | Destructive action confirm dialog (e.g., delete lorebook). Uses shared `<Modal>` with `z-[700]`. |
 | `empty-state.tsx` | Empty state placeholder component |
