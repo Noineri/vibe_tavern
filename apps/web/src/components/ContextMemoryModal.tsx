@@ -154,7 +154,7 @@ export function ContextMemoryModal({
   const abortRef = useRef<AbortController | null>(null);
   const [textareaRef, autoResize] = useAutoResize();
 
-  const maxMessage = Math.max(1, messageCount);
+  const maxMessage = Math.max(1, messageCount - 1);
   const activeSummary = summaries.find((s) => s.id === activeSummaryId) ?? null;
   const effectiveProviderId = useChatModel ? activeProvider?.id ?? selectedProviderId : selectedProviderId;
   const effectiveModel = (useChatModel ? (pinnedModel ?? activeProvider?.defaultModel ?? selectedModel) : (pinnedModel ?? selectedModel))?.trim() ?? "";
