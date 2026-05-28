@@ -8,6 +8,7 @@ import type { AppSnapshot } from "../app-client.js";
 import { cn } from "../lib/cn.js";
 import { Icons } from "./shared/icons.js";
 import { CharacterForm } from "./editors/CharacterForm.js";
+import { formatTraceTimestamp } from "./app-shell-helpers.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { useT } from "../i18n/context.js";
 import { useCharacterStore } from "../stores/character-store.js";
@@ -38,8 +39,10 @@ export function BuildMode() {
   const { t } = useT();
 
   const activeTrace = useActiveTrace(useChatStore((s) => s.selectedTraceId));
+  const setSelectedTraceId = useChatStore((s) => s.setSelectedTraceId);
   const promptPayloadText = JSON.stringify(activeTrace?.finalPayload ?? {}, null, 2);
   const promptTraceCount = promptTraceHistory.length;
+  const currentTraceIndex = activeTrace && 'id' in activeTrace ? promptTraceHistory.findIndex((t) => t.id === (activeTrace as PromptTraceRecordDto).id) : -1;
 
   if (!chatMeta || !charData) return null;
 
@@ -50,6 +53,9 @@ export function BuildMode() {
     activeTrace={activeTrace}
     promptPayloadText={promptPayloadText}
     promptTraceCount={promptTraceCount}
+    currentTraceIndex={currentTraceIndex}
+    setSelectedTraceId={setSelectedTraceId}
+    promptTraceHistory={promptTraceHistory}
     onSave={character.handleSaveCharacter}
     onAvatarUpload={character.handleAvatarUpload}
     characterId={charData.id}
@@ -98,6 +104,9 @@ interface BuildModeInnerProps {
   activeTrace: PromptTraceRecordDto | AssemblePromptResponse | null;
   promptPayloadText: string;
   promptTraceCount: number;
+  currentTraceIndex: number;
+  setSelectedTraceId: (id: string | null) => void;
+  promptTraceHistory: PromptTraceRecordDto[];
   onSave: (draft: BuildCharacterDraft) => Promise<void> | void;
   onAvatarUpload: (file: File, originalFile?: File | null) => Promise<void> | void;
   characterId: string;
@@ -110,7 +119,7 @@ interface BuildModeInnerProps {
   hasAvatar: boolean;
 }
 
-function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete, hasAvatar }: BuildModeInnerProps) {
+function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, currentTraceIndex, setSelectedTraceId, promptTraceHistory, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete, hasAvatar }: BuildModeInnerProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const panels = useBuildPanels();
@@ -222,17 +231,47 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
             </div>
           )}
         </div>
-        <div className="mb-7 font-ui text-[calc(var(--ui-fs)-1px)] text-t3 leading-[1.55]">
+        <div className="mb-4 font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.55]">
           {trace && 'id' in trace ? (
-            <>
-              {t("trace_showing").replace("{n}", String(trace.id))}{" "}
-              <span className="text-t2">{trace.id}</span> · {trace.createdAt} · model:{" "}
-              {trace.model} · {trace.latencyMs}ms
-            </>
+            <div className="flex flex-col gap-2">
+              {/* Trace navigator */}
+              <div className="flex items-center gap-2">
+                <button
+                  className="cursor-pointer rounded-md border border-border bg-s2 px-2.5 py-1 text-xs text-t2 transition-colors hover:bg-border2 hover:text-t1 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-s2 disabled:hover:text-t2"
+                  disabled={currentTraceIndex >= promptTraceHistory.length - 1}
+                  onClick={() => {
+                    const prev = promptTraceHistory[currentTraceIndex + 1];
+                    if (prev) setSelectedTraceId(prev.id);
+                  }}
+                >
+                  ← {t("trace_prev")}
+                </button>
+                <span className="text-xs text-t2">
+                  {t("trace_turn").replace("{n}", String(promptTraceHistory.length - currentTraceIndex))}
+                </span>
+                <button
+                  className="cursor-pointer rounded-md border border-border bg-s2 px-2.5 py-1 text-xs text-t2 transition-colors hover:bg-border2 hover:text-t1 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-s2 disabled:hover:text-t2"
+                  disabled={currentTraceIndex <= 0}
+                  onClick={() => {
+                    const next = promptTraceHistory[currentTraceIndex - 1];
+                    if (next) setSelectedTraceId(next.id);
+                  }}
+                >
+                  {t("trace_next")} →
+                </button>
+              </div>
+              {/* Trace metadata */}
+              <div className="text-t3">
+                {formatTraceTimestamp(trace.createdAt)} · {trace.model} · {trace.latencyMs}ms
+                {" · "}{t("trace_recorded_count").replace("{n}", String(promptTraceCount))}
+              </div>
+            </div>
           ) : (
-            t("trace_no_active")
-          )}{" "}
-          · {t("trace_recorded_count").replace("{n}", String(promptTraceCount))}.
+            <span className="text-t3">
+              {t("trace_no_active")}{" "}
+              {promptTraceCount > 0 && t("trace_recorded_count").replace("{n}", String(promptTraceCount))}
+            </span>
+          )}
           {trace?.prefill && (
             <div
               className="mt-1.5 rounded-[6px] border border-border2 bg-s2 px-2.5 py-1.5 font-body text-xs"
