@@ -555,12 +555,14 @@ Phase 2 ships with `node:vm` + 5s timeout. Bun v1.2.16+ supports `timeout` nativ
 
 ```typescript
 interface ScriptContext {
-  // Chat data (read-only)
+  // Chat data
   chat: {
     lastMessage: string;
     last_message: string;          // Janitor alias
     messages: Array<{ message: string; role: string }>;
     messageCount: number;
+    injectMessage(content: string, role?: 'system' | 'user' | 'assistant'): void;
+    inject_message(content: string, role?: 'system' | 'user' | 'assistant'): void;  // Janitor alias
   };
 
   // Character data (mutable via +=)
