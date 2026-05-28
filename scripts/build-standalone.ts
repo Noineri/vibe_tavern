@@ -109,39 +109,46 @@ async function main() {
 
 	// ── Step 4: Compile standalone server ────────────────────────────────
 
-	await step("Compiling standalone binary (bun build --compile)", async () => {
+	await step("Compiling standalone binary (Bun.build API)", async () => {
 		const entrypoint = join(ROOT, "services", "api", "src", "standalone-server.ts");
 		const ext = process.platform === "win32" ? ".exe" : "";
 		const binName = `vibe-tavern${ext}`;
-		const outfile = join(DIST, binName);
+		const outfile = join(DIST, "vibe-tavern"); // Bun automatically adds .exe
 
 		if (!(await Bun.file(entrypoint).exists())) {
 			throw new Error(`Entrypoint not found: ${entrypoint}`);
 		}
 
-		const proc = Bun.spawn([
-			"bun", "build",
-			"--compile",
-			"--windows-icon", join(ROOT, "apps", "web", "public", "logo.ico"),
-			entrypoint,
-			"--outfile", outfile,
-		], {
-			cwd: ROOT,
-			stdout: "inherit",
-			stderr: "inherit",
-			stdin: "inherit",
+		const iconPath = join(ROOT, "apps", "web", "public", "logo.ico");
+
+		const result = await Bun.build({
+			entrypoints: [entrypoint],
+			target: "bun",
+			minify: true,
+			compile: {
+				outfile,
+				windows: {
+					icon: iconPath,
+					title: "Vibe Tavern",
+					description: "A lightweight, self-hosted AI roleplay platform",
+				},
+			},
 		});
 
-		const exitCode = await proc.exited;
-		if (exitCode !== 0) {
-			throw new Error(`bun build --compile exited with code ${exitCode}`);
+		if (!result.success) {
+			console.error("Build failed:");
+			for (const msg of result.logs) {
+				console.error(msg);
+			}
+			throw new Error("Bun.build API failed");
 		}
 
-		if (!(await Bun.file(outfile).exists())) {
-			throw new Error(`Expected output not found: ${outfile}`);
+		const finalOutfile = join(DIST, binName);
+		if (!(await Bun.file(finalOutfile).exists())) {
+			throw new Error(`Expected output not found: ${finalOutfile}`);
 		}
 
-		console.log(`   → ${outfile}`);
+		console.log(`   → ${finalOutfile}`);
 	});
 
 	// ── Done ─────────────────────────────────────────────────────────────
