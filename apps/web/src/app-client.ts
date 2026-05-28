@@ -55,6 +55,7 @@ export interface AutoSummaryConfig {
   enabled: boolean;
   everyN: number;
   useChatModel: boolean;
+  excludeSummarized: boolean;
   providerProfileId?: string;
   model?: string;
 }

@@ -59,7 +59,7 @@ export const chats = sqliteTable('chats', {
   title: text('title').notNull(),
   summary: text('summary').notNull().default(''),
   messageHistoryLimit: integer('message_history_limit').notNull().default(0),
-  autoSummaryConfigJson: text('auto_summary_config_json').notNull().default('{"enabled":false,"everyN":20,"useChatModel":true}'),
+  autoSummaryConfigJson: text('auto_summary_config_json').notNull().default('{"enabled":false,"everyN":20,"useChatModel":true,"excludeSummarized":true}'),
   lastAccessedAt: text('last_accessed_at').notNull().default(''),
   status: text('status').notNull().default('active'),
   createdAt: text('created_at').notNull(),
