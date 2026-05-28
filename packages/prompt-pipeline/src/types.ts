@@ -121,6 +121,8 @@ export interface PromptAssemblyContext {
   };
   chat: {
     recentMessages: RecentMessage[];
+    /** Messages injected by scripts via context.chat.injectMessage() */
+    scriptInjections?: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
   };
   instructions?: {
     toolInstructions?: string | null;

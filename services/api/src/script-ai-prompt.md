@@ -7,6 +7,7 @@ The script receives a single `context` object with these fields:
 - `context.chat.lastMessage` — string, the user's most recent message
 - `context.chat.messages` — array of { role: string, message: string }
 - `context.chat.messageCount` — number
+- `context.chat.injectMessage(content, role?)` — inject a message at the end of chat history, right before the model's response. Default role is `system`. Use this to add reminders, scene notes, or dynamic instructions the model will see as the last thing in the conversation.
 - `context.character.name` — string
 - `context.character.personality` — string, MUTABLE (+= to inject into prompt)
 - `context.character.scenario` — string, MUTABLE (+= to inject into prompt)
@@ -78,5 +79,21 @@ if (last.includes('hit') || last.includes('attack')) {
   if (newHp < 30) {
     context.character.scenario += ' {{char}} is badly wounded and struggling to stay standing.';
   }
+}
+```
+
+Injecting a message at the end of chat history:
+
+```js
+// Add a scene reminder as the last thing the model sees
+const last = context.chat.lastMessage.toLowerCase();
+if (last.includes('sneak') || last.includes('hide')) {
+  context.chat.injectMessage("[OOC: {{char}} is currently trying to remain hidden. Describe the tension and risk of being discovered.]");
+}
+
+// Dynamic narrator injection based on time of day
+const hour = new Date().getHours();
+if (hour >= 22 || hour < 6) {
+  context.chat.injectMessage("[The scene takes place late at night. Atmosphere is quiet, dark, and intimate.]");
 }
 ```

@@ -80,6 +80,7 @@ export interface PromptAssemblyResolver {
   }): Promise<{
     personality: string;
     scenario: string;
+    injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
     errors: Array<{ scriptId: string; scriptName: string; error: string }>;
   }>;
   getToolInstructions(): string | null;
@@ -235,6 +236,7 @@ export class PromptAssemblyService {
       },
       chat: {
         recentMessages,
+        scriptInjections: scriptResult.injectedMessages,
       },
       instructions: {
         toolInstructions: [promptPreset?.tools, this.resolver.getToolInstructions()].filter(Boolean).join("\n") || null,
@@ -249,12 +251,14 @@ export class PromptAssemblyService {
     // Build script injection trace data
     const scriptInjections = scriptResult.errors.length > 0 ||
       scriptResult.personality !== (character.personality ?? '') ||
-      scriptResult.scenario !== (character.scenario ?? '')
+      scriptResult.scenario !== (character.scenario ?? '') ||
+      scriptResult.injectedMessages.length > 0
       ? [{
           scriptId: '__pipeline',
           scriptName: 'Script Pipeline',
           personalityMutation: scriptResult.personality !== (character.personality ?? '') ? scriptResult.personality : '',
           scenarioMutation: scriptResult.scenario !== (character.scenario ?? '') ? scriptResult.scenario : '',
+          injectedMessages: scriptResult.injectedMessages,
           error: scriptResult.errors.length > 0 ? scriptResult.errors.map(e => `${e.scriptName}: ${e.error}`).join('; ') : undefined,
         }]
       : [];
