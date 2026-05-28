@@ -123,6 +123,8 @@
   "trace_prefill_label": "Префилл:",
   "trace_showing": "Трассировка {n}",
   "trace_turn": "Ход {n}",
+  "trace_prev": "Пред",
+  "trace_next": "След",
   "view_raw_json": "Просмотреть JSON",
   "trace_no_traces_yet": "Трассировок ещё нет. Отправьте сообщение для записи.",
 
