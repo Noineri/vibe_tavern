@@ -422,7 +422,7 @@
   "summary_auto_toggle": "Автосводка",
   "summary_auto_every": "Каждые",
   "summary_auto_messages": "сообщений вызывает пересказ",
-  "summary_auto_exclude_toggle": "Исключить сведённые сообщения из контекста",
+  "summary_auto_exclude_toggle": "Исключать сведённые сообщения из контекста",
   "summary_messages_in_prompt": "Сообщений в промпте",
   "summary_source_auto": "авто",
   "summary_source_manual": "вручную",
