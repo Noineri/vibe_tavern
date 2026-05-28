@@ -579,32 +579,34 @@ export function ContextMemoryModal({
   /* ─── footer ─── */
   const footer = (
     <div className="shrink-0 border-t border-border px-5 py-3 pb-[env(safe-area-inset-bottom,0px)]">
-      <div className="h-2 overflow-hidden rounded-full bg-s3">
-        <div className="h-full bg-accent transition-all" style={{ width: `${contextPct}%` }} />
+      {/* Row 1: context bar + token stats */}
+      <div className="flex items-center gap-3">
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-s3">
+          <div className="h-full bg-accent transition-all" style={{ width: `${contextPct}%` }} />
+        </div>
+        <div className="shrink-0 font-ui text-[11px] text-t3 tabular-nums">{contextWindow.used} / {contextWindow.limit}t ({contextPct}%)</div>
       </div>
-      <div className="mt-2 flex items-center justify-between gap-4 font-ui text-[11px] text-t3">
-        <div className="shrink-0">{contextWindow.used} / {contextWindow.limit}t ({contextPct}%)</div>
-        {!isMobile && (
-          <label className="flex flex-1 items-center justify-end gap-3">
-            <span className="shrink-0">{t("summary_messages_in_prompt")}</span>
-            <input
-              className="accent-accent w-[min(46vw,420px)]"
-              type="range" min={0} max={Math.max(1, messageCount)}
-              value={Math.min(historyLimit, Math.max(1, messageCount))}
-              onChange={(e) => setHistoryLimit(Number(e.target.value))}
-              onMouseUp={() => void commitMemorySettings()}
-              onTouchEnd={() => void commitMemorySettings()}
-            />
-            <input
-              className={cn(inputCls, "h-8 w-16 py-1 text-center")}
-              type="number" min={0} max={Math.max(1, messageCount)}
-              value={historyLimit}
-              onChange={(e) => setHistoryLimit(Math.max(0, Number(e.target.value) || 0))}
-              onBlur={() => void commitMemorySettings()}
-            />
-          </label>
-        )}
-      </div>
+      {/* Row 2: messages-in-prompt slider (desktop only) */}
+      {!isMobile && (
+        <div className="mt-2 flex items-center gap-3">
+          <span className="shrink-0 font-ui text-[11px] text-t3">{t("summary_messages_in_prompt")}</span>
+          <input
+            className="accent-accent flex-1"
+            type="range" min={0} max={Math.max(1, messageCount)}
+            value={Math.min(historyLimit, Math.max(1, messageCount))}
+            onChange={(e) => setHistoryLimit(Number(e.target.value))}
+            onMouseUp={() => void commitMemorySettings()}
+            onTouchEnd={() => void commitMemorySettings()}
+          />
+          <input
+            className={cn(inputCls, "h-8 w-16 shrink-0 py-1 text-center")}
+            type="number" min={0} max={Math.max(1, messageCount)}
+            value={historyLimit}
+            onChange={(e) => setHistoryLimit(Math.max(0, Number(e.target.value) || 0))}
+            onBlur={() => void commitMemorySettings()}
+          />
+        </div>
+      )}
     </div>
   );
 

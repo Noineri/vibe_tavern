@@ -412,7 +412,7 @@
   "summary_range_label": "Диапазон сообщений",
   "summary_msg_label": "Сооб. {n}",
   "summary_messages_count": "{count} сообщений",
-  "summary_exclude_toggle": "Исключить сведения из контекста",
+  "summary_exclude_toggle": "Исключить сведённые сообщения из контекста",
   "summary_token_line": "Сводка {summary}t + История {history}t = {total}t",
   "summary_without_line": "Без сводки: {tokens}t",
   "summary_saved_line": "Сэкономлено {tokens}t ({pct}%)",
