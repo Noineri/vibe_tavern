@@ -578,7 +578,7 @@ export function ContextMemoryModal({
 
   /* ─── footer ─── */
   const footer = (
-    <div className="shrink-0 border-t border-border px-5 py-3 pb-[env(safe-area-inset-bottom,0px)]">
+    <div className="shrink-0 border-t border-border px-5 py-3 space-y-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
       {/* Row 1: context bar + token stats */}
       <div className="flex items-center gap-3">
         <div className="h-2 flex-1 overflow-hidden rounded-full bg-s3">
@@ -588,7 +588,7 @@ export function ContextMemoryModal({
       </div>
       {/* Row 2: messages-in-prompt slider (desktop only) */}
       {!isMobile && (
-        <div className="mt-2 flex items-center gap-3">
+        <div className="flex items-center gap-3">
           <span className="shrink-0 font-ui text-[11px] text-t3">{t("summary_messages_in_prompt")}</span>
           <input
             className="accent-accent flex-1"
