@@ -122,6 +122,7 @@ async function main() {
 		const proc = Bun.spawn([
 			"bun", "build",
 			"--compile",
+			"--icon", join(ROOT, "apps", "web", "public", "logo.ico"),
 			entrypoint,
 			"--outfile", outfile,
 		], {
