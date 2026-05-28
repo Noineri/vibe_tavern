@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ChatId } from "@vibe-tavern/domain";
 import { Ic } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { initials } from "./app-shell-helpers.js";
-import { CharacterImportModal } from "./ImportModals.js";
+import { CharacterImportModal, ChatImportModal } from "./ImportModals.js";
 import { useT } from "../i18n/context.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 import { activateBranchAction } from "../stores/api-actions/chat-actions.js";
@@ -12,6 +13,7 @@ import { useChatMeta } from "../stores/chat-selectors.js";
 import { useNavigationStore, useChatStore, useModalStore } from "../stores/index.js";
 import { useCharacterStore } from "../stores/character-store.js";
 import { useCharacterController } from "../hooks/use-character-controller.js";
+import { useChatController } from "../hooks/use-chat-controller.js";
 import { useBuildPanels } from "../hooks/use-build-panels.js";
 import type { ChatListItem } from "../app-client.js";
 
@@ -27,11 +29,25 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const activeBranchId = chatMeta?.activeBranch?.id ?? null;
   const buildPanels = useBuildPanels();
 
+  const character = useCharacterController();
+  const chat = useChatController();
+  const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
+
   const [expanded, setExpanded] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const character = useCharacterController();
+  const [chatImportOpen, setChatImportOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [branchesOpen, setBranchesOpen] = useState<string | null>(null);
+
+  // Context menus
+  const [charMenuId, setCharMenuId] = useState<string | null>(null);
+  const [chatMenuId, setChatMenuId] = useState<ChatId | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Chat rename
+  const [renamingChatId, setRenamingChatId] = useState<ChatId | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
 
   // Hamburger force-open from TopBar
   const forceOpen = useNavigationStore((s) => s.railForceOpen);
@@ -39,11 +55,22 @@ export function Rail({ hidden }: { hidden?: boolean }) {
     if (forceOpen > 0) setExpanded(true);
   }, [forceOpen]);
 
+  // Close menu on outside click
+  useEffect(() => {
+    if (charMenuId === null && chatMenuId === null) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setCharMenuId(null);
+        setChatMenuId(null);
+        setMenuPos(null);
+      }
+    };
+    document.addEventListener("pointerdown", handler);
+    return () => document.removeEventListener("pointerdown", handler);
+  }, [charMenuId, chatMenuId]);
+
   // Filter: only non-archived characters
-  const visibleChars = allCharacters.filter((c) => {
-    // Bootstrap data doesn't have status; treat all as visible
-    return true;
-  });
+  const visibleChars = allCharacters.filter(() => true);
 
   // Chats for the selected/active character
   const activeCharId = selectedCharacterId ?? chatMeta?.character?.id ?? null;
@@ -61,6 +88,25 @@ export function Rail({ hidden }: { hidden?: boolean }) {
     if (!expanded) return;
     setClosing(true);
     setTimeout(() => { setExpanded(false); setClosing(false); }, 200);
+  };
+
+  const closeMenu = () => {
+    setCharMenuId(null);
+    setChatMenuId(null);
+    setMenuPos(null);
+  };
+
+  const calcPos = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    return { top: r.bottom + 4, right: window.innerWidth - r.right };
+  };
+
+  const commitRename = () => {
+    const nextTitle = renameDraft.trim();
+    if (nextTitle && renamingChatId) {
+      void character.handleRenameChat(renamingChatId, nextTitle);
+    }
+    setRenamingChatId(null);
   };
 
   /* ── Swipe on expanded panel to close ── */
@@ -94,6 +140,34 @@ export function Rail({ hidden }: { hidden?: boolean }) {
     if (!dragRef.current.startExpanded && d > 40) setExpanded(true);
     if (dragRef.current.startExpanded && d < -40) setExpanded(false);
   }, []);
+
+  /* ── Context menu portal ── */
+  const contextMenu = (items: Array<{ icon: React.ReactNode; label: string; danger?: boolean; action: () => void }>) => {
+    if (!menuPos) return null;
+    return createPortal(
+      <div
+        className="fixed z-[500] w-[190px] rounded-md border border-border2 bg-surface py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
+        ref={menuRef}
+        onClick={(e) => e.stopPropagation()}
+        style={{ top: menuPos.top, right: menuPos.right }}
+      >
+        {items.map((item, i) => (
+          <div
+            key={i}
+            className={cn(
+              "flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0",
+              item.danger ? "text-danger-text hover:bg-danger-dim hover:text-danger-text" : "text-t2",
+            )}
+            role="menuitem"
+            onClick={() => { closeMenu(); item.action(); }}
+          >
+            {item.icon} {item.label}
+          </div>
+        ))}
+      </div>,
+      document.body,
+    );
+  };
 
   /* ── Mini icon button (collapsed rail item) ── */
   const Ico = ({ icon, active, onClick, title }: { icon: React.ReactNode; active?: boolean; onClick: () => void; title: string }) => (
@@ -136,7 +210,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
 
   return (
     <>
-      {/* ═══ COLLAPSED RAIL (hidden when rail is not visible) ═══ */}
+      {/* ═══ COLLAPSED RAIL ═══ */}
       {!hidden && (
       <div
         className="relative z-[200] flex w-[56px] min-w-[56px] shrink-0 flex-col items-center border-r border-border bg-surface"
@@ -217,6 +291,14 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                   </div>
                 );
               })}
+              {/* + New chat in collapsed rail */}
+              <div
+                className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-dashed border-border2 text-t3 transition-all active:bg-s3"
+                onClick={() => { void character.handleCreateChat(selectedCharacterId ?? undefined); }}
+                title={t("new_chat")}
+              >
+                <Ic.plus />
+              </div>
               <div className="my-0.5 h-px w-8 shrink-0 bg-border" />
             </>
           )}
@@ -288,7 +370,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                       {/* Character row */}
                       <div
                         className={cn(
-                          "flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 transition-colors active:bg-s3 active:scale-[0.97]",
+                          "group relative flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 transition-colors active:bg-s3 active:scale-[0.97]",
                           selectedCharacterId === c.id ? "bg-s2 border border-accent/20" : "",
                         )}
                         onClick={() => { useChatStore.getState().setSelectedCharacterId(c.id); }}
@@ -298,24 +380,60 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                         </div>
                         <span className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)] text-t2">{c.name}</span>
                         {c.id === selectedCharacterId && <span className="shrink-0 rounded bg-s3 px-1.5 py-0.5 text-[calc(var(--ui-fs)-4px)] text-t3">{t("active")}</span>}
+                        {/* Three-dot menu button */}
+                        <button
+                          className={cn(
+                            "flex h-6 w-6 shrink-0 items-center justify-center rounded text-t3 transition-colors hover:text-t1 active:bg-s3",
+                            charMenuId === c.id && "text-t1",
+                          )}
+                          onClick={(e) => { e.stopPropagation(); setCharMenuId(c.id); setChatMenuId(null); setMenuPos(calcPos(e.currentTarget)); }}
+                        >
+                          <Ic.ellipsis />
+                        </button>
                       </div>
 
                       {/* Chats for active character */}
-                      {c.id === selectedCharacterId && activeCharChats.length > 0 && (
+                      {c.id === selectedCharacterId && (
                         <div className="ml-3 border-l border-border pl-1.5">
                           {activeCharChats.map((ch) => (
                             <div key={ch.id}
                                  className={cn(
-                                   "flex min-h-[36px] cursor-pointer flex-col rounded-md px-2 py-1.5 transition-colors active:bg-s3",
+                                   "group relative flex min-h-[36px] cursor-pointer flex-col rounded-md px-2 py-1.5 transition-colors active:bg-s3",
                                    ch.id === activeChatId && "bg-accent-dim",
                                  )}
                                  onClick={() => { useChatStore.getState().setActiveChatId(ch.id); }}>
-                              <span className={cn("min-w-0 truncate text-[calc(var(--ui-fs)-2px)]", ch.id === activeChatId ? "text-accent-t font-medium" : "text-t2")}>
-                                {ch.title}
-                              </span>
+                              {renamingChatId === ch.id ? (
+                                <input
+                                  className="mb-px w-full rounded border border-accent bg-bg px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none"
+                                  value={renameDraft}
+                                  autoFocus
+                                  onChange={(e) => setRenameDraft(e.target.value)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onBlur={commitRename}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+                                    else if (e.key === "Escape") { e.preventDefault(); setRenamingChatId(null); }
+                                  }}
+                                />
+                              ) : (
+                                <span className={cn("min-w-0 truncate text-[calc(var(--ui-fs)-2px)]", ch.id === activeChatId ? "text-accent-t font-medium" : "text-t2")}>
+                                  {ch.title}
+                                </span>
+                              )}
                               <span className="min-w-0 truncate text-[calc(var(--ui-fs)-4px)] text-t3">
                                 {ch.subtitle}
                               </span>
+
+                              {/* Chat three-dot menu */}
+                              <button
+                                className={cn(
+                                  "absolute right-1 top-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded text-t3 transition-colors hover:text-t1 active:bg-s3",
+                                  chatMenuId === ch.id && "text-t1",
+                                )}
+                                onClick={(e) => { e.stopPropagation(); setChatMenuId(ch.id); setCharMenuId(null); setMenuPos(calcPos(e.currentTarget)); }}
+                              >
+                                <Ic.ellipsis />
+                              </button>
 
                               {/* Branches toggle */}
                               {branches.length > 0 && (
@@ -347,6 +465,11 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                               )}
                             </div>
                           ))}
+                          {/* + New chat */}
+                          <div className="flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-lg border-t border-border/50 px-2 pt-2 text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors active:bg-s3 active:text-t1"
+                               onClick={() => { void character.handleCreateChat(c.id); }}>
+                            <Ic.plus /> {t("new_chat")}
+                          </div>
                         </div>
                       )}
                     </React.Fragment>
@@ -365,10 +488,54 @@ export function Rail({ hidden }: { hidden?: boolean }) {
           </div>
         </>
       )}
+
+      {/* ═══ CONTEXT MENUS ═══ */}
+      {charMenuId && contextMenu([
+        { icon: <Ic.download />, label: t("sidebar_export"), action: () => character.handleExportCharacter(charMenuId) },
+        { icon: <Ic.copy />, label: t("duplicate"), action: () => character.handleDuplicateCharacter(charMenuId) },
+        { icon: <Ic.import />, label: t("sidebar_import_chat"), action: () => setChatImportOpen(true) },
+        { icon: <Ic.del />, label: t("delete"), danger: true, action: () => {
+          const ch = visibleChars.find(c => c.id === charMenuId);
+          setConfirmDestroy({
+            title: t("sidebar_delete_character"),
+            body: <>{t("sidebar_are_you_sure")} <b>{ch?.name}</b></>,
+            confirmLabel: t("delete"),
+            onConfirm: () => character.handleDeleteCharacter(charMenuId),
+          });
+        }},
+      ])}
+
+      {chatMenuId && contextMenu([
+        { icon: <Ic.edit />, label: t("sidebar_rename"), action: () => {
+          const ch = activeCharChats.find(c => c.id === chatMenuId);
+          setRenamingChatId(chatMenuId);
+          setRenameDraft(ch?.title ?? "");
+        }},
+        { icon: <Ic.download />, label: t("sidebar_export_jsonl"), action: () => character.handleExportChatJsonl(chatMenuId) },
+        { icon: <Ic.del />, label: t("delete"), danger: true, action: () => {
+          const ch = activeCharChats.find(c => c.id === chatMenuId);
+          setConfirmDestroy({
+            title: t("sidebar_delete_chat"),
+            body: <>{t("sidebar_are_you_sure")} <b>{ch?.title}</b></>,
+            confirmLabel: t("delete"),
+            onConfirm: () => character.handleDeleteChat(chatMenuId),
+          });
+        }},
+      ])}
+
+      {/* ═══ MODALS ═══ */}
       {importOpen && (
         <CharacterImportModal
           isImporting={character.isImporting}
           onClose={() => setImportOpen(false)}
+          onImportFiles={(files) => { void character.handleImportFiles(files); }}
+        />
+      )}
+      {chatImportOpen && (
+        <ChatImportModal
+          isImporting={character.isImporting}
+          activeChatId={activeChatId}
+          onClose={() => setChatImportOpen(false)}
           onImportFiles={(files) => { void character.handleImportFiles(files); }}
         />
       )}
