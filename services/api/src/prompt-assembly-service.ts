@@ -153,9 +153,14 @@ export class PromptAssemblyService {
     const filteredMessages = branchMessages.filter((message) =>
       !excludedMessageIds.has(message.id as MessageId) && !isInExcludedSummaryRange(message.position),
     );
+    // Always keep the last user message (needed for send/regenerate)
+    const lastUserMsg = [...branchMessages].reverse().find(m => m.role === 'user');
+    const ensureLastUser = lastUserMsg && !filteredMessages.some(m => m.id === lastUserMsg.id)
+      ? [...filteredMessages, lastUserMsg]
+      : filteredMessages;
     const messageLimit = input.recentMessageLimit ?? (chat.messageHistoryLimit || Infinity);
-    const recentMessages = filteredMessages
-      .slice(-(messageLimit === Infinity ? filteredMessages.length : messageLimit))
+    const recentMessages = ensureLastUser
+      .slice(-(messageLimit === Infinity ? ensureLastUser.length : messageLimit))
       .map((message) => ({
         id: message.id as MessageId,
         role: message.role as 'system' | 'user' | 'assistant' | 'tool',
