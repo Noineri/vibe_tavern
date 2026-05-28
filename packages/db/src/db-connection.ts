@@ -173,13 +173,34 @@ async function repairMissingTables(sqlite: Database, migrationsFolder: string): 
     if (missingCols.length > 0) reasons.push(`columns (${missingCols.map(c => `${c.table}.${c.column}`).join(', ')})`);
     console.log(`[db] Repair: migration ${entry.tag} missing ${reasons.join(' and ')}, applying...`);
     try {
-      sqlite.exec(sqlContent);
+      // Apply statements individually to tolerate partial state
+      // (e.g. ALTER TABLE column already exists but CREATE TABLE is missing)
+      const statements = sqlContent
+        .split(';')
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+      for (const stmt of statements) {
+        try {
+          sqlite.exec(stmt);
+        } catch (stmtErr: any) {
+          // Ignore "duplicate column" and "already exists" errors
+          if (stmtErr?.message?.includes('duplicate column') || stmtErr?.message?.includes('already exists')) {
+            continue;
+          }
+          throw stmtErr;
+        }
+      }
       // Stamp this migration as applied so migrate() skips it next time
       const hash = new Bun.CryptoHasher('sha256').update(sqlContent).digest('hex');
       sqlite.prepare('INSERT OR IGNORE INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)').run(hash, entry.when);
       repaired++;
       // Update existing set
       for (const t of createdTables) existing.add(t.toLowerCase());
+      // Update column cache
+      for (const { table, column } of alterCols) {
+        const tbl = table.toLowerCase();
+        columnCache.get(tbl)?.add(column.toLowerCase());
+      }
     } catch (err) {
       console.error(`[db] Repair: failed to apply ${entry.tag}:`, err);
     }
