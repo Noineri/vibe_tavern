@@ -78,6 +78,13 @@
       "when": 1779750000000,
       "tag": "0010_lorebook_activation",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1779800000000,
+      "tag": "0011_chat_summaries",
+      "breakpoints": true
     }
   ]
 }

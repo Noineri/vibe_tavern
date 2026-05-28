@@ -34,10 +34,35 @@ export interface PersonaRecord {
   avatarAssetId: string | null;
 }
 
+export interface ChatSummaryRecord {
+  id: string;
+  chatId: string;
+  branchId: string;
+  label: string;
+  content: string;
+  summarizedFrom: number;
+  summarizedTo: number;
+  includeInContext: boolean;
+  excludeSummarized: boolean;
+  source: "manual" | "auto";
+  sortOrder: number;
+  contentHash: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AutoSummaryConfig {
+  enabled: boolean;
+  everyN: number;
+  useChatModel: boolean;
+  providerProfileId?: string;
+  model?: string;
+}
+
 export interface AppSnapshot {
   chats: ChatListItem[];
   allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null }>;
-  activeChat: Chat & { summary?: string; messageHistoryLimit?: number };
+  activeChat: Chat & { summary?: string; messageHistoryLimit?: number; autoSummaryConfig?: AutoSummaryConfig };
   activeBranch: ChatBranch;
   branches: ChatBranch[];
   messages: AppMessage[];
@@ -427,6 +452,76 @@ export async function saveChatSummary(
   const response = await client.api.chats[":chatId"].summary.$put({ param: { chatId }, json: { summary } });
   const data = await unwrapRpc<{ summary: string; snapshot: AppSnapshot }>(response);
   return { summary: data.summary, snapshot: normalizeSnapshot(data.snapshot) };
+}
+
+export async function listChatSummaries(chatId: ChatId): Promise<ChatSummaryRecord[]> {
+  const response = await client.api.chats[":chatId"].summaries.$get({ param: { chatId } });
+  return unwrapRpc<ChatSummaryRecord[]>(response);
+}
+
+export async function createChatSummary(
+  chatId: ChatId,
+  input: {
+    label?: string;
+    content?: string;
+    summarizedFrom: number;
+    summarizedTo: number;
+    includeInContext?: boolean;
+    excludeSummarized?: boolean;
+    source?: "manual" | "auto";
+    sortOrder?: number;
+  },
+): Promise<{ summary: ChatSummaryRecord; snapshot: AppSnapshot }> {
+  const response = await client.api.chats[":chatId"].summaries.$post({ param: { chatId }, json: input });
+  const data = await unwrapRpc<{ summary: ChatSummaryRecord; snapshot: AppSnapshot }>(response);
+  return { summary: data.summary, snapshot: normalizeSnapshot(data.snapshot) };
+}
+
+export async function updateChatSummary(
+  chatId: ChatId,
+  summaryId: string,
+  input: Partial<Pick<ChatSummaryRecord, "label" | "content" | "summarizedFrom" | "summarizedTo" | "includeInContext" | "excludeSummarized" | "sortOrder">>,
+): Promise<{ summary: ChatSummaryRecord; snapshot: AppSnapshot }> {
+  const response = await client.api.chats[":chatId"].summaries[":summaryId"].$patch({ param: { chatId, summaryId }, json: input });
+  const data = await unwrapRpc<{ summary: ChatSummaryRecord; snapshot: AppSnapshot }>(response);
+  return { summary: data.summary, snapshot: normalizeSnapshot(data.snapshot) };
+}
+
+export async function deleteChatSummary(chatId: ChatId, summaryId: string): Promise<{ ok: boolean; snapshot: AppSnapshot }> {
+  const response = await client.api.chats[":chatId"].summaries[":summaryId"].$delete({ param: { chatId, summaryId } });
+  const data = await unwrapRpc<{ ok: boolean; snapshot: AppSnapshot }>(response);
+  return { ok: data.ok, snapshot: normalizeSnapshot(data.snapshot) };
+}
+
+export async function generateChatSummary(
+  chatId: ChatId,
+  input: {
+    providerProfileId: string;
+    model?: string;
+    summarizedFrom: number;
+    summarizedTo: number;
+    targetSummaryId?: string;
+    label?: string;
+    includeInContext?: boolean;
+    excludeSummarized?: boolean;
+  },
+  options?: { signal?: AbortSignal },
+): Promise<{ summary: string; chatSummary: ChatSummaryRecord; snapshot: AppSnapshot }> {
+  const response = await client.api.chats[":chatId"].summaries.generate.$post(
+    { param: { chatId }, json: input },
+    { init: { signal: options?.signal } },
+  );
+  const data = await unwrapRpc<{ summary: string; chatSummary: ChatSummaryRecord; snapshot: AppSnapshot }>(response);
+  return { summary: data.summary, chatSummary: data.chatSummary, snapshot: normalizeSnapshot(data.snapshot) };
+}
+
+export async function updateMemorySettings(
+  chatId: ChatId,
+  input: { messageHistoryLimit?: number; autoSummaryConfig?: Partial<AutoSummaryConfig> },
+): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"]["memory-settings"].$patch({ param: { chatId }, json: input });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function sendChatMessageStream(

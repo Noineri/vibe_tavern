@@ -9,6 +9,12 @@ import {
   fetchChat,
   forkBranch,
   generateReply,
+  generateChatSummary,
+  listChatSummaries,
+  createChatSummary,
+  updateChatSummary,
+  deleteChatSummary,
+  updateMemorySettings,
   saveChatSummary,
   summarizeChat,
   regenerateChatMessage,
@@ -18,6 +24,7 @@ import {
   setChatPersona,
   type AppSnapshot,
 } from "../../app-client.js";
+import type { AutoSummaryConfig, ChatSummaryRecord } from "../../app-client.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
 
@@ -119,4 +126,36 @@ export async function saveChatSummaryAction(chatId: ChatId, summary: string): Pr
   const result = await saveChatSummary(chatId, summary);
   syncSnapshot(result.snapshot);
   return { summary: result.summary };
+}
+
+export async function listChatSummariesAction(chatId: ChatId): Promise<ChatSummaryRecord[]> {
+  return listChatSummaries(chatId);
+}
+
+export async function createChatSummaryAction(chatId: ChatId, input: Parameters<typeof createChatSummary>[1]): Promise<ChatSummaryRecord> {
+  const result = await createChatSummary(chatId, input);
+  syncSnapshot(result.snapshot);
+  return result.summary;
+}
+
+export async function updateChatSummaryAction(chatId: ChatId, summaryId: string, input: Parameters<typeof updateChatSummary>[2]): Promise<ChatSummaryRecord> {
+  const result = await updateChatSummary(chatId, summaryId, input);
+  syncSnapshot(result.snapshot);
+  return result.summary;
+}
+
+export async function deleteChatSummaryAction(chatId: ChatId, summaryId: string): Promise<void> {
+  const result = await deleteChatSummary(chatId, summaryId);
+  syncSnapshot(result.snapshot);
+}
+
+export async function generateChatSummaryAction(chatId: ChatId, input: Parameters<typeof generateChatSummary>[1], signal?: AbortSignal): Promise<ChatSummaryRecord> {
+  const result = await generateChatSummary(chatId, input, { signal });
+  syncSnapshot(result.snapshot);
+  return result.chatSummary;
+}
+
+export async function updateMemorySettingsAction(chatId: ChatId, input: { messageHistoryLimit?: number; autoSummaryConfig?: Partial<AutoSummaryConfig> }): Promise<void> {
+  const snapshot = await updateMemorySettings(chatId, input);
+  syncSnapshot(snapshot);
 }

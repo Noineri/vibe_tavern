@@ -79,8 +79,10 @@ await mkdir(resolve(rootDir, "data", "assets"), { recursive: true });
 		getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
 	});
 	const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
-	const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime.chatRuntime, providerOrchestrator);
-	const chatSummaryService = new ChatSummaryService(sessionRuntime, providerProfileService);
+	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
+	const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime.chatRuntime, providerOrchestrator, {
+		onAssistantAppended: (chatId) => chatSummaryService.triggerAutoSummary(chatId),
+	});
 	const assetService = new AssetService(resolve(rootDir, "data", "assets"));
 	const mobileAccessService = new MobileAccessService(resolve(rootDir, "data"));
 

@@ -198,7 +198,7 @@ export interface ImportResult {
 	 * chat list, active chat messages + branches, persona, character, prompt traces.
 	 */
 	async getSnapshot(chatId: ChatId): Promise<SessionSnapshot> {
-		const { chat, branch, messages: branchMessages, summaries } = await this.chatApp.getChatState(chatId);
+		const { chat, branch, messages: branchMessages } = await this.chatApp.getChatState(chatId);
 		const branches = await this.stores.chats.getBranches(chat.id);
 		const character = await this.resolver.getCharacter(chat.characterId);
 		const persona = await this.resolver.getPersona(
@@ -209,6 +209,7 @@ export interface ImportResult {
 			branch.id as ChatBranchId,
 		);
 
+		const branchSummaries = await this.stores.chatSummaries.listByChatBranch(chat.id, branch.id);
 		const variantsByMessage = await this.stores.chats.getVariantsByBranch(branch.id);
 		const messagesWithVariants = branchMessages.map((message) =>
 			mapMessageDto(message, variantsByMessage.get(message.id) ?? []),
@@ -221,10 +222,10 @@ export interface ImportResult {
 			activeBranch: branch,
 			branches,
 			messages: messagesWithVariants,
-			summaries: summaries.map((summary) => ({
+			summaries: branchSummaries.map((summary) => ({
 				id: summary.id,
-				kind: summary.kind,
-				summary: summary.summary,
+				kind: summary.source,
+				summary: summary.content,
 			})),
 			promptTrace: promptTraceHistory[0] ?? null,
 			promptTraceHistory,

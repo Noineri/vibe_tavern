@@ -1,21 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
+import type { AutoSummaryConfig, ChatSummaryRecord } from "../app-client.js";
 import { Icons } from "./shared/icons.js";
 import { Modal } from "./shared/Modal.js";
-import { MobileExpandTextarea } from "./shared/MobileExpandTextarea.js";
 import { useIsMobile } from "../hooks/use-mobile.js";
-import { SummaryTab, ContextFooter } from "./context/index.js";
-import type { SavedSummary } from "./context/SummaryTab.js";
 import { cn } from "../lib/cn.js";
 import { useT } from "../i18n/context.js";
+import { countTokens } from "../utils/tokenizer.js";
+import { useSnapshotStore } from "../stores/snapshot-store.js";
 import {
-  readSummarySettings,
-  persistSummarySettings,
-  readSavedSummaries,
-  persistSavedSummaries,
-  type SavedSummaryRecord,
-} from "../lib/local-storage.js";
+  createChatSummaryAction,
+  deleteChatSummaryAction,
+  generateChatSummaryAction,
+  listChatSummariesAction,
+  updateChatSummaryAction,
+  updateMemorySettingsAction,
+} from "../stores/api-actions/chat-actions.js";
 
 interface ContextMemoryModalProps {
   isOpen: boolean;
@@ -25,12 +26,22 @@ interface ContextMemoryModalProps {
   contextWindow: { used: number; limit: number };
   currentSummary: string;
   messageCount: number;
+  messageHistoryLimit?: number;
+  autoSummaryConfig?: Partial<AutoSummaryConfig>;
   onSummarize: (input: { providerProfileId: string; model?: string; maxMessages: number }) => Promise<string>;
   onSaveSummary: (summary: string) => Promise<string>;
   onFetchModelsForProfile: (providerProfileId: string) => Promise<Array<{ id: string; label: string; contextLength?: number }>>;
 }
 
-let nextSummaryCounter = 1;
+const labelCls = "block font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3 mb-2";
+const inputCls = "rounded-md border border-border bg-s2 px-3 py-2 font-ui text-[13px] text-t1 outline-none transition-colors focus:border-accent disabled:opacity-50";
+const checkboxCls = "flex h-[18px] w-[18px] shrink-0 cursor-pointer items-center justify-center rounded border transition-colors";
+
+const DEFAULT_AUTO_CONFIG: AutoSummaryConfig = {
+  enabled: false,
+  everyN: 20,
+  useChatModel: true,
+};
 
 export function ContextMemoryModal({
   isOpen,
@@ -38,450 +49,433 @@ export function ContextMemoryModal({
   activeChatId,
   providers,
   contextWindow,
-  currentSummary,
+  currentSummary: _currentSummary,
   messageCount,
-  onSummarize,
-  onSaveSummary,
+  messageHistoryLimit = 0,
+  autoSummaryConfig,
+  onSummarize: _onSummarize,
+  onSaveSummary: _onSaveSummary,
   onFetchModelsForProfile,
 }: ContextMemoryModalProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
-  const [topTab, setTopTab] = useState<'summary' | 'memory'>('summary');
-  const [summaryText, setSummaryText] = useState(currentSummary);
-  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const activeProvider = providers.find((p) => p.isActive) ?? providers[0] ?? null;
+  const messagesById = useSnapshotStore((s) => s.messagesById);
+  const messageOrder = useSnapshotStore((s) => s.messageOrder);
+  const messages = useMemo(() => messageOrder.map((id) => messagesById[id]).filter(Boolean), [messageOrder, messagesById]);
+
+  const [summaries, setSummaries] = useState<ChatSummaryRecord[]>([]);
   const [activeSummaryId, setActiveSummaryId] = useState<string | null>(null);
-  const effectiveMax = Math.max(messageCount, 1);
-  const [msgCount, setMsgCount] = useState(Math.min(Math.max(messageCount || 10, 1), effectiveMax));
-  const [selectedProviderId, setSelectedProviderId] = useState(providers.find((p) => p.isActive)?.id ?? providers[0]?.id ?? '');
-  const [selectedModel, setSelectedModel] = useState(providers.find((p) => p.isActive)?.defaultModel ?? providers[0]?.defaultModel ?? '');
+  const [draftText, setDraftText] = useState("");
+  const [draftLabel, setDraftLabel] = useState("");
+  const [rangeFrom, setRangeFrom] = useState(1);
+  const [rangeTo, setRangeTo] = useState(Math.max(1, messageCount));
+  const [includeInContext, setIncludeInContext] = useState(true);
+  const [excludeSummarized, setExcludeSummarized] = useState(true);
+  const [dirty, setDirty] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [useChatModel, setUseChatModel] = useState(true);
+  const [selectedProviderId, setSelectedProviderId] = useState(activeProvider?.id ?? "");
+  const [selectedModel, setSelectedModel] = useState(activeProvider?.defaultModel ?? "");
   const [providerModels, setProviderModels] = useState<Array<{ id: string; label: string; contextLength?: number }>>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
-  const [isSummarizing, setIsSummarizing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [autosaveFlash, setAutosaveFlash] = useState(false);
-  const [savedRecords, setSavedRecords] = useState<SavedSummaryRecord[]>([]);
+  const [historyLimit, setHistoryLimit] = useState(messageHistoryLimit || messageCount || 1);
+  const [autoConfig, setAutoConfig] = useState<AutoSummaryConfig>({ ...DEFAULT_AUTO_CONFIG, ...autoSummaryConfig });
+  const abortRef = useRef<AbortController | null>(null);
 
-  // Stabilize the fetch callback so the model-loading effect doesn't re-run on every render
-  const fetchModelsRef = useRef(onFetchModelsForProfile);
-  fetchModelsRef.current = onFetchModelsForProfile;
+  const maxMessage = Math.max(1, messageCount);
+  const activeSummary = summaries.find((summary) => summary.id === activeSummaryId) ?? null;
+  const selectedProvider = providers.find((provider) => provider.id === selectedProviderId) ?? activeProvider;
+  const effectiveProviderId = useChatModel ? activeProvider?.id ?? selectedProviderId : selectedProviderId;
+  const effectiveModel = (useChatModel ? activeProvider?.defaultModel ?? selectedModel : selectedModel)?.trim() ?? "";
 
-  // Autosave timer ref
-  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedRangeMessages = useMemo(() => {
+    return messages.filter((message) => {
+      const position = (message.position ?? 0) + 1;
+      return position >= rangeFrom && position <= rangeTo;
+    });
+  }, [messages, rangeFrom, rangeTo]);
 
-  // Load saved summaries from localStorage when modal opens or chat changes
-  useEffect(() => {
-    if (!isOpen || !activeChatId) return;
-    const records = readSavedSummaries(activeChatId);
-    setSavedRecords(records);
+  const excludedRanges = useMemo(() => {
+    return summaries
+      .filter((summary) => summary.includeInContext && summary.excludeSummarized && summary.summarizedTo >= summary.summarizedFrom)
+      .map((summary) => ({ from: summary.summarizedFrom, to: summary.summarizedTo }));
+  }, [summaries]);
 
-    // Restore persisted provider/model settings
-    const settings = readSummarySettings(activeChatId);
-    if (settings) {
-      if (settings.providerId && providers.some(p => p.id === settings.providerId)) {
-        setSelectedProviderId(settings.providerId);
+  const tokenEstimate = useMemo(() => {
+    const summaryTokens = countTokens(draftText);
+    const limitedMessages = messages
+      .filter((message) => {
+        const position = (message.position ?? 0) + 1;
+        return !excludedRanges.some((range) => position >= range.from && position <= range.to);
+      })
+      .slice(-(historyLimit || messages.length));
+    const historyTokens = limitedMessages.reduce((sum, message) => sum + countTokens(message.content), 0);
+    const selectedRawTokens = selectedRangeMessages.reduce((sum, message) => sum + countTokens(message.content), 0);
+    const saved = Math.max(0, selectedRawTokens - summaryTokens);
+    const pct = selectedRawTokens > 0 ? Math.round((saved / selectedRawTokens) * 100) : 0;
+    return { summaryTokens, historyTokens, total: summaryTokens + historyTokens, selectedRawTokens, saved, pct };
+  }, [draftText, excludedRanges, historyLimit, messages, selectedRangeMessages]);
+
+  const contextPct = contextWindow.limit > 0 ? Math.min(100, Math.round((contextWindow.used / contextWindow.limit) * 100)) : 0;
+
+  const loadSummaries = useCallback(async () => {
+    if (!activeChatId) return;
+    setLoading(true);
+    try {
+      const rows = await listChatSummariesAction(activeChatId);
+      setSummaries(rows);
+      if (rows.length > 0) {
+        selectSummary(rows[0], false);
+      } else {
+        startNewSummary();
       }
-      if (settings.model) {
-        setSelectedModel(settings.model);
-      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("summary_save_failed"));
+    } finally {
+      setLoading(false);
     }
-  }, [isOpen, activeChatId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeChatId, t]);
 
   useEffect(() => {
     if (!isOpen) return;
-    const newMax = Math.max(messageCount, 1);
-    setMsgCount((prev) => Math.min(prev, newMax));
-  }, [isOpen, messageCount]);
+    void loadSummaries();
+  }, [isOpen, loadSummaries]);
 
   useEffect(() => {
-    if (!selectedProviderId || !providers.some((p) => p.id === selectedProviderId)) {
-      const nextProvider = providers.find((p) => p.isActive) ?? providers[0];
-      setSelectedProviderId(nextProvider?.id ?? '');
-      setSelectedModel(nextProvider?.defaultModel ?? '');
+    if (!isOpen) return;
+    setRangeTo((prev) => Math.max(1, Math.min(Math.max(prev, messageCount), maxMessage)));
+    setHistoryLimit(messageHistoryLimit || messageCount || 1);
+    setAutoConfig({ ...DEFAULT_AUTO_CONFIG, ...autoSummaryConfig });
+  }, [autoSummaryConfig, isOpen, maxMessage, messageCount, messageHistoryLimit]);
+
+  useEffect(() => {
+    if (!selectedProviderId) {
+      setSelectedProviderId(activeProvider?.id ?? "");
+      setSelectedModel(activeProvider?.defaultModel ?? "");
     }
-  }, [providers, selectedProviderId]);
+  }, [activeProvider, selectedProviderId]);
 
   useEffect(() => {
     if (!isOpen || !selectedProviderId) {
       setProviderModels([]);
       return;
     }
-
     let cancelled = false;
     setIsLoadingModels(true);
-    void fetchModelsRef.current(selectedProviderId)
+    void onFetchModelsForProfile(selectedProviderId)
       .then((models) => {
         if (cancelled) return;
         setProviderModels(models.map((model) => ({ id: model.id, label: model.label || model.id, contextLength: model.contextLength })));
-        const currentStillExists = models.some((model) => model.id === selectedModel);
-        const defaultModel = providers.find((p) => p.id === selectedProviderId)?.defaultModel ?? '';
-        const nextModel = (defaultModel && models.some((model) => model.id === defaultModel) ? defaultModel : models[0]?.id) ?? '';
-        if (!currentStillExists) setSelectedModel(nextModel);
+        const defaultModel = providers.find((p) => p.id === selectedProviderId)?.defaultModel ?? "";
+        setSelectedModel((current) => current || defaultModel || models[0]?.id || "");
       })
       .catch((err) => {
-        if (!cancelled) {
-          setProviderModels([]);
-          toast.error(err instanceof Error ? err.message : t("models_load_failed"));
-        }
+        if (!cancelled) toast.error(err instanceof Error ? err.message : t("models_load_failed"));
       })
       .finally(() => {
         if (!cancelled) setIsLoadingModels(false);
       });
-
     return () => { cancelled = true; };
-  }, [isOpen, selectedProviderId]);
-
-  const handleAutosaveSettings = useCallback((providerId: string, model: string) => {
-    if (!activeChatId) return;
-    persistSummarySettings(activeChatId, { providerId, model });
-    setAutosaveFlash(true);
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    autosaveTimerRef.current = setTimeout(() => setAutosaveFlash(false), 1200);
-  }, [activeChatId]);
-
-  const persistRecords = useCallback((records: SavedSummaryRecord[]) => {
-    if (!activeChatId) return;
-    setSavedRecords(records);
-    persistSavedSummaries(activeChatId, records);
-  }, [activeChatId]);
-
-  const isDisabled = activeChatId === null;
-  const providerOptions = providers.map(p => ({ id: p.id, name: p.name, defaultModel: p.defaultModel ?? '' }));
-
-  // Build sidebar list: saved records + current backend summary (if any)
-  const savedSummaries = useMemo<SavedSummary[]>(() => {
-    const items: SavedSummary[] = savedRecords.map((r) => ({
-      id: r.id,
-      label: r.label,
-      text: r.text,
-      turn: r.msgCount,
-      timestamp: new Date(r.timestamp).toLocaleString(),
-      includeInContext: r.includeInContext,
-    }));
-    // If there's a backend summary that isn't already in savedRecords, show it too
-    if (currentSummary.trim() && !savedRecords.some(r => r.text === currentSummary)) {
-      items.unshift({
-        id: 'chat-summary',
-        label: t('current_summary_label'),
-        text: currentSummary,
-        turn: messageCount,
-        timestamp: t('summary_timestamp_saved'),
-        includeInContext: true,
-      });
-    }
-    return items;
-  }, [currentSummary, messageCount, savedRecords, t]);
+  }, [isOpen, onFetchModelsForProfile, providers, selectedProviderId, t]);
 
   if (!isOpen) return null;
 
-  const handleSummarize = async () => {
-    const selected = providers.find((p) => p.id === selectedProviderId);
-    if (!selected) {
-      toast.error(t("select_provider_error"));
-      return;
-    }
-    if (!selectedModel.trim()) {
-      toast.error(t("no_default_model"));
-      return;
-    }
-    setIsSummarizing(true);
-    try {
-      const summary = await onSummarize({ providerProfileId: selectedProviderId, model: selectedModel.trim() || undefined, maxMessages: msgCount });
+  function selectSummary(summary: ChatSummaryRecord, openDirty = false) {
+    setActiveSummaryId(summary.id);
+    setDraftText(summary.content);
+    setDraftLabel(summary.label);
+    setRangeFrom(clamp(summary.summarizedFrom, 1, maxMessage));
+    setRangeTo(clamp(Math.max(summary.summarizedTo, summary.summarizedFrom), 1, maxMessage));
+    setIncludeInContext(summary.includeInContext);
+    setExcludeSummarized(summary.excludeSummarized);
+    setDirty(openDirty);
+  }
 
-      // Add a new summary record to localStorage
-      const newRecord: SavedSummaryRecord = {
-        id: `summary-${Date.now()}-${nextSummaryCounter++}`,
-        label: `${t('summary_label_prefix')} ${savedRecords.length + 1}`,
-        text: summary,
-        msgCount,
-        timestamp: Date.now(),
-        includeInContext: false,
+  function startNewSummary() {
+    setActiveSummaryId(null);
+    setDraftText("");
+    setDraftLabel(`T1–T${maxMessage}`);
+    setRangeFrom(1);
+    setRangeTo(maxMessage);
+    setIncludeInContext(true);
+    setExcludeSummarized(true);
+    setDirty(false);
+  }
+
+  function setRange(nextFrom: number, nextTo: number) {
+    const from = clamp(Math.min(nextFrom, nextTo), 1, maxMessage);
+    const to = clamp(Math.max(nextFrom, nextTo), 1, maxMessage);
+    setRangeFrom(from);
+    setRangeTo(to);
+    setDirty(true);
+  }
+
+  async function handleSave() {
+    if (!activeChatId) return;
+    setSaving(true);
+    try {
+      const payload = {
+        label: draftLabel.trim() || `T${rangeFrom}–T${rangeTo}`,
+        content: draftText,
+        summarizedFrom: rangeFrom,
+        summarizedTo: rangeTo,
+        includeInContext,
+        excludeSummarized,
       };
-      persistRecords([...savedRecords, newRecord]);
-
-      setSummaryText(summary);
-      setActiveSummaryId(newRecord.id);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("summarization_failed"));
-    } finally {
-      setIsSummarizing(false);
-    }
-  };
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      // Save the currently edited summary text to the backend
-      const summary = await onSaveSummary(summaryText);
-      setSummaryText(summary);
-
-      // Also update/create a local record for this summary
-      if (summary.trim()) {
-        const existingIdx = savedRecords.findIndex(r => r.id === activeSummaryId);
-        if (existingIdx >= 0) {
-          const updated = [...savedRecords];
-          updated[existingIdx] = { ...updated[existingIdx], text: summary };
-          persistRecords(updated);
-        } else {
-          const newRecord: SavedSummaryRecord = {
-            id: activeSummaryId ?? `summary-${Date.now()}-${nextSummaryCounter++}`,
-            label: `${t('summary_label_prefix')} ${savedRecords.length + 1}`,
-            text: summary,
-            msgCount,
-            timestamp: Date.now(),
-            includeInContext: false,
-          };
-          persistRecords([...savedRecords, newRecord]);
-          setActiveSummaryId(newRecord.id);
-        }
-      }
+      const saved = activeSummaryId
+        ? await updateChatSummaryAction(activeChatId, activeSummaryId, payload)
+        : await createChatSummaryAction(activeChatId, payload);
+      setSummaries((prev) => upsertSummary(prev, saved));
+      selectSummary(saved);
+      toast.success(t("save_summary_btn"));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("summary_save_failed"));
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
-  };
+  }
 
-  const handleSelectSummary = (id: string) => {
-    const record = savedSummaries.find(s => s.id === id);
-    if (record) {
-      setSummaryText(record.text);
-      setActiveSummaryId(id);
-      if (isMobile) setMobileDetailOpen(true);
+  async function handleGenerate() {
+    if (!activeChatId || !effectiveProviderId || !effectiveModel) {
+      toast.error(t("select_provider_error"));
+      return;
     }
-  };
+    abortRef.current?.abort();
+    const abort = new AbortController();
+    abortRef.current = abort;
+    setGenerating(true);
+    try {
+      const generated = await generateChatSummaryAction(activeChatId, {
+        providerProfileId: effectiveProviderId,
+        model: effectiveModel,
+        summarizedFrom: rangeFrom,
+        summarizedTo: rangeTo,
+        targetSummaryId: activeSummaryId ?? undefined,
+        label: draftLabel.trim() || `T${rangeFrom}–T${rangeTo}`,
+        includeInContext,
+        excludeSummarized,
+      }, abort.signal);
+      setSummaries((prev) => upsertSummary(prev, generated));
+      selectSummary(generated);
+    } catch (err) {
+      if (!abort.signal.aborted) toast.error(err instanceof Error ? err.message : t("summarization_failed"));
+    } finally {
+      setGenerating(false);
+    }
+  }
 
-  const handleDeleteSummary = (id: string) => {
-    if (id === 'chat-summary') {
-      // Delete the backend summary
-      void onSaveSummary('').then((summary) => {
-        setSummaryText(summary);
-        if (activeSummaryId === 'chat-summary') setActiveSummaryId(null);
-      }).catch((err) => {
-        toast.error(err instanceof Error ? err.message : t("summary_save_failed"));
-      });
-    } else {
-      const updated = savedRecords.filter(r => r.id !== id);
-      persistRecords(updated);
-      if (activeSummaryId === id) {
-        setActiveSummaryId(null);
-        setSummaryText('');
+  async function handleDelete(summaryId: string) {
+    if (!activeChatId) return;
+    try {
+      await deleteChatSummaryAction(activeChatId, summaryId);
+      const next = summaries.filter((summary) => summary.id !== summaryId);
+      setSummaries(next);
+      if (summaryId === activeSummaryId) {
+        if (next[0]) selectSummary(next[0]); else startNewSummary();
       }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("summary_save_failed"));
     }
-  };
+  }
 
-  const handleToggleContext = (id: string) => {
-    if (id === 'chat-summary') return; // Backend summary is always included
-    const updated = savedRecords.map(r =>
-      r.id === id ? { ...r, includeInContext: !r.includeInContext } : r
-    );
-    persistRecords(updated);
-  };
+  async function patchSummary(summary: ChatSummaryRecord, patch: Partial<ChatSummaryRecord>) {
+    if (!activeChatId) return;
+    const updated = await updateChatSummaryAction(activeChatId, summary.id, patch);
+    setSummaries((prev) => upsertSummary(prev, updated));
+    if (summary.id === activeSummaryId) selectSummary(updated);
+  }
 
-  const activeSummaryName = activeSummaryId
-    ? savedSummaries.find(s => s.id === activeSummaryId)?.label ?? ''
-    : '';
+  async function commitMemorySettings(next?: { historyLimit?: number; autoConfig?: AutoSummaryConfig }) {
+    if (!activeChatId) return;
+    const nextHistoryLimit = next?.historyLimit ?? historyLimit;
+    const nextAutoConfig = next?.autoConfig ?? autoConfig;
+    setHistoryLimit(nextHistoryLimit);
+    setAutoConfig(nextAutoConfig);
+    try {
+      await updateMemorySettingsAction(activeChatId, {
+        messageHistoryLimit: Math.max(0, Math.floor(nextHistoryLimit)),
+        autoSummaryConfig: nextAutoConfig,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("summary_save_failed"));
+    }
+  }
 
   return (
     <Modal open={true} onClose={onClose}>
-      <div className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "h-[min(85vh,680px)] max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[820px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
-        {/* ── HEADER ── */}
-        <div className={cn("shrink-0 border-b border-border", isMobile ? "px-3 py-2.5" : "px-5 pt-[18px]")}>
-          {isMobile && mobileDetailOpen ? (
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 hover:bg-s2 hover:text-t1" onClick={() => { setMobileDetailOpen(false); setActiveSummaryId(null); }}>
-                <span className="text-lg leading-none">←</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-body text-[calc(var(--ui-fs)+2px)] font-medium text-t1">{activeSummaryName}</div>
-              </div>
+      <div className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "h-full w-full" : "h-[min(86vh,780px)] w-[min(920px,calc(100vw-32px))] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
+        <div className="shrink-0 border-b border-border px-5 pt-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="font-body text-[20px] font-semibold text-t1">{t("context_memory_title")}</div>
+              <div className="mt-1 font-ui text-[13px] text-t3">{t("context_memory_sub")}</div>
             </div>
-          ) : (
-            <div className="flex items-center justify-between">
-              <div>
-                <div className={cn("font-body font-medium text-t1", isMobile ? "text-[calc(var(--ui-fs)+2px)]" : "text-[calc(var(--ui-fs)+4px)] mb-0.5")}>{t("context_memory_title")}</div>
-                {!isMobile && <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("context_memory_sub")}</div>}
-              </div>
-              <div
-                className={cn("shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1", isMobile ? "flex h-8 w-8" : "flex h-[32px] w-[32px]")}
-                onClick={onClose}
-              >
-                <Icons.Close />
-              </div>
-            </div>
-          )}
-          {!isMobile && (
-            <div className="flex gap-0 mt-1">
-              <div className={cn("cursor-pointer border-b-2 border-b-transparent px-4 py-2 font-ui text-xs font-medium text-t3 transition-all select-none hover:text-t2", topTab === 'summary' && "border-b-accent text-accent-t")} onClick={() => setTopTab('summary')}>{t("memory_v1_tab")}</div>
-            </div>
-          )}
+            <button className="flex h-8 w-8 items-center justify-center rounded-md text-t3 hover:bg-s2 hover:text-t1" onClick={onClose} type="button">
+              <Icons.Close />
+            </button>
+          </div>
+          <div className="mt-4 flex gap-0">
+            <div className="border-b-2 border-b-accent px-4 py-2 font-ui text-xs font-medium text-accent-t">{t("memory_tab_summary")}</div>
+          </div>
         </div>
 
-        {/* ── MOBILE: drill-down views ── */}
-        {isMobile ? (
-          <>
-            {mobileDetailOpen ? (
-              /* ── Mobile detail view ── */
-              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
-                <label className="block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3 mb-[7px]">{t('summary_text_label')}</label>
-                <MobileExpandTextarea value={summaryText} onChange={setSummaryText} label={t('summary_text_label')}>
-                  <textarea
-                    className="w-full flex-1 min-h-[120px] resize-none rounded-md border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent"
-                    placeholder={t('summary_placeholder')}
-                    value={summaryText}
-                    disabled={isDisabled}
-                    onChange={e => setSummaryText(e.target.value)}
-                  />
-                </MobileExpandTextarea>
-
-                <div className="shrink-0 mt-3">
-                  <label className="block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3 mb-[7px]">{t('msg_to_summarize_label')}</label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="range" min={1} max={effectiveMax} value={msgCount}
-                      disabled={isDisabled || isSummarizing}
-                      onChange={e => setMsgCount(Number(e.target.value))}
-                      className="accent-accent h-2 flex-1 cursor-pointer rounded-full bg-s3"
-                    />
-                    <input
-                      type="number" min={1} max={effectiveMax} value={msgCount}
-                      disabled={isDisabled || isSummarizing}
-                      onChange={e => setMsgCount(Math.max(1, Math.min(effectiveMax, Number(e.target.value) || 1)))}
-                      className="h-[32px] w-[52px] rounded border border-border bg-s2 text-center font-ui text-[12px] text-t1 outline-none focus:border-accent px-1"
-                    />
-                  </div>
-                </div>
-
-                <div className="shrink-0 mt-3">
-                  <label className="block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3 mb-[7px]">{t('summarize_provider_label')}</label>
-                  <select
-                    value={selectedProviderId}
-                    disabled={isDisabled || isSummarizing}
-                    onChange={e => { setSelectedProviderId(e.target.value); setSelectedModel(''); setProviderModels([]); }}
-                    className="w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none pl-[13px]"
-                  >
-                    {providerOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </div>
-
-                <div className="shrink-0 mt-3">
-                  <label className="block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3 mb-[7px]">{t('summarize_model_label')}</label>
-                  <select
-                    value={selectedModel}
-                    disabled={isDisabled || isSummarizing || isLoadingModels}
-                    onChange={e => setSelectedModel(e.target.value)}
-                    className="w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none pl-[13px] disabled:opacity-60"
-                  >
-                    {isLoadingModels
-                      ? <option>{t('loading_models')}</option>
-                      : providerModels.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                  </select>
-                </div>
-
-                <button
-                  className="mt-3 h-[38px] w-full shrink-0 cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-40"
-                  disabled={isDisabled || isSummarizing || !selectedProviderId || !selectedModel.trim()}
-                  onClick={handleSummarize}
+        <div className={cn("flex min-h-0 flex-1", isMobile && "flex-col")}> 
+          <aside className={cn("flex shrink-0 flex-col border-border", isMobile ? "max-h-[180px] border-b" : "w-[200px] border-r")}> 
+            <div className="px-4 py-4 font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3">{t("summary_archive_label")}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {loading && <div className="px-4 py-3 font-ui text-xs text-t3">{t("loading_models")}</div>}
+              {!loading && summaries.length === 0 && <div className="px-4 py-3 font-ui text-xs text-t4">{t("no_saved_summaries")}</div>}
+              {summaries.map((summary) => (
+                <div
+                  key={summary.id}
+                  className={cn("group flex cursor-pointer items-start gap-2 border-l-2 border-l-transparent px-3 py-2.5 hover:bg-s2", activeSummaryId === summary.id && "border-l-accent bg-accent-dim")}
+                  onClick={() => selectSummary(summary)}
                 >
-                  {isSummarizing ? t('summarizing_btn') : t('summarize_btn')}
-                </button>
-              </div>
-            ) : (
-              /* ── Mobile list view ── */
-              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-                <div className="px-[13px] pt-2 pb-2 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.08em] text-t3">{t('saved_summaries_label')}</div>
-                {savedSummaries.length === 0 && (
-                  <div className="px-3 py-4 text-center font-ui text-[11px] text-t4">{t('no_saved_summaries')}</div>
-                )}
-                {savedSummaries.map(s => (
-                  <div
-                    key={s.id}
-                    className={cn(
-                      "group flex cursor-pointer items-center gap-1 border-l-2 border-l-transparent px-4 py-3 transition-colors hover:bg-s2",
-                      activeSummaryId === s.id && "border-l-accent bg-accent-dim",
-                    )}
-                    onClick={() => handleSelectSummary(s.id)}
-                  >
-                    {handleToggleContext && (
-                      <button
-                        className={cn("flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded border transition-colors mr-1",
-                          s.includeInContext ? "border-accent bg-accent text-white" : "border-border2 bg-transparent")}
-                        onClick={e => { e.stopPropagation(); handleToggleContext(s.id); }}
-                      >
-                        {s.includeInContext && <Icons.Check />}
-                      </button>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className={cn("truncate font-ui text-[12px]", activeSummaryId === s.id ? "font-medium text-accent-t" : "text-t2")}>{s.label}</div>
-                      <div className="truncate font-ui text-[10px] text-t4">{s.timestamp}</div>
-                    </div>
-                    <div className="shrink-0 px-2 py-1 text-t3">
-                      <Icons.Caret direction="r" />
-                    </div>
-                  </div>
-                ))}
-                <div className="shrink-0 border-t border-border px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] mt-auto">
                   <button
-                    className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
-                    disabled={isDisabled}
-                    onClick={() => { setSummaryText(''); setActiveSummaryId(null); if (isMobile) setMobileDetailOpen(true); }}
+                    type="button"
+                    className={cn(checkboxCls, summary.includeInContext ? "border-accent bg-accent text-on-accent" : "border-border2 bg-transparent text-transparent")}
+                    onClick={(event) => { event.stopPropagation(); void patchSummary(summary, { includeInContext: !summary.includeInContext }); }}
                   >
-                    <Icons.Plus /> {t('new_summary_entry')}
+                    <Icons.Check />
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-ui text-[12px] text-t1">{summary.label || `T${summary.summarizedFrom}–T${summary.summarizedTo}`}</div>
+                    <div className="mt-0.5 font-ui text-[10px] text-t4">{summary.source === "auto" ? t("summary_source_auto") : t("summary_source_manual")}</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 opacity-0 hover:bg-danger-dim hover:text-danger-text group-hover:opacity-100"
+                    onClick={(event) => { event.stopPropagation(); void handleDelete(summary.id); }}
+                  >
+                    <Icons.Close />
                   </button>
                 </div>
-              </div>
-            )}
-          </>
-        ) : (
-          /* ── Desktop: two-column SummaryTab ── */
-          <SummaryTab
-            summaryText={summaryText}
-            onSummaryTextChange={setSummaryText}
-            msgCount={msgCount}
-            onMsgCountChange={setMsgCount}
-            maxMsgCount={effectiveMax}
-            selectedProviderId={selectedProviderId}
-            selectedModel={selectedModel}
-            onProviderChange={(id) => {
-              setSelectedProviderId(id);
-              setSelectedModel('');
-              setProviderModels([]);
-              handleAutosaveSettings(id, '');
-            }}
-            onModelChange={(model) => {
-              setSelectedModel(model);
-              handleAutosaveSettings(selectedProviderId, model);
-            }}
-            providers={providerOptions}
-            models={providerModels}
-            isLoadingModels={isLoadingModels}
-            onSummarize={handleSummarize}
-            isSummarizing={isSummarizing}
-            savedSummaries={savedSummaries}
-            activeSummaryId={activeSummaryId}
-            onSelectSummary={handleSelectSummary}
-            onDeleteSummary={handleDeleteSummary}
-            onToggleContext={handleToggleContext}
-            onNewSummary={() => { setSummaryText(''); setActiveSummaryId(null); }}
-            disabled={isDisabled}
-            error=""
-          />
-        )}
+              ))}
+            </div>
+            <div className="border-t border-border p-3">
+              <button type="button" className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-xs text-t3 hover:border-border hover:bg-s2 hover:text-t1" onClick={startNewSummary} disabled={!activeChatId}>
+                <Icons.Plus /> {t("new_summary_entry")}
+              </button>
+            </div>
+          </aside>
 
-        {/* ── FOOTER: only on desktop or mobile detail ── */}
-        {(!isMobile || mobileDetailOpen) && (
-        <div className="shrink-0 pb-[env(safe-area-inset-bottom,0px)]">
-        <ContextFooter
-          topTab={topTab}
-          onClose={onClose}
-          disabled={isDisabled}
-          contextWindow={contextWindow}
-          onSaveSummary={handleSave}
-          isSaving={isSaving}
-          autoSaveFlash={autosaveFlash}
-        />
+          <main className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+            <section>
+              <div className={labelCls}>{t("summary_range_label")}</div>
+              <div className="rounded-lg border border-border bg-bg p-4">
+                <div className="relative pb-5 pt-1">
+                  <input type="range" min={1} max={maxMessage} value={rangeFrom} onChange={(e) => setRange(Number(e.target.value), rangeTo)} className="accent-accent absolute inset-x-0 top-0 h-4 w-full bg-transparent" />
+                  <input type="range" min={1} max={maxMessage} value={rangeTo} onChange={(e) => setRange(rangeFrom, Number(e.target.value))} className="accent-accent absolute inset-x-0 top-0 h-4 w-full bg-transparent" />
+                </div>
+                <div className="flex items-center justify-between font-ui text-[11px] text-t4">
+                  <span>{t("summary_msg_label").replace("{n}", String(rangeFrom))}</span>
+                  <span className="rounded-full bg-accent-dim px-2 py-1 text-accent-t">{t("summary_messages_count").replace("{count}", String(Math.max(0, rangeTo - rangeFrom + 1)))}</span>
+                  <span>{t("summary_msg_label").replace("{n}", String(rangeTo))}</span>
+                </div>
+              </div>
+            </section>
+
+            <label className="mt-4 flex items-center gap-2 font-ui text-[13px] text-t2">
+              <button type="button" className={cn(checkboxCls, excludeSummarized ? "border-accent bg-accent text-on-accent" : "border-border2 text-transparent")} onClick={() => { setExcludeSummarized((v) => !v); setDirty(true); }}>
+                <Icons.Check />
+              </button>
+              {t("summary_exclude_toggle")}
+            </label>
+
+            <section className="mt-5">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className={cn(labelCls, "mb-0")}>{t("summary_text_label")}</div>
+                <button type="button" className="h-7 rounded-md bg-s3 px-3 font-ui text-xs text-t2 hover:bg-border2 hover:text-t1 disabled:opacity-40" disabled={!dirty || saving} onClick={handleSave}>
+                  {saving ? t("saving_btn") : t("save_summary_btn")}
+                </button>
+              </div>
+              <input className={cn(inputCls, "mb-2 w-full")} value={draftLabel} onChange={(e) => { setDraftLabel(e.target.value); setDirty(true); }} placeholder={`T${rangeFrom}–T${rangeTo}`} />
+              <textarea className={cn(inputCls, "min-h-[86px] w-full resize-y leading-relaxed")} value={draftText} onChange={(e) => { setDraftText(e.target.value); setDirty(true); }} placeholder={t("summary_placeholder_short")} />
+              <div className="mt-1 text-right font-ui text-[11px] text-t4">{tokenEstimate.summaryTokens}t</div>
+            </section>
+
+            <section className="mt-4 rounded-lg border border-border bg-bg p-4">
+              <div className="mb-2 font-ui text-[12px] text-t3">
+                {t("summary_token_line")
+                  .replace("{summary}", String(tokenEstimate.summaryTokens))
+                  .replace("{history}", String(tokenEstimate.historyTokens))
+                  .replace("{total}", String(tokenEstimate.total))}
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-s3">
+                <div className="h-full bg-accent" style={{ width: `${tokenEstimate.total > 0 ? Math.min(100, Math.round((tokenEstimate.summaryTokens / tokenEstimate.total) * 100)) : 0}%` }} />
+              </div>
+              <div className="mt-2 flex items-center justify-between font-ui text-[11px] text-t4">
+                <span>{t("summary_without_line").replace("{tokens}", String(tokenEstimate.selectedRawTokens))}</span>
+                <span className="text-success-text">{t("summary_saved_line").replace("{tokens}", String(tokenEstimate.saved)).replace("{pct}", String(tokenEstimate.pct))}</span>
+              </div>
+            </section>
+
+            <section className="mt-5">
+              <div className={labelCls}>{t("summary_provider_label")}</div>
+              <label className="mb-3 flex items-center gap-2 font-ui text-[13px] text-t2">
+                <button type="button" className={cn(checkboxCls, useChatModel ? "border-accent bg-accent text-on-accent" : "border-border2 text-transparent")} onClick={() => setUseChatModel((v) => !v)}>
+                  <Icons.Check />
+                </button>
+                {t("summary_use_chat_model")}
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <select className={cn(inputCls, "w-full")} value={selectedProviderId} disabled={useChatModel || generating} onChange={(e) => { setSelectedProviderId(e.target.value); setSelectedModel(""); }}>
+                  {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
+                </select>
+                <select className={cn(inputCls, "w-full")} value={selectedModel} disabled={useChatModel || generating || isLoadingModels} onChange={(e) => setSelectedModel(e.target.value)}>
+                  {isLoadingModels ? <option>{t("loading_models")}</option> : providerModels.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+                </select>
+              </div>
+              <button type="button" className="mt-3 h-10 w-full rounded-md bg-accent px-4 font-ui text-sm font-semibold text-on-accent hover:brightness-110 disabled:opacity-50" disabled={!activeChatId || generating || !effectiveProviderId || !effectiveModel} onClick={handleGenerate}>
+                {generating ? t("summarizing_btn") : t("summary_generate_range").replace("{from}", String(rangeFrom)).replace("{to}", String(rangeTo))}
+              </button>
+            </section>
+
+            <section className="mt-5 rounded-lg border border-border bg-bg p-4">
+              <label className="flex items-center gap-2 font-ui text-[13px] text-t2">
+                <button type="button" className={cn(checkboxCls, autoConfig.enabled ? "border-accent bg-accent text-on-accent" : "border-border2 text-transparent")} onClick={() => void commitMemorySettings({ autoConfig: { ...autoConfig, enabled: !autoConfig.enabled } })}>
+                  <Icons.Check />
+                </button>
+                {t("summary_auto_toggle")}
+              </label>
+              <div className="mt-3 flex items-center gap-2 font-ui text-[12px] text-t3">
+                <span>{t("summary_auto_every")}</span>
+                <input className={cn(inputCls, "h-8 w-20 py-1 text-center")} type="number" min={1} max={500} value={autoConfig.everyN} onChange={(e) => setAutoConfig({ ...autoConfig, everyN: Math.max(1, Number(e.target.value) || 1) })} onBlur={() => void commitMemorySettings()} />
+                <span>{t("summary_auto_messages")}</span>
+              </div>
+            </section>
+          </main>
         </div>
-        )}
+
+        <footer className="shrink-0 border-t border-border px-5 py-3">
+          <div className="h-2 overflow-hidden rounded-full bg-s3">
+            <div className="h-full bg-accent" style={{ width: `${contextPct}%` }} />
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-4 font-ui text-[11px] text-t3">
+            <div>{contextWindow.used} / {contextWindow.limit}t ({contextPct}%)</div>
+            <label className="flex flex-1 items-center justify-end gap-3">
+              <span>{t("summary_messages_in_prompt")}</span>
+              <input className="accent-accent w-[min(46vw,420px)]" type="range" min={0} max={Math.max(1, messageCount)} value={Math.min(historyLimit, Math.max(1, messageCount))} onChange={(e) => setHistoryLimit(Number(e.target.value))} onMouseUp={() => void commitMemorySettings()} onTouchEnd={() => void commitMemorySettings()} />
+              <input className={cn(inputCls, "h-8 w-16 py-1 text-center")} type="number" min={0} max={Math.max(1, messageCount)} value={historyLimit} onChange={(e) => setHistoryLimit(Math.max(0, Number(e.target.value) || 0))} onBlur={() => void commitMemorySettings()} />
+            </label>
+          </div>
+        </footer>
       </div>
     </Modal>
   );
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
+function upsertSummary(list: ChatSummaryRecord[], summary: ChatSummaryRecord): ChatSummaryRecord[] {
+  const existing = list.findIndex((item) => item.id === summary.id);
+  if (existing < 0) return [...list, summary].sort((a, b) => a.summarizedFrom - b.summarizedFrom || a.createdAt.localeCompare(b.createdAt));
+  const next = [...list];
+  next[existing] = summary;
+  return next;
 }

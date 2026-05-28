@@ -77,8 +77,10 @@ configureLogDir(paths.logsDir);
 		dataDir: paths.dataDir,
 	});
 	const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
-	const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime.chatRuntime, providerOrchestrator);
-	const chatSummaryService = new ChatSummaryService(sessionRuntime, providerProfileService);
+	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
+	const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime.chatRuntime, providerOrchestrator, {
+		onAssistantAppended: (chatId) => chatSummaryService.triggerAutoSummary(chatId),
+	});
 	const assetService = new AssetService(paths.assetsDir);
 	const mobileAccessService = new MobileAccessService(paths.dataDir);
 

@@ -23,6 +23,13 @@ export type {
   SaveTraceData,
 } from './chat-store.js';
 
+export { ChatSummaryStore } from './chat-summary-store.js';
+export type {
+  ChatSummary,
+  CreateChatSummaryData,
+  UpdateChatSummaryData,
+} from './chat-summary-store.js';
+
 export { LorebookStore } from './lorebook-store.js';
 export type {
   CreateLorebookData,

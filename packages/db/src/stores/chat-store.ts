@@ -12,6 +12,7 @@ export interface Chat {
   title: string;
   summary: string;
   messageHistoryLimit: number;
+  autoSummaryConfig: Record<string, unknown>;
   status: 'active' | 'archived';
   activeBranchId: string;
   promptPresetId: string;
@@ -131,6 +132,7 @@ export class ChatStore {
           title: data.title,
           summary: '',
           messageHistoryLimit: 0,
+          autoSummaryConfigJson: '{"enabled":false,"everyN":20,"useChatModel":true}',
           status: 'active',
           lastAccessedAt: now,
           createdAt: now,
@@ -238,6 +240,20 @@ export class ChatStore {
       .where(eq(chats.id, id))
       .returning();
     if (!row) throw new Error(`Chat '${id}' not found after limit update`);
+    return this.mapRow(row);
+  }
+
+  async updateMemorySettings(id: string, input: { messageHistoryLimit?: number; autoSummaryConfig?: Record<string, unknown> }): Promise<Chat> {
+    const now = this.clock.now();
+    const values: Partial<typeof chats.$inferInsert> = { updatedAt: now };
+    if (input.messageHistoryLimit !== undefined) values.messageHistoryLimit = Math.max(0, Math.floor(input.messageHistoryLimit));
+    if (input.autoSummaryConfig !== undefined) values.autoSummaryConfigJson = JSON.stringify(input.autoSummaryConfig);
+    const [row] = await this.db
+      .update(chats)
+      .set(values)
+      .where(eq(chats.id, id))
+      .returning();
+    if (!row) throw new Error(`Chat '${id}' not found after memory settings update`);
     return this.mapRow(row);
   }
 
@@ -836,6 +852,7 @@ export class ChatStore {
       title: row.title,
       summary: row.summary,
       messageHistoryLimit: row.messageHistoryLimit,
+      autoSummaryConfig: safeParseJson(row.autoSummaryConfigJson),
       status: row.status as Chat['status'],
       activeBranchId: row.activeBranchId,
       promptPresetId: row.promptPresetId,

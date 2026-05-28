@@ -275,7 +275,7 @@ export async function createTestServer(): Promise<TestServer> {
   });
   const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
   const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime.chatRuntime, providerOrchestrator);
-  const chatSummaryService = new ChatSummaryService(sessionRuntime, providerProfileService);
+  const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
   const assetService = new AssetService(resolve(tmpDir, "data", "assets"));
 
   const runtime = new RuntimeApiAdapter(
