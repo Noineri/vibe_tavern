@@ -123,6 +123,8 @@
   "trace_prefill_label": "Prefill:",
   "trace_showing": "Showing trace {n}",
   "trace_turn": "Turn {n}",
+  "trace_prev": "Prev",
+  "trace_next": "Next",
   "view_raw_json": "View Raw JSON Payload",
   "trace_no_traces_yet": "No traces recorded yet. Send a message to generate one.",
 
