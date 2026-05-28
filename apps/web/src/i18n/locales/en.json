@@ -428,6 +428,8 @@
   "summary_messages_in_prompt": "Messages in prompt",
   "summary_source_auto": "auto",
   "summary_source_manual": "manual",
+  "summary_pin_model": "Pin this model for summaries",
+  "summary_unpin_model": "Unpin model",
   "saved_summaries_label": "Saved Summaries",
   "no_saved_summaries": "No saved summaries.",
   "delete_summary": "Delete summary",
