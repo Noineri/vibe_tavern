@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import type { AutoSummaryConfig, ChatSummaryRecord } from "../app-client.js";
@@ -76,6 +76,18 @@ function DualRangeSlider({ min, max, from, to, disabled, onChange }: {
   );
 }
 
+/* ─── Auto-resize textarea hook ─── */
+function useAutoResize(): [RefObject<HTMLTextAreaElement | null>, () => void] {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  const resize = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.max(86, el.scrollHeight) + "px";
+  }, []);
+  return [ref, resize];
+}
+
 /* ─── Main component ─── */
 interface ContextMemoryModalProps {
   isOpen: boolean;
@@ -136,6 +148,7 @@ export function ContextMemoryModal({
   const [autoConfig, setAutoConfig] = useState<AutoSummaryConfig>({ ...DEFAULT_AUTO_CONFIG, ...autoSummaryConfig });
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const [textareaRef, autoResize] = useAutoResize();
 
   const maxMessage = Math.max(1, messageCount);
   const activeSummary = summaries.find((s) => s.id === activeSummaryId) ?? null;
@@ -434,11 +447,13 @@ export function ContextMemoryModal({
           onChange={(e) => { setDraftLabel(e.target.value); setDirty(true); }}
           placeholder={`T${rangeFrom}\u2013T${rangeTo}`}
         />
-        <MobileExpandTextarea value={draftText} onChange={(v) => { setDraftText(v); setDirty(true); }} label={t("summary_text_label")}>
+        <MobileExpandTextarea value={draftText} onChange={(v) => { setDraftText(v); setDirty(true); autoResize(); }} label={t("summary_text_label")}>
           <textarea
+            ref={textareaRef}
             className={cn(inputCls, "min-h-[86px] w-full resize-y leading-relaxed")}
             value={draftText}
-            onChange={(e) => { setDraftText(e.target.value); setDirty(true); }}
+            onChange={(e) => { setDraftText(e.target.value); setDirty(true); autoResize(); }}
+            onInput={autoResize}
             placeholder={t("summary_placeholder_short")}
           />
         </MobileExpandTextarea>
@@ -469,7 +484,7 @@ export function ContextMemoryModal({
           <Toggle checked={useChatModel} onChange={(v) => setUseChatModel(v)} />
           {t("summary_use_chat_model")}
         </label>
-        <div className="grid grid-cols-2 gap-3">
+        <div className={cn("gap-3", isMobile ? "flex flex-col" : "grid grid-cols-2")}>
           <DropdownSelect
             value={selectedProviderId}
             options={providerOptions}
@@ -534,6 +549,30 @@ export function ContextMemoryModal({
           <span>{t("summary_auto_messages")}</span>
         </div>
       </section>
+
+      {/* ── Messages in prompt (mobile: moved here from footer) ── */}
+      {isMobile && (
+        <section className="mt-4 rounded-lg border border-border bg-bg p-4">
+          <div className={labelCls}>{t("summary_messages_in_prompt")}</div>
+          <div className="flex items-center gap-3">
+            <input
+              className="accent-accent flex-1"
+              type="range" min={0} max={Math.max(1, messageCount)}
+              value={Math.min(historyLimit, Math.max(1, messageCount))}
+              onChange={(e) => setHistoryLimit(Number(e.target.value))}
+              onMouseUp={() => void commitMemorySettings()}
+              onTouchEnd={() => void commitMemorySettings()}
+            />
+            <input
+              className={cn(inputCls, "h-8 w-16 py-1 text-center")}
+              type="number" min={0} max={Math.max(1, messageCount)}
+              value={historyLimit}
+              onChange={(e) => setHistoryLimit(Math.max(0, Number(e.target.value) || 0))}
+              onBlur={() => void commitMemorySettings()}
+            />
+          </div>
+        </section>
+      )}
     </>
   );
 
@@ -544,25 +583,27 @@ export function ContextMemoryModal({
         <div className="h-full bg-accent transition-all" style={{ width: `${contextPct}%` }} />
       </div>
       <div className="mt-2 flex items-center justify-between gap-4 font-ui text-[11px] text-t3">
-        <div>{contextWindow.used} / {contextWindow.limit}t ({contextPct}%)</div>
-        <label className="flex flex-1 items-center justify-end gap-3">
-          <span>{t("summary_messages_in_prompt")}</span>
-          <input
-            className="accent-accent w-[min(46vw,420px)]"
-            type="range" min={0} max={Math.max(1, messageCount)}
-            value={Math.min(historyLimit, Math.max(1, messageCount))}
-            onChange={(e) => setHistoryLimit(Number(e.target.value))}
-            onMouseUp={() => void commitMemorySettings()}
-            onTouchEnd={() => void commitMemorySettings()}
-          />
-          <input
-            className={cn(inputCls, "h-8 w-16 py-1 text-center")}
-            type="number" min={0} max={Math.max(1, messageCount)}
-            value={historyLimit}
-            onChange={(e) => setHistoryLimit(Math.max(0, Number(e.target.value) || 0))}
-            onBlur={() => void commitMemorySettings()}
-          />
-        </label>
+        <div className="shrink-0">{contextWindow.used} / {contextWindow.limit}t ({contextPct}%)</div>
+        {!isMobile && (
+          <label className="flex flex-1 items-center justify-end gap-3">
+            <span className="shrink-0">{t("summary_messages_in_prompt")}</span>
+            <input
+              className="accent-accent w-[min(46vw,420px)]"
+              type="range" min={0} max={Math.max(1, messageCount)}
+              value={Math.min(historyLimit, Math.max(1, messageCount))}
+              onChange={(e) => setHistoryLimit(Number(e.target.value))}
+              onMouseUp={() => void commitMemorySettings()}
+              onTouchEnd={() => void commitMemorySettings()}
+            />
+            <input
+              className={cn(inputCls, "h-8 w-16 py-1 text-center")}
+              type="number" min={0} max={Math.max(1, messageCount)}
+              value={historyLimit}
+              onChange={(e) => setHistoryLimit(Math.max(0, Number(e.target.value) || 0))}
+              onBlur={() => void commitMemorySettings()}
+            />
+          </label>
+        )}
       </div>
     </div>
   );
