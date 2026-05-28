@@ -251,12 +251,73 @@ async function ensureAlterColumns(sqlite: Database, migrationsFolder: string): P
   }
 }
 
+/**
+ * Heal partial migration state caused by previous runs where ensureAlterColumns()
+ * added columns before migrate() ran, leaving the migration unstamped.
+ *
+ * Splits each unstamped migration's SQL into individual statements, runs each
+ * one tolerating "already exists" / "duplicate column" errors, and stamps the
+ * migration hash so the subsequent migrate() call skips it.
+ */
+async function healPartialMigrations(sqlite: Database, migrationsFolder: string): Promise<void> {
+  const journalPath = resolve(migrationsFolder, 'meta', '_journal.json');
+  if (!await Bun.file(journalPath).exists()) return;
+  const journal = JSON.parse(await Bun.file(journalPath).text());
+
+  // Collect already-stamped hashes
+  const stamped = new Set<string>();
+  try {
+    const rows = sqlite.prepare('SELECT hash FROM __drizzle_migrations').all() as { hash: string }[];
+    for (const r of rows) stamped.add(r.hash);
+  } catch {
+    return; // No meta table yet — nothing to heal
+  }
+
+  let healed = 0;
+  for (const entry of journal.entries) {
+    const sqlPath = resolve(migrationsFolder, `${entry.tag}.sql`);
+    const sqlContent = await Bun.file(sqlPath).text();
+    const hash = new Bun.CryptoHasher('sha256').update(sqlContent).digest('hex');
+
+    if (stamped.has(hash)) continue; // Already applied
+
+    // Split SQL into individual statements, stripping comments
+    const statements = sqlContent
+      .split(';')
+      .map((s: string) => s.replace(/--[^\n]*/g, '').trim())
+      .filter((s: string) => s.length > 0);
+
+    let allOk = true;
+    for (const stmt of statements) {
+      try {
+        sqlite.exec(stmt + ';');
+      } catch (err: any) {
+        const msg = (err?.message ?? '').toLowerCase();
+        if (msg.includes('already exists') || msg.includes('duplicate column')) {
+          // Tolerate — column/table already present from a previous partial run
+        } else {
+          console.error(`[db] Heal: unexpected error in ${entry.tag}:`, err?.message);
+          allOk = false;
+        }
+      }
+    }
+
+    if (allOk) {
+      sqlite.prepare('INSERT OR IGNORE INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)').run(hash, entry.when);
+      healed++;
+      console.log(`[db] Heal: stamped migration ${entry.tag}`);
+    }
+  }
+
+  if (healed > 0) {
+    console.log(`[db] Heal: repaired ${healed} partial migration(s).`);
+  }
+}
+
 export async function createDb(dbPath: string): Promise<AppDb> {
   await mkdir(resolve(dbPath, '..'), { recursive: true });
   const sqlite = new Database(dbPath);
   sqlite.exec('PRAGMA journal_mode = WAL');
-  sqlite.exec('PRAGMA foreign_keys = ON');
-
   sqlite.exec('PRAGMA foreign_keys = ON');
 
   const db = drizzle(sqlite, { schema });
@@ -264,19 +325,24 @@ export async function createDb(dbPath: string): Promise<AppDb> {
 
   console.log(`[db] Migrations folder: ${migrationsFolder}`);
 
-  // Pre-flight: ensure columns from ALTER TABLE migrations exist.
-  // If a previous build incorrectly stamped a migration (e.g. baselineLegacyDb
-  // stamping migrations with no CREATE TABLE), the columns won't exist.
-  // This runs BEFORE migrate() to prevent query crashes from drizzle's own schema checks.
-  await ensureAlterColumns(sqlite, migrationsFolder);
-
   await baselineLegacyDb(sqlite, migrationsFolder);
-  migrate(db, { migrationsFolder });
 
-  // Post-migration integrity check: if migrations were incorrectly
-  // stamped as applied (e.g. old baselineLegacyDb bug), apply missing
-  // tables directly. This heals databases from older builds.
+  // Try normal migration first
+  try {
+    migrate(db, { migrationsFolder });
+  } catch (migrateErr: any) {
+    // migrate() can fail when a previous ensureAlterColumns() pre-flight
+    // already added columns but didn't stamp the migration, leaving partial state.
+    // Heal by splitting unstamped migrations into individual statements
+    // and tolerating "already exists" / "duplicate column" errors.
+    console.warn(`[db] migrate() failed (${migrateErr?.message ?? migrateErr}), healing partial state...`);
+    await healPartialMigrations(sqlite, migrationsFolder);
+    migrate(db, { migrationsFolder });
+  }
+
+  // Post-migration integrity checks
   await repairMissingTables(sqlite, migrationsFolder);
+  await ensureAlterColumns(sqlite, migrationsFolder);
 
   return db;
 }
