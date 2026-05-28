@@ -12,6 +12,7 @@ export const ENTITY_ID_NAMESPACE = {
   loreEntryDeterministic: "loreentry",
   chat: "chat",
   chatBranch: "branch",
+  chatSummary: "chat_summary",
   message: "msg",
   messageVariant: "variant",
   summaryMemory: "summary",
@@ -142,6 +143,13 @@ export const SUMMARY_KIND = {
 } as const;
 
 export type SummaryKind = typeof SUMMARY_KIND[keyof typeof SUMMARY_KIND];
+
+export const CHAT_SUMMARY_SOURCE = {
+  manual: "manual",
+  auto: "auto",
+} as const;
+
+export type ChatSummarySource = typeof CHAT_SUMMARY_SOURCE[keyof typeof CHAT_SUMMARY_SOURCE];
 
 /**
  * Activation modes for a tool profile.

@@ -16,6 +16,7 @@ export type LorebookId = Brand<"LorebookId">;
 export type LoreEntryId = Brand<"LoreEntryId">;
 export type ChatId = Brand<"ChatId">;
 export type ChatBranchId = Brand<"ChatBranchId">;
+export type ChatSummaryId = Brand<"ChatSummaryId">;
 export type MessageId = Brand<"MessageId">;
 export type MessageVariantId = Brand<"MessageVariantId">;
 export type SummaryMemorySnapshotId = Brand<"SummaryMemorySnapshotId">;

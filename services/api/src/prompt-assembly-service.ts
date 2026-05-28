@@ -139,10 +139,23 @@ export class PromptAssemblyService {
       promptPresetResolved: promptPreset ? { id: promptPreset.id, name: promptPreset.name, systemLength: promptPreset.text.length } : null,
     });
     const excludedMessageIds = new Set(input.excludeMessageIds ?? []);
+    const branchSummaries = input.mode === "summary"
+      ? []
+      : await this.stores.chatSummaries.listByChatBranch(chat.id, branchId);
+    const enabledSummaries = branchSummaries.filter((summary) => summary.includeInContext && summary.content.trim());
+    const excludedRanges = branchSummaries
+      .filter((summary) => summary.includeInContext && summary.excludeSummarized && summary.summarizedTo >= summary.summarizedFrom)
+      .map((summary) => ({ from: summary.summarizedFrom, to: summary.summarizedTo }));
+    const isInExcludedSummaryRange = (position: number) => {
+      const oneBasedPosition = position + 1;
+      return excludedRanges.some((range) => oneBasedPosition >= range.from && oneBasedPosition <= range.to);
+    };
+    const filteredMessages = branchMessages.filter((message) =>
+      !excludedMessageIds.has(message.id as MessageId) && !isInExcludedSummaryRange(message.position),
+    );
     const messageLimit = input.recentMessageLimit ?? (chat.messageHistoryLimit || Infinity);
-    const recentMessages = branchMessages
-      .filter((message) => !excludedMessageIds.has(message.id as MessageId))
-      .slice(-(messageLimit === Infinity ? branchMessages.length : messageLimit))
+    const recentMessages = filteredMessages
+      .slice(-(messageLimit === Infinity ? filteredMessages.length : messageLimit))
       .map((message) => ({
         id: message.id as MessageId,
         role: message.role as 'system' | 'user' | 'assistant' | 'tool',
@@ -224,9 +237,9 @@ export class PromptAssemblyService {
         role: entry.role,
       })),
       memory: {
-        summary: chat.summary?.trim()
-          ? [{ id: `chat_summary_${chat.id}`, kind: "chat", summary: chat.summary }]
-          : [],
+        summary: enabledSummaries.length > 0
+          ? enabledSummaries.map((summary) => ({ id: summary.id, kind: summary.source, summary: summary.content }))
+          : (chat.summary?.trim() ? [{ id: `chat_summary_${chat.id}`, kind: "chat", summary: chat.summary }] : []),
         retrieval: retrievedMemories.map((memory) => ({
           id: memory.id,
           sourceType: memory.sourceType,

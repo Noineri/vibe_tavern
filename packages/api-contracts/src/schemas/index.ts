@@ -33,6 +33,12 @@ export {
   setPromptPresetSchema,
 } from "./prompt-preset-schema.js";
 export {
+  autoSummaryConfigSchema,
+  chatSummarySourceSchema,
+  createChatSummarySchema,
+  updateChatSummarySchema,
+  generateChatSummarySchema,
+  updateMemorySettingsSchema,
   summarizeChatSchema,
   saveChatSummarySchema,
 } from "./summarize-schema.js";

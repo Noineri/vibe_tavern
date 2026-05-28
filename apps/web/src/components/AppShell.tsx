@@ -226,6 +226,8 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         contextWindow={{ used: contextUsed, limit: contextLimit }}
         currentSummary={activeChat?.summary ?? ""}
         messageCount={messageCount}
+        messageHistoryLimit={activeChat?.messageHistoryLimit ?? 0}
+        autoSummaryConfig={activeChat?.autoSummaryConfig}
         onSummarize={handleSummarizeChat} onSaveSummary={handleSaveChatSummary}
         onFetchModelsForProfile={provider.handleFetchModelsForProfile}
       />

@@ -3,6 +3,7 @@ import type {
   CharacterVersionId,
   ChatBranchId,
   ChatId,
+  ChatSummaryId,
   LoreEntryId,
   LorebookId,
   MessageId,
@@ -24,6 +25,7 @@ import type {
   AuthorType,
   MessageState,
   SummaryKind,
+  ChatSummarySource,
   ToolProfileMode,
   LoreLogic,
   LoreEntryRole,
@@ -42,6 +44,7 @@ export {
   AuthorType,
   MessageState,
   SummaryKind,
+  ChatSummarySource,
   ToolProfileMode,
   LoreLogic,
   LoreEntryRole,
@@ -232,6 +235,30 @@ export interface ChatBranch {
   forkedFromMessageId: MessageId | null;
   label: string;
   createdAt: Timestamp;
+}
+
+export interface ChatSummary {
+  id: ChatSummaryId;
+  chatId: ChatId;
+  branchId: ChatBranchId;
+  label: string;
+  summarizedFrom: number;
+  summarizedTo: number;
+  includeInContext: boolean;
+  excludeSummarized: boolean;
+  source: ChatSummarySource;
+  sortOrder: number;
+  contentHash: string | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface ChatAutoSummaryConfig {
+  enabled: boolean;
+  everyN: number;
+  useChatModel: boolean;
+  providerProfileId?: string;
+  model?: string;
 }
 
 export interface Message {

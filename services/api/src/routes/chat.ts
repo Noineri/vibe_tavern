@@ -107,6 +107,27 @@ export function createChatRoutes(runtime: RuntimeApi) {
         }
       });
     })
+    .get("/api/chats/:chatId/summaries", async (c) => {
+      return c.json(await runtime.listChatSummaries(c.req.param("chatId")));
+    })
+    .post("/api/chats/:chatId/summaries", zValidator("json", schemas.createChatSummarySchema), async (c) => {
+      return c.json(await runtime.createChatSummary(c.req.param("chatId"), c.req.valid("json")), 201);
+    })
+    .patch("/api/chats/:chatId/summaries/:summaryId", zValidator("json", schemas.updateChatSummarySchema), async (c) => {
+      return c.json(await runtime.updateChatSummaryRecord(c.req.param("chatId"), c.req.param("summaryId"), c.req.valid("json")));
+    })
+    .delete("/api/chats/:chatId/summaries/:summaryId", async (c) => {
+      return c.json(await runtime.deleteChatSummaryRecord(c.req.param("chatId"), c.req.param("summaryId")));
+    })
+    .post("/api/chats/:chatId/summaries/generate", zValidator("json", schemas.generateChatSummarySchema), async (c) => {
+      const chatId = c.req.param("chatId");
+      const body = c.req.valid("json");
+      logSendDebug("api.route.summaries.generate", { chatId, providerProfileId: body.providerProfileId, model: body.model ?? null, from: body.summarizedFrom, to: body.summarizedTo });
+      return c.json(await runtime.generateChatSummary(chatId, body, c.req.raw.signal));
+    })
+    .patch("/api/chats/:chatId/memory-settings", zValidator("json", schemas.updateMemorySettingsSchema), async (c) => {
+      return c.json(await runtime.updateMemorySettings(c.req.param("chatId"), c.req.valid("json")));
+    })
     .post("/api/chats/:chatId/summary", zValidator("json", schemas.summarizeChatSchema), async (c) => {
       const chatId = c.req.param("chatId");
       const body = c.req.valid("json");

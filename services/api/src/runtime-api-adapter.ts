@@ -310,7 +310,53 @@ export class RuntimeApiAdapter {
 	deleteMessage = (chatId: string, messageId: string) =>
 		this.sessionRuntime.chatRuntime.deleteMessage(brandId<ChatId>(chatId), messageId);
 
-	// ─── Chat summary ─────────────────────────────────────────────────────
+	// ─── Chat summary / Memory 1.0 ───────────────────────────────────────
+
+	listChatSummaries = async (chatId: string) => {
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		return this.stores.chatSummaries.listByChatBranch(chat.id, chat.activeBranchId);
+	};
+
+	createChatSummary = async (chatId: string, body: { label?: string; content?: string; summarizedFrom: number; summarizedTo: number; includeInContext?: boolean; excludeSummarized?: boolean; source?: "manual" | "auto"; sortOrder?: number }) => {
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		const summary = await this.stores.chatSummaries.create({
+			chatId: chat.id,
+			branchId: chat.activeBranchId,
+			...body,
+		});
+		return { summary, snapshot: await this.sessionRuntime.getSnapshot(brandId<ChatId>(chatId)) };
+	};
+
+	updateChatSummaryRecord = async (_chatId: string, summaryId: string, body: { label?: string; content?: string; summarizedFrom?: number; summarizedTo?: number; includeInContext?: boolean; excludeSummarized?: boolean; sortOrder?: number }) => {
+		const summary = await this.stores.chatSummaries.update(summaryId, body);
+		return { summary, snapshot: await this.sessionRuntime.getSnapshot(brandId<ChatId>(summary.chatId)) };
+	};
+
+	deleteChatSummaryRecord = async (chatId: string, summaryId: string) => {
+		await this.stores.chatSummaries.delete(summaryId);
+		return { ok: true, snapshot: await this.sessionRuntime.getSnapshot(brandId<ChatId>(chatId)) };
+	};
+
+	generateChatSummary = (
+		chatId: string,
+		body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean },
+		signal?: AbortSignal,
+	) => this.chatSummaryService.generateChatSummary({ chatId, ...body, signal });
+
+	updateMemorySettings = async (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: { enabled?: boolean; everyN?: number; useChatModel?: boolean; providerProfileId?: string; model?: string } }) => {
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		const autoSummaryConfig = body.autoSummaryConfig
+			? { ...chat.autoSummaryConfig, ...body.autoSummaryConfig }
+			: undefined;
+		await this.stores.chats.updateMemorySettings(chatId, {
+			messageHistoryLimit: body.messageHistoryLimit,
+			autoSummaryConfig,
+		});
+		return this.sessionRuntime.getSnapshot(brandId<ChatId>(chatId));
+	};
 
 	summarizeChat = (
 		chatId: string,

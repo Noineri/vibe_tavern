@@ -21,6 +21,7 @@ export interface WriteEntityOptions {
 export class ContentStore {
 	private readonly _fileStore: FileStore;
 	private readonly cache = new Map<string, { hash: string; data: unknown }>();
+	private readonly textCache = new Map<string, { hash: string; text: string }>();
 
 	constructor(config: ContentStoreConfig) {
 		this._fileStore = config.fileStore;
@@ -39,6 +40,11 @@ export class ContentStore {
 			return this._fileStore.resolvePath(folder, `${entityId}.${slug}.json`);
 		}
 		return this._fileStore.resolvePath(folder, `${entityId}.json`);
+	}
+
+	private resolveTextPath(folder: StorageFolder, entityId: string, extension = "md"): string {
+		const safeExtension = extension.replace(/[^a-zA-Z0-9]/g, "") || "md";
+		return this._fileStore.resolvePath(folder, `${entityId}.${safeExtension}`);
 	}
 
 	/**
@@ -73,6 +79,41 @@ export class ContentStore {
 		return hash;
 	}
 
+	/** Read UTF-8 text content from a file-backed entity such as summaries/*.md. */
+	async readText(folder: StorageFolder, entityId: string, extension = "md"): Promise<string | null> {
+		const key = `${this.cacheKey(folder, entityId)}.${extension}`;
+		const cached = this.textCache.get(key);
+		if (cached) return cached.text;
+
+		const path = this.resolveTextPath(folder, entityId, extension);
+		try {
+			const text = await this._fileStore.readText(path);
+			this.textCache.set(key, { hash: this.hashText(text), text });
+			return text;
+		} catch {
+			return null;
+		}
+	}
+
+	/** Write UTF-8 text content to a file-backed entity such as summaries/*.md. */
+	async writeText(folder: StorageFolder, entityId: string, text: string, extension = "md"): Promise<string> {
+		const key = `${this.cacheKey(folder, entityId)}.${extension}`;
+		const path = this.resolveTextPath(folder, entityId, extension);
+		const storedText = text.endsWith("\n") ? text : `${text}\n`;
+		const hash = this.hashText(storedText);
+		await this._fileStore.writeText(path, storedText);
+		this.textCache.set(key, { hash, text: storedText });
+		return hash;
+	}
+
+	/** Delete UTF-8 text content for a file-backed entity such as summaries/*.md. */
+	async deleteText(folder: StorageFolder, entityId: string, extension = "md"): Promise<void> {
+		const key = `${this.cacheKey(folder, entityId)}.${extension}`;
+		const path = this.resolveTextPath(folder, entityId, extension);
+		await this._fileStore.deleteFile(path);
+		this.textCache.delete(key);
+	}
+
 	/**
 	 * Check if entity file exists on disk.
 	 */
@@ -96,6 +137,10 @@ export class ContentStore {
 		return hashCanonicalJson(data);
 	}
 
+	hashText(text: string): string {
+		return new Bun.CryptoHasher("sha256").update(new TextEncoder().encode(text)).digest("hex");
+	}
+
 	/**
 	 * Delete entity file from disk and evict from cache.
 	 * Tries both filename formats.
@@ -108,6 +153,9 @@ export class ContentStore {
 			await file.delete();
 		}
 		this.cache.delete(this.cacheKey(folder, entityId));
+		for (const key of this.textCache.keys()) {
+			if (key.startsWith(`${this.cacheKey(folder, entityId)}.`)) this.textCache.delete(key);
+		}
 	}
 
 	/**

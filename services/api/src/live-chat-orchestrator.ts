@@ -20,6 +20,7 @@ export class LiveChatOrchestrator {
   constructor(
     private readonly chatRuntime: ChatRuntime,
     private readonly providers: ProviderOrchestrator,
+    private readonly hooks: { onAssistantAppended?: (chatId: string) => void | Promise<void> } = {},
   ) {}
 
   // ─── Non-streaming methods ────────────────────────────────────────────
@@ -70,6 +71,7 @@ export class LiveChatOrchestrator {
       reasoning,
     });
     logSendDebug("live.send.append.done", { chatId: input.chatId, messageCount: snapshot.messages.length });
+    this.notifyAssistantAppended(input.chatId);
 
     return {
       preparedMessageCount: prepared.snapshot.messages.length,
@@ -119,6 +121,7 @@ export class LiveChatOrchestrator {
     const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
       reasoning,
     });
+    this.notifyAssistantAppended(input.chatId);
     return {
       promptMessageCount: countPromptMessages(prompt),
       reply,
@@ -212,6 +215,7 @@ export class LiveChatOrchestrator {
             reasoning: reasoning || undefined,
             reasoningDurationMs,
           });
+          this.notifyAssistantAppended(input.chatId);
         }
       },
       onFinal: async (text, reasoning, reasoningDurationMs, latencyMs) => {
@@ -220,6 +224,7 @@ export class LiveChatOrchestrator {
           reasoningDurationMs,
         });
         logSendDebug("live.send-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
+        this.notifyAssistantAppended(input.chatId);
         return snapshot;
       },
     });
@@ -253,6 +258,7 @@ export class LiveChatOrchestrator {
             reasoning: reasoning || undefined,
             reasoningDurationMs,
           });
+          this.notifyAssistantAppended(input.chatId);
         }
       },
       onFinal: async (text, reasoning, reasoningDurationMs, latencyMs) => {
@@ -261,6 +267,7 @@ export class LiveChatOrchestrator {
           reasoningDurationMs,
         });
         logSendDebug("live.generateReply-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
+        this.notifyAssistantAppended(input.chatId);
         return snapshot;
       },
     });
@@ -320,6 +327,16 @@ export class LiveChatOrchestrator {
    * Starts a stream provider execution with error handling.
    * Discards the pending prompt trace on failure.
    */
+  private notifyAssistantAppended(chatId: string): void {
+    if (!this.hooks.onAssistantAppended) return;
+    void Promise.resolve(this.hooks.onAssistantAppended(chatId)).catch((err) => {
+      logSendDebug("live.assistantAppendedHook.error", {
+        chatId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
+
   private async startStream(
     input: { chatId: string; profile: StoredProviderProfileRecord; model: string; signal?: AbortSignal; prefill?: string },
     prompt: Parameters<typeof streamProviderExecutor>[0]["prompt"],

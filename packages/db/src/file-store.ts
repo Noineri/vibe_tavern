@@ -10,6 +10,7 @@ export const STORAGE_FOLDERS = {
 	chatMirrors: "chatMirrors",
 	assets: "assets",
 	traces: "traces",
+	summaries: "summaries",
 } as const;
 
 export type StorageFolder =
@@ -21,6 +22,9 @@ export interface FileStore {
 	readJson<T = unknown>(absolutePath: string): Promise<T>;
 	writeJson(absolutePath: string, data: unknown): Promise<void>;
 	asyncWriteJson(absolutePath: string, data: unknown): Promise<void>;
+	readText(absolutePath: string): Promise<string>;
+	writeText(absolutePath: string, text: string): Promise<void>;
+	deleteFile(absolutePath: string): Promise<void>;
 }
 
 function sortObjectKeys(_key: string, value: unknown): unknown {
@@ -69,7 +73,7 @@ function safeResolve(
 async function writeLocked(
 	writeLocks: Map<string, Promise<void>>,
 	absolutePath: string,
-	data: unknown,
+	data: string | Uint8Array,
 ): Promise<void> {
 	const previous = writeLocks.get(absolutePath) ?? Promise.resolve();
 	const next = previous
@@ -79,7 +83,7 @@ async function writeLocked(
 				dir,
 				`.tmp-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
 			);
-			await Bun.write(tmpPath, canonicalJsonBytes(data));
+			await Bun.write(tmpPath, data);
 			await rename(tmpPath, absolutePath);
 		})
 		.finally(() => {
@@ -101,10 +105,20 @@ export function createFileStore(dataRoot?: string): FileStore {
 			return Bun.file(absolutePath).json() as Promise<T>;
 		},
 		writeJson(absolutePath: string, data: unknown): Promise<void> {
-			return writeLocked(writeLocks, absolutePath, data);
+			return writeLocked(writeLocks, absolutePath, canonicalJsonBytes(data));
 		},
 		asyncWriteJson(absolutePath: string, data: unknown): Promise<void> {
-			return writeLocked(writeLocks, absolutePath, data);
+			return writeLocked(writeLocks, absolutePath, canonicalJsonBytes(data));
+		},
+		readText(absolutePath: string): Promise<string> {
+			return Bun.file(absolutePath).text();
+		},
+		writeText(absolutePath: string, text: string): Promise<void> {
+			return writeLocked(writeLocks, absolutePath, text);
+		},
+		async deleteFile(absolutePath: string): Promise<void> {
+			const file = Bun.file(absolutePath);
+			if (await file.exists()) await file.delete();
 		},
 	};
 }

@@ -118,6 +118,36 @@ export class ChatLifecycleRuntime {
 		});
 	}
 
+	async assembleRangedSummaryPrompt(input: {
+		chatId: ChatId;
+		model: string;
+		summarizedFrom: number;
+		summarizedTo: number;
+		contextBudget?: number | null;
+	}) {
+		const chat = await this.deps.stores.chats.getById(input.chatId);
+		if (!chat) {
+			throw notFound("Chat", `Chat '${input.chatId}' was not found.`);
+		}
+		const branchId = chat.activeBranchId as ChatBranchId;
+		const messages = await this.deps.stores.chats.getMessages(branchId);
+		const from = Math.max(1, Math.floor(input.summarizedFrom));
+		const to = Math.max(from, Math.floor(input.summarizedTo));
+		const excludeMessageIds = messages
+			.filter((message) => {
+				const oneBasedPosition = message.position + 1;
+				return oneBasedPosition < from || oneBasedPosition > to;
+			})
+			.map((message) => brandId<import("@vibe-tavern/domain").MessageId>(message.id));
+		return this.deps.assemblePrompt(input.chatId, branchId, {
+			model: input.model,
+			recentMessageLimit: messages.length,
+			excludeMessageIds,
+			contextBudget: input.contextBudget ?? null,
+			mode: "summary",
+		});
+	}
+
 	async updateChatSummary(chatId: ChatId, summary: string): Promise<SessionSnapshot> {
 		await this.deps.stores.chats.updateSummary(chatId, summary);
 		return this.deps.getSnapshot(chatId);

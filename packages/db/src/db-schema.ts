@@ -59,6 +59,7 @@ export const chats = sqliteTable('chats', {
   title: text('title').notNull(),
   summary: text('summary').notNull().default(''),
   messageHistoryLimit: integer('message_history_limit').notNull().default(0),
+  autoSummaryConfigJson: text('auto_summary_config_json').notNull().default('{"enabled":false,"everyN":20,"useChatModel":true}'),
   lastAccessedAt: text('last_accessed_at').notNull().default(''),
   status: text('status').notNull().default('active'),
   createdAt: text('created_at').notNull(),
@@ -203,6 +204,26 @@ export const messages = sqliteTable('messages', {
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
   branchPosition: uniqueIndex('idx_messages_branch_position').on(table.branchId, table.position),
+}));
+
+// ─── chatSummaries ─────────────────────────────────────────────────────────────
+
+export const chatSummaries = sqliteTable('chat_summaries', {
+  id: text('id').primaryKey(),
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  branchId: text('branch_id').notNull().references(() => chatBranches.id, { onDelete: 'cascade' }),
+  label: text('label').notNull().default(''),
+  summarizedFrom: integer('summarized_from').notNull().default(1),
+  summarizedTo: integer('summarized_to').notNull().default(0),
+  includeInContext: integer('include_in_context').notNull().default(1),
+  excludeSummarized: integer('exclude_summarized').notNull().default(1),
+  source: text('source').notNull().default('manual'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  contentHash: text('content_hash'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  chatBranchIdx: index('idx_chat_summaries_chat_branch').on(table.chatId, table.branchId),
 }));
 
 // ─── messageVariants ───────────────────────────────────────────────────────────
