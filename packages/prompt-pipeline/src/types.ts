@@ -17,6 +17,8 @@ export interface PromptLayer {
   id: string;
   sourceType: string;
   sourceId: string;
+  /** Human-readable label for the trace UI (e.g. lore entry keyword, "System Prompt"). */
+  sourceName: string;
   position: PromptLayerPosition;
   priority: number;
   enabled: boolean;

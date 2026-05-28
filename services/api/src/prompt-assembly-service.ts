@@ -345,6 +345,7 @@ function mapPromptLayerDto(layer: {
   id: string;
   sourceType: string;
   sourceId: string;
+  sourceName: string;
   position: "before_prompt" | "in_prompt" | "in_chat" | "hidden_system";
   priority: number;
   enabled: boolean;
@@ -358,6 +359,7 @@ function mapPromptLayerDto(layer: {
     id: layer.id,
     sourceType: layer.sourceType,
     sourceId: layer.sourceId,
+    sourceName: layer.sourceName,
     position: layer.position,
     priority: layer.priority,
     enabled: layer.enabled,

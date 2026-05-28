@@ -340,6 +340,7 @@ export interface PromptTrace {
     id: string;
     sourceType: string;
     sourceId: string;
+    sourceName: string;
     position: "before_prompt" | "in_prompt" | "in_chat" | "hidden_system";
     priority: number;
     enabled: boolean;
