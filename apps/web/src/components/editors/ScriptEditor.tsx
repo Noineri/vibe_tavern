@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { fetchProviderModelsAction } from "../../stores/api-actions/provider-actions.js";
 import { Ic } from "../shared/icons.js";
@@ -51,6 +51,116 @@ function cleanAiCode(raw: string): string {
   // Remove closing fence
   code = code.replace(/\n?```\s*$/,'');
   return code.trim();
+}
+
+type DiffLineKind = "same" | "add" | "remove";
+
+interface DiffLine {
+  kind: DiffLineKind;
+  text: string;
+}
+
+interface DiffSummary {
+  lines: DiffLine[];
+  added: number;
+  removed: number;
+  tooLarge: boolean;
+}
+
+const MAX_INLINE_DIFF_LINES = 1600;
+
+function buildLineDiff(oldCode: string, newCode: string): DiffSummary {
+  const oldLines = oldCode.split("\n");
+  const newLines = newCode.split("\n");
+  if (oldLines.length + newLines.length > MAX_INLINE_DIFF_LINES) {
+    return {
+      lines: [],
+      added: Math.max(0, newLines.length - oldLines.length),
+      removed: Math.max(0, oldLines.length - newLines.length),
+      tooLarge: true,
+    };
+  }
+
+  const dp = Array.from({ length: oldLines.length + 1 }, () => new Array<number>(newLines.length + 1).fill(0));
+  for (let i = oldLines.length - 1; i >= 0; i--) {
+    for (let j = newLines.length - 1; j >= 0; j--) {
+      dp[i][j] = oldLines[i] === newLines[j]
+        ? dp[i + 1][j + 1] + 1
+        : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+
+  const lines: DiffLine[] = [];
+  let added = 0;
+  let removed = 0;
+  let i = 0;
+  let j = 0;
+  while (i < oldLines.length && j < newLines.length) {
+    if (oldLines[i] === newLines[j]) {
+      lines.push({ kind: "same", text: oldLines[i] });
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      lines.push({ kind: "remove", text: oldLines[i++] });
+      removed++;
+    } else {
+      lines.push({ kind: "add", text: newLines[j++] });
+      added++;
+    }
+  }
+  while (i < oldLines.length) {
+    lines.push({ kind: "remove", text: oldLines[i++] });
+    removed++;
+  }
+  while (j < newLines.length) {
+    lines.push({ kind: "add", text: newLines[j++] });
+    added++;
+  }
+
+  return { lines, added, removed, tooLarge: false };
+}
+
+function DiffPreview({ summary, labels }: { summary: DiffSummary; labels: { title: string; tooLarge: string; noChanges: string } }) {
+  if (summary.tooLarge) {
+    return (
+      <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
+        <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{labels.title}</div>
+        <div className="font-ui text-[12px] leading-relaxed text-t3">{labels.tooLarge}</div>
+      </div>
+    );
+  }
+
+  if (summary.added === 0 && summary.removed === 0) {
+    return (
+      <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
+        <div className="font-ui text-[12px] text-t3">{labels.noChanges}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{labels.title}</div>
+        <div className="font-mono text-[11px] tabular-nums"><span className="text-success-text">+{summary.added}</span> <span className="text-danger-text">-{summary.removed}</span></div>
+      </div>
+      <pre className="max-h-[280px] overflow-auto rounded border border-border/60 bg-surface p-2 font-mono text-[11px] leading-[1.45]">
+        {summary.lines.map((line, idx) => (
+          <div
+            key={idx}
+            className={cn(
+              "min-w-max whitespace-pre-wrap px-2",
+              line.kind === "add" && "bg-success-dim text-success-text",
+              line.kind === "remove" && "bg-danger-dim text-danger-text",
+              line.kind === "same" && "text-t3/65",
+            )}
+          >
+            <span className="select-none pr-2 text-t3/50">{line.kind === "add" ? "+" : line.kind === "remove" ? "-" : " "}</span>{line.text || " "}
+          </div>
+        ))}
+      </pre>
+    </div>
+  );
 }
 
 export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEditor, onBackToList }: ScriptPanelProps) {
@@ -111,6 +221,12 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   }, [aiProviderId]);
 
   const activeScript = scripts.find(s => s.id === activeScriptId) ?? null;
+  const cleanedAiCode = useMemo(() => cleanAiCode(aiStreamedCode), [aiStreamedCode]);
+  const isAiEditMode = Boolean(activeScript?.code?.trim());
+  const aiDiffSummary = useMemo(
+    () => (!aiStreaming && aiStreamedCode && isAiEditMode ? buildLineDiff(activeScript?.code ?? "", cleanedAiCode) : null),
+    [activeScript?.code, aiStreaming, aiStreamedCode, isAiEditMode, cleanedAiCode],
+  );
 
   // ── Mutations (replaced with async handlers) ─────────────
   const [creatingScript, setCreatingScript] = useState(false);
@@ -226,9 +342,16 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     }
   };
 
+  const resetAiHelper = () => {
+    setAiHelperOpen(false);
+    setAiStreamedCode("");
+    setAiStreamedReasoning("");
+    setAiPrompt("");
+  };
   const handleAiStop = () => { aiAbortRef.current?.abort(); setAiStreaming(false); };
-  const handleAiInsert = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: (activeScript?.code || "") + "\n\n" + cleanAiCode(aiStreamedCode) }); setAiHelperOpen(false); setAiStreamedCode(""); setAiStreamedReasoning(""); setAiPrompt(""); };
-  const handleAiReplace = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: cleanAiCode(aiStreamedCode) }); setAiHelperOpen(false); setAiStreamedCode(""); setAiStreamedReasoning(""); setAiPrompt(""); };
+  const handleAiInsert = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: (activeScript?.code || "") + "\n\n" + cleanedAiCode }); resetAiHelper(); };
+  const handleAiReplace = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: cleanedAiCode }); resetAiHelper(); };
+  const handleAiApplyChanges = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: cleanedAiCode }); resetAiHelper(); };
 
   // ── Modals ───────────────────────────────────────────────
   const modals = (
@@ -327,12 +450,29 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                       <MessageReasoning reasoning={aiStreamedReasoning} />
                     </div>
                   )}
-                  {aiStreamedCode && (
+                  {aiStreamedCode && (aiDiffSummary ? (
+                    <>
+                      <DiffPreview
+                        summary={aiDiffSummary}
+                        labels={{
+                          title: t("script_ai_changes"),
+                          tooLarge: t("script_ai_diff_too_large"),
+                          noChanges: t("script_ai_no_changes"),
+                        }}
+                      />
+                      {aiDiffSummary.tooLarge && (
+                        <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
+                          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_ai_generated")}</div>
+                          <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap font-mono text-[12px] leading-[1.5] text-t1">{cleanedAiCode}</pre>
+                        </div>
+                      )}
+                    </>
+                  ) : (
                     <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
-                      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">Generated code</div>
+                      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_ai_generated")}</div>
                       <pre className="whitespace-pre-wrap font-mono text-[12px] leading-[1.5] text-t1">{aiStreamedCode}{aiStreaming && <span className="animate-pulse text-accent">▌</span>}</pre>
                     </div>
-                  )}
+                  ))}
                   {aiError && (
                     <div className="rounded-md border border-danger bg-danger-dim" style={{ padding: 10, marginBottom: 12 }}>
                       <div className="text-[11px] font-semibold uppercase text-danger-text">{t("script_ai_error")}</div>
@@ -345,10 +485,17 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             {providerProfiles.length > 0 && (
               <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
                 {aiStreamedCode && !aiStreaming && (
-                  <>
-                    <button className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleAiInsert}>{t("script_ai_insert")}</button>
-                    <button className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleAiReplace}>{t("script_ai_replace")}</button>
-                  </>
+                  isAiEditMode ? (
+                    <>
+                      <button className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleAiReplace}>{t("script_ai_replace")}</button>
+                      <button className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleAiApplyChanges}>{t("script_ai_apply")}</button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleAiInsert}>{t("script_ai_insert")}</button>
+                      <button className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleAiReplace}>{t("script_ai_replace")}</button>
+                    </>
+                  )
                 )}
                 {aiStreaming ? (
                   <button className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={handleAiStop}>{t("script_ai_stop")}</button>

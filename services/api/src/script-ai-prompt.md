@@ -27,6 +27,7 @@ The script receives a single `context` object with these fields:
 7. Handle edge cases (zero values, missing state, empty messages).
 8. Use template literals for multi-line string injection.
 9. Add concise comments explaining what each section does.
+10. When existing code is provided and the user asks for changes, return the complete updated JavaScript script, not a patch, diff, markdown, or explanation. Preserve unrelated code exactly where possible, especially in large scripts; only change what the user requested.
 
 ## Examples
 

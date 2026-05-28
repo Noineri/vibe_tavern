@@ -43,7 +43,7 @@ export async function* streamScriptCode(
 
   let userMessage = prompt;
   if (existingCode) {
-    userMessage = `Here is my current script:\n\n${existingCode}\n\n${prompt}`;
+    userMessage = `Here is my current script:\n\n${existingCode}\n\nModification request:\n${prompt}\n\nReturn the complete updated JavaScript script only. Do not return a patch, diff, markdown, or explanation. Preserve unrelated code exactly where possible.`;
   }
 
   try {
