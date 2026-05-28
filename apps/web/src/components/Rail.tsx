@@ -4,12 +4,14 @@ import { Ic } from "./shared/icons.js";
 import { cn } from "../lib/cn.js";
 import { avatarUrl } from "../lib/avatar.js";
 import { initials } from "./app-shell-helpers.js";
+import { CharacterImportModal } from "./ImportModals.js";
 import { useT } from "../i18n/context.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 import { activateBranchAction } from "../stores/api-actions/chat-actions.js";
 import { useChatMeta } from "../stores/chat-selectors.js";
 import { useNavigationStore, useChatStore, useModalStore } from "../stores/index.js";
 import { useCharacterStore } from "../stores/character-store.js";
+import { useCharacterController } from "../hooks/use-character-controller.js";
 import { useBuildPanels } from "../hooks/use-build-panels.js";
 import type { ChatListItem } from "../app-client.js";
 
@@ -26,6 +28,8 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const buildPanels = useBuildPanels();
 
   const [expanded, setExpanded] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const character = useCharacterController();
   const [closing, setClosing] = useState(false);
   const [branchesOpen, setBranchesOpen] = useState<string | null>(null);
 
@@ -164,7 +168,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                   <Ic.plus />
                 </div>
                 <div className="flex h-10 w-full cursor-pointer items-center justify-center rounded-lg text-t3 transition-colors active:bg-s3"
-                     onClick={() => { useModalStore.getState().setCreateCharacterModalOpen(true); }}
+                     onClick={() => { setImportOpen(true); }}
                      title={t("import_char_short")}>
                   <Ic.import />
                 </div>
@@ -273,7 +277,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                       <Ic.plus /> <span className="truncate">{t("create_manual")}</span>
                     </div>
                     <div className="flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border2 bg-s2/50 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors active:bg-s3 active:scale-[0.97]"
-                         onClick={() => { useModalStore.getState().setCreateCharacterModalOpen(true); close(); }}>
+                         onClick={() => { setImportOpen(true); close(); }}>
                       <Ic.import /> <span className="truncate">{t("import_char_short")}</span>
                     </div>
                   </div>
@@ -360,6 +364,13 @@ export function Rail({ hidden }: { hidden?: boolean }) {
             </div>
           </div>
         </>
+      )}
+      {importOpen && (
+        <CharacterImportModal
+          isImporting={character.isImporting}
+          onClose={() => setImportOpen(false)}
+          onImportFiles={(files) => { void character.handleImportFiles(files); }}
+        />
       )}
     </>
   );
