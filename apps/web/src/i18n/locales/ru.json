@@ -425,6 +425,8 @@
   "summary_messages_in_prompt": "Сообщений в промпте",
   "summary_source_auto": "авто",
   "summary_source_manual": "вручную",
+  "summary_pin_model": "Закрепить модель для сводок",
+  "summary_unpin_model": "Открепить модель",
   "saved_summaries_label": "Сохранённые сводки",
   "no_saved_summaries": "Нет сохранённых сводок.",
   "delete_summary": "Удалить сводку",
