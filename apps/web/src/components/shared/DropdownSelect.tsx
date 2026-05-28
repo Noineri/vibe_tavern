@@ -153,12 +153,14 @@ export function DropdownSelect({
                 )}
               >
                 <Select.ItemText>
-                  {o.label}
-                  {o.detail && (
-                    <span className="ml-auto text-[11px] text-t4">
-                      {o.detail}
-                    </span>
-                  )}
+                  <span className="flex items-center gap-2">
+                    <span className="min-w-0 truncate">{o.label}</span>
+                    {o.detail && (
+                      <span className="shrink-0 text-[11px] text-t4">
+                        {o.detail}
+                      </span>
+                    )}
+                  </span>
                 </Select.ItemText>
               </Select.Item>
             ))}
