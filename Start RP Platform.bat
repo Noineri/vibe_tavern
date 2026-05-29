@@ -65,10 +65,13 @@ echo Press Ctrl+C to stop.
 echo.
 
 REM Проверяем, не занят ли порт
-powershell.exe -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 8787 -ErrorAction SilentlyContinue) { Write-Host ''; Write-Host 'ERROR: Port 8787 is already in use.'; Write-Host 'Kill the old process first:'; Get-NetTCPConnection -LocalPort 8787 | ForEach-Object { Write-Host ('  taskkill /PID ' + $_.OwningProcess + ' /F') }; Write-Host ''; exit 1 }"
-if errorlevel 1 (
-    pause
-    exit /b 1
+powershell.exe -NoProfile -Command "$conn = Get-NetTCPConnection -LocalPort 8787 -ErrorAction SilentlyContinue; if ($conn) { $pid = $conn[0].OwningProcess; Write-Host ''; Write-Host 'Port 8787 is already in use by PID' $pid; exit 10 } else { exit 0 }"
+if %ERRORLEVEL%==10 (
+    powershell.exe -NoProfile -Command "$pid = (Get-NetTCPConnection -LocalPort 8787 -ErrorAction SilentlyContinue)[0].OwningProcess; Write-Host 'Kill PID' $pid '? [Y/n]'; $a = Read-Host; if ($a -eq '' -or $a -eq 'Y' -or $a -eq 'y') { Stop-Process -Id $pid -Force; Write-Host 'Killed.'; exit 0 } else { Write-Host 'Cancelled.'; exit 1 }"
+    if errorlevel 1 (
+        pause
+        exit /b 1
+    )
 )
 
 bun services/api/src/prod-server.ts

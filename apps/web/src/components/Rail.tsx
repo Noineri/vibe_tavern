@@ -137,6 +137,34 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   }, []);
 
   /* ── Bottom sheet (action sheet) для мобильных ── */
+  /* ── Bottom sheet swipe-to-dismiss state ── */
+  const sheetDragRef = useRef({ active: false, startY: 0, currentY: 0 });
+
+  const onSheetTouchStart = useCallback((e: React.TouchEvent) => {
+    sheetDragRef.current = { active: true, startY: e.touches[0].clientY, currentY: e.touches[0].clientY };
+  }, []);
+  const onSheetTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!sheetDragRef.current.active) return;
+    sheetDragRef.current.currentY = e.touches[0].clientY;
+    // Визуально двигаем sheet за пальцем
+    const delta = sheetDragRef.current.currentY - sheetDragRef.current.startY;
+    if (delta > 0 && menuRef.current) {
+      menuRef.current.style.transform = `translateY(${delta}px)`;
+      menuRef.current.style.transition = 'none';
+    }
+  }, []);
+  const onSheetTouchEnd = useCallback(() => {
+    if (!sheetDragRef.current.active) return;
+    sheetDragRef.current.active = false;
+    const delta = sheetDragRef.current.currentY - sheetDragRef.current.startY;
+    if (menuRef.current) {
+      menuRef.current.style.transform = '';
+      menuRef.current.style.transition = '';
+    }
+    // Свайп вниз больше чем на 80px → закрыть
+    if (delta > 80) closeMenu();
+  }, []);
+
   const bottomSheet = (title: string, items: Array<{ icon: React.ReactNode; label: string; danger?: boolean; action: () => void }>) => {
     return createPortal(
       <>
@@ -151,6 +179,9 @@ export function Rail({ hidden }: { hidden?: boolean }) {
           className="fixed inset-x-0 bottom-0 z-[501] rounded-t-2xl border-t border-border2 bg-surface pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
           ref={menuRef}
           style={{ animation: "slideUp 0.2s ease-out" }}
+          onTouchStart={onSheetTouchStart}
+          onTouchMove={onSheetTouchMove}
+          onTouchEnd={onSheetTouchEnd}
         >
           {/* Drag handle */}
           <div className="flex justify-center pt-2 pb-1">
