@@ -37,23 +37,23 @@ export async function createCharacterAction(
   if (result.snapshot) {
     useSnapshotStore.getState().ingestSnapshot(result.snapshot);
   }
-  void fetchBootstrapAction();
+  void fetchBootstrapAction({ silent: true });
   return result;
 }
 
 export async function archiveCharacterAction(characterId: string): Promise<void> {
   await archiveCharacter(characterId);
-  void fetchBootstrapAction();
+  void fetchBootstrapAction({ silent: true });
 }
 
 export async function unarchiveCharacterAction(characterId: string): Promise<void> {
   await unarchiveCharacter(characterId);
-  void fetchBootstrapAction();
+  void fetchBootstrapAction({ silent: true });
 }
 
 export async function deleteCharacterAction(characterId: string): Promise<void> {
   await deleteCharacter(characterId);
-  void fetchBootstrapAction();
+  void fetchBootstrapAction({ silent: true });
 }
 
 export async function avatarUploadAction(input: {
@@ -73,7 +73,7 @@ export async function avatarUploadAction(input: {
     originalAsset?.assetId,
   );
   useSnapshotStore.getState().ingestSnapshot(snapshot);
-  void fetchBootstrapAction();
+  void fetchBootstrapAction({ silent: true });
 }
 
 export async function importCharacterAction(input: {
@@ -85,7 +85,7 @@ export async function importCharacterAction(input: {
   if (result.snapshot) {
     useSnapshotStore.getState().ingestSnapshot(result.snapshot);
   }
-  void fetchBootstrapAction();
+  void fetchBootstrapAction({ silent: true });
   return result;
 }
 
@@ -99,7 +99,7 @@ export async function exportCharacterAction(characterId: string): Promise<Record
 
 export async function duplicateCharacterAction(characterId: string): Promise<ImportJsonResponse> {
   const result = await duplicateCharacter(characterId);
-  void fetchBootstrapAction();
+  void fetchBootstrapAction({ silent: true });
   return result;
 }
 

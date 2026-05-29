@@ -25,8 +25,8 @@ export const useBootstrapStore = create<BootstrapState>(() => ({
   isLoading: false,
 }));
 
-export async function fetchBootstrapAction(): Promise<void> {
-  useBootstrapStore.setState({ isLoading: true });
+export async function fetchBootstrapAction(options?: { silent?: boolean }): Promise<void> {
+  if (!options?.silent) useBootstrapStore.setState({ isLoading: true });
   try {
     const boot = await bootstrapApp();
     
@@ -43,7 +43,7 @@ export async function fetchBootstrapAction(): Promise<void> {
       useChatStore.getState().setActiveChatId(boot.initialChatId);
     }
   } finally {
-    useBootstrapStore.setState({ isLoading: false });
+    if (!options?.silent) useBootstrapStore.setState({ isLoading: false });
   }
 }
 
