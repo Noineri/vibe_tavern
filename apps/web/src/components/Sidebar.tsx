@@ -559,7 +559,7 @@ export function Sidebar() {
                         </div>
                       </div>
 
-                      {!chatMenuOpen && (
+                      {!chatMenuOpen && renamingChatId !== chatItem.id && (
                         <div className="absolute right-1 top-2 flex gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
                           <CustomTooltip content={t("sidebar_chat_actions")}>
                             <button type="button"
