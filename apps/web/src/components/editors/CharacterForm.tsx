@@ -335,19 +335,18 @@ export function CharacterForm({
       {/* Avatar + Name + Tags */}
       {avatarOrientation === "landscape" && displayAvatar ? (
         /* Landscape: full-width avatar above name/tags */
-        <div className={cn("mb-5", isMobile ? "flex flex-col items-center" : "")}>
+        <div className="mb-5">
           <CustomTooltip content={t("change_avatar")}>
           <div
             className="group relative mb-3 cursor-pointer overflow-hidden rounded-lg"
-            style={{ maxWidth: isMobile ? 400 : 480 }}
             onClick={() => avaInputRef.current?.click()}
           >
             <input ref={avaInputRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleAvatarPick(e.target.files)} />
-            <img src={displayAvatar} alt="" className="block w-full rounded-lg" style={{ maxHeight: 280, objectFit: "contain" }} />
+            <img src={displayAvatar} alt="" className="block rounded-lg" style={{ maxWidth: isMobile ? 400 : 480, maxHeight: 280, objectFit: "contain" }} />
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
           </div>
           </CustomTooltip>
-          <div className={cn("flex min-w-0 flex-1 flex-col gap-3", isMobile ? "w-full" : "")} style={{ maxWidth: isMobile ? undefined : 480 }}>
+          <div className="flex flex-col gap-3">
             <div>
               <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
               <input type="text" className={inputCls + mInput} style={inputPad} disabled={isSaving} {...register("name")} />
