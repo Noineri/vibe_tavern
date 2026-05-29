@@ -26,6 +26,7 @@ import {
 } from "../../app-client.js";
 import type { AutoSummaryConfig, ChatSummaryRecord } from "../../app-client.js";
 import { useSnapshotStore } from "../snapshot-store.js";
+import { useChatStore } from "../chat-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
 
 // Single canonical backend snapshot cache.
@@ -45,23 +46,33 @@ export async function fetchChatAction(chatId: ChatId): Promise<void> {
 export async function setChatPersonaAction(chatId: ChatId, personaId: string): Promise<void> {
   const snapshot = await setChatPersona(chatId, personaId);
   syncSnapshot(snapshot);
-  void fetchBootstrapAction();
+  void fetchBootstrapAction({ silent: true });
 }
 
 export async function createChatAction(characterId?: string): Promise<void> {
   const snapshot = await createChat(characterId);
   syncSnapshot(snapshot);
-  void fetchBootstrapAction();
+  // Auto-select the new chat
+  const newChatId = snapshot.chats?.[0]?.id;
+  if (newChatId) {
+    useChatStore.getState().setActiveChatId(newChatId);
+  }
+  void fetchBootstrapAction({ silent: true });
 }
 
 export async function deleteChatAction(chatId: ChatId): Promise<void> {
   await deleteChat(chatId);
-  void fetchBootstrapAction();
+  // Clear deleted chat from active
+  const current = useChatStore.getState().activeChatId;
+  if (current === chatId) {
+    useChatStore.getState().setActiveChatId(null);
+  }
+  void fetchBootstrapAction({ silent: true });
 }
 
 export async function renameChatAction(chatId: ChatId, title: string): Promise<void> {
   await renameChat(chatId, title);
-  void fetchBootstrapAction();
+  void fetchBootstrapAction({ silent: true });
 }
 
 export async function sendChatMessageAction(chatId: ChatId, content: string, signal?: AbortSignal): Promise<void> {
