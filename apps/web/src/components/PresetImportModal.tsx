@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useT } from "../i18n/context.js";
 import { cn } from "../lib/cn.js";
 import { Modal } from "./shared/Modal.js";
 import { Icons } from "./shared/icons.js";
 import { useIsMobile } from "../hooks/use-mobile.js";
+import { Checkbox } from "./shared/Checkbox.js";
 import { parseStPreset, type ParsedStPreset, type StPresetBlock } from "../lib/st-preset-parser.js";
 import type { InjectionRow } from "./prompt/InjectionTable.js";
 
@@ -220,13 +222,7 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
                       value={filter}
                       onChange={(e) => setFilter(e.target.value)}
                     />
-                    <button type="button"
-                      className={cn(
-                        "h-[36px] cursor-pointer whitespace-nowrap rounded-full px-3 font-ui text-[calc(var(--ui-fs)-2px)] transition-colors",
-                        showOnlySelected ? "bg-accent/20 text-accent-t" : "bg-s2 text-t4 hover:text-t2"
-                      )}
-                      onClick={() => setShowOnlySelected(!showOnlySelected)}
-                    >{t("preset_import_filter_selected")}</button>
+                    <Checkbox checked={showOnlySelected} onChange={setShowOnlySelected} label={t("preset_import_filter_selected")} />
                   </div>
                   <div className="flex items-center gap-2">
                     <button type="button" className="h-[36px] flex-1 cursor-pointer rounded border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 hover:text-t1" onClick={selectAll}>{t("preset_import_select_all")}</button>
@@ -235,22 +231,18 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
                   <BulkDropdown onSelect={bulkSetTarget} />
                 </div>
               ) : (
-                /* Desktop: single row */
-                <div className="flex items-center gap-2">
-                  <input
-                    className="h-[30px] w-[180px] rounded border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t4 focus:border-accent"
-                    placeholder={t("search") + "…"}
-                    value={filter}
-                    onChange={(e) => setFilter(e.target.value)}
-                  />
-                  <button type="button"
-                    className={cn(
-                      "h-[30px] cursor-pointer whitespace-nowrap rounded-full px-3 font-ui text-[calc(var(--ui-fs)-2px)] transition-colors",
-                      showOnlySelected ? "bg-accent/20 text-accent-t" : "bg-s2 text-t4 hover:text-t2"
-                    )}
-                    onClick={() => setShowOnlySelected(!showOnlySelected)}
-                  >{t("preset_import_filter_selected")}</button>
-                  <div className="ml-auto flex items-center gap-1.5">
+                /* Desktop: two rows */
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      className="h-[30px] w-[200px] rounded border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t4 focus:border-accent"
+                      placeholder={t("search") + "…"}
+                      value={filter}
+                      onChange={(e) => setFilter(e.target.value)}
+                    />
+                    <Checkbox checked={showOnlySelected} onChange={setShowOnlySelected} label={t("preset_import_filter_selected")} />
+                  </div>
+                  <div className="flex items-center gap-1.5">
                     <button type="button" className="h-[30px] cursor-pointer whitespace-nowrap rounded border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 hover:text-t1" onClick={selectAll}>{t("preset_import_select_all")}</button>
                     <button type="button" className="h-[30px] cursor-pointer whitespace-nowrap rounded border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 hover:text-t1" onClick={deselectAll}>{t("preset_import_deselect_all")}</button>
                     <BulkDropdown onSelect={bulkSetTarget} />
@@ -420,32 +412,49 @@ function BulkDropdown({ onSelect }: { onSelect: (t: TargetMapping) => void }) {
 function TargetDropdown({ value, disabled, onChange }: { value: TargetMapping; disabled: boolean; onChange: (v: TargetMapping) => void }) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const isMobile = useIsMobile();
+
+  const openMenu = () => {
+    if (disabled) return;
+    const rect = btnRef.current?.getBoundingClientRect();
+    if (rect) {
+      setMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setOpen(true);
+  };
 
   useEffect(() => {
     if (!open) return;
-    const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onClick = (e: Event) => {
+      if (btnRef.current && btnRef.current.contains(e.target as Node)) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
+    document.addEventListener('touchstart', onClick);
+    return () => { document.removeEventListener('mousedown', onClick); document.removeEventListener('touchstart', onClick); };
   }, [open]);
 
   const current = TARGET_OPTIONS.find((o) => o.value === value);
   const label = current ? t(current.labelKey) : value;
 
   return (
-    <div ref={ref} className="relative inline-block">
-      <button type="button"
+    <>
+      <button type="button" ref={btnRef}
         className={cn(
           "cursor-pointer rounded border border-border bg-s2 px-2.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 outline-none transition-colors",
           disabled ? "opacity-40 cursor-default" : "hover:bg-s3 hover:text-t1",
           isMobile ? "h-[36px]" : "h-[28px]"
         )}
         disabled={disabled}
-        onClick={() => !disabled && setOpen(!open)}
+        onClick={openMenu}
       >{label} ▾</button>
-      {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 min-w-[160px] rounded-md border border-border2 bg-surface py-1 shadow-[0_8px_24px_rgba(0,0,0,.4)]">
+      {open && menuPos && createPortal(
+        <div
+          className="fixed z-[999] min-w-[160px] rounded-md border border-border2 bg-surface py-1 shadow-[0_8px_24px_rgba(0,0,0,.4)]"
+          style={{ top: menuPos.top, left: menuPos.left }}
+        >
           {TARGET_OPTIONS.map((o) => (
             <button type="button" key={o.value}
               className={cn(
@@ -455,8 +464,9 @@ function TargetDropdown({ value, disabled, onChange }: { value: TargetMapping; d
               onClick={() => { onChange(o.value); setOpen(false); }}
             >{t(o.labelKey)}</button>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
