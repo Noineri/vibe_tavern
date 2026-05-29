@@ -169,7 +169,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey 
   ), [draft, disabled, onUpdateField, resetKey]);
 
   return (
-    <div className="flex flex-1 flex-col gap-6 overflow-y-auto scroll-smooth p-5">
+    <div className="flex flex-col gap-6 scroll-smooth p-5">
       <SectionHeader title={t("prompt_section_chat")} />
 
       <FieldSection label={t("system_prompt")} labelClassName={labelAccentCls} token={draft?.system ?? ""}>
