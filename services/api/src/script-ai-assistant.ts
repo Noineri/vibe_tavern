@@ -1,13 +1,31 @@
 import { streamText } from "ai";
 import type { LanguageModelV1 } from "ai";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 /** Load the system prompt from the adjacent .md file. Cached after first read. */
 let _cachedPrompt: string | null = null;
 
+async function resolveScriptAiPromptPath(): Promise<string> {
+  const candidates = [
+    process.env.RP_PLATFORM_SCRIPT_AI_PROMPT,
+    // Standalone binary/release artifact: prompt next to executable.
+    join(resolve(process.execPath, ".."), "script-ai-prompt.md"),
+    // Dev and built services/api output: adjacent to script-ai-assistant module.
+    resolve(import.meta.dir, "script-ai-prompt.md"),
+    // Source checkout fallback when running from repo root.
+    join(process.cwd(), "services", "api", "src", "script-ai-prompt.md"),
+  ].filter(Boolean) as string[];
+
+  for (const path of candidates) {
+    if (await Bun.file(path).exists()) return path;
+  }
+
+  return candidates[candidates.length - 1];
+}
+
 export async function getDefaultScriptAiPrompt(): Promise<string> {
   if (_cachedPrompt) return _cachedPrompt;
-  const mdPath = resolve(import.meta.dir, "script-ai-prompt.md");
+  const mdPath = await resolveScriptAiPromptPath();
   _cachedPrompt = await Bun.file(mdPath).text();
   return _cachedPrompt;
 }
