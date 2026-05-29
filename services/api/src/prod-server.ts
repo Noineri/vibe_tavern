@@ -109,6 +109,101 @@ await mkdir(resolve(rootDir, "data", "assets"), { recursive: true });
 		mobileAccessToken: mobileAccessService.getToken() ?? undefined,
 	});
 
+	// Проверяем, не занят ли порт, и предлагаем убить старый процесс
+	try {
+		const testServer = Bun.serve({
+			fetch: () => new Response(),
+			port,
+			hostname: host,
+		});
+		testServer.stop(true);
+	} catch (err: any) {
+		if (err?.code === "EADDRINUSE") {
+			console.error(`\n[prod] Port ${port} is already in use.`);
+
+			// Находим PID процесса, занимающего порт
+			let oldPid: string | null = null;
+			try {
+				if (process.platform === "win32") {
+					const result = Bun.spawnSync(["netstat", "-ano"], { stdout: "pipe" });
+					const lines = new TextDecoder().decode(result.stdout).split("\n");
+					for (const line of lines) {
+						if (line.includes(`:${port}`) && line.includes("LISTENING")) {
+							oldPid = line.trim().split(/\s+/).pop() ?? null;
+							break;
+						}
+					}
+				} else {
+					// Linux/macOS/Android (Termux)
+					const result = Bun.spawnSync(["ss", "-tlnp"], { stdout: "pipe" });
+					const lines = new TextDecoder().decode(result.stdout).split("\n");
+					for (const line of lines) {
+						if (line.includes(`:${port}`)) {
+							const match = line.match(/pid=(\d+)/);
+							oldPid = match?.[1] ?? null;
+							break;
+						}
+					}
+				}
+			} catch {}
+
+			if (oldPid) {
+				console.error(`[prod] Occupied by PID ${oldPid}.`);
+
+				// В неинтерактивном режиме (Android/Termux) — убиваем автоматически
+				if (!process.stdin?.isTTY) {
+					console.log(`[prod] Non-interactive mode — killing PID ${oldPid}...`);
+					try {
+						process.kill(Number(oldPid), "SIGTERM");
+						// Ждём освобождения порта
+						for (let i = 0; i < 20; i++) {
+							await new Promise(r => setTimeout(r, 250));
+							try {
+								const t = Bun.serve({ fetch: () => new Response(), port, hostname: host });
+								t.stop(true);
+								console.log(`[prod] Port ${port} freed.`);
+								break;
+							} catch {}
+						}
+					} catch {
+						console.error(`[prod] Failed to kill PID ${oldPid}. Exiting.`);
+						process.exit(1);
+					}
+				} else {
+					// Интерактивный — спрашиваем Y/n
+					console.log(`[prod] Kill PID ${oldPid}? [Y/n]`);
+					const input = await new Promise<string>((resolve) => {
+						process.stdin.resume();
+						process.stdin.once("data", (data: Buffer) => {
+							process.stdin.pause();
+							resolve(data.toString().trim());
+						});
+					});
+					if (input === "" || input.toLowerCase() === "y") {
+						process.kill(Number(oldPid), "SIGTERM");
+						for (let i = 0; i < 20; i++) {
+							await new Promise(r => setTimeout(r, 250));
+							try {
+								const t = Bun.serve({ fetch: () => new Response(), port, hostname: host });
+								t.stop(true);
+								console.log(`[prod] Port ${port} freed.`);
+								break;
+							} catch {}
+						}
+					} else {
+						console.error(`[prod] Cancelled. Exiting.`);
+						process.exit(1);
+					}
+				}
+			} else {
+				console.error(`[prod] Could not find the process. Please kill it manually and try again.`);
+				process.exit(1);
+			}
+		} else {
+			throw err;
+		}
+	}
+
 	const tlsOptions = tlsConfig ? { tls: tlsConfig } : {};
 	const server = Bun.serve({
 		fetch: app.fetch,

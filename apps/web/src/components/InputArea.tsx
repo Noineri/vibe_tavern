@@ -138,9 +138,9 @@ export function InputArea() {
       )}>
         <div className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
           {/* Toolbar row: persona + starred models */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <div className="relative" ref={mobilePersonaRef}>
-              <button onClick={() => setMobilePersonaOpen(o => !o)} className="flex items-center gap-1.5 rounded-md bg-s3 px-2.5 py-2 min-h-[44px] font-ui text-[calc(var(--ui-fs)-2px)] text-t2 active:bg-s2">
+              <button onClick={() => setMobilePersonaOpen(o => !o)} className="flex h-9 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2">
                 {activePersonaId ? (
                   <PersonaAvatar assetId={personas.find(p => p.id === activePersonaId)?.avatarAssetId ?? null} size={20} />
                 ) : (
