@@ -19,7 +19,7 @@ export const SaveBtn: FC<SaveBtnProps> = ({ dirty, saveState, onClick, label, st
   const isSaved = saveState === "saved";
 
   return (
-    <button
+    <button type="button"
       className={`api-save-btn${isSaved ? " save-btn-saved" : ""}${isSaving ? " save-btn-saving" : ""}`}
       disabled={disabled || (!dirty && !isSaved) || isSaving}
       onClick={onClick}

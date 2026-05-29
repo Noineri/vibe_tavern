@@ -189,7 +189,7 @@ export function ProviderForm({
         ) : (
           <div>
             <div className="flex gap-3">
-              <button
+              <button type="button"
                 className={cn(
                   'rounded-md border font-ui text-[13px] font-medium transition-colors px-4 py-1.5',
                   testOk === true
@@ -203,7 +203,7 @@ export function ProviderForm({
               >
                 {testing ? t("testing") : t("test_connection")}
               </button>
-              <button
+              <button type="button"
                 className="rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50"
                 onClick={() => void onTestChat()}
                 disabled={testingChat}

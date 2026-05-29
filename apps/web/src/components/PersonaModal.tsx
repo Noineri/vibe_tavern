@@ -227,8 +227,7 @@ export function PersonaModal(input: PersonaModalProps) {
                 </div>
                 </CustomTooltip>
                 {editDisplayAvatar && (
-                  <button
-                    type="button"
+                  <button type="button"
                     className="absolute -right-1 -bottom-1 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface text-t4 opacity-0 transition-all hover:text-danger group-hover/ava:opacity-100"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -251,8 +250,7 @@ export function PersonaModal(input: PersonaModalProps) {
                 />
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {PRONOUN_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.v}
+                    <button  key={opt.v}
                       type="button"
                       className={cn(
                         "rounded-md px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] transition-all",
@@ -291,14 +289,14 @@ export function PersonaModal(input: PersonaModalProps) {
             </div>
             {/* Save / Cancel */}
             <div className="flex gap-2">
-              <button
+              <button type="button"
                 className="min-h-[40px] cursor-pointer rounded-md bg-accent px-4 font-ui text-sm font-medium text-white transition-all hover:brightness-110"
                 disabled={input.isSaving || !(editName || "").trim()}
                 onClick={commitEdit}
               >
                 {input.isSaving ? t("saving") : t("save_btn")}
               </button>
-              <button
+              <button type="button"
                 className="min-h-[40px] cursor-pointer rounded-md bg-transparent px-3.5 font-ui text-sm text-t3 active:bg-s2"
                 onClick={cancelEdit}
               >
@@ -463,13 +461,13 @@ export function PersonaModal(input: PersonaModalProps) {
       </div>
       {/* Footer */}
       <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "px-4 py-3" : "px-5 py-3.5")}>
-        <button
+        <button type="button"
           className={cn("cursor-pointer rounded-md font-ui font-medium text-t2 transition-all hover:text-t1", isMobile ? "min-h-[44px] flex-1 text-[14px]" : "h-[37px] px-[21px] text-[calc(var(--ui-fs)-2px)]")}
           onClick={onClose}
         >
           {t("cancel_btn")}
         </button>
-        <button
+        <button type="button"
           className={cn("cursor-pointer rounded-md bg-accent font-ui font-medium text-white shadow-lg shadow-accent/20 transition-all hover:brightness-110 active:scale-[0.98]", isMobile ? "min-h-[44px] flex-1 text-[14px]" : "h-[37px] px-[21px] text-[calc(var(--ui-fs)-2px)]")}
           disabled={!selectedId || isEditing}
           onClick={setActiveAndClose}

@@ -365,8 +365,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             </div>
             <div className="p-5 text-[13px] text-t2">{t("delete_script_msg")}</div>
             <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
-              <button className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
-              <button className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={() => handleDeleteScript(confirmDeleteId)}>{t("delete_script_confirm")}</button>
+              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={() => handleDeleteScript(confirmDeleteId)}>{t("delete_script_confirm")}</button>
             </div>
           </div>
         </div>
@@ -391,13 +391,13 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
               <div className="mt-3 text-[11px] text-t3">{t("script_templates")}:</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {Object.entries(SCRIPT_TEMPLATES).map(([key, tpl]) => (
-                  <button key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{t("script_template_" + key) || tpl.name}</button>
+                  <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{t("script_template_" + key) || tpl.name}</button>
                 ))}
               </div>
             </div>
             <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
-              <button className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => { setImportOpen(false); setImportCode(""); }}>Cancel</button>
-              <button className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={() => handleImportScript(importCode)} disabled={!importCode.trim()}>{t("script_import_import")}</button>
+              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => { setImportOpen(false); setImportCode(""); }}>Cancel</button>
+              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={() => handleImportScript(importCode)} disabled={!importCode.trim()}>{t("script_import_import")}</button>
             </div>
           </div>
         </div>
@@ -487,20 +487,20 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                 {aiStreamedCode && !aiStreaming && (
                   isAiEditMode ? (
                     <>
-                      <button className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleAiReplace}>{t("script_ai_replace")}</button>
-                      <button className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleAiApplyChanges}>{t("script_ai_apply")}</button>
+                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleAiReplace}>{t("script_ai_replace")}</button>
+                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleAiApplyChanges}>{t("script_ai_apply")}</button>
                     </>
                   ) : (
                     <>
-                      <button className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleAiInsert}>{t("script_ai_insert")}</button>
-                      <button className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleAiReplace}>{t("script_ai_replace")}</button>
+                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleAiInsert}>{t("script_ai_insert")}</button>
+                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleAiReplace}>{t("script_ai_replace")}</button>
                     </>
                   )
                 )}
                 {aiStreaming ? (
-                  <button className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={handleAiStop}>{t("script_ai_stop")}</button>
+                  <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={handleAiStop}>{t("script_ai_stop")}</button>
                 ) : (
-                  <button className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", aiProviderId && aiPrompt ? "bg-accent text-on-accent" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleAiGenerate} disabled={!aiProviderId || !aiPrompt}>{t("script_ai_generate")}</button>
+                  <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", aiProviderId && aiPrompt ? "bg-accent text-on-accent" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleAiGenerate} disabled={!aiProviderId || !aiPrompt}>{t("script_ai_generate")}</button>
                 )}
               </div>
             )}
@@ -517,10 +517,10 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         <div className="py-10 text-center">
           <div className="mb-2 text-[13px] text-t3">{t("script_no_scripts")}</div>
           <div className="flex justify-center gap-2">
-            <button className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent" onClick={handleAdd}>
+            <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent" onClick={handleAdd}>
               <Ic.plus /> {t("new_script")}
             </button>
-            <button className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent" onClick={() => setImportOpen(true)}>
+            <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent" onClick={() => setImportOpen(true)}>
               <Ic.import /> {t("script_import")}
             </button>
           </div>
@@ -540,8 +540,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             </div>
           ))}
           <div className="mt-2 flex flex-wrap gap-2">
-            <button className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent" onClick={handleAdd}><Ic.plus /> {t("new_script")}</button>
-            <button className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent" onClick={() => setImportOpen(true)}><Ic.import /> {t("script_import")}</button>
+            <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent" onClick={handleAdd}><Ic.plus /> {t("new_script")}</button>
+            <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent" onClick={() => setImportOpen(true)}><Ic.import /> {t("script_import")}</button>
           </div>
         </>
       )}
@@ -574,8 +574,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
       {/* Toolbar */}
       <div className="mb-2 flex flex-wrap gap-2">
-        <button className={cn("flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")} onClick={() => setApiRefOpen(v => !v)}><Ic.book /> {t("script_api_reference")}</button>
-        <button className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => setAiHelperOpen(true)}><Ic.brain /> {t("script_ai_helper")}</button>
+        <button type="button" className={cn("flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")} onClick={() => setApiRefOpen(v => !v)}><Ic.book /> {t("script_api_reference")}</button>
+        <button type="button" className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => setAiHelperOpen(true)}><Ic.brain /> {t("script_ai_helper")}</button>
       </div>
 
       {/* API Reference */}
@@ -634,7 +634,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("script_templates")}</div>
         <div className="flex flex-wrap gap-2">
           {Object.entries(SCRIPT_TEMPLATES).map(([key, tpl]) => (
-            <button key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => handleAddFromTemplate(key)}>{t("script_template_" + key) || tpl.name}</button>
+            <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => handleAddFromTemplate(key)}>{t("script_template_" + key) || tpl.name}</button>
           ))}
         </div>
       </div>
@@ -644,7 +644,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("script_test_panel")}</div>
         <div className={cn("flex gap-2.5", isMobile && "flex-col")}>
           <input className={cn("h-9 flex-1 rounded-md border border-border bg-bg px-3 font-ui text-t1 outline-none", isMobile && "min-h-[44px]")} value={testInput} onChange={e => setTestInput(e.target.value)} onKeyDown={e => e.key === "Enter" && runTest()} placeholder={t("script_test_input_placeholder")} />
-          <button className={cn("h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all", isMobile && "min-h-[44px]")} onClick={runTest}>{t("script_test_run")}</button>
+          <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all", isMobile && "min-h-[44px]")} onClick={runTest}>{t("script_test_run")}</button>
         </div>
         {testResult && (
           <div className="mt-3 space-y-2">

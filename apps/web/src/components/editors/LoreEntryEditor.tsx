@@ -133,8 +133,7 @@ export function LoreEntryEditor({
             className="ml-1"
           />
           <CustomTooltip content={t("lore_save_entry")}>
-            <button
-              type="button"
+            <button type="button"
               className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-danger"
               onClick={() => setConfirmDeleteEntry(true)}
             >
@@ -208,7 +207,7 @@ export function LoreEntryEditor({
             onKeyDown={(e) => e.key === "Enter" && runTest()}
             placeholder={t("lore_test_placeholder")}
           />
-          <button
+          <button type="button"
             className={cn(
               "h-8 cursor-pointer rounded-md bg-accent px-4 text-[12px] font-medium text-on-accent transition-all hover:opacity-90",
               isMobile && "min-h-[44px]"
@@ -239,7 +238,7 @@ export function LoreEntryEditor({
         )}
 
         {/* ── Тогл расширенных настроек ── */}
-        <button
+        <button type="button"
           className="flex items-center gap-1.5 text-[13px] font-medium text-accent-t transition-all hover:text-accent"
           onClick={() => setAdvancedOpen((v) => !v)}
         >
@@ -453,8 +452,7 @@ export function LoreEntryEditor({
                     "outlet",
                   ] as const
                 ).map((pos) => (
-                  <button
-                    key={pos}
+                  <button  key={pos}
                     type="button"
                     onClick={() => updateAct("position", pos)}
                     className={cn(
@@ -789,13 +787,13 @@ export function LoreEntryEditor({
               className="flex justify-end gap-2 border-t border-border"
               style={{ padding: "12px 20px" }}
             >
-              <button
+              <button type="button"
                 className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
                 onClick={() => setConfirmDeleteEntry(false)}
               >
                 {t("lore_cancel_edit")}
               </button>
-              <button
+              <button type="button"
                 className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all"
                 onClick={handleDelete}
                 disabled={deletingEntry}

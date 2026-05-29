@@ -193,7 +193,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
           </div>
           {/* Items */}
           {items.map((item, i) => (
-            <button
+            <button type="button"
               key={i}
               className={cn(
                 "flex w-full cursor-pointer items-center gap-4 px-5 min-h-[52px] text-[calc(var(--ui-fs)+1px)] transition-colors duration-100 active:bg-s3 text-left",
@@ -212,7 +212,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
           ))}
           {/* Cancel */}
           <div className="h-px bg-border mx-4 mt-2" />
-          <button
+          <button type="button"
             className="flex w-full cursor-pointer items-center justify-center min-h-[52px] text-[calc(var(--ui-fs)+1px)] font-medium text-t3 transition-colors active:bg-s3 rounded-b-2xl"
             onClick={closeMenu}
           >
@@ -436,7 +436,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                         </div>
                         <span className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)] text-t1">{c.name}</span>
                         {/* Three-dot menu button */}
-                        <button
+                        <button type="button"
                           className={cn(
                             "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
                             charMenuId === c.id && "text-t1 bg-s3",
@@ -485,7 +485,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                               </span>
 
                               {/* Chat three-dot menu — увеличенный touch target */}
-                              <button
+                              <button type="button"
                                 className={cn(
                                   "absolute right-1 inset-y-0 my-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
                                   chatMenuId === ch.id && "text-t1 bg-s3",
@@ -498,7 +498,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                               {/* Branches — только для активного чата (данные в snapshot) */}
                               {ch.id === activeChatId && activeChatBranches.length > 0 && (
                                 <>
-                                <button
+                                <button type="button"
                                   className="mt-1 flex min-h-[44px] items-center gap-1.5 rounded-md px-1 text-[calc(var(--ui-fs)-3px)] text-t4 active:bg-s3 active:text-t2 transition-colors"
                                   onClick={(e) => { e.stopPropagation(); setBranchesOpen(branchesOpen === ch.id ? null : ch.id); }}
                                 >

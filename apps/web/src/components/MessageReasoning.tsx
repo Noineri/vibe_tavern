@@ -32,7 +32,7 @@ export function MessageReasoning({ reasoning, reasoningDurationMs, redacted }: M
 
   return (
     <div className="mb-2 overflow-hidden rounded-md border border-border bg-surface">
-      <button
+      <button type="button"
         className="flex w-full cursor-pointer select-none items-center gap-1.5 px-3 py-1.5 font-ui text-[11px] font-medium uppercase tracking-[0.05em] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
         onClick={() => setOpen(!open)}
       >

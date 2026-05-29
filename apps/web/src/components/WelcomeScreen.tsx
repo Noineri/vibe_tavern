@@ -65,19 +65,19 @@ export function WelcomeScreen() {
 
         {!creating ? (
           <div className={cn("flex flex-col gap-3", isMobile ? "px-4 pb-5" : "px-7 pb-7")}>
-            <button className={cardBase} onClick={() => setCreating(true)}>
+            <button type="button" className={cardBase} onClick={() => setCreating(true)}>
               <div className="text-[1.4rem] text-accent">{Ic.edit()}</div>
               <div className="font-ui text-[0.95rem] font-semibold">{t("ws_create")}</div>
               <div className="font-ui text-[0.8rem] text-t2">{t("ws_create_sub")}</div>
             </button>
 
-            <button className={cardBase} onClick={() => fileRef.current?.click()}>
+            <button type="button" className={cardBase} onClick={() => fileRef.current?.click()}>
               <div className="text-[1.4rem] text-accent">{Ic.import()}</div>
               <div className="font-ui text-[0.95rem] font-semibold">{t("ws_import")}</div>
               <div className="font-ui text-[0.8rem] text-t2">{t("ws_import_sub")}</div>
             </button>
 
-            <button className={cn(cardBase, "opacity-70 hover:opacity-100")} onClick={handleFreeChat} disabled={busy}>
+            <button type="button" className={cn(cardBase, "opacity-70 hover:opacity-100")} onClick={handleFreeChat} disabled={busy}>
               <div className="text-[1.4rem] text-accent">{Ic.plus()}</div>
               <div className="font-ui text-[0.95rem] font-semibold">{t("ws_free")}</div>
               <div className="font-ui text-[0.8rem] text-t2">{t("ws_free_sub")}</div>
@@ -115,8 +115,8 @@ export function WelcomeScreen() {
               />
             </label>
             <div className="mt-1 flex items-center justify-between">
-              <button className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1" onClick={() => setCreating(false)} disabled={busy}>{t("back")}</button>
-              <button className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40" disabled={!canCreate} onClick={handleCreate}>
+              <button type="button" className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1" onClick={() => setCreating(false)} disabled={busy}>{t("back")}</button>
+              <button type="button" className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40" disabled={!canCreate} onClick={handleCreate}>
                 {busy ? t("ws_creating") : t("ws_create_btn")}
               </button>
             </div>

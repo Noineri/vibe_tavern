@@ -153,7 +153,7 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
               <div className="mb-0.5 font-body text-[calc(var(--ui-fs)+4px)] font-medium text-t1">{t("preset_import_title")}</div>
               <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3 mb-6">{t("preset_import_sub")}</div>
             </div>
-            <button className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={onClose}><Icons.Close /></button>
+            <button type="button" className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={onClose}><Icons.Close /></button>
           </div>
         </div>
 
@@ -211,8 +211,8 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
                   {t("preset_import_filter_selected")}
                 </label>
                 <div className="ml-auto flex items-center gap-1.5">
-                  <button className="h-[24px] cursor-pointer whitespace-nowrap rounded border border-border bg-s2 px-3 font-ui text-[10px] text-t3 hover:text-t1" onClick={selectAll}>{t("preset_import_select_all")}</button>
-                  <button className="h-[24px] cursor-pointer whitespace-nowrap rounded border border-border bg-s2 px-3 font-ui text-[10px] text-t3 hover:text-t1" onClick={deselectAll}>{t("preset_import_deselect_all")}</button>
+                  <button type="button" className="h-[24px] cursor-pointer whitespace-nowrap rounded border border-border bg-s2 px-3 font-ui text-[10px] text-t3 hover:text-t1" onClick={selectAll}>{t("preset_import_select_all")}</button>
+                  <button type="button" className="h-[24px] cursor-pointer whitespace-nowrap rounded border border-border bg-s2 px-3 font-ui text-[10px] text-t3 hover:text-t1" onClick={deselectAll}>{t("preset_import_deselect_all")}</button>
                   <select
                     className="h-[24px] cursor-pointer rounded border border-border bg-s2 px-1.5 font-ui text-[10px] text-t2 outline-none"
                     onChange={(e) => { if (e.target.value) bulkSetTarget(e.target.value as TargetMapping); e.target.value = ""; }}
@@ -253,11 +253,11 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
 
         {/* Footer */}
         <div className="flex shrink-0 items-center justify-between border-t border-border px-5 py-3.5">
-          <button className="h-[37px] cursor-pointer rounded-md border border-border bg-surface px-5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={onClose}>
+          <button type="button" className="h-[37px] cursor-pointer rounded-md border border-border bg-surface px-5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={onClose}>
             {t("cancel")}
           </button>
           {phase === "preview" && (
-            <button
+            <button type="button"
               className="h-[37px] cursor-pointer rounded-md border-0 bg-accent px-6 font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40 hover:brightness-110"
               disabled={counts.total === 0}
               onClick={handleImport}
@@ -286,13 +286,12 @@ function BlockRow({ mapping, index, onToggle, onTarget }: {
       "grid grid-cols-[24px_1fr_130px] gap-2.5 border-b border-border2 px-5 py-2.5 hover:bg-s2/50 transition-colors",
       !enabled && "opacity-40"
     )}>
-      <button
+      <button type="button"
         className={cn(
           "mt-1 flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center rounded text-[14px] transition-colors",
           enabled ? "text-accent hover:bg-accent/10" : "text-t4 hover:text-t2"
         )}
         onClick={() => onToggle(index)}
-        type="button"
       >
         {enabled ? "●" : "○"}
       </button>

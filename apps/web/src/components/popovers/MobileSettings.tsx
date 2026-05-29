@@ -27,7 +27,7 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 		<div className="fixed inset-0 z-[400] flex flex-col bg-bg">
 			{/* Header */}
 			<div className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-4">
-				<button
+				<button type="button"
 					className="flex h-9 w-9 cursor-pointer items-center justify-center rounded text-t3 active:bg-s2"
 					onClick={onClose}
 				>
@@ -164,7 +164,7 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 							{ value: "en", label: "English" },
 							{ value: "ru", label: "Русский" },
 						] as const).map((l) => (
-							<button
+							<button type="button"
 								key={l.value}
 								className={`flex flex-1 cursor-pointer items-center justify-center rounded-md py-2.5 font-ui text-[calc(var(--ui-fs)-3px)] transition-colors min-h-[40px] ${
 									settings.lang === l.value

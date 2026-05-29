@@ -20,13 +20,13 @@ export function ConfirmCloseModal(input: ConfirmCloseModalProps) {
           {t("close_without_saving_body")}
         </div>
         <div className="flex justify-center gap-4">
-          <button
+          <button type="button"
             className="h-12 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[14px] leading-[1.2] font-medium text-white transition-[filter] duration-100 hover:brightness-110"
             onClick={input.onCancel}
           >
             {t("keep_editing")}
           </button>
-          <button
+          <button type="button"
             className="h-12 cursor-pointer rounded-md border border-border bg-transparent px-4 font-ui text-[14px] leading-[1.2] text-t3 transition-colors duration-150 hover:border-danger hover:text-danger"
             onClick={input.onConfirm}
           >

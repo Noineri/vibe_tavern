@@ -35,20 +35,20 @@ export function ContextFooter({
             </div>
             <div className="font-ui text-xs text-t3">{contextWindow.used} / {contextWindow.limit}</div>
           </div>
-          <button className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" onClick={onClose}>
+          <button type="button" className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" onClick={onClose}>
             {t('close')}
           </button>
         </div>
       ) : (
         <div className="flex gap-2">
-          <button
+          <button type="button"
             className="h-[37px] cursor-pointer rounded-md bg-accent px-[18px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-40"
             disabled={disabled || isSaving}
             onClick={onSaveSummary}
           >
             {isSaving ? t('saving_btn') : t('save_summary_btn')}
           </button>
-          <button className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" onClick={onClose}>
+          <button type="button" className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" onClick={onClose}>
             {t('close')}
           </button>
         </div>

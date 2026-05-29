@@ -41,25 +41,22 @@ const PresetRow = React.memo(({ p, isActive, onSelect, isMobile, onDrillDown, st
         </CustomTooltip>
       )}
       {isMobile && (
-        <button
+        <button type="button"
           onClick={(e) => startEditing(p, e)}
           className={cn("ml-1 shrink-0 transition-colors", isActive ? "text-accent" : "text-t4 hover:text-t1")}
-          type="button"
         ><Icons.Edit /></button>
       )}
       <div className="ml-auto flex items-center gap-1">
         {!isMobile && (
-        <button
+        <button type="button"
           onClick={(e) => startEditing(p, e)}
           className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100", isActive ? "text-accent" : "text-t4 hover:text-t1")}
-          type="button"
         ><Icons.Edit /></button>
         )}
         {onDrillDown && (
-        <button
+        <button type="button"
           onClick={(e) => { e.stopPropagation(); onDrillDown(p.id); }}
           className="shrink-0 px-2 py-1 text-t3 transition-colors hover:text-t1"
-          type="button"
         ><Icons.Caret direction="r" /></button>
         )}
       </div>
@@ -156,10 +153,9 @@ export function PresetList({ presets, activePresetId, onSelect, onDrillDown, onA
                     onBlur={saveEdit}
                     className="w-full rounded border border-accent bg-surface px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none"
                   />
-                  <button
+                  <button type="button"
                     onMouseDown={(e) => { e.preventDefault(); saveEdit(); }}
                     className="absolute right-2 text-success transition-colors hover:text-green-400"
-                    type="button"
                   >
                     <Icons.Check />
                   </button>
@@ -194,10 +190,9 @@ export function PresetList({ presets, activePresetId, onSelect, onDrillDown, onA
                 onBlur={() => { if (!newName.trim()) setIsCreating(false); else saveNew(); }}
                 className="w-full rounded border border-border bg-s2 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none focus:border-border2"
               />
-              <button
+              <button type="button"
                 onMouseDown={(e) => { e.preventDefault(); saveNew(); }}
                 className="absolute right-2 text-success transition-colors hover:text-green-400"
-                type="button"
               >
                 <Icons.Check />
               </button>
@@ -207,15 +202,14 @@ export function PresetList({ presets, activePresetId, onSelect, onDrillDown, onA
       </div>
 
       <div className="shrink-0 border-t border-border px-3 pt-3">
-        <button
+        <button type="button"
           onClick={() => setIsCreating(true)}
           className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
-          type="button"
         >
           <Icons.Plus /> {t("new_preset_btn")}
         </button>
         {onImportPreset && (
-          <button
+          <button 
             onClick={onImportPreset}
             className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
             type="button"

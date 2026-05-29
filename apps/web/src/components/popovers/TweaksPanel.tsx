@@ -66,7 +66,7 @@ export function TweaksPanel({ settings, setSetting, onOpenMobileAccess }: Tweaks
             <Icons.Phone />
             {t("mobile_access")}
           </span>
-          <button
+          <button type="button"
             className="rounded bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] text-on-accent hover:opacity-90"
             onClick={onOpenMobileAccess}
           >{t("mobile_access_enable")}</button>

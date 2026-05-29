@@ -140,7 +140,7 @@ export function InputArea() {
           {/* Toolbar row: persona + starred models */}
           <div className="flex items-center justify-between gap-2">
             <div className="relative" ref={mobilePersonaRef}>
-              <button onClick={() => setMobilePersonaOpen(o => !o)} className="flex h-9 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2">
+              <button type="button" onClick={() => setMobilePersonaOpen(o => !o)} className="flex h-9 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2">
                 {activePersonaId ? (
                   <PersonaAvatar assetId={personas.find(p => p.id === activePersonaId)?.avatarAssetId ?? null} size={20} />
                 ) : (
@@ -153,20 +153,20 @@ export function InputArea() {
                 <div className="absolute bottom-[calc(100%+4px)] left-0 z-[220] w-[240px] rounded-lg border border-border2 bg-surface py-2 shadow-theme-md">
                   <div className="px-4 pb-2 text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1">{t("persona_selection")}</div>
                   {personas.map(p => (
-                    <button key={p.id} className="flex w-full min-h-[44px] cursor-pointer items-center gap-2 px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2" onClick={() => { void character.handleSetChatPersona(p.id); setMobilePersonaOpen(false); }}>
+                    <button type="button" key={p.id} className="flex w-full min-h-[44px] cursor-pointer items-center gap-2 px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2" onClick={() => { void character.handleSetChatPersona(p.id); setMobilePersonaOpen(false); }}>
                       <div className="w-4 shrink-0 flex justify-center text-accent-t">{activePersonaId === p.id && <Icons.Check/>}</div>
                       <PersonaAvatar assetId={p.avatarAssetId} size={22} />
                       <div className="min-w-0 truncate">{p.name}</div>
                     </button>
                   ))}
                   <div className="pt-1 px-2 mt-1 border-t border-border">
-                    <button className="flex w-full min-h-[44px] cursor-pointer items-center gap-1.5 rounded-md px-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 active:bg-s2" onClick={() => { setMobilePersonaOpen(false); useModalStore.getState().setIsPersonaModalOpen(true); }}><Icons.Edit/> {t("manage_personas")}</button>
+                    <button type="button" className="flex w-full min-h-[44px] cursor-pointer items-center gap-1.5 rounded-md px-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 active:bg-s2" onClick={() => { setMobilePersonaOpen(false); useModalStore.getState().setIsPersonaModalOpen(true); }}><Icons.Edit/> {t("manage_personas")}</button>
                   </div>
                 </div>
               )}
             </div>
             <div className="relative" ref={modelDropRef}>
-              <button onClick={() => setModelDropOpen(o => !o)} className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2">
+              <button type="button" onClick={() => setModelDropOpen(o => !o)} className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2">
                 <Icons.StarFilled />
               </button>
               {modelDropOpen && (
@@ -201,11 +201,11 @@ export function InputArea() {
             />
             <div className="flex shrink-0 items-center">
               {isSending ? (
-                <button className="flex h-9 w-9 items-center justify-center rounded-lg border border-danger text-danger-text active:bg-danger/10" onClick={chat.handleCancelGeneration}>
+                <button type="button" className="flex h-9 w-9 items-center justify-center rounded-lg border border-danger text-danger-text active:bg-danger/10" onClick={chat.handleCancelGeneration}>
                   <span className="text-[11px] font-bold">✕</span>
                 </button>
               ) : (
-                <button className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-on-accent disabled:opacity-45 active:scale-95" disabled={!canSend} onClick={() => void chat.handleSend()}>
+                <button type="button" className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-on-accent disabled:opacity-45 active:scale-95" disabled={!canSend} onClick={() => void chat.handleSend()}>
                   <Icons.Caret direction="r" />
                 </button>
               )}
@@ -295,8 +295,7 @@ export function InputArea() {
               {!isSending && (
                 <div className="relative flex items-center" ref={modelDropRef}>
                   <CustomTooltip content={t("starred_models")}>
-                    <button
-                      type="button"
+                    <button type="button"
                       className={cn(
                         "flex h-8 items-center justify-center rounded-[5px] bg-s2 px-2.5 text-warning-text transition-colors hover:bg-s3 hover:brightness-110",
                         modelDropOpen ? "brightness-110" : "",
@@ -331,7 +330,7 @@ export function InputArea() {
                 </div>
               )}
               {isSending ? (
-                <button
+                <button type="button"
                   className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface px-3.5 font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
                   onClick={chat.handleCancelGeneration}
                 >
@@ -339,7 +338,7 @@ export function InputArea() {
                 </button>
               ) : (
                 <CustomTooltip content={sendLabel}>
-                  <button
+                  <button type="button"
                     className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[5px] bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all duration-150 hover:brightness-110 disabled:cursor-default disabled:opacity-45 disabled:filter-none"
                     disabled={!canSend}
                     onClick={() => void chat.handleSend()}

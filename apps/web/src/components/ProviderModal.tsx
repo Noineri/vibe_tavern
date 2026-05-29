@@ -464,7 +464,7 @@ export function ProviderModal({
                     {/* Test Hi */}
                     {form.model && (
                       <div className="mb-4">
-                        <button onClick={() => void handleTestChat()} disabled={testingChat}
+                        <button type="button" onClick={() => void handleTestChat()} disabled={testingChat}
                           className="rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50"
                         >
                           {testingChat ? t("sending") : t("test_hi_btn")}

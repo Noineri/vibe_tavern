@@ -18,7 +18,7 @@ export function SaveBar({ dirty, saveState, onSave, onReset, label, className }:
   return (
     <div className={cn('flex items-center gap-2 text-[calc(var(--ui-fs)-3px)] text-t2 bg-s2 border border-border rounded-md mb-3 px-3 py-1.5', className)}>
       {dirty && <span>{t('unsaved_changes')}</span>}
-      <button
+      <button type="button"
         className={cn(
           'h-[37px] bg-accent text-on-accent rounded-md text-[calc(var(--ui-fs)-2px)] font-medium font-ui cursor-pointer transition-filter hover:brightness-110 px-[21px]',
           isSaved && '!bg-success-dim !text-success-text',
@@ -30,7 +30,7 @@ export function SaveBar({ dirty, saveState, onSave, onReset, label, className }:
         {isSaving ? t('saving') : isSaved ? t('saved') : label || t('save_btn')}
       </button>
       {onReset && dirty && (
-        <button className="h-[37px] bg-transparent text-t3 rounded-md text-[calc(var(--ui-fs)-2px)] font-ui cursor-pointer transition-colors hover:text-t1 px-4" onClick={onReset}>{t('cancel_btn')}</button>
+        <button type="button" className="h-[37px] bg-transparent text-t3 rounded-md text-[calc(var(--ui-fs)-2px)] font-ui cursor-pointer transition-colors hover:text-t1 px-4" onClick={onReset}>{t('cancel_btn')}</button>
       )}
     </div>
   );
@@ -48,7 +48,7 @@ export function SaveButton({ dirty, saveState, onClick, label }: SaveButtonProps
   const isSaving = saveState === 'saving';
   const isSaved = saveState === 'saved';
   return (
-    <button
+    <button type="button"
       className={cn(
         'h-[37px] bg-accent text-on-accent rounded-md text-[calc(var(--ui-fs)-2px)] font-medium font-ui cursor-pointer transition-filter hover:brightness-110 px-[21px]',
         isSaved && '!bg-success-dim !text-success-text',
