@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect, useRef } from "react";
+import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../../lib/cn.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
@@ -153,6 +153,7 @@ function FieldSection({ label, labelClassName, token, children }: {
 export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey }: PromptFieldsProps) {
   const { t } = useT();
   const disabled = !draft;
+  const [serviceOpen, setServiceOpen] = useState(false);
 
   const ta = useCallback((key: TextDraftKey, placeholder: string, minH = 100, labelKey?: string) => (
     <MobileExpandTextarea value={String(draft?.[key] ?? "")} onChange={(v) => onUpdateField(key, v)} label={labelKey ? t(labelKey) : undefined}>
@@ -210,16 +211,29 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey 
 
       <div className="h-2" />
 
-      <SectionHeader title={t("prompt_section_service")} />
-      <div className="-mt-4 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("prompt_section_service_desc")}</div>
+      <div className="rounded-md border border-border2 bg-s1/40">
+        <button type="button"
+          className="flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-s2/70"
+          onClick={() => setServiceOpen((v) => !v)}
+        >
+          <span className={cn("font-ui text-[13px] text-t4 transition-transform", serviceOpen && "rotate-180")}>▾</span>
+          <span className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t4">{t("prompt_section_service")}</span>
+          <div className="h-px flex-1 bg-border" />
+        </button>
+        {serviceOpen && (
+          <div className="flex flex-col gap-6 border-t border-border2 p-3 pt-4">
+            <div className="font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("prompt_section_service_desc")}</div>
 
-      <ServiceField label={t("summary")} description={t("summary_desc")} token={draft?.summary ?? ""}>
-        {ta("summary", t("summary_placeholder"), 100)}
-      </ServiceField>
+            <ServiceField label={t("summary")} description={t("summary_desc")} token={draft?.summary ?? ""}>
+              {ta("summary", t("summary_placeholder"), 100)}
+            </ServiceField>
 
-      <ServiceField label={t("script_ai_prompt_field")} description={t("script_ai_prompt_desc")} token={draft?.scriptAiSystemPrompt ?? ""}>
-        {ta("scriptAiSystemPrompt", t("script_ai_prompt_placeholder"), 160)}
-      </ServiceField>
+            <ServiceField label={t("script_ai_prompt_field")} description={t("script_ai_prompt_desc")} token={draft?.scriptAiSystemPrompt ?? ""}>
+              {ta("scriptAiSystemPrompt", t("script_ai_prompt_placeholder"), 160)}
+            </ServiceField>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
