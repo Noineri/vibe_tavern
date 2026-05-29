@@ -39,6 +39,7 @@ import {
   createChatAction,
   deleteChatAction,
   renameChatAction,
+  switchChatAction,
 } from "../stores/api-actions/chat-actions.js";
 
 export interface CharacterControllerActions {
@@ -338,7 +339,21 @@ export function useCharacterController(): CharacterControllerActions {
   }
 
   async function handleDeleteChat(chatId: ChatId): Promise<void> {
+    const snapshot = getSnapshot();
+    const characterId = snapshot?.character.id;
+    // Find next chat for the same character before deleting
+    let nextChatId: string | null = null;
+    if (snapshot && characterId) {
+      const remaining = snapshot.chats
+        .filter(c => c.id !== chatId)
+        .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
+      nextChatId = remaining[0]?.id ?? null;
+    }
     await deleteChatAction(chatId);
+    // Switch to next chat or clear
+    if (nextChatId) {
+      await switchChatAction(nextChatId as ChatId);
+    }
   }
 
   async function handleRenameChat(chatId: ChatId, title: string): Promise<void> {
