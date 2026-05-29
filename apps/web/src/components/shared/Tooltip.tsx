@@ -18,7 +18,7 @@ export function CustomTooltip({ children, content, side = "top", align = "center
       </Tooltip.Trigger>
       <Tooltip.Portal>
         <Tooltip.Content
-          className="z-50 rounded-md bg-t1 px-2.5 py-1.5 text-xs text-bg shadow-md animate-in fade-in zoom-in-95 duration-150"
+          className="z-[9999] rounded-md bg-t1 px-2.5 py-1.5 text-xs text-bg shadow-md animate-in fade-in zoom-in-95 duration-150"
           side={side}
           align={align}
           sideOffset={5}
