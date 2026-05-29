@@ -51,6 +51,7 @@ export function AvatarPanel({ src, onClose }: AvatarPanelProps) {
   const [isDragging, setIsDragging] = useState(false);
   const dragging = useRef(false);
   const attachedRef = useRef(true);
+  const wheelRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef({ x: 0, y: 0 });
   const frameRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef(1);
@@ -139,6 +140,18 @@ export function AvatarPanel({ src, onClose }: AvatarPanelProps) {
     return () => window.removeEventListener('resize', onResize);
   }, [clampFramePos, recomputeAttached]);
 
+  // Non-passive wheel listener to allow preventDefault (zoom)
+  useEffect(() => {
+    const el = wheelRef.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      setTargetZoom(targetZoomRef.current * (1 - event.deltaY * 0.0011));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [setTargetZoom]);
+
   const onMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -174,7 +187,7 @@ export function AvatarPanel({ src, onClose }: AvatarPanelProps) {
 
   return (
     <div
-      ref={frameRef}
+      ref={(el) => { frameRef.current = el; wheelRef.current = el; }}
       className={[
         'group fixed z-[600] inline-block select-none overflow-visible rounded-md border border-border2/70 bg-bg/30 shadow-[0_10px_35px_rgba(0,0,0,0.35)] opacity-0 transition-opacity duration-150 will-change-transform',
         isReady && 'opacity-100',
@@ -189,10 +202,6 @@ export function AvatarPanel({ src, onClose }: AvatarPanelProps) {
       }}
       onMouseDown={onMouseDown}
       onDoubleClick={toggleFit}
-      onWheel={(event) => {
-        event.preventDefault();
-        setTargetZoom(targetZoomRef.current * (1 - event.deltaY * 0.0011));
-      }}
       title={t('drag_scroll_zoom')}
     >
       <img
