@@ -335,10 +335,10 @@ export function CharacterForm({
       {/* Avatar + Name + Tags */}
       {avatarOrientation === "landscape" && displayAvatar ? (
         /* Landscape: full-width avatar above name/tags */
-        <div className="mb-5">
+        <div className="mb-5 flex flex-col items-center gap-3">
           <CustomTooltip content={t("change_avatar")}>
           <div
-            className="group relative mb-3 cursor-pointer overflow-hidden rounded-lg"
+            className="group relative cursor-pointer overflow-hidden rounded-lg"
             onClick={() => avaInputRef.current?.click()}
           >
             <input ref={avaInputRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleAvatarPick(e.target.files)} />
@@ -346,7 +346,7 @@ export function CharacterForm({
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
           </div>
           </CustomTooltip>
-          <div className="flex flex-col gap-3">
+          <div className="w-full flex flex-col gap-3">
             <div>
               <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
               <input type="text" className={inputCls + mInput} style={inputPad} disabled={isSaving} {...register("name")} />
