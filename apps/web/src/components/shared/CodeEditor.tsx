@@ -62,6 +62,15 @@ const rpTheme = EditorView.theme(
 );
 
 /** Syntax token colors matching Espresso palette. */
+const pageScrollTheme = EditorView.theme({
+  "&.cm-editor": {
+    height: "auto",
+  },
+  ".cm-scroller": {
+    overflow: "visible !important",
+  },
+});
+
 const rpTokens = EditorView.baseTheme({
   "&dark .tok-keyword": { color: "var(--accent-t)" },
   "&dark .tok-string": { color: "oklch(0.72 0.10 145)" },
@@ -84,6 +93,7 @@ interface CodeEditorProps {
   minHeight?: string;
   className?: string;
   readOnly?: boolean;
+  scrollMode?: "inner" | "page";
 }
 
 export function CodeEditor({
@@ -92,6 +102,7 @@ export function CodeEditor({
   minHeight = "300px",
   className,
   readOnly = false,
+  scrollMode = "inner",
 }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -106,6 +117,7 @@ export function CodeEditor({
       javascript(),
       rpTheme,
       rpTokens,
+      ...(scrollMode === "page" ? [pageScrollTheme] : []),
       EditorView.lineWrapping,
       EditorState.readOnly.of(readOnly),
       EditorView.updateListener.of((update) => {
@@ -116,7 +128,7 @@ export function CodeEditor({
         }
       }),
     ],
-    [readOnly]
+    [readOnly, scrollMode]
   );
 
   useEffect(() => {
@@ -159,7 +171,7 @@ export function CodeEditor({
     <div
       ref={containerRef}
       className={className}
-      style={{ minHeight, overflow: "auto" }}
+      style={{ minHeight, overflow: scrollMode === "page" ? "visible" : "auto" }}
     />
   );
 }

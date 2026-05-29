@@ -147,27 +147,6 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 					/>
 				</div>
 
-				{/* Message width */}
-				<div className="px-5 py-2.5">
-					<div className="flex min-h-[48px] items-center justify-between gap-3">
-						<div className="flex items-center gap-3">
-							<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
-								<Icons.Chat />
-							</div>
-							<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_message_width")}</span>
-						</div>
-						<select
-							className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none pl-[7px] sel-arrow min-h-[36px]"
-							value={settings.messageWidth}
-							onChange={(e) => setSetting("messageWidth", e.target.value as "narrow" | "medium" | "wide")}
-						>
-							<option value="narrow">{t("tweaks_narrow")}</option>
-							<option value="medium">{t("tweaks_medium")}</option>
-							<option value="wide">{t("tweaks_wide")}</option>
-						</select>
-					</div>
-				</div>
-
 				{/* Language */}
 				<div className="px-5 pt-5 pb-2">
 					<div className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.08em] text-t3">{t("tweaks_language")}</div>
@@ -198,20 +177,6 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 							</button>
 						))}
 					</div>
-				</div>
-
-				{/* Mobile access */}
-				<div className="px-5 pt-5 pb-2">
-					<div className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.08em] text-t3">{t("mobile_access")}</div>
-				</div>
-				<div className="px-5 py-2.5">
-					<button
-						className="flex w-full min-h-[48px] cursor-pointer items-center justify-center gap-2 rounded-lg bg-accent px-4 font-ui text-[length:var(--ui-fs)] font-medium text-on-accent active:opacity-90"
-						onClick={onOpenMobileAccess}
-					>
-						<Icons.Phone />
-						{t("mobile_access_enable")}
-					</button>
 				</div>
 
 				{/* Safe area spacer */}

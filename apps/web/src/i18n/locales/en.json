@@ -33,6 +33,7 @@
   "sidebar_delete_branch_body": "Delete the active branch and its messages? Main timeline will stay.",
   "sidebar_switch_to_non_main": "Switch to a non-main branch first",
   "sidebar_new_chat_active_char": "New chat for active character",
+  "new_chat": "New chat",
   "sidebar_import_character": "Import character (PNG/JSON)",
   "sidebar_import_chat": "Import chat (JSONL)",
   "sidebar_create_character": "Create character",

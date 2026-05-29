@@ -170,6 +170,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     setConfirmDeleteOpen(false);
     setDirty(false);
     setSaveState("idle");
+    setMobileDetailOpen(false);
     void input.onDelete(deleteId);
   };
 

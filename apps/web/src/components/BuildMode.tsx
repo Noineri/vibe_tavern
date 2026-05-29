@@ -64,6 +64,7 @@ export function BuildMode() {
     onExportJson={() => { void character.handleExportCharacter(charData.id); }}
     onExportPng={() => { void character.handleExportPng(charData.id); }}
     onDuplicate={() => { void character.handleDuplicateCharacter(charData.id); }}
+    onCreateChat={() => character.handleCreateChat(charData.id)}
     onDelete={() => {
       setConfirmDestroy({
         title: t("char_delete"),
@@ -116,10 +117,11 @@ interface BuildModeInnerProps {
   onExportPng: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onCreateChat: () => Promise<void>;
   hasAvatar: boolean;
 }
 
-function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, currentTraceIndex, setSelectedTraceId, promptTraceHistory, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete, hasAvatar }: BuildModeInnerProps) {
+function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, currentTraceIndex, setSelectedTraceId, promptTraceHistory, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete, onCreateChat, hasAvatar }: BuildModeInnerProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const panels = useBuildPanels();
@@ -144,8 +146,8 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
   // Track avatar-preview dirtiness separately
   const isDirty = form.formState.isDirty || !!avatarPreview;
 
-  function handleSave(): void {
-    void form.handleSubmit(async (data) => {
+  async function handleSave(): Promise<void> {
+    await form.handleSubmit(async (data) => {
       await onSave(data);
       form.reset(data);
       setAvatarPreview(null);
@@ -191,6 +193,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
             onExportPng={onExportPng}
             onDuplicate={onDuplicate}
             onDelete={onDelete}
+            onAfterImport={async () => { await handleSave(); void onCreateChat(); }}
             hasAvatar={hasAvatar}
           />
         </div>

@@ -64,6 +64,13 @@ echo Starting server...
 echo Press Ctrl+C to stop.
 echo.
 
+REM Проверяем, не занят ли порт
+powershell.exe -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 8787 -ErrorAction SilentlyContinue) { Write-Host ''; Write-Host 'ERROR: Port 8787 is already in use.'; Write-Host 'Kill the old process first:'; Get-NetTCPConnection -LocalPort 8787 | ForEach-Object { Write-Host ('  taskkill /PID ' + $_.OwningProcess + ' /F') }; Write-Host ''; exit 1 }"
+if errorlevel 1 (
+    pause
+    exit /b 1
+)
+
 bun services/api/src/prod-server.ts
 set "EXIT_CODE=%ERRORLEVEL%"
 
