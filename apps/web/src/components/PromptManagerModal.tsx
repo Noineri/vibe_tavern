@@ -297,21 +297,27 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           {(!isMobile || mobileDetailOpen) && (
           <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
             {/* Advanced mode accordion */}
-            <details open={advancedMode} onToggle={(e) => setAdvancedMode((e.target as HTMLDetailsElement).open)} className="mx-5 mt-4">
-              <summary className="flex cursor-pointer items-center gap-3 rounded-md border border-border2 bg-s2 px-4 py-3 select-none">
+            <div className="mx-5 mt-4 mb-1">
+              <button type="button"
+                className="flex w-full cursor-pointer items-center gap-3 rounded-md border border-border2 bg-s2 px-4 py-3 select-none transition-colors hover:bg-s3"
+                onClick={() => setAdvancedMode(!advancedMode)}
+              >
                 <Toggle checked={advancedMode} onChange={setAdvancedMode} />
-                <div>
+                <div className="flex-1 text-left">
                   <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">{t("preset_advanced_mode")}</span>
                   <span className="ml-2 font-ui text-[11px] text-t4">{t("preset_advanced_mode_hint")}</span>
                 </div>
-              </summary>
-              <div className="max-h-[240px] overflow-y-auto rounded-b-md border-x border-b border-border2 bg-s1 px-4 py-3">
-                <InjectionTable
-                  injections={draft.customInjections}
-                  onChange={(injections) => { setDraft((d) => ({ ...d, customInjections: injections })); setDirty(true); setSaveState("idle"); }}
-                />
-              </div>
-            </details>
+                <span className={cn("text-t4 transition-transform", advancedMode && "rotate-180")}>▾</span>
+              </button>
+              {advancedMode && (
+                <div className="max-h-[240px] overflow-y-auto rounded-b-md border-x border-b border-border2 bg-s1 px-4 py-3">
+                  <InjectionTable
+                    injections={draft.customInjections}
+                    onChange={(injections) => { setDraft((d) => ({ ...d, customInjections: injections })); setDirty(true); setSaveState("idle"); }}
+                  />
+                </div>
+              )}
+            </div>
 
             <PromptFields
               draft={activePreset ? draft : null}
