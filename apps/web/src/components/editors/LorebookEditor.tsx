@@ -44,6 +44,20 @@ import { LorebookImportModal } from "./LorebookImportModal.js";
 type Tab = "lorebooks" | "scripts";
 type View = "pick" | "list" | "editor";
 
+const WORLD_LORE_TAB_KEY = "vibe-tavern.world-lore-tab";
+
+function readStickyWorldLoreTab(): Tab | null {
+  if (typeof window === "undefined") return null;
+  const value = window.sessionStorage.getItem(WORLD_LORE_TAB_KEY);
+  return value === "lorebooks" || value === "scripts" ? value : null;
+}
+
+function writeStickyWorldLoreTab(tab: Tab | null): void {
+  if (typeof window === "undefined") return;
+  if (tab) window.sessionStorage.setItem(WORLD_LORE_TAB_KEY, tab);
+  else window.sessionStorage.removeItem(WORLD_LORE_TAB_KEY);
+}
+
 interface LorebookEditorProps {
   characterId: string;
   chatId: string | null;
@@ -93,8 +107,9 @@ export function LorebookEditor({
   const isMobile = useIsMobile();
 
   // ── Навигация ──
-  const [view, setView] = useState<View>("pick");
-  const [tab, setTab] = useState<Tab>("lorebooks");
+  const stickyInitialTab = useRef<Tab | null>(readStickyWorldLoreTab());
+  const [view, setView] = useState<View>(() => stickyInitialTab.current ? "list" : "pick");
+  const [tab, setTab] = useState<Tab>(() => stickyInitialTab.current ?? "lorebooks");
   const [scope, setScope] = useState<Scope>("character");
 
   // Анимация переходов
@@ -133,6 +148,7 @@ export function LorebookEditor({
   // ── Переход pick → list ──
   const handlePick = (target: Tab) => {
     setTab(target);
+    writeStickyWorldLoreTab(target);
     setFadingTab(target);
     setPhase("fading");
     timer.current = setTimeout(() => {
@@ -146,10 +162,22 @@ export function LorebookEditor({
   };
 
   const handleBackToPick = () => {
+    writeStickyWorldLoreTab(null);
     setView("pick");
     setActiveEntryId(null);
     scriptPanel.setActiveScriptId(null);
     setPhase("idle");
+  };
+
+  const handleSwitchTab = (target: Tab) => {
+    if (target === tab) return;
+    writeStickyWorldLoreTab(target);
+    setTab(target);
+    setView("list");
+    setActiveEntryId(null);
+    scriptPanel.setActiveScriptId(null);
+    setPhase("idle");
+    setFadingTab(null);
   };
 
   // ── Редактирование мета лорбука (inline в аккордеоне) ──
@@ -632,6 +660,22 @@ export function LorebookEditor({
           : t("scripts_card_title")}
       </span>
       <div className="ml-auto flex gap-1">
+        <CustomTooltip
+          content={tab === "lorebooks" ? t("scripts_card_title") : t("lorebooks_card_title")}
+        >
+          <button
+            type="button"
+            className="flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded px-2 font-ui text-[12px] text-t3 transition-all hover:bg-s2 hover:text-t1"
+            aria-label={tab === "lorebooks" ? t("scripts_card_title") : t("lorebooks_card_title")}
+            onClick={() => handleSwitchTab(tab === "lorebooks" ? "scripts" : "lorebooks")}
+          >
+            {tab === "lorebooks" ? <Ic.terminal /> : <Ic.book />}
+            {!isMobile && (
+              <span>{tab === "lorebooks" ? t("scripts_card_title") : t("lorebooks_card_title")}</span>
+            )}
+          </button>
+        </CustomTooltip>
+        <div className="mx-1 h-8 w-px bg-border" />
         {tab === "lorebooks" && (
           <>
             <CustomTooltip content={t("new_lorebook")}>

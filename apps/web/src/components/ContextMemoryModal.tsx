@@ -38,13 +38,19 @@ function DualRangeSlider({ min, max, from, to, disabled, onChange }: {
   disabled?: boolean;
   onChange: (from: number, to: number) => void;
 }) {
+  const clampValue = (v: number) => Math.min(max, Math.max(min, Number.isFinite(v) ? v : min));
+  const safeFrom = Math.min(clampValue(from), clampValue(to));
+  const safeTo = Math.max(clampValue(from), clampValue(to));
+
   function handleFrom(v: number) {
-    onChange(Math.min(v, to), to);
+    const next = clampValue(v);
+    onChange(Math.min(next, safeTo), safeTo);
   }
   function handleTo(v: number) {
-    onChange(from, Math.max(from, v));
+    const next = clampValue(v);
+    onChange(safeFrom, Math.max(safeFrom, next));
   }
-  const trackPct = (v: number) => max > min ? ((v - min) / (max - min)) * 100 : 0;
+  const trackPct = (v: number) => max > min ? Math.min(100, Math.max(0, ((clampValue(v) - min) / (max - min)) * 100)) : 0;
 
   const thumbCls =
     "absolute inset-x-0 top-0 h-5 w-full appearance-none bg-transparent " +
@@ -62,17 +68,17 @@ function DualRangeSlider({ min, max, from, to, disabled, onChange }: {
       {/* Filled track between the two thumbs */}
       <div
         className="absolute top-[7px] h-[6px] rounded-full bg-accent"
-        style={{ left: `${trackPct(from)}%`, width: `${trackPct(to) - trackPct(from)}%` }}
+        style={{ left: `${trackPct(safeFrom)}%`, width: `${Math.max(0, trackPct(safeTo) - trackPct(safeFrom))}%` }}
       />
       {/* Both inputs: pointer-events:none on container, auto on thumb via Tailwind */}
       <input
-        type="range" min={min} max={max} value={from}
+        type="range" min={min} max={max} value={safeFrom}
         disabled={disabled}
         onChange={(e) => handleFrom(Number(e.target.value))}
         className={cn("dual-range-l z-[2] pointer-events-none", thumbCls)}
       />
       <input
-        type="range" min={min} max={max} value={to}
+        type="range" min={min} max={max} value={safeTo}
         disabled={disabled}
         onChange={(e) => handleTo(Number(e.target.value))}
         className={cn("dual-range-u z-[3] pointer-events-none", thumbCls)}
@@ -220,7 +226,8 @@ export function ContextMemoryModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    setRangeTo((prev) => Math.max(1, Math.min(Math.max(prev, messageCount), maxMessage)));
+    setRangeFrom((prev) => clamp(prev, 1, maxMessage));
+    setRangeTo((prev) => clamp(Math.max(prev, 1), 1, maxMessage));
     setHistoryLimit(messageHistoryLimit || messageCount || 1);
     setAutoConfig({ ...DEFAULT_AUTO_CONFIG, ...autoSummaryConfig });
   }, [autoSummaryConfig, isOpen, maxMessage, messageCount, messageHistoryLimit]);
