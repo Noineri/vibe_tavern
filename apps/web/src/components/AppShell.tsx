@@ -183,7 +183,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         {shellSurface}
       </main>
 
-      {tweaksOpen && <TweaksPanel settings={tweaksPanelSettings} setSetting={handleSetTweak} onOpenMobileAccess={async () => {
+      {tweaksOpen && <TweaksPanel settings={tweaksPanelSettings} setSetting={handleSetTweak} onClose={() => setTweaksOpen(false)} onOpenMobileAccess={async () => {
           // Ensure a token exists before opening the modal
           try {
             const resp = await fetch("/api/settings/mobile-access");

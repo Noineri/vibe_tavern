@@ -307,9 +307,18 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     }
   };
 
+  const codeSaveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
   const updateField = (field: string, value: unknown) => {
     if (!activeScriptId) return;
-    handleUpdateScript(activeScriptId, { [field]: value } as Parameters<typeof updateScript>[1]);
+    if (field === "code") {
+      clearTimeout(codeSaveTimer.current);
+      codeSaveTimer.current = setTimeout(() => {
+        void handleUpdateScript(activeScriptId, { code: value as string });
+      }, 600);
+    } else {
+      void handleUpdateScript(activeScriptId, { [field]: value } as Parameters<typeof updateScript>[1]);
+    }
   };
 
   const runTest = () => {

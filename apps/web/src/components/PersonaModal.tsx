@@ -88,8 +88,8 @@ export function PersonaModal(input: PersonaModalProps) {
     form.reset({
       name: persona.name,
       description: persona.description,
-      pronouns: persona.pronouns ?? "",
-      pronounsCustom: "",
+      pronouns: PRONOUN_OPTIONS.some(o => o.v === persona.pronouns) ? (persona.pronouns ?? "") : "custom",
+      pronounsCustom: PRONOUN_OPTIONS.some(o => o.v === persona.pronouns) ? "" : (persona.pronouns ?? ""),
       avatarAssetId: persona.avatarAssetId,
       avatarFullAssetId: null,
       avatarPreview: null,
