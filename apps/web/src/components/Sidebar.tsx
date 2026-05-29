@@ -81,6 +81,13 @@ export function Sidebar() {
   const [importModal, setImportModal] = useState<"character" | "chat" | null>(null);
   const [charSwitcherOpen, setCharSwitcherOpen] = useState(false);
   const charSwitcherRef = useRef<HTMLDivElement | null>(null);
+  const [flyoutCharId, setFlyoutCharId] = useState<string | null>(null);
+  const flyoutRef = useRef<HTMLDivElement | null>(null);
+
+  const flyoutChats = useMemo(
+    () => flyoutCharId ? allChats.filter(c => c.characterId === flyoutCharId) : [],
+    [allChats, flyoutCharId],
+  );
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent): void {
@@ -89,6 +96,7 @@ export function Sidebar() {
       if (chatMenuRef.current && !chatMenuRef.current.contains(target)) setChatMenuId(null);
       if (branchPopRef.current && !branchPopRef.current.contains(target)) setBranchPopId(null);
       if (charSwitcherRef.current && !charSwitcherRef.current.contains(target)) setCharSwitcherOpen(false);
+      if (flyoutRef.current && !flyoutRef.current.contains(target)) setFlyoutCharId(null);
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -100,6 +108,13 @@ export function Sidebar() {
       top: rect.bottom + 4,
       right: window.innerWidth - rect.right,
     };
+  }
+
+  function formatShortDate(value: string | null | undefined): string {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
   return (
@@ -128,47 +143,30 @@ export function Sidebar() {
 
         {sidebarCollapsed && mode === 'play' && (
           <div className="flex min-h-0 flex-1 flex-col items-center">
-            <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto py-2">
+            <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto py-2 px-[7px]">
               {characterTabs.map((tab) => {
                 const isActive = tab.chatId === activeChatId
                   || (!tab.chatId && tab.id === selectedCharacterId);
+                const isFlyout = flyoutCharId === tab.id;
                 return (
                   <CustomTooltip key={tab.id} content={tab.name} side="right">
                     <div
                       className={cn(
-                        'flex h-11 w-11 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all duration-150 hover:rounded-xl hover:bg-s2',
-                        isActive && 'rounded-xl bg-accent-dim ring-2 ring-accent'
+                        'relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-all duration-150 hover:rounded-xl hover:bg-s2',
+                        (isActive || isFlyout) && 'rounded-xl bg-accent-dim',
                       )}
                       onClick={() => {
-                        if (tab.chatId) {
-                          void chat.handleSwitchChat(tab.chatId);
-                        } else {
-                          useChatStore.getState().setSelectedCharacterId(tab.id);
-                        }
+                        useChatStore.getState().setSelectedCharacterId(tab.id);
+                        setFlyoutCharId(prev => prev === tab.id ? null : tab.id);
                       }}
                     >
-                      <span className={cn('flex h-full w-full items-center justify-center rounded-full font-ui text-sm', isActive ? 'bg-accent text-on-accent' : 'bg-s3 text-t2')}>
+                      {/* Pill-индикатор для активного персонажа */}
+                      {isActive && (
+                        <div className="absolute -left-[7px] top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-accent transition-all" />
+                      )}
+                      <span className={cn('flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm', isActive ? 'bg-accent text-on-accent' : 'bg-s3 text-t2')}>
                         {tab.avatarAssetId ? <img src={avatarUrl(tab.avatarAssetId)} alt={tab.name} className="h-full w-full object-cover object-top" /> : initials(tab.name)}
                       </span>
-                    </div>
-                  </CustomTooltip>
-                );
-              })}
-
-              <div className="my-1 h-px w-8 shrink-0 bg-border" />
-
-              {chats.map((chatItem) => {
-                const initial = (chatItem.title || '?').trim().charAt(0).toUpperCase() || '?';
-                return (
-                  <CustomTooltip key={chatItem.id} content={chatItem.title} side="right">
-                    <div
-                      className={cn(
-                        'flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full font-ui text-xs font-medium transition-all duration-150 hover:rounded-xl hover:bg-s2',
-                        chatItem.id === activeChatId ? 'rounded-xl bg-accent text-on-accent' : 'bg-s3 text-t2'
-                      )}
-                      onClick={() => void chat.handleSwitchChat(chatItem.id)}
-                    >
-                      {initial}
                     </div>
                   </CustomTooltip>
                 );
@@ -179,15 +177,101 @@ export function Sidebar() {
 
             <div className="flex shrink-0 flex-col items-center gap-1 py-2">
               <CustomTooltip content={t("sidebar_prompt_manager")} side="right">
-                <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}><Icons.Terminal /></div>
+                <div className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}><Icons.Terminal /></div>
               </CustomTooltip>
               <CustomTooltip content={personaName} side="right">
-                <div className="flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}>
+                <div className="flex h-9 w-9 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}>
                   {personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(personaName)}
                 </div>
               </CustomTooltip>
             </div>
           </div>
+        )}
+
+        {/* ═══ FLYOUT: Чаты персонажа при свёрнутом сайдбаре ═══ */}
+        {flyoutCharId && sidebarCollapsed && createPortal(
+          <>
+            {/* Панель */}
+            <div
+              ref={flyoutRef}
+              className="fixed left-[54px] top-0 z-[301] flex h-screen w-[220px] flex-col border-r border-border bg-surface shadow-[4px_0_24px_rgba(0,0,0,0.4)]"
+              style={{ animation: "flyoutIn 0.15s ease-out" }}
+            >
+              {/* Заголовок с именем персонажа */}
+              <div className="flex h-[52px] shrink-0 items-center gap-2.5 border-b border-border px-3">
+                <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full font-ui text-sm bg-s3 text-t2')}>
+                  {(() => { const tab = characterTabs.find(t => t.id === flyoutCharId); return tab?.avatarAssetId ? <img src={avatarUrl(tab.avatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(tab?.name ?? '?'); })()}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[calc(var(--ui-fs)+0px)] font-medium text-t1">
+                  {characterTabs.find(t => t.id === flyoutCharId)?.name}
+                </span>
+                <CustomTooltip content={t("sidebar_new_chat_active_char")}>
+                  <button className="iBtn size-6" onClick={() => { void character.handleCreateChat(flyoutCharId); }}><Icons.Plus /></button>
+                </CustomTooltip>
+                <CustomTooltip content={t("close")}>
+                  <button className="iBtn size-6" aria-label={t("close")} onClick={() => setFlyoutCharId(null)}><Icons.Close /></button>
+                </CustomTooltip>
+              </div>
+
+              {/* Список чатов */}
+              <div className="flex-1 overflow-y-auto py-1">
+                <div className="px-3 pb-1 pt-1 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_chats")}</div>
+                {flyoutChats.length === 0 ? (
+                  <div className="px-3 py-4 text-center text-xs text-t3">{t("sidebar_send_a_message")}</div>
+                ) : (
+                  flyoutChats.map((chatItem) => {
+                    const isActive = chatItem.id === activeChatId;
+                    return (
+                      <div key={chatItem.id}>
+                        <div
+                          className={cn(
+                            'mx-1 flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 transition-colors hover:bg-s2',
+                            isActive && 'bg-accent-dim',
+                          )}
+                          onClick={() => {
+                            void chat.handleSwitchChat(chatItem.id);
+                          }}
+                        >
+                          <Icons.Chat className="h-4 w-4 shrink-0 text-t3" />
+                          <div className="min-w-0 flex-1">
+                            <div className={cn('truncate text-[calc(var(--ui-fs)-1px)]', isActive ? 'text-accent-t font-medium' : 'text-t1')}>{chatItem.title}</div>
+                            <div className="truncate text-[calc(var(--ui-fs)-3px)] text-t3">{chatItem.messageCount} msgs</div>
+                          </div>
+                        </div>
+                        {/* Ветки под активным чатом */}
+                        {isActive && branches.length > 0 && (
+                          <div className="ml-5 mr-2 mt-0.5 mb-1 flex flex-col border-l-2 border-border pl-3">
+                            {branches.map((branch) => {
+                              const isActiveBranch = branch.id === activeBranchId;
+                              return (
+                                <div
+                                  key={branch.id}
+                                  className={cn(
+                                    'relative flex cursor-pointer items-center gap-1.5 rounded py-1 pr-2 text-[calc(var(--ui-fs)-2px)] transition-colors hover:bg-s2',
+                                    isActiveBranch ? 'text-accent-t font-medium' : 'text-t2',
+                                  )}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void chat.handleActivateBranch(branch.id);
+                                  }}
+                                >
+                                  {/* Точка-коннектор на линии */}
+                                  <div className={cn('absolute -left-[17px] top-1/2 h-[2px] w-3', isActiveBranch ? 'bg-accent' : 'bg-border')} />
+                                  <div className={cn('h-1.5 w-1.5 rounded-full shrink-0', isActiveBranch ? 'bg-accent' : 'bg-t3')} />
+                                  <span className="truncate">{branch.label || t("sidebar_unnamed_branch")}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </>,
+          document.body,
         )}
 
         {sidebarCollapsed && mode === 'build' && (
@@ -291,10 +375,9 @@ export function Sidebar() {
                       )}
                       style={{ zIndex: menuOpen ? 100 : 1 }}
                       onClick={() => {
+                        useChatStore.getState().setSelectedCharacterId(tab.id);
                         if (tab.chatId) {
                           void chat.handleSwitchChat(tab.chatId);
-                        } else {
-                          useChatStore.getState().setSelectedCharacterId(tab.id);
                         }
                       }}
                     >
@@ -420,56 +503,60 @@ export function Sidebar() {
                   return (
                     <div
                       key={chatItem.id}
-                      className={cn(
-                        'group relative mx-1 flex cursor-pointer flex-col rounded px-2.5 py-1.5 transition-colors duration-100 hover:bg-s2',
-                        isActive && 'bg-accent-dim'
-                      )}
+                      className="group relative mx-1 flex flex-col rounded"
                       style={{ zIndex: chatMenuOpen || branchPopOpen ? 100 : 1 }}
-                      onClick={() => void chat.handleSwitchChat(chatItem.id)}
                     >
-                      {renamingChatId === chatItem.id ? (
-                        <input
-                          className="mb-px w-full rounded border border-accent bg-bg px-[5px] py-[2px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none"
-                          value={renameDraft}
-                          autoFocus
-                          onChange={(event) => setRenameDraft(event.target.value)}
-                          onClick={(event) => event.stopPropagation()}
-                          onBlur={commitRename}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              commitRename();
-                            } else if (event.key === "Escape") {
-                              event.preventDefault();
-                              setRenamingChatId(null);
-                            }
-                          }}
-                        />
-                      ) : (
-                        <div className={cn(
-                          'overflow-hidden text-ellipsis whitespace-nowrap pr-4 text-[calc(var(--ui-fs)-1px)] text-t1',
-                          isActive && 'text-accent-t'
-                        )}>{chatItem.title}</div>
-                      )}
-                      <div className="mt-px flex items-center gap-1.5">
-                        <div className="text-[calc(var(--ui-fs)-3px)] text-t3">
-                          {chatItem.characterName} · {chatItem.messageCount} msgs
-                        </div>
-                        {isActive && branchCount > 0 && (
-                          <CustomTooltip content={t("sidebar_chat_branches")}>
-                            <div
-                              className="inline-flex cursor-pointer items-center gap-[3px] rounded px-1 py-px font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3 transition-colors duration-100 hover:bg-border hover:text-t1 [&_svg]:h-2.5 [&_svg]:w-2.5"
-                              onMouseDown={(event) => event.stopPropagation()}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setBranchPopId((current) => current === chatItem.id ? null : chatItem.id);
-                                setChatMenuId(null);
-                              }}
-                            >
-                              <Icons.Stack /> {branchCount}
-                            </div>
-                          </CustomTooltip>
+                      <div
+                        className={cn(
+                          'relative cursor-pointer rounded px-2.5 py-1.5 transition-colors duration-100',
+                          isActive ? 'bg-accent-dim hover:bg-accent-dim' : 'hover:bg-s2'
                         )}
+                        onClick={() => void chat.handleSwitchChat(chatItem.id)}
+                      >
+                        {renamingChatId === chatItem.id ? (
+                          <input
+                            className="mb-px w-full rounded border border-accent bg-bg px-[5px] py-[2px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none"
+                            value={renameDraft}
+                            autoFocus
+                            onChange={(event) => setRenameDraft(event.target.value)}
+                            onClick={(event) => event.stopPropagation()}
+                            onBlur={commitRename}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                commitRename();
+                              } else if (event.key === "Escape") {
+                                event.preventDefault();
+                                setRenamingChatId(null);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <div className={cn(
+                            'overflow-hidden text-ellipsis whitespace-nowrap pr-4 text-[calc(var(--ui-fs)-1px)] text-t1',
+                            isActive && 'text-accent-t'
+                          )}>{chatItem.title}</div>
+                        )}
+                        <div className="mt-px flex items-center gap-1.5">
+                          <div className="text-[calc(var(--ui-fs)-3px)] text-t3">
+                            {chatItem.characterName} · {chatItem.messageCount} msgs
+                          </div>
+                          {isActive && branchCount > 0 && (
+                            <CustomTooltip content={t("sidebar_chat_branches")}>
+                              <div
+                                className="inline-flex cursor-pointer items-center gap-[3px] rounded px-1 py-px font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t3 transition-colors duration-100 hover:bg-border hover:text-t1 [&_svg]:h-2.5 [&_svg]:w-2.5"
+                                onMouseDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setBranchPopId((current) => current === chatItem.id ? null : chatItem.id);
+                                  setChatMenuId(null);
+                                }}
+                              >
+                                <Icons.Stack /> {branchCount}
+                              </div>
+                            </CustomTooltip>
+                          )}
+                        </div>
                       </div>
 
                       {!chatMenuOpen && (
@@ -544,75 +631,76 @@ export function Sidebar() {
                       )}
 
                       {branchPopOpen && isActive && (
-                        <div className="mt-1.5 flex cursor-default flex-col gap-0.5 border-t border-dashed border-border2 pt-1.5" ref={branchPopRef} onClick={(event) => event.stopPropagation()}>
+                        <div className="mt-1.5 flex cursor-default flex-col border-t border-dashed border-border2 pt-1.5" ref={branchPopRef} onClick={(event) => event.stopPropagation()}>
                           <div className="mb-1 pl-1 text-[9px] font-medium uppercase tracking-[0.05em] text-t3">
                             {t("sidebar_timeline_branches")}
                           </div>
-                          {branches.map((branch) => {
-                            const isActiveBranch = branch.id === activeBranchId;
-                            return (
-                              <div
-                                key={branch.id}
-                                className={cn(
-                                  'group/br relative cursor-pointer rounded pl-3.5 pr-2 transition-colors duration-100 before:absolute before:left-[5px] before:top-[9px] before:h-1 before:w-1 before:rounded-full before:transition-colors',
-                                  isActiveBranch ? 'bg-accent-dim before:bg-accent' : 'before:bg-border2 hover:bg-s2 hover:before:bg-t3'
-                                )}
-                                style={{ paddingTop: 5, paddingBottom: 5 }}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  void chat.handleActivateBranch(branch.id);
-                                }}
-                              >
-                                <div className={cn(
-                                  'mb-px min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] font-medium text-t2',
-                                  isActiveBranch && 'text-accent-t'
-                                )}>{branch.label || t("sidebar_unnamed_branch")}</div>
-                                <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] italic text-t3">
-                                  {isActiveBranch ? t("sidebar_active") : t("sidebar_tap_to_switch")}
-                                </div>
-                              </div>
-                            );
-                          })}
-                          <div
-                            className="mt-0.5 cursor-pointer rounded border-t border-border px-2 py-1.5 text-center text-[calc(var(--ui-fs)-3px)] italic text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1"
-                            role="button"
-                            tabIndex={0}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void chat.handleFork(undefined);
-                            }}
-                            onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.stopPropagation(); void chat.handleFork(undefined); } }}
-                          >
-                            {t("sidebar_fork_from_here")}
-                          </div>
-                          {(() => {
-                            const rootBranch = branches.find((b) => b.parentBranchId === null);
-                            const activeIsRoot = rootBranch != null && activeBranchId === rootBranch.id;
-                            const canAct = !activeIsRoot && branches.length > 1;
-                            return (
-                              <CustomTooltip content={canAct ? "" : t("sidebar_switch_to_non_main")}>
-                                <div className={cn(
-                                  'cursor-pointer rounded border-t border-border px-2 py-1.5 text-center text-[calc(var(--ui-fs)-3px)] italic text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1',
-                                  !canAct && 'opacity-45 cursor-not-allowed'
-                                )}
-                                  role="button" tabIndex={0} aria-disabled={!canAct}
+                          <div className="ml-2 flex flex-col border-l-2 border-border pl-3">
+                            {branches.map((branch) => {
+                              const isActiveBranch = branch.id === activeBranchId;
+                              return (
+                                <div
+                                  key={branch.id}
+                                  className={cn(
+                                    'relative cursor-pointer rounded py-[5px] pl-1.5 pr-2 transition-colors duration-100',
+                                    isActiveBranch ? 'bg-accent-dim hover:bg-accent-dim' : 'hover:bg-s2/70'
+                                  )}
                                   onClick={(event) => {
-                                    if (!canAct) return;
                                     event.stopPropagation();
-                                    setConfirmDestroy({
-                                      title: t("sidebar_delete_branch"),
-                                      body: t("sidebar_delete_branch_body"),
-                                      confirmLabel: t("sidebar_delete_branch"),
-                                      onConfirm: () => void chat.handleDeleteActiveBranch(),
-                                    });
+                                    void chat.handleActivateBranch(branch.id);
                                   }}
-                                  onKeyDown={(event) => { if (canAct && (event.key === "Enter" || event.key === " ")) { event.stopPropagation(); setConfirmDestroy({ title: t("sidebar_delete_branch"), body: t("sidebar_delete_branch_body"), confirmLabel: t("sidebar_delete_branch"), onConfirm: () => void chat.handleDeleteActiveBranch(), }); } }}
                                 >
-                                  {t("sidebar_delete_branch")}
+                                  <div className={cn('absolute -left-[14px] top-[14px] h-[2px] w-3', isActiveBranch ? 'bg-accent' : 'bg-border')} />
+                                  <div className={cn(
+                                    'mb-px min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] font-medium text-t2',
+                                    isActiveBranch && 'text-accent-t'
+                                  )}>{branch.label || t("sidebar_unnamed_branch")}</div>
+                                  <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] text-t3">
+                                    {formatShortDate(branch.createdAt)}
+                                  </div>
                                 </div>
-                              </CustomTooltip>
-                            );
-                          })()}
+                              );
+                            })}
+                          </div>
+                          <div className="mt-1 flex items-center gap-1 border-t border-border pt-1">
+                            <button
+                              className="inline-flex h-6 flex-1 cursor-pointer items-center justify-center gap-1 rounded px-1.5 text-center text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1 [&_svg]:h-3 [&_svg]:w-3"
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void chat.handleFork(undefined);
+                              }}
+                            >
+                              <Icons.Branch /> {t("sidebar_fork_short")}
+                            </button>
+                            {(() => {
+                              const rootBranch = branches.find((b) => b.parentBranchId === null);
+                              const activeIsRoot = rootBranch != null && activeBranchId === rootBranch.id;
+                              const canAct = !activeIsRoot && branches.length > 1;
+                              return (
+                                <CustomTooltip content={canAct ? "" : t("sidebar_switch_to_non_main")}>
+                                  <button className={cn(
+                                    'inline-flex h-6 flex-1 cursor-pointer items-center justify-center gap-1 rounded px-1.5 text-center text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1 [&_svg]:h-3 [&_svg]:w-3',
+                                    !canAct && 'opacity-45 cursor-not-allowed'
+                                  )}
+                                    type="button" aria-disabled={!canAct}
+                                    onClick={(event) => {
+                                      if (!canAct) return;
+                                      event.stopPropagation();
+                                      setConfirmDestroy({
+                                        title: t("sidebar_delete_branch"),
+                                        body: t("sidebar_delete_branch_body"),
+                                        confirmLabel: t("sidebar_delete_branch"),
+                                        onConfirm: () => void chat.handleDeleteActiveBranch(),
+                                      });
+                                    }}
+                                  >
+                                    <Icons.Trash /> {t("sidebar_delete_branch_short")}
+                                  </button>
+                                </CustomTooltip>
+                              );
+                            })()}
+                          </div>
                         </div>
                       )}
                     </div>
