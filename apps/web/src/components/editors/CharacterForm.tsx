@@ -22,6 +22,8 @@ export interface CharacterFormProps {
   avatarUrl?: string;
   onSave: () => void;
   onReset: () => void;
+  /** Вызывается после успешного импорта карточки (данные уже в форме, форма dirty) */
+  onAfterImport?: () => void;
   onAvatarUpload: (file: File, originalFile?: File | null) => Promise<void> | void;
   onExportJson: () => void;
   onExportPng: () => void;
@@ -73,6 +75,7 @@ function TokenBadge({ text }: { text: string }) {
 
 export function CharacterForm({
   form, avatarPreview, setAvatarPreview, isDirty, isSaving, avatarUrl, onSave, onReset, onAvatarUpload,
+  onAfterImport,
   onExportJson, onExportPng, onDuplicate, onDelete, hasAvatar,
 }: CharacterFormProps) {
   const { t } = useT();
@@ -135,6 +138,8 @@ export function CharacterForm({
         if (Object.keys(merged).length === 0) throw new Error(t("import_error_no_data"));
         form.reset({ ...form.getValues(), ...merged } as BuildCharacterDraft);
         setImportModalOpen(false);
+        // Автосохранение + создание чата после импорта
+        onAfterImport?.();
       } catch (err) {
         setImportError(err instanceof Error ? err.message : t("import_failed"));
       }

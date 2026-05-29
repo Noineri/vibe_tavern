@@ -95,7 +95,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
   selectedTraceId: null,
   generations: {},
 
-  setActiveChatId: (id) => set({ activeChatId: id, selectedCharacterId: null }),
+  setActiveChatId: (id) => set({ activeChatId: id }),
   setSelectedCharacterId: (id) => set({ selectedCharacterId: id }),
   setDraft: (draft) => set({ draft }),
   setSelectedTraceId: (id) => set({ selectedTraceId: id }),

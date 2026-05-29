@@ -277,7 +277,7 @@ export function ProviderModal({
     await onDeleteProfile(editingId);
     const next = providerProfiles.find((p) => p.id !== editingId);
     if (next) { setEditingId(next.id); setForm(profileToForm(next)); }
-    setConfirmDelete(false); setHeaderMode("view"); setIsNew(false); setDirty(false);
+    setConfirmDelete(false); setHeaderMode("view"); setIsNew(false); setDirty(false); setMobileDetailOpen(false);
   };
 
   // ── Save header (connection settings) ──

@@ -27,6 +27,9 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const chats: ChatListItem[] = chatMeta?.chats ?? [];
   const branches = chatMeta?.branches ?? [];
   const activeBranchId = chatMeta?.activeBranch?.id ?? null;
+
+  // Ветки доступны только для активного чата (подгружаются через snapshot)
+  const activeChatBranches = activeChatId ? branches : [];
   const buildPanels = useBuildPanels();
 
   const character = useCharacterController();
@@ -42,7 +45,6 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   // Context menus
   const [charMenuId, setCharMenuId] = useState<string | null>(null);
   const [chatMenuId, setChatMenuId] = useState<ChatId | null>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   // Chat rename
@@ -62,7 +64,6 @@ export function Rail({ hidden }: { hidden?: boolean }) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setCharMenuId(null);
         setChatMenuId(null);
-        setMenuPos(null);
       }
     };
     document.addEventListener("pointerdown", handler);
@@ -93,12 +94,6 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const closeMenu = () => {
     setCharMenuId(null);
     setChatMenuId(null);
-    setMenuPos(null);
-  };
-
-  const calcPos = (el: HTMLElement) => {
-    const r = el.getBoundingClientRect();
-    return { top: r.bottom + 4, right: window.innerWidth - r.right };
   };
 
   const commitRename = () => {
@@ -141,30 +136,59 @@ export function Rail({ hidden }: { hidden?: boolean }) {
     if (dragRef.current.startExpanded && d < -40) setExpanded(false);
   }, []);
 
-  /* ── Context menu portal ── */
-  const contextMenu = (items: Array<{ icon: React.ReactNode; label: string; danger?: boolean; action: () => void }>) => {
-    if (!menuPos) return null;
+  /* ── Bottom sheet (action sheet) для мобильных ── */
+  const bottomSheet = (title: string, items: Array<{ icon: React.ReactNode; label: string; danger?: boolean; action: () => void }>) => {
     return createPortal(
-      <div
-        className="fixed z-[500] w-[190px] rounded-md border border-border2 bg-surface py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
-        ref={menuRef}
-        onClick={(e) => e.stopPropagation()}
-        style={{ top: menuPos.top, right: menuPos.right }}
-      >
-        {items.map((item, i) => (
-          <div
-            key={i}
-            className={cn(
-              "flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0",
-              item.danger ? "text-danger-text hover:bg-danger-dim hover:text-danger-text" : "text-t2",
-            )}
-            role="menuitem"
-            onClick={() => { closeMenu(); item.action(); }}
-          >
-            {item.icon} {item.label}
+      <>
+        {/* Затемнение */}
+        <div
+          className="fixed inset-0 z-[500] bg-black/50"
+          style={{ animation: "fadeIn 0.15s ease-out" }}
+          onClick={closeMenu}
+        />
+        {/* Sheet */}
+        <div
+          className="fixed inset-x-0 bottom-0 z-[501] rounded-t-2xl border-t border-border2 bg-surface pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
+          ref={menuRef}
+          style={{ animation: "slideUp 0.2s ease-out" }}
+        >
+          {/* Drag handle */}
+          <div className="flex justify-center pt-2 pb-1">
+            <div className="h-1 w-10 rounded-full bg-border" />
           </div>
-        ))}
-      </div>,
+          {/* Title */}
+          <div className="px-5 pb-2 pt-1">
+            <span className="font-ui text-[calc(var(--ui-fs)-1px)] font-semibold text-t1">{title}</span>
+          </div>
+          {/* Items */}
+          {items.map((item, i) => (
+            <button
+              key={i}
+              className={cn(
+                "flex w-full cursor-pointer items-center gap-4 px-5 min-h-[52px] text-[calc(var(--ui-fs)+1px)] transition-colors duration-100 active:bg-s3 text-left",
+                item.danger ? "text-danger-text" : "text-t2",
+              )}
+              onClick={() => { closeMenu(); item.action(); }}
+            >
+              <span className={cn(
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                item.danger ? "bg-danger-dim/50" : "bg-s2",
+              )}>
+                {item.icon}
+              </span>
+              <span className={cn("font-ui", item.danger && "font-medium")}>{item.label}</span>
+            </button>
+          ))}
+          {/* Cancel */}
+          <div className="h-px bg-border mx-4 mt-2" />
+          <button
+            className="flex w-full cursor-pointer items-center justify-center min-h-[52px] text-[calc(var(--ui-fs)+1px)] font-medium text-t3 transition-colors active:bg-s3 rounded-b-2xl"
+            onClick={closeMenu}
+          >
+            {t("cancel") ?? "Отмена"}
+          </button>
+        </div>
+      </>,
       document.body,
     );
   };
@@ -285,7 +309,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                          "flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full font-ui text-xs font-medium transition-all duration-150 active:rounded-xl active:bg-s2",
                          ch.id === activeChatId ? "rounded-xl bg-accent text-on-accent" : "bg-s3 text-t2",
                        )}
-                       onClick={() => { useChatStore.getState().setActiveChatId(ch.id); }}
+                       onClick={() => { void chat.handleSwitchChat(ch.id); }}
                        title={ch.title}>
                     {initial}
                   </div>
@@ -293,6 +317,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
               })}
               {/* + New chat in collapsed rail */}
               <div
+                key="new-chat-collapsed"
                 className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-dashed border-border2 text-t3 transition-all active:bg-s3"
                 onClick={() => { void character.handleCreateChat(selectedCharacterId ?? undefined); }}
                 title={t("new_chat")}
@@ -367,26 +392,25 @@ export function Rail({ hidden }: { hidden?: boolean }) {
 
                   {visibleChars.map((c) => (
                     <React.Fragment key={c.id}>
-                      {/* Character row */}
+                      {/* Character row — soft card */}
                       <div
                         className={cn(
-                          "group relative flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 transition-colors active:bg-s3 active:scale-[0.97]",
-                          selectedCharacterId === c.id ? "bg-s2 border border-accent/20" : "",
+                          "group relative flex min-h-[56px] cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 transition-colors active:bg-s3 active:scale-[0.97]",
+                          selectedCharacterId === c.id ? "bg-s2 border border-accent/20" : "bg-s2/30",
                         )}
                         onClick={() => { useChatStore.getState().setSelectedCharacterId(c.id); }}
                       >
-                        <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md", selectedCharacterId === c.id ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>
+                        <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg", selectedCharacterId === c.id ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>
                           {c.avatarAssetId ? <img className="h-full w-full object-cover object-top" src={avatarUrl(c.avatarAssetId)} alt={c.name} /> : initials(c.name)}
                         </div>
-                        <span className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)] text-t2">{c.name}</span>
-                        {c.id === selectedCharacterId && <span className="shrink-0 rounded bg-s3 px-1.5 py-0.5 text-[calc(var(--ui-fs)-4px)] text-t3">{t("active")}</span>}
+                        <span className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)] text-t1">{c.name}</span>
                         {/* Three-dot menu button */}
                         <button
                           className={cn(
-                            "flex h-6 w-6 shrink-0 items-center justify-center rounded text-t3 transition-colors hover:text-t1 active:bg-s3",
-                            charMenuId === c.id && "text-t1",
+                            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
+                            charMenuId === c.id && "text-t1 bg-s3",
                           )}
-                          onClick={(e) => { e.stopPropagation(); setCharMenuId(c.id); setChatMenuId(null); setMenuPos(calcPos(e.currentTarget)); }}
+                          onClick={(e) => { e.stopPropagation(); setCharMenuId(c.id); setChatMenuId(null); }}
                         >
                           <Ic.ellipsis />
                         </button>
@@ -394,14 +418,19 @@ export function Rail({ hidden }: { hidden?: boolean }) {
 
                       {/* Chats for active character */}
                       {c.id === selectedCharacterId && (
-                        <div className="ml-3 border-l border-border pl-1.5">
+                        <div className={cn(
+                          "ml-3 flex flex-col gap-1 border-l-2 pl-2 py-1 transition-colors",
+                          activeCharChats.some(ch => ch.id === activeChatId) ? "border-accent/50" : "border-border"
+                        )}>
                           {activeCharChats.map((ch) => (
                             <div key={ch.id}
                                  className={cn(
-                                   "group relative flex min-h-[36px] cursor-pointer flex-col rounded-md px-2 py-1.5 transition-colors active:bg-s3",
-                                   ch.id === activeChatId && "bg-accent-dim",
+                                   "group relative flex min-h-[48px] cursor-pointer flex-col rounded-lg px-3 py-2 transition-colors active:scale-[0.97]",
+                                   ch.id === activeChatId
+                                     ? "bg-accent-dim border border-accent/30"
+                                     : "bg-s2/30 active:bg-s3",
                                  )}
-                                 onClick={() => { useChatStore.getState().setActiveChatId(ch.id); }}>
+                                 onClick={() => { void chat.handleSwitchChat(ch.id); }}>
                               {renamingChatId === ch.id ? (
                                 <input
                                   className="mb-px w-full rounded border border-accent bg-bg px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none"
@@ -416,46 +445,46 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                                   }}
                                 />
                               ) : (
-                                <span className={cn("min-w-0 truncate text-[calc(var(--ui-fs)-2px)]", ch.id === activeChatId ? "text-accent-t font-medium" : "text-t2")}>
+                                <span className={cn("min-w-0 truncate pr-12 text-[calc(var(--ui-fs)-2px)]", ch.id === activeChatId ? "text-accent-t font-medium" : "text-t2")}>
                                   {ch.title}
                                 </span>
                               )}
-                              <span className="min-w-0 truncate text-[calc(var(--ui-fs)-4px)] text-t3">
+                              <span className="min-w-0 truncate pr-12 text-[calc(var(--ui-fs)-4px)] text-t3">
                                 {ch.subtitle}
                               </span>
 
-                              {/* Chat three-dot menu */}
+                              {/* Chat three-dot menu — увеличенный touch target */}
                               <button
                                 className={cn(
-                                  "absolute right-1 top-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded text-t3 transition-colors hover:text-t1 active:bg-s3",
-                                  chatMenuId === ch.id && "text-t1",
+                                  "absolute right-1 inset-y-0 my-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
+                                  chatMenuId === ch.id && "text-t1 bg-s3",
                                 )}
-                                onClick={(e) => { e.stopPropagation(); setChatMenuId(ch.id); setCharMenuId(null); setMenuPos(calcPos(e.currentTarget)); }}
+                                onClick={(e) => { e.stopPropagation(); setChatMenuId(ch.id); setCharMenuId(null); }}
                               >
                                 <Ic.ellipsis />
                               </button>
 
-                              {/* Branches toggle */}
-                              {branches.length > 0 && (
+                              {/* Branches — только для активного чата (данные в snapshot) */}
+                              {ch.id === activeChatId && activeChatBranches.length > 0 && (
                                 <>
                                 <button
-                                  className="mt-1 flex min-h-[36px] items-center gap-1 text-[calc(var(--ui-fs)-4px)] text-t4 hover:text-t3"
+                                  className="mt-1 flex min-h-[44px] items-center gap-1.5 rounded-md px-1 text-[calc(var(--ui-fs)-3px)] text-t4 active:bg-s3 active:text-t2 transition-colors"
                                   onClick={(e) => { e.stopPropagation(); setBranchesOpen(branchesOpen === ch.id ? null : ch.id); }}
                                 >
-                                  <Ic.branch /> {branches.length} {t("branches")}
+                                  <Ic.branch /> {activeChatBranches.length} {t("branches")}
                                 </button>
                                 {branchesOpen === ch.id && (
                                   <div className="mt-1 ml-2 flex flex-col gap-0.5 border-l border-border/30 pl-2">
-                                    {branches.map((b) => (
+                                    {activeChatBranches.map((b) => (
                                       <div
                                         key={b.id}
                                         className={cn(
-                                          "flex cursor-pointer items-center gap-1.5 rounded-sm px-2 min-h-[40px] text-[calc(var(--ui-fs)-3px)] transition-colors active:bg-s3",
-                                          b.id === activeBranchId ? "text-accent-t font-medium" : "text-t3"
+                                          "flex cursor-pointer items-center gap-1.5 rounded-md px-2 min-h-[44px] text-[calc(var(--ui-fs)-2px)] transition-colors active:bg-s3",
+                                          b.id === activeBranchId ? "text-accent-t font-medium bg-accent-dim/50" : "text-t3"
                                         )}
                                         onClick={(e) => { e.stopPropagation(); void activateBranchAction(ch.id as any, b.id as any); }}
                                       >
-                                        <span className={cn("inline-block h-1.5 w-1.5 rounded-full shrink-0", b.id === activeBranchId ? "bg-accent" : "bg-border2")} />
+                                        <span className={cn("inline-block h-2 w-2 rounded-full shrink-0", b.id === activeBranchId ? "bg-accent" : "bg-border2")} />
                                         <span className="truncate">{b.label}</span>
                                       </div>
                                     ))}
@@ -463,10 +492,15 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                                 )}
                                 </>
                               )}
+                              {/* Для неактивных чатов — показываем метку ветки */}
+                              {ch.id !== activeChatId && ch.activeBranchLabel && (
+                                <span className="mt-0.5 truncate text-[calc(var(--ui-fs)-4px)] text-t4">↳ {ch.activeBranchLabel}</span>
+                              )}
                             </div>
                           ))}
                           {/* + New chat */}
-                          <div className="flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-lg border-t border-border/50 px-2 pt-2 text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors active:bg-s3 active:text-t1"
+                          <div key={`new-chat-${c.id}`}
+                               className="flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-lg border-t border-border/50 px-2 pt-2 text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors active:bg-s3 active:text-t1"
                                onClick={() => { void character.handleCreateChat(c.id); }}>
                             <Ic.plus /> {t("new_chat")}
                           </div>
@@ -489,39 +523,45 @@ export function Rail({ hidden }: { hidden?: boolean }) {
         </>
       )}
 
-      {/* ═══ CONTEXT MENUS ═══ */}
-      {charMenuId && contextMenu([
-        { icon: <Ic.download />, label: t("sidebar_export"), action: () => character.handleExportCharacter(charMenuId) },
-        { icon: <Ic.copy />, label: t("duplicate"), action: () => character.handleDuplicateCharacter(charMenuId) },
-        { icon: <Ic.import />, label: t("sidebar_import_chat"), action: () => setChatImportOpen(true) },
-        { icon: <Ic.del />, label: t("delete"), danger: true, action: () => {
-          const ch = visibleChars.find(c => c.id === charMenuId);
-          setConfirmDestroy({
-            title: t("sidebar_delete_character"),
-            body: <>{t("sidebar_are_you_sure")} <b>{ch?.name}</b></>,
-            confirmLabel: t("delete"),
-            onConfirm: () => character.handleDeleteCharacter(charMenuId),
-          });
-        }},
-      ])}
+      {/* ═══ BOTTOM SHEETS (контекстные меню) ═══ */}
+      {charMenuId && bottomSheet(
+        visibleChars.find(c => c.id === charMenuId)?.name ?? "",
+        [
+          { icon: <Ic.download />, label: t("sidebar_export"), action: () => character.handleExportCharacter(charMenuId) },
+          { icon: <Ic.copy />, label: t("duplicate"), action: () => character.handleDuplicateCharacter(charMenuId) },
+          { icon: <Ic.import />, label: t("sidebar_import_chat"), action: () => setChatImportOpen(true) },
+          { icon: <Ic.del />, label: t("delete"), danger: true, action: () => {
+            const ch = visibleChars.find(c => c.id === charMenuId);
+            setConfirmDestroy({
+              title: t("sidebar_delete_character"),
+              body: <>{t("sidebar_are_you_sure")} <b>{ch?.name}</b></>,
+              confirmLabel: t("delete"),
+              onConfirm: () => character.handleDeleteCharacter(charMenuId),
+            });
+          }},
+        ]
+      )}
 
-      {chatMenuId && contextMenu([
-        { icon: <Ic.edit />, label: t("sidebar_rename"), action: () => {
-          const ch = activeCharChats.find(c => c.id === chatMenuId);
-          setRenamingChatId(chatMenuId);
-          setRenameDraft(ch?.title ?? "");
-        }},
-        { icon: <Ic.download />, label: t("sidebar_export_jsonl"), action: () => character.handleExportChatJsonl(chatMenuId) },
-        { icon: <Ic.del />, label: t("delete"), danger: true, action: () => {
-          const ch = activeCharChats.find(c => c.id === chatMenuId);
-          setConfirmDestroy({
-            title: t("sidebar_delete_chat"),
-            body: <>{t("sidebar_are_you_sure")} <b>{ch?.title}</b></>,
-            confirmLabel: t("delete"),
-            onConfirm: () => character.handleDeleteChat(chatMenuId),
-          });
-        }},
-      ])}
+      {chatMenuId && bottomSheet(
+        activeCharChats.find(c => c.id === chatMenuId)?.title ?? "",
+        [
+          { icon: <Ic.edit />, label: t("sidebar_rename"), action: () => {
+            const ch = activeCharChats.find(c => c.id === chatMenuId);
+            setRenamingChatId(chatMenuId);
+            setRenameDraft(ch?.title ?? "");
+          }},
+          { icon: <Ic.download />, label: t("sidebar_export_jsonl"), action: () => character.handleExportChatJsonl(chatMenuId) },
+          { icon: <Ic.del />, label: t("delete"), danger: true, action: () => {
+            const ch = activeCharChats.find(c => c.id === chatMenuId);
+            setConfirmDestroy({
+              title: t("sidebar_delete_chat"),
+              body: <>{t("sidebar_are_you_sure")} <b>{ch?.title}</b></>,
+              confirmLabel: t("delete"),
+              onConfirm: () => character.handleDeleteChat(chatMenuId),
+            });
+          }},
+        ]
+      )}
 
       {/* ═══ MODALS ═══ */}
       {importOpen && (

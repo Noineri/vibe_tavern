@@ -550,7 +550,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
   // ── Script editor panel (for LorebookEditor editor view) ──
   const scriptEditorPanel = activeScript ? (
-    <div className="mx-auto max-w-[860px]">
+    <div className={cn("mx-auto max-w-[860px]", isMobile && "pb-[calc(4rem+env(safe-area-inset-bottom,0px))] [&_button]:min-h-[40px] [&_input]:text-base")}>
       {/* Header: name + toggle + delete */}
       <div className="flex items-center gap-3" style={{ marginBottom: 16 }}>
         <div className="flex-1"><input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[15px] font-semibold text-t1 outline-none focus:border-accent" type="text" value={activeScript.name} onChange={e => updateField("name", e.target.value)} placeholder={t("script_name")} /></div>
@@ -620,7 +620,12 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       <div style={{ marginBottom: 20 }}>
         <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_code_label")}</label>
         <div className="relative rounded-md border border-border bg-bg">
-          <CodeEditor value={activeScript.code ?? ""} onChange={v => updateField("code", v)} minHeight="300px" />
+          <CodeEditor
+            value={activeScript.code ?? ""}
+            onChange={v => updateField("code", v)}
+            minHeight={isMobile ? "220px" : "300px"}
+            scrollMode={isMobile ? "page" : "inner"}
+          />
         </div>
       </div>
 
@@ -637,9 +642,9 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       {/* Test panel */}
       <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
         <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("script_test_panel")}</div>
-        <div className="flex gap-2.5">
-          <input className="h-9 flex-1 rounded-md border border-border bg-bg px-3 font-ui text-t1 outline-none" value={testInput} onChange={e => setTestInput(e.target.value)} onKeyDown={e => e.key === "Enter" && runTest()} placeholder={t("script_test_input_placeholder")} />
-          <button className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={runTest}>{t("script_test_run")}</button>
+        <div className={cn("flex gap-2.5", isMobile && "flex-col")}>
+          <input className={cn("h-9 flex-1 rounded-md border border-border bg-bg px-3 font-ui text-t1 outline-none", isMobile && "min-h-[44px]")} value={testInput} onChange={e => setTestInput(e.target.value)} onKeyDown={e => e.key === "Enter" && runTest()} placeholder={t("script_test_input_placeholder")} />
+          <button className={cn("h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all", isMobile && "min-h-[44px]")} onClick={runTest}>{t("script_test_run")}</button>
         </div>
         {testResult && (
           <div className="mt-3 space-y-2">

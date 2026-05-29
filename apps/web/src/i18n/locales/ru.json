@@ -33,6 +33,7 @@
   "sidebar_delete_branch_body": "Удалить активную ветку и её сообщения? Основной таймлайн останется.",
   "sidebar_switch_to_non_main": "Сначала переключитесь на неосновную ветку",
   "sidebar_new_chat_active_char": "Новый чат для активного персонажа",
+  "new_chat": "Новый чат",
   "sidebar_import_character": "Импорт персонажа (PNG/JSON)",
   "sidebar_import_chat": "Импорт чата (JSONL)",
   "sidebar_create_character": "Создать персонажа",
