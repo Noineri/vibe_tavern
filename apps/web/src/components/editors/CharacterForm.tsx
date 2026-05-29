@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import { Ic } from "../shared/icons";
@@ -86,6 +86,7 @@ export function CharacterForm({
   const [importError, setImportError] = useState("");
   const [importModalOpen, setImportModalOpen] = useState(false);
   const avaInputRef = useRef<HTMLInputElement>(null);
+  const [avatarOrientation, setAvatarOrientation] = useState<"portrait" | "landscape" | null>(null);
 
 
 
@@ -113,7 +114,14 @@ export function CharacterForm({
   function handleAvatarPick(files: FileList | null) {
     if (!files || files.length === 0) return;
     const file = files[0];
-    setAvatarPreview(URL.createObjectURL(file));
+    const url = URL.createObjectURL(file);
+    setAvatarPreview(url);
+    // Detect orientation
+    const img = new Image();
+    img.onload = () => {
+      setAvatarOrientation(img.naturalWidth > img.naturalHeight ? "landscape" : "portrait");
+    };
+    img.src = url;
     onAvatarUpload(file);
   }
 
@@ -160,6 +168,16 @@ export function CharacterForm({
   }
 
   const displayAvatar = avatarPreview || avatarUrl;
+
+  // Detect orientation for existing avatar on mount
+  useEffect(() => {
+    if (!displayAvatar || avatarOrientation) return;
+    const img = new Image();
+    img.onload = () => {
+      setAvatarOrientation(img.naturalWidth > img.naturalHeight ? "landscape" : "portrait");
+    };
+    img.src = displayAvatar;
+  }, [displayAvatar, avatarOrientation]);
   const lblCls = "block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3";
 
   // Token breakdown: permanent (all fields except greeting) + greeting
@@ -315,6 +333,40 @@ export function CharacterForm({
       </div>
 
       {/* Avatar + Name + Tags */}
+      {avatarOrientation === "landscape" && displayAvatar ? (
+        /* Landscape: full-width avatar above name/tags */
+        <div className={cn("mb-5", isMobile ? "flex flex-col items-center" : "")}>
+          <CustomTooltip content={t("change_avatar")}>
+          <div
+            className="group relative mb-3 cursor-pointer overflow-hidden rounded-lg"
+            style={{ maxWidth: isMobile ? 400 : 480 }}
+            onClick={() => avaInputRef.current?.click()}
+          >
+            <input ref={avaInputRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleAvatarPick(e.target.files)} />
+            <img src={displayAvatar} alt="" className="block w-full rounded-lg" style={{ maxHeight: 280, objectFit: "contain" }} />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
+          </div>
+          </CustomTooltip>
+          <div className={cn("flex min-w-0 flex-1 flex-col gap-3", isMobile ? "w-full" : "")} style={{ maxWidth: isMobile ? undefined : 480 }}>
+            <div>
+              <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
+              <input type="text" className={inputCls + mInput} style={inputPad} disabled={isSaving} {...register("name")} />
+            </div>
+            <div>
+              <label className={lblCls + " mb-1.5 block"}>{t("char_tags_label")}</label>
+              <input type="text" className={inputCls + mInput} style={inputPad} value={tagInput} disabled={isSaving} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagKey} placeholder={t("tags_enter")} />
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {tags.map((tag: string) => (
+                  <span key={tag} className="cursor-pointer rounded bg-accent-dim px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => toggleTag(tag)}>
+                    {tag} ✕
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+      /* Portrait / no avatar: side-by-side layout */
       <div className={cn("mb-5 gap-5", isMobile ? "flex flex-col items-center" : "flex")}>
         <CustomTooltip content={t("change_avatar")}>
         <div
@@ -357,6 +409,7 @@ export function CharacterForm({
           </div>
         </div>
       </div>
+      )}
 
       {/* Description */}
       <div className="mb-5">
