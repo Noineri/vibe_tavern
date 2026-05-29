@@ -20,7 +20,7 @@ function PersonaAvatar({ assetId, size }: { assetId: string | null; size: number
     <img
       src={avatarUrl(assetId)}
       alt=""
-      className="shrink-0 rounded-full object-cover"
+      className="shrink-0 rounded-full object-cover bg-black"
       style={{ width: size, height: size }}
     />
   );

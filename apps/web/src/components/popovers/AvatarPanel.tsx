@@ -65,7 +65,7 @@ export function AvatarPanel({ src, onClose }: AvatarPanelProps) {
     const height = rect?.height ?? 480;
     return {
       x: clamp(next.x, -width + 72, window.innerWidth - 48),
-      y: clamp(next.y, 8, window.innerHeight - Math.min(48, height)),
+      y: clamp(next.y, -height + 72, window.innerHeight - Math.min(48, height)),
     };
   }, []);
 
@@ -325,7 +325,7 @@ function MobileLightbox({ src, onClose, t }: MobileLightboxProps) {
         alt={t("character_avatar_alt")}
         className="max-h-full max-w-full object-contain select-none"
         style={{
-          transform: `scale(${scale}) translate(${translate.x / scale}px, ${translate.y / scale}px)`,
+          transform: `scale(${scale}) translate(${translate.x}px, ${translate.y}px)`,
           transition: lastTouchDist.current !== null ? "none" : "transform 0.15s ease-out",
         }}
         draggable={false}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Toggle } from '../shared/Toggle.js';
 import { useT } from '../../i18n/context.js';
 import { Icons } from '../shared/icons.js';
@@ -18,12 +18,26 @@ interface TweaksPanelProps {
   onOpenMobileAccess: () => void;
 }
 
-export function TweaksPanel({ settings, setSetting, onOpenMobileAccess }: TweaksPanelProps) {
+export function TweaksPanel({ settings, setSetting, onOpenMobileAccess, onClose }: TweaksPanelProps & { onClose?: () => void }) {
   const { t } = useT();
   const isMobile = useIsMobile();
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isMobile) return;
+    function handleClick(e: MouseEvent) {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        onClose?.();
+      }
+    }
+    // Delay to avoid the same click that opened the panel
+    const timer = setTimeout(() => document.addEventListener('mousedown', handleClick), 0);
+    return () => { clearTimeout(timer); document.removeEventListener('mousedown', handleClick); };
+  }, [isMobile, onClose]);
+
   if (isMobile) return null;
   return (
-    <div className="fixed right-4 top-[68px] z-[300] w-[260px] rounded-lg border border-border2 bg-surface shadow-[0_12px_28px_rgba(0,0,0,0.45)] p-3">
+    <div ref={panelRef} className="fixed right-4 top-[68px] z-[300] w-[260px] rounded-lg border border-border2 bg-surface shadow-[0_12px_28px_rgba(0,0,0,0.45)] p-3">
       <div className="mb-3 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t1">{t("tweaks_title")}</div>
       <div className="flex items-center justify-between gap-3 py-2">
         <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_dark_theme")}</span>

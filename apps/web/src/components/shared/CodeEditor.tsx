@@ -157,15 +157,14 @@ export function CodeEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    if (externalValueRef.current !== value) {
+    const currentDoc = view.state.doc.toString();
+    if (currentDoc !== value) {
       externalValueRef.current = value;
-      const scrollPos = view.scrollDOM.scrollTop;
-      view.setState(
-        EditorState.create({ doc: value, extensions: buildExtensions() })
-      );
-      view.scrollDOM.scrollTop = scrollPos;
+      view.dispatch({
+        changes: { from: 0, to: currentDoc.length, insert: value },
+      });
     }
-  }, [value, buildExtensions]);
+  }, [value]);
 
   return (
     <div
