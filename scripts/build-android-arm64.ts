@@ -12,7 +12,7 @@
  *   bun run build:android-arm64
  */
 
-import { chmod, cp, mkdir, rm, stat } from "node:fs/promises";
+import { chmod, copyFile, cp, mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -88,6 +88,16 @@ async function main() {
 			join(ANDROID_DIST, "tokenizers"),
 			"Tokenizer",
 		);
+	});
+
+	await step("Copying Script AI prompt", async () => {
+		const promptSource = join(ROOT, "services", "api", "src", "script-ai-prompt.md");
+		const promptTarget = join(ANDROID_DIST, "script-ai-prompt.md");
+		if (!(await exists(promptSource))) {
+			throw new Error(`Script AI prompt source not found: ${promptSource}`);
+		}
+		await copyFile(promptSource, promptTarget);
+		console.log(`   → ${promptTarget}`);
 	});
 
 	await step("Copying DB migrations", async () => {

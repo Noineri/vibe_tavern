@@ -58,6 +58,12 @@ drizzle-generated/
 # packages/db/drizzle/ — NOT ignored, migration files must be committed
 .tokensave
 
+# Runtime assets required for fresh checkouts and production builds.
+# Keep these tracked even though generated dist/ directories are ignored.
+!services/api/src/script-ai-prompt.md
+!services/api/src/tokenizers/
+!services/api/src/tokenizers/*.json
+
 # Standalone build output
 dist/
 

@@ -23,7 +23,7 @@
  */
 
 import { join, resolve } from "node:path";
-import { cp, rm, mkdir, stat } from "node:fs/promises";
+import { copyFile, cp, rm, mkdir, stat } from "node:fs/promises";
 
 const ROOT = resolve(import.meta.dir, "..");
 const DIST = join(ROOT, "dist");
@@ -95,7 +95,19 @@ async function main() {
 		console.log(`   → ${tokenizerTarget}`);
 	});
 
-	// ── Step 3c: Copy DB migrations to dist/drizzle/ ────────────────────────
+	// ── Step 3c: Copy Script AI prompt to dist/script-ai-prompt.md ───────────
+
+	await step("Copying Script AI prompt", async () => {
+		const promptSource = join(ROOT, "services", "api", "src", "script-ai-prompt.md");
+		const promptTarget = join(DIST, "script-ai-prompt.md");
+		if (!(await exists(promptSource))) {
+			throw new Error(`Script AI prompt source not found: ${promptSource}`);
+		}
+		await copyFile(promptSource, promptTarget);
+		console.log(`   → ${promptTarget}`);
+	});
+
+	// ── Step 3d: Copy DB migrations to dist/drizzle/ ────────────────────────
 
 	await step("Copying DB migrations to dist/drizzle/", async () => {
 		const drizzleSource = join(ROOT, "packages", "db", "drizzle");

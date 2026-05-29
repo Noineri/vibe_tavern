@@ -8,10 +8,50 @@
  * This script is for production Docker / deployment.
  */
 
-import { join, resolve } from "node:path";
-import { readdir } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
+import { copyFile, cp, mkdir, stat } from "node:fs/promises";
 
 const ROOT = resolve(import.meta.dir, "..");
+
+function exists(path: string): Promise<boolean> {
+  return stat(path).then(() => true, () => false);
+}
+
+async function copyApiRuntimeAssets() {
+  const apiDist = join(ROOT, "services", "api", "dist");
+  const apiDistSrc = join(apiDist, "services", "api", "src");
+  const promptSource = join(ROOT, "services", "api", "src", "script-ai-prompt.md");
+  const promptTargets = [
+    join(apiDist, "script-ai-prompt.md"),
+    join(apiDistSrc, "script-ai-prompt.md"),
+  ];
+  const tokenizerSource = join(ROOT, "services", "api", "src", "tokenizers");
+  const tokenizerTargets = [
+    join(apiDist, "tokenizers"),
+    join(apiDistSrc, "tokenizers"),
+  ];
+
+  if (!(await exists(promptSource))) {
+    throw new Error(`Script AI prompt source not found: ${promptSource}`);
+  }
+  if (!(await exists(tokenizerSource))) {
+    throw new Error(`Tokenizer source not found: ${tokenizerSource}`);
+  }
+
+  await mkdir(apiDistSrc, { recursive: true });
+  for (const promptTarget of promptTargets) {
+    await mkdir(resolve(promptTarget, ".."), { recursive: true });
+    await copyFile(promptSource, promptTarget);
+  }
+  for (const tokenizerTarget of tokenizerTargets) {
+    await cp(tokenizerSource, tokenizerTarget, { recursive: true });
+  }
+
+  console.log("  ✅ Runtime assets copied:");
+  for (const target of [...promptTargets, ...tokenizerTargets]) {
+    console.log(`     ${relative(ROOT, target)}`);
+  }
+}
 
 interface PackageConfig {
   name: string;
@@ -105,7 +145,11 @@ async function buildPackage(pkg: PackageConfig) {
     })
   );
 
-  return results.every(Boolean);
+  const ok = results.every(Boolean);
+  if (ok && pkg.dir === "services/api") {
+    await copyApiRuntimeAssets();
+  }
+  return ok;
 }
 
 async function main() {

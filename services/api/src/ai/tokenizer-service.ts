@@ -23,14 +23,25 @@ function guesstimate(text: string): number {
 // ── Paths ────────────────────────────────────────────────────────────────
 
 async function resolveTokenizerDir(): Promise<string> {
-	// 1. Next to the executable (standalone .exe mode)
-	const exeDir = resolve(process.execPath, "..");
-	const exeTokenizerDir = join(exeDir, "tokenizers");
-	if (await Bun.file(join(exeTokenizerDir, "claude.json")).exists()) {
-		return exeTokenizerDir;
+	const candidates = [
+		process.env.RP_PLATFORM_TOKENIZER_DIR,
+		// Standalone binary/release artifact: dist/tokenizers next to executable.
+		join(resolve(process.execPath, ".."), "tokenizers"),
+		// Flat bundled services/api output: services/api/dist/tokenizers.
+		join(import.meta.dir, "tokenizers"),
+		// Preserved module output: dist/services/api/src/tokenizers.
+		join(import.meta.dir, "..", "tokenizers"),
+		// Source checkout/dev fallback when running from repo root.
+		join(process.cwd(), "services", "api", "src", "tokenizers"),
+	].filter(Boolean) as string[];
+
+	for (const dir of candidates) {
+		if (await Bun.file(join(dir, "claude.json")).exists()) {
+			return dir;
+		}
 	}
-	// 2. Relative to source file (dev mode)
-	return join(import.meta.dir, "..", "tokenizers");
+
+	return candidates[candidates.length - 1];
 }
 
 let TOKENIZER_DIR: string | undefined;
