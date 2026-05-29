@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "../i18n/context.js";
 import { cn } from "../lib/cn.js";
@@ -377,33 +377,22 @@ function BlockRow({ mapping, index, onToggle, onTarget }: {
 
 function BulkDropdown({ onSelect }: { onSelect: (t: TargetMapping) => void }) {
   const { t } = useT();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, [open]);
+  const isMobile = useIsMobile();
+  const options = TARGET_OPTIONS.map((o) => ({ ...o, active: false }));
 
   return (
-    <div ref={ref} className="relative">
-      <button type="button"
-        className="h-[30px] cursor-pointer whitespace-nowrap rounded border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 hover:text-t1"
-        onClick={() => setOpen(!open)}
-      >{t("preset_import_bulk_set")}…</button>
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 min-w-[180px] rounded-md border border-border2 bg-surface py-1 shadow-[0_8px_24px_rgba(0,0,0,.4)]">
-          {TARGET_OPTIONS.map((o) => (
-            <button type="button" key={o.value}
-              className="flex w-full cursor-pointer items-center px-3 py-[7px] font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
-              onClick={() => { onSelect(o.value); setOpen(false); }}
-            >{t(o.labelKey)}</button>
-          ))}
-        </div>
+    <AnchoredDropdown
+      minWidth={180}
+      align={isMobile ? "left" : "right"}
+      button={(open) => (
+        <span className={cn(
+          "inline-flex cursor-pointer items-center rounded border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 hover:text-t1",
+          isMobile ? "h-[36px]" : "h-[30px]"
+        )}>{t("preset_import_bulk_set")}…</span>
       )}
-    </div>
+      options={options}
+      onSelect={onSelect}
+    />
   );
 }
 
@@ -411,57 +400,129 @@ function BulkDropdown({ onSelect }: { onSelect: (t: TargetMapping) => void }) {
 
 function TargetDropdown({ value, disabled, onChange }: { value: TargetMapping; disabled: boolean; onChange: (v: TargetMapping) => void }) {
   const { t } = useT();
-  const [open, setOpen] = useState(false);
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const isMobile = useIsMobile();
-
-  const openMenu = () => {
-    if (disabled) return;
-    const rect = btnRef.current?.getBoundingClientRect();
-    if (rect) {
-      setMenuPos({ top: rect.bottom + 4, left: rect.left });
-    }
-    setOpen(true);
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: Event) => {
-      if (btnRef.current && btnRef.current.contains(e.target as Node)) return;
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', onClick);
-    document.addEventListener('touchstart', onClick);
-    return () => { document.removeEventListener('mousedown', onClick); document.removeEventListener('touchstart', onClick); };
-  }, [open]);
-
   const current = TARGET_OPTIONS.find((o) => o.value === value);
   const label = current ? t(current.labelKey) : value;
 
   return (
-    <>
-      <button type="button" ref={btnRef}
-        className={cn(
-          "cursor-pointer rounded border border-border bg-s2 px-2.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 outline-none transition-colors",
-          disabled ? "opacity-40 cursor-default" : "hover:bg-s3 hover:text-t1",
+    <AnchoredDropdown
+      minWidth={160}
+      align="left"
+      disabled={disabled}
+      button={() => (
+        <span className={cn(
+          "inline-flex cursor-pointer items-center rounded border border-border bg-s2 px-2.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 outline-none transition-colors",
+          disabled ? "cursor-default opacity-40" : "hover:bg-s3 hover:text-t1",
           isMobile ? "h-[36px]" : "h-[28px]"
-        )}
+        )}>{label} ▾</span>
+      )}
+      options={TARGET_OPTIONS.map((o) => ({ ...o, active: o.value === value }))}
+      onSelect={onChange}
+    />
+  );
+}
+
+function AnchoredDropdown({
+  button,
+  options,
+  onSelect,
+  minWidth,
+  align = "left",
+  disabled = false,
+}: {
+  button: (open: boolean) => React.ReactNode;
+  options: Array<{ value: TargetMapping; labelKey: string; active: boolean }>;
+  onSelect: (value: TargetMapping) => void;
+  minWidth: number;
+  align?: "left" | "right";
+  disabled?: boolean;
+}) {
+  const { t } = useT();
+  const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  function updatePosition() {
+    const rect = btnRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    if (rect.bottom < 0 || rect.top > viewportHeight || rect.right < 0 || rect.left > viewportWidth) {
+      setOpen(false);
+      return;
+    }
+
+    const menuRect = menuRef.current?.getBoundingClientRect();
+    const menuWidth = Math.max(minWidth, menuRect?.width ?? minWidth);
+    const menuHeight = menuRect?.height ?? (options.length * 34 + 8);
+    const rawLeft = align === "right" ? rect.right - menuWidth : rect.left;
+    const left = Math.max(8, Math.min(rawLeft, viewportWidth - menuWidth - 8));
+
+    let top = rect.bottom + 4;
+    if (top + menuHeight > viewportHeight - 8 && rect.top - menuHeight - 4 >= 8) {
+      top = rect.top - menuHeight - 4;
+    }
+    top = Math.max(8, Math.min(top, viewportHeight - menuHeight - 8));
+    setMenuPos({ top, left, width: menuWidth });
+  }
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePosition();
+  }, [open, align, minWidth, options.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (btnRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onReposition = () => updatePosition();
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
+    };
+  }, [open, align, minWidth]);
+
+  return (
+    <>
+      <button
+        type="button"
+        ref={btnRef}
+        className="inline-flex border-0 bg-transparent p-0"
         disabled={disabled}
-        onClick={openMenu}
-      >{label} ▾</button>
+        onClick={() => {
+          if (disabled) return;
+          if (open) {
+            setOpen(false);
+          } else {
+            updatePosition();
+            setOpen(true);
+          }
+        }}
+      >
+        {button(open)}
+      </button>
       {open && menuPos && createPortal(
         <div
-          className="fixed z-[999] min-w-[160px] rounded-md border border-border2 bg-surface py-1 shadow-[0_8px_24px_rgba(0,0,0,.4)]"
-          style={{ top: menuPos.top, left: menuPos.left }}
+          ref={menuRef}
+          className="fixed z-[9999] rounded-md border border-border2 bg-surface py-1 shadow-[0_8px_24px_rgba(0,0,0,.4)]"
+          style={{ top: menuPos.top, left: menuPos.left, minWidth: menuPos.width }}
         >
-          {TARGET_OPTIONS.map((o) => (
+          {options.map((o) => (
             <button type="button" key={o.value}
               className={cn(
-                "flex w-full cursor-pointer items-center px-3 py-[6px] font-ui text-[calc(var(--ui-fs)-2px)] transition-colors",
-                o.value === value ? "text-accent-t bg-accent/10" : "text-t2 hover:bg-s2 hover:text-t1"
+                "flex w-full cursor-pointer items-center px-3 py-[7px] font-ui text-[calc(var(--ui-fs)-2px)] transition-colors",
+                o.active ? "bg-accent/10 text-accent-t" : "text-t2 hover:bg-s2 hover:text-t1"
               )}
-              onClick={() => { onChange(o.value); setOpen(false); }}
+              onClick={() => { onSelect(o.value); setOpen(false); }}
             >{t(o.labelKey)}</button>
           ))}
         </div>,
