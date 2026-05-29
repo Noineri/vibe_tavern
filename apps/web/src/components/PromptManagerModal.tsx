@@ -175,16 +175,39 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   };
 
   const handleImportPreset = (result: PresetImportResult) => {
-    setDraft((d) => {
-      const next = { ...d };
-      if (result.system.length) next.system = d.system + (d.system ? "\n\n" : "") + result.system.join("\n\n");
-      if (result.post.length) next.jailbreak = d.jailbreak + (d.jailbreak ? "\n\n" : "") + result.post.join("\n\n");
-      if (result.authors.length) next.authorsNote = d.authorsNote + (d.authorsNote ? "\n\n" : "") + result.authors.join("\n\n");
-      if (result.injections.length) next.customInjections = [...d.customInjections, ...result.injections];
-      return next;
-    });
-    setDirty(true);
-    setSaveState("idle");
+    if (result.target === 'new') {
+      const name = result.newPresetName || `${t('imported_preset')} ${new Date().toLocaleDateString()}`;
+      void input.onCreate({
+        name,
+        system: result.system.join("\n\n"),
+        jailbreak: result.post.join("\n\n"),
+        authorsNote: result.authors.join("\n\n"),
+        prefill: "",
+        authorsNoteDepth: 4,
+        summary: "",
+        tools: "",
+        scriptAiSystemPrompt: "",
+      }).then((created) => {
+        if (created?.id) {
+          // Also set injections if any
+          if (result.injections.length) {
+            void input.onUpdate(created.id, { customInjections: result.injections });
+          }
+          input.setActivePresetId(created.id);
+        }
+      });
+    } else {
+      setDraft((d) => {
+        const next = { ...d };
+        if (result.system.length) next.system = d.system + (d.system ? "\n\n" : "") + result.system.join("\n\n");
+        if (result.post.length) next.jailbreak = d.jailbreak + (d.jailbreak ? "\n\n" : "") + result.post.join("\n\n");
+        if (result.authors.length) next.authorsNote = d.authorsNote + (d.authorsNote ? "\n\n" : "") + result.authors.join("\n\n");
+        if (result.injections.length) next.customInjections = [...d.customInjections, ...result.injections];
+        return next;
+      });
+      setDirty(true);
+      setSaveState("idle");
+    }
     setImportModalOpen(false);
   };
 
@@ -282,7 +305,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   <span className="ml-2 font-ui text-[11px] text-t4">{t("preset_advanced_mode_hint")}</span>
                 </div>
               </summary>
-              <div className="rounded-b-md border-x border-b border-border2 bg-s1 px-4 py-3">
+              <div className="max-h-[240px] overflow-y-auto rounded-b-md border-x border-b border-border2 bg-s1 px-4 py-3">
                 <InjectionTable
                   injections={draft.customInjections}
                   onChange={(injections) => { setDraft((d) => ({ ...d, customInjections: injections })); setDirty(true); setSaveState("idle"); }}

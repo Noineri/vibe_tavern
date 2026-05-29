@@ -3,6 +3,7 @@ import { useT } from "../i18n/context.js";
 import { cn } from "../lib/cn.js";
 import { Modal } from "./shared/Modal.js";
 import { Icons } from "./shared/icons.js";
+import { useIsMobile } from "../hooks/use-mobile.js";
 import { parseStPreset, type ParsedStPreset, type StPresetBlock } from "../lib/st-preset-parser.js";
 import type { InjectionRow } from "./prompt/InjectionTable.js";
 
@@ -27,6 +28,8 @@ export interface PresetImportResult {
   post: string[];
   authors: string[];
   injections: InjectionRow[];
+  target: 'current' | 'new';
+  newPresetName?: string;
 }
 
 interface PresetImportModalProps {
@@ -49,7 +52,10 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
   const [drag, setDrag] = useState(false);
   const [filter, setFilter] = useState("");
   const [showOnlySelected, setShowOnlySelected] = useState(false);
+  const [importTarget, setImportTarget] = useState<"current" | "new">("current");
+  const [newPresetName, setNewPresetName] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const isMobile = useIsMobile();
 
   function handleFile(file?: File | null) {
     setErrorMsg("");
@@ -123,7 +129,7 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
 
   function handleImport() {
     if (counts.total === 0) return;
-    const result: PresetImportResult = { system: [], post: [], authors: [], injections: [] };
+    const result: PresetImportResult = { system: [], post: [], authors: [], injections: [], target: importTarget, newPresetName: newPresetName || undefined };
     for (const m of selected) {
       switch (m.target) {
         case "system": result.system.push(m.block.content); break;
@@ -145,7 +151,12 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
 
   return (
     <Modal open={true} onClose={onClose}>
-      <div className="flex max-h-[calc(100vh-60px)] w-[640px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">
+      <div className={cn(
+        "flex flex-col overflow-hidden bg-surface",
+        isMobile
+          ? "w-full h-full"
+          : "max-h-[calc(100vh-60px)] w-[640px] max-w-[calc(100vw-32px)] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
+      )}>
         {/* Header */}
         <div className="shrink-0 px-5 pt-[18px] pb-1">
           <div className="flex items-start justify-between">
@@ -192,29 +203,29 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
               </div>
               {/* Summary pills */}
               <div className="flex flex-wrap items-center gap-2 mb-2.5">
-                <span className="rounded bg-accent/15 px-2 py-0.5 font-ui text-[11px] text-accent-t">{counts.total} selected</span>
-                {counts.system > 0 && <span className="rounded bg-blue-500/15 px-1.5 py-0.5 font-ui text-[10px] text-blue-400">{counts.system} system</span>}
-                {counts.post > 0 && <span className="rounded bg-purple-500/15 px-1.5 py-0.5 font-ui text-[10px] text-purple-400">{counts.post} post</span>}
-                {counts.authors > 0 && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-ui text-[10px] text-amber-400">{counts.authors} author</span>}
-                {counts.injection > 0 && <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-ui text-[10px] text-emerald-400">{counts.injection} injection</span>}
+                <span className="rounded bg-accent/15 px-2.5 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-accent-t">{counts.total} selected</span>
+                {counts.system > 0 && <span className="rounded bg-blue-500/15 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-blue-400">{counts.system} system</span>}
+                {counts.post > 0 && <span className="rounded bg-purple-500/15 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-purple-400">{counts.post} post</span>}
+                {counts.authors > 0 && <span className="rounded bg-amber-500/15 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-amber-400">{counts.authors} author</span>}
+                {counts.injection > 0 && <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-emerald-400">{counts.injection} injection</span>}
               </div>
               {/* Filter + bulk */}
               <div className="flex items-center gap-2">
                 <input
-                  className="h-[28px] w-[180px] rounded border border-border bg-s2 px-2.5 font-ui text-[11px] text-t1 outline-none placeholder:text-t4 focus:border-accent"
+                  className="h-[30px] w-[180px] rounded border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t4 focus:border-accent"
                   placeholder={t("search") + "…"}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                 />
-                <label className="flex cursor-pointer items-center gap-1.5 font-ui text-[10px] text-t4 select-none">
-                  <input type="checkbox" className="h-3 w-3 accent-accent" checked={showOnlySelected} onChange={(e) => setShowOnlySelected(e.target.checked)} />
+                <label className="flex cursor-pointer items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t4 select-none">
+                  <input type="checkbox" className="h-3.5 w-3.5 accent-accent" checked={showOnlySelected} onChange={(e) => setShowOnlySelected(e.target.checked)} />
                   {t("preset_import_filter_selected")}
                 </label>
                 <div className="ml-auto flex items-center gap-1.5">
-                  <button type="button" className="h-[24px] cursor-pointer whitespace-nowrap rounded border border-border bg-s2 px-3 font-ui text-[10px] text-t3 hover:text-t1" onClick={selectAll}>{t("preset_import_select_all")}</button>
-                  <button type="button" className="h-[24px] cursor-pointer whitespace-nowrap rounded border border-border bg-s2 px-3 font-ui text-[10px] text-t3 hover:text-t1" onClick={deselectAll}>{t("preset_import_deselect_all")}</button>
+                  <button type="button" className="h-[30px] cursor-pointer whitespace-nowrap rounded border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 hover:text-t1" onClick={selectAll}>{t("preset_import_select_all")}</button>
+                  <button type="button" className="h-[30px] cursor-pointer whitespace-nowrap rounded border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 hover:text-t1" onClick={deselectAll}>{t("preset_import_deselect_all")}</button>
                   <select
-                    className="h-[24px] cursor-pointer rounded border border-border bg-s2 px-1.5 font-ui text-[10px] text-t2 outline-none"
+                    className="h-[30px] cursor-pointer rounded border border-border bg-s2 px-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 outline-none"
                     onChange={(e) => { if (e.target.value) bulkSetTarget(e.target.value as TargetMapping); e.target.value = ""; }}
                     value=""
                   >
@@ -251,6 +262,27 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
           </>
         )}
 
+        { parsed && (phase === "preview") && (
+          <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-2.5">
+            <label className="flex cursor-pointer items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 select-none">
+              <input type="radio" name="importTarget" className="accent-accent" checked={importTarget === "current"} onChange={() => setImportTarget("current")} />
+              {t("preset_import_to_current")}
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 select-none">
+              <input type="radio" name="importTarget" className="accent-accent" checked={importTarget === "new"} onChange={() => setImportTarget("new")} />
+              {t("preset_import_to_new")}
+            </label>
+            {importTarget === "new" && (
+              <input
+                className="ml-2 h-[30px] flex-1 rounded border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t4 focus:border-accent"
+                placeholder={t("preset_import_new_name_placeholder")}
+                value={newPresetName}
+                onChange={(e) => setNewPresetName(e.target.value)}
+              />
+            )}
+          </div>
+        )}
+
         {/* Footer */}
         <div className="flex shrink-0 items-center justify-between border-t border-border px-5 py-3.5">
           <button type="button" className="h-[37px] cursor-pointer rounded-md border border-border bg-surface px-5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={onClose}>
@@ -278,43 +310,62 @@ function BlockRow({ mapping, index, onToggle, onTarget }: {
 }) {
   const { t } = useT();
   const { block, enabled, target } = mapping;
-  const preview = block.content.slice(0, 80).replace(/\n/g, " ").trim() + (block.content.length > 80 ? "…" : "");
+  const [expanded, setExpanded] = useState(false);
+  const preview = block.content.slice(0, 120).replace(/\n/g, " ").trim() + (block.content.length > 120 ? "…" : "");
   const hasMeta = target === "injection" && enabled;
+  const isMobile = useIsMobile();
 
   return (
     <div className={cn(
-      "grid grid-cols-[24px_1fr_130px] gap-2.5 border-b border-border2 px-5 py-2.5 hover:bg-s2/50 transition-colors",
-      !enabled && "opacity-40"
+      "border-b border-border2 hover:bg-s2/50 transition-colors",
+      !enabled && "opacity-40",
+      isMobile ? "px-3 py-3" : "px-5 py-3"
     )}>
-      <button type="button"
-        className={cn(
-          "mt-1 flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center rounded text-[14px] transition-colors",
-          enabled ? "text-accent hover:bg-accent/10" : "text-t4 hover:text-t2"
-        )}
-        onClick={() => onToggle(index)}
-      >
-        {enabled ? "●" : "○"}
-      </button>
-      <div className="min-w-0 overflow-hidden">
-        <div className="truncate font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{block.name}</div>
-        <div className="mt-0.5 truncate font-mono text-[10px] text-t4">{preview}</div>
-        {hasMeta && (
-          <div className="mt-0.5 flex items-center gap-3 font-mono text-[10px] text-t4">
-            <span>role: <span className="text-t3">{block.role}</span></span>
-            <span>depth: <span className="text-t3">{block.injectionDepth}</span></span>
+      <div className={cn("flex items-start gap-3", isMobile && "gap-2")}>
+        <button type="button"
+          className={cn(
+            "mt-0.5 flex shrink-0 cursor-pointer items-center justify-center rounded text-base transition-colors",
+            enabled ? "text-accent hover:bg-accent/10" : "text-t4 hover:text-t2",
+            isMobile ? "h-[44px] w-[44px]" : "h-7 w-7"
+          )}
+          onClick={() => onToggle(index)}
+        >
+          {enabled ? "●" : "○"}
+        </button>
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <div className="truncate font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{block.name}</div>
+          <div
+            className={cn("mt-0.5 font-mono text-[calc(var(--ui-fs)-3px)] text-t4 cursor-pointer", !expanded && "truncate")}
+            onClick={() => setExpanded(!expanded)}
+          >
+            {expanded ? block.content : preview}
           </div>
-        )}
+          {hasMeta && (
+            <div className="mt-0.5 flex items-center gap-3 font-mono text-[calc(var(--ui-fs)-3px)] text-t4">
+              <span>role: <span className="text-t3">{block.role}</span></span>
+              <span>depth: <span className="text-t3">{block.injectionDepth}</span></span>
+            </div>
+          )}
+          {expanded && block.content.length > 120 && (
+            <button type="button" className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-accent hover:underline" onClick={() => setExpanded(false)}>
+              {t("collapse")}
+            </button>
+          )}
+        </div>
+        <select
+          className={cn(
+            "mt-0.5 shrink-0 cursor-pointer rounded border border-border bg-s2 px-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 outline-none disabled:cursor-default",
+            isMobile ? "h-[44px]" : "h-[30px]"
+          )}
+          value={target}
+          disabled={!enabled}
+          onChange={(e) => onTarget(index, e.target.value as TargetMapping)}
+        >
+          {TARGET_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
+          ))}
+        </select>
       </div>
-      <select
-        className="mt-1 h-[24px] cursor-pointer rounded border border-border bg-s2 px-1.5 font-ui text-[10px] text-t2 outline-none disabled:cursor-default"
-        value={target}
-        disabled={!enabled}
-        onChange={(e) => onTarget(index, e.target.value as TargetMapping)}
-      >
-        {TARGET_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
-        ))}
-      </select>
     </div>
   );
 }
