@@ -432,12 +432,12 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
 
         {/* Footer */}
         <div className="flex shrink-0 items-center gap-2.5 border-t border-border px-5 py-[14px]">
-          <button
+          <button type="button"
             className="ml-auto h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
             onClick={onClose}
             disabled={busy}
           >{t("cancel")}</button>
-          <button
+          <button type="button"
             className="h-[37px] px-[18px] cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
             disabled={!canSave}
             onClick={handleSave}

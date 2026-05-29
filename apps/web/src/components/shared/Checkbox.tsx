@@ -45,8 +45,7 @@ export function Checkbox({ checked, onChange, disabled, id, className, label }: 
 
   if (!label) {
     return (
-      <button
-        type="button"
+      <button type="button"
         role="checkbox"
         aria-checked={checked}
         id={id}

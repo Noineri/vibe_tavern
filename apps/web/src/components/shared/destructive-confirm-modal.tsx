@@ -26,13 +26,13 @@ export function DestructiveConfirmModal(input: DestructiveConfirmModalProps) {
           {input.body}
         </div>
         <div className="flex justify-center gap-2.5">
-          <button
+          <button type="button"
             className="h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[12.5px] text-t3 transition-colors duration-150 hover:text-t1"
             onClick={input.onCancel}
           >
             {t("cancel")}
           </button>
-          <button
+          <button type="button"
             className="h-8 cursor-pointer rounded-md border-0 bg-[oklch(0.4_0.15_25)] px-[18px] font-ui text-[12.5px] font-medium text-white transition-[filter] duration-100 hover:brightness-110"
             onClick={input.onConfirm}
           >
@@ -64,13 +64,13 @@ export function ShellDestructiveConfirmModal() {
           {confirmDestroy.body}
         </div>
         <div className="flex justify-center gap-2.5">
-          <button
+          <button type="button"
             className="h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[12.5px] text-t3 transition-colors duration-150 hover:text-t1"
             onClick={() => setConfirmDestroy(null)}
           >
             {t("cancel")}
           </button>
-          <button
+          <button type="button"
             className="h-8 cursor-pointer rounded-md border-0 bg-[oklch(0.4_0.15_25)] px-[18px] font-ui text-[12.5px] font-medium text-white transition-[filter] duration-100 hover:brightness-110"
             onClick={() => {
               confirmDestroy!.onConfirm();

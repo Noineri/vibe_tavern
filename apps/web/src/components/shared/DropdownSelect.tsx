@@ -68,7 +68,7 @@ export function DropdownSelect({
       disabled={disabled}
     >
       <Select.Trigger asChild>
-        <button
+        <button type="button"
           className={cn(
             "flex w-full items-center justify-between rounded-[6px] border border-border bg-s2 px-[13px] py-[7px] font-ui text-[13px] text-t1 transition-[border-color] duration-150 hover:border-accent",
             disabled && "pointer-events-none opacity-40",

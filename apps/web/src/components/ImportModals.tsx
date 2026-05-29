@@ -247,7 +247,7 @@ interface ImportError {
       {!scanResult && !scanning && (
         <>
           <div className="mb-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("st_select_folder")}</div>
-          <button
+          <button type="button"
             className="flex h-[38px] cursor-pointer items-center gap-2 rounded-md border border-border bg-surface px-4 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 transition-all hover:border-accent hover:text-accent-t"
             onClick={() => folderRef.current?.click()}
           >
@@ -276,7 +276,7 @@ interface ImportError {
               .replace("{chats}", String(scanResult.chats.length))
               .replace("{lorebooks}", String(scanResult.lorebooks.length))}
           </div>
-          <button
+          <button type="button"
             className="h-[34px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45"
             disabled={scanResult.characters.length + scanResult.chats.length === 0}
             onClick={handleImport}
@@ -385,7 +385,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
             />
             <div className="mt-3 flex items-center gap-3">
               <div className="flex-1 border-t border-border2" />
-              <button
+              <button type="button"
                 className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] text-accent-t transition-colors hover:text-accent"
                 onClick={() => setStMode(true)}
               >
@@ -470,7 +470,7 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
             />
             <div className="mt-3 flex items-center gap-3">
               <div className="flex-1 border-t border-border2" />
-              <button
+              <button type="button"
                 className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] text-accent-t transition-colors hover:text-accent"
                 onClick={() => setStMode(true)}
               >
@@ -523,7 +523,7 @@ function ImportModalFrame(props: { title: string; subtitle: string; onClose: () 
               <div className={cn("mb-0.5 font-body font-medium text-t1", isMobile ? "text-lg" : "text-[calc(var(--ui-fs)+4px)]")}>{props.title}</div>
               <div className={cn("mb-3.5 font-ui text-t3", isMobile ? "text-xs" : "text-[calc(var(--ui-fs)-2px)]")}>{props.subtitle}</div>
             </div>
-            <button className={cn("flex shrink-0 cursor-pointer items-center justify-center text-t3 transition-all hover:bg-s2 hover:text-t1", isMobile ? "h-10 w-10 rounded-lg active:bg-s2" : "h-8 w-8 rounded-[5px]")} onClick={props.onClose} aria-label={t("close")}><Icons.Close /></button>
+            <button type="button" className={cn("flex shrink-0 cursor-pointer items-center justify-center text-t3 transition-all hover:bg-s2 hover:text-t1", isMobile ? "h-10 w-10 rounded-lg active:bg-s2" : "h-8 w-8 rounded-[5px]")} onClick={props.onClose} aria-label={t("close")}><Icons.Close /></button>
           </div>
         </div>
         {props.children}
@@ -563,7 +563,7 @@ function BusyLine(props: { label: string }) {
 
 function ModalFooter(props: { onClose: () => void; onConfirm: () => void; confirmLabel: string; disabled: boolean; busy: boolean }) {
   const { t } = useT();
-  return <div className="flex shrink-0 items-center gap-2.5 border-t border-border px-5 py-3.5"><button className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" onClick={props.onClose}>{t("cancel")}</button><button className="h-[37px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45" disabled={props.disabled} onClick={props.onConfirm}>{props.busy ? t("importing") : props.confirmLabel}</button></div>;
+  return <div className="flex shrink-0 items-center gap-2.5 border-t border-border px-5 py-3.5"><button type="button" className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" onClick={props.onClose}>{t("cancel")}</button><button type="button" className="h-[37px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45" disabled={props.disabled} onClick={props.onConfirm}>{props.busy ? t("importing") : props.confirmLabel}</button></div>;
 }
 
 // ─── Utility functions ─────────────────────────────────────────────────────

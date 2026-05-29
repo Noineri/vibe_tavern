@@ -34,11 +34,11 @@ export function ProviderViewHeader({ form, isActive, onEdit, onActivate }: Provi
               </span>
             )}
           </div>
-          <button onClick={onEdit} className="mt-3 flex items-center gap-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:text-accent">
+          <button type="button" onClick={onEdit} className="mt-3 flex items-center gap-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:text-accent">
             <Icons.Edit /> {t("edit_settings_btn")}
           </button>
         </div>
-        <button
+        <button type="button"
           onClick={onActivate}
           className="h-[34px] rounded-md border border-accent bg-accent-dim px-4 font-ui text-[13px] font-medium text-accent-t transition-colors hover:bg-accent hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
           disabled={isActive}

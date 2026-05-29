@@ -186,7 +186,7 @@ export function CharacterForm({
             {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
           </span>
           <CustomTooltip content={t("char_export_json")}>
-          <button
+          <button type="button"
             className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
             style={{ height: 28, width: 28 }}
             onClick={onExportJson}
@@ -197,7 +197,7 @@ export function CharacterForm({
           </CustomTooltip>
           {hasAvatar && (
             <CustomTooltip content={t("char_export_png")}>
-            <button
+            <button type="button"
               className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
               style={{ height: 28, width: 28 }}
               onClick={onExportPng}
@@ -208,7 +208,7 @@ export function CharacterForm({
             </CustomTooltip>
           )}
           <CustomTooltip content={t("char_duplicate")}>
-          <button
+          <button type="button"
             className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
             style={{ height: 28, width: 28 }}
             onClick={onDuplicate}
@@ -218,7 +218,7 @@ export function CharacterForm({
           </button>
           </CustomTooltip>
           <CustomTooltip content={t("char_delete")}>
-          <button
+          <button type="button"
             className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-danger hover:text-danger"
             style={{ height: 28, width: 28 }}
             onClick={onDelete}
@@ -228,7 +228,7 @@ export function CharacterForm({
           </button>
           </CustomTooltip>
           <CustomTooltip content={t("char_import_to_draft")}>
-          <button
+          <button type="button"
             className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
             style={{ height: 28, width: 28 }}
             onClick={() => setImportModalOpen(true)}
@@ -237,7 +237,7 @@ export function CharacterForm({
             {Ic.import()}
           </button>
           </CustomTooltip>
-          <button
+          <button type="button"
             className="cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
             style={{ height: 28, padding: "0 14px" }}
             disabled={!canSave || !isDirty}
@@ -251,21 +251,21 @@ export function CharacterForm({
       {/* Mobile action bar */}
       {isMobile && (
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <button
+          <button type="button"
             className="min-h-[44px] cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:opacity-40"
             disabled={!canSave || !isDirty}
             onClick={onSave}
           >
             {isSaving ? t("saving") : t("save")}
           </button>
-          <button
+          <button type="button"
             className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
             onClick={() => setImportModalOpen(true)}
             disabled={isSaving}
           >
             {Ic.import()}
           </button>
-          <button
+          <button type="button"
             className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
             onClick={onExportJson}
             disabled={isSaving}
@@ -273,7 +273,7 @@ export function CharacterForm({
             {Ic.download()}
           </button>
           {hasAvatar && (
-            <button
+            <button type="button"
               className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
               onClick={onExportPng}
               disabled={isSaving}
@@ -281,14 +281,14 @@ export function CharacterForm({
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="8" cy="8" r="2"/><circle cx="5" cy="5" r="0.8" fill="currentColor"/></svg>
             </button>
           )}
-          <button
+          <button type="button"
             className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
             onClick={onDuplicate}
             disabled={isSaving}
           >
             {Ic.copy()}
           </button>
-          <button
+          <button type="button"
             className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-danger active:bg-danger/10"
             onClick={onDelete}
             disabled={isSaving}
@@ -549,7 +549,7 @@ export function CharacterForm({
 
       {/* Footer */}
       <div className={cn("mt-2 flex flex-wrap items-center gap-2", isMobile && "pb-8")}>
-        <button className={cn("cursor-pointer rounded-md bg-transparent px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1", isMobile && "min-h-[44px]")} disabled={isSaving || !isDirty} onClick={onReset}>{t("reset")}</button>
+        <button type="button" className={cn("cursor-pointer rounded-md bg-transparent px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1", isMobile && "min-h-[44px]")} disabled={isSaving || !isDirty} onClick={onReset}>{t("reset")}</button>
         <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{isDirty ? t("unsaved_changes") : t("saved_state")}</span>
       </div>
 

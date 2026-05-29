@@ -229,7 +229,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         <div className={cn("shrink-0 items-start justify-between border-b border-border", isMobile ? "flex pt-4 px-4 pb-3" : "flex pt-[18px] px-5 pb-[14px]")}>
           <div className="flex items-center gap-2">
             {isMobile && mobileDetailOpen && (
-              <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-t3 active:bg-s2" onClick={() => setMobileDetailOpen(false)}>
+              <button type="button" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-t3 active:bg-s2" onClick={() => setMobileDetailOpen(false)}>
                 <Icons.Caret direction="l" />
               </button>
             )}
@@ -320,7 +320,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           )}
           <div className="ml-auto flex items-center gap-2.5">
             {!isMobile && (
-            <button
+            <button type="button"
               className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1"
               onClick={handleClose}
             >

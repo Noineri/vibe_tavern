@@ -36,7 +36,7 @@ export function InjectionTable({ injections, onChange }: InjectionTableProps) {
         ) : (
           <span className="flex-1 font-ui text-[11px] text-t4">{injections.filter(i => i.enabled).length}/{injections.length} active</span>
         )}
-        <button
+        <button type="button"
           className="flex cursor-pointer items-center gap-1 rounded border border-border bg-surface px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:border-accent hover:text-accent-t"
           onClick={add}
         >
@@ -73,7 +73,7 @@ function InjectionRowView({ injection, index, onUpdate, onRemove }: {
       >
         {/* Enable toggle */}
         <CustomTooltip content={enabled ? t("preset_injection_enabled") : t("preset_injection_disabled")}>
-        <button
+        <button type="button"
           className={cn(
             "flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center rounded text-[14px] transition-colors",
             enabled ? "text-accent hover:bg-accent/10" : "text-t4 hover:text-t2"
@@ -110,7 +110,7 @@ function InjectionRowView({ injection, index, onUpdate, onRemove }: {
 
         {/* Delete */}
         <CustomTooltip content={t("preset_injection_delete")}>
-        <button
+        <button type="button"
           className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-t4 transition-all hover:bg-danger-dim hover:text-danger"
           onClick={(e) => { e.stopPropagation(); onRemove(index); }}
         >

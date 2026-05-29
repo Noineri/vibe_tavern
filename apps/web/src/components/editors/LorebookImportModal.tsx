@@ -256,7 +256,7 @@ export function LorebookImportModal({
                   {t("import_drop_browse")}
                 </div>
               </div>
-              <button
+              <button type="button"
                 className="mt-4 h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
                 onClick={handlePaste}
               >
@@ -331,13 +331,13 @@ export function LorebookImportModal({
                 ))}
               </div>
               <div className="flex gap-2">
-                <button
+                <button type="button"
                   className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
                   onClick={() => setStep(1)}
                 >
                   {t("import_back")}
                 </button>
-                <button
+                <button type="button"
                   className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
                   onClick={() => setStep(3)}
                 >
@@ -391,13 +391,13 @@ export function LorebookImportModal({
                 </>
               )}
               <div className="flex gap-2">
-                <button
+                <button type="button"
                   className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
                   onClick={() => setStep(2)}
                 >
                   {t("import_back")}
                 </button>
-                <button
+                <button type="button"
                   className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all"
                   disabled={importing}
                   onClick={runImport}

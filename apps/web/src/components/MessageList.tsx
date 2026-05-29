@@ -165,7 +165,7 @@ export function MessageList() {
           />
           {!atBottom && displayMessageIds.length > 0 && (
             isMobile ? (
-              <button
+              <button type="button"
                 className="absolute bottom-4 right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-surface/80 backdrop-blur-sm border border-border shadow-lg transition-all duration-300 active:scale-95"
                 onClick={() => virtuosoRef.current?.scrollToIndex({ index: 999999, behavior: "smooth", align: "end" })}
               >
@@ -173,7 +173,7 @@ export function MessageList() {
               </button>
             ) : (
               <CustomTooltip content={t("scroll_to_bottom")} side="left">
-                <button
+                <button type="button"
                   className="absolute bottom-6 right-8 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-on-accent shadow-lg transition-transform hover:scale-110 active:scale-95"
                   onClick={() => virtuosoRef.current?.scrollToIndex({ index: 999999, behavior: "smooth", align: "end" })}
                 >

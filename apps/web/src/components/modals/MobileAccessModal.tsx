@@ -81,7 +81,7 @@ export function MobileAccessModal({ open, onClose, onDisabled }: MobileAccessMod
       <div className="w-[360px] rounded-lg border border-border2 bg-surface p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1">{t("mobile_access")}</h2>
-          <button onClick={onClose} className="text-t3 hover:text-t1"><Icons.Close /></button>
+          <button type="button" onClick={onClose} className="text-t3 hover:text-t1"><Icons.Close /></button>
         </div>
 
         {/* QR Code */}
@@ -96,7 +96,7 @@ export function MobileAccessModal({ open, onClose, onDisabled }: MobileAccessMod
             <div className="mb-1 text-[calc(var(--ui-fs)-3px)] text-t3">{t("mobile_access_or_enter")}</div>
             <div className="flex items-center gap-2">
               <code className="flex-1 truncate text-[calc(var(--ui-fs)-1px)] text-t1">{primaryUrl}</code>
-              <button
+              <button type="button"
                 className="shrink-0 text-[calc(var(--ui-fs)-2px)] text-accent hover:text-accent-t"
                 onClick={() => copyToClipboard(primaryUrl, "url")}
               >{copied === "url" ? t("mobile_access_copied") : t("mobile_access_copy")}</button>
@@ -110,7 +110,7 @@ export function MobileAccessModal({ open, onClose, onDisabled }: MobileAccessMod
             <div className="mb-1 text-[calc(var(--ui-fs)-3px)] text-accent-t">🔗 {t("mobile_access_tailscale")}</div>
             <div className="flex items-center gap-2">
               <code className="flex-1 truncate text-[calc(var(--ui-fs)-1px)] text-t1">{proto}://{tailscale.address}:{info.port}</code>
-              <button
+              <button type="button"
                 className="shrink-0 text-[calc(var(--ui-fs)-2px)] text-accent hover:text-accent-t"
                 onClick={() => copyToClipboard(`${proto}://${tailscale.address}:${info.port}`, "ts")}
               >{copied === "ts" ? t("mobile_access_copied") : t("mobile_access_copy")}</button>
@@ -125,10 +125,10 @@ export function MobileAccessModal({ open, onClose, onDisabled }: MobileAccessMod
             <code className="flex-1 truncate text-[calc(var(--ui-fs)-1px)] text-t1 font-mono">
               {showToken ? info.token : "••••••••-••••-••••-••••-••••••••••••"}
             </code>
-            <button className="shrink-0 text-[calc(var(--ui-fs)-2px)] text-t3 hover:text-t1" onClick={() => setShowToken(!showToken)}>
+            <button type="button" className="shrink-0 text-[calc(var(--ui-fs)-2px)] text-t3 hover:text-t1" onClick={() => setShowToken(!showToken)}>
               <Icons.Eye />
             </button>
-            <button
+            <button type="button"
               className="shrink-0 text-[calc(var(--ui-fs)-2px)] text-accent hover:text-accent-t"
               onClick={() => copyToClipboard(info.token!, "token")}
             >{copied === "token" ? t("mobile_access_copied") : t("mobile_access_copy")}</button>
@@ -143,7 +143,7 @@ export function MobileAccessModal({ open, onClose, onDisabled }: MobileAccessMod
               {fallbacks.map((ip: IPResult) => (
                 <div key={ip.address} className="flex items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-t2">
                   <code>{proto}://{ip.address}:{info.port}</code>
-                  <button className="text-accent hover:text-accent-t" onClick={() => copyToClipboard(`${proto}://${ip.address}:${info.port}`, ip.address)}>
+                  <button type="button" className="text-accent hover:text-accent-t" onClick={() => copyToClipboard(`${proto}://${ip.address}:${info.port}`, ip.address)}>
                     {copied === ip.address ? t("mobile_access_copied") : t("mobile_access_copy")}
                   </button>
                 </div>
@@ -159,11 +159,11 @@ export function MobileAccessModal({ open, onClose, onDisabled }: MobileAccessMod
 
         {/* Actions */}
         <div className="flex items-center gap-2 border-t border-border2 pt-3">
-          <button
+          <button type="button"
             className="flex-1 rounded bg-s2 px-3 py-1.5 text-[calc(var(--ui-fs)-2px)] text-t1 hover:bg-s3"
             onClick={handleRegenerate}
           >{t("mobile_access_regenerate")}</button>
-          <button
+          <button type="button"
             className="rounded px-3 py-1.5 text-[calc(var(--ui-fs)-2px)] text-red-400 hover:bg-red-400/10"
             onClick={handleDisable}
           >{t("mobile_access_disable")}</button>

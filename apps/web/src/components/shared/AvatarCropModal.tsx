@@ -140,15 +140,13 @@ export function AvatarCropModal({
 
         {/* Footer */}
         <div className="flex items-center gap-2.5 border-t border-border px-5 py-[14px] shrink-0">
-          <button
-            type="button"
+          <button type="button"
             className="h-[37px] cursor-pointer rounded-md bg-transparent py-0 px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
             onClick={onCancel}
           >
             {t("cancel")}
           </button>
-          <button
-            type="button"
+          <button type="button"
             className="h-[37px] cursor-pointer rounded-md bg-accent py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110"
             onClick={() => void handleConfirm()}
           >

@@ -88,8 +88,7 @@ export function ProviderModelSelector({
           <label className={labelCls + " mb-[7px]"}>{t("selected_model_label")}</label>
           {models.length > 0 ? (
             <div className="relative">
-              <button
-                type="button"
+              <button type="button"
                 onClick={() => setModelListOpen((v) => !v)}
                 className="flex w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[7px] font-ui text-[13px] text-t1 transition-colors hover:border-accent"
               >
@@ -144,8 +143,7 @@ export function ProviderModelSelector({
                           )}
                         >
                           <CustomTooltip content={isFavorite ? t("remove_from_favorites") : t("add_to_favorites")}>
-                          <button
-                            type="button"
+                          <button type="button"
                             className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 transition-colors hover:bg-s3 hover:text-warning-text', isFavorite && 'text-warning-text')}
                             onClick={(event) => {
                               event.stopPropagation();
@@ -224,7 +222,7 @@ export function ProviderModelSelector({
             />
           )}
         </div>
-        <button
+        <button type="button"
           onClick={() => void onFetchModels()}
           disabled={fetching}
           className={cn(

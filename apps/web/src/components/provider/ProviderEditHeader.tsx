@@ -101,7 +101,7 @@ export function ProviderEditHeader({
 
       {/* Test connection + Save */}
       <div className="mt-2 flex items-center gap-3">
-        <button
+        <button type="button"
           className={cn(
             'flex items-center gap-2 rounded-md border py-2 px-4 font-ui text-[13px] font-medium transition-colors',
             testOk === true ? 'border-success/30 bg-success/10 text-success' :
@@ -116,11 +116,11 @@ export function ProviderEditHeader({
         </button>
         <div className="flex-1" />
         {!isNew && onCancel && (
-          <button onClick={onCancel} className="rounded-md border border-border bg-transparent py-2 px-4 font-ui text-[13px] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1">
+          <button type="button" onClick={onCancel} className="rounded-md border border-border bg-transparent py-2 px-4 font-ui text-[13px] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1">
             {t("cancel")}
           </button>
         )}
-        <button onClick={onSave} className="rounded-md bg-accent py-2 px-5 font-ui text-[13px] font-medium text-white shadow-lg shadow-accent/20 transition-all hover:bg-accent-t">
+        <button type="button" onClick={onSave} className="rounded-md bg-accent py-2 px-5 font-ui text-[13px] font-medium text-white shadow-lg shadow-accent/20 transition-all hover:bg-accent-t">
           {t("save_settings_btn")}
         </button>
       </div>

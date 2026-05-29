@@ -565,13 +565,13 @@ export function LorebookEditor({
             {t("lore_no_entries")}
           </div>
           <div className="mx-auto flex justify-center gap-2">
-            <button
+            <button type="button"
               className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent"
               onClick={handleAddLorebook}
             >
               <Ic.plus /> {t("new_lorebook")}
             </button>
-            <button
+            <button type="button"
               className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent"
               onClick={() => setImportOpen(true)}
             >
@@ -622,13 +622,13 @@ export function LorebookEditor({
       {/* Кнопки внизу списка */}
       {lorebooks.length > 0 && (
         <div className="mt-2 flex gap-2">
-          <button
+          <button type="button"
             className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent"
             onClick={handleAddLorebook}
           >
             <Ic.plus /> {t("new_lorebook")}
           </button>
-          <button
+          <button type="button"
             className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent"
             onClick={() => setImportOpen(true)}
           >
@@ -663,8 +663,7 @@ export function LorebookEditor({
         <CustomTooltip
           content={tab === "lorebooks" ? t("scripts_card_title") : t("lorebooks_card_title")}
         >
-          <button
-            type="button"
+          <button type="button"
             className="flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded px-2 font-ui text-[12px] text-t3 transition-all hover:bg-s2 hover:text-t1"
             aria-label={tab === "lorebooks" ? t("scripts_card_title") : t("lorebooks_card_title")}
             onClick={() => handleSwitchTab(tab === "lorebooks" ? "scripts" : "lorebooks")}
@@ -741,7 +740,7 @@ export function LorebookEditor({
         {tab === "lorebooks" ? activeEntry?.title || "" : ""}
       </span>
       {/* Индикатор автосохранения */}
-      <button
+      <button type="button"
         className={cn(
           "h-8 cursor-pointer rounded-md px-3 font-ui text-xs font-medium transition-all select-none",
           savingState === "saving"
@@ -802,13 +801,13 @@ export function LorebookEditor({
           className="flex justify-end gap-2 border-t border-border"
           style={{ padding: "12px 20px" }}
         >
-          <button
+          <button type="button"
             className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
             onClick={() => setConfirmDeleteLorebook(null)}
           >
             {t("lore_cancel_edit")}
           </button>
-          <button
+          <button type="button"
             className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all"
             onClick={() => handleDeleteLb(confirmDeleteLorebook)}
           >

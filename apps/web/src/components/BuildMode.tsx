@@ -239,7 +239,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
             <div className="flex flex-col gap-2">
               {/* Trace navigator */}
               <div className="flex items-center gap-2">
-                <button
+                <button type="button"
                   className="cursor-pointer rounded-md border border-border bg-s2 px-2.5 py-1 text-xs text-t2 transition-colors hover:bg-border2 hover:text-t1 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-s2 disabled:hover:text-t2"
                   disabled={currentTraceIndex >= promptTraceHistory.length - 1}
                   onClick={() => {
@@ -252,7 +252,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
                 <span className="text-xs text-t2">
                   {t("trace_turn").replace("{n}", String(promptTraceHistory.length - currentTraceIndex))}
                 </span>
-                <button
+                <button type="button"
                   className="cursor-pointer rounded-md border border-border bg-s2 px-2.5 py-1 text-xs text-t2 transition-colors hover:bg-border2 hover:text-t1 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-s2 disabled:hover:text-t2"
                   disabled={currentTraceIndex <= 0}
                   onClick={() => {
@@ -322,7 +322,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
             ))}
 
             <div className="mt-5">
-              <button
+              <button type="button"
                 className="inline-flex cursor-pointer items-center rounded-md border-0 bg-s3 px-4 py-2 font-ui text-xs font-medium text-t2 transition-colors hover:bg-border2 hover:text-t1"
                 onClick={() => alert(promptPayloadText)}
               >

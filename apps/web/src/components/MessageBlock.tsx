@@ -223,13 +223,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
             <span>{isUser ? personaName : characterName}</span>
             {greetingActive && (
               <span className="ml-auto flex items-center gap-1 text-[calc(var(--ui-fs)-3px)] text-t3">
-                <button
+                <button type="button"
                   className={cn("cursor-pointer text-t3 transition-colors duration-100", isMobile ? "active:text-accent" : "hover:text-accent")}
                   disabled={!canSwitchVariant || greetingIndex <= 0}
                   onClick={() => { if (!isGreeting) isSwipingRef.current = true; useSnapshotStore.getState().setSwipeDirection(-1); setGreetingIndex(Math.max(0, greetingIndex - 1)); }}
                 >◀</button>
                 {t("greeting_counter").replace("{n}", String(greetingIndex + 1)).replace("{total}", String(greetingOptions!.length))}
-                <button
+                <button type="button"
                   className={cn("cursor-pointer text-t3 transition-colors duration-100", isMobile ? "active:text-accent" : "hover:text-accent")}
                   disabled={!canSwitchVariant || greetingIndex >= greetingOptions!.length - 1}
                   onClick={() => { if (!isGreeting) isSwipingRef.current = true; useSnapshotStore.getState().setSwipeDirection(1); setGreetingIndex(Math.min(greetingOptions!.length - 1, greetingIndex + 1)); }}
@@ -295,12 +295,12 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                 autoFocus
               />
               <div className="mt-1.5 flex gap-1.5">
-                <button
+                <button type="button"
                   className="cursor-pointer rounded-[5px] bg-accent px-3 py-[5px] font-ui text-xs font-medium text-on-accent transition-all duration-100 hover:brightness-110"
                   disabled={isBusy}
                   onClick={() => void chat.handleSaveMessageEdit(msg.id)}
                 >{t("save_edit")}</button>
-                <button
+                <button type="button"
                   className="cursor-pointer rounded-[5px] bg-s2 px-3 py-[5px] font-ui text-xs font-medium text-t2 transition-all duration-100 hover:bg-s3"
                   disabled={isBusy}
                   onClick={chat.handleCancelEdit}
@@ -431,7 +431,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
               {!isUser && variantCount > 1 && canSwitchVariant && (
                 <span className="ml-auto mr-auto flex items-center gap-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
-                  <button
+                  <button type="button"
                     className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
                     disabled={isBusy || selectedVariantIndex <= 0}
                     onClick={() => {
@@ -441,7 +441,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                     }}
                   ><Icons.Caret direction="l" /></button>
                   <span className="min-w-6 text-center tabular-nums">{selectedVariantIndex + 1}/{variantCount}</span>
-                  <button
+                  <button type="button"
                     className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
                     disabled={isBusy || selectedVariantIndex >= variantCount - 1}
                     onClick={() => {

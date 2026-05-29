@@ -37,8 +37,7 @@ export function ToggleChips({
       {options.map((opt) => {
         const active = selected.includes(opt.value);
         return (
-          <button
-            key={opt.value}
+          <button  key={opt.value}
             type="button"
             disabled={disabled}
             onClick={() => toggle(opt.value)}

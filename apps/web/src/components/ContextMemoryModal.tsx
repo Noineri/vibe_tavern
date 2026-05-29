@@ -426,8 +426,7 @@ export function ContextMemoryModal({
           </div>
           {isMobile && <span className="shrink-0 text-t4">{Ic.caret("r")}</span>}
           {!isMobile && (
-            <button
-              type="button"
+            <button type="button"
               className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 opacity-0 hover:bg-danger-dim hover:text-danger-text group-hover:opacity-100"
               onClick={(e) => { e.stopPropagation(); void handleDelete(s.id); }}
             >
@@ -467,8 +466,7 @@ export function ContextMemoryModal({
       <section className="mt-4">
         <div className="mb-2 flex items-center justify-between gap-3">
           <div className={cn(labelCls, "mb-0")}>{t("summary_text_label")}</div>
-          <button
-            type="button"
+          <button type="button"
             className="h-7 rounded-md bg-s3 px-3 font-ui text-xs text-t2 hover:bg-border2 hover:text-t1 disabled:opacity-40"
             disabled={!dirty || saving}
             onClick={() => void handleSave()}
@@ -539,8 +537,7 @@ export function ContextMemoryModal({
               className="flex-1"
             />
             {/* Pin star: lock this model even when "use chat model" is on */}
-            <button
-              type="button"
+            <button type="button"
               className={cn(
                 "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors",
                 pinnedModel ? "border-accent bg-accent-dim text-accent" : "border-border text-t4 hover:text-t3",
@@ -553,8 +550,7 @@ export function ContextMemoryModal({
             </button>
           </div>
         </div>
-        <button
-          type="button"
+        <button type="button"
           className="mt-3 h-10 w-full rounded-md bg-accent px-4 font-ui text-sm font-semibold text-on-accent hover:brightness-110 disabled:opacity-50"
           disabled={!activeChatId || generating || !effectiveProviderId || !effectiveModel}
           onClick={() => void handleGenerate()}
@@ -664,8 +660,7 @@ export function ContextMemoryModal({
         <div className={cn("shrink-0 border-b border-border", isMobile ? "px-3 py-2.5" : "px-5 pt-5")}>
           {isMobile && mobileDetailOpen ? (
             <div className="flex items-center gap-2">
-              <button
-                type="button"
+              <button type="button"
                 className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 hover:bg-s2 hover:text-t1"
                 onClick={() => { setMobileDetailOpen(false); setActiveSummaryId(null); }}
               >
@@ -685,8 +680,7 @@ export function ContextMemoryModal({
                 </div>
                 {!isMobile && <div className="mt-1 font-ui text-[13px] text-t3">{t("context_memory_sub")}</div>}
               </div>
-              <button
-                className="flex h-8 w-8 items-center justify-center rounded-md text-t3 hover:bg-s2 hover:text-t1"
+              <button  className="flex h-8 w-8 items-center justify-center rounded-md text-t3 hover:bg-s2 hover:text-t1"
                 onClick={onClose} type="button"
               >
                 <Icons.Close />
@@ -714,8 +708,7 @@ export function ContextMemoryModal({
               </div>
               {archiveList}
               <div className="shrink-0 border-t border-border px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] mt-auto">
-                <button
-                  type="button"
+                <button type="button"
                   className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-xs text-t3 hover:border-border hover:bg-s2 hover:text-t1"
                   onClick={() => void createNewSummary()}
                   disabled={!activeChatId || saving}
@@ -732,8 +725,7 @@ export function ContextMemoryModal({
               <div className="px-4 py-4 font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3">{t("summary_archive_label")}</div>
               {archiveList}
               <div className="border-t border-border p-3">
-                <button
-                  type="button"
+                <button type="button"
                   className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-xs text-t3 hover:border-border hover:bg-s2 hover:text-t1"
                   onClick={() => void createNewSummary()}
                   disabled={!activeChatId || saving}

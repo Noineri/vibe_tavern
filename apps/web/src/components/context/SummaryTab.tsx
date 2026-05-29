@@ -115,7 +115,7 @@ export function SummaryTab({
               {/* Context toggle checkbox */}
               {onToggleContext && (
                 <CustomTooltip content={t('toggle_context_summary')}>
-                <button
+                <button type="button"
                   className={cn(
                     "flex h-[18px] w-[18px] shrink-0 cursor-pointer items-center justify-center rounded border transition-colors mr-1",
                     s.includeInContext
@@ -133,7 +133,7 @@ export function SummaryTab({
                 <div className="truncate font-ui text-[10px] text-t4">{s.timestamp}</div>
               </div>
               <CustomTooltip content={t('delete_summary')}>
-              <button
+              <button type="button"
                 className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-t4 opacity-0 transition-all hover:bg-danger-dim hover:text-danger group-hover:opacity-100"
                 onClick={e => { e.stopPropagation(); onDeleteSummary(s.id); }}
               >
@@ -144,8 +144,7 @@ export function SummaryTab({
           ))}
         </div>
         <div className="shrink-0 border-t border-border px-3 pt-3">
-          <button
-            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+          <button  className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
             disabled={disabled}
             onClick={onNewSummary}
             type="button"
@@ -212,8 +211,7 @@ export function SummaryTab({
           <div className="min-w-0" ref={modelDropdownRef}>
             <label className={labelCls}>{t('summarize_model_label')}</label>
             <div className="relative">
-              <button
-                type="button"
+              <button type="button"
                 disabled={disabled || isSummarizing || isLoadingModels || models.length === 0}
                 onClick={() => setModelListOpen((v) => !v)}
                 className="flex h-[38px] w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[7px] font-ui text-[13px] text-t1 transition-colors hover:border-accent disabled:cursor-default disabled:opacity-60"
@@ -285,7 +283,7 @@ export function SummaryTab({
               )}
             </div>
           </div>
-          <button
+          <button type="button"
             className="h-[38px] shrink-0 cursor-pointer whitespace-nowrap rounded-md border-0 bg-accent px-3.5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-40"
             disabled={disabled || isSummarizing || !selectedProviderId || !selectedModel.trim()}
             onClick={onSummarize}

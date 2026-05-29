@@ -131,7 +131,7 @@ export function Sidebar() {
             <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap font-body text-[length:var(--ui-fs)] font-medium tracking-[-0.01em] text-t1">{t("app_name")}</span>
           )}
           <CustomTooltip content={sidebarCollapsed ? t("sidebar_expand") : t("sidebar_collapse")} side="right">
-            <button
+            <button type="button"
               className="iBtn"
               aria-label={sidebarCollapsed ? t("sidebar_expand") : t("sidebar_collapse")}
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -206,10 +206,10 @@ export function Sidebar() {
                   {characterTabs.find(t => t.id === flyoutCharId)?.name}
                 </span>
                 <CustomTooltip content={t("sidebar_new_chat_active_char")}>
-                  <button className="iBtn size-6" onClick={() => { void character.handleCreateChat(flyoutCharId); }}><Icons.Plus /></button>
+                  <button type="button" className="iBtn size-6" onClick={() => { void character.handleCreateChat(flyoutCharId); }}><Icons.Plus /></button>
                 </CustomTooltip>
                 <CustomTooltip content={t("close")}>
-                  <button className="iBtn size-6" aria-label={t("close")} onClick={() => setFlyoutCharId(null)}><Icons.Close /></button>
+                  <button type="button" className="iBtn size-6" aria-label={t("close")} onClick={() => setFlyoutCharId(null)}><Icons.Close /></button>
                 </CustomTooltip>
               </div>
 
@@ -347,12 +347,12 @@ export function Sidebar() {
               <div className="flex items-center pr-2.5">
                 <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_characters")}</div>
                 <CustomTooltip content={t("sidebar_import_character")}>
-                  <button className="iBtn size-5" onClick={() => setImportModal("character")}>
+                  <button type="button" className="iBtn size-5" onClick={() => setImportModal("character")}>
                     <Icons.Import />
                   </button>
                 </CustomTooltip>
                 <CustomTooltip content={t("sidebar_create_character")}>
-                  <button className="iBtn size-5" onClick={() => useModalStore.getState().setCreateCharacterModalOpen(true)}>
+                  <button type="button" className="iBtn size-5" onClick={() => useModalStore.getState().setCreateCharacterModalOpen(true)}>
                     <Icons.Plus />
                   </button>
                 </CustomTooltip>
@@ -392,7 +392,7 @@ export function Sidebar() {
                       {!menuOpen && (
                         <div className="absolute right-1 top-1/2 flex -translate-y-1/2 gap-0.5 rounded pl-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
                           <CustomTooltip content={t("sidebar_character_actions")}>
-                            <button
+                            <button type="button"
                               className="flex h-[22px] w-[22px] scale-90 items-center justify-center rounded text-t3 transition-colors duration-100 hover:text-t1"
                               aria-label={t("sidebar_character_actions")}
                               onClick={(event) => {
@@ -466,12 +466,12 @@ export function Sidebar() {
               <div className="flex items-center pr-2.5">
                 <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_chats")}</div>
                 <CustomTooltip content={t("sidebar_import_chat")}>
-                  <button className="iBtn size-5" onClick={() => setImportModal("chat")}>
+                  <button type="button" className="iBtn size-5" onClick={() => setImportModal("chat")}>
                     <Icons.Import />
                   </button>
                 </CustomTooltip>
                 <CustomTooltip content={t("sidebar_new_chat_active_char")}>
-                  <button className="iBtn size-5" onClick={() => {
+                  <button type="button" className="iBtn size-5" onClick={() => {
                     const activeTab = characterTabs.find((tab) => tab.chatId === activeChatId);
                     const charId = activeTab?.id ?? selectedCharacterId;
                     void character.handleCreateChat(charId ?? undefined);
@@ -562,7 +562,7 @@ export function Sidebar() {
                       {!chatMenuOpen && (
                         <div className="absolute right-1 top-2 flex gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
                           <CustomTooltip content={t("sidebar_chat_actions")}>
-                            <button
+                            <button type="button"
                               className={cn(
                                 'flex h-[22px] w-[22px] scale-90 items-center justify-center rounded text-t3 transition-colors duration-100 hover:text-t1',
                                 isActive && 'hover:text-accent-t'
@@ -663,8 +663,7 @@ export function Sidebar() {
                             })}
                           </div>
                           <div className="mt-1 flex items-center gap-1 border-t border-border pt-1">
-                            <button
-                              className="inline-flex h-6 flex-1 cursor-pointer items-center justify-center gap-1 rounded px-1.5 text-center text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1 [&_svg]:h-3 [&_svg]:w-3"
+                            <button  className="inline-flex h-6 flex-1 cursor-pointer items-center justify-center gap-1 rounded px-1.5 text-center text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1 [&_svg]:h-3 [&_svg]:w-3"
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
@@ -679,7 +678,7 @@ export function Sidebar() {
                               const canAct = !activeIsRoot && branches.length > 1;
                               return (
                                 <CustomTooltip content={canAct ? "" : t("sidebar_switch_to_non_main")}>
-                                  <button className={cn(
+                                  <button  className={cn(
                                     'inline-flex h-6 flex-1 cursor-pointer items-center justify-center gap-1 rounded px-1.5 text-center text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1 [&_svg]:h-3 [&_svg]:w-3',
                                     !canAct && 'opacity-45 cursor-not-allowed'
                                   )}

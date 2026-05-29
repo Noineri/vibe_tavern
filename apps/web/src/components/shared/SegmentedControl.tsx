@@ -40,8 +40,7 @@ export function SegmentedControl({
       {options.map((opt) => {
         const active = opt.value === value;
         return (
-          <button
-            key={opt.value}
+          <button  key={opt.value}
             type="button"
             role="radio"
             aria-checked={active}
