@@ -28,14 +28,13 @@ const rpTheme = EditorView.theme(
         backgroundColor: "var(--accent-dim) !important",
       },
     ".cm-gutters": {
-      backgroundColor: "var(--surface)",
+      backgroundColor: "transparent",
       color: "var(--t3)",
       border: "none",
-      borderRight: "1px solid var(--border)",
-      minWidth: "32px",
+      minWidth: "28px",
     },
     ".cm-activeLineGutter": {
-      backgroundColor: "var(--s2)",
+      backgroundColor: "transparent",
       color: "var(--t2)",
     },
     ".cm-activeLine": {
@@ -68,6 +67,9 @@ const pageScrollTheme = EditorView.theme({
   },
   ".cm-scroller": {
     overflow: "visible !important",
+  },
+  ".cm-gutters": {
+    position: "static !important",
   },
 });
 
