@@ -196,9 +196,9 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
 
         {/* Preview */}
         {phase === "preview" && parsed && (
-          <>
+          <div className={cn(isMobile ? "flex-1 overflow-y-auto" : "contents")}>
             {/* Top bar: summary + bulk actions */}
-            <div className="shrink-0 border-b border-border px-5 pb-2.5">
+            <div className={cn("border-b border-border px-5 pb-2.5", !isMobile && "shrink-0")}>
               <div className="flex items-center gap-2 mb-2">
                 <span className="font-ui text-[calc(var(--ui-fs)-1px)] text-t1">{parsed.name}.json</span>
                 <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t4">· {counts.all} {t("blocks")}</span>
@@ -252,7 +252,7 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
             </div>
 
             {/* Block list */}
-            <div className="flex-1 overflow-y-auto">
+            <div className={cn(!isMobile && "flex-1 overflow-y-auto")}>
               {filtered.length === 0 ? (
                 <div className="px-5 py-8 text-center font-ui text-[12px] text-t4">{t("preset_import_no_match")}</div>
               ) : (
@@ -272,7 +272,7 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
                 </div>
               )}
             </div>
-          </>
+          </div>
         )}
 
         { parsed && (phase === "preview") && (
