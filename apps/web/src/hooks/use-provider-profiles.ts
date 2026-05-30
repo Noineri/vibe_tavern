@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ProviderProbeResponse } from "@vibe-tavern/domain";
 import { PROVIDER_TYPE } from "@vibe-tavern/domain";
-import { getT } from "../i18n/context.js";
+import { getT } from "../i18n/locale-helpers.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import {

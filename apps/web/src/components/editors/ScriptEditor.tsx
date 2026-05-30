@@ -120,7 +120,7 @@ function buildLineDiff(oldCode: string, newCode: string): DiffSummary {
   return { lines, added, removed, tooLarge: false };
 }
 
-function DiffPreview({ summary, labels }: { summary: DiffSummary; labels: { title: string; tooLarge: string; noChanges: string } }) {
+export function DiffPreview({ summary, labels }: { summary: DiffSummary; labels: { title: string; tooLarge: string; noChanges: string } }) {
   if (summary.tooLarge) {
     return (
       <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>

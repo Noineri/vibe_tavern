@@ -17,6 +17,49 @@ import { useChatController } from "../hooks/use-chat-controller.js";
 import { useBuildPanels } from "../hooks/use-build-panels.js";
 import type { ChatListItem } from "../app-client.js";
 
+/* ── Mini icon button (collapsed rail item) ── */
+function Ico({ icon, active, onClick, title }: { icon: React.ReactNode; active?: boolean; onClick: () => void; title: string }) {
+  return (
+    <div
+      className={cn(
+        "flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-all duration-150 active:bg-s3 active:scale-95",
+        active ? "rounded-xl bg-accent-dim text-accent-t" : "text-t3",
+      )}
+      onClick={onClick}
+      title={title}
+    >
+      {icon}
+    </div>
+  );
+}
+
+function NavRow({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <div
+      className="flex h-9 cursor-pointer items-center rounded-md transition-colors duration-100 active:bg-s3 gap-3 px-2.5 w-full"
+      onClick={onClick}
+    >
+      <div className="flex h-4 w-4 shrink-0 items-center justify-center opacity-80">{icon}</div>
+      <span className="min-w-0 truncate font-ui text-[clamp(11px,calc(var(--ui-fs)-2px),15px)] font-medium tracking-wide text-t2">{label}</span>
+    </div>
+  );
+}
+
+function RailRow({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick: () => void }) {
+  return (
+    <div
+      className={cn(
+        "flex min-h-[44px] cursor-pointer items-center rounded-md transition-colors duration-100 active:bg-s3 gap-2.5 px-3 w-full",
+        active ? "bg-accent-dim text-accent-t" : "text-t3",
+      )}
+      onClick={onClick}
+    >
+      <div className="flex h-5 w-5 shrink-0 items-center justify-center">{icon}</div>
+      <span className="truncate font-ui text-[calc(var(--ui-fs)-1px)]">{label}</span>
+    </div>
+  );
+}
+
 export function Rail({ hidden }: { hidden?: boolean }) {
   const { t } = useT();
   const mode = useNavigationStore((s) => s.mode);
@@ -224,45 +267,6 @@ export function Rail({ hidden }: { hidden?: boolean }) {
     );
   };
 
-  /* ── Mini icon button (collapsed rail item) ── */
-  const Ico = ({ icon, active, onClick, title }: { icon: React.ReactNode; active?: boolean; onClick: () => void; title: string }) => (
-    <div
-      className={cn(
-        "flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-all duration-150 active:bg-s3 active:scale-95",
-        active ? "rounded-xl bg-accent-dim text-accent-t" : "text-t3",
-      )}
-      onClick={onClick}
-      title={title}
-    >
-      {icon}
-    </div>
-  );
-
-  /* ── Expanded row (build sections) ── */
-  const Row = ({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick: () => void }) => (
-    <div
-      className={cn(
-        "flex min-h-[44px] cursor-pointer items-center rounded-md transition-colors duration-100 active:bg-s3 gap-2.5 px-3 w-full",
-        active ? "bg-accent-dim text-accent-t" : "text-t3",
-      )}
-      onClick={onClick}
-    >
-      <div className="flex h-5 w-5 shrink-0 items-center justify-center">{icon}</div>
-      <span className="truncate font-ui text-[calc(var(--ui-fs)-1px)]">{label}</span>
-    </div>
-  );
-
-  /* ── Nav row (bottom actions) ── */
-  const NavRow = ({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) => (
-    <div
-      className="flex h-9 cursor-pointer items-center rounded-md transition-colors duration-100 active:bg-s3 gap-3 px-2.5 w-full"
-      onClick={onClick}
-    >
-      <div className="flex h-4 w-4 shrink-0 items-center justify-center opacity-80">{icon}</div>
-      <span className="min-w-0 truncate font-ui text-[clamp(11px,calc(var(--ui-fs)-2px),15px)] font-medium tracking-wide text-t2">{label}</span>
-    </div>
-  );
-
   return (
     <>
       {/* ═══ COLLAPSED RAIL ═══ */}
@@ -403,7 +407,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
             <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-scroll px-2 py-2">
               {mode === "build" ? (
                 buildPanels.map((panel) => (
-                  <Row key={panel.id} icon={panel.icon} label={t(panel.labelKey)}
+                  <RailRow key={panel.id} icon={panel.icon} label={t(panel.labelKey)}
                        onClick={() => { useCharacterStore.getState().setBuildTab(panel.id); close(); }} />
                 ))
               ) : (
