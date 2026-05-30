@@ -253,7 +253,7 @@ export async function createTestServer(): Promise<TestServer> {
 
   // ── Set env for createRuntimeStore() ───────────────────────────────────
   process.env.RP_PLATFORM_ROOT_DIR = tmpDir;
-  process.env.RP_PLATFORM_DB_PATH = "data/test.db";
+  process.env.VIBE_TAVERN_DB_PATH = "data/test.db";
 
   // ── DI wiring (mirrors prod-server.ts) ──────────────────────────────────
   const stores = await createRuntimeStore();
@@ -302,7 +302,7 @@ export async function createTestServer(): Promise<TestServer> {
       await rm(tmpDir, { recursive: true, force: true });
     } catch {}
     delete process.env.RP_PLATFORM_ROOT_DIR;
-    delete process.env.RP_PLATFORM_DB_PATH;
+    delete process.env.VIBE_TAVERN_DB_PATH;
   };
 
   return { api, app, tmpDir, cleanup };

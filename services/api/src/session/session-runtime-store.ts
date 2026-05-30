@@ -12,9 +12,9 @@ function resolveDataDir(rootDir: string, dataDir?: string): string {
 }
 
 function resolveDbPath(rootDir: string, resolvedDataDir: string): string {
-  // RP_PLATFORM_DB_PATH is the public env var used by Docker/tests. Keep
-  // VIBE_TAVERN_DB_PATH as a backward-compatible alias for older local setups.
-  const configuredDbPath = process.env.RP_PLATFORM_DB_PATH ?? process.env.VIBE_TAVERN_DB_PATH;
+  // VIBE_TAVERN_DB_PATH is the current app-specific env var. Keep
+  // RP_PLATFORM_DB_PATH as a backward-compatible alias for older setups.
+  const configuredDbPath = process.env.VIBE_TAVERN_DB_PATH ?? process.env.RP_PLATFORM_DB_PATH;
   if (configuredDbPath) return resolve(rootDir, configuredDbPath);
   return resolve(resolvedDataDir, 'vibe-tavern.db');
 }
