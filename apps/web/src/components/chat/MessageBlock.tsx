@@ -224,9 +224,23 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     pin();
   };
 
-  const handleSelectGreeting = (targetIndex: number, swipeDirection: SwipeDirection) => {
+  const handleSelectGreeting = async (targetIndex: number, swipeDirection: SwipeDirection) => {
     useSnapshotStore.getState().setSwipeDirection(swipeDirection);
     setGreetingIndex(targetIndex);
+
+    // Persist the selected greeting as the actual message content so the
+    // prompt assembly sends the correct greeting to the model.
+    if (greetingOptions && msg) {
+      const selectedContent = greetingOptions[targetIndex];
+      if (selectedContent != null && selectedContent !== msg.displayContent) {
+        try {
+          await chat.handleEditGreeting(msg.id, selectedContent);
+        } catch {
+          // Non-critical: UI already shows the selected greeting.
+          // If the API call fails, the model may use the original greeting.
+        }
+      }
+    }
   };
 
   const handleSelectVariant = (targetIndex: number, swipeDirection: SwipeDirection) => {
@@ -304,13 +318,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                 <button type="button"
                   className={cn("cursor-pointer text-t3 transition-colors duration-100", isMobile ? "active:text-accent" : "hover:text-accent")}
                   disabled={!canSwitchVariant || greetingIndex <= 0}
-                  onClick={() => { useSnapshotStore.getState().setSwipeDirection(-1); setGreetingIndex(Math.max(0, greetingIndex - 1)); }}
+                  onClick={() => { handleSelectGreeting(Math.max(0, greetingIndex - 1), -1); }}
                 >◀</button>
                 {t("greeting_counter").replace("{n}", String(greetingIndex + 1)).replace("{total}", String(greetingOptions!.length))}
                 <button type="button"
                   className={cn("cursor-pointer text-t3 transition-colors duration-100", isMobile ? "active:text-accent" : "hover:text-accent")}
                   disabled={!canSwitchVariant || greetingIndex >= greetingOptions!.length - 1}
-                  onClick={() => { useSnapshotStore.getState().setSwipeDirection(1); setGreetingIndex(Math.min(greetingOptions!.length - 1, greetingIndex + 1)); }}
+                  onClick={() => { handleSelectGreeting(Math.min(greetingOptions!.length - 1, greetingIndex + 1), 1); }}
                 >▶</button>
               </span>
             )}
@@ -346,7 +360,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                       <div className="flex items-center gap-2.5 min-h-[44px] px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2 cursor-pointer" onClick={() => { setMobileMenuOpen(false); void navigator.clipboard?.writeText(msg.displayContent); setCopied(true); setTimeout(() => setCopied(false), 1000); }}>
                         {copied ? <Icons.Check /> : <Icons.Copy />}<span className={copied ? 'text-success-text' : ''}>{copied ? t("copied") : copyLabel}</span>
                       </div>
-                      <div className="flex items-center gap-2.5 min-h-[44px] px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2 cursor-pointer" onClick={() => { setMobileMenuOpen(false); chat.handleStartEdit(msg); }}>
+                      <div className="flex items-center gap-2.5 min-h-[44px] px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2 cursor-pointer" onClick={() => { setMobileMenuOpen(false); chat.handleStartEdit(msg, isGreeting ? renderContent : undefined); }}>
                         <Icons.Edit />{editLabel}
                       </div>
                       <div style={{ borderTop: '1px solid var(--border)' }}>
@@ -497,7 +511,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               onBranch={() => void chat.handleFork(msg.id)}
               onCopy={() => { void navigator.clipboard?.writeText(msg.displayContent); setCopied(true); setTimeout(() => setCopied(false), 1000); }}
               onDelete={() => void chat.handleDeleteMessage(msg.id)}
-              onEdit={() => chat.handleStartEdit(msg)}
+              onEdit={() => chat.handleStartEdit(msg, isGreeting ? renderContent : undefined)}
               onRegenerate={() => void chat.handleRegenerateMessage(msg.id)}
               onResend={() => void chat.handleResend()}
               onSelectVariant={handleSelectVariant}
