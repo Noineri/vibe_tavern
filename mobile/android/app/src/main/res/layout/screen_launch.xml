@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FF1A1A2E"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:padding="28dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🌴"
+            android:textSize="56sp"
+            android:gravity="center"
+            android:layout_marginBottom="6dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Vibe Tavern"
+            android:textSize="24sp"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="APK manages the local server. The app itself opens in your browser."
+            android:textSize="13sp"
+            android:textColor="#9999AA"
+            android:gravity="center"
+            android:layout_marginBottom="20dp" />
+
+        <TextView
+            android:id="@+id/status_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Checking server…"
+            android:textSize="16sp"
+            android:textColor="#FFFFFF"
+            android:gravity="center"
+            android:padding="16dp"
+            android:background="#2A2A40"
+            android:layout_marginBottom="14dp" />
+
+        <TextView
+            android:id="@+id/progress_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textSize="14sp"
+            android:textColor="#CCCCDD"
+            android:gravity="center"
+            android:layout_marginBottom="10dp"
+            android:visibility="gone" />
+
+        <ProgressBar
+            android:id="@+id/progress_bar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="6dp"
+            android:layout_marginBottom="22dp"
+            android:visibility="gone"
+            android:indeterminate="true" />
+
+        <Button
+            android:id="@+id/btn_launch_server"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="🚀 Start Server in Termux"
+            android:textSize="16sp"
+            android:layout_marginBottom="12dp"
+            style="@style/Widget.VibeTavern.Button.Primary" />
+
+        <Button
+            android:id="@+id/btn_open_browser"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:text="🌐 Open in Browser"
+            android:textSize="15sp"
+            android:layout_marginBottom="12dp"
+            style="@style/Widget.VibeTavern.Button.Primary" />
+
+        <Button
+            android:id="@+id/btn_stop_server"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="⏹ Stop Server"
+            android:textSize="14sp"
+            android:layout_marginBottom="18dp"
+            style="@style/Widget.VibeTavern.Button.Secondary" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Management"
+            android:textSize="12sp"
+            android:textColor="#777788"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginBottom="10dp" />
+
+        <Button
+            android:id="@+id/btn_one_time_setup"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="📦 Install / Update"
+            android:textSize="14sp"
+            android:layout_marginBottom="10dp"
+            style="@style/Widget.VibeTavern.Button.Secondary" />
+
+        <Button
+            android:id="@+id/btn_help"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="❓ Help / Troubleshooting"
+            android:textSize="14sp"
+            android:layout_marginBottom="10dp"
+            style="@style/Widget.VibeTavern.Button.Secondary" />
+
+        <Button
+            android:id="@+id/btn_language"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="🌐 Language"
+            android:textSize="14sp"
+            android:layout_marginBottom="10dp"
+            style="@style/Widget.VibeTavern.Button.Secondary" />
+
+        <Button
+            android:id="@+id/btn_uninstall"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="🗑 Uninstall Everything"
+            android:textSize="14sp"
+            android:layout_marginBottom="16dp"
+            style="@style/Widget.VibeTavern.Button.Secondary" />
+
+        <TextView
+            android:id="@+id/help_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Tip: if the web UI lags after switching apps, disable battery optimization for Termux."
+            android:textSize="12sp"
+            android:textColor="#AAAA88"
+            android:gravity="center"
+            android:lineSpacingExtra="3dp" />
+
+    </LinearLayout>
+</ScrollView>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Vibe Tavern</string>
+    <string name="step_install_termux">Step 1: Install Termux</string>
+    <string name="step_grant_permission">Step 2: Grant Permission</string>
+    <string name="btn_install_termux">Install Termux from F-Droid</string>
+    <string name="btn_installed_continue">I\'ve installed it — continue</string>
+    <string name="btn_open_settings">Open Termux Settings</string>
+    <string name="btn_continue">Continue</string>
+    <string name="warn_fdroid_only">⚠ IMPORTANT: Install from F-Droid, NOT the Play Store.</string>
+    <string name="permission_guide">1. Tap the button below to open Termux settings\n2. Tap &quot;Permissions&quot; → &quot;Additional permissions&quot;\n3. Enable &quot;Run commands in Termux environment&quot;\n4. Come back here and tap Continue</string>
+    <string name="loading">Starting server…</string>
+    <string name="notification_server_running">Server is running on localhost:8787</string>
+</resources>
