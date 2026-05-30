@@ -96,16 +96,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   }
   const direction = directionRef.current;
 
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // ⚠️  FRAGILE — Synchronous Scroll Anchoring (SillyTavern style)
-  // ⚠️  DO NOT TOUCH unless absolutely necessary.
-  //
-  // This keeps the scroll pinned to the bottom when swiping between variants
-  // of different lengths. It measures the bottom edge delta synchronously
-  // in useLayoutEffect (before paint) and adjusts the Virtuoso scroller.
-  //
-  // Breaking this = scroll jumps on every swipe. You have been warned.
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // -- Synchronous Scroll Anchoring (SillyTavern style) --
   const msgWrapRef = useRef<HTMLDivElement>(null);
   const lastBottomRef = useRef<number | undefined>(undefined);
   const isSwipingRef = useRef(false);

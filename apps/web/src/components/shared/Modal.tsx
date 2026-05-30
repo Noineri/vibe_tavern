@@ -1,7 +1,5 @@
 import type { ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-// getModalPortal lives in modal-helpers.ts — import from there directly.
-// Do NOT re-export here to keep this file Fast Refresh compatible.
 import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 
@@ -20,6 +18,21 @@ export interface ModalProps {
   hideOverlay?: boolean;
 }
 
+/**
+ * Returns the nearest modal portal container element.
+ * DropdownSelect calls this to portal its content inside the Dialog's focus scope,
+ * so keyboard navigation (arrow keys) works inside modals.
+ */
+export function getModalPortal(): HTMLElement | null {
+  return document.getElementById("modal-portal");
+}
+
+/**
+ * Shared Modal wrapper using Radix Dialog primitives.
+ *
+ * Provides: focus trap, scroll lock, Escape-to-close, overlay click dismiss.
+ * Visual: same `bg-black/55 backdrop-blur-[2px]` overlay, centered content.
+ */
 export function Modal({ open, onClose, children, overlayClassName, compact, hideOverlay }: ModalProps) {
   const isMobile = useIsMobile();
   return (

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { PROVIDER_TYPE } from "@vibe-tavern/domain";
-import { getT } from "../i18n/locale-helpers.js";
+import { getT } from "../i18n/context.js";
 import type { ConnectionState } from "../components/app-shell-types.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import { useNavigationStore, useProviderStore, useChatStore } from "../stores/index.js";

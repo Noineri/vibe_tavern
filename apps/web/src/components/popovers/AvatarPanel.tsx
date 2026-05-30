@@ -36,19 +36,15 @@ function getFitZoom(naturalWidth: number, naturalHeight: number): number {
 }
 
 export function AvatarPanel({ src, onClose }: AvatarPanelProps) {
+  const { t } = useT();
   const isMobile = useIsMobile();
 
+  // ── Mobile: fullscreen lightbox with pinch-to-zoom ──
   if (isMobile) {
-    return <MobileLightbox src={src} onClose={onClose} />;
+    return <MobileLightbox src={src} onClose={onClose} t={t} />;
   }
 
-  return <DesktopAvatarPanel src={src} onClose={onClose} />;
-}
-
-// ── Desktop: draggable floating panel ──
-
-function DesktopAvatarPanel({ src, onClose }: AvatarPanelProps) {
-  const { t } = useT();
+  // ── Desktop: draggable floating panel ──
   const [pos, setPos] = useState(() => getAttachedPosition());
   const [zoom, setZoom] = useState(1);
   const [isReady, setIsReady] = useState(false);
@@ -236,8 +232,13 @@ function DesktopAvatarPanel({ src, onClose }: AvatarPanelProps) {
 
 // ── Mobile fullscreen lightbox with pinch-to-zoom ──
 
-function MobileLightbox({ src, onClose }: AvatarPanelProps) {
-  const { t } = useT();
+interface MobileLightboxProps {
+  src: string;
+  onClose: () => void;
+  t: (key: string) => string;
+}
+
+function MobileLightbox({ src, onClose, t }: MobileLightboxProps) {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const lastTouchDist = useRef<number | null>(null);
