@@ -534,6 +534,11 @@ type MobileVariantCarouselProps = {
   onSelectVariant: (targetIndex: number, direction: SwipeDirection) => void;
 };
 
+// Mobile-only true carousel for assistant variants/greetings.
+// It renders previous/current/next panels in a 3-wide track so the content can
+// follow the finger during horizontal drag. The desktop variant controls use a
+// separate bottom-pin strategy; mobile deliberately avoids that and relies on
+// direct gesture interaction instead.
 function MobileVariantCarousel(props: MobileVariantCarouselProps) {
   const { selectedVariantIndex, variants, onSelectVariant } = props;
   const controls = useAnimationControls();
@@ -564,6 +569,9 @@ function MobileVariantCarousel(props: MobileVariantCarouselProps) {
     return () => observer.disconnect();
   }, []);
 
+  // The viewport must be locked to the CURRENT panel height, not the tallest
+  // neighbor. Otherwise short variants show a large blank gap above the action
+  // row. Height is then smoothly adjusted after the selected index changes.
   useLayoutEffect(() => {
     const el = currentPanelRef.current;
     if (!el) return;
@@ -626,6 +634,9 @@ function MobileVariantCarousel(props: MobileVariantCarouselProps) {
       style={{ height: viewportHeight ?? undefined, transition: "height 180ms ease", touchAction: "pan-y" }}
     >
       <motion.div
+        // `items-start` is critical: default flex stretch would force all three
+        // panels to the tallest panel's height, breaking current-panel height
+        // measurement and creating permanent blank space under short variants.
         className="absolute left-0 top-0 flex w-[300%] items-start"
         animate={controls}
         drag="x"
@@ -633,6 +644,9 @@ function MobileVariantCarousel(props: MobileVariantCarouselProps) {
           left: canGoNext ? -viewportWidth * 2 : -viewportWidth,
           right: canGoPrevious ? 0 : -viewportWidth,
         }}
+        // Keep vertical chat scrolling usable: Framer only captures the gesture
+        // once horizontal movement wins, while CSS `touchAction: pan-y` leaves
+        // normal vertical scrolling to the browser.
         dragDirectionLock
         dragElastic={0.08}
         onDragEnd={handleDragEnd}
