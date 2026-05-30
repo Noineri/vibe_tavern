@@ -11,6 +11,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - uses: actions/checkout@v4
@@ -68,3 +70,40 @@ jobs:
         with:
           generate_release_notes: true
           files: "*.zip"
+
+  build-windows-installer:
+    needs: release
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.version }}
+
+      - name: Set version from release
+        shell: bash
+        run: |
+          VERSION="${{ needs.release.outputs.version }}"
+          jq --arg v "$VERSION" '.version = $v' package.json > package.json.tmp
+          mv package.json.tmp package.json
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      - run: choco install innosetup --yes --no-progress
+
+      - run: bun scripts/build-installer.ts
+        env:
+          ISCC_PATH: "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe"
+
+      - name: Rename installer with version
+        shell: pwsh
+        run: |
+          $version = "${{ needs.release.outputs.version }}"
+          Rename-Item -Path "installer\output\claw-tavern-setup.exe" `
+                      -NewName "claw-tavern-${version}-setup.exe"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: installer/output/claw-tavern-${{ needs.release.outputs.version }}-setup.exe
