@@ -77,6 +77,20 @@
   --md-bold-italic:  oklch(53.402% 0.0587 54.748);     /* combined emphasis */
   --md-quoted:       oklch(74.544% 0.11946 73.203);     /* accent-tone quoted */
 
+  /* ─── Syntax highlighting (Kanagawa Dragon) ─── */
+  --syn-bg:         var(--bg);        /* editor background */
+  --syn-keyword:     #8992a7;  /* dragonViolet — const, let, if, return */
+  --syn-string:      #8a9a7b;  /* dragonGreen2 — "text" */
+  --syn-number:      #a292a3;  /* dragonPink — 123 */
+  --syn-comment:     #737c73;  /* dragonAsh — // comments */
+  --syn-variable:    var(--t1);        /* default text — variable references */
+  --syn-property:    #c4b28a;  /* dragonYellow — .property */
+  --syn-operator:    #c4746e;  /* dragonRed — =, +, === */
+  --syn-punctuation: #9e9b93;  /* dragonGray2 — {, }, (, ) */
+  --syn-bool:        #b6927b;  /* dragonOrange — true, false */
+  --syn-null:        #b6927b;  /* dragonOrange — null, undefined */
+  --syn-function:    #8ba4b0;  /* dragonBlue2 — function names */
+
   /* ─── Layout tokens ─── */
   --r: 6px;       /* border radius */
   --sw: 248px;    /* sidebar width */
