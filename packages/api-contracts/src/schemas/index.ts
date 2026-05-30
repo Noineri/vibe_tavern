@@ -8,6 +8,7 @@ export {
   sendMessageSchema,
   editMessageSchema,
   renameChatSchema,
+  setGreetingIndexSchema,
 } from "./chat-schema.js";
 export {
   setPersonalLorebookSchema,

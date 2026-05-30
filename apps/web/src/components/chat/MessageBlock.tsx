@@ -31,7 +31,9 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const { t } = useT();
   const chat = useChatController();
   const [copied, setCopied] = useState(false);
-  const [greetingIndex, setGreetingIndex] = useState(0);
+  const [greetingIndex, setGreetingIndex] = useState(() =>
+    useSnapshotStore.getState().activeChat?.selectedGreetingIndex ?? 0
+  );
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [variantControlsOverlay, setVariantControlsOverlay] = useState<VariantControlsOverlayState | null>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
@@ -118,6 +120,12 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       if (bottomPinRafRef.current !== undefined) window.cancelAnimationFrame(bottomPinRafRef.current);
     };
   }, []);
+
+  // Sync local greeting index when the persisted value changes (e.g. after API sync).
+  const persistedGreetingIndex = useSnapshotStore((s) => s.activeChat?.selectedGreetingIndex ?? 0);
+  useEffect(() => {
+    setGreetingIndex(persistedGreetingIndex);
+  }, [persistedGreetingIndex]);
 
   // Streaming text for regeneration
   const globalStreamingText = activeGen?.streamingText ?? "";
@@ -224,22 +232,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     pin();
   };
 
-  const handleSelectGreeting = async (targetIndex: number, swipeDirection: SwipeDirection) => {
+  const handleSelectGreeting = (targetIndex: number, swipeDirection: SwipeDirection) => {
     useSnapshotStore.getState().setSwipeDirection(swipeDirection);
+    const changed = targetIndex !== greetingIndex;
     setGreetingIndex(targetIndex);
-
-    // Persist the selected greeting as the actual message content so the
-    // prompt assembly sends the correct greeting to the model.
-    if (greetingOptions && msg) {
-      const selectedContent = greetingOptions[targetIndex];
-      if (selectedContent != null && selectedContent !== msg.displayContent) {
-        try {
-          await chat.handleEditGreeting(msg.id, selectedContent);
-        } catch {
-          // Non-critical: UI already shows the selected greeting.
-          // If the API call fails, the model may use the original greeting.
-        }
-      }
+    // Persist the selected greeting index so prompt assembly uses it.
+    if (changed) {
+      void chat.handleSetGreetingIndex(targetIndex);
     }
   };
 

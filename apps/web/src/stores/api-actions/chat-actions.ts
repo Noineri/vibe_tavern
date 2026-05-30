@@ -19,6 +19,7 @@ import {
   summarizeChat,
   regenerateChatMessage,
   renameChat,
+  setGreetingIndex,
   selectMessageVariant,
   sendChatMessage,
   setChatPersona,
@@ -73,6 +74,11 @@ export async function deleteChatAction(chatId: ChatId): Promise<void> {
 export async function renameChatAction(chatId: ChatId, title: string): Promise<void> {
   await renameChat(chatId, title);
   void fetchBootstrapAction({ silent: true });
+}
+
+export async function setGreetingIndexAction(chatId: ChatId, greetingIndex: number): Promise<void> {
+  const snapshot = await setGreetingIndex(chatId, greetingIndex);
+  syncSnapshot(snapshot);
 }
 
 export async function sendChatMessageAction(chatId: ChatId, content: string, signal?: AbortSignal): Promise<void> {

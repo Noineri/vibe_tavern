@@ -62,6 +62,7 @@ export const chats = sqliteTable('chats', {
   autoSummaryConfigJson: text('auto_summary_config_json').notNull().default('{"enabled":false,"everyN":20,"useChatModel":true,"excludeSummarized":true}'),
   lastAccessedAt: text('last_accessed_at').notNull().default(''),
   status: text('status').notNull().default('active'),
+  selectedGreetingIndex: integer('selected_greeting_index').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
   loreActivationStateJson: text('lore_activation_state_json').notNull().default('{}'),

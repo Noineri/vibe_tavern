@@ -469,4 +469,9 @@ export interface ImportResult {
 				avatarFullAssetId: c.avatarFullAssetId,
 			}));
 	}
+
+	async setGreetingIndex(chatId: ChatId, greetingIndex: number): Promise<SessionSnapshot> {
+		await this.stores.chats.setSelectedGreetingIndex(chatId, greetingIndex);
+		return this.getSnapshot(chatId);
+	}
 }

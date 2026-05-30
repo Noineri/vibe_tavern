@@ -180,5 +180,9 @@ export function createChatRoutes(runtime: RuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.renameChat(c.req.param("chatId"), body.title));
     })
+    .patch("/api/chats/:chatId/greeting-index", zValidator("json", schemas.setGreetingIndexSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.setGreetingIndex(c.req.param("chatId"), body.greetingIndex));
+    })
   ;
 }
