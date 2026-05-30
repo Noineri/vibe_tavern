@@ -144,7 +144,7 @@ jobs:
       - name: Rename APK with version
         run: |
           VERSION="${{ needs.release.outputs.version }}"
-          mv mobile/android/app/build/outputs/apk/release/app-debug.apk \
+          mv mobile/android/app/build/outputs/apk/release/app-release.apk \
              "vibe-tavern-${VERSION}-android.apk"
 
       - uses: softprops/action-gh-release@v2
