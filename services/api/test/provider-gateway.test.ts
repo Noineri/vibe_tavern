@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
-import { listProviderModels } from "../src/provider-gateway.js";
+import { listProviderModels } from "../src/providers/provider-gateway.js";
 
 const originalFetch = globalThis.fetch;
 

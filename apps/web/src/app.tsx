@@ -1,6 +1,6 @@
 import { useRpPlatformApp } from "./hooks/use-vibe-tavern-app.js";
 import { useT } from "./i18n/context.js";
-import { AppShell } from "./components/AppShell.js";
+import { AppShell } from "./components/layout/AppShell.js";
 import { fetchBootstrapAction } from "./stores/api-actions/bootstrap-actions.js";
 import { TooltipProvider } from "./components/shared/Tooltip.js";
 

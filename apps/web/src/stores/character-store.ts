@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { ReactNode } from "react";
 import type { ChatId } from "@vibe-tavern/domain";
-import type { BuildTab } from "../components/BuildMode.js";
+import type { BuildTab } from "../components/build/BuildMode.js";
 
 export interface ConfirmDestroyDialog {
   title: string;

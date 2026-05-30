@@ -1,11 +1,13 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "..",
-    "outDir": "dist",
+    "rootDir": "src",
+    "outDir": "../../out/packages/db",
     "types": [
       "bun"
     ],
+    "composite": true,
+    "tsBuildInfoFile": "../../out/tsbuildinfo/db.tsbuildinfo",
     "paths": {
       "@vibe-tavern/domain": [
         "../domain/src/index.ts"
@@ -14,5 +16,10 @@
   },
   "include": [
     "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../domain"
+    }
   ]
 }

@@ -1,7 +1,7 @@
 /**
  * Standalone build pipeline for Vibe Tavern.
  *
- * Produces a self-contained dist/ directory with:
+ * Produces a self-contained out/standalone/ directory with:
  *   - vibe-tavern.exe (compiled standalone server)
  *   - web/index.html + assets (pre-built frontend)
  *
@@ -13,7 +13,7 @@
  *   - Frontend must be buildable via "bun run build:web"
  *
  * Output:
- *   dist/
+ *   out/standalone/
  *     vibe-tavern.exe
  *     web/
  *       index.html
@@ -26,9 +26,9 @@ import { join, resolve } from "node:path";
 import { copyFile, cp, rm, mkdir, stat } from "node:fs/promises";
 
 const ROOT = resolve(import.meta.dir, "..");
-const DIST = join(ROOT, "dist");
-const WEB_SOURCE = join(ROOT, "apps", "web", "dist");
-const WEB_TARGET = join(DIST, "web");
+const STANDALONE_OUT = join(ROOT, "out", "standalone");
+const WEB_SOURCE = join(ROOT, "out", "apps", "web");
+const WEB_TARGET = join(STANDALONE_OUT, "web");
 
 function exists(path: string): Promise<boolean> {
 	return stat(path).then(() => true, () => false);
@@ -47,21 +47,21 @@ async function step(label: string, fn: () => Promise<void>) {
 async function main() {
 	console.log("📦 Vibe Tavern — Standalone Build\n");
 	console.log(`   Root: ${ROOT}`);
-	console.log(`   Output: ${DIST}`);
+	console.log(`   Output: ${STANDALONE_OUT}`);
 
 	// ── Step 1: Clean previous output ────────────────────────────────────
 
-	await step("Cleaning dist/", async () => {
-		if (await exists(DIST)) {
-			await rm(DIST, { recursive: true, force: true });
+	await step("Cleaning out/standalone/", async () => {
+		if (await exists(STANDALONE_OUT)) {
+			await rm(STANDALONE_OUT, { recursive: true, force: true });
 		}
-		await mkdir(DIST, { recursive: true });
+		await mkdir(STANDALONE_OUT, { recursive: true });
 	});
 
 	// ── Step 2: Build frontend ───────────────────────────────────────────
 
 	await step("Building frontend (vite build)", async () => {
-		const proc = Bun.spawn(["bun", "x", "vite", "build", "apps/web"], {
+		const proc = Bun.spawn(["bun", "run", "--filter", "@vibe-tavern/web", "build"], {
 			cwd: ROOT,
 			stdout: "inherit",
 			stderr: "inherit",
@@ -73,9 +73,9 @@ async function main() {
 		}
 	});
 
-	// ── Step 3: Copy frontend to dist/web/ ───────────────────────────────
+	// ── Step 3: Copy frontend to out/standalone/web/ ─────────────────────
 
-	await step("Copying frontend to dist/web/", async () => {
+	await step("Copying frontend to out/standalone/web/", async () => {
 		if (!(await Bun.file(join(WEB_SOURCE, "index.html")).exists())) {
 			throw new Error(`Frontend not found at ${WEB_SOURCE}. Build may have failed.`);
 		}
@@ -83,11 +83,11 @@ async function main() {
 		console.log(`   → ${WEB_TARGET}`);
 	});
 
-	// ── Step 3b: Copy tokenizer files to dist/tokenizers/ ───────────────────
+	// ── Step 3b: Copy tokenizer files to out/standalone/tokenizers/ ───────
 
-	await step("Copying tokenizer files to dist/tokenizers/", async () => {
-		const tokenizerSource = join(ROOT, "services", "api", "src", "tokenizers");
-		const tokenizerTarget = join(DIST, "tokenizers");
+	await step("Copying tokenizer files to out/standalone/tokenizers/", async () => {
+		const tokenizerSource = join(ROOT, "services", "api", "assets", "tokenizers");
+		const tokenizerTarget = join(STANDALONE_OUT, "tokenizers");
 		if (!(await exists(tokenizerSource))) {
 			throw new Error(`Tokenizer source not found: ${tokenizerSource}`);
 		}
@@ -95,11 +95,11 @@ async function main() {
 		console.log(`   → ${tokenizerTarget}`);
 	});
 
-	// ── Step 3c: Copy Script AI prompt to dist/script-ai-prompt.md ───────────
+	// ── Step 3c: Copy Script AI prompt to out/standalone/ ─────────────────
 
 	await step("Copying Script AI prompt", async () => {
-		const promptSource = join(ROOT, "services", "api", "src", "script-ai-prompt.md");
-		const promptTarget = join(DIST, "script-ai-prompt.md");
+		const promptSource = join(ROOT, "services", "api", "assets", "script-ai-prompt.md");
+		const promptTarget = join(STANDALONE_OUT, "script-ai-prompt.md");
 		if (!(await exists(promptSource))) {
 			throw new Error(`Script AI prompt source not found: ${promptSource}`);
 		}
@@ -107,11 +107,11 @@ async function main() {
 		console.log(`   → ${promptTarget}`);
 	});
 
-	// ── Step 3d: Copy DB migrations to dist/drizzle/ ────────────────────────
+	// ── Step 3d: Copy DB migrations to out/standalone/drizzle/ ────────────
 
-	await step("Copying DB migrations to dist/drizzle/", async () => {
+	await step("Copying DB migrations to out/standalone/drizzle/", async () => {
 		const drizzleSource = join(ROOT, "packages", "db", "drizzle");
-		const drizzleTarget = join(DIST, "drizzle");
+		const drizzleTarget = join(STANDALONE_OUT, "drizzle");
 		if (!(await exists(drizzleSource))) {
 			throw new Error(`DB migrations source not found: ${drizzleSource}`);
 		}
@@ -122,10 +122,10 @@ async function main() {
 	// ── Step 4: Compile standalone server ────────────────────────────────
 
 	await step("Compiling standalone binary (Bun.build API)", async () => {
-		const entrypoint = join(ROOT, "services", "api", "src", "standalone-server.ts");
+		const entrypoint = join(ROOT, "services", "api", "src", "server", "standalone-server.ts");
 		const ext = process.platform === "win32" ? ".exe" : "";
 		const binName = `vibe-tavern${ext}`;
-		const outfile = join(DIST, "vibe-tavern"); // Bun automatically adds .exe
+		const outfile = join(STANDALONE_OUT, "vibe-tavern"); // Bun automatically adds .exe
 
 		if (!(await Bun.file(entrypoint).exists())) {
 			throw new Error(`Entrypoint not found: ${entrypoint}`);
@@ -155,7 +155,7 @@ async function main() {
 			throw new Error("Bun.build API failed");
 		}
 
-		const finalOutfile = join(DIST, binName);
+		const finalOutfile = join(STANDALONE_OUT, binName);
 		if (!(await Bun.file(finalOutfile).exists())) {
 			throw new Error(`Expected output not found: ${finalOutfile}`);
 		}
@@ -167,7 +167,7 @@ async function main() {
 
 	const ext = process.platform === "win32" ? ".exe" : "";
 	console.log("\n✅ Standalone build complete!");
-	console.log(`   Run: ${join(DIST, `vibe-tavern${ext}`)}`);
+	console.log(`   Run: ${join(STANDALONE_OUT, `vibe-tavern${ext}`)}`);
 }
 
 main();

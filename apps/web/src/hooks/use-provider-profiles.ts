@@ -10,7 +10,7 @@ import {
   type ProviderProfileRecord,
   type TestChatResponse,
 } from "../app-client.js";
-import type { FormState } from "../components/ProviderModal.js";
+import type { FormState } from "../components/modals/ProviderModal.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import {
   loadProviderProfilesAction,

@@ -1,5 +1,5 @@
 export * from './db-schema.js';
-export { createDb, type AppDb } from './db-connection.js';
+export { createDb, resolveMigrationsFolder, type AppDb } from './db-connection.js';
 export {
   createStoreContainer,
   IncrementingStoreIdGenerator,

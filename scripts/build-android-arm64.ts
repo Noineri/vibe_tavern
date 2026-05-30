@@ -2,11 +2,11 @@
  * Android ARM64 release artifact build pipeline for Vibe Tavern.
  *
  * Produces a prebuilt archive intended for Termux + proot Ubuntu on Android:
- *   - dist/android-arm64/vibe-tavern      (compiled linux-arm64 standalone server)
- *   - dist/android-arm64/web/             (pre-built frontend)
- *   - dist/android-arm64/drizzle/         (DB migrations)
- *   - dist/android-arm64/tokenizers/      (runtime tokenizer JSON files)
- *   - dist/vibe-tavern-android-arm64.tar.gz
+ *   - out/android-arm64/vibe-tavern      (compiled linux-arm64 standalone server)
+ *   - out/android-arm64/web/             (pre-built frontend)
+ *   - out/android-arm64/drizzle/         (DB migrations)
+ *   - out/android-arm64/tokenizers/      (runtime tokenizer JSON files)
+ *   - out/vibe-tavern-android-arm64.tar.gz
  *
  * Usage:
  *   bun run build:android-arm64
@@ -17,10 +17,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..");
-const DIST = join(ROOT, "dist");
-const ANDROID_DIST = join(DIST, "android-arm64");
-const ARCHIVE = join(DIST, "vibe-tavern-android-arm64.tar.gz");
-const WEB_SOURCE = join(ROOT, "apps", "web", "dist");
+const OUT = join(ROOT, "out");
+const ANDROID_DIST = join(OUT, "android-arm64");
+const ARCHIVE = join(OUT, "vibe-tavern-android-arm64.tar.gz");
+const WEB_SOURCE = join(ROOT, "out", "apps", "web");
 const WEB_TARGET = join(ANDROID_DIST, "web");
 
 function exists(path: string): Promise<boolean> {
@@ -74,7 +74,7 @@ async function main() {
 		await run(["bun", "run", "--filter", "@vibe-tavern/web", "build"]);
 	});
 
-	await step("Copying frontend to dist/android-arm64/web/", async () => {
+	await step("Copying frontend to out/android-arm64/web/", async () => {
 		if (!(await Bun.file(join(WEB_SOURCE, "index.html")).exists())) {
 			throw new Error(`Frontend not found at ${WEB_SOURCE}. Build may have failed.`);
 		}
@@ -84,14 +84,14 @@ async function main() {
 
 	await step("Copying tokenizer files", async () => {
 		await copyRequiredDir(
-			join(ROOT, "services", "api", "src", "tokenizers"),
+			join(ROOT, "services", "api", "assets", "tokenizers"),
 			join(ANDROID_DIST, "tokenizers"),
 			"Tokenizer",
 		);
 	});
 
 	await step("Copying Script AI prompt", async () => {
-		const promptSource = join(ROOT, "services", "api", "src", "script-ai-prompt.md");
+		const promptSource = join(ROOT, "services", "api", "assets", "script-ai-prompt.md");
 		const promptTarget = join(ANDROID_DIST, "script-ai-prompt.md");
 		if (!(await exists(promptSource))) {
 			throw new Error(`Script AI prompt source not found: ${promptSource}`);
@@ -109,7 +109,7 @@ async function main() {
 	});
 
 	await step("Compiling linux-arm64 standalone binary", async () => {
-		const entrypoint = join(ROOT, "services", "api", "src", "standalone-server.ts");
+		const entrypoint = join(ROOT, "services", "api", "src", "server", "standalone-server.ts");
 		const outfile = join(ANDROID_DIST, "vibe-tavern");
 		const compileCwd = join(tmpdir(), "vibe-tavern-android-arm64-build");
 
@@ -141,13 +141,13 @@ async function main() {
 		console.log(`   → ${outfile}`);
 	});
 
-	await step("Packaging dist/vibe-tavern-android-arm64.tar.gz", async () => {
+	await step("Packaging out/vibe-tavern-android-arm64.tar.gz", async () => {
 		await run([
 			"tar",
 			"-czf",
-			join("dist", "vibe-tavern-android-arm64.tar.gz"),
+			join("out", "vibe-tavern-android-arm64.tar.gz"),
 			"-C",
-			join("dist", "android-arm64"),
+			join("out", "android-arm64"),
 			".",
 		]);
 	});

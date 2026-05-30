@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AppMode, ThemeMode } from "../components/app-shell-types.js";
+import type { AppMode, ThemeMode } from "../components/layout/app-shell-types.js";
 
 export interface NavigationState {
   mode: AppMode;

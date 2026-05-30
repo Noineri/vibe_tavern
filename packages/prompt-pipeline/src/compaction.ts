@@ -12,13 +12,13 @@ export interface CompactionConfig {
  * a model-specific tokenizer (e.g. tiktoken for OpenAI, web-tokenizers
  * for Claude/Llama, etc).
  *
- * Default heuristic: `ceil(charLength / 4)` — a rough approximation.
- * Replace at runtime with a real tokenizer via {@link setTokenCountFn}.
+ * **Must be set at startup** via {@link setTokenCountFn} before any prompt
+ * assembly occurs. The server entry points call
+ * `setTokenCountFn(countTokens)` during bootstrap.
+ *
+ * There is no default — if unset, estimateTokens always returns 0.
  */
-let tokenCountFn: (text: string, model?: string) => number = (text: string) => {
-  if (!text) return 0;
-  return Math.ceil(text.length / 4);
-};
+let tokenCountFn: ((text: string, model?: string) => number) | null = null;
 
 /** Current model hint passed to the token-counting function. */
 let currentModel: string | undefined;
@@ -47,6 +47,11 @@ export function setModelHint(model: string | undefined): void {
  * Automatically passes the model hint set via {@link setModelHint}.
  */
 export function estimateTokens(text: string): number {
+  if (!text) return 0;
+  if (!tokenCountFn) {
+    console.warn("[prompt-pipeline] estimateTokens called before setTokenCountFn — returning 0. Ensure the server calls setTokenCountFn(countTokens) during startup.");
+    return 0;
+  }
   return tokenCountFn(text, currentModel);
 }
 

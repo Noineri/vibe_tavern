@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "paths": {
+      "@vibe-tavern/domain": [
+        "../domain/src/index.ts"
+      ]
+    },
+    "composite": false
+  }
+}

@@ -11,10 +11,12 @@
 
 import { readdir, stat, mkdir } from "node:fs/promises";
 import { join, extname, basename, resolve } from "node:path";
-import { importCharacterCardV3Json } from "../../../packages/import-export/src/index.js";
-import { importStLorebookJson } from "../../../packages/import-export/src/index.js";
-import { parseSillyTavernChat } from "../../../packages/import-export/src/chats/st-chat.js";
-import type { ImportExportModuleDeps, ImportResult } from "./session-runtime-import-export.js";
+import {
+	importCharacterCardV3Json,
+	importStLorebookJson,
+	parseSillyTavernChat,
+} from "@vibe-tavern/import-export";
+import type { ImportExportModuleDeps, ImportResult } from "./session/session-runtime-import-export.js";
 import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 import type { CharacterId, ChatId } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";

@@ -6,13 +6,13 @@
 ;
 ; Prerequisites:
 ;   - Inno Setup 6+ installed (https://jrsoftware.org/isinfo.php)
-;   - Run "bun scripts/build-standalone.ts" first to produce dist/
+;   - Run "bun scripts/build-standalone.ts" first to produce out\standalone\
 ;
 ; Output:
-;   installer\output\vibe-tavern-setup.exe
+;   out\installer\vibe-tavern-setup.exe
 ;
 ; NOTE: All Source paths are relative to ProjectRoot (passed via /D or defaulting
-; to the repo root). This allows ISCC to find dist/ regardless of cwd.
+; to the repo root). This allows ISCC to find out\standalone\ regardless of cwd.
 
 ; Allow overriding from command line: iscc /DProjectRoot=N:\path installer\vibe-tavern.iss
 #if !Defined(ProjectRoot)
@@ -34,7 +34,7 @@ AppPublisherURL={#AppURL}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 AllowNoIcons=yes
-OutputDir={#ProjectRoot}\installer\output
+OutputDir={#ProjectRoot}\out\installer
 OutputBaseFilename=vibe-tavern-setup
 SetupIconFile={#ProjectRoot}\apps\web\public\logo.ico
 Compression=lzma2/ultra64
@@ -56,13 +56,13 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; Main executable
-Source: "{#ProjectRoot}\dist\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ProjectRoot}\out\standalone\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 ; Frontend static files
-Source: "{#ProjectRoot}\dist\web\*"; DestDir: "{app}\web"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#ProjectRoot}\out\standalone\web\*"; DestDir: "{app}\web"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Tokenizer data files
-Source: "{#ProjectRoot}\dist\tokenizers\*"; DestDir: "{app}\tokenizers"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#ProjectRoot}\out\standalone\tokenizers\*"; DestDir: "{app}\tokenizers"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; DB migration files
-Source: "{#ProjectRoot}\dist\drizzle\*"; DestDir: "{app}\drizzle"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#ProjectRoot}\out\standalone\drizzle\*"; DestDir: "{app}\drizzle"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"
@@ -73,7 +73,7 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: deskto
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-// Verify dist/ exists before installation begins
+// Verify packaged files exist before installation begins
 function InitializeSetup(): Boolean;
 begin
   Result := True;

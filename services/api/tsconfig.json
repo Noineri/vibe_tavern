@@ -1,11 +1,13 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "../..",
-    "outDir": "dist",
+    "rootDir": "src",
+    "outDir": "../../out/services/api",
     "types": [
       "bun"
     ],
+    "composite": true,
+    "tsBuildInfoFile": "../../out/tsbuildinfo/api.tsbuildinfo",
     "paths": {
       "@vibe-tavern/api-contracts": [
         "../../packages/api-contracts/src/index.ts"
@@ -26,5 +28,22 @@
   },
   "include": [
     "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../../packages/domain"
+    },
+    {
+      "path": "../../packages/api-contracts"
+    },
+    {
+      "path": "../../packages/prompt-pipeline"
+    },
+    {
+      "path": "../../packages/db"
+    },
+    {
+      "path": "../../packages/import-export"
+    }
   ]
 }

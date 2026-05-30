@@ -1,7 +1,7 @@
 import { registerBuildPanel } from "../lib/build-panel-registry.js";
 import { Icons } from "../components/shared/icons.js";
-import { CharacterForm } from "../components/editors/CharacterForm.js";
-import { LorebookEditor } from "../components/editors/LorebookEditor.js";
+import { CharacterForm } from "../components/build/editors/CharacterForm.js";
+import { LorebookEditor } from "../components/build/editors/LorebookEditor.js";
 
 registerBuildPanel({
   id: "character",
