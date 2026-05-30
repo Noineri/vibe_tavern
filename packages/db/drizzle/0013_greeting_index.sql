@@ -1,0 +1,1 @@
+ALTER TABLE `chats` ADD `selected_greeting_index` integer DEFAULT 0 NOT NULL;

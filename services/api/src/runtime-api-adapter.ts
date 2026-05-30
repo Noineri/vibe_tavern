@@ -210,6 +210,10 @@ export class RuntimeApiAdapter {
 	renameChat = (chatId: string, title: string) =>
 		this.sessionRuntime.chatRuntime.renameChat(chatId, title);
 
+	setGreetingIndex = async (chatId: string, greetingIndex: number): Promise<unknown> => {
+		return this.sessionRuntime.setGreetingIndex(brandId<ChatId>(chatId), greetingIndex);
+	};
+
 	updateChatSettings = (
 		_chatId: string,
 		_body: { title: string; subtitle: string; scenario: string; systemPrompt: string },

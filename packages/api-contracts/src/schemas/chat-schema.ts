@@ -24,3 +24,7 @@ export const editMessageSchema = z.object({
 export const renameChatSchema = z.object({
   title: z.string(),
 });
+
+export const setGreetingIndexSchema = z.object({
+  greetingIndex: z.number().int().min(0),
+});

@@ -14,6 +14,7 @@ export interface Chat {
   messageHistoryLimit: number;
   autoSummaryConfig: Record<string, unknown>;
   status: 'active' | 'archived';
+  selectedGreetingIndex: number;
   activeBranchId: string;
   promptPresetId: string;
   lastAccessedAt: string;
@@ -276,6 +277,17 @@ export class ChatStore {
       .where(eq(chats.id, id))
       .returning();
     if (!row) throw new Error(`Chat '${id}' not found after prompt preset update`);
+    return this.mapRow(row);
+  }
+
+  async setSelectedGreetingIndex(id: string, index: number): Promise<Chat> {
+    const now = this.clock.now();
+    const [row] = await this.db
+      .update(chats)
+      .set({ selectedGreetingIndex: index, updatedAt: now })
+      .where(eq(chats.id, id))
+      .returning();
+    if (!row) throw new Error(`Chat '${id}' not found after greeting index update`);
     return this.mapRow(row);
   }
 
@@ -854,6 +866,7 @@ export class ChatStore {
       messageHistoryLimit: row.messageHistoryLimit,
       autoSummaryConfig: safeParseJson(row.autoSummaryConfigJson),
       status: row.status as Chat['status'],
+      selectedGreetingIndex: row.selectedGreetingIndex,
       activeBranchId: row.activeBranchId,
       promptPresetId: row.promptPresetId,
       lastAccessedAt: row.lastAccessedAt,

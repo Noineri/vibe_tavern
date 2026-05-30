@@ -27,6 +27,7 @@ import {
   forkBranchAction,
   activateBranchAction,
   deleteBranchAction,
+  setGreetingIndexAction,
 } from "../stores/api-actions/chat-actions.js";
 
 export interface ChatControllerActions {
@@ -34,7 +35,7 @@ export interface ChatControllerActions {
   handleCancelGeneration: () => void;
   handleSwitchChat: (chatId: ChatId) => Promise<void>;
   handleStartEdit: (message: AppMessage, contentOverride?: string) => void;
-  handleEditGreeting: (messageId: string, content: string) => Promise<void>;
+  handleSetGreetingIndex: (greetingIndex: number) => Promise<void>;
   handleCancelEdit: () => void;
   handleSaveMessageEdit: (messageId: string) => Promise<void>;
   handleDeleteMessage: (messageId: string) => Promise<void>;
@@ -289,17 +290,15 @@ export function useChatController(): ChatControllerActions {
     useChatStore.getState().setActiveChatId(chatId);
   }
 
-  async function handleEditGreeting(messageId: string, content: string): Promise<void> {
-    const activeChatId = getActiveChatId();
-    if (!activeChatId) return;
-    const trimmed = content.trim();
-    if (!trimmed) return;
-    await editMessageAction(activeChatId, messageId, trimmed);
-  }
-
   function handleStartEdit(message: AppMessage, contentOverride?: string): void {
     useChatStore.getState().setEditingMessageId(message.id);
     useChatStore.getState().setEditingDraft(contentOverride ?? message.content);
+  }
+
+  async function handleSetGreetingIndex(greetingIndex: number): Promise<void> {
+    const activeChatId = getActiveChatId();
+    if (!activeChatId) return;
+    await setGreetingIndexAction(activeChatId, greetingIndex);
   }
 
   function handleCancelEdit(): void {
@@ -429,7 +428,7 @@ export function useChatController(): ChatControllerActions {
     handleCancelGeneration,
     handleSwitchChat,
     handleStartEdit,
-    handleEditGreeting,
+    handleSetGreetingIndex,
     handleCancelEdit,
     handleSaveMessageEdit,
     handleDeleteMessage,
