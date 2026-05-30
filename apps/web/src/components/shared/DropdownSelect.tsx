@@ -2,7 +2,7 @@ import { useState } from "react";
 import * as Select from "@radix-ui/react-select";
 import { cn } from "../../lib/cn.js";
 import { Ic } from "./icons.js";
-import { getModalPortal } from "./Modal.js";
+import { getModalPortal } from "./modal-helpers.js";
 
 interface DropdownOption {
   id: string;
