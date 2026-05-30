@@ -1,20 +1,21 @@
-import { useRef, useEffect, useCallback } from "react";
-import { EditorView, basicSetup } from "codemirror";
 import { javascript } from "@codemirror/lang-javascript";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
+import { tags } from "@lezer/highlight";
+import { EditorView, basicSetup } from "codemirror";
+import { useCallback, useEffect, useRef } from "react";
 
 /** Theme matching RP Platform Espresso dark palette. */
 const rpTheme = EditorView.theme(
   {
     "&": {
-      fontSize: "12px",
-      backgroundColor: "var(--bg)",
+      fontSize: "14px",
+      backgroundColor: "var(--syn-bg)",
       color: "var(--t1)",
       borderRadius: "6px",
     },
     ".cm-content": {
-      fontFamily:
-        'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+      fontFamily: "var(--font-mono)",
       caretColor: "var(--accent)",
       lineHeight: "1.65",
       padding: "4px 0",
@@ -73,20 +74,20 @@ const pageScrollTheme = EditorView.theme({
   },
 });
 
-const rpTokens = EditorView.baseTheme({
-  "&dark .tok-keyword": { color: "var(--accent-t)" },
-  "&dark .tok-string": { color: "oklch(0.72 0.10 145)" },
-  "&dark .tok-number": { color: "oklch(0.75 0.12 70)" },
-  "&dark .tok-comment": { color: "var(--t3)", fontStyle: "italic" },
-  "&dark .tok-variableName": { color: "var(--t1)" },
-  "&dark .tok-propertyName": { color: "oklch(0.78 0.08 200)" },
-  "&dark .tok-operator": { color: "var(--t2)" },
-  "&dark .tok-punctuation": { color: "var(--t3)" },
-  "&dark .tok-bool": { color: "oklch(0.75 0.12 70)" },
-  "&dark .tok-null": { color: "oklch(0.75 0.12 70)" },
-  "&dark .tok-definition.variableName": { color: "var(--t1)" },
-  "&dark .tok-function": { color: "oklch(0.78 0.10 150)" },
-});
+const rpHighlight = HighlightStyle.define([
+  { tag: tags.keyword, color: "var(--syn-keyword)" },
+  { tag: tags.string, color: "var(--syn-string)" },
+  { tag: tags.number, color: "var(--syn-number)" },
+  { tag: tags.comment, color: "var(--syn-comment)", fontStyle: "italic" },
+  { tag: tags.variableName, color: "var(--syn-variable)" },
+  { tag: tags.propertyName, color: "var(--syn-property)" },
+  { tag: tags.operator, color: "var(--syn-operator)" },
+  { tag: tags.punctuation, color: "var(--syn-punctuation)" },
+  { tag: tags.bool, color: "var(--syn-bool)" },
+  { tag: tags.null, color: "var(--syn-null)" },
+  { tag: tags.function(tags.variableName), color: "var(--syn-function)" },
+  { tag: tags.definition(tags.variableName), color: "var(--syn-variable)" },
+]);
 
 interface CodeEditorProps {
   value: string;
@@ -118,7 +119,7 @@ export function CodeEditor({
       basicSetup,
       javascript(),
       rpTheme,
-      rpTokens,
+      syntaxHighlighting(rpHighlight),
       ...(scrollMode === "page" ? [pageScrollTheme] : []),
       EditorView.lineWrapping,
       EditorState.readOnly.of(readOnly),
