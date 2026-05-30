@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="32dp"
+    android:background="#FF1A1A2E">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="🔐"
+        android:textSize="64sp"
+        android:gravity="center"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Step 2: Grant Permission"
+        android:textSize="22sp"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:layout_marginBottom="24dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="This permission is for THIS app (Vibe Tavern), NOT Termux.\n\nFirst, run this in Termux:\n  mkdir -p ~/.termux\n  echo &quot;allow-external-apps=true&quot; &gt;&gt; ~/.termux/termux.properties\n\nIf termux-reload-settings crashes, force stop Termux and open it again.\n\nThen:\n1. Tap the button below to open Vibe Tavern settings\n2. ⋮ → &quot;Allow restricted settings&quot;\n3. Permissions → ⋮ → &quot;All permissions&quot;\n4. Enable &quot;Run commands in Termux environment&quot;\n5. Come back and tap Continue"
+        android:textSize="14sp"
+        android:textColor="#CCCCDD"
+        android:gravity="start"
+        android:lineSpacingExtra="4dp"
+        android:layout_marginBottom="24dp" />
+
+    <Button
+        android:id="@+id/btn_open_termux_settings"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:text="Open Vibe Tavern Settings"
+        android:textSize="16sp"
+        android:layout_marginBottom="12dp"
+        style="@style/Widget.VibeTavern.Button.Primary" />
+
+    <Button
+        android:id="@+id/btn_continue_after_permission"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:text="Continue"
+        android:textSize="14sp"
+        style="@style/Widget.VibeTavern.Button.Secondary" />
+
+</LinearLayout>
