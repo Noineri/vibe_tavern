@@ -45,7 +45,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
 ; Uninstall: remove program files only.
-; User data in %LOCALAPPDATA%\ClawTavern is NOT touched.
+; User data in %LOCALAPPDATA%\VibeTavern is NOT touched.
 UninstallDisplayIcon={app}\{#AppExeName}
 
 [Languages]

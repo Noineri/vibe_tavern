@@ -2,7 +2,7 @@
  * Standalone server entry point for Vibe Tavern .exe distribution.
  *
  * Uses resolveStandalonePaths() for all directory resolution.
- * Data lives in %LOCALAPPDATA%\ClawTavern (Windows) or OS-equivalent.
+ * Data lives in %LOCALAPPDATA%\VibeTavern (Windows) or OS-equivalent.
  * Program files (exe + web/) live in the installation directory.
  *
  * Usage:

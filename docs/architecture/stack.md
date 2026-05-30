@@ -215,12 +215,14 @@ vibe-tavern/
 
 ## Build & Deploy
 
-| Target | Method |
-|--------|--------|
-| **Dev** | `bun run dev` — Vite dev server + Bun API server concurrently |
-| **Docker** | `docker-compose up` — Bun runtime + built frontend in single container |
-| **Standalone .exe** | `bun build --compile` — single binary with embedded frontend |
-| **Android** | `scripts/build-android-arm64.ts` — cross-compile for ARM64 |
+| Target | Method | Output |
+|--------|--------|--------|
+| **Dev** | `bun run dev` — Vite dev server + Bun API server concurrently | Source tree |
+| **Production bundle** | `bun scripts/build.ts prod` — builds all packages + frontend | `out/services/api/`, `out/apps/web/` |
+| **Docker** | `docker-compose up` — Bun runtime + built frontend in single container | Uses production bundle |
+| **Standalone .exe** | `bun run build:standalone` — single binary with embedded frontend + assets | `out/standalone/vibe-tavern.exe` |
+| **Android** | `bun run build:android-arm64` — cross-compile for ARM64 | `out/android-arm64/` |
+| **Windows installer** | `bun run build:installer` — Inno Setup wrapper | `installer/output/vibe-tavern-setup.exe` |
 
 **Why standalone .exe:** The target audience (RP community) includes non-technical users. Download one file, double-click, it opens in browser. No Node.js, no `npm install`, no terminal.
 

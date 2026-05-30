@@ -5,7 +5,7 @@
 ## Context
 
 Vibe Tavern is a local-first desktop application. User data lives in
-`%LOCALAPPDATA%\ClawTavern\vibe-tavern.db` (SQLite). The DB is created via
+`%LOCALAPPDATA%\VibeTavern\vibe-tavern.db` (SQLite). The DB is created via
 `ensureSchema()` (`CREATE TABLE IF NOT EXISTS`) on first launch.
 
 Pre-release: schema changes → users delete the DB, start fresh.
@@ -39,22 +39,19 @@ App starts → open DB
         → record applied migrations
 ```
 
-### Embedding migrations in the compiled exe
+### Migration files at runtime
 
-`bun build --compile` bundles JS/TS but not external `.sql` files.
+The build process copies `packages/db/drizzle/` into the output directory:
 
-Solution: `drizzle-kit generate` produces SQL → a build script converts them
-to a TypeScript file with embedded SQL strings.
+| Build mode | Migrations location |
+|------------|-------------------|
+| Production bundle | `out/services/api/drizzle/` |
+| Standalone exe | `out/standalone/drizzle/` (next to exe) |
+| Dev | `packages/db/drizzle/` (source tree) |
 
-```
-packages/db/
-  drizzle/
-    0000_initial.sql          ← drizzle-kit generate output
-    0001_add_foo_column.sql
-  src/
-    db-migrations.ts           ← auto-generated, imports SQL as strings
-    db-migrator.ts             ← runner: reads _migrations, applies pending
-```
+`resolveMigrationsFolder()` in `db-connection.ts` resolves the correct path
+based on the runtime environment. No SQL files are bundled into the compiled
+binary — they are copied alongside it.
 
 ### _migrations table
 
@@ -72,46 +69,16 @@ Created by `ensureSchema()` alongside all other tables.
 
 1. Modify schema in `packages/db/src/db-schema.ts`
 2. Run `bun run db:generate` → produces `packages/db/drizzle/NNNN_name.sql`
-3. Run `bun run db:embed-migrations` → generates `db-migrations.ts`
-4. Commit both the SQL and the generated TS
+3. Commit the SQL file
+4. Rebuild: `bun scripts/build.ts prod` copies migrations to `out/services/api/drizzle/`
 5. `ensureSchema()` handles fresh installs automatically
-6. `db-migrator.ts` handles existing installs on update
+6. Migrator handles existing installs on update
 
 ### Fresh install optimization
 
 On a fresh DB, `ensureSchema()` creates the full schema directly.
 Then the migrator marks all known migrations as applied — no need to
 run them sequentially against an empty DB.
-
-## Implementation Steps
-
-### Step 1: Add _migrations table
-- Add `_migrations` to `ensureSchema()` in `db-connection.ts`
-- Add `_migrations` to Drizzle schema in `db-schema.ts`
-
-### Step 2: Create db-migrator.ts
-- `getAppliedMigrations(db)` → list of tags from `_migrations`
-- `applyMigration(db, tag, sql)` → exec SQL, insert record
-- `runPendingMigrations(db, allMigrations)` → diff + apply
-
-### Step 3: Create embed script
-- `scripts/embed-migrations.ts` — reads `packages/db/drizzle/*.sql`,
-  writes `packages/db/src/db-migrations.ts` with embedded SQL strings
-- Add `"db:embed-migrations"` script to root package.json
-
-### Step 4: Wire into startup
-- `createDb()` calls `ensureSchema()` then `runPendingMigrations()`
-- Both standalone-server and dev-server benefit
-
-### Step 5: Update build-standalone
-- `db-migrations.ts` is TypeScript → bundled by `bun build --compile`
-  automatically (no external SQL files needed)
-
-## Why not drizzle-kit migrate runtime?
-
-`drizzle-kit migrate` reads SQL files from disk at runtime. In the compiled
-exe, there is no disk — everything is bundled. Embedding SQL as TS strings
-is the standard approach for single-binary apps.
 
 ## When to implement
 

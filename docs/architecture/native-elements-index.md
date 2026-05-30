@@ -28,16 +28,16 @@ Small fixed option sets, all options should be visible at once.
 
 | File | Line | Purpose | Options | Suggested replacement |
 |------|------|---------|---------|-----------------------|
-| `components/popovers/TweaksPanel.tsx` | 48 | Chat font size | small / medium / large | `SegmentedControl compact` |
-| `components/popovers/TweaksPanel.tsx` | 56 | UI font size | small / medium / large | `SegmentedControl compact` |
-| `components/popovers/TweaksPanel.tsx` | 64 | Message width | narrow / medium / wide | `SegmentedControl compact` |
-| `components/popovers/TweaksPanel.tsx` | 72 | Language | EN / RU | `SegmentedControl compact` |
-| `components/editors/CharacterForm.tsx` | 482 | Example message activation mode | always / once / depth | `SegmentedControl compact` (keep tooltip wrapper) |
-| `components/editors/CharacterForm.tsx` | 562 | Depth prompt role | system / user / assistant | `SegmentedControl compact` |
-| `components/CreateCharacterModal.tsx` | 368 | Depth prompt role | system / user / assistant | `SegmentedControl compact` |
-| `components/editors/LorebookAccordion.tsx` | 136 | Lorebook scope while renaming | global / character / persona / chat | `SegmentedControl compact` or keep if too cramped on mobile |
-| `components/prompt/InjectionTable.tsx` | 141 | Injection role | roleOptions, currently 3 roles | `SegmentedControl compact` |
-| `components/provider/ProviderSamplerPanel.tsx` | 248 | Reasoning effort | low / medium / high | `SegmentedControl` |
+| `components/settings/popovers/TweaksPanel.tsx` | 48 | Chat font size | small / medium / large | `SegmentedControl compact` |
+| `components/settings/popovers/TweaksPanel.tsx` | 56 | UI font size | small / medium / large | `SegmentedControl compact` |
+| `components/settings/popovers/TweaksPanel.tsx` | 64 | Message width | narrow / medium / wide | `SegmentedControl compact` |
+| `components/settings/popovers/TweaksPanel.tsx` | 72 | Language | EN / RU | `SegmentedControl compact` |
+| `components/build/editors/CharacterForm.tsx` | 482 | Example message activation mode | always / once / depth | `SegmentedControl compact` (keep tooltip wrapper) |
+| `components/build/editors/CharacterForm.tsx` | 562 | Depth prompt role | system / user / assistant | `SegmentedControl compact` |
+| `components/modals/CreateCharacterModal.tsx` | 368 | Depth prompt role | system / user / assistant | `SegmentedControl compact` |
+| `components/build/editors/LorebookAccordion.tsx` | 136 | Lorebook scope while renaming | global / character / persona / chat | `SegmentedControl compact` or keep if too cramped on mobile |
+| `components/settings/prompt/InjectionTable.tsx` | 141 | Injection role | roleOptions, currently 3 roles | `SegmentedControl compact` |
+| `components/settings/provider/ProviderSamplerPanel.tsx` | 248 | Reasoning effort | low / medium / high | `SegmentedControl` |
 
 ### Replace with `DropdownSelect`
 
@@ -46,10 +46,10 @@ Dynamic or potentially long option lists.
 | File | Line | Purpose | Notes |
 |------|------|---------|-------|
 | `components/context/SummaryTab.tsx` | 200 | Summarization provider | Dynamic provider list. Use `DropdownSelect`; no need for search if list is short, but component includes it. |
-| `components/provider/ProviderForm.tsx` | 84 | Provider preset group | `PRESET_GROUPS`; include custom/default option. |
-| `components/provider/ProviderForm.tsx` | 111 | API format / provider preset | `filteredPresets`; include custom/default option. |
-| `components/provider/ProviderEditHeader.tsx` | 68 | Provider preset group | Same logic as `ProviderForm`; likely extract shared provider-preset selector. |
-| `components/provider/ProviderEditHeader.tsx` | 79 | API format / provider preset | Same logic as `ProviderForm`; likely extract shared provider-preset selector. |
+| `components/settings/provider/ProviderForm.tsx` | 84 | Provider preset group | `PRESET_GROUPS`; include custom/default option. |
+| `components/settings/provider/ProviderForm.tsx` | 111 | API format / provider preset | `filteredPresets`; include custom/default option. |
+| `components/settings/provider/ProviderEditHeader.tsx` | 68 | Provider preset group | Same logic as `ProviderForm`; likely extract shared provider-preset selector. |
+| `components/settings/provider/ProviderEditHeader.tsx` | 79 | API format / provider preset | Same logic as `ProviderForm`; likely extract shared provider-preset selector. |
 
 ### DropdownSelect keyboard caveat
 
@@ -65,35 +65,35 @@ Only replace true native DOM `title` attributes. Ignore component props like `<I
 
 | File | Line | Element | Suggested change |
 |------|------|---------|------------------|
-| `components/Rail.tsx` | 29 | `Ico` wrapper uses native `title` | Wrap returned `<div>` in `CustomTooltip`. This fixes all `Ico` callsites. |
-| `components/Rail.tsx` | 300 | Create character rail button | `CustomTooltip` |
-| `components/Rail.tsx` | 305 | Import character rail button | `CustomTooltip` |
-| `components/Rail.tsx` | 319 | Character avatar button | `CustomTooltip`; content = character name |
-| `components/Rail.tsx` | 332 | `+N` more characters button | `CustomTooltip` |
-| `components/Rail.tsx` | 348 | Chat indicator button | `CustomTooltip`; content = chat title |
-| `components/Rail.tsx` | 358 | New chat button | `CustomTooltip` |
-| `components/MessageBlock.tsx` | 814 | Resend button | `CustomTooltip` |
-| `components/MessageBlock.tsx` | 819 | Regenerate button | `CustomTooltip` |
-| `components/MessageBlock.tsx` | 824 | Branch button | `CustomTooltip` |
-| `components/provider/ProviderModelSelector.tsx` | 232 | Refresh models button | `CustomTooltip` |
-| `components/ContextMemoryModal.tsx` | 545 | Pin/unpin model button | `CustomTooltip` |
+| `components/layout/Rail.tsx` | 29 | `Ico` wrapper uses native `title` | Wrap returned `<div>` in `CustomTooltip`. This fixes all `Ico` callsites. |
+| `components/layout/Rail.tsx` | 300 | Create character rail button | `CustomTooltip` |
+| `components/layout/Rail.tsx` | 305 | Import character rail button | `CustomTooltip` |
+| `components/layout/Rail.tsx` | 319 | Character avatar button | `CustomTooltip`; content = character name |
+| `components/layout/Rail.tsx` | 332 | `+N` more characters button | `CustomTooltip` |
+| `components/layout/Rail.tsx` | 348 | Chat indicator button | `CustomTooltip`; content = chat title |
+| `components/layout/Rail.tsx` | 358 | New chat button | `CustomTooltip` |
+| `components/chat/MessageBlock.tsx` | 814 | Resend button | `CustomTooltip` |
+| `components/chat/MessageBlock.tsx` | 819 | Regenerate button | `CustomTooltip` |
+| `components/chat/MessageBlock.tsx` | 824 | Branch button | `CustomTooltip` |
+| `components/settings/provider/ProviderModelSelector.tsx` | 232 | Refresh models button | `CustomTooltip` |
+| `components/modals/ContextMemoryModal.tsx` | 545 | Pin/unpin model button | `CustomTooltip` |
 
 ### Lower-priority / maybe keep
 
 | File | Line | Element | Reason |
 |------|------|---------|--------|
-| `components/popovers/AvatarPanel.tsx` | 209 | Draggable/zoomable image container | This is a non-button interaction hint. Native title is not great, but wrapping the whole drag surface in a tooltip may interfere with pointer behavior. |
+| `components/settings/popovers/AvatarPanel.tsx` | 209 | Draggable/zoomable image container | This is a non-button interaction hint. Native title is not great, but wrapping the whole drag surface in a tooltip may interfere with pointer behavior. |
 
 ### False positives from `rg 'title={...'`
 
 These are component props, not native DOM `title` attributes:
 
-- `components/ImportModals.tsx` — `ImportModalFrame`, `ImportDropZone`
-- `components/PersonaModal.tsx` — `DestructiveConfirmModal`
-- `components/PromptManagerModal.tsx` — `DestructiveConfirmModal`
-- `components/ProviderModal.tsx` — `DestructiveConfirmModal`
-- `components/prompt/PromptFields.tsx` — `SectionHeader`
-- `components/prompt/PresetList.tsx` — `EmptyState`
+- `components/modals/ImportModals.tsx` — `ImportModalFrame`, `ImportDropZone`
+- `components/modals/PersonaModal.tsx` — `DestructiveConfirmModal`
+- `components/modals/PromptManagerModal.tsx` — `DestructiveConfirmModal`
+- `components/modals/ProviderModal.tsx` — `DestructiveConfirmModal`
+- `components/settings/prompt/PromptFields.tsx` — `SectionHeader`
+- `components/settings/prompt/PresetList.tsx` — `EmptyState`
 
 ---
 
@@ -103,17 +103,17 @@ There are 22 native textareas outside `components/shared/`. Many should probably
 
 | File | Lines | Suggested replacement | Notes |
 |------|-------|-----------------------|-------|
-| `components/CreateCharacterModal.tsx` | 248, 257, 297, 313, 323, 332, 344, 354, 391, 401 | `AutoTextarea` + `MobileExpandTextarea` for long fields | High-value: create modal has many repeated native textareas. |
-| `components/editors/LoreEntryEditor.tsx` | 187 | `AutoTextarea` + `MobileExpandTextarea` | Lore entry content can be long. |
-| `components/prompt/PrefillField.tsx` | 29 | `AutoTextarea` | Small straightforward replacement. |
-| `components/prompt/InjectionTable.tsx` | 151 | `AutoTextarea` | Injection content field. |
+| `components/modals/CreateCharacterModal.tsx` | 248, 257, 297, 313, 323, 332, 344, 354, 391, 401 | `AutoTextarea` + `MobileExpandTextarea` for long fields | High-value: create modal has many repeated native textareas. |
+| `components/build/editors/LoreEntryEditor.tsx` | 187 | `AutoTextarea` + `MobileExpandTextarea` | Lore entry content can be long. |
+| `components/settings/prompt/PrefillField.tsx` | 29 | `AutoTextarea` | Small straightforward replacement. |
+| `components/settings/prompt/InjectionTable.tsx` | 151 | `AutoTextarea` | Injection content field. |
 | `components/context/SummaryTab.tsx` | 160 | `AutoTextarea` | Summary prompt/instructions field. |
-| `components/ContextMemoryModal.tsx` | 484 | `AutoTextarea` | Memory/summary modal text field. |
-| `components/editors/ScriptEditor.tsx` | 393 | `CodeEditor` or keep native | Script import code should probably use `CodeEditor`; might be overkill in modal. |
-| `components/editors/ScriptEditor.tsx` | 453 | `AutoTextarea` | AI prompt field. |
-| `components/WelcomeScreen.tsx` | 101, 110 | `AutoTextarea` or keep | Onboarding/import fields; review UI behavior. |
-| `components/prompt/PromptFields.tsx` | 122 | `AutoTextarea` | Currently has a local resize helper with shrink limitations; likely replace with shared helper/component. |
-| `components/InputArea.tsx` | 194, 225 | Keep native for now | Chat composer has custom keyboard/submit/mobile behavior; do not blindly replace. |
+| `components/modals/ContextMemoryModal.tsx` | 484 | `AutoTextarea` | Memory/summary modal text field. |
+| `components/build/editors/ScriptEditor.tsx` | 393 | `CodeEditor` or keep native | Script import code should probably use `CodeEditor`; might be overkill in modal. |
+| `components/build/editors/ScriptEditor.tsx` | 453 | `AutoTextarea` | AI prompt field. |
+| `components/layout/WelcomeScreen.tsx` | 101, 110 | `AutoTextarea` or keep | Onboarding/import fields; review UI behavior. |
+| `components/settings/prompt/PromptFields.tsx` | 122 | `AutoTextarea` | Currently has a local resize helper with shrink limitations; likely replace with shared helper/component. |
+| `components/chat/InputArea.tsx` | 194, 225 | Keep native for now | Chat composer has custom keyboard/submit/mobile behavior; do not blindly replace. |
 
 ---
 
@@ -123,11 +123,11 @@ Current range sliders:
 
 | File | Lines | Purpose | Recommendation |
 |------|-------|---------|----------------|
-| `components/ContextMemoryModal.tsx` | 75, 81 | Local `DualRangeSlider` implementation | Consider extracting to `components/shared/DualRangeSlider.tsx`. |
-| `components/ContextMemoryModal.tsx` | 598, 633 | Single range controls for summary ranges | Could share styling with extracted slider. |
+| `components/modals/ContextMemoryModal.tsx` | 75, 81 | Local `DualRangeSlider` implementation | Consider extracting to `components/shared/DualRangeSlider.tsx`. |
+| `components/modals/ContextMemoryModal.tsx` | 598, 633 | Single range controls for summary ranges | Could share styling with extracted slider. |
 | `components/context/SummaryTab.tsx` | 176 | Summary range slider | Could share styling. |
-| `components/popovers/MobileSettings.tsx` | 126, 143 | Mobile font size sliders | Keep until shared `Slider` exists. |
-| `components/provider/ProviderSamplerPanel.tsx` | 70 | Sampler slider | Consider a shared `NumberSlider` pair because it has range + numeric input. |
+| `components/settings/popovers/MobileSettings.tsx` | 126, 143 | Mobile font size sliders | Keep until shared `Slider` exists. |
+| `components/settings/provider/ProviderSamplerPanel.tsx` | 70 | Sampler slider | Consider a shared `NumberSlider` pair because it has range + numeric input. |
 
 ---
 
