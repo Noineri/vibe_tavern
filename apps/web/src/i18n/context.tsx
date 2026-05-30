@@ -17,18 +17,9 @@ const LocaleContext = createContext<LocaleContextValue>({
   ready: false,
 });
 
-// ── Standalone getT() for use outside React components (hooks, etc.) ──
-let _lastStrings: TranslationMap = {};
-let _lastLocale: Locale = "en";
-
-/** Returns the last-known `t` function. Falls back to key-as-value. */
-export function getT(): (key: string) => string {
-  return (key: string) => _lastStrings[key] ?? key;
-}
-
-export function getLocale(): Locale {
-  return _lastLocale;
-}
+// getT/getLocale live in locale-helpers.ts — import from there directly.
+// Do NOT re-export here to keep this file Fast Refresh compatible.
+import { syncLocaleState } from "./locale-helpers.js";
 
 // ── Provider ──
 export function LocaleProvider({ children, initialLocale }: {
@@ -48,16 +39,14 @@ export function LocaleProvider({ children, initialLocale }: {
         if (!cancelled) {
           const map = mod.default as TranslationMap;
           setStrings(map);
-          _lastStrings = map;
-          _lastLocale = locale;
+          syncLocaleState(locale, map);
           setReady(true);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setStrings({});
-          _lastStrings = {};
-          _lastLocale = locale;
+          syncLocaleState(locale, {});
           setReady(true);
         }
       });

@@ -1,7 +1,7 @@
 import { useState, type ChangeEvent, type DragEvent } from "react";
 import type { ChatId } from "@vibe-tavern/domain";
 import { toast } from "sonner";
-import { getT } from "../i18n/context.js";
+import { getT } from "../i18n/locale-helpers.js";
 import {
   setPersonalLorebookEnabled,
   uploadAsset,
