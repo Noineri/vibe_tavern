@@ -65,3 +65,10 @@ vibe_tavern_plan/
 services/api/tmp-test-*/
 
 # Source runtime assets under services/api/assets/ are intentionally tracked.
+
+# Android / Gradle
+mobile/android/local.properties
+mobile/android/.gradle/
+mobile/android/**/build/
+*.apk
+*.aab

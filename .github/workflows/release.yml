@@ -107,3 +107,46 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: out/installer/vibe-tavern-${{ needs.release.outputs.version }}-setup.exe
+
+  build-android-apk:
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.version }}
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun scripts/build-android-arm64.ts
+
+      - name: Copy tarball into Android assets
+        run: |
+          mkdir -p mobile/android/app/src/main/assets
+          cp out/vibe-tavern-android-arm64.tar.gz \
+             mobile/android/app/src/main/assets/vibe-tavern-android-arm64.tgz
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease
+
+      - name: Rename APK with version
+        run: |
+          VERSION="${{ needs.release.outputs.version }}"
+          mv mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk \
+             "vibe-tavern-${VERSION}-android.apk"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: vibe-tavern-${{ needs.release.outputs.version }}-android.apk

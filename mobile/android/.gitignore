@@ -1,0 +1,14 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+/local.properties
+/app/build
+/app/src/main/assets/vibe-tavern-android-arm64.tar.gz
+/app/src/main/assets/vibe-tavern-android-arm64.tgz
