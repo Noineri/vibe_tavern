@@ -1,0 +1,46 @@
+name: Build Windows Installer
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set version from tag
+        shell: bash
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          jq --arg v "$VERSION" '.version = $v' package.json > package.json.tmp
+          mv package.json.tmp package.json
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      - run: choco install innosetup --yes --no-progress
+
+      - run: bun scripts/build-installer.ts
+        env:
+          ISCC_PATH: "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe"
+
+      - name: Rename installer with version
+        shell: pwsh
+        run: |
+          $version = "${{ github.event.release.tag_name }}".TrimStart('v')
+          Rename-Item -Path "installer\output\claw-tavern-setup.exe" `
+                      -NewName "claw-tavern-${version}-setup.exe"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: installer/output/claw-tavern-*-setup.exe
