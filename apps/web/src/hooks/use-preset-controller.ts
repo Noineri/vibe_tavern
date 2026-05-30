@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 import type { PromptPresetDto } from "@vibe-tavern/domain";
-import { getT } from "../i18n/locale-helpers.js";
+import { getT } from "../i18n/context.js";
 import {
   loadPromptPresetsAction,
   createPromptPresetAction,

@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import type { ChatId } from "@vibe-tavern/domain";
 import { uploadAsset, updateCharacterAvatar } from "../app-client.js";
 import { extractPngMetadata, parseCharacterMetadata } from "../lib/png-reader.js";
-import { getT } from "../i18n/locale-helpers.js";
+import { getT } from "../i18n/context.js";
 import { importCharacterAction } from "../stores/api-actions/character-actions.js";
 
 export interface CharacterImportOptions {

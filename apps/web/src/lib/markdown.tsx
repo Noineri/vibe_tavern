@@ -157,6 +157,6 @@ export const Markdown: React.FC<MarkdownProps> = ({ text, className }) => {
   );
 };
 
-function renderRPText(text: string): React.ReactNode {
+export function renderRPText(text: string): React.ReactNode {
   return <Markdown text={text} />;
 }
