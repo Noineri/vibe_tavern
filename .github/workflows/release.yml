@@ -17,50 +17,53 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: master
           fetch-depth: 0
 
       - name: Extract version from tag
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
 
-      - name: Bump versions in all package.json files
+      - name: Create source archive
         run: |
+          REPO_NAME=$(basename "${{ github.repository }}")
+          VERSION="${{ steps.version.outputs.version }}"
+          git archive --format=zip --prefix="${REPO_NAME}/" HEAD -o "${REPO_NAME}-${VERSION}.zip"
+          zip -d "${REPO_NAME}-${VERSION}.zip" \
+            "${REPO_NAME}/.gitignore" \
+            "${REPO_NAME}/.github/*" \
+            "${REPO_NAME}/.github/"
+
+      - name: Sync version bump to master
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout master
           find . -name package.json -not -path '*/node_modules/*' | while read pkg; do
             tmp="${pkg}.tmp"
-            jq --arg v "${{ steps.version.outputs.version }}" '
+            jq --arg v "$VERSION" '
               .version = $v |
               if .dependencies then
-                .dependencies |= to_entries | map(
-                  if .key | startswith("@vibe-tavern/") then .value = $v else . end
-                ) | from_entries
+                .dependencies |= (
+                  to_entries | map(
+                    if .key | startswith("@vibe-tavern/") then .value = $v else . end
+                  ) | from_entries
+                )
               else . end |
               if .devDependencies then
-                .devDependencies |= to_entries | map(
-                  if .key | startswith("@vibe-tavern/") then .value = $v else . end
-                ) | from_entries
+                .devDependencies |= (
+                  to_entries | map(
+                    if .key | startswith("@vibe-tavern/") then .value = $v else . end
+                  ) | from_entries
+                )
               else . end
             ' "$pkg" > "$tmp"
             mv "$tmp" "$pkg"
           done
-
-      - name: Sync version bump to master
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add '**/package.json'
           git diff --cached --quiet && echo "Version already up to date" && exit 0
-          git commit -m "chore: release v${{ steps.version.outputs.version }}"
+          git commit -m "chore: release v${VERSION}"
           git push
-
-      - name: Create source archive
-        run: |
-          REPO_NAME=$(basename "${{ github.repository }}")
-          git archive --format=zip --prefix="${REPO_NAME}/" HEAD -o "${REPO_NAME}-${{ steps.version.outputs.version }}.zip"
-          zip -d "${REPO_NAME}-${{ steps.version.outputs.version }}.zip" \
-            "${REPO_NAME}/.gitignore" \
-            "${REPO_NAME}/.github/*" \
-            "${REPO_NAME}/.github/"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -74,6 +77,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.version }}
+
+      - name: Set version from release
+        shell: bash
+        run: |
+          VERSION="${{ needs.release.outputs.version }}"
+          jq --arg v "$VERSION" '.version = $v' package.json > package.json.tmp
+          mv package.json.tmp package.json
 
       - uses: oven-sh/setup-bun@v2
 
@@ -85,11 +97,56 @@ jobs:
         env:
           ISCC_PATH: "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe"
 
-      - run: |
+      - name: Rename installer with version
+        shell: pwsh
+        run: |
           $version = "${{ needs.release.outputs.version }}"
-          Rename-Item -Path "installer\output\claw-tavern-setup.exe" `
-                      -NewName "claw-tavern-${version}-setup.exe"
+          Rename-Item -Path "out\installer\vibe-tavern-setup.exe" `
+                      -NewName "vibe-tavern-${version}-setup.exe"
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: installer/output/claw-tavern-${{ needs.release.outputs.version }}-setup.exe
+          files: out/installer/vibe-tavern-${{ needs.release.outputs.version }}-setup.exe
+
+  build-android-apk:
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.version }}
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun scripts/build-android-arm64.ts
+
+      - name: Copy tarball into Android assets
+        run: |
+          mkdir -p mobile/android/app/src/main/assets
+          cp out/vibe-tavern-android-arm64.tar.gz \
+             mobile/android/app/src/main/assets/vibe-tavern-android-arm64.tgz
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease
+
+      - name: Rename APK with version
+        run: |
+          VERSION="${{ needs.release.outputs.version }}"
+          mv mobile/android/app/build/outputs/apk/release/app-release.apk \
+             "vibe-tavern-${VERSION}-android.apk"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: vibe-tavern-${{ needs.release.outputs.version }}-android.apk

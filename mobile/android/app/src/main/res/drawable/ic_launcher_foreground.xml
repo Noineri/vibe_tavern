@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Palm tree icon for Vibe Tavern -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,28 C54,28 48,22 42,28 C36,34 42,40 42,40 C42,40 36,36 32,42 C28,48 36,52 36,52 C36,52 30,50 28,56 C26,62 34,64 34,64 L54,64 Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,64 L54,88 C54,90 52,92 52,92 L56,92 C56,92 54,90 54,88 Z"/>
+</vector>
