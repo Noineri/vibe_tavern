@@ -13,15 +13,15 @@ function findScrollParent(el: HTMLElement): HTMLElement | null {
 
 /**
  * Resize a textarea to fit its content.
- * When allowShrink is true, shrinks first then grows (for value changes).
- * When false, only grows (while typing).
+ * Always shrinks-to-fit first, then grows to scrollHeight — works both on render
+ * and during typing/deleting.
  * Preserves scroll position of the nearest scrollable ancestor.
  */
-export function resizeTextarea(el: HTMLTextAreaElement, allowShrink: boolean, maxHeight?: number): void {
+export function resizeTextarea(el: HTMLTextAreaElement, maxHeight?: number): void {
   const scrollParent = findScrollParent(el);
   const scrollTop = scrollParent?.scrollTop ?? 0;
 
-  if (allowShrink) el.style.height = "auto";
+  el.style.height = "auto";
   const min = parseFloat(getComputedStyle(el).minHeight) || 0;
   let next = Math.max(el.scrollHeight, min);
   if (maxHeight && next > maxHeight) {
@@ -30,9 +30,7 @@ export function resizeTextarea(el: HTMLTextAreaElement, allowShrink: boolean, ma
   } else {
     el.style.overflowY = "hidden";
   }
-  if (allowShrink || next > el.getBoundingClientRect().height) {
-    el.style.height = `${next}px`;
-  }
+  el.style.height = `${next}px`;
 
   // Prevent scroll anchoring from jumping when textarea shrinks/grows
   if (scrollParent) scrollParent.scrollTop = scrollTop;

@@ -34,7 +34,8 @@ export interface AutoTextareaProps extends AutoTextareaPassthrough {
  * - **Uncontrolled**: pass `register={register("field")}` — delegates to react-hook-form
  * - **Controlled**: pass `value` + `onChange` — for manually managed state
  *
- * Resizes on every render (shrinks to fit) and on every keystroke (grows only).
+ * Resizes on every render and every keystroke — grows when text is added,
+ * shrinks immediately when text is deleted.
  */
 export function AutoTextarea({
   className,
@@ -53,23 +54,23 @@ export function AutoTextarea({
   useLayoutEffect(() => {
     const el = elRef.current;
     if (!el) return;
-    resizeTextarea(el, true, maxHeight);
+    resizeTextarea(el, maxHeight);
   });
 
   const handleRegisterChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      resizeTextarea(e.currentTarget, false, maxHeight);
+      resizeTextarea(e.currentTarget, maxHeight);
       register?.onChange?.(e);
     },
-    [register],
+    [register, maxHeight],
   );
 
   const handleControlledChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      resizeTextarea(e.currentTarget, false, maxHeight);
+      resizeTextarea(e.currentTarget, maxHeight);
       onChange?.(e);
     },
-    [onChange],
+    [onChange, maxHeight],
   );
 
   // Merge refs: both the internal elRef and the register ref (if any)
