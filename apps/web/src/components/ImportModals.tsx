@@ -8,7 +8,8 @@ import { cn } from "../lib/cn.js";
 import { Icons } from "./shared/icons.js";
 import { Modal } from "./shared/Modal.js";
 import { useIsMobile } from "../hooks/use-mobile.js";
-import { useT, getT } from "../i18n/context.js";
+import { useT } from "../i18n/context.js";
+import { getT } from "../i18n/locale-helpers.js";
 
 interface ImportModalCommonProps {
   isImporting: boolean;

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
-import { getT } from "../i18n/context.js";
+import { getT } from "../i18n/locale-helpers.js";
 import {
   generateReplyStream,
   logClientSendDebug,
