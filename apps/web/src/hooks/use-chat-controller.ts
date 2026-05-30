@@ -33,7 +33,8 @@ export interface ChatControllerActions {
   handleSend: () => Promise<void>;
   handleCancelGeneration: () => void;
   handleSwitchChat: (chatId: ChatId) => Promise<void>;
-  handleStartEdit: (message: AppMessage) => void;
+  handleStartEdit: (message: AppMessage, contentOverride?: string) => void;
+  handleEditGreeting: (messageId: string, content: string) => Promise<void>;
   handleCancelEdit: () => void;
   handleSaveMessageEdit: (messageId: string) => Promise<void>;
   handleDeleteMessage: (messageId: string) => Promise<void>;
@@ -288,9 +289,17 @@ export function useChatController(): ChatControllerActions {
     useChatStore.getState().setActiveChatId(chatId);
   }
 
-  function handleStartEdit(message: AppMessage): void {
+  async function handleEditGreeting(messageId: string, content: string): Promise<void> {
+    const activeChatId = getActiveChatId();
+    if (!activeChatId) return;
+    const trimmed = content.trim();
+    if (!trimmed) return;
+    await editMessageAction(activeChatId, messageId, trimmed);
+  }
+
+  function handleStartEdit(message: AppMessage, contentOverride?: string): void {
     useChatStore.getState().setEditingMessageId(message.id);
-    useChatStore.getState().setEditingDraft(message.content);
+    useChatStore.getState().setEditingDraft(contentOverride ?? message.content);
   }
 
   function handleCancelEdit(): void {
@@ -420,6 +429,7 @@ export function useChatController(): ChatControllerActions {
     handleCancelGeneration,
     handleSwitchChat,
     handleStartEdit,
+    handleEditGreeting,
     handleCancelEdit,
     handleSaveMessageEdit,
     handleDeleteMessage,
