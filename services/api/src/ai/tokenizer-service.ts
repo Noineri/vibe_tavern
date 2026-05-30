@@ -4,35 +4,31 @@
  * Uses:
  * - js-tiktoken for OpenAI models (GPT-4, GPT-4o, etc.)
  * - @agnai/web-tokenizers for Claude, Llama3, Qwen2, DeepSeek, etc.
- * - Byte-based fallback for unknown models
+ * - cl100k_base (GPT-4 tokenizer) as universal fallback for unknown models
  */
 
 import { join, resolve } from "node:path";
 import { getEncoding, type Tiktoken, type TiktokenEncoding } from "js-tiktoken";
 import { Tokenizer as WebTokenizer } from "@agnai/web-tokenizers";
 
-// ── Byte-based fallback ──────────────────────────────────────────────────
-
-const BYTES_PER_TOKEN = 3.35;
-
-function guesstimate(text: string): number {
-	const byteLen = new TextEncoder().encode(text).length;
-	return Math.ceil(byteLen / BYTES_PER_TOKEN);
-}
+// ── cl100k_base fallback ─────────────────────────────────────────────────
+// Used when the model name doesn't match any known tokenizer family.
+// cl100k_base is the GPT-4 tokenizer — reasonably accurate for all languages
+// and far better than byte-based estimation.
 
 // ── Paths ────────────────────────────────────────────────────────────────
 
-async function resolveTokenizerDir(): Promise<string> {
+export async function resolveTokenizerDir(): Promise<string> {
 	const candidates = [
 		process.env.RP_PLATFORM_TOKENIZER_DIR,
-		// Standalone binary/release artifact: dist/tokenizers next to executable.
+		// Standalone artifact: tokenizers next to executable.
 		join(resolve(process.execPath, ".."), "tokenizers"),
-		// Flat bundled services/api output: services/api/dist/tokenizers.
+		// API artifacts: Bun.build flat output or tsc module output.
 		join(import.meta.dir, "tokenizers"),
-		// Preserved module output: dist/services/api/src/tokenizers.
 		join(import.meta.dir, "..", "tokenizers"),
-		// Source checkout/dev fallback when running from repo root.
-		join(process.cwd(), "services", "api", "src", "tokenizers"),
+		// Source/dev mode still uses the canonical copied runtime assets in out/.
+		resolve(import.meta.dir, "..", "..", "..", "..", "out", "services", "api", "tokenizers"),
+		join(process.cwd(), "out", "services", "api", "tokenizers"),
 	].filter(Boolean) as string[];
 
 	for (const dir of candidates) {
@@ -181,7 +177,8 @@ export function countTokensDefault(text: string): number {
 	try {
 		return getTiktoken("cl100k_base").encode(text).length;
 	} catch {
-		return guesstimate(text);
+		// cl100k_base failed (shouldn't happen) — rough char-based estimate
+		return Math.ceil(text.length / 4);
 	}
 }
 

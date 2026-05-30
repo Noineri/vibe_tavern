@@ -1,5 +1,6 @@
 .git/
 node_modules/
+out/
 dist/
 build/
 .vite/
@@ -10,6 +11,13 @@ data/
 *.db-*
 logs/
 *.log
+*.exe
+*.msi
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.7z
 .env
 .env.*
 !.env.example

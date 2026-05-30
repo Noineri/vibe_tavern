@@ -2,12 +2,24 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist",
+    "outDir": "../../out/packages/prompt-pipeline",
     "types": [
       "bun"
-    ]
+    ],
+    "composite": true,
+    "tsBuildInfoFile": "../../out/tsbuildinfo/prompt-pipeline.tsbuildinfo",
+    "paths": {
+      "@vibe-tavern/domain": [
+        "../domain/src/index.ts"
+      ]
+    }
   },
   "include": [
     "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../domain"
+    }
   ]
 }

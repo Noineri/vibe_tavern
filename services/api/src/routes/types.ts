@@ -1,4 +1,4 @@
-import type { AiAssistantStreamChunk } from "../script-ai-assistant.js";
+import type { AiAssistantStreamChunk } from "../scripts-engine/script-ai-assistant.js";
 
 export interface RuntimeApi {
   bootstrap: () => Promise<unknown>;

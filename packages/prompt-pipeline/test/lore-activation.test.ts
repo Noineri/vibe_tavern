@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { activateLoreEntries } from "../dist/lore-activation.js";
+import { activateLoreEntries } from "../src/lore-activation.js";
 
 function makeEntry(overrides = {}) {
   return {

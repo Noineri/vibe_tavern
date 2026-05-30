@@ -26,6 +26,8 @@ export default defineConfig({
 		},
 	},
 	build: {
+		outDir: "../../out/apps/web",
+		emptyOutDir: true,
 		chunkSizeWarningLimit: 8000,
 	},
 	server: {

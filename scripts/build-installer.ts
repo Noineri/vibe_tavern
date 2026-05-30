@@ -2,7 +2,7 @@
  * Full installer build pipeline for Vibe Tavern.
  *
  * Orchestrates:
- *   1. Run build-standalone.ts (produces dist/vibe-tavern.exe + dist/web/)
+ *   1. Run build-standalone.ts (produces out/standalone/vibe-tavern.exe + out/standalone/web/)
  *   2. Invoke ISCC (Inno Setup Compiler) to produce the installer
  *
  * Usage:
@@ -14,16 +14,16 @@
  *     (or set ISCC_PATH environment variable)
  *
  * Output:
- *   installer/output/vibe-tavern-setup.exe
+ *   out/installer/vibe-tavern-setup.exe
  */
 
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..");
-const DIST = join(ROOT, "dist");
+const STANDALONE_OUT = join(ROOT, "out", "standalone");
 const INSTALLER_DIR = join(ROOT, "installer");
 const ISS_FILE = join(INSTALLER_DIR, "vibe-tavern.iss");
-const OUTPUT_DIR = join(INSTALLER_DIR, "output");
+const OUTPUT_DIR = join(ROOT, "out", "installer");
 const EXPECTED_SETUP = join(OUTPUT_DIR, "vibe-tavern-setup.exe");
 
 async function findIscc(): Promise<string> {
@@ -74,13 +74,13 @@ async function main() {
 		process.exit(1);
 	}
 
-	if (!(await Bun.file(join(DIST, "vibe-tavern.exe")).exists())) {
-		console.error("❌ dist/vibe-tavern.exe not found after build");
+	if (!(await Bun.file(join(STANDALONE_OUT, "vibe-tavern.exe")).exists())) {
+		console.error("❌ out/standalone/vibe-tavern.exe not found after build");
 		process.exit(1);
 	}
 
-	if (!(await Bun.file(join(DIST, "web", "index.html")).exists())) {
-		console.error("❌ dist/web/index.html not found after build");
+	if (!(await Bun.file(join(STANDALONE_OUT, "web", "index.html")).exists())) {
+		console.error("❌ out/standalone/web/index.html not found after build");
 		process.exit(1);
 	}
 

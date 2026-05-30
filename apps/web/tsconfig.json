@@ -1,8 +1,8 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "../..",
-    "outDir": "dist",
+    "rootDir": "src",
+    "outDir": "../../out/apps/web-types",
     "jsx": "react-jsx",
     "lib": [
       "ESNext",
@@ -13,6 +13,8 @@
       "bun",
       "vite/client"
     ],
+    "composite": true,
+    "tsBuildInfoFile": "../../out/tsbuildinfo/web.tsbuildinfo",
     "paths": {
       "@vibe-tavern/api": [
         "../../services/api/src/index.ts"
@@ -36,5 +38,22 @@
     "src/**/*.tsx",
     "src/**/*.d.ts",
     "vite.config.ts"
+  ],
+  "references": [
+    {
+      "path": "../../packages/domain"
+    },
+    {
+      "path": "../../packages/api-contracts"
+    },
+    {
+      "path": "../../packages/prompt-pipeline"
+    },
+    {
+      "path": "../../packages/db"
+    },
+    {
+      "path": "../../services/api"
+    }
   ]
 }

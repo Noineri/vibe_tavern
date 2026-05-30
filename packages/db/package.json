@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./dist/db/src/index.js",
-  "types": "./dist/db/src/index.d.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
     "test": "bun test",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push"

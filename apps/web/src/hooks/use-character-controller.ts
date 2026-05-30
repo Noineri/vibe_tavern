@@ -8,7 +8,7 @@ import {
   updateCharacterAvatar,
   type AppSnapshot,
 } from "../app-client.js";
-import type { BuildCharacterDraft } from "../components/BuildMode.js";
+import type { BuildCharacterDraft } from "../components/build/BuildMode.js";
 import { useCharacterImport } from "./use-character-import.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useNavigationStore } from "../stores/navigation-store.js";

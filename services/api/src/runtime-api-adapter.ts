@@ -3,12 +3,12 @@ import type { CreateLoreEntryData, UpdateLoreEntryData } from "@vibe-tavern/db";
 import { brandId, type CharacterId, type ChatId, type ChatBranchId, type MessageId, type LoreScopeType } from "@vibe-tavern/domain";
 import { validation, notFound } from "./errors.js";
 import { logSendDebug } from "./send-debug-log.js";
-import type { SessionRuntime } from "./session-runtime.js";
-import type { ProviderProfileService } from "./provider-profile-service.js";
-import type { ProviderOrchestrator } from "./provider-orchestrator.js";
-import type { LiveChatOrchestrator } from "./live-chat-orchestrator.js";
-import type { ChatSummaryService } from "./chat-summary-service.js";
-import type { PromptPresetService } from "./prompt-preset-service.js";
+import type { SessionRuntime } from "./session/session-runtime.js";
+import type { ProviderProfileService } from "./providers/provider-profile-service.js";
+import type { ProviderOrchestrator } from "./providers/provider-orchestrator.js";
+import type { LiveChatOrchestrator } from "./chat/live-chat-orchestrator.js";
+import type { ChatSummaryService } from "./chat/chat-summary-service.js";
+import type { PromptPresetService } from "./prompt/prompt-preset-service.js";
 import type { AssetService } from "./asset-service.js";
 import type { MobileAccessService } from "./mobile-access-service.js";
 import {
@@ -16,9 +16,9 @@ import {
 	testProviderChat,
 	listProviderModels,
 	normalizeOpenAiCompatibleBaseUrl,
-} from "./provider-gateway.js";
-import { executeScripts } from "./script-sandbox.js";
-import { streamScriptCode, getDefaultScriptAiPrompt } from "./script-ai-assistant.js";
+} from "./providers/provider-gateway.js";
+import { executeScripts } from "./scripts-engine/script-sandbox.js";
+import { streamScriptCode, getDefaultScriptAiPrompt } from "./scripts-engine/script-ai-assistant.js";
 
 /**
  * Facade that implements RuntimeApi — the single contract between

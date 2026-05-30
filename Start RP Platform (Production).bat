@@ -24,7 +24,7 @@ if errorlevel 1 (
 )
 echo.
 
-if not exist "services\api\dist" (
+if not exist "out\services\api" (
     echo API not built. Building now...
     call %BUN_EXE% run scripts\build.ts api-stack
     if errorlevel 1 (
@@ -39,7 +39,7 @@ echo Starting server on http://127.0.0.1:8787
 echo Press Ctrl+C or close this window to stop.
 echo.
 
-"%BUN_EXE%" "services\api\src\prod-server.ts"
+"%BUN_EXE%" "services\api\src\server\prod-server.ts"
 set "EXIT_CODE=%ERRORLEVEL%"
 
 rem Graceful exit codes (Ctrl+C, window close on Windows)

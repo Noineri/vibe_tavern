@@ -2,38 +2,38 @@
 node_modules/
 **/node_modules/
 
-# Build output
-dist/
+# Build output — all artefacts go to out/
+out/
 **/dist/
-build/
-!**/src/**/build/
-.vite/
-coverage/
-*.tsbuildinfo
+installer/output/
 
-# Local runtime data
-data/
-services/api/data/
-*.sqlite
-*.sqlite-*
-*.db
-*.db-*
+# Packaged binaries / archives (generated, never tracked)
+*.exe
+*.msi
+*.dmg
+*.pkg
+*.AppImage
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.7z
 
 # Lock files (migrated to bun.lock)
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
-# Node.js version files (migrated to Bun)
-.nvmrc
-.node-version
+# Local runtime data
+data/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
 
 # Logs
 logs/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
 # Secrets and local environment
 .env
@@ -51,25 +51,17 @@ desktop.ini
 *.tmp
 *.temp
 .pi/
+
+# Drizzle generated output (dev-only)
+drizzle-generated/
+
+# Planning repo (separate repository)
 vibe_tavern_plan/
 
-# Drizzle generated output
-drizzle-generated/
-# packages/db/drizzle/ — NOT ignored, migration files must be committed
+# Runtime token cache
 .tokensave
-
-# Runtime assets required for fresh checkouts and production builds.
-# Keep these tracked even though generated dist/ directories are ignored.
-!services/api/src/script-ai-prompt.md
-!services/api/src/tokenizers/
-!services/api/src/tokenizers/*.json
-
-# Standalone build output
-dist/
-
-# Inno Setup
-installer/output/
-installer/installer/
 
 # Test temp directories
 services/api/tmp-test-*/
+
+# Source runtime assets under services/api/assets/ are intentionally tracked.

@@ -12,17 +12,17 @@ import { resolve } from "node:path";
 import { rm, mkdir } from "node:fs/promises";
 import { Database } from "bun:sqlite";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
-import { createRuntimeStore } from "../../src/session-runtime-store.js";
+import { createRuntimeStore } from "../../src/session/session-runtime-store.js";
 import { warmupTokenizers, countTokens } from "../../src/ai/tokenizer-service.js";
-import { SessionRuntime } from "../../src/session-runtime.js";
-import { createProviderProfileService } from "../../src/provider-profile-service.js";
-import { PromptPresetService } from "../../src/prompt-preset-service.js";
-import { ProviderOrchestrator } from "../../src/provider-orchestrator.js";
-import { LiveChatOrchestrator } from "../../src/live-chat-orchestrator.js";
-import { ChatSummaryService } from "../../src/chat-summary-service.js";
+import { SessionRuntime } from "../../src/session/session-runtime.js";
+import { createProviderProfileService } from "../../src/providers/provider-profile-service.js";
+import { PromptPresetService } from "../../src/prompt/prompt-preset-service.js";
+import { ProviderOrchestrator } from "../../src/providers/provider-orchestrator.js";
+import { LiveChatOrchestrator } from "../../src/chat/live-chat-orchestrator.js";
+import { ChatSummaryService } from "../../src/chat/chat-summary-service.js";
 import { AssetService } from "../../src/asset-service.js";
 import { RuntimeApiAdapter } from "../../src/runtime-api-adapter.js";
-import { createApp } from "../../src/app-factory.js";
+import { createApp } from "../../src/server/app-factory.js";
 import type { Hono } from "hono";
 
 // ── Full DDL (extracted from drizzle schema) ──────────────────────────────

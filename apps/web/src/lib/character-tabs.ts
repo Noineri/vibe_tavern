@@ -1,5 +1,5 @@
 import type { ChatId } from "@vibe-tavern/domain";
-import type { CharacterTab } from "../components/app-shell-types.js";
+import type { CharacterTab } from "../components/layout/app-shell-types.js";
 
 export function buildCharacterTabs(
   allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>,

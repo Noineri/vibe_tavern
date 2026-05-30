@@ -1,4 +1,4 @@
-import type { ConnectionState, ThemeMode } from "../components/app-shell-types.js";
+import type { ConnectionState, ThemeMode } from "../components/layout/app-shell-types.js";
 
 const THEME_STORAGE_KEY = "vibe-tavern.theme";
 const TWEAKS_STORAGE_KEY = "vibe-tavern.tweaks";

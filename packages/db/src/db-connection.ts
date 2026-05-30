@@ -20,7 +20,7 @@ export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
  * Strategy: walk up from this file's directory looking for drizzle/meta/_journal.json.
  * Falls back to explicit RP_PLATFORM_MIGRATIONS_DIR env var.
  */
-async function getMigrationsFolder(): Promise<string> {
+export async function resolveMigrationsFolder(): Promise<string> {
   const envDir = process.env.RP_PLATFORM_MIGRATIONS_DIR;
   if (envDir) return envDir;
 
@@ -342,7 +342,7 @@ export async function createDb(dbPath: string): Promise<AppDb> {
   sqlite.exec('PRAGMA foreign_keys = ON');
 
   const db = drizzle(sqlite, { schema });
-  const migrationsFolder = await getMigrationsFolder();
+  const migrationsFolder = await resolveMigrationsFolder();
 
   console.log(`[db] Migrations folder: ${migrationsFolder}`);
 

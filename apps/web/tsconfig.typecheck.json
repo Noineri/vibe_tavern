@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "paths": {
+      "@vibe-tavern/api": [
+        "../../services/api/src/index.ts"
+      ],
+      "@vibe-tavern/api-contracts": [
+        "../../packages/api-contracts/src/index.ts"
+      ],
+      "@vibe-tavern/db": [
+        "../../packages/db/src/index.ts"
+      ],
+      "@vibe-tavern/domain": [
+        "../../packages/domain/src/index.ts"
+      ],
+      "@vibe-tavern/prompt-pipeline": [
+        "../../packages/prompt-pipeline/src/index.ts"
+      ]
+    },
+    "composite": false
+  }
+}

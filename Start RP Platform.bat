@@ -74,7 +74,7 @@ if %ERRORLEVEL%==10 (
     )
 )
 
-bun services/api/src/prod-server.ts
+bun services/api/src/server/prod-server.ts
 set "EXIT_CODE=%ERRORLEVEL%"
 
 REM Graceful exits (0=normal, 1=Ctrl+C, 58=window closed) - just exit silently

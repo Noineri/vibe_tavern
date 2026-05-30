@@ -1,6 +1,6 @@
 import { type SetStateAction } from "react";
 import { create } from "zustand";
-import type { ConnectionState } from "../components/app-shell-types.js";
+import type { ConnectionState } from "../components/layout/app-shell-types.js";
 
 export interface ProviderState {
   connection: ConnectionState;

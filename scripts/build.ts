@@ -18,18 +18,13 @@ function exists(path: string): Promise<boolean> {
 }
 
 async function copyApiRuntimeAssets() {
-  const apiDist = join(ROOT, "services", "api", "dist");
-  const apiDistSrc = join(apiDist, "services", "api", "src");
-  const promptSource = join(ROOT, "services", "api", "src", "script-ai-prompt.md");
-  const promptTargets = [
-    join(apiDist, "script-ai-prompt.md"),
-    join(apiDistSrc, "script-ai-prompt.md"),
-  ];
-  const tokenizerSource = join(ROOT, "services", "api", "src", "tokenizers");
-  const tokenizerTargets = [
-    join(apiDist, "tokenizers"),
-    join(apiDistSrc, "tokenizers"),
-  ];
+  const apiOut = join(ROOT, "out", "services", "api");
+  const promptSource = join(ROOT, "services", "api", "assets", "script-ai-prompt.md");
+  const promptTargets = [join(apiOut, "script-ai-prompt.md")];
+  const tokenizerSource = join(ROOT, "services", "api", "assets", "tokenizers");
+  const tokenizerTargets = [join(apiOut, "tokenizers")];
+  const migrationsSource = join(ROOT, "packages", "db", "drizzle");
+  const migrationsTarget = join(apiOut, "drizzle");
 
   if (!(await exists(promptSource))) {
     throw new Error(`Script AI prompt source not found: ${promptSource}`);
@@ -37,8 +32,10 @@ async function copyApiRuntimeAssets() {
   if (!(await exists(tokenizerSource))) {
     throw new Error(`Tokenizer source not found: ${tokenizerSource}`);
   }
+  if (!(await exists(migrationsSource))) {
+    throw new Error(`DB migrations source not found: ${migrationsSource}`);
+  }
 
-  await mkdir(apiDistSrc, { recursive: true });
   for (const promptTarget of promptTargets) {
     await mkdir(resolve(promptTarget, ".."), { recursive: true });
     await copyFile(promptSource, promptTarget);
@@ -46,9 +43,10 @@ async function copyApiRuntimeAssets() {
   for (const tokenizerTarget of tokenizerTargets) {
     await cp(tokenizerSource, tokenizerTarget, { recursive: true });
   }
+  await cp(migrationsSource, migrationsTarget, { recursive: true });
 
   console.log("  ✅ Runtime assets copied:");
-  for (const target of [...promptTargets, ...tokenizerTargets]) {
+  for (const target of [...promptTargets, ...tokenizerTargets, migrationsTarget]) {
     console.log(`     ${relative(ROOT, target)}`);
   }
 }
@@ -66,46 +64,49 @@ const PACKAGES: Record<string, PackageConfig> = {
     name: "@vibe-tavern/domain",
     dir: "packages/domain",
     entrypoints: ["src/index.ts"],
-    outdir: "dist",
+    outdir: "out/packages/domain",
+    external: [],
+  },
+  "api-contracts": {
+    name: "@vibe-tavern/api-contracts",
+    dir: "packages/api-contracts",
+    entrypoints: ["src/index.ts"],
+    outdir: "out/packages/api-contracts",
     external: [],
   },
   "prompt-pipeline": {
     name: "@vibe-tavern/prompt-pipeline",
     dir: "packages/prompt-pipeline",
     entrypoints: ["src/index.ts"],
-    outdir: "dist",
+    outdir: "out/packages/prompt-pipeline",
     external: ["@vibe-tavern/domain"],
   },
   db: {
     name: "@vibe-tavern/db",
     dir: "packages/db",
     entrypoints: ["src/index.ts"],
-    outdir: "dist",
+    outdir: "out/packages/db",
     external: ["@vibe-tavern/domain"],
   },
   "import-export": {
     name: "@vibe-tavern/import-export",
     dir: "packages/import-export",
     entrypoints: ["src/index.ts"],
-    outdir: "dist",
+    outdir: "out/packages/import-export",
     external: ["@vibe-tavern/domain"],
   },
   api: {
     name: "@vibe-tavern/api",
     dir: "services/api",
-    entrypoints: ["src/index.ts", "src/prod-server.ts"],
-    outdir: "dist",
-    external: [
-      "@vibe-tavern/db",
-      "@vibe-tavern/domain",
-      "@vibe-tavern/import-export",
-      "@vibe-tavern/prompt-pipeline",
-    ],
+    entrypoints: ["src/index.ts", "src/server/prod-server.ts"],
+    outdir: "out/services/api",
+    external: [],
   },
 };
 
 const API_STACK_ORDER = [
   "domain",
+  "api-contracts",
   "prompt-pipeline",
   "db",
   "import-export",
@@ -122,7 +123,7 @@ async function buildPackage(pkg: PackageConfig) {
       const entrypoint = join(absDir, entry);
       const result = await Bun.build({
         entrypoints: [entrypoint],
-        outdir: join(absDir, pkg.outdir),
+        outdir: join(ROOT, pkg.outdir),
         target: "bun",
         external: pkg.external,
         sourcemap: "external",
@@ -159,7 +160,7 @@ async function main() {
   if (target === "web") {
     // Build frontend via Vite
     console.log("📦 Building frontend (vite build)...\n");
-    const proc = Bun.spawn(["bun", "x", "vite", "build", "apps/web"], {
+    const proc = Bun.spawn(["bun", "run", "--filter", "@vibe-tavern/web", "build"], {
       cwd: ROOT,
       stdout: "inherit",
       stderr: "inherit",
@@ -170,7 +171,7 @@ async function main() {
       console.error("❌ Frontend build failed");
       process.exit(1);
     }
-    console.log("\n✅ Frontend built to apps/web/dist/");
+    console.log("\n✅ Frontend built to out/apps/web/");
     return;
   }
 
@@ -190,7 +191,7 @@ async function main() {
 
     // 2. Frontend
     console.log("📦 Building frontend (vite build)...\n");
-    const proc = Bun.spawn(["bun", "x", "vite", "build", "apps/web"], {
+    const proc = Bun.spawn(["bun", "run", "--filter", "@vibe-tavern/web", "build"], {
       cwd: ROOT,
       stdout: "inherit",
       stderr: "inherit",
@@ -203,7 +204,7 @@ async function main() {
     }
 
     console.log("\n✅ Production bundle ready.");
-    console.log("   Run: bun services/api/src/prod-server.ts");
+    console.log("   Run: bun out/services/api/prod-server.js");
     return;
   }
 
