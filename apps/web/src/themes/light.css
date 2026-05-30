@@ -75,6 +75,20 @@
   --md-bold-italic:  oklch(0.30 0.06 40);     /* terracotta emphasis */
   --md-quoted:       oklch(0.50 0.12 35);     /* terracotta quoted */
 
+  /* ─── Syntax highlighting (Kanagawa Lotus) ─── */
+  --syn-bg:         var(--bg);        /* editor background */
+  --syn-keyword:     #624c83;  /* lotusViolet4 — const, let, if, return */
+  --syn-string:      #6f894e;  /* lotusGreen — "text" */
+  --syn-number:      #b35b79;  /* lotusPink — 123 */
+  --syn-comment:     #8a8980;  /* lotusGray3 — // comments */
+  --syn-variable:    var(--t1);        /* default text — variable references */
+  --syn-property:    #77713f;  /* lotusYellow — .property */
+  --syn-operator:    #836f4a;  /* lotusYellow2 — =, +, === */
+  --syn-punctuation: #4e8ca2;  /* lotusTeal1 — {, }, (, ) */
+  --syn-bool:        #cc6d00;  /* lotusOrange — true, false */
+  --syn-null:        #cc6d00;  /* lotusOrange — null, undefined */
+  --syn-function:    #4d699b;  /* lotusBlue4 — function names */
+
   /* ─── Markdown inline sizes (override if needed) ─── */
   --md-fs-italic:       calc(var(--mfs) + 1px);
   --md-fs-bold-italic:  calc(var(--mfs) + 1px);
