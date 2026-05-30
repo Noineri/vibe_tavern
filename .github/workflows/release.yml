@@ -101,9 +101,9 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ needs.release.outputs.version }}"
-          Rename-Item -Path "installer\output\claw-tavern-setup.exe" `
-                      -NewName "claw-tavern-${version}-setup.exe"
+          Rename-Item -Path "out\installer\vibe-tavern-setup.exe" `
+                      -NewName "vibe-tavern-${version}-setup.exe"
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: installer/output/claw-tavern-${{ needs.release.outputs.version }}-setup.exe
+          files: out/installer/vibe-tavern-${{ needs.release.outputs.version }}-setup.exe
