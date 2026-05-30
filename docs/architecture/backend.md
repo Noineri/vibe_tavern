@@ -10,17 +10,18 @@ Two server entry points for different deployment scenarios:
 
 | Entry Point | Use Case | Data Paths |
 |-------------|----------|------------|
-| `prod-server.ts` | Dev, Docker, direct Bun | Relative to source tree (`data/`, `apps/web/dist/`) |
-| `standalone-server.ts` | Compiled `.exe` | OS-specific (`%LOCALAPPDATA%\VibeTavern`, `~/Library/Application Support/VibeTavern`, `~/.local/share/vibe-tavern`) |
+| `server/prod-server.ts` → `out/services/api/prod-server.js` | Dev, Docker, production bundle | `data/` relative to project root, `out/apps/web/` for frontend |
+| `server/standalone-server.ts` → `out/standalone/vibe-tavern.exe` | Compiled `.exe` | OS-specific (`%LOCALAPPDATA%\VibeTavern`, `~/Library/Application Support/VibeTavern`, `~/.local/share/vibe-tavern`) |
 
 Both share the same bootstrap sequence:
-1. `createRuntimeStore()` → `createStoreContainer()` → `createDb()` (SQLite + migrations)
-2. Seed data (system character, default persona, default preset, UI settings)
-3. Tokenizer warmup + registration with prompt pipeline
-4. Service construction (providers, presets, session runtime, orchestrators, mobile access)
-5. Hono app creation with auth middleware
-6. `Bun.serve()` with optional TLS
-7. Graceful shutdown on SIGINT/SIGTERM
+1. `runStartupFileChecks()` — verify all runtime files exist (DB, migrations, tokenizers, prompt, web bundle)
+2. `createRuntimeStore()` → `createStoreContainer()` → `createDb()` (SQLite + migrations)
+3. Seed data (system character, default persona, default preset, UI settings)
+4. Tokenizer warmup + registration with prompt pipeline
+5. Service construction (providers, presets, session runtime, orchestrators, mobile access)
+6. Hono app creation with auth middleware
+7. `Bun.serve()` with optional TLS
+8. Graceful shutdown on SIGINT/SIGTERM
 
 **Why single process:** Local-first single-user app. No horizontal scaling needed. One process = zero deployment complexity, zero network hops between API and DB, instant cold start.
 
@@ -59,15 +60,15 @@ Both share the same bootstrap sequence:
 `SessionRuntime` is the top-level coordinator. It creates and wires all sub-runtimes via constructor injection:
 
 ```
-SessionRuntime
-├── ChatRuntime           (live chat: prepare turn, append reply, manage variants)
-├── ChatLifecycleRuntime  (create/delete/switch chats, seed openings)
-├── CharacterRuntime      (CRUD characters, archive, duplicate, promote system char)
-├── PersonaRuntime        (CRUD personas, resolve defaults)
-├── ChatOrderService      (in-memory ordered list by lastAccessedAt)
-├── LorebookRuntime       (CRUD lorebooks and entries, scope-aware listing)
-├── PresetRuntime         (preset-related methods)
-└── StoreContainer        (all DB stores behind a facade)
+session/SessionRuntime
+├── chat/ChatRuntime           (live chat: prepare turn, append reply, manage variants)
+├── chat/ChatLifecycleRuntime  (create/delete/switch chats, seed openings)
+├── session/CharacterRuntime   (CRUD characters, archive, duplicate, promote system char)
+├── session/PersonaRuntime     (CRUD personas, resolve defaults)
+├── session/ChatOrderService   (in-memory ordered list by lastAccessedAt)
+├── session/LorebookRuntime    (CRUD lorebooks and entries, scope-aware listing)
+├── session/PresetRuntime      (preset-related methods)
+└── StoreContainer             (all DB stores behind a facade)
 ```
 
 **Why decomposition (not one god class):** Each sub-runtime owns a clear domain boundary. Dependencies flow one way — `ChatRuntime` uses `StoreContainer` but doesn't know about `PersonaRuntime`. The top-level `SessionRuntime` wires them together.
@@ -93,8 +94,8 @@ POST /api/chats/:chatId/messages/stream
   │       │   ├─ Load character, persona, preset from DB
   │       │   ├─ Load lorebooks + entries (scope-filtered, enabled-only)
   │       │   ├─ Load ranged summaries + exclusion ranges
-  │       │   ├─ resolveActivatedEntries()       → lore-activation-engine
-  │       │   ├─ executeScripts()                 → node:vm sandbox
+  │       │   ├─ resolveActivatedEntries()       → prompt/lore-activation-engine
+  │       │   ├─ executeScripts()                 → scripts-engine/script-sandbox
   │       │   └─ Persist activation + script state
   │       ├─ Macro resolution ({{user}}, {{char}}, {{scenario}}, etc.)
   │       └─ assemblePrompt()                    → @vibe-tavern/prompt-pipeline
@@ -130,7 +131,7 @@ Scripts run BEFORE prompt assembly. They can modify `character.personality`, `ch
 
 ## Lorebook Activation Engine
 
-**File:** `lore-activation-engine.ts` — **pure function**, no DB access, no side effects.
+**File:** `prompt/lore-activation-engine.ts` — **pure function**, no DB access, no side effects.
 
 Takes: lorebooks with entries + recent messages + activation state
 Returns: activated entries + updated state
@@ -160,7 +161,7 @@ Activation state (`LoreActivationState`) is stored as JSON on the `chats` table,
 
 ## Script System
 
-**File:** `script-sandbox.ts`
+**File:** `scripts-engine/script-sandbox.ts`
 
 Scripts execute **synchronously** in `node:vm` with 5-second timeout.
 
@@ -221,7 +222,7 @@ context.random() / randomInt(min, max) / pick(arr) / weightedPick(entries)   // 
 
 ### Tokenizer Service
 
-`tokenizer-service.ts` — three-tier token counting:
+`ai/tokenizer-service.ts` — three-tier token counting:
 
 1. **`js-tiktoken`** — BPE tokenization for OpenAI models (cl100k, o200k). Fast, accurate.
 2. **`@agnai/web-tokenizers`** — WASM-based tokenizer for Claude, Llama, etc. Slower but accurate for non-GPT models.

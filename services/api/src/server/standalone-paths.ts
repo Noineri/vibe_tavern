@@ -11,8 +11,8 @@
  *   RP_PLATFORM_PORT      — listen port (default: 8787)
  *
  * OS convention defaults:
- *   Windows: %LOCALAPPDATA%\ClawTavern
- *   macOS:   ~/Library/Application Support/ClawTavern
+ *   Windows: %LOCALAPPDATA%\VibeTavern
+ *   macOS:   ~/Library/Application Support/VibeTavern
  *   Linux:   ~/.local/share/vibe-tavern
  */
 
@@ -46,13 +46,13 @@ function defaultDataDir(): string {
 	if (platform === "win32") {
 		const localAppData = process.env.LOCALAPPDATA;
 		if (localAppData) {
-			return resolve(localAppData, "ClawTavern");
+			return resolve(localAppData, "VibeTavern");
 		}
-		return resolve(homedir(), "AppData", "Local", "ClawTavern");
+		return resolve(homedir(), "AppData", "Local", "VibeTavern");
 	}
 
 	if (platform === "darwin") {
-		return resolve(homedir(), "Library", "Application Support", "ClawTavern");
+		return resolve(homedir(), "Library", "Application Support", "VibeTavern");
 	}
 
 	// Linux and other POSIX
