@@ -40,10 +40,28 @@ export function MessageList() {
   // Read from normalized store selectors
   const messageOrder = useMessageOrder();
   const macroContext = useMacroContext();
+  const lastPersistedMessage = useSnapshotStore((s) => {
+    const lastMessageId = s.messageOrder[s.messageOrder.length - 1];
+    return lastMessageId ? s.messagesById[lastMessageId] : null;
+  });
 
-  // When a user message is pending (being streamed), it's rendered in the
-  // pending-message footer.  If React Query refetches the snapshot mid-stream,
-  const displayMessageIds = messageOrder;
+  // When a user message is pending, it is rendered in the footer immediately.
+  // If a snapshot refresh lands mid-generation after the backend persisted the
+  // same user message, hide that last persisted user row to avoid a ghost
+  // duplicate. Only filter the final row when its content matches pending text;
+  // otherwise an older user message could disappear before persistence catches up.
+  const displayMessageIds = useMemo(() => {
+    if (!pendingUserMessageContent || messageOrder.length === 0) return messageOrder;
+
+    if (
+      lastPersistedMessage?.role === "user" &&
+      lastPersistedMessage.content.trim() === pendingUserMessageContent.trim()
+    ) {
+      return messageOrder.slice(0, -1);
+    }
+
+    return messageOrder;
+  }, [lastPersistedMessage, messageOrder, pendingUserMessageContent]);
 
   const displayPendingUserMessageContent = useMemo(
     () => pendingUserMessageContent && macroContext
