@@ -20,6 +20,9 @@ export type UpdatePersonaData = Partial<CreatePersonaData>;
 
 // ─── Return type (matches domain Persona interface) ───────────────────────────
 
+/**
+ * Store-level Persona — domain Persona projected from a DB row.
+ */
 export interface Persona {
   id: string;
   name: string;
@@ -118,8 +121,7 @@ export class PersonaStore {
   async update(id: string, data: UpdatePersonaData): Promise<Persona> {
     const now = this.clock.now();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const values: Record<string, any> = { updatedAt: now };
+    const values: Partial<typeof personas.$inferInsert> = { updatedAt: now };
 
     if (data.name !== undefined) values.name = data.name;
     if (data.description !== undefined) values.description = data.description;

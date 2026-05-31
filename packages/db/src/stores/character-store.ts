@@ -33,8 +33,11 @@ export interface CreateCharacterData {
 
 export type UpdateCharacterData = Partial<CreateCharacterData>;
 
-// ─── Return type (matches domain Character interface) ─────────────────────────
-
+/**
+ * Store-level Character — domain Character projected from a DB row.
+ * Uses plain `string` IDs (brands are applied at the API boundary).
+ * Includes DB-specific fields like `slug` and `status`.
+ */
 export interface Character {
   id: string;
   slug: string;
@@ -191,8 +194,7 @@ export class CharacterStore {
   async update(id: string, data: UpdateCharacterData): Promise<Character> {
     const now = this.clock.now();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const values: Record<string, any> = { updatedAt: now };
+    const values: Partial<typeof characters.$inferInsert> = { updatedAt: now };
 
     if (data.name !== undefined) values.name = data.name;
     if (data.description !== undefined) values.description = data.description;

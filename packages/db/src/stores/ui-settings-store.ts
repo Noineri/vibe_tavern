@@ -5,6 +5,9 @@ import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../
 
 // ─── Return type ──────────────────────────────────────────────────────────────
 
+/**
+ * Store-level UI settings — app preferences projected from a DB row.
+ */
 export interface UiSettings {
   id: string;
   theme: string;
@@ -68,8 +71,7 @@ export class UiSettingsStore {
   async update(partial: UiSettingsUpdate): Promise<UiSettings> {
     const existing = await this.db.select().from(uiSettings).where(eq(uiSettings.id, 'default')).get();
     if (existing) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const values: Record<string, any> = { ...partial, updatedAt: this.clock.now() };
+      const values: Partial<typeof uiSettings.$inferInsert> = { ...partial, updatedAt: this.clock.now() };
       const [row] = await this.db.update(uiSettings).set(values).where(eq(uiSettings.id, 'default')).returning();
       return this.mapRow(row!);
     }

@@ -6,7 +6,10 @@ import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
-// Re-export canonical domain type — all consumers use this name
+/**
+ * Store-level provider profile — mirrors StoredProviderProfileRecord from domain.
+ * Uses plain `string` IDs (brands are applied at the API boundary).
+ */
 export type ProviderProfile = StoredProviderProfileRecord;
 
 export interface CachedModel {
@@ -143,8 +146,7 @@ export class ProviderStore {
   async update(id: string, data: UpdateProviderData): Promise<ProviderProfile> {
     const now = this.clock.now();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const values: Record<string, any> = { updatedAt: now };
+    const values: Partial<typeof providerProfiles.$inferInsert> = { updatedAt: now };
 
     if (data.name !== undefined) values.name = data.name;
     if (data.providerPreset !== undefined) values.providerPreset = data.providerPreset;

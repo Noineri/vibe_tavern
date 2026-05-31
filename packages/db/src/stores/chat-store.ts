@@ -5,6 +5,11 @@ import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
+/**
+ * Store-level Chat — domain Chat projected from a DB row.
+ * Uses plain `string` IDs (brands are applied at the API boundary).
+ * Includes DB-specific denormalized fields (summary, loreActivationState, scriptState, etc.).
+ */
 export interface Chat {
   id: string;
   characterId: string;
@@ -24,6 +29,9 @@ export interface Chat {
   updatedAt: string;
 }
 
+/**
+ * Store-level ChatBranch — domain ChatBranch projected from a DB row.
+ */
 export interface ChatBranch {
   id: string;
   chatId: string;
@@ -33,6 +41,9 @@ export interface ChatBranch {
   createdAt: string;
 }
 
+/**
+ * Store-level Message — domain Message projected from a DB row.
+ */
 export interface Message {
   id: string;
   chatId: string;
@@ -46,6 +57,9 @@ export interface Message {
   updatedAt: string;
 }
 
+/**
+ * Store-level MessageVariant — domain MessageVariant projected from a DB row.
+ */
 export interface MessageVariant {
   id: string;
   messageId: string;
@@ -59,6 +73,10 @@ export interface MessageVariant {
   createdAt: string;
 }
 
+/**
+ * Store-level PromptTrace — domain PromptTrace projected from a DB row.
+ * JSON columns are parsed into structured types.
+ */
 export interface PromptTrace {
   id: string;
   chatId: string;
