@@ -51,6 +51,7 @@ desktop.ini
 *.tmp
 *.temp
 .pi/
+.omo/
 
 # Drizzle generated output (dev-only)
 drizzle-generated/

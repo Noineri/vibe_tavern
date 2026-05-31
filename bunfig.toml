@@ -1,0 +1,14 @@
+# Bun configuration — https://bun.sh/docs/runtime/bunfig
+
+[install]
+# Use hardlinks instead of copying packages into node_modules.
+# Faster installs, uses less disk space. Works on Linux, macOS, Windows (NTFS).
+backend = "hardlink"
+
+# Do not install optionalDependencies — reduces install size.
+# None of our dependencies rely on optional deps for core functionality.
+optional = false
+
+[install.cache]
+# Enable Bun's global package cache (default). Prevents re-downloading.
+disable = false
