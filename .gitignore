@@ -19,11 +19,6 @@ installer/output/
 *.zip
 *.7z
 
-# Lock files (migrated to bun.lock)
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-
 # Local runtime data
 data/
 *.sqlite
@@ -39,6 +34,7 @@ logs/
 .env
 .env.*
 !.env.example
+docker-compose.override.yml
 
 # OS/editor noise
 .DS_Store
