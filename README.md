@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/github/license/Noineri/vibe_tavern)](LICENSE)
 [![Downloads](https://img.shields.io/github/downloads/Noineri/vibe_tavern/total)](https://github.com/Noineri/vibe_tavern/releases)
 
-[Русский](../README.ru.md) · **English**
+[Русский](./README.ru.md) · **English**
 
 ---
 
