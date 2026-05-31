@@ -1,0 +1,867 @@
+# API Reference
+
+> **`services/api`** — Hono HTTP API. All endpoints return JSON unless noted. Base URL defaults to `http://127.0.0.1:8787`.
+
+---
+
+## Conventions
+
+| Convention | Detail |
+|-----------|--------|
+| **Auth** | Loopback requests (127.0.0.1) bypass auth. LAN/mobile requires `Authorization: Bearer <token>` header. |
+| **Errors** | `{ error: string }` with appropriate HTTP status. `DomainError` kinds map to: 404 (NotFound), 400 (Validation), 409 (Conflict), 502 (Provider), 499 (Cancelled), 401 (Unauthorized), 500 (Internal). |
+| **SSE streams** | Endpoints with `/stream` return `text/event-stream`. Events: `text-delta`, `reasoning-delta`, `error`, `snapshot`, `done`. |
+| **Snapshots** | Most mutating endpoints return a monolithic snapshot (`ChatSnapshot`) that the frontend ingests atomically. |
+| **Validation** | Request bodies validated via Zod schemas (`@hono/zod-validator`). Invalid requests return 400 with field-level error details. |
+
+---
+
+## Characters
+
+### `POST /api/characters`
+
+Create a new character.
+
+**Body:** `createCharacterSchema`
+
+```json
+{
+  "name": "Aria",
+  "description": "A fire mage.",
+  "firstMessage": "*looks up from her spellbook*",
+  "scenario": "{{user}} enters the tower.",
+  "personalitySummary": "Bold, curious",
+  "mesExample": "<START>\n{{char}}: *casts fireball*",
+  "mesExampleMode": "always",
+  "mesExampleDepth": 4,
+  "alternateGreetings": ["*glares at you*"],
+  "postHistoryInstructions": "",
+  "creatorNotes": "A character for fantasy RP.",
+  "systemPrompt": "",
+  "tags": ["fantasy", "mage"]
+}
+```
+
+**Response:** `ChatSnapshot`
+
+### `PATCH /api/characters/:characterId`
+
+Update character fields.
+
+**Body:** `updateCharacterSchema` (all fields optional)
+
+```json
+{
+  "name": "Aria the Wise",
+  "description": "An ancient fire mage.",
+  "avatarAssetId": "asset_abc"
+}
+```
+
+**Response:** `ChatSnapshot`
+
+### `DELETE /api/characters/:characterId`
+
+Delete a character and all associated data.
+
+**Response:** `ChatSnapshot`
+
+### `GET /api/characters/:characterId/export`
+
+Export character as SillyTavern V2/V3 PNG card.
+
+**Response:** Binary PNG with embedded character JSON.
+
+### `PATCH /api/characters/:characterId/archive`
+
+Archive a character (soft delete from active list).
+
+**Response:** `ChatSnapshot`
+
+### `PATCH /api/characters/:characterId/unarchive`
+
+Restore an archived character.
+
+**Response:** `ChatSnapshot`
+
+### `POST /api/characters/:characterId/duplicate`
+
+Duplicate a character with a new ID.
+
+**Response:** `ChatSnapshot`
+
+---
+
+## Chats
+
+### `POST /api/chats`
+
+Create a new chat.
+
+**Body:** `createChatSchema`
+
+```json
+{ "characterId": "char_1" }
+```
+
+If `characterId` omitted, uses the system character.
+
+**Response:** `ChatSnapshot`
+
+### `GET /api/chats/:chatId`
+
+Get full chat state (messages, branches, variants, summaries).
+
+**Response:** `ChatSnapshot`
+
+### `PATCH /api/chats/:chatId/settings`
+
+Update chat-level overrides (scenario, systemPrompt).
+
+**Body:** `updateChatSettingsSchema`
+
+```json
+{
+  "title": "My Chat",
+  "subtitle": "",
+  "scenario": "{{user}} arrives at the castle.",
+  "systemPrompt": "You are a medieval guard."
+}
+```
+
+**Response:** `ChatSnapshot`
+
+### `PATCH /api/chats/:chatId/title`
+
+Rename chat.
+
+**Body:** `{ "title": "New Title" }`
+
+**Response:** `ChatSnapshot`
+
+### `PATCH /api/chats/:chatId/greeting-index`
+
+Select which alternate greeting to use.
+
+**Body:** `{ "greetingIndex": 2 }`
+
+**Response:** `ChatSnapshot`
+
+### `DELETE /api/chats/:chatId`
+
+Delete a chat and all associated data.
+
+**Response:** `ChatSnapshot`
+
+### `POST /api/chats/:chatId/clone`
+
+Clone a chat (same character, same branch structure).
+
+**Response:** `ChatSnapshot`
+
+### `POST /api/chats/:chatId/fork`
+
+Fork a chat from a specific message into a new branch.
+
+**Body:** `{ "fromMessageId": "msg_42" }` (optional — defaults to last message)
+
+**Response:** `ChatSnapshot`
+
+### `GET /api/chats/:chatId/export.jsonl`
+
+Export chat as JSONL (one JSON object per line, SillyTavern-compatible format).
+
+**Response:** `text/plain` with JSONL body.
+
+---
+
+## Messages
+
+### `POST /api/chats/:chatId/messages/stream`
+
+Send a user message and stream the AI response. **Primary generation endpoint.**
+
+**Body:** `sendMessageSchema`
+
+```json
+{ "content": "Hello, Aria!" }
+```
+
+**Response:** `text/event-stream` (SSE)
+
+Events:
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `text-delta` | `{ text: string }` | Assistant text chunk |
+| `reasoning-delta` | `{ text: string }` | Thinking/reasoning chunk |
+| `snapshot` | `ChatSnapshot` | Final state after generation completes |
+| `error` | `{ error: string }` | Generation error |
+| `done` | — | Stream complete |
+
+### `POST /api/chats/:chatId/messages`
+
+Send a user message **without** AI generation (append only).
+
+**Body:** `sendMessageSchema`
+
+```json
+{ "content": "A message without generation." }
+```
+
+**Response:** `ChatSnapshot`
+
+### `POST /api/chats/:chatId/messages/:messageId/regenerate/stream`
+
+Regenerate a specific assistant message (streaming).
+
+**Response:** SSE stream (same format as `/messages/stream`)
+
+### `POST /api/chats/:chatId/messages/:messageId/regenerate`
+
+Regenerate a specific assistant message (non-streaming).
+
+**Response:** `ChatSnapshot`
+
+### `POST /api/chats/:chatId/generate-reply/stream`
+
+Generate an assistant continuation without user input (streaming).
+
+**Response:** SSE stream
+
+### `POST /api/chats/:chatId/generate-reply`
+
+Generate continuation without user input (non-streaming).
+
+**Response:** `ChatSnapshot`
+
+### `POST /api/chats/:chatId/messages/:messageId/branch`
+
+Create a new branch from a specific message.
+
+**Response:** `ChatSnapshot`
+
+### `POST /api/chats/:chatId/messages/:messageId/variants/:variantIndex/select`
+
+Switch the active variant (swipe) for a message.
+
+**Response:** `ChatSnapshot`
+
+### `PATCH /api/chats/:chatId/messages/:messageId`
+
+Edit message content.
+
+**Body:** `editMessageSchema`
+
+```json
+{ "content": "Edited message text." }
+```
+
+**Response:** `ChatSnapshot`
+
+### `DELETE /api/chats/:chatId/messages/:messageId`
+
+Delete a message.
+
+**Response:** `ChatSnapshot`
+
+---
+
+## Branches
+
+### `POST /api/chats/:chatId/branches/:branchId/activate`
+
+Switch to a different branch.
+
+**Response:** `ChatSnapshot`
+
+### `DELETE /api/chats/:chatId/branches/:branchId`
+
+Delete a branch and all its messages.
+
+**Response:** `ChatSnapshot`
+
+---
+
+## Summaries & Memory
+
+### `GET /api/chats/:chatId/summaries`
+
+List all chat summaries.
+
+**Response:** `ChatSnapshot` (summaries included)
+
+### `POST /api/chats/:chatId/summaries`
+
+Create a manual summary.
+
+**Body:** `createChatSummarySchema`
+
+```json
+{
+  "label": "Early adventure",
+  "content": "The party met at the tavern...",
+  "summarizedFrom": 1,
+  "summarizedTo": 40,
+  "includeInContext": true,
+  "excludeSummarized": true,
+  "source": "manual"
+}
+```
+
+**Response:** `ChatSnapshot`
+
+### `PATCH /api/chats/:chatId/summaries/:summaryId`
+
+Update a summary.
+
+**Body:** `updateChatSummarySchema` (all fields optional)
+
+**Response:** `ChatSnapshot`
+
+### `DELETE /api/chats/:chatId/summaries/:summaryId`
+
+Delete a summary.
+
+**Response:** `ChatSnapshot`
+
+### `POST /api/chats/:chatId/summaries/generate`
+
+Generate a summary using AI.
+
+**Body:** `generateChatSummarySchema`
+
+```json
+{
+  "providerProfileId": "provider_1",
+  "model": "gpt-4o-mini",
+  "summarizedFrom": 1,
+  "summarizedTo": 40
+}
+```
+
+**Response:** `ChatSnapshot`
+
+### `PATCH /api/chats/:chatId/memory-settings`
+
+Update memory/summary configuration.
+
+**Body:** `updateMemorySettingsSchema`
+
+```json
+{
+  "messageHistoryLimit": 100,
+  "autoSummaryConfig": {
+    "enabled": true,
+    "everyN": 20,
+    "excludeSummarized": true
+  }
+}
+```
+
+**Response:** `ChatSnapshot`
+
+### `POST /api/chats/:chatId/set-persona`
+
+Change the active persona for this chat.
+
+**Body:** `{ "personaId": "pers_2" }`
+
+**Response:** `ChatSnapshot`
+
+### `POST /api/chats/:chatId/set-prompt-preset`
+
+Change the active prompt preset for this chat.
+
+**Body:** `{ "promptPresetId": "prompt_preset_2" }`
+
+**Response:** `ChatSnapshot`
+
+---
+
+## Prompt Traces
+
+### `GET /api/prompt-traces/:traceId/export`
+
+Export a prompt trace as JSON (shows all layers, token counts, and the final messages array).
+
+**Response:** JSON prompt trace object.
+
+---
+
+## Lorebooks
+
+### `GET /api/lorebooks`
+
+List all lorebooks (all scopes).
+
+### `POST /api/lorebooks`
+
+Create a lorebook.
+
+**Body:** `createLorebookSchema`
+
+```json
+{
+  "name": "World Lore",
+  "scopeType": "character",
+  "characterId": "char_1",
+  "scanDepth": 50,
+  "tokenBudget": 2048,
+  "recursiveScanning": false
+}
+```
+
+### `PATCH /api/lorebooks/:lorebookId`
+
+Update lorebook metadata.
+
+**Body:** `updateLorebookMetaSchema` (all fields optional)
+
+### `DELETE /api/lorebooks/:lorebookId`
+
+Delete a lorebook and all its entries.
+
+### `POST /api/lorebooks/:lorebookId/test-activation`
+
+Test which entries would activate against sample text.
+
+**Body:** `{ "text": "The dragon approaches the castle." }`
+
+**Response:** Array of activated entry IDs and details.
+
+### `GET /api/lorebooks/:lorebookId/entries`
+
+List all entries in a lorebook.
+
+### `POST /api/lorebooks/:lorebookId/entries`
+
+Create a lore entry.
+
+**Body:** `createLoreEntrySchema`
+
+```json
+{
+  "title": "The Dragon",
+  "content": "A red dragon lives in the mountain.",
+  "keys": ["dragon", "mountain"],
+  "secondaryKeys": ["fire"],
+  "logic": "and_any",
+  "position": "after_char",
+  "priority": 10,
+  "constant": false,
+  "probability": 100,
+  "role": "system",
+  "groupName": "creatures"
+}
+```
+
+### `PATCH /api/lorebooks/:lorebookId/entries/:entryId`
+
+Update a lore entry.
+
+**Body:** `updateLoreEntrySchema` (all fields optional)
+
+### `DELETE /api/lorebooks/:lorebookId/entries/:entryId`
+
+Delete a lore entry.
+
+### `POST /api/lorebooks/:lorebookId/import`
+
+Import a lorebook from SillyTavern format.
+
+**Body:** `importLorebookSchema`
+
+```json
+{
+  "name": "Imported Lorebook",
+  "scopeType": "character",
+  "characterId": "char_1",
+  "entries": [
+    { "keys": ["castle"], "content": "An ancient fortress.", "position": "before_char" }
+  ]
+}
+```
+
+---
+
+## Personas
+
+### `GET /api/personas`
+
+List all personas.
+
+### `POST /api/personas`
+
+Create a persona.
+
+**Body:** `createPersonaSchema`
+
+```json
+{
+  "name": "Olya",
+  "description": "A careful archivist.",
+  "pronouns": "she/her",
+  "defaultForNewChats": true
+}
+```
+
+### `PATCH /api/personas/:personaId`
+
+Update a persona.
+
+**Body:** `updatePersonaSchema` (all fields optional)
+
+### `DELETE /api/personas/:personaId`
+
+Delete a persona.
+
+### `GET /api/personas/:personaId/personal-lorebook`
+
+Get the persona's personal lorebook.
+
+### `PUT /api/personas/:personaId/personal-lorebook`
+
+Set the persona's personal lorebook.
+
+**Body:** `{ "enabled": true }`
+
+### `POST /api/personas/:personaId/duplicate`
+
+Duplicate a persona.
+
+---
+
+## Providers
+
+### `GET /api/providers`
+
+List all provider profiles.
+
+### `GET /api/providers/:providerId`
+
+Get a single provider profile.
+
+### `POST /api/providers`
+
+Create a provider profile.
+
+**Body:** `saveProviderDraftSchema`
+
+```json
+{
+  "name": "OpenRouter",
+  "providerPreset": "cloud",
+  "endpoint": "https://openrouter.ai/api/v1",
+  "apiKey": "sk-...",
+  "defaultModel": "anthropic/claude-3-opus",
+  "contextBudget": 128000,
+  "temperature": 0.8,
+  "topP": 0.95,
+  "streamResponse": true
+}
+```
+
+### `PATCH /api/providers/:providerId`
+
+Update a provider profile.
+
+**Body:** `updateProviderProfileSchema` (all fields optional)
+
+### `DELETE /api/providers/:providerId`
+
+Delete a provider profile.
+
+### `POST /api/providers/:providerId/activate`
+
+Set this provider as the active profile.
+
+### `POST /api/providers/test`
+
+Test connection with draft settings (no saved profile needed).
+
+**Body:** `testProviderDraftSchema`
+
+```json
+{
+  "endpoint": "https://api.openai.com/v1",
+  "apiKey": "sk-...",
+  "providerType": "openai_compat"
+}
+```
+
+**Response:** `{ success: boolean, models?: string[], error?: string }`
+
+### `POST /api/providers/:providerId/test`
+
+Test connection for a saved profile.
+
+### `POST /api/providers/test-chat`
+
+Send a test message using draft settings.
+
+**Body:** `testChatSchema`
+
+```json
+{
+  "baseUrl": "https://api.openai.com/v1",
+  "apiKey": "sk-...",
+  "model": "gpt-4o"
+}
+```
+
+### `POST /api/providers/:providerId/test-chat`
+
+Send a test message using a saved profile.
+
+**Body:** `testChatProfileSchema`
+
+```json
+{ "model": "gpt-4o" }
+```
+
+### `POST /api/providers/fetch-models`
+
+Fetch available models from a provider endpoint.
+
+**Body:** `fetchModelsSchema`
+
+```json
+{
+  "baseUrl": "https://api.openai.com/v1",
+  "apiKey": "sk-...",
+  "providerType": "openai_compat"
+}
+```
+
+**Response:** `{ models: Array<{ id: string, name?: string }> }`
+
+### `POST /api/providers/:providerId/models`
+
+Refresh cached model list for a saved provider.
+
+### `GET /api/providers/:providerId/model-favorites`
+
+Get favorite models for a provider.
+
+### `POST /api/providers/:providerId/model-favorites`
+
+Add a model to favorites.
+
+**Body:** `{ "modelId": "gpt-4o", "label": "GPT-4o", "contextLength": 128000 }`
+
+### `DELETE /api/providers/:providerId/model-favorites`
+
+Remove a model from favorites.
+
+**Body:** `{ "modelId": "gpt-4o" }`
+
+---
+
+## Prompt Presets
+
+### `GET /api/prompt-presets`
+
+List all prompt presets.
+
+### `POST /api/prompt-presets`
+
+Create a preset.
+
+**Body:** `createPromptPresetSchema`
+
+```json
+{
+  "name": "Celia V4.3",
+  "system": "You are {{char}}. Roleplay with {{user}}.",
+  "jailbreak": "[System: continue the story]",
+  "prefill": "Understood.",
+  "authorsNote": "Focus on sensory detail",
+  "authorsNoteDepth": 4,
+  "summary": "Summarize the events so far:",
+  "tools": "Use search_lore to find relevant lore."
+}
+```
+
+### `PATCH /api/prompt-presets/:presetId`
+
+Update a preset.
+
+**Body:** `updatePromptPresetSchema` (all fields optional)
+
+### `DELETE /api/prompt-presets/:presetId`
+
+Delete a preset.
+
+---
+
+## Scripts
+
+### `GET /api/scripts`
+
+List all scripts (with scope information).
+
+### `GET /api/scripts/:scriptId`
+
+Get a single script with full code.
+
+### `POST /api/scripts`
+
+Create a script.
+
+**Body:** `createScriptSchema`
+
+```json
+{
+  "name": "Mood Tracker",
+  "description": "Tracks character mood across messages.",
+  "code": "const last = context.chat.lastMessage;\nif (last.includes('angry')) {\n  context.state.set('mood', 'angry');\n}",
+  "scopeType": "character",
+  "characterId": "char_1",
+  "enabled": true,
+  "sortOrder": 0
+}
+```
+
+### `PATCH /api/scripts/:scriptId`
+
+Update a script.
+
+**Body:** `updateScriptSchema` (all fields optional)
+
+### `DELETE /api/scripts/:scriptId`
+
+Delete a script.
+
+### `POST /api/scripts/:scriptId/test`
+
+Test a script with simulated context.
+
+**Body:** `testScriptSchema`
+
+```json
+{
+  "messages": [
+    { "role": "user", "content": "Hello!" },
+    { "role": "assistant", "content": "Hi there!" }
+  ],
+  "characterName": "Aria",
+  "lastMessage": "Hi there!"
+}
+```
+
+**Response:** `{ output: any, error?: string, mutations?: object }`
+
+### `POST /api/scripts/import`
+
+Import a script from JS code or JSON.
+
+**Body:** `importScriptSchema`
+
+```json
+{
+  "format": "js",
+  "code": "// Script code here",
+  "name": "Imported Script",
+  "scopeType": "character",
+  "characterId": "char_1"
+}
+```
+
+### `POST /api/scripts/ai-assistant`
+
+AI-powered script writing assistant (SSE stream).
+
+**Request:** SSE connection. Client sends script description, server streams generated code.
+
+---
+
+## Assets
+
+### `POST /api/assets/upload`
+
+Upload an image asset (avatar, gallery image).
+
+**Body:** `multipart/form-data` with file field.
+
+**Response:** `{ assetId: string, url: string }`
+
+### `GET /api/assets/:assetId`
+
+Serve an asset file. **Public** (no auth required — img tags can't send headers).
+
+**Response:** Binary image file with appropriate Content-Type.
+
+---
+
+## Import
+
+### `POST /api/import/json`
+
+Import a character/chat from JSON (SillyTavern or internal format).
+
+**Body:** `importJsonSchema`
+
+```json
+{
+  "fileName": "Aria.png",
+  "jsonText": "{ \"data\": { \"name\": \"Aria\", ... } }",
+  "chatId": "chat_1",
+  "skipExisting": false
+}
+```
+
+**Response:** Import result with created entity IDs.
+
+### `POST /api/import/st-scan`
+
+Scan a SillyTavern data directory for importable content.
+
+**Body:** `{ "directoryPath": "C:\\Users\\user\\SillyTavern\\data" }`
+
+**Response:** List of importable characters, chats, lorebooks, and scripts.
+
+### `POST /api/import/st-directory`
+
+Bulk import from a SillyTavern directory.
+
+**Body:** `{ "directoryPath": "C:\\Users\\user\\SillyTavern\\data" }`
+
+**Response:** Import summary with counts per entity type.
+
+---
+
+## Settings
+
+### `GET /api/settings/mobile-access`
+
+Get mobile access status (enabled, token exists).
+
+### `POST /api/settings/mobile-access/regenerate`
+
+Generate or regenerate the mobile access token. Invalidates previous token.
+
+### `DELETE /api/settings/mobile-access`
+
+Disable mobile access.
+
+---
+
+## Debug
+
+### `POST /api/debug/send-log`
+
+Submit a debug log for troubleshooting.
+
+**Body:** Any JSON (logged to `data/logs/send-debug.log`).
+
+### `GET /api/bootstrap`
+
+Get the bootstrap snapshot — all reference data needed on app startup (chats, characters, personas, presets, providers, UI settings).
+
+**Response:** Full bootstrap object.
+
+### `GET /api/defaults/script-ai-prompt`
+
+Get the default system prompt for the script AI assistant.
+
+**Response:** Plain text prompt.
