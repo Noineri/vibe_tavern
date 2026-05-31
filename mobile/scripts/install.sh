@@ -29,26 +29,33 @@ fi
 echo -e "${GREEN}✅ Termux detected${NC}"
 
 echo ""
-echo "📦 Installing Termux packages..."
-pkg update -y
-pkg install -y curl tar proot-distro
+echo "📦 Step 1/5: Updating system packages (fixes broken curl on fresh Termux)..."
+yes | apt update -y 2>/dev/null || true
+yes | apt full-upgrade -y 2>/dev/null || true
 
 echo ""
-echo "🐧 Ensuring proot Ubuntu exists..."
+echo "📦 Step 2/5: Installing Termux packages..."
+yes | pkg update -y
+yes | pkg install -y curl tar proot-distro procps procps
+
+echo ""
+echo "🐧 Step 3/5: Ensuring proot Ubuntu exists..."
 if ! proot-distro list 2>&1 | grep -q "${DISTRO}"; then
-    proot-distro install "${DISTRO}"
+    yes | proot-distro install "${DISTRO}"
 else
     echo -e "${GREEN}✅ ${DISTRO} already installed${NC}"
 fi
 
 echo ""
-echo "📥 Installing Vibe Tavern archive..."
+echo "📥 Step 4/5: Downloading Vibe Tavern archive..."
 if [ -z "${ARCHIVE_PATH}" ] && [ -z "${ARCHIVE_URL}" ]; then
     echo -e "${RED}❌ Set VIBE_TAVERN_ARCHIVE_PATH or VIBE_TAVERN_ARCHIVE_URL.${NC}"
     exit 1
 fi
 proot-distro login "${DISTRO}" -- bash -s -- "${ARCHIVE_PATH}" "${ARCHIVE_URL}" "${TOKEN}" <<'UBUNTU_INSTALL'
 set -euo pipefail
+
+echo '📦 Step 5/5: Installing Vibe Tavern inside Ubuntu...'
 
 ARCHIVE_PATH="$1"
 ARCHIVE_URL="$2"

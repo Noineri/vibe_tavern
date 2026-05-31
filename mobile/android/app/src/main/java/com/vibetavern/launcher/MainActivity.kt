@@ -48,6 +48,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var launchBtn: Button
     private lateinit var uninstallBtn: Button
     private lateinit var languageBtn: Button
+    private lateinit var firstTimeSetupBtn: Button
 
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var pollingJob: Job? = null
@@ -80,11 +81,18 @@ class MainActivity : AppCompatActivity() {
             if [ ! -f "${'$'}ARCHIVE_PATH" ]; then
               ARCHIVE_PATH="${'$'}(ls -t /sdcard/Download/vibe-tavern-android-arm64*.tgz /sdcard/Download/vibe-tavern-android-arm64*.tar.gz 2>/dev/null | head -n1 || true)"
             fi
-            pkg update -y
-            pkg install -y curl tar proot-distro procps
-            echo y | termux-setup-storage || true
+
+            echo '📦 Step 1/5: Updating system packages (fixes broken curl on fresh Termux)...'
+            yes | apt update -y 2>/dev/null || true
+            yes | apt full-upgrade -y 2>/dev/null || true
+
+            echo '📦 Step 2/5: Installing Termux packages...'
+            yes | pkg update -y
+            yes | pkg install -y curl tar proot-distro procps
+            yes | termux-setup-storage 2>/dev/null || true
             termux-wake-lock 2>/dev/null || true
 
+            echo '📦 Step 3/5: Getting archive...'
             TERMUX_ARCHIVE="${'$'}HOME/$bundledArchiveName"
             if [ -n "${'$'}ARCHIVE_PATH" ] && [ -f "${'$'}ARCHIVE_PATH" ]; then
               cp "${'$'}ARCHIVE_PATH" "${'$'}TERMUX_ARCHIVE"
@@ -93,12 +101,14 @@ class MainActivity : AppCompatActivity() {
               curl -fL "${'$'}ARCHIVE_URL" -o "${'$'}TERMUX_ARCHIVE"
             fi
 
-            proot-distro install ubuntu 2>/dev/null || true
+            echo '🐧 Step 4/5: Setting up proot Ubuntu...'
+            yes | proot-distro install ubuntu 2>/dev/null || true
 
             mkdir -p ~/.termux
             grep -qxF 'allow-external-apps=true' ~/.termux/termux.properties 2>/dev/null || echo 'allow-external-apps=true' >> ~/.termux/termux.properties
             termux-reload-settings 2>/dev/null || true
 
+            echo '📦 Step 5/5: Installing Vibe Tavern into Ubuntu...'
             proot-distro login ubuntu -- bash -s -- "${'$'}TERMUX_ARCHIVE" <<'UBUNTU_INSTALL'
             set -euo pipefail
             ARCHIVE_PATH="${'$'}1"
@@ -364,6 +374,7 @@ class MainActivity : AppCompatActivity() {
         }
         uninstallBtn.text = tr("🗑 Uninstall", "🗑 Удалить")
         languageBtn.text = tr("🌐 Language: English", "🌐 Язык: Русский")
+        firstTimeSetupBtn.text = tr("🔧 First-Time Setup", "🔧 Первичная настройка")
         findViewById<Button>(R.id.btn_help).text = tr("❓ Help / Troubleshooting", "❓ Справка / проблемы")
         findViewById<TextView>(R.id.help_hint).text = tr(
             "Tip: if the web UI lags after switching apps, disable battery optimization for Termux.",
@@ -398,8 +409,10 @@ class MainActivity : AppCompatActivity() {
         launchBtn = findViewById(R.id.btn_launch_server)
         uninstallBtn = findViewById(R.id.btn_uninstall)
         languageBtn = findViewById(R.id.btn_language)
+        firstTimeSetupBtn = findViewById(R.id.btn_first_time_setup)
 
         setupBtn.setOnClickListener { doOneTimeSetup() }
+        firstTimeSetupBtn.setOnClickListener { showFirstTimeSetupGuide() }
         launchBtn.setOnClickListener { launchServer() }
         openBtn.setOnClickListener { openBrowser() }
         stopBtn.setOnClickListener { stopServer() }
@@ -785,6 +798,63 @@ class MainActivity : AppCompatActivity() {
                 dialog.dismiss()
             }
             .setNegativeButton(tr("Cancel", "Отмена"), null)
+            .show()
+    }
+
+    private val FIRST_TIME_SETUP_COMMAND = "mkdir -p ~/.termux && echo \"allow-external-apps=true\" >> ~/.termux/termux.properties && termux-reload-settings"
+
+    private fun showFirstTimeSetupGuide() {
+        val isRu = isRu()
+
+        val step1Title = if (isRu) "Шаг 1: Обнови пакеты Termux" else "Step 1: Update Termux packages"
+        val step1Body = if (isRu)
+            "Свежий Termux часто содержит сломанные пакеты (особенно curl). Открой Termux и выполни:\napt update && apt full-upgrade\nНажми 'y' при любом запросе. Если видишь 'No mirror selected' — сначала выполни termux-change-repo."
+        else
+            "Fresh Termux often has broken packages (especially curl). Open Termux and run:\napt update && apt full-upgrade\nPress 'y' on any prompts. If you see 'No mirror selected', run termux-change-repo first."
+
+        val step2Title = if (isRu) "Шаг 2: Разреши внешним приложениям выполнять команды" else "Step 2: Allow external apps to run commands"
+        val step2Body = if (isRu)
+            "APK нуждается в этом разрешении для управления сервером. Нажми кнопку ниже, чтобы скопировать команду, затем вставь её в Termux."
+        else
+            "The APK needs this permission to manage the server. Tap the button below to copy the command, then paste it in Termux."
+
+        val step3Title = if (isRu) "Шаг 3: Перезапусти Termux" else "Step 3: Restart Termux"
+        val step3Body = if (isRu)
+            "Набери exit в Termux, смахни его из недавних приложений и открой заново. Это нужно чтобы настройка вступила в силу."
+        else
+            "Type exit in Termux, swipe it away from recent apps, then reopen it. This ensures the setting takes effect."
+
+        val step4Title = if (isRu) "Шаг 4: Вернись сюда и нажми 'Установить'" else "Step 4: Come back and tap 'Install'"
+        val step4Body = if (isRu)
+            "После этого APK сможет автоматически управлять Termux. Эти шаги нужно выполнить только один раз.\n\n💡 Если при установке что-то спрашивает Y/N — нажимай Y."
+        else
+            "After this, the APK can automatically manage Termux. You only need to do these steps once.\n\n💡 If anything asks Y/N during install, press Y."
+
+        val message = buildString {
+            append("$step1Title\n$step1Body\n\n")
+            append("$step2Title\n$step2Body\n\n")
+            append("$step3Title\n$step3Body\n\n")
+            append("$step4Title\n$step4Body")
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(if (isRu) "🔧 Первичная настройка Termux" else "🔧 First-Time Termux Setup")
+            .setMessage(message)
+            .setPositiveButton(if (isRu) "📋 Скопировать команду" else "📋 Copy Command") { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("termux-setup", FIRST_TIME_SETUP_COMMAND))
+                setProgress(
+                    if (isRu) "✅ Команда скопирована. Открой Termux и вставь её."
+                    else "✅ Command copied. Open Termux and paste it.",
+                    visible = false
+                )
+            }
+            .setNegativeButton(if (isRu) "Открыть Termux" else "Open Termux") { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("termux-setup", FIRST_TIME_SETUP_COMMAND))
+                openTermux()
+            }
+            .setNeutralButton("OK", null)
             .show()
     }
 
