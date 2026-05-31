@@ -4,6 +4,7 @@ import { uploadAsset, updateCharacterAvatar } from "../app-client.js";
 import { extractPngMetadata, parseCharacterMetadata } from "../lib/png-reader.js";
 import { getT } from "../i18n/locale-helpers.js";
 import { importCharacterAction } from "../stores/api-actions/character-actions.js";
+import { fetchBootstrapAction } from "../stores/api-actions/bootstrap-actions.js";
 
 export interface CharacterImportOptions {
   chatId?: ChatId;
@@ -56,6 +57,8 @@ export function useCharacterImport() {
             const updatedSnapshot = await updateCharacterAvatar(characterId, result.activeChatId, avatarAssetId);
             // Replace snapshot so the caller sees the avatar
             result.snapshot = updatedSnapshot;
+            // Refresh bootstrap store so sidebar picks up the new avatarAssetId
+            await fetchBootstrapAction({ silent: true });
           }
         } catch (err) {
           console.warn("Failed to attach avatar to imported character:", err);
