@@ -1,4 +1,4 @@
-import { eq, and, or } from 'drizzle-orm';
+import { eq, and, or, asc, sql } from 'drizzle-orm';
 import { lorebooks, loreEntries } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
@@ -307,13 +307,46 @@ export class LorebookStore {
       .select()
       .from(loreEntries)
       .where(eq(loreEntries.lorebookId, lorebookId))
+      .orderBy(asc(loreEntries.sortOrder), asc(loreEntries.createdAt))
       .all();
     return rows.map((r) => this.mapEntryRow(r));
+  }
+
+  /**
+   * Batch-reorder entries within a lorebook.
+   * Accepts an array of {id, sortOrder, position?} updates applied in a single transaction.
+   * Returns the updated entries list.
+   */
+  async reorderEntries(lorebookId: string, updates: Array<{ id: string; sortOrder: number; position?: string }>): Promise<LoreEntry[]> {
+    const now = this.clock.now();
+    await this.db.transaction(async (tx) => {
+      for (const u of updates) {
+        const values: Partial<typeof loreEntries.$inferInsert> = { sortOrder: u.sortOrder, updatedAt: now };
+        if (u.position !== undefined) values.position = u.position;
+        await tx
+          .update(loreEntries)
+          .set(values)
+          .where(and(eq(loreEntries.id, u.id), eq(loreEntries.lorebookId, lorebookId)))
+          .run();
+      }
+    });
+    return this.listEntries(lorebookId);
   }
 
   async createEntry(lorebookId: string, data: CreateLoreEntryData): Promise<LoreEntry> {
     const id = this.idGen.next('lore_entry');
     const now = this.clock.now();
+
+    // Auto-assign sortOrder: max existing + 1 within this lorebook
+    let nextSortOrder = data.sortOrder ?? 0;
+    if (data.sortOrder === undefined) {
+      const maxRow = await this.db
+        .select({ maxSort: sql<number>`COALESCE(MAX(${loreEntries.sortOrder}), -1)` })
+        .from(loreEntries)
+        .where(eq(loreEntries.lorebookId, lorebookId))
+        .get();
+      nextSortOrder = (maxRow?.maxSort ?? -1) + 1;
+    }
     const [row] = await this.db
       .insert(loreEntries)
       .values({
@@ -350,7 +383,7 @@ export class LorebookStore {
         triggersJson: JSON.stringify(data.triggers ?? []),
         matchSourcesJson: JSON.stringify(data.matchSources ?? []),
         enabled: (data.enabled ?? true) ? 1 : 0,
-        sortOrder: data.sortOrder ?? 0,
+        sortOrder: nextSortOrder,
         automationId: data.automationId ?? "",
         metadataJson: JSON.stringify(data.metadata ?? {}),
         createdAt: now,
@@ -607,7 +640,39 @@ export class LorebookStore {
     };
   }
 
+  private normalizeImportedEntryPosition(
+    position: string,
+    metadata: Record<string, unknown>,
+  ): string {
+    // Older ST imports collapsed most ST WI positions into canonical "in_prompt".
+    // Recover the original ST-like UI position from import metadata when present.
+    const stPosition = metadata.stPosition;
+    if ((position === 'in_prompt' || position === 'before_prompt' || position === 'in_chat' || position === 'hidden_system') && typeof stPosition === 'number') {
+      switch (stPosition) {
+        case 0: return 'before_char';
+        case 1: return 'after_char';
+        case 2: return 'top_an';
+        case 3: return 'bottom_an';
+        case 4: return 'at_depth';
+        case 5: return 'before_examples';
+        case 6: return 'after_examples';
+        case 7: return 'outlet';
+      }
+    }
+
+    // Canonical prompt-layer positions should not leak into lorebook UI semantics.
+    switch (position) {
+      case 'before_prompt': return 'before_char';
+      case 'in_prompt': return 'after_char';
+      case 'in_chat': return 'at_depth';
+      case 'hidden_system': return 'outlet';
+      default: return position;
+    }
+  }
+
   private mapEntryRow(row: typeof loreEntries.$inferSelect): LoreEntry {
+    const metadata = JSON.parse(row.metadataJson) as Record<string, unknown>;
+
     return {
       id: row.id,
       lorebookId: row.lorebookId,
@@ -616,7 +681,7 @@ export class LorebookStore {
       keys: JSON.parse(row.keysJson),
       secondaryKeys: JSON.parse(row.secondaryKeysJson),
       logic: row.logic,
-      position: row.position,
+      position: this.normalizeImportedEntryPosition(row.position, metadata),
       depth: row.depth,
       priority: row.priority,
       stickyWindow: row.stickyWindow,
@@ -644,7 +709,7 @@ export class LorebookStore {
       enabled: row.enabled === 1,
       sortOrder: row.sortOrder,
       automationId: row.automationId,
-      metadata: JSON.parse(row.metadataJson),
+      metadata,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

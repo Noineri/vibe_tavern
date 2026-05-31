@@ -429,9 +429,12 @@ export function LoreEntryEditor({
 
             {/* ═══ Группа 2: Размещение и форматирование ═══ */}
             <div className="py-7 border-b border-border/50">
-              <div className="mb-3 text-[13px] font-medium text-t1">
-                {t("lore_position_label")}
-              </div>
+              <CustomTooltip content={t("lore_position_hint")} side="right" align="start">
+                <div className="mb-3 inline-flex cursor-help items-center gap-1 text-[13px] font-medium text-t1">
+                  {t("lore_position_label")}
+                  <span className="text-[11px] text-t3">?</span>
+                </div>
+              </CustomTooltip>
 
               {/* Позиция — сетка pill-кнопок (2 колонки на мобиле) */}
               <div
@@ -452,18 +455,20 @@ export function LoreEntryEditor({
                     "outlet",
                   ] as const
                 ).map((pos) => (
-                  <button  key={pos}
-                    type="button"
-                    onClick={() => updateAct("position", pos)}
-                    className={cn(
-                      "rounded-md border px-2 py-1.5 text-[11px] font-ui font-medium transition-all",
-                      entry.position === pos
-                        ? "border-accent bg-accent-dim text-accent-t"
-                        : "border-border bg-s3 text-t2 hover:border-t3 hover:text-t1"
-                    )}
-                  >
-                    {t("pos_" + pos)}
-                  </button>
+                  <CustomTooltip key={pos} content={t("pos_" + pos + "_hint")} side="top">
+                    <button
+                      type="button"
+                      onClick={() => updateAct("position", pos)}
+                      className={cn(
+                        "rounded-md border px-2 py-1.5 text-[11px] font-ui font-medium transition-all",
+                        entry.position === pos
+                          ? "border-accent bg-accent-dim text-accent-t"
+                          : "border-border bg-s3 text-t2 hover:border-t3 hover:text-t1"
+                      )}
+                    >
+                      {t("pos_" + pos)}
+                    </button>
+                  </CustomTooltip>
                 ))}
               </div>
 
@@ -482,35 +487,39 @@ export function LoreEntryEditor({
                 {(entry.position === "at_depth" ||
                   entry.position === "top_an" ||
                   entry.position === "bottom_an") && (
+                  <CustomTooltip content={t("lore_depth_hint")} side="top" align="start">
+                    <div>
+                      <label className="mb-1.5 block cursor-help text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                        {t("lore_depth_label")}
+                      </label>
+                      <input
+                        className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
+                        type="number"
+                        min="0"
+                        value={entry.depth}
+                        onChange={(e) =>
+                          updateAct("depth", parseInt(e.target.value))
+                        }
+                      />
+                    </div>
+                  </CustomTooltip>
+                )}
+                <CustomTooltip content={t("lore_priority_hint")} side="top" align="start">
                   <div>
-                    <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
-                      {t("lore_depth_label")}
+                    <label className="mb-1.5 block cursor-help text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                      {t("lore_priority_label")}
                     </label>
                     <input
                       className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
                       type="number"
                       min="0"
-                      value={entry.depth}
+                      value={entry.priority}
                       onChange={(e) =>
-                        updateAct("depth", parseInt(e.target.value))
+                        updateAct("priority", parseInt(e.target.value))
                       }
                     />
                   </div>
-                )}
-                <div>
-                  <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
-                    {t("lore_priority_label")}
-                  </label>
-                  <input
-                    className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
-                    type="number"
-                    min="0"
-                    value={entry.priority}
-                    onChange={(e) =>
-                      updateAct("priority", parseInt(e.target.value))
-                    }
-                  />
-                </div>
+                </CustomTooltip>
                 <div>
                   <CustomTooltip content={t("probability_hint")}>
                     <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
@@ -654,9 +663,12 @@ export function LoreEntryEditor({
 
               {/* Рекурсия */}
               <div className="mb-7 pb-7 border-b border-border/50">
-                <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.07em] text-t3">
-                  {t("lore_recursion_section")}
-                </div>
+                <CustomTooltip content={t("lore_recursion_section_hint")} side="right" align="start">
+                  <div className="mb-3 inline-flex cursor-help items-center gap-1 text-[12px] font-semibold uppercase tracking-[0.07em] text-t3">
+                    {t("lore_recursion_section")}
+                    <span className="text-[11px] normal-case tracking-normal text-t3">?</span>
+                  </div>
+                </CustomTooltip>
                 <div className="flex flex-wrap gap-4">
                   <CustomTooltip content={t("exclude_recursion_hint")}>
                     <Checkbox

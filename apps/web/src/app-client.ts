@@ -188,6 +188,7 @@ export interface LoreEntryRecord {
   characterFilterExclude: boolean;
   triggers: string[];
   matchSources: string[];
+  sortOrder: number;
 }
 
 export interface LorebookRecord {
@@ -910,8 +911,13 @@ export async function deleteLoreEntry(lorebookId: string, entryId: string): Prom
   }
 }
 
-export async function importLorebookEntries(lorebookId: string, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }): Promise<{ lorebookId?: string; imported: number; skipped: number; warnings: string[] }> {
-  const response = await client.api.lorebooks[":lorebookId"].import.$post({ param: { lorebookId }, json: body as { format: "st"; data: unknown; mode: "new"; scopeType?: string; characterId?: string; personaId?: string; chatId?: string } });
+export async function reorderLoreEntries(lorebookId: string, updates: Array<{ id: string; sortOrder: number; position?: string }>): Promise<LoreEntryRecord[]> {
+  const response = await client.api.lorebooks[":lorebookId"].entries.reorder.$patch({ param: { lorebookId }, json: { updates } });
+  return unwrapRpc<LoreEntryRecord[]>(response);
+}
+
+export async function importLorebookEntries(lorebookId: string, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string }): Promise<{ lorebookId?: string; imported: number; skipped: number; warnings: string[] }> {
+  const response = await client.api.lorebooks[":lorebookId"].import.$post({ param: { lorebookId }, json: body as { format: "st"; data: unknown; mode: "new" | "merge" | "replace"; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string } });
   return unwrapRpc<{ lorebookId?: string; imported: number; skipped: number; warnings: string[] }>(response);
 }
 

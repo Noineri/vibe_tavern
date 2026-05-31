@@ -19,6 +19,7 @@ import {
   type LorebookRecord,
   type LoreEntryRecord,
 } from "../../../app-client.js";
+import { LoreEntryList } from "./LoreEntryList.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -50,6 +51,8 @@ interface LorebookAccordionProps {
     tokenBudget?: number;
     recursiveScanning?: boolean;
   }) => void;
+  onReorderEntries: (updates: Array<{ id: string; sortOrder: number; position?: string }>) => Promise<LoreEntryRecord[]>;
+  isRu: boolean;
 }
 
 // ── Component ──────────────────────────────────────────────────────────
@@ -76,6 +79,8 @@ export function LorebookAccordion({
   onEntryClick,
   onToggleEnabled,
   onUpdateMeta,
+  onReorderEntries,
+  isRu,
 }: LorebookAccordionProps) {
   // ── Entries: загружаются при раскрытии аккордеона ──
   const [entries, setEntries] = useState<LoreEntryRecord[]>([]);
@@ -90,6 +95,13 @@ export function LorebookAccordion({
       cancelled = true;
     };
   }, [expanded, lorebook.id]);
+
+  const handleReorderEntries = async (
+    updates: Array<{ id: string; sortOrder: number; position?: string }>
+  ) => {
+    const nextEntries = await onReorderEntries(updates);
+    setEntries(nextEntries);
+  };
 
   return (
     <div className="mb-3 rounded-xl border border-border bg-surface">
@@ -367,68 +379,16 @@ export function LorebookAccordion({
             </div>
           </div>
 
-          {/* Пустое состояние */}
-          {entries.length === 0 && (
-            <div className="py-3 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
-              {t("lore_no_entries")}
-            </div>
-          )}
-
-          {/* Список записей */}
-          {entries.map((e) => (
-            <div
-              key={e.id}
-              className={cn(
-                "cursor-pointer rounded-lg border transition-all min-h-[44px]",
-                e.id === activeEntryId
-                  ? "border-accent bg-accent-dim"
-                  : "border-border bg-surface hover:bg-s2"
-              )}
-              style={{ padding: "10px 14px" }}
-              onClick={() => onEntryClick(e.id)}
-            >
-              <div className="flex items-center gap-2">
-                <div
-                  className={cn(
-                    "h-2 w-2 shrink-0 rounded-full",
-                    e.enabled ? "bg-success" : "bg-t3"
-                  )}
-                />
-                <span
-                  className={cn(
-                    "flex-1 truncate text-[13px] font-medium",
-                    e.enabled ? "text-t1" : "text-t3 line-through"
-                  )}
-                >
-                  {e.title || t("lore_no_entries")}
-                </span>
-              </div>
-              <div className="mt-1 truncate font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
-                {e.keys.length > 0
-                  ? `keys: ${e.keys.join(", ")}`
-                  : t("lore_no_entries")}
-              </div>
-              {e.content && (
-                <div
-                  className="mt-1.5 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2"
-                  style={{
-                    display: "-webkit-box",
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: "vertical",
-                    overflow: "hidden",
-                  }}
-                >
-                  {e.content}
-                </div>
-              )}
-              {e.content && (
-                <TokenCounter
-                  text={e.content}
-                  className="mt-1 flex justify-end font-ui text-[11px] tabular-nums text-t3/50"
-                />
-              )}
-            </div>
-          ))}
+          {/* Drag-and-drop entry list grouped by position */}
+          <LoreEntryList
+            entries={entries}
+            activeEntryId={activeEntryId}
+            isMobile={isMobile}
+            isRu={isRu}
+            t={t}
+            onEntryClick={onEntryClick}
+            onReorder={handleReorderEntries}
+          />
         </div>
       )}
     </div>

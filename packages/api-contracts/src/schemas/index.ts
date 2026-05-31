@@ -17,6 +17,7 @@ export {
   testActivationSchema,
   createLoreEntrySchema,
   updateLoreEntrySchema,
+  reorderLoreEntriesSchema,
   importLorebookSchema,
 } from "./lorebook-schema.js";
 export {

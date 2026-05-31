@@ -28,6 +28,7 @@ import {
   listLoreEntries,
   createLoreEntry,
   updateLoreEntry,
+  reorderLoreEntries,
   type LorebookRecord,
   type LoreEntryRecord,
 } from "../../../app-client.js";
@@ -103,8 +104,9 @@ export function LorebookEditor({
   chatId,
   personaId,
 }: LorebookEditorProps) {
-  const { t } = useT();
+  const { t, locale } = useT();
   const isMobile = useIsMobile();
+  const isRu = locale === "ru";
 
   // ── Навигация ──
   const stickyInitialTab = useRef<Tab | null>(readStickyWorldLoreTab());
@@ -293,6 +295,13 @@ export function LorebookEditor({
     await updateLorebookMeta(id, body);
     await refreshLorebooks();
     setEditingLorebookId(null);
+  };
+
+  const handleReorderEntries = async (
+    lorebookId: string,
+    updates: Array<{ id: string; sortOrder: number; position?: string }>
+  ) => {
+    return reorderLoreEntries(lorebookId, updates);
   };
 
   const handleDeleteLb = async (id: string) => {
@@ -616,6 +625,8 @@ export function LorebookEditor({
             handleUpdateLb(lb.id, { enabled: !lb.enabled })
           }
           onUpdateMeta={(body) => handleUpdateLb(lb.id, body)}
+          onReorderEntries={(updates) => handleReorderEntries(lb.id, updates)}
+          isRu={isRu}
         />
       ))}
 

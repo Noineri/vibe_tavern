@@ -116,6 +116,14 @@ const loreEntryUpdateSchema = z.object({
 
 export const updateLoreEntrySchema = loreEntryUpdateSchema;
 
+export const reorderLoreEntriesSchema = z.object({
+  updates: z.array(z.object({
+    id: z.string(),
+    sortOrder: z.number(),
+    position: z.string().optional(),
+  })),
+});
+
 export const importLorebookSchema = z.object({
   format: z.enum(["st", "janitor"]).optional().default("st"),
   data: z.unknown(),

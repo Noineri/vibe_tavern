@@ -354,7 +354,15 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     );
   }
 
-  for (const loreEntry of [...(context.lore ?? [])].sort((a, b) => b.priority - a.priority)) {
+  for (const loreEntry of [...(context.lore ?? [])].sort((a, b) => {
+    // Sort by: position → subPosition → sortOrder asc → priority desc
+    const posA = a.position ?? 'in_prompt';
+    const posB = b.position ?? 'in_prompt';
+    if (posA !== posB) return posA.localeCompare(posB);
+    const sortDiff = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+    if (sortDiff !== 0) return sortDiff;
+    return (b.priority ?? 100) - (a.priority ?? 100);
+  })) {
     if (!loreEntry.content.trim()) {
       droppedLayers.push({ id: loreEntry.id, reason: PROMPT_LAYER_REASON.emptyLoreContent });
       continue;
