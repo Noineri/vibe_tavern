@@ -1,7 +1,7 @@
 services:
   vibe_tavern:
     container_name: vibe_tavern
-    build: .
+    image: ghcr.io/noineri/vibe_tavern:latest
     ports:
       - "8787:8787"
     volumes:
