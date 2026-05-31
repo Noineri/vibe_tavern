@@ -421,6 +421,7 @@ export function LoreEntryList({
   const overlayRectRef = useRef<OverlayRect | null>(null);
   const overlayTransformRef = useRef("translate3d(0, 0, 0)");
   const overlayBaselineDeltaRef = useRef<{ x: number; y: number } | null>(null);
+  const dragInputTypeRef = useRef<"mouse" | "touch" | "unknown">("unknown");
   const dragPreviewItemsRef = useRef<DragPreviewItem[]>([]);
   const dragSourceIndexRef = useRef<number | null>(null);
   const dragTargetIndexRef = useRef<number | null>(null);
@@ -434,7 +435,11 @@ export function LoreEntryList({
       activationConstraint: { distance: 2 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: { distance: 4 },
+      // Mobile uses a dedicated 44px handle with touch-action:none, so we can
+      // activate almost immediately. A larger threshold combines badly with
+      // touch move coalescing and makes the overlay feel like it trails the
+      // finger.
+      activationConstraint: { distance: 1 },
     })
   );
 
@@ -489,6 +494,7 @@ export function LoreEntryList({
     overlayRectRef.current = null;
     overlayTransformRef.current = "translate3d(0, 0, 0)";
     overlayBaselineDeltaRef.current = null;
+    dragInputTypeRef.current = "unknown";
     dragPreviewItemsRef.current = [];
     dragSourceIndexRef.current = null;
     dragTargetIndexRef.current = null;
@@ -497,6 +503,14 @@ export function LoreEntryList({
   }, [clearPreviewTransforms]);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
+    const activatorEvent = event.activatorEvent;
+    dragInputTypeRef.current =
+      typeof TouchEvent !== "undefined" && activatorEvent instanceof TouchEvent
+        ? "touch"
+        : typeof MouseEvent !== "undefined" && activatorEvent instanceof MouseEvent
+          ? "mouse"
+          : "unknown";
+
     const dndRect = event.active.rect.current.initial;
     const activeId = event.active.id as string;
     const sourceNode = document.querySelector(
@@ -560,6 +574,7 @@ export function LoreEntryList({
       measuredGap,
       slotSize: dragSlotSizeRef.current,
       scrollY: window.scrollY,
+      inputType: dragInputTypeRef.current,
       activeElement: document.activeElement?.tagName,
     });
 
@@ -589,11 +604,14 @@ export function LoreEntryList({
     const node = overlayWrapperRef.current;
     if (!node) return;
 
-    // dnd-kit delta includes the pointer movement accumulated before the
-    // distance activation constraint fired. Treat the first move as the visual
-    // baseline so the overlay does not "catch up" with a pickup snap.
+    // Desktop needs first-delta normalization to hide the 2px activation
+    // threshold "catch-up" snap. Touch is different: move events can be
+    // coalesced, so subtracting the first delta creates a persistent offset that
+    // feels like the card is lagging behind the finger. The mobile handle uses a
+    // tiny activation distance instead and follows the raw touch delta.
     if (!overlayBaselineDeltaRef.current) {
-      overlayBaselineDeltaRef.current = { x: event.delta.x, y: event.delta.y };
+      overlayBaselineDeltaRef.current =
+        dragInputTypeRef.current === "touch" ? { x: 0, y: 0 } : { x: event.delta.x, y: event.delta.y };
     }
 
     const base = overlayBaselineDeltaRef.current;
