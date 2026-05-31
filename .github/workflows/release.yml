@@ -60,7 +60,7 @@ jobs:
             ' "$pkg" > "$tmp"
             mv "$tmp" "$pkg"
           done
-          git add '**/package.json'
+          git add package.json '**/package.json'
           git diff --cached --quiet && echo "Version already up to date" && exit 0
           git commit -m "chore: release v${VERSION}"
           git push
