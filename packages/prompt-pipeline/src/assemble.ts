@@ -7,7 +7,7 @@ import type {
 } from "./types.js";
 import type { AssemblyMode } from "./types.js";
 import { estimateTokens, findSafeCompactionBoundary } from "./compaction.js";
-import { createPhaseOneMacroEngine } from "./macro-registry.js";
+import { createFullMacroEngine } from "./macro-registry.js";
 import { buildPromptVariableContext, type PromptVariableContext } from "./prompt-variable-context.js";
 import {
   DEFAULT_PROMPT_LAYER_PRIORITY,
@@ -89,7 +89,7 @@ function sortLayers(layers: PromptLayer[]): PromptLayer[] {
   });
 }
 
-const phaseOneMacroEngine = createPhaseOneMacroEngine();
+const phaseOneMacroEngine = createFullMacroEngine();
 
 function buildAssemblyVariableContext(context: PromptAssemblyContext): PromptVariableContext {
   return buildPromptVariableContext({
@@ -134,6 +134,8 @@ function applyMacros(text: string | null | undefined, variableContext: PromptVar
  * Called before any layer construction so all downstream text is fully resolved.
  */
 function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyContext {
+  // Reset variable state for this assembly pass so setvar/getvar start clean
+  phaseOneMacroEngine.resetVariables();
   const variableContext = buildAssemblyVariableContext(context);
   return {
     ...context,

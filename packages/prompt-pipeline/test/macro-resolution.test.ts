@@ -1,18 +1,13 @@
 import { describe, it, expect } from "bun:test";
 import { assemblePrompt } from "../src/assemble.ts";
-import { createPhaseOneMacroEngine } from "../src/macro-registry.ts";
+import { createFullMacroEngine } from "../src/macro-registry.ts";
 import { buildPromptVariableContext } from "../src/prompt-variable-context.ts";
 
 /**
- * Тесты на раскрытие макросов {{char}}, {{user}}, <BOT>, <USER> и др.
- *
- * Три зоны ответственности:
- * 1. Prompt pipeline (assemblePrompt) — макросы раскрываются при сборке промпта для AI
- * 2. UI display (replaceUiMacros) — макросы раскрываются при отображении в интерфейсе
- * 3. DB storage — текст хранится «как есть», с нераскрытыми макросами
+ * Tests for macro resolution: {{char}}, {{user}}, <BOT>, <USER>, setvar/getvar, random, roll, if/else, comments.
  */
 
-// ─── Prompt pipeline: макросы раскрываются в сборке промпта ───
+// ─── Prompt pipeline: macros resolved in assembled prompt ───
 
 describe("Prompt pipeline: macro resolution in assembled prompt", () => {
   it("resolves {{char}} and {{user}} in chat message content", () => {
@@ -66,7 +61,6 @@ describe("Prompt pipeline: macro resolution in assembled prompt", () => {
 
     const base = result.layers.find((l) => l.id === "character_base");
     expect(base).toBeTruthy();
-    // Default persona name = "User"
     expect(base!.text).toContain("User enters the tower.");
     expect(base!.text).not.toContain("{{user}}");
   });
@@ -104,10 +98,10 @@ describe("Prompt pipeline: macro resolution in assembled prompt", () => {
   });
 });
 
-// ─── Macro engine: прямой вызов createPhaseOneMacroEngine ───
+// ─── Macro engine: direct resolution ───
 
-describe("Phase-one macro engine: direct resolution", () => {
-  const engine = createPhaseOneMacroEngine();
+describe("Macro engine: direct resolution", () => {
+  const engine = createFullMacroEngine();
 
   it("resolves {{char}} to character name", () => {
     const ctx = buildPromptVariableContext({ character: { name: "Aria" } });
@@ -154,9 +148,7 @@ describe("Phase-one macro engine: direct resolution", () => {
   });
 });
 
-// ─── UI display: replaceUiMacros (фронтенд) ───
-// Функция находится в apps/web/src/lib/macros.ts — дублируем логику для теста,
-// т.к. она не зависит от React и мала.
+// ─── UI display: replaceUiMacros (frontend) ───
 
 function replaceUiMacros(
   text: string,
@@ -213,20 +205,16 @@ describe("UI display: replaceUiMacros resolves macros for user-visible text", ()
   });
 });
 
-// ─── DB storage: макросы НЕ раскрываются при сохранении ───
-// Это проверяет контракт: expandChatMacros — NOP, текст проходит как есть.
+// ─── DB storage: raw text preserved with macros unresolved ───
 
 describe("DB storage: raw text preserved with macros unresolved", () => {
   it("greeting with {{user}} is stored as-is in assembled input", () => {
-    // Симуляция: greeting содержит макрос, который НЕ раскрывается при сохранении
     const rawGreeting = "Hello, {{user}}! I am {{char}}.";
 
-    // Но при отображении (UI) и генерации (pipeline) макросы раскрываются
     const displayCtx = { characterName: "Aria", personaName: "Olya" };
     const displayed = replaceUiMacros(rawGreeting, displayCtx);
     expect(displayed).toBe("Hello, Olya! I am Aria.");
 
-    // В «БД» (сырой текст) макросы на месте
     expect(rawGreeting).toContain("{{user}}");
     expect(rawGreeting).toContain("{{char}}");
   });
@@ -234,13 +222,279 @@ describe("DB storage: raw text preserved with macros unresolved", () => {
   it("user message with {{char}} is stored as-is and resolved in pipeline", () => {
     const rawUserMessage = "Tell me about {{char}}'s powers.";
 
-    // Pipeline раскрывает
-    const engine = createPhaseOneMacroEngine();
+    const engine = createFullMacroEngine();
     const ctx = buildPromptVariableContext({ character: { name: "Aria" } });
     const resolved = engine.resolve(rawUserMessage, ctx);
     expect(resolved).toBe("Tell me about Aria's powers.");
 
-    // «БД» — сырой текст
     expect(rawUserMessage).toContain("{{char}}");
+  });
+});
+
+// ─── Variable macros: setvar / getvar ───
+
+describe("Variable macros: setvar/getvar", () => {
+  const engine = createFullMacroEngine();
+
+  it("setvar sets a variable, getvar retrieves it", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    const result = engine.resolve("{{setvar::color::red}}{{getvar::color}}", ctx);
+    expect(result).toBe("red");
+  });
+
+  it("getvar returns empty string for unset variable", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    expect(engine.resolve("{{getvar::unknown}}", ctx)).toBe("");
+  });
+
+  it("getvar returns fallback for unset variable", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    expect(engine.resolve("{{getvar::unknown::default}}", ctx)).toBe("default");
+  });
+
+  it("setvar with empty value resets variable", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    const result = engine.resolve("{{setvar::x::hello}}{{setvar::x::}}{{getvar::x}}", ctx);
+    expect(result).toBe("");
+  });
+
+  it("variables persist across resolve calls on same engine", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    engine.resolve("{{setvar::mood::happy}}", ctx);
+    expect(engine.resolve("The mood is {{getvar::mood}}.", ctx)).toBe("The mood is happy.");
+  });
+
+  it("resetVariables clears state", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    engine.resolve("{{setvar::x::1}}", ctx);
+    engine.resetVariables();
+    expect(engine.resolve("{{getvar::x}}", ctx)).toBe("");
+  });
+
+  it("incvar increments and returns value", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    const result = engine.resolve("{{setvar::counter::5}}{{incvar::counter}}", ctx);
+    expect(result).toBe("6");
+  });
+
+  it("decvar decrements and returns value", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    const result = engine.resolve("{{setvar::counter::3}}{{decvar::counter}}", ctx);
+    expect(result).toBe("2");
+  });
+
+  it("addvar appends strings", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    const result = engine.resolve("{{setvar::list::a}}{{addvar::list::,b}}{{getvar::list}}", ctx);
+    expect(result).toBe("a,b");
+  });
+
+  it("hasvar returns true/false", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    const result = engine.resolve("{{setvar::x::1}}has={{hasvar::x}} missing={{hasvar::y}}", ctx);
+    expect(result).toBe("has=true missing=false");
+  });
+
+  it("deletevar removes a variable", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    const result = engine.resolve("{{setvar::x::1}}{{deletevar::x}}{{hasvar::x}}", ctx);
+    expect(result).toBe("false");
+  });
+});
+
+// ─── Random macro ───
+
+describe("Random macro: {{random::a::b::c}}", () => {
+  const engine = createFullMacroEngine();
+
+  it("picks one of the options", () => {
+    const ctx = buildPromptVariableContext({});
+    const result = engine.resolve("{{random::a::b::c}}", ctx);
+    expect(["a", "b", "c"]).toContain(result);
+  });
+
+  it("handles comma-separated legacy format", () => {
+    const ctx = buildPromptVariableContext({});
+    const result = engine.resolve("{{random:x,y,z}}", ctx);
+    expect(["x", "y", "z"]).toContain(result);
+  });
+
+  it("returns empty for no args", () => {
+    const ctx = buildPromptVariableContext({});
+    expect(engine.resolve("{{random}}", ctx)).toBe("");
+  });
+});
+
+// ─── Roll macro ───
+
+describe("Roll macro: {{roll::1d20}}", () => {
+  const engine = createFullMacroEngine();
+
+  it("returns a number for valid formula", () => {
+    const ctx = buildPromptVariableContext({});
+    const result = engine.resolve("{{roll::1d20}}", ctx);
+    const num = Number(result);
+    expect(num).toBeGreaterThanOrEqual(1);
+    expect(num).toBeLessThanOrEqual(20);
+  });
+
+  it("handles d6 shorthand", () => {
+    const ctx = buildPromptVariableContext({});
+    const result = engine.resolve("{{roll::d6}}", ctx);
+    const num = Number(result);
+    expect(num).toBeGreaterThanOrEqual(1);
+    expect(num).toBeLessThanOrEqual(6);
+  });
+
+  it("handles 3d6", () => {
+    const ctx = buildPromptVariableContext({});
+    const result = engine.resolve("{{roll::3d6}}", ctx);
+    const num = Number(result);
+    expect(num).toBeGreaterThanOrEqual(3);
+    expect(num).toBeLessThanOrEqual(18);
+  });
+
+  it("handles modifier", () => {
+    const ctx = buildPromptVariableContext({});
+    const result = engine.resolve("{{roll::1d10+5}}", ctx);
+    const num = Number(result);
+    expect(num).toBeGreaterThanOrEqual(6);
+    expect(num).toBeLessThanOrEqual(15);
+  });
+});
+
+// ─── Comment macro ───
+
+describe("Comment macro: {{// ...}}", () => {
+  const engine = createFullMacroEngine();
+
+  it("strips comments completely", () => {
+    const ctx = buildPromptVariableContext({});
+    expect(engine.resolve("before{{// this is a comment}}after", ctx)).toBe("beforeafter");
+  });
+
+  it("strips comment with long text", () => {
+    const ctx = buildPromptVariableContext({});
+    expect(engine.resolve("{{// Make sure to edit both!}}text", ctx)).toBe("text");
+  });
+});
+
+// ─── Conditional macro: if/else ───
+
+describe("Conditional macro: {{if}}...{{else}}...{{/if}}", () => {
+  const engine = createFullMacroEngine();
+
+  it("shows then-branch when condition is truthy", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    const result = engine.resolve("{{setvar::x::yes}}{{if {{getvar::x}}}}shown{{/if}}", ctx);
+    expect(result).toBe("shown");
+  });
+
+  it("hides then-branch when condition is falsy (empty)", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    const result = engine.resolve("{{if {{getvar::x}}}}hidden{{/if}}", ctx);
+    expect(result).toBe("");
+  });
+
+  it("shows else-branch when condition is falsy", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    const result = engine.resolve("{{if {{getvar::x}}}}then{{else}}else{{/if}}", ctx);
+    expect(result).toBe("else");
+  });
+
+  it("negation with ! inverts condition", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    const result = engine.resolve("{{setvar::x::yes}}{{if !{{getvar::x}}}}no{{else}}yes{{/if}}", ctx);
+    expect(result).toBe("yes");
+  });
+
+  it("condition 'false' is falsy", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    const result = engine.resolve("{{setvar::x::false}}{{if {{getvar::x}}}}no{{else}}yes{{/if}}", ctx);
+    expect(result).toBe("yes");
+  });
+
+  it("simple non-empty condition is truthy", () => {
+    const ctx = buildPromptVariableContext({ character: { name: "Aria" } });
+    const result = engine.resolve("{{if {{char}}}}char exists{{/if}}", ctx);
+    expect(result).toBe("char exists");
+  });
+
+  it("nested if blocks work", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    const input = "{{setvar::a::1}}{{setvar::b::1}}{{if {{getvar::a}}}}{{if {{getvar::b}}}}both{{/if}}{{/if}}";
+    const result = engine.resolve(input, ctx);
+    expect(result).toBe("both");
+  });
+});
+
+// ─── Celia preset stress test ───
+
+describe("Celia preset stress test", () => {
+  const engine = createFullMacroEngine();
+
+  it("initializes many variables and reads them back", () => {
+    const ctx = buildPromptVariableContext({
+      character: { name: "Elena", description: "A pirate captain." },
+      persona: { name: "Human" },
+    });
+    engine.resetVariables();
+
+    const input = [
+      "{{setvar::clauword::}}",
+      "{{setvar::rating::}}",
+      "{{setvar::roleplay::}}",
+      "{{setvar::clauagency1::Simulating within}}",
+      "{{setvar::clauagency2::immediate perceptive area.}}",
+      "{{setvar::novelty::Assuming memory of previous history}}",
+      "",
+      "{{getvar::clauagency1}} {{getvar::clauagency2}}",
+      "Novelty: {{getvar::novelty}}",
+    ].join("\n");
+
+    const result = engine.resolve(input, ctx);
+
+    expect(result).toContain("Simulating within");
+    expect(result).toContain("immediate perceptive area.");
+    expect(result).toContain("Novelty: Assuming memory of previous history");
+  });
+
+  it("random name generation pattern works", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    const result = engine.resolve("{{random:a,b,c,d,e,f}}", ctx);
+    expect(["a", "b", "c", "d", "e", "f"]).toContain(result);
+  });
+
+  it("comment lines are stripped", () => {
+    const ctx = buildPromptVariableContext({});
+    const result = engine.resolve("{{// This dis-includes the below information}}visible", ctx);
+    expect(result).toBe("visible");
+  });
+
+  it("roll dice in naming macro", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    const result = engine.resolve("{{roll::1d6}}", ctx);
+    const num = Number(result);
+    expect(num).toBeGreaterThanOrEqual(1);
+    expect(num).toBeLessThanOrEqual(6);
   });
 });
