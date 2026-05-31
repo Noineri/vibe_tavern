@@ -37,6 +37,10 @@ export function createLorebookRoutes(runtime: RuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.createLoreEntry(c.req.param("lorebookId"), body));
     })
+    .patch("/api/lorebooks/:lorebookId/entries/reorder", zValidator("json", schemas.reorderLoreEntriesSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.reorderLoreEntries(c.req.param("lorebookId"), body.updates));
+    })
     .patch("/api/lorebooks/:lorebookId/entries/:entryId", zValidator("json", schemas.updateLoreEntrySchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(await runtime.updateLoreEntry(c.req.param("lorebookId"), c.req.param("entryId"), body));

@@ -349,6 +349,10 @@ export interface ImportResult {
 		throw new Error("Not implemented: lorebooks are phase 2");
 	}
 
+	reorderLoreEntries(_lorebookId: string, _updates: Array<{ id: string; sortOrder: number; position?: string }>): Promise<unknown> {
+		throw new Error("Not implemented: lorebooks are phase 2");
+	}
+
 	testLoreActivation(lorebookId: string, text: string): { activatedIds: string[]; totalEntries: number } {
 		void lorebookModule; void lorebookId; void text;
 		throw new Error("Not implemented: lorebooks are phase 2");

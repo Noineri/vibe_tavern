@@ -107,6 +107,8 @@ export interface PromptAssemblyContext {
     depth?: number;
     /** Message role (system, user, assistant). Defaults to system. */
     role?: string;
+    /** User-defined display order within the same lorebook. Lower = earlier. */
+    sortOrder?: number;
   }>;
   memory?: {
     summary?: Array<{

@@ -46,6 +46,7 @@ export interface RuntimeApi {
   updateLoreEntry: (lorebookId: string, entryId: string, body: Record<string, unknown>) => Promise<unknown>;
   deleteLoreEntry: (lorebookId: string, entryId: string) => Promise<void>;
   listLoreEntries: (lorebookId: string) => Promise<unknown>;
+  reorderLoreEntries: (lorebookId: string, updates: Array<{ id: string; sortOrder: number; position?: string }>) => Promise<unknown>;
   testLoreActivation: (lorebookId: string, body: { text: string }) => Promise<unknown>;
   importLorebook: (lorebookId: string | null, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string }) => Promise<unknown>;
   // ── Scripts ──

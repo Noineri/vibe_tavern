@@ -415,6 +415,9 @@ export class RuntimeApiAdapter {
 	listLoreEntries = (lorebookId: string) =>
 		this.stores.lorebooks.listEntries(lorebookId);
 
+	reorderLoreEntries = (lorebookId: string, updates: Array<{ id: string; sortOrder: number; position?: string }>) =>
+		this.stores.lorebooks.reorderEntries(lorebookId, updates);
+
 	testLoreActivation = async (lorebookId: string, body: { text: string }) => {
 		const entries = await this.stores.lorebooks.listEntries(lorebookId);
 		const activated = entries.filter(e =>

@@ -255,6 +255,7 @@ export class PromptAssemblyService {
         position: entry.position,
         depth: entry.depth,
         role: entry.role,
+        sortOrder: entry.sortOrder,
       })),
       memory: {
         summary: enabledSummaries.length > 0
