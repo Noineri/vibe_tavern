@@ -29,3 +29,8 @@ logs/
 package-lock.json
 coverage/
 *.tsbuildinfo
+.github/
+.tokensave/
+.opencode/
+*.bat
+LICENSE
