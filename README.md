@@ -35,7 +35,7 @@ Vibe Tavern — self-hosted AI-roleplaying web app developed with [Bun](https://
 
 ### 💬 Chat
 
-- **Nothing superfluous** - just you and the character. Switch chats, personalities, preset promptos and AI models from quick access without distracting yourself from communication.
+- **Nothing superfluous** - just you and the character. Switch chats, personalities, prompts presets and AI models from quick access without distracting yourself from communication.
 - **Streaming and reasoning** — the reasoning blocks are collapsed by default so as not to interfere with the main chat flow. However, you can open them up and see that the reasoning look stylish.
 - **Swipes of response options** — desktop animation of slides + a mobile carousel of three panels. Built-in token counting and model label for a specific swipe.
 - **Tokens counting directly in UI** — keep track of the context budget without opening the settings, right in the chat input! A color display is implemented, as well as a pop-up window showing what takes up and how much.
