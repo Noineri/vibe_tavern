@@ -73,6 +73,10 @@ export type UpdateLoreEntryData = Partial<CreateLoreEntryData>;
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
+/**
+ * Store-level Lorebook — domain Lorebook projected from a DB row.
+ * Uses plain `string` IDs (brands are applied at the API boundary).
+ */
 export interface Lorebook {
   id: string;
   name: string;
@@ -97,6 +101,9 @@ export interface Lorebook {
   updatedAt: string;
 }
 
+/**
+ * Store-level LoreEntry — domain LoreEntry projected from a DB row.
+ */
 export interface LoreEntry {
   id: string;
   lorebookId: string;
@@ -229,10 +236,7 @@ export class LorebookStore {
 
   async updateLorebook(id: string, data: UpdateLorebookData): Promise<Lorebook> {
     const now = this.clock.now();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const values: Record<string, any> = { updatedAt: now };
-    if (data.name !== undefined) values.name = data.name;
-    if (data.description !== undefined) values.description = data.description;
+    const values: Partial<typeof lorebooks.$inferInsert> = { updatedAt: now };
     if (data.scopeType !== undefined) values.scopeType = data.scopeType;
     if (data.scanDepth !== undefined) values.scanDepth = data.scanDepth;
     if (data.tokenBudget !== undefined) values.tokenBudget = data.tokenBudget;
@@ -364,8 +368,7 @@ export class LorebookStore {
 
   async updateEntry(id: string, data: UpdateLoreEntryData): Promise<LoreEntry> {
     const now = this.clock.now();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const values: Record<string, any> = { updatedAt: now };
+    const values: Partial<typeof loreEntries.$inferInsert> = { updatedAt: now };
     if (data.title !== undefined) values.title = data.title;
     if (data.content !== undefined) values.content = data.content;
     if (data.keys !== undefined) values.keysJson = JSON.stringify(data.keys);

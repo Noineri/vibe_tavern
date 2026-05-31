@@ -25,6 +25,9 @@ export type UpdatePresetData = Partial<CreatePresetData>;
 
 // ─── Return type ──────────────────────────────────────────────────────────────
 
+/**
+ * Store-level PromptPreset — domain PromptPreset projected from a DB row.
+ */
 export interface PromptPreset {
   id: string;
   name: string;
@@ -124,8 +127,7 @@ export class PresetStore {
   async update(id: string, data: UpdatePresetData): Promise<PromptPreset> {
     const now = this.clock.now();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const values: Record<string, any> = { updatedAt: now };
+    const values: Partial<typeof promptPresets.$inferInsert> = { updatedAt: now };
 
     if (data.name !== undefined) values.name = data.name;
     if (data.bindProviderPresetId !== undefined) values.bindProviderPresetId = data.bindProviderPresetId;

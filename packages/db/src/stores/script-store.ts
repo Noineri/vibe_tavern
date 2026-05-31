@@ -24,6 +24,9 @@ export type UpdateScriptData = Partial<CreateScriptData>;
 
 // ─── Return type ──────────────────────────────────────────────────────────────
 
+/**
+ * Store-level Script — domain Script projected from a DB row.
+ */
 export interface Script {
   id: string;
   name: string;
@@ -135,8 +138,7 @@ export class ScriptStore {
 
   async update(id: string, data: UpdateScriptData): Promise<Script> {
     const now = this.clock.now();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const values: Record<string, any> = { updatedAt: now };
+    const values: Partial<typeof scripts.$inferInsert> = { updatedAt: now };
     if (data.name !== undefined) values.name = data.name;
     if (data.description !== undefined) values.description = data.description;
     if (data.code !== undefined) values.code = data.code;
