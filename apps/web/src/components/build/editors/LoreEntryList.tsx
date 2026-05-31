@@ -132,6 +132,55 @@ function nextAnimationFrame(): Promise<void> {
   return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
 }
 
+interface DragPoint {
+  x: number;
+  y: number;
+}
+
+interface ScrollSnapshot {
+  node: Element | Window;
+  top: number;
+  left: number;
+}
+
+function getTouchPoint(event: Event): DragPoint | null {
+  if (typeof TouchEvent === "undefined" || !(event instanceof TouchEvent)) return null;
+  const touch = event.touches[0] ?? event.changedTouches[0];
+  return touch ? { x: touch.clientX, y: touch.clientY } : null;
+}
+
+function getScrollPosition(node: Element | Window): DragPoint {
+  if (node === window) return { x: window.scrollX, y: window.scrollY };
+  const element = node as Element;
+  return { x: element.scrollLeft, y: element.scrollTop };
+}
+
+function getScrollSnapshots(node: HTMLElement | null): ScrollSnapshot[] {
+  const snapshots: ScrollSnapshot[] = [];
+  for (let parent = node?.parentElement ?? null; parent; parent = parent.parentElement) {
+    const style = window.getComputedStyle(parent);
+    const canScrollY = /(auto|scroll|overlay)/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight;
+    const canScrollX = /(auto|scroll|overlay)/.test(style.overflowX) && parent.scrollWidth > parent.clientWidth;
+    if (canScrollY || canScrollX) {
+      const position = getScrollPosition(parent);
+      snapshots.push({ node: parent, top: position.y, left: position.x });
+    }
+  }
+  const windowPosition = getScrollPosition(window);
+  snapshots.push({ node: window, top: windowPosition.y, left: windowPosition.x });
+  return snapshots;
+}
+
+function getScrollDelta(snapshots: ScrollSnapshot[]): DragPoint {
+  return snapshots.reduce(
+    (sum, snapshot) => {
+      const now = getScrollPosition(snapshot.node);
+      return { x: sum.x + now.x - snapshot.left, y: sum.y + now.y - snapshot.top };
+    },
+    { x: 0, y: 0 }
+  );
+}
+
 // ── Props ──────────────────────────────────────────────────────────────
 
 interface OverlayRect {
@@ -422,6 +471,9 @@ export function LoreEntryList({
   const overlayTransformRef = useRef("translate3d(0, 0, 0)");
   const overlayBaselineDeltaRef = useRef<{ x: number; y: number } | null>(null);
   const dragInputTypeRef = useRef<"mouse" | "touch" | "unknown">("unknown");
+  const touchStartPointRef = useRef<DragPoint | null>(null);
+  const touchCurrentPointRef = useRef<DragPoint | null>(null);
+  const dragScrollSnapshotsRef = useRef<ScrollSnapshot[]>([]);
   const dragPreviewItemsRef = useRef<DragPreviewItem[]>([]);
   const dragSourceIndexRef = useRef<number | null>(null);
   const dragTargetIndexRef = useRef<number | null>(null);
@@ -451,6 +503,23 @@ export function LoreEntryList({
       setOptimisticEntries(null);
     }
   }, [entries, optimisticEntries]);
+
+  useEffect(() => {
+    if (activeDragId === null || dragInputTypeRef.current !== "touch") return;
+
+    const handleTouchMove = (event: TouchEvent) => {
+      const point = getTouchPoint(event);
+      if (point) touchCurrentPointRef.current = point;
+    };
+
+    // Keep a live viewport-space touch point. dnd-kit deltas can include scroll
+    // compensation when an inner mobile panel autoscrolls near the edge; the
+    // manual fixed overlay should instead stay attached to the finger.
+    window.addEventListener("touchmove", handleTouchMove, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener("touchmove", handleTouchMove, { capture: true });
+    };
+  }, [activeDragId]);
 
   // Group entries by position for rendering (memoized)
   const grouped = useMemo(() => {
@@ -495,6 +564,9 @@ export function LoreEntryList({
     overlayTransformRef.current = "translate3d(0, 0, 0)";
     overlayBaselineDeltaRef.current = null;
     dragInputTypeRef.current = "unknown";
+    touchStartPointRef.current = null;
+    touchCurrentPointRef.current = null;
+    dragScrollSnapshotsRef.current = [];
     dragPreviewItemsRef.current = [];
     dragSourceIndexRef.current = null;
     dragTargetIndexRef.current = null;
@@ -510,6 +582,9 @@ export function LoreEntryList({
         : typeof MouseEvent !== "undefined" && activatorEvent instanceof MouseEvent
           ? "mouse"
           : "unknown";
+    const initialTouchPoint = getTouchPoint(activatorEvent);
+    touchStartPointRef.current = initialTouchPoint;
+    touchCurrentPointRef.current = initialTouchPoint;
 
     const dndRect = event.active.rect.current.initial;
     const activeId = event.active.id as string;
@@ -553,6 +628,7 @@ export function LoreEntryList({
       : 6;
 
     dragPreviewItemsRef.current = previewItems;
+    dragScrollSnapshotsRef.current = getScrollSnapshots(sourceNode);
     dragSourceIndexRef.current = sourceIndex >= 0 ? sourceIndex : null;
     dragTargetIndexRef.current = sourceIndex >= 0 ? sourceIndex : null;
     dragSlotSizeRef.current = (sourceRect?.height ?? nextOverlayRect?.height ?? sourceItem?.rect.height ?? 0) + measuredGap;
@@ -575,6 +651,12 @@ export function LoreEntryList({
       slotSize: dragSlotSizeRef.current,
       scrollY: window.scrollY,
       inputType: dragInputTypeRef.current,
+      initialTouchPoint,
+      scrollSnapshots: dragScrollSnapshotsRef.current.map((snapshot) => ({
+        node: snapshot.node === window ? "window" : (snapshot.node as Element).tagName,
+        top: snapshot.top,
+        left: snapshot.left,
+      })),
       activeElement: document.activeElement?.tagName,
     });
 
@@ -615,8 +697,11 @@ export function LoreEntryList({
     }
 
     const base = overlayBaselineDeltaRef.current;
-    const x = Math.round(event.delta.x - base.x);
-    const y = Math.round(event.delta.y - base.y);
+    const touchStart = touchStartPointRef.current;
+    const touchCurrent = touchCurrentPointRef.current;
+    const useTouchPoint = dragInputTypeRef.current === "touch" && touchStart && touchCurrent;
+    const x = Math.round(useTouchPoint ? touchCurrent.x - touchStart.x : event.delta.x - base.x);
+    const y = Math.round(useTouchPoint ? touchCurrent.y - touchStart.y : event.delta.y - base.y);
     const nextTransform = `translate3d(${x}px, ${y}px, 0)`;
     overlayTransformRef.current = nextTransform;
     node.style.transform = nextTransform;
@@ -625,11 +710,12 @@ export function LoreEntryList({
     const sourceIndex = dragSourceIndexRef.current;
     const sourceRect = sourceIndex === null ? null : items[sourceIndex]?.rect;
     if (sourceIndex !== null && sourceRect) {
-      const centerY = sourceRect.top + sourceRect.height / 2 + y;
+      const scrollDelta = getScrollDelta(dragScrollSnapshotsRef.current);
+      const centerY = sourceRect.top - scrollDelta.y + sourceRect.height / 2 + y;
       let targetIndex = sourceIndex;
       let closestDistance = Number.POSITIVE_INFINITY;
       for (const item of items) {
-        const itemCenterY = item.rect.top + item.rect.height / 2;
+        const itemCenterY = item.rect.top - scrollDelta.y + item.rect.height / 2;
         const distance = Math.abs(centerY - itemCenterY);
         if (distance < closestDistance) {
           closestDistance = distance;
@@ -660,6 +746,7 @@ export function LoreEntryList({
           sourceIndex,
           targetIndex,
           centerY: Math.round(centerY * 100) / 100,
+          scrollDelta,
         });
       }
     }
@@ -717,8 +804,9 @@ export function LoreEntryList({
       // replaced in the list after the API reorder.
       const overlayNode = overlayWrapperRef.current;
       if (overlayNode && baseOverlayRect && targetPreviewItem) {
-        const x = Math.round(targetPreviewItem.rect.left - baseOverlayRect.left);
-        const y = Math.round(targetPreviewItem.rect.top - baseOverlayRect.top);
+        const scrollDelta = getScrollDelta(dragScrollSnapshotsRef.current);
+        const x = Math.round(targetPreviewItem.rect.left - scrollDelta.x - baseOverlayRect.left);
+        const y = Math.round(targetPreviewItem.rect.top - scrollDelta.y - baseOverlayRect.top);
         const settleTransform = `translate3d(${x}px, ${y}px, 0)`;
         overlayTransformRef.current = settleTransform;
         overlayNode.style.transition = "transform 120ms cubic-bezier(0.2, 0, 0, 1)";
