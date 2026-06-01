@@ -576,20 +576,28 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     if (shouldInclude) {
       const isDepthMode = mesExampleMode === "depth";
       const depth = context.character.mesExampleDepth ?? 4;
-      layers.push(
-        makeLayer({
-          id: PROMPT_LAYER_ID.mesExample,
-          sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
-          sourceId: context.character.id,
-          sourceName: context.character.name + " — Examples",
-          priority: PROMPT_LAYER_PRIORITY.mesExample,
-          reason: isDepthMode
-            ? `included (depth mode, depth=${depth})`
-            : isFirstTurn ? "included" : "included (always mode)",
-          text: PROMPT_FORMAT.exampleMessages(context.character.mesExample),
-          ...(isDepthMode ? { injectionDepth: depth } : {}),
-        }),
-      );
+      const layer = makeLayer({
+        id: PROMPT_LAYER_ID.mesExample,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
+        sourceId: context.character.id,
+        sourceName: context.character.name + " — Examples",
+        priority: PROMPT_LAYER_PRIORITY.mesExample,
+        reason: isDepthMode
+          ? `included (depth mode, depth=${depth})`
+          : isFirstTurn ? "included" : "included (always mode)",
+        text: PROMPT_FORMAT.exampleMessages(context.character.mesExample),
+      });
+
+      if (isDepthMode) {
+        layer.position = "in_chat";
+        layer.injectionDepth = depth;
+      } else {
+        // always/once: place after chat history (before jailbreak)
+        // Higher priority than jailbreak (990) so examples come first
+        layer.position = "in_chat";
+        layer.injectionDepth = 0;
+      }
+      layers.push(layer);
     } else {
       droppedLayers.push({
         id: PROMPT_LAYER_ID.mesExample,
