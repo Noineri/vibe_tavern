@@ -11,7 +11,6 @@ import { SaveButton } from "../shared/SaveBar.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { PresetList, PromptFields } from "../settings/prompt/index.js";
 import { InjectionTable } from "../settings/prompt/InjectionTable.js";
-import { Toggle } from "../shared/Toggle.js";
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 
@@ -301,30 +300,51 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           )}
           {(!isMobile || mobileDetailOpen) && (
           <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-            {/* Advanced mode accordion */}
-            <div className="mx-5 mt-4 shrink-0">
-              <button type="button"
-                className="flex w-full cursor-pointer items-center gap-3 rounded-md border border-border2 bg-s2 px-4 py-3 select-none transition-colors hover:bg-s3"
-                onClick={() => setAdvancedMode(!advancedMode)}
-              >
-                <span onClick={(event) => event.stopPropagation()}>
-                  <Toggle checked={advancedMode} onChange={setAdvancedMode} />
-                </span>
-                <div className="flex-1 text-left">
-                  <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">{t("preset_advanced_mode")}</span>
-                  <span className="ml-2 font-ui text-[11px] text-t4">{t("preset_advanced_mode_hint")}</span>
+            <div className="mx-5 mt-4 flex shrink-0 items-center justify-between gap-3">
+              <div>
+                <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
+                  {advancedMode ? t("preset_advanced_mode") : t("preset_simple_mode")}
                 </div>
-                <span className={cn("text-t4 transition-transform", advancedMode && "rotate-180")}>▾</span>
-              </button>
-              {advancedMode && (
-                <div className="rounded-b-md border-x border-b border-border2 bg-s1 px-4 py-3">
-                  <InjectionTable
-                    injections={draft.customInjections}
-                    onChange={(injections) => { setDraft((d) => ({ ...d, customInjections: injections })); setDirty(true); setSaveState("idle"); }}
-                  />
+                <div className="mt-0.5 font-ui text-[11px] text-t4">
+                  {advancedMode ? t("preset_advanced_mode_hint") : t("preset_simple_mode_hint")}
                 </div>
-              )}
+              </div>
+              <div className="inline-flex shrink-0 gap-0 rounded-md border border-border bg-s3 p-0.5" role="radiogroup" aria-label={t("preset_editor_mode")}>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!advancedMode}
+                  className={cn(
+                    "cursor-pointer select-none rounded-[5px] px-2.5 py-1 font-ui text-[11px] transition-all duration-150",
+                    !advancedMode ? "bg-s2 font-medium text-accent shadow-sm" : "text-t2 hover:text-t1",
+                  )}
+                  onClick={() => setAdvancedMode(false)}
+                >
+                  {t("preset_simple_mode_short")}
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={advancedMode}
+                  className={cn(
+                    "cursor-pointer select-none rounded-[5px] px-2.5 py-1 font-ui text-[11px] transition-all duration-150",
+                    advancedMode ? "bg-s2 font-medium text-accent shadow-sm" : "text-t2 hover:text-t1",
+                  )}
+                  onClick={() => setAdvancedMode(true)}
+                >
+                  {t("preset_advanced_mode_short")}
+                </button>
+              </div>
             </div>
+
+            {advancedMode && (
+              <div className="mx-5 mt-3 rounded-md border border-border2 bg-s1 px-4 py-3">
+                <InjectionTable
+                  injections={draft.customInjections}
+                  onChange={(injections) => { setDraft((d) => ({ ...d, customInjections: injections })); setDirty(true); setSaveState("idle"); }}
+                />
+              </div>
+            )}
 
             <PromptFields
               draft={activePreset ? draft : null}
