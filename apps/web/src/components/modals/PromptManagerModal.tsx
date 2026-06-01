@@ -10,7 +10,7 @@ import { Icons } from "../shared/icons.js";
 import { SaveButton } from "../shared/SaveBar.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { PresetList, PromptFields } from "../settings/prompt/index.js";
-import { PromptOrderCanvas } from "../settings/prompt/InjectionTable.js";
+import { PromptOrderCanvas, type InjectionRow } from "../settings/prompt/InjectionTable.js";
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 
@@ -28,7 +28,7 @@ type DraftData = {
   summary: string;
   tools: string;
   scriptAiSystemPrompt: string;
-  customInjections: Array<{ name: string; content: string; depth: number; role: 'system' | 'user' | 'assistant'; enabled: boolean }>;
+  customInjections: InjectionRow[];
 };
 
 interface PromptManagerModalProps {

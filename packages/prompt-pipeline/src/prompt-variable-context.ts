@@ -48,7 +48,18 @@ export interface PromptPresetContext {
   prefill: string | null;
   authorsNote: string | null;
   authorsNoteDepth: number | null;
-  customInjections: Array<{ name: string; content: string; depth: number; role: string; enabled: boolean }>;
+  customInjections: Array<{
+    identifier?: string;
+    name: string;
+    content: string;
+    depth: number;
+    role: string;
+    enabled: boolean;
+    injectionPosition?: 0 | 1 | "relative" | "absolute";
+    injectionOrder?: number;
+    promptOrderIndex?: number;
+    promptOrderPlacement?: "before_chat" | "after_chat";
+  }>;
   original: string | null;
   contextBudget: number | null;
   maxResponseTokens: number | null;

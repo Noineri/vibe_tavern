@@ -59,7 +59,18 @@ export interface PromptAssemblyResolver {
       authorsNote: string;
       authorsNoteDepth: number;
       authorsNotePosition: string;
-      customInjections: Array<{ name: string; content: string; depth: number; role: string; enabled: boolean }>;
+      customInjections: Array<{
+        identifier?: string;
+        name: string;
+        content: string;
+        depth: number;
+        role: string;
+        enabled: boolean;
+        injectionPosition?: 0 | 1 | "relative" | "absolute";
+        injectionOrder?: number;
+        promptOrderIndex?: number;
+        promptOrderPlacement?: "before_chat" | "after_chat";
+      }>;
     } | null>;
   listActiveLoreEntries(input: {
     chatId: ChatId;

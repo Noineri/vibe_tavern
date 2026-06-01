@@ -68,11 +68,20 @@ export interface PromptPresetDto {
 // ─── Custom Injections (attached to PromptPreset) ───────────────────────────
 
 export interface CustomInjection {
+  identifier?: string;
   name: string;
   content: string;
   depth: number;
   role: 'system' | 'user' | 'assistant';
   enabled: boolean;
+  /** ST compatibility: 0/relative = prompt-order block, 1/absolute = depth injection. */
+  injectionPosition?: 0 | 1 | 'relative' | 'absolute';
+  /** ST compatibility: order bucket for absolute/depth injections. */
+  injectionOrder?: number;
+  /** ST compatibility: original prompt_order index. */
+  promptOrderIndex?: number;
+  /** Derived ST prompt_order placement relative to chatHistory. */
+  promptOrderPlacement?: 'before_chat' | 'after_chat';
 }
 
 export interface ProviderProbeResponse {

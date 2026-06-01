@@ -44,7 +44,18 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 	async getPromptPreset(presetId: string) {
 		const preset = await this.stores.presets.getById(presetId);
 		if (!preset) return null;
-		let customInjections: Array<{ name: string; content: string; depth: number; role: string; enabled: boolean }> = [];
+		let customInjections: Array<{
+			identifier?: string;
+			name: string;
+			content: string;
+			depth: number;
+			role: string;
+			enabled: boolean;
+			injectionPosition?: 0 | 1 | "relative" | "absolute";
+			injectionOrder?: number;
+			promptOrderIndex?: number;
+			promptOrderPlacement?: "before_chat" | "after_chat";
+		}> = [];
 		try { customInjections = JSON.parse(preset.customInjectionsJson); } catch {}
 		return {
 			id: preset.id,

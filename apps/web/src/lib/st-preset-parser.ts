@@ -3,9 +3,13 @@ export interface StPresetBlock {
   name: string;
   role: "system" | "user" | "assistant";
   content: string;
-  injectionPosition: number; // 0=before, 1=in-chat, 2=after
+  /** SillyTavern INJECTION_POSITION: 0 = RELATIVE prompt-order block, 1 = ABSOLUTE depth injection. */
+  injectionPosition: 0 | 1;
   injectionDepth: number;
+  injectionOrder: number;
   enabled: boolean;
+  promptOrderIndex?: number;
+  promptOrderPlacement?: "before_chat" | "after_chat";
 }
 
 export interface ParsedStPreset {
@@ -20,6 +24,7 @@ interface StPromptEntry {
   content?: string;
   injection_position?: number;
   injection_depth?: number;
+  injection_order?: number;
   enabled?: boolean;
 }
 
@@ -29,10 +34,22 @@ interface StPromptOrderEntry {
   identifier: string;
 }
 
+interface StPromptOrderSet {
+  character_id?: number | string;
+  order?: StPromptOrderEntry[];
+  [key: string]: unknown;
+}
+
+interface StOrderInfo {
+  enabled: boolean;
+  index: number;
+  placement?: "before_chat" | "after_chat";
+}
+
 interface StPresetJson {
   name?: string;
   prompts?: StPromptEntry[];
-  prompt_order?: Array<Record<string, StPromptOrderEntry[]>>;
+  prompt_order?: StPromptOrderSet[];
 }
 
 export function parseStPreset(jsonText: string): ParsedStPreset {
@@ -50,19 +67,7 @@ export function parseStPreset(jsonText: string): ParsedStPreset {
 
   const name = data.name || "Unnamed preset";
 
-  // Resolve prompt_order variant 100000 (single-char)
-  let orderMap: Map<string, boolean> | null = null;
-  if (Array.isArray(data.prompt_order)) {
-    const singleChar = data.prompt_order.find((entry) =>
-      entry && typeof entry === "object" && "100000" in entry
-    ) as Record<string, StPromptOrderEntry[]> | undefined;
-    if (singleChar?.["100000"]) {
-      orderMap = new Map();
-      for (const item of singleChar["100000"]) {
-        orderMap.set(item.identifier, item.enabled);
-      }
-    }
-  }
+  const orderMap = resolvePromptOrder(data.prompt_order);
 
   // Collect non-empty blocks
   const rawBlocks: StPromptEntry[] = data.prompts.filter(
@@ -77,7 +82,7 @@ export function parseStPreset(jsonText: string): ParsedStPreset {
 
 function mergeXmlWrappers(
   entries: StPromptEntry[],
-  orderMap: Map<string, boolean> | null
+  orderMap: Map<string, StOrderInfo> | null
 ): StPresetBlock[] {
   const byId = new Map<string, StPromptEntry>();
   for (const e of entries) byId.set(e.identifier, e);
@@ -103,11 +108,13 @@ function mergeXmlWrappers(
         result.push({
           identifier: base,
           name,
-          role: (e.role as StPresetBlock["role"]) || "system",
+          role: normalizeRole(e.role),
           content,
-          injectionPosition: e.injection_position ?? 1,
+          injectionPosition: normalizeInjectionPosition(e.injection_position),
           injectionDepth: e.injection_depth ?? 4,
+          injectionOrder: e.injection_order ?? 100,
           enabled: getEnabled(e, orderMap),
+          ...getOrderMeta(e.identifier, orderMap),
         });
         continue;
       }
@@ -124,20 +131,78 @@ function mergeXmlWrappers(
     result.push({
       identifier: e.identifier,
       name: e.name || e.identifier,
-      role: (e.role as StPresetBlock["role"]) || "system",
+      role: normalizeRole(e.role),
       content: e.content ?? "",
-      injectionPosition: e.injection_position ?? 1,
+      injectionPosition: normalizeInjectionPosition(e.injection_position),
       injectionDepth: e.injection_depth ?? 4,
+      injectionOrder: e.injection_order ?? 100,
       enabled: getEnabled(e, orderMap),
+      ...getOrderMeta(e.identifier, orderMap),
     });
   }
 
   return result;
 }
 
-function getEnabled(e: StPromptEntry, orderMap: Map<string, boolean> | null): boolean {
+function resolvePromptOrder(promptOrder: StPromptOrderSet[] | undefined): Map<string, StOrderInfo> | null {
+  if (!Array.isArray(promptOrder) || promptOrder.length === 0) return null;
+
+  const sets = promptOrder
+    .map((entry) => ({ id: entry.character_id, order: extractOrderArray(entry) }))
+    .filter((entry): entry is { id: number | string | undefined; order: StPromptOrderEntry[] } => Array.isArray(entry.order));
+
+  if (sets.length === 0) return null;
+
+  // ST commonly stores a generic 100000 order and a character-specific 100001 order.
+  // The character-specific order contains custom prompt blocks, so prefer the largest
+  // non-100000 order when present; otherwise use the largest available order.
+  const preferred =
+    sets.filter((entry) => String(entry.id) !== "100000").sort((a, b) => b.order.length - a.order.length)[0] ??
+    sets.sort((a, b) => b.order.length - a.order.length)[0];
+
+  const chatIndex = preferred.order.findIndex((item) => item.identifier === "chatHistory");
+  const map = new Map<string, StOrderInfo>();
+  preferred.order.forEach((item, index) => {
+    map.set(item.identifier, {
+      enabled: item.enabled,
+      index,
+      ...(chatIndex >= 0 && item.identifier !== "chatHistory"
+        ? { placement: index < chatIndex ? "before_chat" : "after_chat" }
+        : {}),
+    });
+  });
+  return map;
+}
+
+function extractOrderArray(entry: StPromptOrderSet): StPromptOrderEntry[] | undefined {
+  if (Array.isArray(entry.order)) return entry.order;
+  for (const value of Object.values(entry)) {
+    if (Array.isArray(value) && value.every((item) => item && typeof item === "object" && "identifier" in item)) {
+      return value as StPromptOrderEntry[];
+    }
+  }
+  return undefined;
+}
+
+function normalizeRole(role: string | undefined): StPresetBlock["role"] {
+  return role === "user" || role === "assistant" ? role : "system";
+}
+
+function normalizeInjectionPosition(position: number | undefined): 0 | 1 {
+  return position === 0 ? 0 : 1;
+}
+
+function getEnabled(e: StPromptEntry, orderMap: Map<string, StOrderInfo> | null): boolean {
   if (orderMap?.has(e.identifier)) {
-    return orderMap.get(e.identifier)!;
+    return orderMap.get(e.identifier)!.enabled;
   }
   return e.enabled !== false;
+}
+
+function getOrderMeta(eIdentifier: string, orderMap: Map<string, StOrderInfo> | null): Pick<StPresetBlock, "promptOrderIndex" | "promptOrderPlacement"> {
+  const meta = orderMap?.get(eIdentifier);
+  return {
+    ...(meta?.index != null ? { promptOrderIndex: meta.index } : {}),
+    ...(meta?.placement ? { promptOrderPlacement: meta.placement } : {}),
+  };
 }
