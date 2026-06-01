@@ -337,5 +337,5 @@ export function usePromptTrace() {
 
 // Debug helper
 if (typeof window !== "undefined") {
-  (window as any).__useSnapshotStore = useSnapshotStore;
+  window.__useSnapshotStore = useSnapshotStore;
 }

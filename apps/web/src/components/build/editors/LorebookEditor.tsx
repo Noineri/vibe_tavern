@@ -145,13 +145,13 @@ export function LorebookEditor({
     });
   };
   useEffect(() => {
-    (window as any).__setLorebookView = setView;
-    (window as any).__setLorebookTab = setTab;
-    (window as any).__getLorebookView = () => view;
+    window.__setLorebookView = setView;
+    window.__setLorebookTab = setTab;
+    window.__getLorebookView = () => view;
     return () => {
-      delete (window as any).__setLorebookView;
-      delete (window as any).__setLorebookTab;
-      delete (window as any).__getLorebookView;
+      delete (window as Partial<Window>).__setLorebookView;
+      delete (window as Partial<Window>).__setLorebookTab;
+      delete (window as Partial<Window>).__getLorebookView;
     };
   }, [view]);
 

@@ -16,7 +16,7 @@ export function createMobileAuthMiddleware(token: string | undefined): Middlewar
 
 	return async (c, next) => {
 		// Skip auth for loopback connections (real TCP remote IP from Bun)
-		const remoteIp = (c as any).remoteIp as string | undefined;
+		const remoteIp = c.get("remoteIp");
 		if (remoteIp === "127.0.0.1" || remoteIp === "::1") {
 			return await next();
 		}
