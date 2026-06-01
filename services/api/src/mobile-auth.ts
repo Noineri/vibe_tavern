@@ -3,32 +3,65 @@ import { existsSync } from "node:fs";
 
 // ── Auth middleware ──────────────────────────────────────────────────────
 
-/** Creates a conditional auth middleware.
- *  If no token is provided, returns a pass-through middleware (no auth).
- *  If token is provided, validates Bearer header OR ?token= query param on /api/* only.
- *  Loopback connections (127.0.0.1, ::1) are always allowed through.
- */
-export function createMobileAuthMiddleware(token: string | undefined): MiddlewareHandler {
-	if (!token) {
-		// No token configured → no auth
-		return async (_c, next) => await next();
-	}
+export type MobileAccessTokenSource = string | (() => string | null | undefined) | null | undefined;
 
+export interface MobileAuthOptions {
+	/** Current access token or a getter. Use a getter so regenerate/revoke works without restart. */
+	token: MobileAccessTokenSource;
+	/** When true, remote /api/* requests are denied while no token exists. */
+	enforceWhenTokenMissing?: boolean;
+}
+
+function resolveToken(source: MobileAccessTokenSource): string | undefined {
+	const token = typeof source === "function" ? source() : source;
+	return typeof token === "string" && token.trim() ? token : undefined;
+}
+
+function isLoopback(remoteIp: unknown): boolean {
+	return remoteIp === "127.0.0.1" || remoteIp === "::1" || remoteIp === "::ffff:127.0.0.1";
+}
+
+function isPublicAssetRead(path: string, method: string): boolean {
+	return path.startsWith("/api/assets/") && (method === "GET" || method === "HEAD");
+}
+
+function extractBearerToken(value: string | undefined): string | undefined {
+	if (!value) return undefined;
+	const match = value.match(/^Bearer\s+(.+)$/i);
+	return match?.[1]?.trim();
+}
+
+/** Creates conditional mobile/LAN auth middleware.
+ *  Loopback connections are always allowed.
+ *  Remote /api/* requests must provide the current Bearer token or ?token= query param.
+ *  Public asset reads stay open so avatar/image URLs work in <img>, but uploads are protected.
+ */
+export function createMobileAuthMiddleware(options: MobileAuthOptions): MiddlewareHandler {
 	return async (c, next) => {
 		// Skip auth for loopback connections (real TCP remote IP from Bun)
 		const remoteIp = c.get("remoteIp");
-		if (remoteIp === "127.0.0.1" || remoteIp === "::1") {
+		if (isLoopback(remoteIp)) {
 			return await next();
 		}
 
-		// Only protect /api/* routes (except public assets)
 		const path = new URL(c.req.url).pathname;
-		if (!path.startsWith("/api/") || path.startsWith("/api/assets/")) {
+		const method = c.req.method.toUpperCase();
+
+		// Only protect /api/* routes, except public asset reads.
+		if (!path.startsWith("/api/") || isPublicAssetRead(path, method)) {
 			return await next();
 		}
 
-		// Check Authorization header first, then ?token= query param
-		const headerToken = c.req.header("Authorization")?.replace("Bearer ", "");
+		const token = resolveToken(options.token);
+		if (!token) {
+			if (options.enforceWhenTokenMissing) {
+				return c.json({ error: { kind: "Unauthorized", message: "Mobile access is disabled" } }, 401);
+			}
+			return await next();
+		}
+
+		// Check Authorization header first, then ?token= query param.
+		const headerToken = extractBearerToken(c.req.header("Authorization"));
 		const queryToken = c.req.query("token");
 		const providedToken = headerToken || queryToken;
 

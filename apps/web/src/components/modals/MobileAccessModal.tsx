@@ -39,9 +39,11 @@ export function MobileAccessModal({ open, onClose, onDisabled }: MobileAccessMod
         const primary = data.ips?.[0];
         if (primary && data.token) {
           const proto = data.tlsEnabled ? "https" : "http";
-          const url = `${proto}://${primary.address}:${data.port}/#token=${data.token}`;
+          const url = `${proto}://${primary.address}:${data.port}/#token=${encodeURIComponent(data.token)}`;
           const svg = await QRCode.toString(url, { type: "svg", width: 200, margin: 1 });
           setQrSvg(svg);
+        } else {
+          setQrSvg("");
         }
       }
     } catch { /* ignore */ }
@@ -74,7 +76,8 @@ export function MobileAccessModal({ open, onClose, onDisabled }: MobileAccessMod
   const tailscale = info.ips?.find((ip: IPResult) => ip.type === "tailscale");
   const fallbacks = info.ips?.filter((ip: IPResult) => ip.type === "fallback") || [];
   const proto = info.tlsEnabled ? "https" : "http";
-  const primaryUrl = primary ? `${proto}://${primary.address}:${info.port}` : "";
+  const buildAccessUrl = (address: string) => `${proto}://${address}:${info.port}/#token=${encodeURIComponent(info.token!)}`;
+  const primaryUrl = primary ? buildAccessUrl(primary.address) : "";
 
   return (
     <Modal open={open} onClose={onClose}>
@@ -109,10 +112,10 @@ export function MobileAccessModal({ open, onClose, onDisabled }: MobileAccessMod
           <div className="mb-3 rounded bg-s2 px-3 py-2">
             <div className="mb-1 text-[calc(var(--ui-fs)-3px)] text-accent-t">🔗 {t("mobile_access_tailscale")}</div>
             <div className="flex items-center gap-2">
-              <code className="flex-1 truncate text-[calc(var(--ui-fs)-1px)] text-t1">{proto}://{tailscale.address}:{info.port}</code>
+              <code className="flex-1 truncate text-[calc(var(--ui-fs)-1px)] text-t1">{buildAccessUrl(tailscale.address)}</code>
               <button type="button"
                 className="shrink-0 text-[calc(var(--ui-fs)-2px)] text-accent hover:text-accent-t"
-                onClick={() => copyToClipboard(`${proto}://${tailscale.address}:${info.port}`, "ts")}
+                onClick={() => copyToClipboard(buildAccessUrl(tailscale.address), "ts")}
               >{copied === "ts" ? t("mobile_access_copied") : t("mobile_access_copy")}</button>
             </div>
           </div>
@@ -142,8 +145,8 @@ export function MobileAccessModal({ open, onClose, onDisabled }: MobileAccessMod
             <div className="mt-1 space-y-1">
               {fallbacks.map((ip: IPResult) => (
                 <div key={ip.address} className="flex items-center gap-2 text-[calc(var(--ui-fs)-2px)] text-t2">
-                  <code>{proto}://{ip.address}:{info.port}</code>
-                  <button type="button" className="text-accent hover:text-accent-t" onClick={() => copyToClipboard(`${proto}://${ip.address}:${info.port}`, ip.address)}>
+                  <code className="truncate">{buildAccessUrl(ip.address)}</code>
+                  <button type="button" className="shrink-0 text-accent hover:text-accent-t" onClick={() => copyToClipboard(buildAccessUrl(ip.address), ip.address)}>
                     {copied === ip.address ? t("mobile_access_copied") : t("mobile_access_copy")}
                   </button>
                 </div>

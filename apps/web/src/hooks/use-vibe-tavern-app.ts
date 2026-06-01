@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { PROVIDER_TYPE } from "@vibe-tavern/domain";
 import { getT } from "../i18n/locale-helpers.js";
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
@@ -68,30 +68,32 @@ export function useRpPlatformApp() {
   const isLoading = useBootstrapStore((s) => s.isLoading);
   const bootstrapData = useBootstrapStore((s) => s.data);
 
+  const load = useCallback(async () => {
+    setLoadError("");
+    try {
+      // Extract mobile token from URL hash if present
+      const hashToken = extractTokenFromHash();
+      if (hashToken) {
+        saveMobileToken(hashToken);
+      }
+
+      await Promise.all([
+        fetchBootstrapAction(),
+        fetchPersonasAction(),
+      ]);
+    } catch (err) {
+      // If 401 and we have a stored token, it's invalid — clear it
+      if (err instanceof Error && (err.message.includes("401") || err.message.includes("Unauthorized"))) {
+        clearMobileToken();
+      }
+      setLoadError(err instanceof Error ? err.message : getT()("could_not_load_app_state"));
+    }
+  }, []);
+
   // Initial load
   useEffect(() => {
-    async function load() {
-      try {
-        // Extract mobile token from URL hash if present
-        const hashToken = extractTokenFromHash();
-        if (hashToken) {
-          saveMobileToken(hashToken);
-        }
-
-        await Promise.all([
-          fetchBootstrapAction(),
-          fetchPersonasAction(),
-        ]);
-      } catch (err) {
-        // If 401 and we have a stored token, it's invalid — clear it
-        if (err instanceof Error && (err.message.includes("401") || err.message.includes("Unauthorized"))) {
-          clearMobileToken();
-        }
-        setLoadError(err instanceof Error ? err.message : getT()("could_not_load_app_state"));
-      }
-    }
     void load();
-  }, []);
+  }, [load]);
 
   // Primitive snapshot facts for small idempotent sync effects.
   const messageOrder = useSnapshotStore((s) => s.messageOrder);
@@ -146,6 +148,7 @@ export function useRpPlatformApp() {
   return {
     isLoading,
     loadError,
+    retryLoad: load,
     tweaksSettings,
     setTweaksSettings,
   };

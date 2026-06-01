@@ -263,7 +263,11 @@ export async function bootstrapApp(): Promise<{
   allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
   promptPresets: PromptPresetDto[];
 }> {
-  const response = await client.api.bootstrap.$get();
+  const baseUrl = getGatewayBaseUrl();
+  const token = getMobileToken();
+  const response = await fetch(appendTokenQuery(`${baseUrl}/api/bootstrap`), {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
   const data = await unwrapRpc<{
     initialChatId: ChatId | null;
     snapshot: AppSnapshot | null;
@@ -1183,8 +1187,10 @@ export async function uploadAsset(file: File): Promise<{ assetId: string; url: s
   const formData = new FormData();
   formData.append("file", file);
   const baseUrl = getGatewayBaseUrl();
+  const token = getMobileToken();
   const response = await fetch(`${baseUrl}/api/assets/upload`, {
     method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: formData,
   });
   if (!response.ok) {
@@ -1195,9 +1201,13 @@ export async function uploadAsset(file: File): Promise<{ assetId: string; url: s
 }
 
 function postSendDebug(event: string, data: Record<string, unknown>): void {
+  const token = getMobileToken();
   void fetch(`${getGatewayBaseUrl()}/api/debug/send-log`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ event, ...data, clientTs: new Date().toISOString() }),
   }).catch(() => undefined);
 }
