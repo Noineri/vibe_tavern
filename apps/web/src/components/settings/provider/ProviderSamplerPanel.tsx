@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useT } from '../../../i18n/context.js';
 import type { FormState } from '../../modals/ProviderModal.js';
+import { ChipInput } from '../../shared/ChipInput.js';
 import { Icons } from '../../shared/icons.js';
 import { cn } from '../../../lib/cn.js';
 import { CustomTooltip } from '../../shared/Tooltip.js';
@@ -375,13 +376,13 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
               <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
                 {t("stop_seqs_label")}
               </label>
-              <input
-                type="text"
-                value={form.stopSequences.join(", ")}
-                onChange={(e) => updateForm('stopSequences', e.target.value.split(",").map(s => s.trim()).filter(Boolean))}
+              <ChipInput
+                values={form.stopSequences}
+                onChange={(v) => updateForm('stopSequences', v)}
                 placeholder={t("stop_seqs_placeholder")}
                 disabled={disabled}
-                className={textInputCls}
+                showPresets
+                tooltip={t("stop_seqs_hint")}
               />
             </div>
 
