@@ -158,7 +158,22 @@ export function ChipInput({
         });
         return;
       }
-      if (e.key === "Tab" || e.key === ",") {
+      if (e.key === "Tab") {
+        // Tab inserts \t literal (parsed to tab on commit)
+        e.preventDefault();
+        const input = inputRef.current;
+        const start = input?.selectionStart ?? inputValue.length;
+        const end = input?.selectionEnd ?? inputValue.length;
+        const next = `${inputValue.slice(0, start)}\t${inputValue.slice(end)}`;
+        const caret = start + 2;
+        setInputValue(next);
+        requestAnimationFrame(() => {
+          inputRef.current?.focus();
+          inputRef.current?.setSelectionRange(caret, caret);
+        });
+        return;
+      }
+      if (e.key === ",") {
         e.preventDefault();
         addChip(inputValue);
       } else if (e.key === "Backspace" && inputValue === "" && values.length > 0) {
@@ -241,6 +256,16 @@ export function ChipInput({
             disabled && "pointer-events-none",
           )}
         />
+        {!disabled && inputValue.length > 0 && (
+          <button
+            type="button"
+            onClick={() => addChip(inputValue)}
+            className="flex-shrink-0 rounded border border-accent/40 px-1.5 py-0.5 font-ui text-[10px] text-accent-t transition-colors hover:border-accent hover:bg-accent/10"
+            title={showPresets ? "Shift+Enter" : undefined}
+          >
+            ✓
+          </button>
+        )}
       </div>
 
       {/* Preset buttons row */}
