@@ -41,7 +41,12 @@ interface HastElement {
   children: HastNode[];
 }
 
-type HastNode = HastText | HastElement;
+interface HastRoot {
+  type: "root";
+  children: HastNode[];
+}
+
+type HastNode = HastText | HastElement | HastRoot;
 
 function isText(node: HastNode): node is HastText {
   return node.type === "text" && typeof (node as HastText).value === "string";
@@ -51,159 +56,181 @@ function isElement(node: HastNode): node is HastElement {
   return node.type === "element";
 }
 
-// ─── Flatten + match + wrap ───
+function isRoot(node: HastNode): node is HastRoot {
+  return node.type === "root";
+}
 
-interface FlatSegment {
-  /** Character offset where this segment starts in the flattened string. */
+// ─── Flatten + match + exact wrapping ───
+
+const INLINE_TAGS = new Set(["a", "del", "em", "span", "strong", "sub", "sup"]);
+const QUOTE_RE = /"[^"]*"|“[^”]*”/g;
+
+interface TextRange {
   start: number;
-  /** Character offset where this segment ends (exclusive). */
   end: number;
-  /** Index of the source child in the parent's children array. */
-  childIndex: number;
-  /** The source child node (may be shared across segments if a child is split). */
-  node: HastNode;
 }
 
-/**
- * Flatten an element's children into a contiguous text + segment map.
- * Only text nodes contribute characters; element boundaries are invisible
- * to quote matching (so "hello *world*" is treated as "hello world").
- */
-function flattenText(children: HastNode[]): { text: string; segments: FlatSegment[] } {
-  let text = "";
-  const segments: FlatSegment[] = [];
-
-  for (let i = 0; i < children.length; i++) {
-    const child = children[i];
-    if (isText(child)) {
-      const start = text.length;
-      text += child.value;
-      segments.push({ start, end: text.length, childIndex: i, node: child });
-    }
-    // Elements (em, strong, etc.) are recursed into for their text content,
-    // but the element node itself stays in place — we only wrap the outer
-    // children, never split an <em> in half.
-    if (isElement(child)) {
-      const start = text.length;
-      const innerText = collectText(child);
-      text += innerText;
-      if (innerText.length > 0) {
-        segments.push({ start, end: text.length, childIndex: i, node: child });
-      }
-    }
-  }
-
-  return { text, segments };
-}
-
-/** Recursively collect all text content from a node. */
+/** Recursively collect all visible inline text content from a node. */
 function collectText(node: HastNode): string {
   if (isText(node)) return node.value;
-  if (isElement(node)) return node.children.map(collectText).join("");
+  if (isElement(node) || isRoot(node)) return node.children.map(collectText).join("");
   return "";
 }
 
-const QUOTE_RE = /"[^"]*"/g;
-
-/**
- * Given flat text + segments and a regex match, return the range of child
- * indices covered by the match. A match may span multiple segments (when
- * italic/bold/etc. breaks the quoted text).
- */
-function matchToChildRange(
-  matchStart: number,
-  matchEnd: number,
-  segments: FlatSegment[],
-): { first: number; last: number } | null {
-  let first = -1;
-  let last = -1;
-
-  for (const seg of segments) {
-    // Segment overlaps with [matchStart, matchEnd)
-    if (seg.end > matchStart && seg.start < matchEnd) {
-      if (first === -1) first = seg.childIndex;
-      last = seg.childIndex;
-    }
-  }
-
-  return first !== -1 ? { first, last } : null;
+function hasQuotedTextClass(node: HastElement): boolean {
+  const className = node.properties?.className;
+  if (typeof className === "string") return className.split(/\s+/).includes("quoted-text");
+  if (Array.isArray(className)) return className.includes("quoted-text");
+  return false;
 }
 
-/**
- * Process one element's children: find quoted ranges and wrap them.
- * Returns a new children array (or the original if no quotes found).
- */
-function wrapQuotesInElement(element: HastElement): HastNode[] {
-  const children = element.children;
-  if (children.length === 0) return children;
+function canFlattenChild(child: HastNode): boolean {
+  return isText(child) || (isElement(child) && INLINE_TAGS.has(child.tagName) && child.tagName !== "code");
+}
 
-  const { text, segments } = flattenText(children);
-  if (text.length === 0 || segments.length === 0) return children;
+function canWrapInlineQuotes(element: HastElement): boolean {
+  if (element.tagName === "code" || element.tagName === "pre" || hasQuotedTextClass(element)) return false;
+  return element.children.some(canFlattenChild);
+}
 
-  // Find all quote matches
-  const ranges: Array<{ first: number; last: number }> = [];
+function findQuotedRanges(text: string): TextRange[] {
+  const ranges: TextRange[] = [];
   QUOTE_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = QUOTE_RE.exec(text)) !== null) {
-    const range = matchToChildRange(match.index, match.index + match[0].length, segments);
-    if (range) ranges.push(range);
+    ranges.push({ start: match.index, end: match.index + match[0].length });
+  }
+  return ranges;
+}
+
+function cloneElementWithChildren(node: HastElement, children: HastNode[]): HastElement {
+  return { ...node, children };
+}
+
+function sliceTextNode(node: HastText, nodeStart: number, from: number, to: number): HastText | null {
+  const start = Math.max(0, from - nodeStart);
+  const end = Math.min(node.value.length, to - nodeStart);
+  if (start >= end) return null;
+  return { type: "text", value: node.value.slice(start, end) };
+}
+
+/**
+ * Return the exact node fragment covered by [from, to) in the flattened text.
+ * Text nodes are split; inline elements are cloned with sliced children.
+ */
+function sliceNode(node: HastNode, nodeStart: number, from: number, to: number): HastNode | null {
+  const nodeTextLength = collectText(node).length;
+  const nodeEnd = nodeStart + nodeTextLength;
+  if (nodeTextLength === 0 || nodeEnd <= from || nodeStart >= to) return null;
+
+  if (isText(node)) return sliceTextNode(node, nodeStart, from, to);
+
+  if (isElement(node)) {
+    if (from <= nodeStart && nodeEnd <= to) return node;
+
+    const children = sliceChildren(node.children, from, to, nodeStart);
+    return children.length > 0 ? cloneElementWithChildren(node, children) : null;
   }
 
-  if (ranges.length === 0) return children;
+  return null;
+}
 
-  // Build new children array, wrapping matched ranges in <span class="quoted-text">
+function sliceChildren(children: HastNode[], from: number, to: number, baseOffset = 0): HastNode[] {
   const result: HastNode[] = [];
-  let i = 0;
+  let offset = baseOffset;
 
-  for (const range of ranges) {
-    // Push children before this quoted range
-    while (i < range.first) {
-      result.push(children[i]);
-      i++;
-    }
-
-    // Collect children in the quoted range
-    const wrappedChildren: HastNode[] = [];
-    while (i <= range.last) {
-      wrappedChildren.push(children[i]);
-      i++;
-    }
-
-    result.push({
-      type: "element",
-      tagName: "span",
-      properties: { className: "quoted-text" },
-      children: wrappedChildren,
-    });
-  }
-
-  // Push remaining children
-  while (i < children.length) {
-    result.push(children[i]);
-    i++;
+  for (const child of children) {
+    const childLength = collectText(child).length;
+    const sliced = sliceNode(child, offset, from, to);
+    if (sliced) result.push(sliced);
+    offset += childLength;
+    if (offset >= to) break;
   }
 
   return result;
 }
 
+function wrapQuoteRun(children: HastNode[]): HastNode[] {
+  const text = children.map(collectText).join("");
+  if (text.length === 0) return children;
+
+  const ranges = findQuotedRanges(text);
+  if (ranges.length === 0) return children;
+
+  const result: HastNode[] = [];
+  let cursor = 0;
+
+  for (const range of ranges) {
+    result.push(...sliceChildren(children, cursor, range.start));
+
+    const quotedChildren = sliceChildren(children, range.start, range.end);
+    if (quotedChildren.length > 0) {
+      result.push({
+        type: "element",
+        tagName: "span",
+        properties: { className: ["quoted-text"] },
+        children: quotedChildren,
+      });
+    }
+
+    cursor = range.end;
+  }
+
+  result.push(...sliceChildren(children, cursor, text.length));
+  return result;
+}
+
+/**
+ * Process one inline element's children: find quoted ranges in flattened text
+ * and wrap only the exact quoted characters in <span class="quoted-text">.
+ *
+ * Non-flattenable children such as inline <code> are treated as barriers so
+ * quotes outside code still highlight, while quotes inside code stay untouched.
+ */
+function wrapQuotesInElement(element: HastElement): HastNode[] {
+  const children = element.children;
+  if (children.length === 0 || !canWrapInlineQuotes(element)) return children;
+
+  const result: HastNode[] = [];
+  let run: HastNode[] = [];
+  let changed = false;
+
+  const flushRun = () => {
+    if (run.length === 0) return;
+    const wrapped = wrapQuoteRun(run);
+    if (wrapped !== run) changed = true;
+    result.push(...wrapped);
+    run = [];
+  };
+
+  for (const child of children) {
+    if (canFlattenChild(child)) {
+      run.push(child);
+    } else {
+      flushRun();
+      result.push(child);
+    }
+  }
+
+  flushRun();
+  return changed ? result : children;
+}
+
 /** Recursively walk the tree and apply quote wrapping to text-containing elements. */
 function processNode(node: HastNode): void {
+  if (isRoot(node)) {
+    for (const child of node.children) processNode(child);
+    return;
+  }
+
   if (!isElement(node)) return;
 
-  // Only process elements that can contain inline text.
-  // Skip <code>, <pre>, and our own <span class="quoted-text">.
-  if (node.tagName === "code" || node.tagName === "pre") return;
+  if (node.tagName === "code" || node.tagName === "pre" || hasQuotedTextClass(node)) return;
 
-  // Recurse into children first (depth-first)
-  for (const child of node.children) {
-    processNode(child);
-  }
-
-  // Then wrap quotes at this level
   const newChildren = wrapQuotesInElement(node);
-  if (newChildren !== node.children) {
-    node.children = newChildren;
-  }
+  if (newChildren !== node.children) node.children = newChildren;
+
+  for (const child of node.children) processNode(child);
 }
 
 const rehypeQuotedText = () => (tree: HastNode) => processNode(tree);
