@@ -366,6 +366,8 @@ Examples:
 
 `{{banned::"word"}}` — registers a word for logit bias (collected during assembly, not emitted into prompt).
 
+Runtime note: banned-word macros produce candidate bias entries only. Before generation, the API applies the same model-aware logit-bias gate as the provider UI: the provider must support bias, the model must resolve to a known tokenizer, and the saved token IDs must match the active model. Unknown/router/mixed-provider cases are disabled rather than using an approximate fallback tokenizer.
+
 ---
 
 ## Pipeline Walkthrough

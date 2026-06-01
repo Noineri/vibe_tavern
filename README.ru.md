@@ -78,7 +78,8 @@ Vibe Tavern — это локальное веб-приложение напис
 - **Движок лорбуков** — активация по ключевым словам, логика AND/OR/NOT, cooldown, веса групп, рекурсия, глубина сканирования, WI якоря.
 - **Скрипты** — песочница `node:vm` с совместимым с Janitor AI API.
 - **Движок макросов** — парсер рекурсивного спуска на базе AST, вложенные блоки `{{if}}`, переменные, броски кубиков.
-- **5 типов провайдеров** — OpenAI-compat (например OpenRouter, DeepSeek, Groq, xAI и др.), Anthropic, Google, Ollama, llama.cpp.
+- **5 типов провайдеров** — OpenAI-compat (например OpenRouter, DeepSeek, Groq, xAI, Mistral, Xiaomi MiMo, ZAI и др.), Anthropic, Google, Ollama, llama.cpp.
+- **Model-aware sampler-настройки** — стоп-последовательности, кастомные sampler controls и fail-closed logit bias, который включается только для известных пар provider/model/tokenizer.
 - **Пресеты промптов** — полный контроль над system prompt, jailbreak, author's note и кастомными инъекциями с указанием глубины.
 
 ---

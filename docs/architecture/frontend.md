@@ -151,6 +151,18 @@ motion.div (viewport, overflow: hidden, height: locked)
 
 **Greeting carousel:** The same `MobileVariantCarousel` is reused for greeting messages, which use `greetingCarouselVariants` (array of `{ content }` objects built from `alternateGreetings`).
 
+### Markdown Rendering
+
+`apps/web/src/lib/markdown.tsx` renders chat content through `react-markdown`, `remark-gfm`, and a custom `rehypeQuotedText` pass.
+
+Quoted dialogue highlighting deliberately works on the HAST tree instead of raw strings:
+
+- The plugin starts at the `root` node so paragraphs and nested inline elements are scanned.
+- It flattens text across inline children (`em`, `strong`, links, spans, etc.) and wraps only the exact matched character range in `<span class="quoted-text">`.
+- It supports straight quotes (`"..."`) and curly quotes (`“...”`).
+- Inline `code` and `pre` are barriers: quote marks inside code are left untouched, while quoted text before/after code can still highlight.
+- Text nodes are sliced and inline elements are cloned as needed, so emphasis/bold inside quoted dialogue is preserved without over-highlighting entire paragraphs.
+
 ### Extracted Sub-Components
 
 `MessageBlock` extracts several module-scope components to keep the main function manageable:
