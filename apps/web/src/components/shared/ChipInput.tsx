@@ -115,8 +115,9 @@ export function ChipInput({
 
   const addChip = useCallback(
     (raw: string) => {
-      const parsed = parseEscapeSequences(raw.trim());
-      if (!parsed) return;
+      if (raw.length === 0) return;
+      const parsed = parseEscapeSequences(raw);
+      if (parsed.length === 0) return;
       if (!values.includes(parsed)) {
         onChange([...values, parsed]);
       }
@@ -148,14 +149,23 @@ export function ChipInput({
 
   // Auto-resize: blur commits
   const handleBlur = useCallback(() => {
-    if (inputValue.trim()) addChip(inputValue);
+    if (inputValue.length > 0) addChip(inputValue);
   }, [inputValue, addChip]);
 
   const insertPreset = useCallback(
     (preset: SpecialCharPreset) => {
-      addChip(preset.value);
+      const input = inputRef.current;
+      const start = input?.selectionStart ?? inputValue.length;
+      const end = input?.selectionEnd ?? inputValue.length;
+      const next = `${inputValue.slice(0, start)}${preset.value}${inputValue.slice(end)}`;
+      const caret = start + preset.value.length;
+      setInputValue(next);
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        inputRef.current?.setSelectionRange(caret, caret);
+      });
     },
-    [addChip],
+    [inputValue],
   );
 
   return (
@@ -224,6 +234,7 @@ export function ChipInput({
             <button
               key={preset.value}
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => insertPreset(preset)}
               className="rounded border border-border2 bg-s3 px-2 py-0.5 font-ui text-[10px] text-t3 transition-colors hover:border-accent hover:text-accent-t"
               title={preset.tooltip}

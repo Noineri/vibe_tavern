@@ -308,6 +308,7 @@
   "logit_bias_tokenize_btn": "Tokenize",
   "logit_bias_manual_placeholder": "Token ID manually…",
   "logit_bias_empty_hint": "Enter text and click Tokenize, or add a token ID manually.",
+  "logit_bias_tooltip": "Bias individual tokens after tokenization. Negative values suppress a token (-100 bans it); positive values make it more likely. Type a word/phrase, tokenize it, then adjust each token's slider. Use sparingly: token IDs are model/tokenizer-specific.",
 
   "capabilities": "Capabilities",
   "cap_non_streaming": "Non-streaming",

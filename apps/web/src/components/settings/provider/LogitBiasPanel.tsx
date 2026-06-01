@@ -38,10 +38,12 @@ function BiasRow({
   entry,
   onUpdate,
   onRemove,
+  disabled = false,
 }: {
   entry: LogitBiasEntry;
   onUpdate: (e: LogitBiasEntry) => void;
   onRemove: () => void;
+  disabled?: boolean;
 }) {
   const biasColor = entry.bias === 0
     ? "text-t3"
@@ -65,8 +67,9 @@ function BiasRow({
       <div className="flex flex-1 items-center gap-2">
         <button
           type="button"
+          disabled={disabled}
           onClick={() => onUpdate({ ...entry, bias: Math.max(-100, entry.bias - 10) })}
-          className="shrink-0 rounded border border-border bg-s3 px-1.5 py-0.5 text-[10px] text-t3 transition-colors hover:border-accent hover:text-accent-t"
+          className="shrink-0 rounded border border-border bg-s3 px-1.5 py-0.5 text-[10px] text-t3 transition-colors hover:border-accent hover:text-accent-t disabled:pointer-events-none"
         >
           −
         </button>
@@ -76,13 +79,15 @@ function BiasRow({
           max={100}
           step={1}
           value={entry.bias}
+          disabled={disabled}
           onChange={(e) => onUpdate({ ...entry, bias: parseInt(e.target.value, 10) })}
-          className="!h-[4px] flex-1 !rounded-full !border-0 accent-accent p-0"
+          className="!h-[4px] flex-1 !rounded-full !border-0 accent-accent p-0 disabled:pointer-events-none"
         />
         <button
           type="button"
+          disabled={disabled}
           onClick={() => onUpdate({ ...entry, bias: Math.min(100, entry.bias + 10) })}
-          className="shrink-0 rounded border border-border bg-s3 px-1.5 py-0.5 text-[10px] text-t3 transition-colors hover:border-accent hover:text-accent-t"
+          className="shrink-0 rounded border border-border bg-s3 px-1.5 py-0.5 text-[10px] text-t3 transition-colors hover:border-accent hover:text-accent-t disabled:pointer-events-none"
         >
           +
         </button>
@@ -98,8 +103,9 @@ function BiasRow({
         <CustomTooltip content="Ban token (-100)">
           <button
             type="button"
+            disabled={disabled}
             onClick={() => onUpdate({ ...entry, bias: -100 })}
-            className="shrink-0 rounded border border-danger/30 bg-danger/10 px-1.5 py-0.5 text-[10px] text-danger transition-colors hover:bg-danger/20"
+            className="shrink-0 rounded border border-danger/30 bg-danger/10 px-1.5 py-0.5 text-[10px] text-danger transition-colors hover:bg-danger/20 disabled:pointer-events-none"
           >
             🚫
           </button>
@@ -109,8 +115,9 @@ function BiasRow({
       {/* Remove */}
       <button
         type="button"
+        disabled={disabled}
         onClick={onRemove}
-        className="shrink-0 opacity-0 group-hover:opacity-100 text-t3 transition-opacity hover:text-danger"
+        className="shrink-0 opacity-0 group-hover:opacity-100 text-t3 transition-opacity hover:text-danger disabled:pointer-events-none"
       >
         <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8">
           <line x1="2.5" y1="2.5" x2="9.5" y2="9.5" />
@@ -191,9 +198,14 @@ export function LogitBiasPanel({ entries, onChange, disabled, supported }: Logit
   if (!supported) {
     return (
       <div className="mt-4">
-        <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
-          {t("logit_bias_label")}
-        </label>
+        <div className="mb-[7px] flex items-center gap-1.5">
+          <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
+            {t("logit_bias_label")}
+          </label>
+          <CustomTooltip content={t("logit_bias_tooltip")} side="right">
+            <span className="cursor-help font-ui text-[10px] text-t3/60">?</span>
+          </CustomTooltip>
+        </div>
         <div className="rounded-lg border border-border bg-s2 px-3 py-4 text-center">
           <div className="font-ui text-[12px] text-t3">
             {t("logit_bias_unsupported")}
@@ -204,10 +216,15 @@ export function LogitBiasPanel({ entries, onChange, disabled, supported }: Logit
   }
 
   return (
-    <div className={cn("mt-4", disabled && "opacity-40 pointer-events-none")}>
-      <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
-        {t("logit_bias_label")}
-      </label>
+    <div className={cn("mt-4", disabled && "opacity-40")}>
+      <div className="mb-[7px] flex items-center gap-1.5">
+        <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
+          {t("logit_bias_label")}
+        </label>
+        <CustomTooltip content={t("logit_bias_tooltip")} side="right">
+          <span className="cursor-help font-ui text-[10px] text-t3/60">?</span>
+        </CustomTooltip>
+      </div>
 
       {/* Tokenize input */}
       <div className="flex gap-2">
@@ -268,6 +285,7 @@ export function LogitBiasPanel({ entries, onChange, disabled, supported }: Logit
               entry={entry}
               onUpdate={(e) => updateEntry(i, e)}
               onRemove={() => removeEntry(i)}
+              disabled={disabled}
             />
           ))}
         </div>
