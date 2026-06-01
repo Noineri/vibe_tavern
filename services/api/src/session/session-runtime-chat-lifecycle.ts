@@ -14,6 +14,13 @@ import type { IChatOrder } from "./session-runtime-chat-order.js";
 import type { PersonaRuntime } from "./session-runtime-persona.js";
 import type { SessionSnapshot } from "./session-runtime.js";
 
+function buildGreetingVariants(firstMessage: string | null | undefined, alternateGreetings: string[] = []): string[] {
+	// Preserve the imported/card ordering exactly: first_mes is variant 0 when
+	// present, alternate_greetings follow in file order. If a card has no
+	// first_mes but does define alternates, still seed those as usable greetings.
+	return firstMessage?.trim() ? [firstMessage, ...alternateGreetings] : alternateGreetings;
+}
+
 export interface ChatLifecycleRuntimeDeps {
 	stores: StoreContainer;
 	chatApp: ChatApplicationService;
@@ -21,7 +28,7 @@ export interface ChatLifecycleRuntimeDeps {
 	persona: PersonaRuntime;
 	resolveDefaultPromptPresetId: () => Promise<PromptPresetId>;
 	getSnapshot: (chatId: ChatId) => Promise<SessionSnapshot>;
-	seedImportedOpening: (chatId: ChatId, firstMessage: string) => Promise<void>;
+	seedImportedOpening: (chatId: ChatId, firstMessage: string, alternateGreetings?: string[]) => Promise<void>;
 	assemblePrompt: (
 		chatId: ChatId,
 		branchId?: ChatBranchId,
@@ -68,8 +75,8 @@ export class ChatLifecycleRuntime {
 		const createdChatId = created.id;
 		this.deps.chatOrder.add(createdChatId);
 
-		const greeting = character.firstMessage;
-		if (greeting) {
+		const greetingVariants = buildGreetingVariants(character.firstMessage, character.alternateGreetings);
+		if (greetingVariants.length > 0) {
 			const chat = await this.deps.stores.chats.getById(createdChatId);
 			if (chat) {
 				await this.deps.stores.chats.addMessage({
@@ -77,7 +84,8 @@ export class ChatLifecycleRuntime {
 					branchId: chat.activeBranchId,
 					role: "assistant",
 					authorType: "assistant",
-					content: greeting,
+					content: greetingVariants[0],
+					variants: greetingVariants,
 				});
 			}
 		}
@@ -175,12 +183,13 @@ export class ChatLifecycleRuntime {
 	}
 
 	/**
-	 * Seeds an imported character's first message as an assistant message
-	 * and records a prompt trace for it.
+	 * Seeds an imported character's opening as a chat-local assistant message.
+	 * The card's first_mes and alternate_greetings are copied into message
+	 * variants so chat edits/swipes do not mutate the character card.
 	 */
-	async seedImportedOpening(chatId: ChatId, firstMessage: string): Promise<void> {
-		const trimmed = firstMessage.trim();
-		if (!trimmed) {
+	async seedImportedOpening(chatId: ChatId, firstMessage: string, alternateGreetings: string[] = []): Promise<void> {
+		const greetingVariants = buildGreetingVariants(firstMessage, alternateGreetings);
+		if (greetingVariants.length === 0) {
 			return;
 		}
 
@@ -191,7 +200,8 @@ export class ChatLifecycleRuntime {
 			branchId: chat.activeBranchId,
 			role: "assistant",
 			authorType: "assistant",
-			content: trimmed,
+			content: greetingVariants[0],
+			variants: greetingVariants,
 		});
 		await this.deps.stores.chats.saveTrace({
 			...assembled.promptTraceDraft,

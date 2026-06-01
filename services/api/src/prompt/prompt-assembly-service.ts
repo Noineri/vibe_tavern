@@ -167,20 +167,6 @@ export class PromptAssemblyService {
         content: message.content,
       }));
 
-    // Replace the first assistant message's content with the selected alternate greeting.
-    // The DB stores the original firstMessage; greetingIndex tells us which alternate to use.
-    if (chat.selectedGreetingIndex > 0 && character.alternateGreetings?.length) {
-      const firstAssistantIdx = recentMessages.findIndex(m => m.role === 'assistant');
-      if (firstAssistantIdx !== -1) {
-        const altIdx = chat.selectedGreetingIndex - 1; // 0 = firstMessage (already in DB), 1+ = alternateGreetings[n-1]
-        if (altIdx < character.alternateGreetings.length) {
-          recentMessages[firstAssistantIdx] = {
-            ...recentMessages[firstAssistantIdx],
-            content: character.alternateGreetings[altIdx],
-          };
-        }
-      }
-    }
     const recentText = recentMessages.map((message) => message.content).join("\n");
     const activeLoreEntries = await this.resolver.listActiveLoreEntries({
       chatId: chat.id as ChatId,

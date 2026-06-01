@@ -1,5 +1,5 @@
 import { eq, and, desc, asc, lte, sql } from 'drizzle-orm';
-import { chats, chatBranches, messages, messageVariants, promptTraces } from '../db-schema.js';
+import { chats, chatBranches, characters, messages, messageVariants, promptTraces } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 
@@ -471,6 +471,8 @@ export class ChatStore {
     chatId: string; branchId: string; role: string; authorType: string; content: string;
     reasoning?: string; reasoningDurationMs?: number;
     modelId?: string | null;
+    variants?: string[];
+    selectedVariantIndex?: number;
   }): Promise<Message> {
     const id = this.idGen.next('msg');
     const now = this.clock.now();
@@ -479,21 +481,28 @@ export class ChatStore {
       .orderBy(desc(messages.position)).limit(1).get();
     const nextPosition = (lastMsg?.position ?? -1) + 1;
 
+    const variantContents = data.variants?.length ? data.variants : [data.content];
+    const selectedVariantIndex = Math.min(
+      Math.max(data.selectedVariantIndex ?? 0, 0),
+      variantContents.length - 1,
+    );
+    const selectedContent = variantContents[selectedVariantIndex] ?? data.content;
+
     await this.db.transaction(async (tx) => {
       await tx.insert(messages).values({
         id, chatId: data.chatId, branchId: data.branchId,
         role: data.role, authorType: data.authorType,
-        position: nextPosition, content: data.content,
+        position: nextPosition, content: selectedContent,
         state: 'complete', createdAt: now, updatedAt: now,
       }).run();
-      await tx.insert(messageVariants).values({
-        id: this.idGen.next('mvar'), messageId: id, variantIndex: 0,
-        content: data.content, isSelected: 1, finishReason: null,
-        reasoning: data.reasoning ?? null,
-        reasoningDurationMs: data.reasoningDurationMs ?? null,
-        modelId: data.modelId ?? null,
+      await tx.insert(messageVariants).values(variantContents.map((content, variantIndex) => ({
+        id: this.idGen.next('mvar'), messageId: id, variantIndex,
+        content, isSelected: variantIndex === selectedVariantIndex ? 1 : 0, finishReason: null,
+        reasoning: variantIndex === selectedVariantIndex ? data.reasoning ?? null : null,
+        reasoningDurationMs: variantIndex === selectedVariantIndex ? data.reasoningDurationMs ?? null : null,
+        modelId: variantIndex === selectedVariantIndex ? data.modelId ?? null : null,
         createdAt: now,
-      }).run();
+      }))).run();
     });
 
     // SELECT outside tx is fine — row is committed
@@ -683,6 +692,12 @@ export class ChatStore {
   }
 
   async selectVariant(messageId: string, variantIndex: number): Promise<void> {
+    const target = await this.db.select({ content: messageVariants.content })
+      .from(messageVariants)
+      .where(and(eq(messageVariants.messageId, messageId), eq(messageVariants.variantIndex, variantIndex)))
+      .get();
+    if (!target) return;
+
     await this.db.transaction(async (tx) => {
       // Clear all selections for this message
       await tx.update(messageVariants).set({ isSelected: 0 })
@@ -691,16 +706,9 @@ export class ChatStore {
       await tx.update(messageVariants).set({ isSelected: 1 })
         .where(and(eq(messageVariants.messageId, messageId), eq(messageVariants.variantIndex, variantIndex)))
         .run();
-      // Read the selected variant's content
-      const target = await tx.select({ content: messageVariants.content })
-        .from(messageVariants)
-        .where(and(eq(messageVariants.messageId, messageId), eq(messageVariants.variantIndex, variantIndex)))
-        .get();
       // Sync messages.content with selected variant content (invariant)
-      if (target) {
-        await tx.update(messages).set({ content: target.content, updatedAt: this.clock.now() })
-          .where(eq(messages.id, messageId)).run();
-      }
+      await tx.update(messages).set({ content: target.content, updatedAt: this.clock.now() })
+        .where(eq(messages.id, messageId)).run();
     });
   }
 
@@ -792,6 +800,177 @@ export class ChatStore {
         await this.selectVariant(messageId, candidate.variantIndex);
       }
     }
+  }
+
+  /**
+   * One-time compatibility migration for the old greeting model.
+   *
+   * Previously, chats stored alternate greetings only as character-level strings
+   * plus chats.selectedGreetingIndex. The first assistant message had only the
+   * main greeting as a real DB variant. This backfills card alternate greetings
+   * as chat-local variants on every branch's first assistant message. If the
+   * legacy selected greeting was an alternate and the DB content differs from the
+   * card's first_mes, copy that content into the selected alternate too — that
+   * preserves edits made through the formerly broken alt-greeting edit flow.
+   */
+  async migrateGreetingVariants(): Promise<number> {
+    const chatRows = await this.db
+      .select({
+        id: chats.id,
+        selectedGreetingIndex: chats.selectedGreetingIndex,
+        firstMessage: characters.firstMessage,
+        alternateGreetingsJson: characters.alternateGreetingsJson,
+      })
+      .from(chats)
+      .innerJoin(characters, eq(chats.characterId, characters.id))
+      .all();
+
+    let migrated = 0;
+    const parseAlternates = (json: string): string[] => {
+      try {
+        const parsed = JSON.parse(json || '[]') as unknown;
+        return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+      } catch {
+        return [];
+      }
+    };
+
+    for (const chat of chatRows) {
+      const alternates = parseAlternates(chat.alternateGreetingsJson);
+      if (alternates.length === 0 && chat.selectedGreetingIndex <= 0) continue;
+
+      const branches = await this.db
+        .select({ id: chatBranches.id })
+        .from(chatBranches)
+        .where(eq(chatBranches.chatId, chat.id))
+        .all();
+
+      for (const branch of branches) {
+        const firstAssistant = await this.db
+          .select()
+          .from(messages)
+          .where(and(eq(messages.branchId, branch.id), eq(messages.role, 'assistant')))
+          .orderBy(asc(messages.position))
+          .limit(1)
+          .get();
+        if (!firstAssistant) continue;
+
+        const existing = await this.db
+          .select()
+          .from(messageVariants)
+          .where(eq(messageVariants.messageId, firstAssistant.id))
+          .orderBy(asc(messageVariants.variantIndex))
+          .all();
+
+        let changed = false;
+        await this.db.transaction(async (tx) => {
+          let currentVariants = existing;
+
+          if (currentVariants.length === 0) {
+            await tx.insert(messageVariants).values({
+              id: this.idGen.next('mvar'),
+              messageId: firstAssistant.id,
+              variantIndex: 0,
+              content: firstAssistant.content,
+              isSelected: 1,
+              finishReason: null,
+              reasoning: null,
+              reasoningDurationMs: null,
+              modelId: null,
+              createdAt: this.clock.now(),
+            }).run();
+            currentVariants = [{
+              id: '',
+              messageId: firstAssistant.id,
+              variantIndex: 0,
+              content: firstAssistant.content,
+              isSelected: 1,
+              finishReason: null,
+              reasoning: null,
+              reasoningDurationMs: null,
+              modelId: null,
+              createdAt: this.clock.now(),
+            }];
+            changed = true;
+          }
+
+          if (currentVariants.length === 1 && alternates.length > 0) {
+            const now = this.clock.now();
+            const legacySelectedAlternateIndex = chat.selectedGreetingIndex - 1;
+            const currentLooksLikeEditedSelectedGreeting =
+              chat.selectedGreetingIndex > 0 &&
+              (!chat.firstMessage || firstAssistant.content !== chat.firstMessage);
+            const migratedAlternates = alternates.map((content, index) =>
+              currentLooksLikeEditedSelectedGreeting && index === legacySelectedAlternateIndex
+                ? firstAssistant.content
+                : content,
+            );
+
+            await tx.insert(messageVariants).values(migratedAlternates.map((content, index) => ({
+              id: this.idGen.next('mvar'),
+              messageId: firstAssistant.id,
+              variantIndex: index + 1,
+              content,
+              isSelected: 0,
+              finishReason: null,
+              reasoning: null,
+              reasoningDurationMs: null,
+              modelId: null,
+              createdAt: now,
+            }))).run();
+            currentVariants = [
+              currentVariants[0],
+              ...migratedAlternates.map((content, index) => ({
+                id: '',
+                messageId: firstAssistant.id,
+                variantIndex: index + 1,
+                content,
+                isSelected: 0,
+                finishReason: null,
+                reasoning: null,
+                reasoningDurationMs: null,
+                modelId: null,
+                createdAt: now,
+              })),
+            ];
+            changed = true;
+          }
+
+          if (chat.selectedGreetingIndex > 0) {
+            const target = currentVariants.find((variant) => variant.variantIndex === chat.selectedGreetingIndex);
+            if (target) {
+              await tx.update(messageVariants).set({ isSelected: 0 })
+                .where(eq(messageVariants.messageId, firstAssistant.id)).run();
+              await tx.update(messageVariants).set({ isSelected: 1 })
+                .where(and(
+                  eq(messageVariants.messageId, firstAssistant.id),
+                  eq(messageVariants.variantIndex, chat.selectedGreetingIndex),
+                )).run();
+              await tx.update(messages).set({ content: target.content, updatedAt: this.clock.now() })
+                .where(eq(messages.id, firstAssistant.id)).run();
+              changed = true;
+            }
+          }
+        });
+
+        if (changed) migrated++;
+      }
+
+      // Convert the legacy chat-level selector into message-level selected variants once.
+      // Leaving it non-zero would re-apply stale card-level selection on every startup
+      // and could overwrite later chat-local greeting switches.
+      if (chat.selectedGreetingIndex > 0) {
+        await this.db.update(chats)
+          .set({ selectedGreetingIndex: 0 })
+          .where(eq(chats.id, chat.id))
+          .run();
+      }
+    }
+
+    if (migrated > 0) {
+      console.log(`[greeting-migration] Backfilled greeting variants for ${migrated} first assistant message(s).`);
+    }
+    return migrated;
   }
 
   // ─── Prompt traces ────────────────────────────────────────────────────────

@@ -150,8 +150,8 @@ export interface ImportResult {
 			persona: this.persona,
 			resolveDefaultPromptPresetId: () => this.ensureDefaultPresetId(),
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
-			seedImportedOpening: (chatId, firstMessage) =>
-				this.chatLifecycle.seedImportedOpening(chatId, firstMessage),
+			seedImportedOpening: (chatId, firstMessage, alternateGreetings) =>
+				this.chatLifecycle.seedImportedOpening(chatId, firstMessage, alternateGreetings),
 			assemblePrompt: (chatId, branchId, opts) =>
 				this.assemblePrompt(chatId, branchId, opts),
 		});
@@ -162,8 +162,8 @@ export interface ImportResult {
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
 			resolveDefaultPersonaId: () => this.persona.resolveDefaultId(),
 			resolveDefaultPromptPresetId: () => this.ensureDefaultPresetId(),
-			seedImportedOpening: (chatId, firstMessage) =>
-				this.chatLifecycle.seedImportedOpening(chatId, firstMessage),
+			seedImportedOpening: (chatId, firstMessage, alternateGreetings) =>
+				this.chatLifecycle.seedImportedOpening(chatId, firstMessage, alternateGreetings),
 			discardPendingPromptTrace: (chatId) =>
 				this.chatRuntime.discardPendingPromptTrace(chatId),
 		});
@@ -282,8 +282,8 @@ export interface ImportResult {
 			resolveDefaultPersonaId: () => this.persona.resolveDefaultId(),
 			resolveDefaultPromptPresetId: () => this.ensureDefaultPresetId(),
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
-			seedImportedOpening: (chatId, firstMessage) =>
-				this.chatLifecycle.seedImportedOpening(chatId, firstMessage),
+			seedImportedOpening: (chatId, firstMessage, alternateGreetings) =>
+				this.chatLifecycle.seedImportedOpening(chatId, firstMessage, alternateGreetings),
 		};
 	}
 
@@ -475,7 +475,17 @@ export interface ImportResult {
 	}
 
 	async setGreetingIndex(chatId: ChatId, greetingIndex: number): Promise<SessionSnapshot> {
-		await this.stores.chats.setSelectedGreetingIndex(chatId, greetingIndex);
+		// Deprecated compatibility endpoint: greeting selection now lives on the
+		// first assistant message's selected variant, not on the chat row.
+		const { messages } = await this.chatApp.getChatState(chatId);
+		const firstAssistant = messages.find((message) => message.role === "assistant");
+		if (firstAssistant) {
+			const variants = await this.stores.chats.getVariants(firstAssistant.id);
+			if (variants.some((variant) => variant.variantIndex === greetingIndex)) {
+				await this.stores.chats.selectVariant(firstAssistant.id, greetingIndex);
+			}
+		}
+		await this.stores.chats.setSelectedGreetingIndex(chatId, 0);
 		return this.getSnapshot(chatId);
 	}
 }

@@ -278,7 +278,7 @@ export async function importSillyTavernDirectory(
 			const slug = imported.character.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 			nameToCharacterId.set(slug, characterId as CharacterId);
 
-			await deps.seedImportedOpening(chat.id as ChatId, imported.normalized.firstMessage);
+			await deps.seedImportedOpening(chat.id as ChatId, imported.normalized.firstMessage, imported.normalized.alternateGreetings);
 			deps.chatOrder.add(chat.id as ChatId);
 			result.lastActiveChatId = chat.id as ChatId;
 			result.characters++;
