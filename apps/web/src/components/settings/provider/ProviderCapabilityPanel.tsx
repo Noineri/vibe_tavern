@@ -8,7 +8,7 @@ interface Capabilities {
   abortSignal: boolean;
   streaming: boolean;
   prefill: boolean;
-  sdkSupport: string;
+  logitBias: boolean;
   vision?: boolean;
   reasoning?: boolean;
   tools?: boolean;
@@ -29,7 +29,7 @@ export function ProviderCapabilityPanel({ capabilities }: ProviderCapabilityPane
     { label: t('cap_streaming'), on: capabilities.streaming },
     { label: t('cap_abort'), on: capabilities.abortSignal },
     { label: t('cap_prefill'), on: capabilities.prefill },
-    { label: t('cap_sdk'), on: capabilities.sdkSupport !== 'unsupported' },
+    { label: t('cap_logit_bias'), on: capabilities.logitBias },
     ...(capabilities.vision !== undefined ? [{ label: t('cap_vision'), on: capabilities.vision }] : []),
     ...(capabilities.reasoning !== undefined ? [{ label: t('cap_reasoning'), on: capabilities.reasoning }] : []),
     ...(capabilities.tools !== undefined ? [{ label: t('cap_tools'), on: capabilities.tools }] : []),

@@ -32,13 +32,9 @@ import { createReasoningAwareFetch } from "./openai-reasoning-fetch.js";
 // SDK support classification
 // ---------------------------------------------------------------------------
 
-export type SdkSupportKind = "native" | "openai_fallback" | "unsupported";
-
 export interface ProviderMappingResult {
   /** The resolved AI SDK language model. */
   model: LanguageModelV1;
-  /** How this provider kind is supported by the SDK. */
-  sdkSupport: SdkSupportKind;
   /** Capability flags for this provider kind. */
   capabilities: ProviderCapabilityFlags;
   /** Human-readable description of any limitations. */
@@ -104,7 +100,7 @@ export function normalizeProviderType(raw: string): ProviderType {
  * Resolve a stored provider profile + model name into an AI SDK LanguageModelV1.
  *
  * This is the single canonical mapping point. Every provider kind has an explicit
- * outcome — see SdkSupportKind documentation above.
+ * outcome.
  */
 export function mapProfileToSdkModel(
   profile: { providerPreset: string; endpoint: string; apiKey: string | null },
@@ -121,7 +117,7 @@ export function mapProfileToSdkModel(
       const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined, fetch: createReasoningAwareFetch() });
       return {
         model: provider(model),
-        sdkSupport: "native",
+        
         capabilities,
         limitations: [],
       };
@@ -133,7 +129,7 @@ export function mapProfileToSdkModel(
       const provider = createAnthropic({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
       return {
         model: provider(model),
-        sdkSupport: "native",
+        
         capabilities,
         limitations: [],
       };
@@ -149,7 +145,7 @@ export function mapProfileToSdkModel(
       const provider = createGoogleGenerativeAI({ apiKey: apiKey || "not-needed", baseURL: googleBaseUrl });
       return {
         model: provider(model),
-        sdkSupport: "native",
+        
         capabilities,
         limitations: [],
       };
@@ -162,7 +158,7 @@ export function mapProfileToSdkModel(
       const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined, fetch: createReasoningAwareFetch() });
       return {
         model: provider(model),
-        sdkSupport: "openai_fallback",
+        
         capabilities,
         limitations: [
           "Sampling parameters top_k, typical_p, min_p, rep_pen, freq_pen, pres_pen are not forwarded via OpenAI-compatible adapter.",
@@ -177,7 +173,7 @@ export function mapProfileToSdkModel(
       const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined, fetch: createReasoningAwareFetch() });
       return {
         model: provider(model),
-        sdkSupport: "openai_fallback",
+        
         capabilities,
         limitations: [
           "Sampling parameters top_k, typical_p, min_p, rep_pen, freq_pen, pres_pen are not forwarded via OpenAI-compatible adapter.",
@@ -207,17 +203,9 @@ export function mapProfileToSdkModel(
 }
 
 /**
- * Check whether a provider type has full native SDK support (not fallback).
- */
-export function isNativeSdkProvider(type: ProviderType): boolean {
-  const caps = getProviderCapabilities(type);
-  return caps.sdkSupport === "native";
-}
-
-/**
  * Check whether a provider type is explicitly unsupported.
  */
 export function isUnsupportedProvider(type: ProviderType): boolean {
   const caps = getProviderCapabilities(type);
-  return caps.sdkSupport === "unsupported";
+  return !caps.nonStreamGeneration && !caps.streaming;
 }

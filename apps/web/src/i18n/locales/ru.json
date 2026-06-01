@@ -304,7 +304,7 @@
   "cap_streaming": "Стриминг",
   "cap_abort": "Прерывание",
   "cap_prefill": "Префилл",
-  "cap_sdk": "SDK",
+  "cap_logit_bias": "Logit Bias",
   "cap_vision": "Зрение",
   "cap_reasoning": "Рассуждение",
   "cap_tools": "Инструменты",
