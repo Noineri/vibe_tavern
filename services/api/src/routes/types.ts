@@ -49,6 +49,10 @@ export interface RuntimeApi {
   reorderLoreEntries: (lorebookId: string, updates: Array<{ id: string; sortOrder: number; position?: string }>) => Promise<unknown>;
   testLoreActivation: (lorebookId: string, body: { text: string }) => Promise<unknown>;
   importLorebook: (lorebookId: string | null, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string }) => Promise<unknown>;
+  getLorebookLinks: (lorebookId: string) => Promise<unknown>;
+  setLorebookLinks: (lorebookId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<unknown>;
+  duplicateLorebook: (lorebookId: string, overrides?: { name?: string; scopeType?: string; characterId?: string | null; personaId?: string | null }) => Promise<unknown>;
+  exportLorebook: (lorebookId: string) => Promise<unknown>;
   // ── Scripts ──
   listScripts: (scopeType: string, ownerId?: string) => Promise<unknown>;
   getScript: (scriptId: string) => Promise<unknown>;

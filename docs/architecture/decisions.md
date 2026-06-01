@@ -207,3 +207,33 @@
 - Zero runtime cost — brands are erased during compilation
 
 **Trade-off:** Slightly more verbose type signatures. Acceptable for the safety benefit.
+
+---
+
+## AD-013: Junction Table for Lorebook Links
+
+**Context:** A lorebook can be shared across multiple characters and personas. SillyTavern models this as `charLore: [{ name, extraBooks }] }` in user settings — a flat array mapping character files to world info names.
+
+**Options considered:**
+
+| Approach | Description | Problem |
+|----------|-------------|----------|
+| **FK columns** | `characterId`/`personaId` on `lorebooks` (current) | Only one owner per lorebook. Sharing requires full copies. |
+| **Junction table** | `lorebook_links(lorebookId, targetType, targetId)` | Clean many-to-many. Requires migration from FKs. |
+| **JSON array** | `linkedTargetIds` JSON column on `lorebooks` | No referential integrity, no indexed joins. |
+| **Copy-on-link** | Create a full copy when "linking" | Diverges from original. Wasteful for large lorebooks. |
+
+**Decision:** Junction table `lorebook_links`.
+
+**Rationale:**
+- **Referential integrity** — `ON DELETE CASCADE` cleans up links automatically when a lorebook is deleted
+- **Indexed lookups** — `listAllActiveForChat` uses `JOIN` through `lorebook_links` for O(log n) lookup instead of scanning JSON arrays
+- **Bidirectional queries** — "which lorebooks does this character have?" and "which characters is this lorebook linked to?" are both indexed
+- **Migration path** — Existing FK columns (`characterId`, `personaId`) are retained as the "primary owner" for scope-based UI tabs and import/duplicate flows. The migration populates `lorebook_links` from existing FK values.
+
+**Key design choices:**
+- **No `chat` target type** — Chat lorebooks are inherently tied to a specific conversation. Linking them to other chats is semantically meaningless. They remain 1:1 via the `chatId` FK.
+- **Composite PK** — `(lorebookId, targetType, targetId)` is the natural key. No synthetic `id` column needed.
+- **Legacy FK retention** — `lorebooks.characterId`/`personaId` are NOT removed. They serve as the "primary owner" used by the scope column UI and by import/duplicate flows that need to know "where does this lorebook live?"
+
+**Trade-off:** Two sources of truth (FK + links table) for character/persona associations. Mitigated by: (1) the migration seeds links from FKs, (2) `createLorebook` populates both, (3) the pipeline (`listAllActiveForChat`) reads exclusively from links.

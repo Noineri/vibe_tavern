@@ -38,7 +38,7 @@ Both share the same bootstrap sequence:
 | `routes/chat.ts` | Chat CRUD, messages, branches, summaries, streaming | ~25 (largest) |
 | `routes/character.ts` | Character CRUD, archive, export | ~10 |
 | `routes/persona.ts` | Persona CRUD, lorebook toggle | ~8 |
-| `routes/lorebook.ts` | Lorebook CRUD, entry CRUD, test activation, import | ~12 |
+| `routes/lorebook.ts` | Lorebook CRUD, entry CRUD, test activation, import, links, duplicate, export | ~16 |
 | `routes/script.ts` | Script CRUD, test, import, AI assistant SSE | ~8 |
 | `routes/provider.ts` | Provider CRUD, test, model fetching, favorites | ~10 |
 | `routes/preset.ts` | Prompt preset CRUD | ~5 |

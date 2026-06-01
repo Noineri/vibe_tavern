@@ -55,5 +55,25 @@ export function createLorebookRoutes(runtime: RuntimeApi) {
       const lorebookId = lorebookIdParam === "new" ? null : lorebookIdParam;
       return c.json(await runtime.importLorebook(lorebookId, { format: body.format, data: body.data, mode: body.mode, scopeType: body.scopeType, characterId: body.characterId, personaId: body.personaId, chatId: body.chatId, fallbackName: body.fallbackName }), 201);
     })
+    // ── Links ───────────────────────────────────────────────────────────
+    .get("/api/lorebooks/:lorebookId/links", async (c) => {
+      return c.json(await runtime.getLorebookLinks(c.req.param("lorebookId")));
+    })
+    .put("/api/lorebooks/:lorebookId/links", zValidator("json", schemas.setLorebookLinksSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.setLorebookLinks(c.req.param("lorebookId"), body.links));
+    })
+    // ── Duplicate & export ──────────────────────────────────────────────
+    .post("/api/lorebooks/:lorebookId/duplicate", zValidator("json", schemas.duplicateLorebookSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.duplicateLorebook(c.req.param("lorebookId"), body), 201);
+    })
+    .get("/api/lorebooks/:lorebookId/export", async (c) => {
+      const data = await runtime.exportLorebook(c.req.param("lorebookId"));
+      const name = (data as Record<string, unknown>).name ?? "lorebook";
+      return c.json(data, 200, {
+        "Content-Disposition": `attachment; filename="${String(name).replace(/[^a-zA-Z0-9_-]/g, '_')}.json"`,
+      });
+    })
   ;
 }

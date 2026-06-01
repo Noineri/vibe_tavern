@@ -134,3 +134,23 @@ export const importLorebookSchema = z.object({
   chatId: z.string().optional(),
   fallbackName: z.string().optional(),
 });
+
+// ─── Link management ─────────────────────────────────────────────────────────
+
+export const lorebookLinkSchema = z.object({
+  targetType: z.enum(["character", "persona"]),
+  targetId: z.string().min(1),
+});
+
+export const setLorebookLinksSchema = z.object({
+  links: z.array(lorebookLinkSchema),
+});
+
+// ─── Duplicate ────────────────────────────────────────────────────────────────
+
+export const duplicateLorebookSchema = z.object({
+  name: z.string().optional(),
+  scopeType: z.string().optional(),
+  characterId: z.string().nullable().optional(),
+  personaId: z.string().nullable().optional(),
+});

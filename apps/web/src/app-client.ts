@@ -205,6 +205,12 @@ export interface LorebookRecord {
   enabled: boolean;
 }
 
+export interface LorebookLinkRecord {
+  lorebookId: string;
+  targetType: 'character' | 'persona';
+  targetId: string;
+}
+
 export interface TestChatResponse {
   success: boolean;
   reply?: string;
@@ -944,6 +950,26 @@ export async function deleteLorebook(lorebookId: string): Promise<void> {
     const errorBody = await response.json() as { error?: string };
     throw new Error(errorBody?.error || `Request failed: ${response.status}`);
   }
+}
+
+export async function getLorebookLinks(lorebookId: string): Promise<LorebookLinkRecord[]> {
+  const response = await client.api.lorebooks[":lorebookId"].links.$get({ param: { lorebookId } });
+  return unwrapRpc<LorebookLinkRecord[]>(response);
+}
+
+export async function setLorebookLinks(lorebookId: string, links: Array<{ targetType: 'character' | 'persona'; targetId: string }>): Promise<LorebookLinkRecord[]> {
+  const response = await client.api.lorebooks[":lorebookId"].links.$put({ param: { lorebookId }, json: { links } });
+  return unwrapRpc<LorebookLinkRecord[]>(response);
+}
+
+export async function duplicateLorebook(lorebookId: string, overrides?: { name?: string; scopeType?: string; characterId?: string | null; personaId?: string | null }): Promise<{ lorebook: LorebookRecord; links: LorebookLinkRecord[] }> {
+  const response = await client.api.lorebooks[":lorebookId"].duplicate.$post({ param: { lorebookId }, json: overrides ?? {} });
+  return unwrapRpc<{ lorebook: LorebookRecord; links: LorebookLinkRecord[] }>(response);
+}
+
+export async function exportLorebookSt(lorebookId: string): Promise<Record<string, unknown>> {
+  const response = await client.api.lorebooks[":lorebookId"].export.$get({ param: { lorebookId } });
+  return unwrapRpc<Record<string, unknown>>(response);
 }
 
 // ── Scripts ──────────────────────────────────────────────────────────
