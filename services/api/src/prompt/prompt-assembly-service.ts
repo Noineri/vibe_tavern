@@ -33,6 +33,9 @@ export interface PromptAssemblyResolver {
     mesExampleDepth?: number | null;
     alternateGreetings?: string[];
     postHistoryInstructions?: string | null;
+    depthPrompt?: string | null;
+    depthPromptDepth?: number | null;
+    depthPromptRole?: string | null;
     creatorNotes?: string | null;
     subtitle?: string;
   }>;
@@ -55,6 +58,7 @@ export interface PromptAssemblyResolver {
       prefill: string;
       authorsNote: string;
       authorsNoteDepth: number;
+      authorsNotePosition: string;
       customInjections: Array<{ name: string; content: string; depth: number; role: string; enabled: boolean }>;
     } | null>;
   listActiveLoreEntries(input: {
@@ -216,6 +220,9 @@ export class PromptAssemblyService {
         mesExampleMode: (character.mesExampleMode as "always" | "once" | "depth") ?? "always",
         mesExampleDepth: character.mesExampleDepth ?? 4,
         postHistoryInstructions: character.postHistoryInstructions,
+        depthPrompt: character.depthPrompt,
+        depthPromptDepth: character.depthPromptDepth,
+        depthPromptRole: (character.depthPromptRole as "system" | "user" | "assistant") ?? "system",
       },
       persona,
       preset: promptPreset
@@ -229,6 +236,7 @@ export class PromptAssemblyService {
             prefill: promptPreset.prefill,
             authorsNote: promptPreset.authorsNote,
             authorsNoteDepth: promptPreset.authorsNoteDepth,
+            authorsNotePosition: (promptPreset.authorsNotePosition as "in_prompt" | "in_chat" | "after_chat") ?? "in_chat",
             customInjections: promptPreset.customInjections,
           }
         : null,

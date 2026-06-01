@@ -73,6 +73,10 @@ export interface PromptAssemblyContext {
     /** When mesExampleMode is "depth": how many messages from end of history to inject. Defaults to 4. */
     mesExampleDepth?: number | null;
     postHistoryInstructions?: string | null;
+    /** Character depth prompt — injected at a specific depth in chat. */
+    depthPrompt?: string | null;
+    depthPromptDepth?: number | null;
+    depthPromptRole?: "system" | "user" | "assistant" | null;
   };
   persona?: {
     id: string;
