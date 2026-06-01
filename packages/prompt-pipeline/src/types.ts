@@ -92,6 +92,8 @@ export interface PromptAssemblyContext {
     authorsNote?: string | null;
     /** How many messages from the end of history to insert the author's note at. Defaults to 4. */
     authorsNoteDepth?: number | null;
+    /** Where to place the author's note: in_prompt (system block), in_chat (at depth), or after_chat (depth=0). Defaults to in_chat. */
+    authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat" | null;
     /** Custom injection blocks (advanced mode). */
     customInjections?: Array<{ name: string; content: string; depth: number; role: string; enabled: boolean }>;
   } | null;

@@ -8,6 +8,7 @@ const promptPresetCoreSchema = z.object({
   prefill: z.string().optional(),
   authorsNote: z.string().optional(),
   authorsNoteDepth: z.number().optional(),
+  authorsNotePosition: z.enum(["in_prompt", "in_chat", "after_chat"]).optional(),
   summary: z.string().optional(),
   tools: z.string().optional(),
   scriptAiSystemPrompt: z.string().optional(),

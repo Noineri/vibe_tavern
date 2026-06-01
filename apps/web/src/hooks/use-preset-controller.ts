@@ -35,7 +35,7 @@ export function usePresetController(): PresetControllerActions {
     }
   }
 
-  async function handleCreatePromptPreset(input: { name: string; bindModel?: string; system?: string; jailbreak?: string; prefill?: string; authorsNote?: string; authorsNoteDepth?: number; summary?: string; tools?: string }): Promise<{ id: string } | null> {
+  async function handleCreatePromptPreset(input: { name: string; bindModel?: string; system?: string; jailbreak?: string; prefill?: string; authorsNote?: string; authorsNoteDepth?: number; authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat"; summary?: string; tools?: string }): Promise<{ id: string } | null> {
     try {
       const created = await createPromptPresetAction(input);
       await handleSetActivePromptPresetId(created.id);

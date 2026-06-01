@@ -223,35 +223,26 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   }
 
   if (context.preset?.jailbreak?.trim()) {
-    layers.push(
-      makeLayer({
-        id: PROMPT_LAYER_ID.promptPresetJailbreak,
-        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-        sourceId: context.preset.id,
-        sourceName: context.preset.name ?? "Jailbreak",
-        priority: PROMPT_LAYER_PRIORITY.promptPresetJailbreak,
-        text: context.preset.jailbreak,
-      }),
-    );
+    // Jailbreak = Post-History Instructions: placed after chat history (depth=0)
+    const layer = makeLayer({
+      id: PROMPT_LAYER_ID.promptPresetJailbreak,
+      sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+      sourceId: context.preset.id,
+      sourceName: context.preset.name ?? "Post-History Instructions",
+      position: "in_chat",
+      priority: PROMPT_LAYER_PRIORITY.promptPresetJailbreak,
+      text: context.preset.jailbreak,
+    });
+    layer.injectionDepth = 0;
+    layers.push(layer);
   }
 
   if (context.preset?.authorsNote?.trim()) {
-    const depth = context.preset.authorsNoteDepth ?? 0;
-    if (depth > 0) {
-      // Depth mode: inject only at the specified depth in chat history
-      const depthLayer = makeLayer({
-        id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
-        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-        sourceId: context.preset.id,
-        sourceName: "Author's Note (depth)",
-        position: "in_chat",
-        priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
-        text: context.preset.authorsNote,
-      });
-      depthLayer.injectionDepth = depth;
-      layers.push(depthLayer);
-    } else {
-      // No depth: place in prompt block
+    const position = context.preset.authorsNotePosition ?? "in_chat";
+    const depth = context.preset.authorsNoteDepth ?? 4;
+
+    if (position === "in_prompt") {
+      // Inside system prompt block
       const layer = makeLayer({
         id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
         sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
@@ -263,6 +254,32 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         text: context.preset.authorsNote,
       });
       layers.push(layer);
+    } else if (position === "after_chat") {
+      // After chat history, before jailbreak (depth=0)
+      const layer = makeLayer({
+        id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+        sourceId: context.preset.id,
+        sourceName: "Author's Note",
+        position: "in_chat",
+        priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
+        text: context.preset.authorsNote,
+      });
+      layer.injectionDepth = 0;
+      layers.push(layer);
+    } else {
+      // in_chat at specified depth (default)
+      const depthLayer = makeLayer({
+        id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+        sourceId: context.preset.id,
+        sourceName: "Author's Note (depth)",
+        position: "in_chat",
+        priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
+        text: context.preset.authorsNote,
+      });
+      depthLayer.injectionDepth = depth;
+      layers.push(depthLayer);
     }
   }
 

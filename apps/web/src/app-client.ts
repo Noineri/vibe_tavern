@@ -384,6 +384,7 @@ export async function createPromptPreset(input: {
   prefill?: string;
   authorsNote?: string;
   authorsNoteDepth?: number;
+  authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat";
   summary?: string;
   tools?: string;
 }): Promise<PromptPresetDto> {

@@ -56,6 +56,7 @@ export interface PromptPresetDto {
   prefill: string;
   authorsNote: string;
   authorsNoteDepth: number;
+  authorsNotePosition: "in_prompt" | "in_chat" | "after_chat";
   summary: string;
   tools: string;
   customInjections: CustomInjection[];
