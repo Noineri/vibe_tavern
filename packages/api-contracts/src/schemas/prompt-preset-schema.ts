@@ -11,6 +11,13 @@ const promptPresetCoreSchema = z.object({
   authorsNotePosition: z.enum(["in_prompt", "in_chat", "after_chat"]).optional(),
   summary: z.string().optional(),
   tools: z.string().optional(),
+  customInjections: z.array(z.unknown()).optional(),
+  promptOrder: z.array(z.object({
+    identifier: z.string(),
+    enabled: z.boolean(),
+    order: z.number().optional(),
+    kind: z.enum(["built_in", "custom"]).optional(),
+  })).optional(),
   scriptAiSystemPrompt: z.string().optional(),
 });
 

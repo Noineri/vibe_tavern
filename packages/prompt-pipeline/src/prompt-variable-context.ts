@@ -60,6 +60,7 @@ export interface PromptPresetContext {
     promptOrderIndex?: number;
     promptOrderPlacement?: "before_chat" | "after_chat";
   }>;
+  promptOrder: Array<{ identifier: string; enabled: boolean; order?: number; kind?: "built_in" | "custom" }>;
   original: string | null;
   contextBudget: number | null;
   maxResponseTokens: number | null;
@@ -214,6 +215,7 @@ export function buildPromptVariableContext(input: BuildPromptVariableContextInpu
       authorsNote: input.prompt?.authorsNote ?? null,
       authorsNoteDepth: input.prompt?.authorsNoteDepth ?? null,
       customInjections: input.prompt?.customInjections ?? [],
+      promptOrder: input.prompt?.promptOrder ?? [],
       original: input.prompt?.original ?? null,
       contextBudget: input.prompt?.contextBudget ?? null,
       maxResponseTokens: input.prompt?.maxResponseTokens ?? null,

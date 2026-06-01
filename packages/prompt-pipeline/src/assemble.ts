@@ -91,6 +91,60 @@ function sortLayers(layers: PromptLayer[]): PromptLayer[] {
 
 const phaseOneMacroEngine = createFullMacroEngine();
 
+function promptOrderEnabled(context: PromptAssemblyContext, identifier: string): boolean {
+  const entry = context.preset?.promptOrder?.find((item) => item.identifier === identifier);
+  return entry?.enabled ?? true;
+}
+
+const DEFAULT_PROMPT_ORDER: Record<string, number> = {
+  worldInfoBefore: 0,
+  main: 10,
+  charDescription: 20,
+  charPersonality: 30,
+  scenario: 40,
+  personaDescription: 50,
+  authorsNote: 60,
+  chatHistory: 100,
+  worldInfoAfter: 110,
+  dialogueExamples: 120,
+  jailbreak: 130,
+};
+
+function hasPromptOrderLayout(context: PromptAssemblyContext): boolean {
+  return (context.preset?.promptOrder ?? []).some((entry) => entry.order != null);
+}
+
+function promptOrderRank(context: PromptAssemblyContext, identifier: string, fallback: number | undefined = DEFAULT_PROMPT_ORDER[identifier] ?? 10_000): number {
+  const entries = context.preset?.promptOrder ?? [];
+  const index = entries.findIndex((entry) => entry.identifier === identifier);
+  if (!hasPromptOrderLayout(context) || index < 0) return fallback ?? 10_000;
+  return entries[index]!.order ?? index;
+}
+
+function promptOrderPlacement(context: PromptAssemblyContext, identifier: string): "before_chat" | "after_chat" | null {
+  if (!hasPromptOrderLayout(context)) return null;
+  const entries = context.preset?.promptOrder ?? [];
+  const itemIndex = entries.findIndex((entry) => entry.identifier === identifier);
+  const chatIndex = entries.findIndex((entry) => entry.identifier === "chatHistory");
+  if (itemIndex < 0 || chatIndex < 0) return null;
+  const itemOrder = entries[itemIndex]!.order ?? itemIndex;
+  const chatOrder = entries[chatIndex]!.order ?? chatIndex;
+  return itemOrder > chatOrder ? "after_chat" : "before_chat";
+}
+
+function applyPromptOrderPosition(context: PromptAssemblyContext, layer: PromptLayer, identifier: string): PromptLayer {
+  const placement = promptOrderPlacement(context, identifier);
+  layer.subPosition = promptOrderRank(context, identifier);
+  if (placement === "after_chat") {
+    layer.position = "in_chat";
+    layer.injectionDepth = 0;
+  } else if (placement === "before_chat" && layer.position === "in_chat" && layer.injectionDepth === 0) {
+    layer.position = "in_prompt";
+    delete layer.injectionDepth;
+  }
+  return layer;
+}
+
 function buildAssemblyVariableContext(context: PromptAssemblyContext): PromptVariableContext {
   return buildPromptVariableContext({
     character: {
@@ -211,26 +265,26 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
 
   // System prompt: character override takes priority over preset
   const effectiveSystemPrompt = context.character.systemPrompt?.trim() || context.preset?.text?.trim();
-  if (effectiveSystemPrompt) {
+  if (effectiveSystemPrompt && promptOrderEnabled(context, "main")) {
     const isOverride = !!context.character.systemPrompt?.trim();
     layers.push(
-      makeLayer({
+      applyPromptOrderPosition(context, makeLayer({
         id: isOverride ? PROMPT_LAYER_ID.characterSystemPrompt : PROMPT_LAYER_ID.promptPresetSystem,
         sourceType: isOverride ? PROMPT_LAYER_SOURCE_TYPE.characterSystemPrompt : PROMPT_LAYER_SOURCE_TYPE.promptPreset,
         sourceId: isOverride ? context.character.id : context.preset!.id,
         sourceName: isOverride ? `${context.character.name} (System Override)` : (context.preset?.name ?? "System Prompt"),
         priority: PROMPT_LAYER_PRIORITY.promptPresetSystem,
         text: effectiveSystemPrompt,
-      }),
+      }), "main"),
     );
   }
 
   // Jailbreak / Post-History Instructions: placed after chat history (depth=0)
   // Character postHistoryInstructions overrides preset jailbreak
   const effectiveJailbreak = context.character.postHistoryInstructions?.trim() || context.preset?.jailbreak?.trim();
-  if (effectiveJailbreak) {
+  if (effectiveJailbreak && promptOrderEnabled(context, "jailbreak")) {
     const isOverride = !!context.character.postHistoryInstructions?.trim();
-    const layer = makeLayer({
+    const layer = applyPromptOrderPosition(context, makeLayer({
       id: PROMPT_LAYER_ID.promptPresetJailbreak,
       sourceType: isOverride ? PROMPT_LAYER_SOURCE_TYPE.character : PROMPT_LAYER_SOURCE_TYPE.promptPreset,
       sourceId: isOverride ? context.character.id : context.preset!.id,
@@ -238,31 +292,31 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       position: "in_chat",
       priority: PROMPT_LAYER_PRIORITY.promptPresetJailbreak,
       text: effectiveJailbreak,
-    });
-    layer.injectionDepth = 0;
+    }), "jailbreak");
+    if (layer.position === "in_chat" && layer.injectionDepth == null) layer.injectionDepth = 0;
     layers.push(layer);
   }
 
-  if (context.preset?.authorsNote?.trim()) {
+  if (context.preset?.authorsNote?.trim() && promptOrderEnabled(context, "authorsNote")) {
     const position = context.preset.authorsNotePosition ?? "in_chat";
     const depth = context.preset.authorsNoteDepth ?? 4;
 
     if (position === "in_prompt") {
       // Inside system prompt block
-      const layer = makeLayer({
+      const layer = applyPromptOrderPosition(context, makeLayer({
         id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
         sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
         sourceId: context.preset.id,
         sourceName: "Author's Note",
         position: "in_prompt",
         priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
-        subPosition: IN_PROMPT_SUB_POSITION.authorNote,
+        subPosition: promptOrderRank(context, "authorsNote", IN_PROMPT_SUB_POSITION.authorNote),
         text: context.preset.authorsNote,
-      });
+      }), "authorsNote");
       layers.push(layer);
     } else if (position === "after_chat") {
       // After chat history, before jailbreak (depth=0)
-      const layer = makeLayer({
+      const layer = applyPromptOrderPosition(context, makeLayer({
         id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
         sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
         sourceId: context.preset.id,
@@ -270,8 +324,8 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         position: "in_chat",
         priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
         text: context.preset.authorsNote,
-      });
-      layer.injectionDepth = 0;
+      }), "authorsNote");
+      if (layer.position === "in_chat" && layer.injectionDepth == null) layer.injectionDepth = 0;
       layers.push(layer);
     } else {
       // in_chat at specified depth (default)
@@ -282,6 +336,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceName: "Author's Note (depth)",
         position: "in_chat",
         priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
+        subPosition: promptOrderRank(context, "authorsNote", DEFAULT_PROMPT_ORDER.authorsNote),
         text: context.preset.authorsNote,
       });
       depthLayer.injectionDepth = depth;
@@ -292,30 +347,34 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   // Custom injections (advanced/ST mode)
   for (const injection of (context.preset?.customInjections ?? [])) {
     if (!injection.enabled || !injection.content?.trim()) continue;
+    if (injection.identifier && !promptOrderEnabled(context, injection.identifier)) continue;
 
     const isAbsolute = injection.injectionPosition === 1 || injection.injectionPosition === "absolute" || injection.injectionPosition == null;
     const role = injection.role === "user" || injection.role === "assistant" ? injection.role : "system";
-    const orderIndex = injection.promptOrderIndex ?? 10_000;
+    const identifier = injection.identifier ?? injection.name;
+    const orderIndex = promptOrderRank(context, identifier, injection.promptOrderIndex ?? 10_000);
+    const placement = promptOrderPlacement(context, identifier) ?? injection.promptOrderPlacement ?? "before_chat";
 
     const layer = makeLayer({
-      id: `preset_injection_${injection.identifier ?? injection.name}`,
+      id: `preset_injection_${identifier}`,
       sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
       sourceId: context.preset?.id ?? "",
       sourceName: injection.name,
       position: isAbsolute
         ? "in_chat"
-        : injection.promptOrderPlacement === "after_chat" ? "in_chat" : "in_prompt",
+        : placement === "after_chat" ? "in_chat" : "in_prompt",
       priority: isAbsolute
         ? (injection.injectionOrder ?? 100)
         : Math.max(1, 800 - orderIndex / 1000),
+      subPosition: orderIndex,
       role,
       reason: isAbsolute
         ? `included (ST absolute depth=${injection.depth ?? 0}, order=${injection.injectionOrder ?? 100})`
-        : `included (ST relative ${injection.promptOrderPlacement ?? "before_chat"}, orderIndex=${orderIndex})`,
+        : `included (ST relative ${placement}, orderIndex=${orderIndex})`,
       text: injection.content,
     });
 
-    if (isAbsolute || injection.promptOrderPlacement === "after_chat") {
+    if (isAbsolute || placement === "after_chat") {
       layer.injectionDepth = isAbsolute ? (injection.depth ?? 0) : 0;
     }
     layers.push(layer);
@@ -337,46 +396,60 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   const characterBase = joinNonEmpty([
     PROMPT_FORMAT.characterHeader(context.character.name),
     context.character.description,
-    context.character.scenario ? PROMPT_FORMAT.scenarioHeader(context.character.scenario) : null,
   ]);
-  if (characterBase) {
+  if (characterBase && promptOrderEnabled(context, "charDescription")) {
     layers.push(
-      makeLayer({
+      applyPromptOrderPosition(context, makeLayer({
         id: PROMPT_LAYER_ID.characterBase,
         sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
         sourceId: context.character.id,
         sourceName: context.character.name,
         priority: PROMPT_LAYER_PRIORITY.characterBase,
-        subPosition: IN_PROMPT_SUB_POSITION.charDesc,
+        subPosition: promptOrderRank(context, "charDescription", IN_PROMPT_SUB_POSITION.charDesc),
         text: characterBase,
-      }),
+      }), "charDescription"),
     );
   }
 
-  if (context.character.personality?.trim()) {
+  if (context.character.scenario?.trim() && promptOrderEnabled(context, "scenario")) {
     layers.push(
-      makeLayer({
+      applyPromptOrderPosition(context, makeLayer({
+        id: PROMPT_LAYER_ID.characterScenario,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
+        sourceId: context.character.id,
+        sourceName: `${context.character.name} — Scenario`,
+        priority: PROMPT_LAYER_PRIORITY.characterScenario,
+        subPosition: promptOrderRank(context, "scenario", IN_PROMPT_SUB_POSITION.charDesc),
+        text: PROMPT_FORMAT.scenarioHeader(context.character.scenario),
+      }), "scenario"),
+    );
+  }
+
+  if (context.character.personality?.trim() && promptOrderEnabled(context, "charPersonality")) {
+    layers.push(
+      applyPromptOrderPosition(context, makeLayer({
         id: PROMPT_LAYER_ID.characterPersonality,
         sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
         sourceId: context.character.id,
         sourceName: context.character.name,
         priority: PROMPT_LAYER_PRIORITY.characterPersonality,
-        subPosition: IN_PROMPT_SUB_POSITION.charDesc,
+        subPosition: promptOrderRank(context, "charPersonality", IN_PROMPT_SUB_POSITION.charDesc),
         text: context.character.personality,
-      }),
+      }), "charPersonality"),
     );
   }
 
-  if (context.persona?.description?.trim()) {
+  if (context.persona?.description?.trim() && promptOrderEnabled(context, "personaDescription")) {
     layers.push(
-      makeLayer({
+      applyPromptOrderPosition(context, makeLayer({
         id: PROMPT_LAYER_ID.persona,
         sourceType: PROMPT_LAYER_SOURCE_TYPE.persona,
         sourceId: context.persona.id,
         sourceName: context.persona.name,
         priority: PROMPT_LAYER_PRIORITY.persona,
+        subPosition: promptOrderRank(context, "personaDescription", DEFAULT_PROMPT_ORDER.personaDescription),
         text: PROMPT_FORMAT.personaBlock(context.persona.name, context.persona.description, context.persona.pronouns),
-      }),
+      }), "personaDescription"),
     );
   }
 
@@ -427,6 +500,12 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       }
     })();
 
+    const worldInfoIdentifier = resolvedPosition === "before_prompt" ? "worldInfoBefore" : "worldInfoAfter";
+    if (!promptOrderEnabled(context, worldInfoIdentifier)) {
+      droppedLayers.push({ id: loreEntry.id, reason: `skipped: ${worldInfoIdentifier} disabled by prompt order` });
+      continue;
+    }
+
     const layer = makeLayer({
       id: createLoreLayerId(loreEntry.id),
       sourceType: PROMPT_LAYER_SOURCE_TYPE.loreEntry,
@@ -435,7 +514,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       position: resolvedPosition,
       priority: loreEntry.priority,
       role: loreEntry.role,
-      subPosition: subPos,
+      subPosition: hasPromptOrderLayout(context) ? promptOrderRank(context, worldInfoIdentifier, subPos) : subPos,
       reason: PROMPT_LAYER_REASON.activatedLoreEntry,
       text: joinNonEmpty([loreEntry.title ? PROMPT_FORMAT.loreHeader(loreEntry.title) : null, loreEntry.content]),
     });
@@ -565,7 +644,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   }
 
   const historyText = formatRecentMessages(recentMessagesForHistory);
-  if (historyText) {
+  if (historyText && promptOrderEnabled(context, "chatHistory")) {
     layers.push(
       makeLayer({
         id: PROMPT_LAYER_ID.recentHistory,
@@ -573,12 +652,13 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceId: context.identity.chatId,
         sourceName: "Chat History",
         priority: PROMPT_LAYER_PRIORITY.recentHistory,
+        subPosition: promptOrderRank(context, "chatHistory", DEFAULT_PROMPT_ORDER.chatHistory),
         text: historyText,
       }),
     );
   }
 
-  if (context.character.mesExample?.trim()) {
+  if (context.character.mesExample?.trim() && promptOrderEnabled(context, "dialogueExamples")) {
     const mesExampleMode = context.character.mesExampleMode ?? "always";
     const isFirstTurn = context.chat.recentMessages.length <= 1;
     const shouldInclude =
@@ -601,6 +681,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         text: PROMPT_FORMAT.exampleMessages(context.character.mesExample),
       });
 
+      layer.subPosition = promptOrderRank(context, "dialogueExamples", DEFAULT_PROMPT_ORDER.dialogueExamples);
       if (isDepthMode) {
         layer.position = "in_chat";
         layer.injectionDepth = depth;
@@ -610,7 +691,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         layer.position = "in_chat";
         layer.injectionDepth = 0;
       }
-      layers.push(layer);
+      layers.push(applyPromptOrderPosition(context, layer, "dialogueExamples"));
     } else {
       droppedLayers.push({
         id: PROMPT_LAYER_ID.mesExample,
@@ -712,7 +793,11 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   // at a larger depth doesn't shift the insertion index of shallower layers.
   const inChatWithDepth = inChat
     .filter((l) => typeof l.injectionDepth === "number")
-    .sort((a, b) => b.injectionDepth! - a.injectionDepth!); // deepest first to preserve indices
+    .sort((a, b) => {
+      const depthDiff = b.injectionDepth! - a.injectionDepth!;
+      if (depthDiff !== 0) return depthDiff;
+      return (b.subPosition ?? b.priority) - (a.subPosition ?? a.priority);
+    }); // deepest first; same-depth reverse order because splice inserts at a fixed index
   // in_chat layers WITHOUT a depth are collected into a single block placed before history.
   const inChatBlock = inChat.filter((l) => typeof l.injectionDepth !== "number");
 
@@ -722,11 +807,13 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     content: string;
     messageId?: string;
     layerId?: string;
-  }> = recentMessagesForHistory.map((message) => ({
-    role: message.role as "system" | "user" | "assistant" | "tool",
-    content: message.content,
-    messageId: message.id,
-  }));
+  }> = promptOrderEnabled(context, "chatHistory")
+    ? recentMessagesForHistory.map((message) => ({
+        role: message.role as "system" | "user" | "assistant" | "tool",
+        content: message.content,
+        messageId: message.id,
+      }))
+    : [];
 
   // Interleave in-chat layers with depth (deepest first to preserve indices)
   for (const layer of inChatWithDepth) {

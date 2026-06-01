@@ -59,10 +59,10 @@ describe("Prompt pipeline: macro resolution in assembled prompt", () => {
       },
     });
 
-    const base = result.layers.find((l) => l.id === "character_base");
-    expect(base).toBeTruthy();
-    expect(base!.text).toContain("User enters the tower.");
-    expect(base!.text).not.toContain("{{user}}");
+    const scenario = result.layers.find((l) => l.id === "character_scenario");
+    expect(scenario).toBeTruthy();
+    expect(scenario!.text).toContain("User enters the tower.");
+    expect(scenario!.text).not.toContain("{{user}}");
   });
 
   it("resolves <BOT> and <USER> aliases in message content", () => {

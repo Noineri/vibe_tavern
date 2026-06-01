@@ -56,7 +56,9 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			promptOrderIndex?: number;
 			promptOrderPlacement?: "before_chat" | "after_chat";
 		}> = [];
+		let promptOrder: Array<{ identifier: string; enabled: boolean; order?: number; kind?: "built_in" | "custom" }> = [];
 		try { customInjections = JSON.parse(preset.customInjectionsJson); } catch {}
+		try { promptOrder = JSON.parse(preset.promptOrderJson); } catch {}
 		return {
 			id: preset.id,
 			name: preset.name,
@@ -69,6 +71,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			authorsNoteDepth: preset.authorsNoteDepth,
 			authorsNotePosition: (preset.authorsNotePosition as "in_prompt" | "in_chat" | "after_chat") ?? "in_chat",
 			customInjections,
+			promptOrder,
 		};
 	}
 

@@ -71,6 +71,7 @@ export interface PromptAssemblyResolver {
         promptOrderIndex?: number;
         promptOrderPlacement?: "before_chat" | "after_chat";
       }>;
+      promptOrder: Array<{ identifier: string; enabled: boolean; order?: number; kind?: "built_in" | "custom" }>;
     } | null>;
   listActiveLoreEntries(input: {
     chatId: ChatId;
@@ -249,6 +250,7 @@ export class PromptAssemblyService {
             authorsNoteDepth: promptPreset.authorsNoteDepth,
             authorsNotePosition: (promptPreset.authorsNotePosition as "in_prompt" | "in_chat" | "after_chat") ?? "in_chat",
             customInjections: promptPreset.customInjections,
+            promptOrder: promptPreset.promptOrder,
           }
         : null,
       mode: input.mode,

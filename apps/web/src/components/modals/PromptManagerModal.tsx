@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { PromptPresetDto } from "@vibe-tavern/domain";
+import type { PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { Modal } from "../shared/Modal.js";
@@ -29,6 +29,7 @@ type DraftData = {
   tools: string;
   scriptAiSystemPrompt: string;
   customInjections: InjectionRow[];
+  promptOrder: PromptOrderEntry[];
 };
 
 interface PromptManagerModalProps {
@@ -47,6 +48,8 @@ interface PromptManagerModalProps {
     summary?: string;
     tools?: string;
     scriptAiSystemPrompt?: string;
+    customInjections?: InjectionRow[];
+    promptOrder?: PromptOrderEntry[];
   }) => Promise<{ id: string } | null>;
   onUpdate: (
     presetId: string,
@@ -61,7 +64,16 @@ const emptyDraft: DraftData = {
   name: "", bindModel: "", system: "", jailbreak: "",
   prefill: "", authorsNote: "", authorsNoteDepth: 4, authorsNotePosition: "in_chat", summary: "", tools: "", scriptAiSystemPrompt: "",
   customInjections: [],
+  promptOrder: [],
 };
+
+function mergePromptOrder(current: PromptOrderEntry[], imported: PromptOrderEntry[]): PromptOrderEntry[] {
+  const map = new Map(current.map((entry) => [entry.identifier, entry]));
+  for (const entry of imported) {
+    map.set(entry.identifier, { ...map.get(entry.identifier), ...entry });
+  }
+  return Array.from(map.values()).sort((a, b) => (a.order ?? 10_000) - (b.order ?? 10_000));
+}
 
 export function PromptManagerModal(input: PromptManagerModalProps) {
   const isOpen = useModalStore((s) => s.isPromptManagerOpen);
@@ -94,6 +106,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         tools: activePreset.tools,
         scriptAiSystemPrompt: activePreset.scriptAiSystemPrompt ?? "",
         customInjections: (activePreset as PromptPresetDto).customInjections ?? [],
+        promptOrder: activePreset.promptOrder ?? [],
       });
     } else {
       setDraft({ ...emptyDraft });
@@ -151,6 +164,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       summary: "",
       tools: "",
       scriptAiSystemPrompt: "",
+      promptOrder: [],
     }).then((created) => {
       if (created?.id) input.setActivePresetId(created.id);
     });
@@ -191,14 +205,10 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         summary: "",
         tools: "",
         scriptAiSystemPrompt: "",
+        customInjections: result.injections,
+        promptOrder: result.promptOrder,
       }).then((created) => {
-        if (created?.id) {
-          // Also set injections if any
-          if (result.injections.length) {
-            void input.onUpdate(created.id, { customInjections: result.injections });
-          }
-          input.setActivePresetId(created.id);
-        }
+        if (created?.id) input.setActivePresetId(created.id);
       });
     } else {
       setDraft((d) => {
@@ -207,6 +217,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         if (result.post.length) next.jailbreak = d.jailbreak + (d.jailbreak ? "\n\n" : "") + result.post.join("\n\n");
         if (result.authors.length) next.authorsNote = d.authorsNote + (d.authorsNote ? "\n\n" : "") + result.authors.join("\n\n");
         if (result.injections.length) next.customInjections = [...d.customInjections, ...result.injections];
+        if (result.promptOrder.length) next.promptOrder = mergePromptOrder(d.promptOrder, result.promptOrder);
         return next;
       });
       setDirty(true);
@@ -342,6 +353,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                 <PromptOrderCanvas
                   injections={draft.customInjections}
                   onChange={(injections) => { setDraft((d) => ({ ...d, customInjections: injections })); setDirty(true); setSaveState("idle"); }}
+                  promptOrder={draft.promptOrder}
+                  onPromptOrderChange={(promptOrder) => { setDraft((d) => ({ ...d, promptOrder })); setDirty(true); setSaveState("idle"); }}
                   draft={activePreset ? draft : null}
                   onUpdateField={(key, value) => updateDraft(key, value as never)}
                 />
