@@ -342,6 +342,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                 <PromptOrderCanvas
                   injections={draft.customInjections}
                   onChange={(injections) => { setDraft((d) => ({ ...d, customInjections: injections })); setDirty(true); setSaveState("idle"); }}
+                  draft={activePreset ? draft : null}
+                  onUpdateField={(key, value) => updateDraft(key, value as never)}
                 />
               </div>
             )}
