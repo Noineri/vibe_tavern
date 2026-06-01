@@ -388,13 +388,15 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
               />
             </div>
 
-            <LogitBiasPanel
-              entries={form.logitBias}
-              onChange={(v) => updateForm('logitBias', v)}
-              disabled={disabled}
-              supported={capabilities?.logitBias === true}
-              model={form.model}
-            />
+            {capabilities?.logitBias && (
+              <LogitBiasPanel
+                entries={form.logitBias}
+                onChange={(v) => updateForm('logitBias', v)}
+                disabled={disabled}
+                supported
+                model={form.model}
+              />
+            )}
           </div>
         )}
       </div>
