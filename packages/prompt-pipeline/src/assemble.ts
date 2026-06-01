@@ -601,7 +601,9 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     } else {
       droppedLayers.push({
         id: PROMPT_LAYER_ID.mesExample,
-        reason: `skipped: mes_example_mode=once, not first turn (${context.chat.recentMessages.length} messages)`,
+        reason: mesExampleMode === "disabled"
+          ? "skipped: mes_example_mode=disabled"
+          : `skipped: mes_example_mode=once, not first turn (${context.chat.recentMessages.length} messages)`,
       });
     }
   }
