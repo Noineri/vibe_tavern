@@ -4,6 +4,13 @@ import { providerProfiles, cachedModels, providerModelFavorites } from '../db-sc
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 
+/** Safe JSON parse that returns [] on missing/invalid data (handles pre-migration state). */
+function safeParseJson<T>(value: string | null | undefined): T {
+  if (!value) return [] as T;
+  try { return JSON.parse(value) as T; }
+  catch { return [] as T; }
+}
+
 // ─── Return types ─────────────────────────────────────────────────────────────
 
 /**
@@ -348,7 +355,7 @@ export class ProviderStore {
       presencePenalty: row.presencePenalty,
       repetitionPenalty: row.repetitionPenalty,
       stopSequences: row.stopSequencesJson ? JSON.parse(row.stopSequencesJson) : [],
-      logitBias: row.logitBiasJson ? JSON.parse(row.logitBiasJson) : [],
+      logitBias: safeParseJson<Array<{ tokenId: number; bias: number; text?: string }>>(row.logitBiasJson),
       seed: row.seed,
       reasoningEffort: row.reasoningEffort,
       showReasoning: row.showReasoning === 1,
