@@ -28,7 +28,7 @@ export interface SamplerConfig {
   presencePenalty?: number;
   seed?: number;
   topK?: number;
-  providerOptions?: Record<string, Record<string, number | string | boolean | null>>;
+  providerOptions?: Record<string, Record<string, number | string | boolean | number[] | null>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,10 +92,19 @@ export function buildSamplerConfig(
       }
 
       // providerOptions.openai namespace
-      const openaiOptions: Record<string, number | string | boolean | null> = {};
+      const openaiOptions: Record<string, number | string | boolean | number[] | null> = {};
       if (profile.topK != null) openaiOptions.top_k = profile.topK;
       if (profile.minP != null) openaiOptions.min_p = profile.minP;
       if (profile.repetitionPenalty != null) openaiOptions.repetition_penalty = profile.repetitionPenalty;
+
+      // Logit bias: map entries to Record<number, number>
+      if (profile.logitBias?.length) {
+        const biasMap: Record<string, number> = {};
+        for (const entry of profile.logitBias) {
+          biasMap[String(entry.tokenId)] = entry.bias;
+        }
+        (openaiOptions as Record<string, unknown>).logitBias = biasMap;
+      }
 
       // reasoningEffort only for openai_compat
       if (

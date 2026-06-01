@@ -385,19 +385,16 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
               />
             </div>
 
-            {/* Logit Bias — full width */}
+            {/* Logit Bias — placeholder, will be replaced with Token Workbench */}
             <div className={cn("mt-4", disabled && "opacity-40 pointer-events-none")}>
               <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
                 {t("logit_bias_label")}
               </label>
-              <input
-                type="text"
-                value={form.logitBias ?? ''}
-                onChange={(e) => updateForm('logitBias', e.target.value)}
-                placeholder='{"50256": -100}'
-                disabled={disabled}
-                className={textInputCls}
-              />
+              <div className="font-ui text-[12px] text-t3">
+                {form.logitBias.length > 0
+                  ? `${form.logitBias.length} ${t("logit_bias_tokens")}`
+                  : t("logit_bias_empty")}
+              </div>
             </div>
           </div>
         )}

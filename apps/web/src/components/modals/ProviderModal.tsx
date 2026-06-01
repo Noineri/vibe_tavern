@@ -39,7 +39,7 @@ export interface FormState {
   maxTokens: number;
   contextBudget: number;
   stopSequences: string[];
-  logitBias: string;
+  logitBias: Array<{ tokenId: number; bias: number; text?: string }>;
   seed: string | null;
   reasoningEffort: string;
   showReasoning: boolean;
@@ -88,7 +88,8 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     repetitionPenalty: p.repetitionPenalty,
     maxTokens: p.maxTokens, contextBudget: p.contextBudget ?? 16000,
     stopSequences: p.stopSequences,
-    logitBias: "", seed: p.seed ?? null, showReasoning: p.showReasoning,
+    logitBias: p.logitBias ?? [],
+    seed: p.seed ?? null, showReasoning: p.showReasoning,
     reasoningEffort: p.reasoningEffort,
     streamResponse: p.streamResponse,
     customSamplers: p.customSamplers ?? false,
@@ -114,6 +115,7 @@ function toProviderDraft(form: FormState) {
     repetitionPenalty: form.repetitionPenalty,
     maxTokens: form.maxTokens,
     stopSequences: form.stopSequences,
+    logitBias: form.logitBias,
     seed: form.seed,
     reasoningEffort: form.reasoningEffort,
     showReasoning: form.showReasoning,

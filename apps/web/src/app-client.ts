@@ -143,6 +143,7 @@ export interface ProviderProfileRecord {
   presencePenalty: number;
   repetitionPenalty: number;
   stopSequences: string[];
+  logitBias: Array<{ tokenId: number; bias: number; text?: string }>;
   seed: string | null;
   reasoningEffort: string;
   showReasoning: boolean;
