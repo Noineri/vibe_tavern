@@ -324,7 +324,17 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
             <div className="mt-5">
               <button type="button"
                 className="inline-flex cursor-pointer items-center rounded-md border-0 bg-s3 px-4 py-2 font-ui text-xs font-medium text-t2 transition-colors hover:bg-border2 hover:text-t1"
-                onClick={() => alert(promptPayloadText)}
+                onClick={() => {
+                  const blob = new Blob([promptPayloadText], { type: "application/json" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `prompt-payload-${activeTrace && 'id' in activeTrace ? (activeTrace as { id: string }).id : 'trace'}.json`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                }}
               >
                 {t("view_raw_json")}
               </button>
