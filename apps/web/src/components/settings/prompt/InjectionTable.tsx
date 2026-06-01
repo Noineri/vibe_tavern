@@ -3,6 +3,7 @@ import { useT } from "../../../i18n/context.js";
 import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
+import { TokenCounter } from "../../shared/TokenCounter.js";
 
 export interface InjectionRow {
   name: string;
@@ -12,9 +13,20 @@ export interface InjectionRow {
   enabled: boolean;
 }
 
+type PromptCanvasDraft = {
+  system: string;
+  jailbreak: string;
+  prefill: string;
+  authorsNote: string;
+  authorsNoteDepth: number;
+  authorsNotePosition: string;
+};
+
 interface InjectionTableProps {
   injections: InjectionRow[];
   onChange: (injections: InjectionRow[]) => void;
+  draft?: PromptCanvasDraft | null;
+  onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number) => void;
 }
 
 const roleOptions = ["system", "user", "assistant"] as const;
@@ -23,7 +35,7 @@ export function InjectionTable(props: InjectionTableProps) {
   return <PromptOrderCanvas {...props} />;
 }
 
-export function PromptOrderCanvas({ injections, onChange }: InjectionTableProps) {
+export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField }: InjectionTableProps) {
   const { t } = useT();
 
   function update(index: number, patch: Partial<InjectionRow>) {
@@ -49,11 +61,19 @@ export function PromptOrderCanvas({ injections, onChange }: InjectionTableProps)
 
       <div className="flex flex-col gap-1.5">
         <PromptOrderMarker label={t("prompt_slot_world_info_before")} kind="marker" />
-        <PromptOrderMarker label={t("system_prompt")} kind="builtIn" />
+        <EditablePromptCard
+          label={t("system_prompt")}
+          role="system"
+          value={draft?.system ?? ""}
+          placeholder={t("system_prompt_placeholder")}
+          disabled={!draft || !onUpdateField}
+          onChange={(value) => onUpdateField?.("system", value)}
+        />
         <PromptOrderMarker label={t("prompt_slot_character_description")} kind="builtIn" />
         <PromptOrderMarker label={t("prompt_slot_character_personality")} kind="builtIn" />
         <PromptOrderMarker label={t("scenario")} kind="builtIn" />
         <PromptOrderMarker label={t("prompt_slot_persona")} kind="builtIn" />
+        <EditableAuthorNoteCard draft={draft} onUpdateField={onUpdateField} />
 
         <div className="my-1 rounded-md border border-dashed border-border2 bg-s2/35 p-2">
           <div className="mb-2 flex items-center gap-2">
@@ -79,7 +99,22 @@ export function PromptOrderCanvas({ injections, onChange }: InjectionTableProps)
         <PromptOrderMarker label={t("prompt_slot_chat_history")} kind="chat" />
         <PromptOrderMarker label={t("prompt_slot_world_info_after")} kind="marker" />
         <PromptOrderMarker label={t("prompt_slot_dialogue_examples")} kind="marker" />
-        <PromptOrderMarker label={t("post_history_instructions")} kind="builtIn" />
+        <EditablePromptCard
+          label={t("post_history_instructions")}
+          role="system"
+          value={draft?.jailbreak ?? ""}
+          placeholder={t("jailbreak_placeholder")}
+          disabled={!draft || !onUpdateField}
+          onChange={(value) => onUpdateField?.("jailbreak", value)}
+        />
+        <EditablePromptCard
+          label={t("prefill_assistant")}
+          role="assistant"
+          value={draft?.prefill ?? ""}
+          placeholder={t("prefill_placeholder")}
+          disabled={!draft || !onUpdateField}
+          onChange={(value) => onUpdateField?.("prefill", value)}
+        />
       </div>
     </div>
   );
@@ -99,8 +134,102 @@ function PromptOrderMarker({ label, kind }: { label: string; kind: "builtIn" | "
       )} />
       <span className="flex-1">{label}</span>
       <span className="rounded bg-black/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] opacity-70">
-        {kind === "chat" ? "marker" : kind === "marker" ? "slot" : "built-in"}
+        {kind === "chat" ? "marker" : kind === "marker" ? "slot" : "read-only"}
       </span>
+    </div>
+  );
+}
+
+function EditablePromptCard({ label, role, value, placeholder, disabled, onChange }: {
+  label: string;
+  role: "system" | "user" | "assistant";
+  value: string;
+  placeholder: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="rounded-md border border-border bg-surface">
+      <div className="flex cursor-pointer select-none items-center gap-2.5 px-3 py-2" onClick={() => setExpanded((v) => !v)}>
+        <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+        <span className="flex-1 font-ui text-[12px] text-t1">{label}</span>
+        <TokenCounter text={value} />
+        <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{role}</span>
+        <span className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] text-accent">editable</span>
+        <span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
+      </div>
+      {expanded && (
+        <div className="border-t border-border2 px-3 pb-3 pt-2">
+          <textarea
+            className="min-h-[110px] w-full resize-y rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
+            value={value}
+            placeholder={placeholder}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EditableAuthorNoteCard({ draft, onUpdateField }: {
+  draft?: PromptCanvasDraft | null;
+  onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number) => void;
+}) {
+  const { t } = useT();
+  const [expanded, setExpanded] = useState(false);
+  const disabled = !draft || !onUpdateField;
+  const position = draft?.authorsNotePosition ?? "in_chat";
+  return (
+    <div className="rounded-md border border-border bg-surface">
+      <div className="flex cursor-pointer select-none items-center gap-2.5 px-3 py-2" onClick={() => setExpanded((v) => !v)}>
+        <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+        <span className="flex-1 font-ui text-[12px] text-t1">{t("authors_note_label")}</span>
+        <TokenCounter text={draft?.authorsNote ?? ""} />
+        <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{position}</span>
+        {position === "in_chat" && <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3 tabular-nums">←{draft?.authorsNoteDepth ?? 4}</span>}
+        <span className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] text-accent">editable</span>
+        <span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
+      </div>
+      {expanded && (
+        <div className="border-t border-border2 px-3 pb-3 pt-2">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <select
+              className="rounded border border-border bg-s2 px-1.5 py-0.5 font-mono text-[11px] text-t1 outline-none cursor-pointer focus:border-accent disabled:opacity-60"
+              value={position}
+              disabled={disabled}
+              onChange={(e) => onUpdateField?.("authorsNotePosition", e.target.value)}
+            >
+              <option value="in_prompt">{t("an_position_in_prompt")}</option>
+              <option value="in_chat">{t("an_position_in_chat")}</option>
+              <option value="after_chat">{t("an_position_after_chat")}</option>
+            </select>
+            {position === "in_chat" && (
+              <label className="flex items-center gap-1.5 font-ui text-[11px] text-t4">
+                {t("insert_depth_label")}
+                <input
+                  type="number"
+                  className="w-[52px] rounded border border-border bg-s2 px-1.5 py-0.5 text-center font-mono text-[11px] text-t1 outline-none focus:border-accent disabled:opacity-60 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  value={draft?.authorsNoteDepth ?? 4}
+                  min={0}
+                  max={99}
+                  disabled={disabled}
+                  onChange={(e) => onUpdateField?.("authorsNoteDepth", Math.max(0, Number(e.target.value) || 0))}
+                />
+              </label>
+            )}
+          </div>
+          <textarea
+            className="min-h-[100px] w-full resize-y rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
+            value={draft?.authorsNote ?? ""}
+            placeholder={t("authors_note_placeholder")}
+            disabled={disabled}
+            onChange={(e) => onUpdateField?.("authorsNote", e.target.value)}
+          />
+        </div>
+      )}
     </div>
   );
 }
