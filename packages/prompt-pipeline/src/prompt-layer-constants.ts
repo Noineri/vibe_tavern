@@ -65,6 +65,7 @@ export const PROMPT_LAYER_PRIORITY = {
   promptPresetAuthorsNote: 170,
   postHistoryInstructions: 160,
   mesExample: 150,
+  characterDepthPrompt: 155,
   recentHistory: 100,
   preflightCompaction: 50,
 } as const;
@@ -82,6 +83,7 @@ export const PROMPT_LAYER_ID = {
   preflightCompaction: "preflight_compaction",
   recentHistory: "recent_history",
   mesExample: "mes_example",
+  characterDepthPrompt: "character_depth_prompt",
   postHistoryInstructions: "post_history_instructions",
 } as const;
 

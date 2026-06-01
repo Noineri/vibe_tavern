@@ -209,29 +209,35 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   const layers: PromptLayer[] = [];
   const droppedLayers: Array<{ id: string; reason: string }> = [];
 
-  if (context.preset?.text?.trim()) {
+  // System prompt: character override takes priority over preset
+  const effectiveSystemPrompt = context.character.systemPrompt?.trim() || context.preset?.text?.trim();
+  if (effectiveSystemPrompt) {
+    const isOverride = !!context.character.systemPrompt?.trim();
     layers.push(
       makeLayer({
-        id: PROMPT_LAYER_ID.promptPresetSystem,
-        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-        sourceId: context.preset.id,
-        sourceName: context.preset.name ?? "System Prompt",
+        id: isOverride ? PROMPT_LAYER_ID.characterSystemPrompt : PROMPT_LAYER_ID.promptPresetSystem,
+        sourceType: isOverride ? PROMPT_LAYER_SOURCE_TYPE.characterSystemPrompt : PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+        sourceId: isOverride ? context.character.id : context.preset!.id,
+        sourceName: isOverride ? `${context.character.name} (System Override)` : (context.preset?.name ?? "System Prompt"),
         priority: PROMPT_LAYER_PRIORITY.promptPresetSystem,
-        text: context.preset.text,
+        text: effectiveSystemPrompt,
       }),
     );
   }
 
-  if (context.preset?.jailbreak?.trim()) {
-    // Jailbreak = Post-History Instructions: placed after chat history (depth=0)
+  // Jailbreak / Post-History Instructions: placed after chat history (depth=0)
+  // Character postHistoryInstructions overrides preset jailbreak
+  const effectiveJailbreak = context.character.postHistoryInstructions?.trim() || context.preset?.jailbreak?.trim();
+  if (effectiveJailbreak) {
+    const isOverride = !!context.character.postHistoryInstructions?.trim();
     const layer = makeLayer({
       id: PROMPT_LAYER_ID.promptPresetJailbreak,
-      sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-      sourceId: context.preset.id,
-      sourceName: context.preset.name ?? "Post-History Instructions",
+      sourceType: isOverride ? PROMPT_LAYER_SOURCE_TYPE.character : PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+      sourceId: isOverride ? context.character.id : context.preset!.id,
+      sourceName: isOverride ? `${context.character.name} (Post-History Override)` : (context.preset?.name ?? "Post-History Instructions"),
       position: "in_chat",
       priority: PROMPT_LAYER_PRIORITY.promptPresetJailbreak,
-      text: context.preset.jailbreak,
+      text: effectiveJailbreak,
     });
     layer.injectionDepth = 0;
     layers.push(layer);
@@ -311,19 +317,6 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceName: "Summary Prompt",
         priority: PROMPT_LAYER_PRIORITY.promptPresetSummary,
         text: context.preset.summary,
-      }),
-    );
-  }
-
-  if (context.character.systemPrompt?.trim()) {
-    layers.push(
-      makeLayer({
-        id: PROMPT_LAYER_ID.characterSystemPrompt,
-        sourceType: PROMPT_LAYER_SOURCE_TYPE.characterSystemPrompt,
-        sourceId: context.character.id,
-        sourceName: context.character.name,
-        priority: PROMPT_LAYER_PRIORITY.characterSystemPrompt,
-        text: context.character.systemPrompt,
       }),
     );
   }
@@ -605,18 +598,27 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     }
   }
 
-  if (context.character.postHistoryInstructions?.trim()) {
-    layers.push(
-      makeLayer({
-        id: PROMPT_LAYER_ID.postHistoryInstructions,
-        sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
-        sourceId: context.character.id,
-        sourceName: "Post-History Instructions",
-        priority: PROMPT_LAYER_PRIORITY.postHistoryInstructions,
-        subPosition: IN_PROMPT_SUB_POSITION.postHistoryInstructions,
-        text: context.character.postHistoryInstructions,
-      }),
-    );
+
+  // Note: character postHistoryInstructions is handled above as jailbreak override
+  // (character.postHistoryInstructions replaces preset.jailbreak when present)
+
+  // --- Character Depth Prompt ---
+  // Character-level depth injection (equivalent to ST depth_prompt)
+  if (context.character.depthPrompt?.trim()) {
+    const depth = context.character.depthPromptDepth ?? 4;
+    const role = context.character.depthPromptRole ?? "system";
+    const layer = makeLayer({
+      id: PROMPT_LAYER_ID.characterDepthPrompt,
+      sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
+      sourceId: context.character.id,
+      sourceName: `${context.character.name} (Depth)`,
+      position: "in_chat",
+      priority: PROMPT_LAYER_PRIORITY.characterDepthPrompt,
+      role: role as "system" | "user" | "assistant",
+      text: context.character.depthPrompt,
+    });
+    layer.injectionDepth = depth;
+    layers.push(layer);
   }
 
   // --- Script-injected messages (context.chat.injectMessage) ---
