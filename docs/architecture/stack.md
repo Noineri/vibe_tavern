@@ -81,12 +81,12 @@ Runtime validation + static types.
 
 ### `@agnai/web-tokenizers` + `js-tiktoken`
 
-Token counting for context budget management.
+Token counting for context budget management and tokenizer-specific logit-bias tooling.
 
 **Why two libraries:**
-- `js-tiktoken` — fast BPE tokenization for OpenAI models (cl100k, o200k encodings).
-- `@agnai/web-tokenizers` — WASM-based tokenizer that handles Claude, Llama, and other non-OpenAI models. Larger but more accurate for non-GPT models.
-- Byte-based fallback — if neither tokenizer matches, estimates `length / 4` (rough but safe for budget calculations).
+- `js-tiktoken` — fast BPE tokenization for OpenAI models (cl100k, o200k, p50k encodings).
+- `@agnai/web-tokenizers` — WASM/JSON tokenizers for Claude, Llama 3, Mistral, Nemo, Qwen2, DeepSeek, Xiaomi MiMo, GLM-4.6/ZAI, and Command R/A. Larger but more accurate for non-GPT models.
+- Default fallback — prompt budgeting can fall back to `cl100k_base`/rough estimates when no tokenizer matches, but logit bias is fail-closed and disabled for unknown tokenizers.
 
 ---
 
@@ -166,7 +166,7 @@ Form handling.
 
 Markdown rendering in chat messages.
 
-**Why react-markdown (not marked / markdown-it):** React component, not a string renderer. Properly escapes HTML, handles JSX renderers for custom elements. `remark-gfm` adds tables, strikethrough, task lists.
+**Why react-markdown (not marked / markdown-it):** React component, not a string renderer. Properly escapes HTML, handles JSX renderers for custom elements. `remark-gfm` adds tables, strikethrough, task lists. A custom rehype pass highlights exact quoted-dialogue ranges, including inline markup split across AST nodes.
 
 ### CodeMirror 6
 

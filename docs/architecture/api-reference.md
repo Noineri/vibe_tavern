@@ -592,17 +592,29 @@ Create a provider profile.
 
 ```json
 {
-  "name": "OpenRouter",
-  "providerPreset": "cloud",
-  "endpoint": "https://openrouter.ai/api/v1",
+  "name": "OpenAI",
+  "providerPreset": "openai",
+  "endpoint": "https://api.openai.com/v1",
   "apiKey": "sk-...",
-  "defaultModel": "anthropic/claude-3-opus",
+  "defaultModel": "gpt-4o-mini",
   "contextBudget": 128000,
+  "maxTokens": 2048,
   "temperature": 0.8,
   "topP": 0.95,
+  "stopSequences": ["\nUser:", "<|im_end|>"],
+  "logitBias": [
+    { "tokenId": 1234, "bias": -100, "text": "foo", "sourceText": "foo", "model": "gpt-4o-mini" }
+  ],
+  "customSamplers": true,
   "streamResponse": true
 }
 ```
+
+Sampler notes:
+
+- `stopSequences` are always forwarded when non-empty.
+- Advanced sampler fields are only forwarded when `customSamplers` is enabled; basic fields such as `temperature`, `maxTokens`, stop sequences, and seed can still be sent without custom samplers.
+- `logitBias` is fail-closed and model-aware. The API only forwards entries whose `model` matches the current `defaultModel`, and only when the provider/model pair has known support via `resolveLogitBiasSupport()`.
 
 ### `PATCH /api/providers/:providerId`
 

@@ -78,7 +78,8 @@ Vibe Tavern — self-hosted AI-roleplaying web app developed with [Bun](https://
 - **Lorebooks engine** — keywords activation, AND/OR/NOT logic, cooldown, groups weights, recursion, scanning depth, WI anchors.
 - **Scripts** — `node:vm` sandbox with Janitor AI compatible API.
 - **Macro engine** — AST-based recursive descent parser, nested blocks `{{if}}`, variables, dice rolls.
-- **5 providers types** — OpenAI-compat (for example OpenRouter, DeepSeek, Groq, xAI etc.), Anthropic, Google, Ollama, llama.cpp.
+- **5 providers types** — OpenAI-compat (for example OpenRouter, DeepSeek, Groq, xAI, Mistral, Xiaomi MiMo, ZAI etc.), Anthropic, Google, Ollama, llama.cpp.
+- **Model-aware samplers** — stop sequences, custom sampler controls, and fail-closed logit bias that only enables for known provider/model tokenizer pairs.
 - **Prompts presets** — full control over system prompt, jailbreak, author's note, and custom depth injections.
 
 ---

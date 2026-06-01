@@ -38,6 +38,14 @@ out/
     tokenizers/
       claude.json
       llama3.json
+      mistral.json
+      nemo.json
+      qwen2.json
+      deepseek.json
+      mimo.json
+      glm-4.6.json
+      command-r.json
+      command-a.json
     drizzle/                  ← DB migrations
       meta/_journal.json
       0000_*.sql ... 0012_*.sql
@@ -57,6 +65,14 @@ out/standalone/
   tokenizers/
     claude.json
     llama3.json
+    mistral.json
+    nemo.json
+    qwen2.json
+    deepseek.json
+    mimo.json
+    glm-4.6.json
+    command-r.json
+    command-a.json
   drizzle/                    ← DB migrations
   script-ai-prompt.md         ← Script AI system prompt
 ```
@@ -190,7 +206,7 @@ All server modes run `runStartupFileChecks()` before bootstrapping services. Thi
 - Data directory + asset subdirectory
 - Database file (or confirms it will be created)
 - Migrations directory + journal + SQL files
-- Tokenizer files (`claude.json`, `llama3.json`)
+- Tokenizer files (`claude.json`, `llama3.json`, `mistral.json`, `nemo.json`, `qwen2.json`, `deepseek.json`, `mimo.json`, `glm-4.6.json`, `command-r.json`, `command-a.json`)
 - Script AI prompt (`script-ai-prompt.md`)
 - Web bundle + `index.html` (if applicable)
 

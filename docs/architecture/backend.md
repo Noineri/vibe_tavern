@@ -201,13 +201,33 @@ context.random() / randomInt(min, max) / pick(arr) / weightedPick(entries)   // 
 
 | Provider Type | SDK Package | Notes |
 |---------------|-------------|-------|
-| `openai_compat` | `@ai-sdk/openai` | OpenAI, OpenRouter, DeepSeek, Groq, xAI, Mistral, etc. |
+| `openai_compat` | `@ai-sdk/openai` | OpenAI-compatible endpoints and presets: OpenAI, OpenRouter, DeepSeek, Groq, xAI, Mistral, Xiaomi MiMo, ZAI, local vLLM/Ooba/Tabby/Aphrodite, etc. |
 | `anthropic` | `@ai-sdk/anthropic` | Claude models |
 | `google` | `@ai-sdk/google` | Gemini models |
 | `ollama` | `@ai-sdk/openai` (fallback) | Uses `/api/tags` for model list |
 | `llamacpp` | `@ai-sdk/openai` (fallback) | Single loaded model |
 
 **Why normalize to AI SDK:** One streaming interface for all providers. Adding a provider = adding a case in the mapper + the SDK package. No SSE parsing, no provider-specific error handling.
+
+### Sampler Mapping
+
+`sampler-mapper.ts` converts stored provider-profile sampler fields into AI SDK arguments:
+
+- `temperature`, `maxTokens`, and `stopSequences` are sent whenever set.
+- `stopSequences` are provider-profile strings; the UI `ChipInput` supports literal `\n`, `\t`, and space shortcuts and stores the parsed characters.
+- `seed` is still sent when set, even if custom samplers are disabled.
+- Advanced sampler fields (`topP`, `topK`, `minP`, repetition/frequency/presence penalties, reasoning effort) are only sent when `customSamplers` is enabled, then routed through native AI SDK fields or `providerOptions.openai` depending on provider type.
+
+### Logit Bias
+
+Logit bias is model-aware and fail-closed because token IDs are tokenizer/model-local.
+
+- Support is decided by `resolveLogitBiasSupport()` in `packages/domain/src/provider-support.ts`, shared by web and API.
+- Router/mixed presets (for example OpenRouter/NanoGPT/Chutes/ElectronHub/Fireworks/SiliconFlow/Together/Perplexity) are disabled because a single profile can target multiple tokenizer families.
+- Providers that do not support logit bias at the API level (Anthropic, Google, Groq, xAI, Moonshot, AI21, Xiaomi MiMo, KoboldCpp) are disabled even if a tokenizer exists for counting.
+- Unknown models/tokenizers are disabled rather than falling back to `cl100k_base` for bias IDs.
+- Each saved logit-bias entry is stamped with the model it was tokenized for; generation only sends entries whose `entry.model` matches the current `defaultModel`.
+- Supported direct/local cases require a known tokenizer hint: OpenAI (`o200k`/`cl100k`/`p50k`), Mistral/Nemo, DeepSeek, ZAI GLM, Llama 3, Qwen2, Command R/A, and local OpenAI-compatible servers.
 
 ### Streaming
 
@@ -224,9 +244,11 @@ context.random() / randomInt(min, max) / pick(arr) / weightedPick(entries)   // 
 
 `ai/tokenizer-service.ts` — three-tier token counting:
 
-1. **`js-tiktoken`** — BPE tokenization for OpenAI models (cl100k, o200k). Fast, accurate.
-2. **`@agnai/web-tokenizers`** — WASM-based tokenizer for Claude, Llama, etc. Slower but accurate for non-GPT models.
-3. **Byte fallback** — `length / 4`. Rough but safe for budget calculations.
+1. **`js-tiktoken`** — BPE tokenization for OpenAI models (cl100k, o200k, p50k). Fast, accurate.
+2. **`@agnai/web-tokenizers`** — WASM/JSON tokenizers for Claude, Llama 3, Mistral, Nemo, Qwen2, DeepSeek, Xiaomi MiMo, GLM-4.6/ZAI, and Cohere Command R/A. Slower but accurate for non-GPT models.
+3. **Default/fallback** — prompt token counting falls back to `cl100k_base` and then a rough `length / 4` estimate if tokenization fails.
+
+The fallback is acceptable for context-budget accounting, but **not** for logit bias. Logit bias must have a known tokenizer/provider match or it is disabled.
 
 ---
 
