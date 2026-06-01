@@ -186,7 +186,7 @@ Avatar cropping tool. Provides circular crop overlay with zoom/pan. Outputs 480Ã
 
 ### qrcode
 
-QR code generation for mobile access flow. Renders `https://IP:PORT/#token=UUID` as scannable QR.
+QR code generation for the web Mobile Access flow. Renders `http(s)://IP:PORT/#token=UUID` as a scannable QR/copy URL; the browser stores the token locally before API bootstrap.
 
 ---
 

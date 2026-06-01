@@ -317,21 +317,23 @@ Fire-and-forget background task triggered after `appendAssistantReply()`:
 
 ## Mobile Access
 
-Token-based authentication with optional TLS for LAN/mobile clients.
+Token-based authentication with optional TLS for LAN/Tailscale/mobile clients.
 
 **Flow:**
-1. User enables mobile access → backend generates UUID token
-2. Frontend renders QR code with `https://IP:PORT/#token=UUID`
-3. Mobile browser opens URL → reads token from hash → stores in localStorage
-4. All subsequent API calls include `Authorization: Bearer <token>`
+1. User enables mobile access → backend generates a UUID token
+2. Frontend renders QR/copy URLs as `http(s)://IP:PORT/#token=UUID`
+3. Mobile browser opens URL → reads token from hash → stores it in `localStorage` (`vibe_mobile_token`) → removes the hash from the visible URL
+4. API calls include `Authorization: Bearer <token>`; bootstrap also appends `?token=...` as a fallback for first-load/retry robustness
 
 **Security:**
-- Loopback always bypasses auth
-- `/api/assets/` is public (img tags can't send headers)
-- Token regeneration invalidates old token immediately
-- TLS via self-signed certs (user accepts warning once)
+- Loopback (`127.0.0.1`/`::1`) always bypasses auth
+- Remote `/api/*` requests are denied with 401 when no mobile token is configured, so LAN exposure is fail-closed
+- Remote clients must provide the current token via `Authorization: Bearer <token>` or `?token=<token>`
+- `GET`/`HEAD /api/assets/*` stay public for `<img>` rendering; asset upload/mutation routes require auth
+- Token regeneration/revocation is dynamic and invalidates old tokens immediately without server restart
+- TLS via self-signed certs is optional (user accepts warning once)
 
-**API base URL:** Uses `window.location.origin` — ensures mobile clients on LAN IP call the correct server, not hardcoded `127.0.0.1`.
+**API base URL:** `apps/web/src/gateway-client.ts` prefers `window.location.origin` when the web app is opened from a non-loopback host but `VITE_RP_API_URL` points at `localhost`/`127.0.0.1`. This prevents LAN/Tailscale clients from trying to call their own loopback address.
 
 ---
 

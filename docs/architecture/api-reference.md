@@ -8,7 +8,7 @@
 
 | Convention | Detail |
 |-----------|--------|
-| **Auth** | Loopback requests (127.0.0.1) bypass auth. LAN/mobile requires `Authorization: Bearer <token>` header. |
+| **Auth** | Loopback requests (`127.0.0.1`/`::1`) bypass auth. Remote/LAN/Tailscale `/api/*` requests are fail-closed: if no mobile token is configured they return 401; otherwise they require `Authorization: Bearer <token>` or `?token=<token>`. |
 | **Errors** | `{ error: string }` with appropriate HTTP status. `DomainError` kinds map to: 404 (NotFound), 400 (Validation), 409 (Conflict), 502 (Provider), 499 (Cancelled), 401 (Unauthorized), 500 (Internal). |
 | **SSE streams** | Endpoints with `/stream` return `text/event-stream`. Events: `text-delta`, `reasoning-delta`, `error`, `snapshot`, `done`. |
 | **Snapshots** | Most mutating endpoints return a monolithic snapshot (`ChatSnapshot`) that the frontend ingests atomically. |
@@ -877,15 +877,17 @@ Bulk import from a SillyTavern directory.
 
 ### `GET /api/settings/mobile-access`
 
-Get mobile access status (enabled, token exists).
+Get mobile access status, available IP addresses, port, TLS status, and current token if one exists.
+
+The web modal uses this to generate `http(s)://IP:PORT/#token=...` QR/copy URLs. The token is placed in the hash so it is not sent to the server as part of normal navigation; the web app stores it in localStorage and removes the hash from the visible URL.
 
 ### `POST /api/settings/mobile-access/regenerate`
 
-Generate or regenerate the mobile access token. Invalidates previous token.
+Generate or regenerate the mobile access token. Invalidates the previous token immediately; server restart is not required.
 
 ### `DELETE /api/settings/mobile-access`
 
-Disable mobile access.
+Disable mobile access by revoking the token immediately. Remote `/api/*` access then returns 401 until a new token is generated.
 
 ---
 

@@ -103,6 +103,28 @@ All paths can be overridden via environment variables:
 | `RP_PLATFORM_PORT` | `8787` | Listen port |
 | `RP_PLATFORM_OPEN_BROWSER` | `1` | Set to `0` to suppress auto-open |
 
+## Mobile/LAN Access in Standalone Builds
+
+By default the standalone app listens on `127.0.0.1`, which is only reachable from the same machine. To use **Mobile Access** from another device on the LAN or through Tailscale/VPN, run the server on a reachable host, for example:
+
+```powershell
+$env:RP_PLATFORM_HOST = "0.0.0.0"
+$env:RP_PLATFORM_PORT = "8787"
+.\vibe-tavern.exe
+```
+
+Then open **Mobile Access** in the web UI and scan/copy one of the generated `http(s)://IP:PORT/#token=...` URLs.
+
+Security behavior:
+
+- Local loopback access (`127.0.0.1`/`::1`) bypasses mobile auth.
+- Remote `/api/*` access is fail-closed: if no token exists, remote requests return 401.
+- Generated QR/copy URLs include the current token in the hash; the browser stores it locally and sends it via `Authorization: Bearer` on API requests.
+- Regenerate/revoke takes effect immediately without restarting the executable.
+- `GET`/`HEAD /api/assets/*` are public for image rendering; uploads and API mutations require auth.
+
+If the page loads but mobile requests fail, check that the OS firewall allows inbound TCP traffic on `RP_PLATFORM_PORT` and that the phone can reach the selected LAN/Tailscale IP.
+
 ## Inno Setup Installer
 
 ### Prerequisites

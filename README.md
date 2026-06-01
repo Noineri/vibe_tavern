@@ -67,7 +67,9 @@ Vibe Tavern — self-hosted AI-roleplaying web app developed with [Bun](https://
 
 ### 📱 Access from smartphone
 
-- Scan QR-code → chat from your phone on the same local network.
+- Open **Mobile Access** in the web UI and scan the QR code → chat from your phone on the same LAN or through Tailscale/VPN.
+- The QR/copy URL includes the current access token in `#token=...`; the browser stores it locally and sends it with API requests.
+- Remote API access is fail-closed: LAN/Tailscale clients need the current token, while local `127.0.0.1` access stays passwordless.
 - Optional TLS.
 - Android ARM64 build for Termux.
 
