@@ -42,6 +42,8 @@
 
 // ─── Marker protocol ───────────────────────────────────────────────────
 
+import { log } from "@vibe-tavern/domain";
+
 /**
  * Special text that marks the beginning of reasoning content in the stream.
  * When the wrapper sees `reasoning_content` in a delta, it emits this marker
@@ -66,7 +68,7 @@ function rewriteChunkLine(line: string, state: { inReasoning: boolean; allDeltaK
 
   // Pass through [DONE] marker
   if (payload === "[DONE]") {
-    console.log("[reasoning-fetch] Stream done. Total chunks:", state.chunkCount, "All delta keys seen:", [...state.allDeltaKeys].sort());
+    log.tag("reasoning").debug("Stream done. Total chunks: %d, All delta keys seen: %o", state.chunkCount, [...state.allDeltaKeys].sort());
     return [line];
   }
 

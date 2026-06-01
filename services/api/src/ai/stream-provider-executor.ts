@@ -10,6 +10,7 @@ import type { ProviderExecutor, ProviderStreamResult, ProviderStreamChunk, Provi
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
 import type { ProviderType } from "@vibe-tavern/domain";
+import { log } from "@vibe-tavern/domain";
 import { cancelled, providerError } from "../errors.js";
 import { REASONING_START_MARKER, REASONING_END_MARKER } from "./openai-reasoning-fetch.js";
 import { logSendDebug } from "../send-debug-log.js";
@@ -145,10 +146,10 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
     // DEBUG: log what actually goes to the provider
     const systemLen = systemPrompt?.length ?? 0;
     const convLen = conversationMessages.reduce((s, m) => s + m.content.length, 0);
-    console.log(`[stream-executor] ${messages.length} msgs from toSdkMessages → system=${systemLen} chars + ${conversationMessages.length} conv msgs (${convLen} chars) = ${systemLen + convLen} chars total`);
-    console.log(`[stream-executor] messages detail:`);
+    const logger = log.tag("stream");
+    logger.debug("%d msgs → system=%d chars + %d conv msgs (%d chars) = %d chars total", messages.length, systemLen, conversationMessages.length, convLen, systemLen + convLen);
     for (const m of messages) {
-      console.log(`  [msg] role=${m.role} len=${m.content.length}`);
+      logger.debug("  [msg] role=%s len=%d", m.role, m.content.length);
     }
 
     const samplerConfig = buildSamplerConfig(input.profile);
