@@ -351,6 +351,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               onUpdateField={updateDraft}
               prefillSupported={input.prefillSupported}
               resetKey={activePreset?.id ?? null}
+              hideChatPrompts={advancedMode}
             />
           </div>
           )}
