@@ -236,20 +236,11 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   }
 
   if (context.preset?.authorsNote?.trim()) {
-    const layer = makeLayer({
-      id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
-      sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-      sourceId: context.preset.id,
-      sourceName: "Author's Note",
-      position: "in_prompt",
-      priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
-      subPosition: IN_PROMPT_SUB_POSITION.authorNote,
-      text: context.preset.authorsNote,
-    });
-    // AuthorsNote depth: if > 0, also inject a copy at the specified depth in chat
-    if ((context.preset.authorsNoteDepth ?? 0) > 0) {
+    const depth = context.preset.authorsNoteDepth ?? 0;
+    if (depth > 0) {
+      // Depth mode: inject only at the specified depth in chat history
       const depthLayer = makeLayer({
-        id: PROMPT_LAYER_ID.promptPresetAuthorsNote + "_depth",
+        id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
         sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
         sourceId: context.preset.id,
         sourceName: "Author's Note (depth)",
@@ -257,10 +248,22 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
         text: context.preset.authorsNote,
       });
-      depthLayer.injectionDepth = context.preset.authorsNoteDepth ?? 4;
+      depthLayer.injectionDepth = depth;
       layers.push(depthLayer);
+    } else {
+      // No depth: place in prompt block
+      const layer = makeLayer({
+        id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+        sourceId: context.preset.id,
+        sourceName: "Author's Note",
+        position: "in_prompt",
+        priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
+        subPosition: IN_PROMPT_SUB_POSITION.authorNote,
+        text: context.preset.authorsNote,
+      });
+      layers.push(layer);
     }
-    layers.push(layer);
   }
 
   // Custom injections (advanced mode)
