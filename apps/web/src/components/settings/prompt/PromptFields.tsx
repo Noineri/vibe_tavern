@@ -50,6 +50,7 @@ interface PromptFieldsProps {
   onUpdateField: (key: keyof DraftData, value: string | number) => void;
   prefillSupported?: boolean;
   resetKey?: string | null;
+  hideChatPrompts?: boolean;
 }
 
 const textareaCls = "w-full rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent resize-none overflow-hidden disabled:opacity-60";
@@ -151,7 +152,7 @@ function FieldSection({ label, labelClassName, token, children }: {
   );
 }
 
-export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey }: PromptFieldsProps) {
+export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey, hideChatPrompts = false }: PromptFieldsProps) {
   const { t } = useT();
   const disabled = !draft;
   const [serviceOpen, setServiceOpen] = useState(false);
@@ -172,59 +173,63 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey 
 
   return (
     <div className="flex flex-col gap-6 scroll-smooth p-5">
-      <SectionHeader title={t("prompt_section_chat")} />
+      {!hideChatPrompts && (
+        <>
+          <SectionHeader title={t("prompt_section_chat")} />
 
-      <FieldSection label={t("system_prompt")} labelClassName={labelAccentCls} token={draft?.system ?? ""}>
-        {ta("system", t("system_prompt_placeholder"), 240)}
-      </FieldSection>
+          <FieldSection label={t("system_prompt")} labelClassName={labelAccentCls} token={draft?.system ?? ""}>
+            {ta("system", t("system_prompt_placeholder"), 240)}
+          </FieldSection>
 
-      <FieldSection label={t("post_history_instructions")} token={draft?.jailbreak ?? ""}>
-        {ta("jailbreak", t("jailbreak_placeholder"), 100)}
-      </FieldSection>
+          <FieldSection label={t("post_history_instructions")} token={draft?.jailbreak ?? ""}>
+            {ta("jailbreak", t("jailbreak_placeholder"), 100)}
+          </FieldSection>
 
-      <PrefillField
-        prefill={draft?.prefill ?? ""}
-        onUpdate={(value) => onUpdateField("prefill", value)}
-        disabled={disabled}
-        prefillSupported={prefillSupported}
-      />
+          <PrefillField
+            prefill={draft?.prefill ?? ""}
+            onUpdate={(value) => onUpdateField("prefill", value)}
+            disabled={disabled}
+            prefillSupported={prefillSupported}
+          />
 
-      <div>
-        <div className="mb-[7px] flex items-center justify-between">
-          <label className={labelCls + " mb-0"}>{t("authors_note_label")}</label>
-          <div className="flex items-center gap-2">
-            <select
-              className="h-[30px] rounded-md border border-border bg-s2 px-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors focus:border-accent disabled:opacity-60"
-              value={draft?.authorsNotePosition ?? "in_chat"}
-              onChange={(e) => onUpdateField("authorsNotePosition", e.target.value)}
-              disabled={disabled}
-            >
-              <option value="in_prompt">{t("an_position_in_prompt")}</option>
-              <option value="in_chat">{t("an_position_in_chat")}</option>
-              <option value="after_chat">{t("an_position_after_chat")}</option>
-            </select>
-            {(draft?.authorsNotePosition ?? "in_chat") === "in_chat" && (
-              <>
-                <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{t("insert_depth_label")}</label>
-                <CustomTooltip content={t("insert_depth_hint")}>
-                <input
-                  className="h-[30px] w-16 rounded-md border border-border bg-s2 px-2 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors focus:border-accent disabled:opacity-60"
-                  type="number"
-                  min={0}
-                  value={draft?.authorsNoteDepth ?? 4}
-                  onChange={(e) => onUpdateField("authorsNoteDepth", Number(e.target.value))}
+          <div>
+            <div className="mb-[7px] flex items-center justify-between">
+              <label className={labelCls + " mb-0"}>{t("authors_note_label")}</label>
+              <div className="flex items-center gap-2">
+                <select
+                  className="h-[30px] rounded-md border border-border bg-s2 px-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors focus:border-accent disabled:opacity-60"
+                  value={draft?.authorsNotePosition ?? "in_chat"}
+                  onChange={(e) => onUpdateField("authorsNotePosition", e.target.value)}
                   disabled={disabled}
-                />
-                </CustomTooltip>
-              </>
-            )}
+                >
+                  <option value="in_prompt">{t("an_position_in_prompt")}</option>
+                  <option value="in_chat">{t("an_position_in_chat")}</option>
+                  <option value="after_chat">{t("an_position_after_chat")}</option>
+                </select>
+                {(draft?.authorsNotePosition ?? "in_chat") === "in_chat" && (
+                  <>
+                    <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{t("insert_depth_label")}</label>
+                    <CustomTooltip content={t("insert_depth_hint")}>
+                    <input
+                      className="h-[30px] w-16 rounded-md border border-border bg-s2 px-2 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors focus:border-accent disabled:opacity-60"
+                      type="number"
+                      min={0}
+                      value={draft?.authorsNoteDepth ?? 4}
+                      onChange={(e) => onUpdateField("authorsNoteDepth", Number(e.target.value))}
+                      disabled={disabled}
+                    />
+                    </CustomTooltip>
+                  </>
+                )}
+              </div>
+            </div>
+            {ta("authorsNote", t("authors_note_placeholder"), 100)}
+            <TokenCounter text={draft?.authorsNote ?? ""} />
           </div>
-        </div>
-        {ta("authorsNote", t("authors_note_placeholder"), 100)}
-        <TokenCounter text={draft?.authorsNote ?? ""} />
-      </div>
 
-      <div className="h-2" />
+          <div className="h-2" />
+        </>
+      )}
 
       <div className="rounded-md border border-border2 bg-s1/40">
         <button type="button"
