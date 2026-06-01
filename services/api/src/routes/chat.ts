@@ -31,7 +31,9 @@ export function createChatRoutes(runtime: RuntimeApi) {
       );
     })
     .get("/api/prompt-traces/:traceId/export", async (c) => {
-      return c.json(await runtime.exportPromptTrace(c.req.param("traceId")));
+      const data = await runtime.exportPromptTrace(c.req.param("traceId"));
+      c.header("Content-Disposition", `attachment; filename="${c.req.param("traceId")}.json"`);
+      return c.json(data);
     })
     .patch("/api/chats/:chatId/settings", zValidator("json", schemas.updateChatSettingsSchema), async (c) => {
       const body = c.req.valid("json");
