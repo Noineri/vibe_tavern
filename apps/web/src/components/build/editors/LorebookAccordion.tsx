@@ -18,8 +18,10 @@ import {
   listLoreEntries,
   type LorebookRecord,
   type LoreEntryRecord,
+  type LorebookLinkRecord,
 } from "../../../app-client.js";
 import { LoreEntryList } from "./LoreEntryList.js";
+import { LorebookLinkPopover, type LinkTarget } from "./LorebookLinkPopover.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -27,6 +29,7 @@ export type Scope = "global" | "character" | "persona" | "chat";
 
 interface LorebookAccordionProps {
   lorebook: LorebookRecord;
+  links: LorebookLinkRecord[];
   expanded: boolean;
   editing: boolean;
   editLbName: string;
@@ -52,6 +55,11 @@ interface LorebookAccordionProps {
     recursiveScanning?: boolean;
   }) => void;
   onReorderEntries: (updates: Array<{ id: string; sortOrder: number; position?: string }>) => Promise<LoreEntryRecord[]>;
+  onSetLinks: (links: Array<{ targetType: "character" | "persona"; targetId: string }>) => void;
+  onDuplicate: () => void;
+  onExport: () => void;
+  characters: LinkTarget[];
+  personas: LinkTarget[];
   isRu: boolean;
 }
 
@@ -59,6 +67,7 @@ interface LorebookAccordionProps {
 
 export function LorebookAccordion({
   lorebook,
+  links,
   expanded,
   editing,
   editLbName,
@@ -80,6 +89,11 @@ export function LorebookAccordion({
   onToggleEnabled,
   onUpdateMeta,
   onReorderEntries,
+  onSetLinks,
+  onDuplicate,
+  onExport,
+  characters,
+  personas,
   isRu,
 }: LorebookAccordionProps) {
   // ── Entries: загружаются при раскрытии аккордеона ──
@@ -255,6 +269,26 @@ export function LorebookAccordion({
                         className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 transition-colors hover:bg-s2 active:bg-s3"
                         onClick={(e) => {
                           e.stopPropagation();
+                          onDuplicate();
+                          onToggleActionMenu();
+                        }}
+                      >
+                        <span>⧉</span> {t("lore_duplicate")}
+                      </div>
+                      <div
+                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 transition-colors hover:bg-s2 active:bg-s3"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onExport();
+                          onToggleActionMenu();
+                        }}
+                      >
+                        <Ic.download /> {t("lore_export_st")}
+                      </div>
+                      <div
+                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 transition-colors hover:bg-s2 active:bg-s3"
+                        onClick={(e) => {
+                          e.stopPropagation();
                           onStartEdit();
                           onToggleActionMenu();
                         }}
@@ -287,6 +321,28 @@ export function LorebookAccordion({
                     }}
                   >
                     <Ic.plus />
+                  </div>
+                </CustomTooltip>
+                <CustomTooltip content={t("lore_duplicate")}>
+                  <div
+                    className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDuplicate();
+                    }}
+                  >
+                    <span className="text-[11px]">⧉</span>
+                  </div>
+                </CustomTooltip>
+                <CustomTooltip content={t("lore_export_st")}>
+                  <div
+                    className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onExport();
+                    }}
+                  >
+                    <Ic.download />
                   </div>
                 </CustomTooltip>
                 <CustomTooltip content={"Edit"}>
@@ -323,14 +379,14 @@ export function LorebookAccordion({
           className="flex flex-col gap-3 border-t border-border"
           style={{ padding: "10px 12px" }}
         >
-          {/* Настройки лорбука: token budget, scan depth, recursive scanning */}
+          {/* Настройки лорбука: token budget, scan depth, recursive scanning, links */}
           <div
             className={cn(
               "flex items-end gap-6 rounded-lg border border-border bg-s2/50 px-3 py-2.5",
               isMobile && "flex-col items-stretch gap-3"
             )}
           >
-            <div className={cn("flex gap-4", isMobile && "gap-3")}>
+            <div className={cn("flex gap-4", isMobile && "flex-col gap-3")}>
               <CustomTooltip content={t("lore_token_budget_hint")}>
                 <div className="flex-1">
                   <label className="mb-1 block text-[11px] font-medium uppercase leading-tight tracking-[0.05em] text-t3/70">
@@ -377,6 +433,22 @@ export function LorebookAccordion({
                 </div>
               </CustomTooltip>
             </div>
+            {/* Link targets — only for non-chat scopes */}
+            {lorebook.scopeType !== 'chat' && (
+              <div className={cn("w-fit self-start", !isMobile && "flex-1 pb-0.5")}>
+                <label className="mb-1 block text-[11px] font-medium uppercase leading-tight tracking-[0.05em] text-t3/70">
+                  {t("lore_link_targets")}
+                </label>
+                <LorebookLinkPopover
+                  links={links}
+                  characters={characters}
+                  personas={personas}
+                  onSetLinks={onSetLinks}
+                  t={t}
+                  isMobile={isMobile}
+                />
+              </div>
+            )}
           </div>
 
           {/* Drag-and-drop entry list grouped by position */}

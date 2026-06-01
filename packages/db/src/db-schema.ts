@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core';
 
 // ─── characters ────────────────────────────────────────────────────────────────
 
@@ -152,7 +152,29 @@ export const loreEntries = sqliteTable('lore_entries', {
   lorebookIdIdx: index('idx_lore_entries_lorebook').on(table.lorebookId),
 }));
 
-// ─── scripts ──────────────────────────────────────────────────────────────────
+// ─── lorebookLinks ───────────────────────────────────────────────────────────
+//
+// Many-to-many junction table: a lorebook can be linked to multiple
+// characters and personas.  Chat-scoped lorebooks stay 1:1 via the
+// `chatId` FK on `lorebooks` — linking a lorebook to another chat is
+// semantically meaningless (different conversation).
+//
+// The legacy FK columns (`characterId`, `personaId`) on `lorebooks`
+// are retained as the "primary owner" used by the scope-based UI tabs
+// and by import/duplicate flows.
+
+export const lorebookLinks = sqliteTable('lorebook_links', {
+  lorebookId: text('lorebook_id').notNull().references(() => lorebooks.id, { onDelete: 'cascade' }),
+  targetType: text('target_type').notNull(),  // 'character' | 'persona'
+  targetId: text('target_id').notNull(),
+}, (table) => ({
+  // Composite PK: one link per (lorebook, target) pair
+  pk: primaryKey({ columns: [table.lorebookId, table.targetType, table.targetId] }),
+  targetIdx: index('idx_lorebook_links_target').on(table.targetType, table.targetId),
+  lorebookIdx: index('idx_lorebook_links_lorebook').on(table.lorebookId),
+}));
+
+// ─── scripts ──────────────────────────────────────────────────────────────────────
 
 export const scripts = sqliteTable('scripts', {
   id: text('id').primaryKey(),

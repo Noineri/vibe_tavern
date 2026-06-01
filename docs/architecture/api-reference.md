@@ -482,6 +482,49 @@ Import a lorebook from SillyTavern format.
 }
 ```
 
+### `GET /api/lorebooks/:lorebookId/links`
+
+Get all character/persona links for a lorebook.
+
+**Response:** Array of `{ lorebookId, targetType, targetId }`
+
+### `PUT /api/lorebooks/:lorebookId/links`
+
+Replace all links for a lorebook.
+
+**Body:** `setLorebookLinksSchema`
+
+```json
+{
+  "links": [
+    { "targetType": "character", "targetId": "char_1" },
+    { "targetType": "persona", "targetId": "pers_2" }
+  ]
+}
+```
+
+### `POST /api/lorebooks/:lorebookId/duplicate`
+
+Deep-copy a lorebook with all entries and links.
+
+**Body:** `duplicateLorebookSchema` (all fields optional)
+
+```json
+{
+  "name": "Copy of Lorebook",
+  "scopeType": "character",
+  "characterId": "char_2"
+}
+```
+
+**Response:** `{ lorebook, links }`
+
+### `GET /api/lorebooks/:lorebookId/export`
+
+Export a lorebook as SillyTavern-compatible JSON.
+
+**Response:** JSON with `Content-Disposition: attachment` header. Format matches ST's `entries` structure (numeric keys, ST field names).
+
 ---
 
 ## Personas

@@ -496,6 +496,18 @@ export class RuntimeApiAdapter {
 		return { lorebookId: targetId, imported, skipped: parsed.entries.length - imported, warnings: parsed.warnings };
 	};
 
+	getLorebookLinks = (lorebookId: string) =>
+		this.stores.lorebooks.getLinks(lorebookId);
+
+	setLorebookLinks = (lorebookId: string, links: Array<{ targetType: string; targetId: string }>) =>
+		this.stores.lorebooks.setLinks(lorebookId, links);
+
+	duplicateLorebook = (lorebookId: string, overrides?: { name?: string; scopeType?: string; characterId?: string | null; personaId?: string | null }) =>
+		this.stores.lorebooks.duplicateLorebook(lorebookId, overrides);
+
+	exportLorebook = (lorebookId: string) =>
+		this.stores.lorebooks.exportToStFormat(lorebookId);
+
 	// ─── Scripts (wired to store) ──────────────────────────────────────────
 
 	listScripts = (scopeType: string, ownerId?: string) =>

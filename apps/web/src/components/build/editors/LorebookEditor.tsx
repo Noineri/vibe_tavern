@@ -29,16 +29,24 @@ import {
   createLoreEntry,
   updateLoreEntry,
   reorderLoreEntries,
+  getLorebookLinks,
+  setLorebookLinks,
+  duplicateLorebook,
+  exportLorebookSt,
   type LorebookRecord,
   type LoreEntryRecord,
+  type LorebookLinkRecord,
 } from "../../../app-client.js";
 
 import { useScriptPanel } from "./ScriptEditor.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { LorebookAccordion } from "./LorebookAccordion.js";
 import type { Scope } from "./LorebookAccordion.js";
+import type { LinkTarget } from "./LorebookLinkPopover.js";
 import { LoreEntryEditor } from "./LoreEntryEditor.js";
 import { LorebookImportModal } from "./LorebookImportModal.js";
+import { useAllCharacters } from "../../../stores/snapshot-store.js";
+import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -259,6 +267,48 @@ export function LorebookEditor({
     if (view !== "pick") void refreshLorebooks();
   }, [view, refreshLorebooks]);
 
+  // ── Links state: per-lorebook link data ──
+  const [lorebookLinksMap, setLorebookLinksMap] = useState<Map<string, LorebookLinkRecord[]>>(new Map());
+
+  // ── Reference data for link popover ──
+  const allCharacters = useAllCharacters();
+  const personas = useBootstrapStore((s) => s.personas) ?? [];
+  const linkCharacters: LinkTarget[] = allCharacters.map((c) => ({
+    id: c.id,
+    name: c.name,
+    avatarAssetId: c.avatarAssetId,
+  }));
+  const linkPersonas: LinkTarget[] = personas.map((p) => ({
+    id: p.id,
+    name: p.name,
+    avatarAssetId: p.avatarAssetId,
+  }));
+
+  // Load links when lorebooks change
+  useEffect(() => {
+    if (lorebooks.length === 0) {
+      setLorebookLinksMap(new Map());
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      lorebooks.map(async (lb) => {
+        try {
+          const links = await getLorebookLinks(lb.id);
+          return [lb.id, links] as const;
+        } catch {
+          return [lb.id, [] as LorebookLinkRecord[]] as const;
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      const map = new Map<string, LorebookLinkRecord[]>();
+      for (const [id, links] of results) map.set(id, links);
+      setLorebookLinksMap(map);
+    });
+    return () => { cancelled = true; };
+  }, [lorebooks]);
+
   // ═══ Загрузка записей (для активного лорбука) ═══
   const [entries, setEntries] = useState<LoreEntryRecord[]>([]);
   const activeEntry = entries.find((e) => e.id === activeEntryId) ?? null;
@@ -308,6 +358,41 @@ export function LorebookEditor({
     await deleteLorebook(id);
     await refreshLorebooks();
     setConfirmDeleteLorebook(null);
+  };
+
+  // ── Link management ──
+  const handleSetLinks = async (
+    lorebookId: string,
+    links: Array<{ targetType: "character" | "persona"; targetId: string }>,
+  ) => {
+    const updated = await setLorebookLinks(lorebookId, links);
+    setLorebookLinksMap((prev) => {
+      const next = new Map(prev);
+      next.set(lorebookId, updated);
+      return next;
+    });
+  };
+
+  // ── Duplicate lorebook ──
+  const handleDuplicateLb = async (lorebookId: string) => {
+    const result = await duplicateLorebook(lorebookId);
+    await refreshLorebooks();
+    setExpandedLorebooks((prev) => new Set([...prev, result.lorebook.id]));
+  };
+
+  // ── Export lorebook (ST format download) ──
+  const handleExportLb = async (lorebookId: string) => {
+    const lb = lorebooks.find((l) => l.id === lorebookId);
+    const data = await exportLorebookSt(lorebookId);
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(lb?.name ?? "lorebook").replace(/[^a-zA-Z0-9_-]/g, "_")}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // ═══ Мутации записей ═══
@@ -595,6 +680,9 @@ export function LorebookEditor({
         <LorebookAccordion
           key={lb.id}
           lorebook={lb}
+          links={lorebookLinksMap.get(lb.id) ?? []}
+          characters={linkCharacters}
+          personas={linkPersonas}
           expanded={expandedLorebooks.has(lb.id)}
           editing={editingLorebookId === lb.id}
           editLbName={editLbName}
@@ -626,6 +714,9 @@ export function LorebookEditor({
           }
           onUpdateMeta={(body) => handleUpdateLb(lb.id, body)}
           onReorderEntries={(updates) => handleReorderEntries(lb.id, updates)}
+          onSetLinks={(links) => handleSetLinks(lb.id, links)}
+          onDuplicate={() => handleDuplicateLb(lb.id)}
+          onExport={() => handleExportLb(lb.id)}
           isRu={isRu}
         />
       ))}

@@ -99,6 +99,13 @@
       "when": 1779900000000,
       "tag": "0013_greeting_index",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1779950000000,
+      "tag": "0014_lorebook_links",
+      "breakpoints": true
     }
   ]
 }

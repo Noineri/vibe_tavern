@@ -1,5 +1,5 @@
-import { eq, and, or, asc, sql } from 'drizzle-orm';
-import { lorebooks, loreEntries } from '../db-schema.js';
+import { eq, and, or, asc, sql, inArray } from 'drizzle-orm';
+import { lorebooks, loreEntries, lorebookLinks } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import type { ContentStore } from '../content-store.js';
@@ -143,6 +143,14 @@ export interface LoreEntry {
   metadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── Link types ────────────────────────────────────────────────────────────────
+
+export interface LorebookLink {
+  lorebookId: string;
+  targetType: 'character' | 'persona';
+  targetId: string;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -475,7 +483,8 @@ export class LorebookStore {
    * Returns all lorebooks visible to a chat session across all scopes,
    * plus their enabled entries.
    *
-   * Scope resolution order: global → character → persona → chat.
+   * Resolution: global lorebooks + lorebooks linked to the character (via lorebook_links)
+   * + lorebooks linked to the persona (via lorebook_links) + chat-scoped lorebooks (direct FK).
    * Only enabled entries are included.
    */
   async listAllActiveForChat(
@@ -483,29 +492,64 @@ export class LorebookStore {
     personaId: string | null,
     chatId: string,
   ): Promise<Array<{ lorebook: Lorebook; entries: LoreEntry[] }>> {
-    const conditions = [
-      eq(lorebooks.scopeType, 'global'),
-      and(eq(lorebooks.scopeType, 'character'), eq(lorebooks.characterId, characterId)),
-      and(eq(lorebooks.scopeType, 'chat'), eq(lorebooks.chatId, chatId)),
-    ];
+    // Build lorebook ID set from multiple sources
+    const lorebookIds = new Set<string>();
+
+    // 1. Global lorebooks
+    const globalRows = await this.db
+      .select({ id: lorebooks.id })
+      .from(lorebooks)
+      .where(and(eq(lorebooks.scopeType, 'global'), eq(lorebooks.enabled, 1)))
+      .all();
+    for (const r of globalRows) lorebookIds.add(r.id);
+
+    // 2. Character-linked lorebooks (via junction table)
+    const charLinks = await this.db
+      .select({ lorebookId: lorebookLinks.lorebookId })
+      .from(lorebookLinks)
+      .innerJoin(lorebooks, and(
+        eq(lorebookLinks.lorebookId, lorebooks.id),
+        eq(lorebooks.enabled, 1),
+      ))
+      .where(and(eq(lorebookLinks.targetType, 'character'), eq(lorebookLinks.targetId, characterId)))
+      .all();
+    for (const r of charLinks) lorebookIds.add(r.lorebookId);
+
+    // 3. Persona-linked lorebooks (via junction table)
     if (personaId) {
-      conditions.push(
-        and(eq(lorebooks.scopeType, 'persona'), eq(lorebooks.personaId, personaId)),
-      );
+      const personaLinks = await this.db
+        .select({ lorebookId: lorebookLinks.lorebookId })
+        .from(lorebookLinks)
+        .innerJoin(lorebooks, and(
+          eq(lorebookLinks.lorebookId, lorebooks.id),
+          eq(lorebooks.enabled, 1),
+        ))
+        .where(and(eq(lorebookLinks.targetType, 'persona'), eq(lorebookLinks.targetId, personaId)))
+        .all();
+      for (const r of personaLinks) lorebookIds.add(r.lorebookId);
     }
 
+    // 4. Chat-scoped lorebooks (direct FK — not via links)
+    const chatRows = await this.db
+      .select({ id: lorebooks.id })
+      .from(lorebooks)
+      .where(and(eq(lorebooks.scopeType, 'chat'), eq(lorebooks.chatId, chatId), eq(lorebooks.enabled, 1)))
+      .all();
+    for (const r of chatRows) lorebookIds.add(r.id);
+
+    if (lorebookIds.size === 0) return [];
+
+    // Batch-load lorebooks
+    const idArray = [...lorebookIds];
     const bookRows = await this.db
       .select()
       .from(lorebooks)
-      .where(or(...conditions))
+      .where(inArray(lorebooks.id, idArray))
       .all();
 
     const result: Array<{ lorebook: Lorebook; entries: LoreEntry[] }> = [];
 
     for (const bookRow of bookRows) {
-      // Skip disabled lorebooks
-      if (bookRow.enabled === 0) continue;
-
       const entryRows = await this.db
         .select()
         .from(loreEntries)
@@ -524,6 +568,219 @@ export class LorebookStore {
     }
 
     return result;
+  }
+
+  // ─── Link management ───────────────────────────────────────────────────────
+
+  /**
+   * Get all links for a lorebook.
+   */
+  async getLinks(lorebookId: string): Promise<LorebookLink[]> {
+    const rows = await this.db
+      .select()
+      .from(lorebookLinks)
+      .where(eq(lorebookLinks.lorebookId, lorebookId))
+      .all();
+    return rows.map((r) => ({
+      lorebookId: r.lorebookId,
+      targetType: r.targetType as 'character' | 'persona',
+      targetId: r.targetId,
+    }));
+  }
+
+  /**
+   * Replace all links for a lorebook. Deletes existing and inserts new ones in a transaction.
+   */
+  async setLinks(lorebookId: string, links: Array<{ targetType: string; targetId: string }>): Promise<LorebookLink[]> {
+    await this.db.transaction(async (tx) => {
+      await tx.delete(lorebookLinks).where(eq(lorebookLinks.lorebookId, lorebookId)).run();
+      for (const link of links) {
+        await tx.insert(lorebookLinks).values({
+          lorebookId,
+          targetType: link.targetType,
+          targetId: link.targetId,
+        }).run();
+      }
+    });
+    return this.getLinks(lorebookId);
+  }
+
+  /**
+   * Add a single link (idempotent — ignores duplicates).
+   */
+  async addLink(lorebookId: string, targetType: string, targetId: string): Promise<void> {
+    await this.db.insert(lorebookLinks).values({
+      lorebookId,
+      targetType,
+      targetId,
+    }).onConflictDoNothing().run();
+  }
+
+  /**
+   * Remove a single link.
+   */
+  async removeLink(lorebookId: string, targetType: string, targetId: string): Promise<void> {
+    await this.db.delete(lorebookLinks).where(
+      and(
+        eq(lorebookLinks.lorebookId, lorebookId),
+        eq(lorebookLinks.targetType, targetType),
+        eq(lorebookLinks.targetId, targetId),
+      ),
+    ).run();
+  }
+
+  // ─── Duplicate & export ────────────────────────────────────────────────────
+
+  /**
+   * Deep-copy a lorebook with all its entries.
+   * Copies links from the original. Overrides optional fields if provided.
+   */
+  async duplicateLorebook(
+    lorebookId: string,
+    overrides?: { name?: string; scopeType?: string; characterId?: string | null; personaId?: string | null },
+  ): Promise<{ lorebook: Lorebook; links: LorebookLink[] }> {
+    const source = await this.getLorebook(lorebookId);
+    if (!source) throw new Error(`Lorebook '${lorebookId}' not found`);
+
+    const sourceEntries = await this.listEntries(lorebookId);
+    const sourceLinks = await this.getLinks(lorebookId);
+
+    const created = await this.createLorebook({
+      name: overrides?.name ?? `${source.name} (copy)`,
+      description: source.description,
+      scopeType: overrides?.scopeType ?? source.scopeType,
+      characterId: overrides?.characterId ?? source.characterId,
+      personaId: overrides?.personaId ?? source.personaId,
+      scanDepth: source.scanDepth,
+      tokenBudget: source.tokenBudget,
+      recursiveScanning: source.recursiveScanning,
+      maxRecursionSteps: source.maxRecursionSteps,
+      includeNames: source.includeNames,
+      minActivations: source.minActivations,
+      minActivationsDepthMax: source.minActivationsDepthMax,
+      overflowAlert: source.overflowAlert,
+      characterStrategy: source.characterStrategy,
+      enabled: source.enabled,
+      extensions: source.extensions,
+    });
+
+    // Copy all entries
+    await this.bulkCreateEntries(created.id, sourceEntries.map((e) => ({
+      title: e.title,
+      content: e.content,
+      keys: e.keys,
+      secondaryKeys: e.secondaryKeys,
+      logic: e.logic,
+      position: e.position,
+      depth: e.depth,
+      priority: e.priority,
+      stickyWindow: e.stickyWindow,
+      cooldownWindow: e.cooldownWindow,
+      delayWindow: e.delayWindow,
+      constant: e.constant,
+      probability: e.probability,
+      ignoreBudget: e.ignoreBudget,
+      role: e.role,
+      groupName: e.group,
+      groupWeight: e.groupWeight,
+      prioritizeInclusion: e.prioritizeInclusion,
+      excludeRecursion: e.excludeRecursion,
+      preventRecursion: e.preventRecursion,
+      delayUntilRecursion: e.delayUntilRecursion,
+      recursionLevel: e.recursionLevel,
+      scanDepthOverride: e.scanDepthOverride,
+      caseSensitive: e.caseSensitive,
+      matchWholeWords: e.matchWholeWords,
+      characterFilter: e.characterFilter,
+      characterFilterExclude: e.characterFilterExclude,
+      triggers: e.triggers,
+      matchSources: e.matchSources,
+      enabled: e.enabled,
+      metadata: e.metadata,
+    })));
+
+    // Copy links
+    if (sourceLinks.length > 0) {
+      await this.setLinks(created.id, sourceLinks.map((l) => ({
+        targetType: l.targetType,
+        targetId: l.targetId,
+      })));
+    }
+
+    const links = await this.getLinks(created.id);
+    return { lorebook: created, links };
+  }
+
+  /**
+   * Export a lorebook to SillyTavern-compatible JSON format.
+   * ST uses numeric keys in `entries` object (not array).
+   */
+  async exportToStFormat(lorebookId: string): Promise<Record<string, unknown>> {
+    const lorebook = await this.getLorebook(lorebookId);
+    if (!lorebook) throw new Error(`Lorebook '${lorebookId}' not found`);
+
+    const entries = await this.listEntries(lorebookId);
+
+    const stEntries: Record<string, unknown> = {};
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      // Reverse-map our UI positions to ST numeric positions
+      let stPosition: number;
+      switch (e.position) {
+        case 'before_char': stPosition = 0; break;
+        case 'after_char': stPosition = 1; break;
+        case 'top_an': stPosition = 2; break;
+        case 'bottom_an': stPosition = 3; break;
+        case 'at_depth': stPosition = 4; break;
+        case 'before_examples': stPosition = 5; break;
+        case 'after_examples': stPosition = 6; break;
+        case 'outlet': stPosition = 7; break;
+        default: stPosition = 1;
+      }
+      stEntries[String(i)] = {
+        uid: i,
+        key: e.keys,
+        keysecondary: e.secondaryKeys,
+        comment: e.title,
+        content: e.content,
+        constant: e.constant,
+        selective: e.secondaryKeys.length > 0,
+        selectiveLogic: e.logic === 'not_all' ? 1 : e.logic === 'not_any' ? 2 : e.logic === 'and_all' ? 3 : 0,
+        order: e.priority,
+        position: stPosition,
+        depth: e.depth,
+        disable: !e.enabled,
+        sticky: e.stickyWindow,
+        cooldown: e.cooldownWindow,
+        delay: e.delayWindow,
+        probability: e.probability,
+        useProbability: true,
+        role: e.role,
+        group: e.group,
+        groupWeight: e.groupWeight,
+        scanDepth: e.scanDepthOverride,
+        caseSensitive: e.caseSensitive,
+        matchWholeWords: e.matchWholeWords,
+        automationId: e.automationId,
+        excludeRecursion: e.excludeRecursion,
+        preventRecursion: e.preventRecursion,
+        delayUntilRecursion: e.delayUntilRecursion,
+        metadata: e.metadata,
+      };
+    }
+
+    return {
+      entries: stEntries,
+      name: lorebook.name,
+      description: lorebook.description,
+      scan_depth: lorebook.scanDepth,
+      token_budget: lorebook.tokenBudget,
+      recursive_scanning: lorebook.recursiveScanning,
+      extensions: {
+        ...((lorebook.extensions as Record<string, unknown>) ?? {}),
+        max_recursion_steps: lorebook.maxRecursionSteps,
+      },
+    };
   }
 
   // ─── Dual-write helpers ────────────────────────────────────────────────────

@@ -38,6 +38,7 @@ export type {
   UpdateLoreEntryData,
   Lorebook as LorebookRow,
   LoreEntry as LoreEntryRow,
+  LorebookLink,
 } from './lorebook-store.js';
 
 export { ScriptStore } from './script-store.js';
