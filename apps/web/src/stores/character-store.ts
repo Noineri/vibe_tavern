@@ -46,4 +46,4 @@ export const useCharacterStore = create<CharacterStore>()((set) => ({
   setIsSavingCharacter: (saving) => set({ isSavingCharacter: saving }),
 }));
 
-if (typeof window !== "undefined") (window as any).__useCharacterStore = useCharacterStore;
+if (typeof window !== "undefined") window.__useCharacterStore = useCharacterStore;

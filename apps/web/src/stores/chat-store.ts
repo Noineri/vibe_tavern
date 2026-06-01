@@ -280,5 +280,5 @@ export function abortActiveGeneration(): void {
 }
 
 if (typeof window !== "undefined") {
-  (window as any).__useChatStore = useChatStore;
+  window.__useChatStore = useChatStore;
 }

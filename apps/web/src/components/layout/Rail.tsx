@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ChatId } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
 import { avatarUrl } from "../../lib/avatar.js";
@@ -517,7 +517,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                                           "flex cursor-pointer items-center gap-1.5 rounded-md px-2 min-h-[44px] text-[calc(var(--ui-fs)-2px)] transition-colors active:bg-s3",
                                           b.id === activeBranchId ? "text-accent-t font-medium bg-accent-dim/50" : "text-t3"
                                         )}
-                                        onClick={(e) => { e.stopPropagation(); void activateBranchAction(ch.id as any, b.id as any); }}
+                                        onClick={(e) => { e.stopPropagation(); void activateBranchAction(ch.id as ChatId, b.id as ChatBranchId); }}
                                       >
                                         <span className={cn("inline-block h-2 w-2 rounded-full shrink-0", b.id === activeBranchId ? "bg-accent" : "bg-border2")} />
                                         <span className="truncate">{b.label}</span>

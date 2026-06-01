@@ -31,9 +31,9 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 		const server = c.env as { requestIP?: (req: Request) => { address: string } | null } | undefined;
 		if (server?.requestIP) {
 			const info = server.requestIP(c.req.raw);
-			(c as any).remoteIp = info?.address ?? "unknown";
+			c.set("remoteIp", info?.address ?? "unknown");
 		} else {
-			(c as any).remoteIp = "unknown";
+			c.set("remoteIp", "unknown");
 		}
 		await next();
 	});

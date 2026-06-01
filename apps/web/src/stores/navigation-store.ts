@@ -28,4 +28,4 @@ export const useNavigationStore = create<NavigationStore>()((set) => ({
   triggerRailOpen: () => set(s => ({ railForceOpen: s.railForceOpen + 1 })),
 }));
 
-if (typeof window !== "undefined") (window as any).__useNavigationStore = useNavigationStore;
+if (typeof window !== "undefined") window.__useNavigationStore = useNavigationStore;

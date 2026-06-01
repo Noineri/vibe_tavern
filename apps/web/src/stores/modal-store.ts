@@ -44,4 +44,4 @@ export const useModalStore = create<ModalStore>()((set) => ({
   setMobileAccessOpen: (open) => set({ mobileAccessOpen: open }),
 }));
 
-if (typeof window !== "undefined") (window as any).__useModalStore = useModalStore;
+if (typeof window !== "undefined") window.__useModalStore = useModalStore;
