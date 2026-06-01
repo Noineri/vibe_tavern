@@ -110,7 +110,8 @@ await mkdir(resolve(dataDir, "assets"), { recursive: true });
 	const app = await createApp({
 		runtime,
 		staticDir: staticEnabled ? staticDir : undefined,
-		mobileAccessToken: mobileAccessService.getToken() ?? undefined,
+		mobileAccessToken: () => mobileAccessService.getToken(),
+		enforceMobileAuth: true,
 	});
 
 	// Проверяем, не занят ли порт, и предлагаем убить старый процесс

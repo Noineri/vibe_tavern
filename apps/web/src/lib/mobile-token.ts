@@ -4,8 +4,10 @@ const STORAGE_KEY = "vibe_mobile_token";
  *  Returns the token if found (and removes hash from URL), or null. */
 export function extractTokenFromHash(): string | null {
   const hash = window.location.hash;
-  if (!hash.startsWith("#token=")) return null;
-  const token = hash.slice(7); // after "#token="
+  if (!hash.startsWith("#")) return null;
+
+  const params = new URLSearchParams(hash.slice(1));
+  const token = params.get("token")?.trim();
   if (!token) return null;
 
   // Clean up URL hash without triggering navigation

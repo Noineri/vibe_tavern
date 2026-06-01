@@ -111,7 +111,8 @@ configureLogDir(paths.logsDir);
 	const app = await createApp({
 		runtime,
 		staticDir: paths.webEnabled ? paths.webDir : undefined,
-		mobileAccessToken: mobileAccessService.getToken() ?? undefined,
+		mobileAccessToken: () => mobileAccessService.getToken(),
+		enforceMobileAuth: true,
 	});
 
 	const tlsOptions = tlsConfig ? { tls: tlsConfig } : {};

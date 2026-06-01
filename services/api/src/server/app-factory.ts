@@ -5,15 +5,17 @@ import { resolve } from "node:path";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "../errors.js";
 import { logSendDebug } from "../send-debug-log.js";
 import { createApiRouter, type RuntimeApi } from "../routes/index.js";
-import { createMobileAuthMiddleware } from "../mobile-auth.js";
+import { createMobileAuthMiddleware, type MobileAccessTokenSource } from "../mobile-auth.js";
 
 export interface AppDeps {
 	runtime: RuntimeApi;
 	/** Absolute path to the built frontend assets directory. When set, the app
 	 *  serves static files and falls back to index.html for SPA routing. */
 	staticDir?: string;
-	/** If set, all /api/* routes require this Bearer token (header or ?token= param). */
-	mobileAccessToken?: string;
+	/** Current mobile/LAN token. Prefer a getter so regenerate/revoke works without restart. */
+	mobileAccessToken?: MobileAccessTokenSource;
+	/** Deny remote /api/* requests when mobile access has no token. */
+	enforceMobileAuth?: boolean;
 }
 
 /**
@@ -47,7 +49,10 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 	}));
 
 	// ─── Mobile auth ────────────────────────────────────────────────────
-	const authMiddleware = createMobileAuthMiddleware(deps.mobileAccessToken);
+	const authMiddleware = createMobileAuthMiddleware({
+		token: deps.mobileAccessToken,
+		enforceWhenTokenMissing: deps.enforceMobileAuth,
+	});
 	app.use("*", authMiddleware);
 
 	app.onError((err, c) => {
