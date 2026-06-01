@@ -23,6 +23,13 @@ const providerCoreSchema = z.object({
   presencePenalty: z.number().optional(),
   repetitionPenalty: z.number().optional(),
   stopSequences: z.array(z.string()).optional(),
+  logitBias: z.array(z.object({
+    tokenId: z.number().int(),
+    bias: z.number().min(-100).max(100),
+    text: z.string().optional(),
+    sourceText: z.string().optional(),
+    model: z.string().optional(),
+  })).optional(),
   seed: z.string().nullable().optional(),
   reasoningEffort: z.string().optional(),
   showReasoning: z.boolean().optional(),

@@ -22,14 +22,18 @@ interface LogitBiasEntry {
   tokenId: number;
   bias: number;
   text?: string;
+  sourceText?: string;
+  model?: string;
 }
 
 interface LogitBiasPanelProps {
   entries: LogitBiasEntry[];
   onChange: (entries: LogitBiasEntry[]) => void;
   disabled?: boolean;
-  /** Whether this provider supports logit bias */
+  /** Whether this provider/model supports logit bias */
   supported: boolean;
+  /** Model used to choose tokenizer IDs. */
+  model?: string;
 }
 
 // ── Bias Row ───────────────────────────────────────────────────────
@@ -39,11 +43,13 @@ function BiasRow({
   onUpdate,
   onRemove,
   disabled = false,
+  stale = false,
 }: {
   entry: LogitBiasEntry;
   onUpdate: (e: LogitBiasEntry) => void;
   onRemove: () => void;
   disabled?: boolean;
+  stale?: boolean;
 }) {
   const biasColor = entry.bias === 0
     ? "text-t3"
@@ -52,7 +58,7 @@ function BiasRow({
       : "text-success";
 
   return (
-    <div className="group flex items-center gap-2 rounded-lg border border-border bg-s2 px-3 py-2 transition-colors hover:border-border2">
+    <div className={cn("group flex items-center gap-2 rounded-lg border bg-s2 px-3 py-2 transition-colors", stale ? "border-warning/50 opacity-60" : "border-border hover:border-border2")}>
       {/* Token text / ID */}
       <div className="flex shrink-0 items-center gap-1.5">
         {entry.text ? (
@@ -61,13 +67,14 @@ function BiasRow({
           </span>
         ) : null}
         <span className="font-mono text-[10px] text-t3">#{entry.tokenId}</span>
+        {stale && <span className="rounded bg-warning/10 px-1 py-0.5 font-ui text-[9px] uppercase tracking-wide text-warning">stale</span>}
       </div>
 
       {/* Bias slider */}
       <div className="flex flex-1 items-center gap-2">
         <button
           type="button"
-          disabled={disabled}
+          disabled={disabled || stale}
           onClick={() => onUpdate({ ...entry, bias: Math.max(-100, entry.bias - 10) })}
           className="shrink-0 rounded border border-border bg-s3 px-1.5 py-0.5 text-[10px] text-t3 transition-colors hover:border-accent hover:text-accent-t disabled:pointer-events-none"
         >
@@ -79,13 +86,13 @@ function BiasRow({
           max={100}
           step={1}
           value={entry.bias}
-          disabled={disabled}
+          disabled={disabled || stale}
           onChange={(e) => onUpdate({ ...entry, bias: parseInt(e.target.value, 10) })}
           className="!h-[4px] flex-1 !rounded-full !border-0 accent-accent p-0 disabled:pointer-events-none"
         />
         <button
           type="button"
-          disabled={disabled}
+          disabled={disabled || stale}
           onClick={() => onUpdate({ ...entry, bias: Math.min(100, entry.bias + 10) })}
           className="shrink-0 rounded border border-border bg-s3 px-1.5 py-0.5 text-[10px] text-t3 transition-colors hover:border-accent hover:text-accent-t disabled:pointer-events-none"
         >
@@ -103,7 +110,7 @@ function BiasRow({
         <CustomTooltip content="Ban token (-100)">
           <button
             type="button"
-            disabled={disabled}
+            disabled={disabled || stale}
             onClick={() => onUpdate({ ...entry, bias: -100 })}
             className="shrink-0 rounded border border-danger/30 bg-danger/10 px-1.5 py-0.5 text-[10px] text-danger transition-colors hover:bg-danger/20 disabled:pointer-events-none"
           >
@@ -130,21 +137,22 @@ function BiasRow({
 
 // ── Main Component ─────────────────────────────────────────────────
 
-export function LogitBiasPanel({ entries, onChange, disabled, supported }: LogitBiasPanelProps) {
+export function LogitBiasPanel({ entries, onChange, disabled, supported, model }: LogitBiasPanelProps) {
   const { t } = useT();
   const [textInput, setTextInput] = useState("");
   const [manualId, setManualId] = useState("");
   const [loading, setLoading] = useState(false);
 
   const addEntries = useCallback(
-    (newTokens: Array<{ id: number; text: string }>, defaultBias = -100) => {
-      const existing = new Set(entries.map((e) => e.tokenId));
+    (newTokens: Array<{ id: number; text: string }>, sourceText: string, defaultBias = -100) => {
+      const currentModel = model || undefined;
+      const existing = new Set(entries.filter((e) => e.model === currentModel).map((e) => e.tokenId));
       const toAdd = newTokens
         .filter((tok) => !existing.has(tok.id))
-        .map((tok) => ({ tokenId: tok.id, bias: defaultBias, text: tok.text }));
+        .map((tok) => ({ tokenId: tok.id, bias: defaultBias, text: tok.text, sourceText, model: currentModel }));
       if (toAdd.length > 0) onChange([...entries, ...toAdd]);
     },
-    [entries, onChange],
+    [entries, model, onChange],
   );
 
   const handleTokenize = useCallback(async () => {
@@ -154,27 +162,28 @@ export function LogitBiasPanel({ entries, onChange, disabled, supported }: Logit
       const resp = await fetch("/api/tokenize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: textInput }),
+        body: JSON.stringify({ text: textInput, model: model || undefined }),
       });
       if (!resp.ok) throw new Error("Tokenization failed");
       const data = await resp.json() as { tokens: Array<{ id: number; text: string }> };
-      addEntries(data.tokens);
+      addEntries(data.tokens, textInput);
       setTextInput("");
     } catch {
       // Silently fail — could add toast later
     } finally {
       setLoading(false);
     }
-  }, [textInput, addEntries]);
+  }, [textInput, model, addEntries]);
 
   const handleManualAdd = useCallback(() => {
     const id = parseInt(manualId.trim(), 10);
     if (isNaN(id)) return;
-    const existing = new Set(entries.map((e) => e.tokenId));
+    const currentModel = model || undefined;
+    const existing = new Set(entries.filter((e) => e.model === currentModel).map((e) => e.tokenId));
     if (existing.has(id)) return;
-    onChange([...entries, { tokenId: id, bias: -100 }]);
+    onChange([...entries, { tokenId: id, bias: -100, model: currentModel }]);
     setManualId("");
-  }, [manualId, entries, onChange]);
+  }, [manualId, model, entries, onChange]);
 
   const updateEntry = useCallback(
     (index: number, updated: LogitBiasEntry) => {
@@ -279,15 +288,19 @@ export function LogitBiasPanel({ entries, onChange, disabled, supported }: Logit
       {/* Token entries */}
       {entries.length > 0 && (
         <div className="mt-3 space-y-1.5">
-          {entries.map((entry, i) => (
-            <BiasRow
-              key={entry.tokenId}
-              entry={entry}
-              onUpdate={(e) => updateEntry(i, e)}
-              onRemove={() => removeEntry(i)}
-              disabled={disabled}
-            />
-          ))}
+          {entries.map((entry, i) => {
+            const stale = Boolean(model && entry.model !== model);
+            return (
+              <BiasRow
+                key={`${entry.model ?? "legacy"}:${entry.tokenId}`}
+                entry={entry}
+                onUpdate={(e) => updateEntry(i, e)}
+                onRemove={() => removeEntry(i)}
+                disabled={disabled}
+                stale={stale}
+              />
+            );
+          })}
         </div>
       )}
 

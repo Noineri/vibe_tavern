@@ -3,8 +3,8 @@
  *
  * Uses:
  * - js-tiktoken for OpenAI models (GPT-4, GPT-4o, etc.)
- * - @agnai/web-tokenizers for Claude, Llama3, Qwen2, DeepSeek, etc.
- * - cl100k_base (GPT-4 tokenizer) as universal fallback for unknown models
+ * - @agnai/web-tokenizers for Claude, Llama3, Mistral, Qwen2, DeepSeek, GLM, etc.
+ * - cl100k_base (GPT-4 tokenizer) as universal fallback for prompt token counting only
  */
 
 import { join, resolve } from "node:path";
@@ -95,18 +95,19 @@ const OPENAI_TIKTOKEN: Array<[RegExp, string]> = [
 
 const WEB_TOKENIZERS: Array<[RegExp, string]> = [
 	[/claude/, "claude.json"],
-	[/llama[-_]?3/, "llama3.json"],
-	[/qwen/, "llama3.json"],
-	[/deepseek/, "llama3.json"],
-	[/mistral|mixtral|codestral/, "llama3.json"],
+	[/command-a/, "command-a.json"],
+	[/command-r/, "command-r.json"],
+	[/glm|zai-|z-ai/, "glm-4.6.json"],
+	[/deepseek/, "deepseek.json"],
+	[/mimo/, "mimo.json"],
+	[/qwen/, "qwen2.json"],
+	[/mistral-nemo|open-mistral-nemo|nemo/, "nemo.json"],
+	[/mistral|mixtral|codestral|ministral|magistral/, "mistral.json"],
+	[/llama[-_]?3|llama/, "llama3.json"],
 	[/gemini|gemma/, "llama3.json"],
-	[/command/, "llama3.json"],
-	[/nemo/, "llama3.json"],
-	[/llama/, "llama3.json"],
 	[/yi[-_]/, "llama3.json"],
 	[/jamba/, "llama3.json"],
 	[/phi/, "llama3.json"],
-	[/glm/, "llama3.json"],
 	[/hermes/, "llama3.json"],
 	[/dolphin/, "llama3.json"],
 	[/mythomax/, "llama3.json"],

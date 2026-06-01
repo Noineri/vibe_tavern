@@ -25,8 +25,10 @@ function profile(
     presencePenalty: 0.3,
     repetitionPenalty: 1.15,
     stopSequences: ["\\n\\n", "STOP"],
+    logitBias: [],
     seed: "42",
     reasoningEffort: "high",
+    showReasoning: false,
     streamResponse: false,
     customSamplers: true,
     isActive: true,
@@ -112,6 +114,28 @@ describe("buildSamplerConfig", () => {
         }),
       );
       expect(config.providerOptions).toBeUndefined();
+    });
+
+    it("includes logit bias only for a known direct provider/model", () => {
+      const config = buildSamplerConfig(
+        profile("openai", {
+          defaultModel: "gpt-4o-mini",
+          endpoint: "https://api.openai.com/v1",
+          logitBias: [{ tokenId: 123, bias: -100, text: " bad", model: "gpt-4o-mini" }],
+        }),
+      );
+      expect((config.providerOptions!.openai as Record<string, unknown>).logitBias).toEqual({ "123": -100 });
+    });
+
+    it("omits logit bias for mixed/router providers even when entries exist", () => {
+      const config = buildSamplerConfig(
+        profile("nanogpt", {
+          defaultModel: "gpt-4o-mini",
+          endpoint: "https://nano-gpt.com/api/v1",
+          logitBias: [{ tokenId: 123, bias: -100, text: " bad", model: "gpt-4o-mini" }],
+        }),
+      );
+      expect((config.providerOptions!.openai as Record<string, unknown>).logitBias).toBeUndefined();
     });
   });
 
@@ -228,16 +252,18 @@ describe("buildSamplerConfig", () => {
   });
 
   describe("unknown provider type", () => {
-    it("sets only common native params — same as koboldcpp fallback", () => {
-      const config = buildSamplerConfig(profile("some_new_provider"));
+    it("treats unknown providers as OpenAI-compatible but still gates logit bias fail-closed", () => {
+      const config = buildSamplerConfig(profile("some_new_provider", {
+        defaultModel: "gpt-4o-mini",
+        logitBias: [{ tokenId: 123, bias: -100, model: "gpt-4o-mini" }],
+      }));
       expect(config.temperature).toBe(0.9);
       expect(config.topP).toBe(0.95);
       expect(config.maxTokens).toBe(4096);
-      expect(config.frequencyPenalty).toBeUndefined();
-      expect(config.presencePenalty).toBeUndefined();
-      expect(config.seed).toBeUndefined();
-      expect(config.topK).toBeUndefined();
-      expect(config.providerOptions).toBeUndefined();
+      expect(config.frequencyPenalty).toBe(0.5);
+      expect(config.presencePenalty).toBe(0.3);
+      expect(config.seed).toBe(42);
+      expect((config.providerOptions!.openai as Record<string, unknown>).logitBias).toBeUndefined();
     });
   });
 

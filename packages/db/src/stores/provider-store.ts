@@ -57,7 +57,7 @@ export interface CreateProviderData {
   presencePenalty?: number;
   repetitionPenalty?: number;
   stopSequences?: string[];
-  logitBias?: Array<{ tokenId: number; bias: number; text?: string }>;
+  logitBias?: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed?: string | null;
   reasoningEffort?: string;
   showReasoning?: boolean;
@@ -355,7 +355,7 @@ export class ProviderStore {
       presencePenalty: row.presencePenalty,
       repetitionPenalty: row.repetitionPenalty,
       stopSequences: row.stopSequencesJson ? JSON.parse(row.stopSequencesJson) : [],
-      logitBias: safeParseJson<Array<{ tokenId: number; bias: number; text?: string }>>(row.logitBiasJson),
+      logitBias: safeParseJson<Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>>(row.logitBiasJson),
       seed: row.seed,
       reasoningEffort: row.reasoningEffort,
       showReasoning: row.showReasoning === 1,

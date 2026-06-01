@@ -301,7 +301,7 @@
   "logit_bias_label": "Logit Bias",
   "logit_bias_tokens": "токен(а) настроено",
   "logit_bias_empty": "Токены не настроены",
-  "logit_bias_unsupported": "Не поддерживается этим провайдером",
+  "logit_bias_unsupported": "Отключено для этого провайдера/модели",
   "logit_bias_tokenize_placeholder": "Слово или текст для токенизации…",
   "logit_bias_tokenize_btn": "Токенизировать",
   "logit_bias_manual_placeholder": "ID токена вручную…",

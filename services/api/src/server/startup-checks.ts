@@ -99,8 +99,20 @@ export async function runStartupFileChecks(options: StartupFileCheckOptions): Pr
 
 	const tokenizerDir = await resolveTokenizerDir();
 	ok = await checkDir("tokenizer directory", tokenizerDir) && ok;
-	ok = await checkFile("tokenizer claude.json", join(tokenizerDir, "claude.json")) && ok;
-	ok = await checkFile("tokenizer llama3.json", join(tokenizerDir, "llama3.json")) && ok;
+	for (const tokenizerFile of [
+		"claude.json",
+		"llama3.json",
+		"mistral.json",
+		"nemo.json",
+		"qwen2.json",
+		"deepseek.json",
+		"mimo.json",
+		"glm-4.6.json",
+		"command-r.json",
+		"command-a.json",
+	]) {
+		ok = await checkFile(`tokenizer ${tokenizerFile}`, join(tokenizerDir, tokenizerFile)) && ok;
+	}
 
 	const promptPath = await resolveScriptAiPromptPath();
 	ok = await checkFile("Script AI prompt", promptPath) && ok;

@@ -303,7 +303,7 @@
   "logit_bias_label": "Logit Bias",
   "logit_bias_tokens": "token(s) configured",
   "logit_bias_empty": "No tokens configured",
-  "logit_bias_unsupported": "Not supported by this provider",
+  "logit_bias_unsupported": "Disabled for this provider/model",
   "logit_bias_tokenize_placeholder": "Word or text to tokenize…",
   "logit_bias_tokenize_btn": "Tokenize",
   "logit_bias_manual_placeholder": "Token ID manually…",
