@@ -418,6 +418,7 @@ export interface ImportResult {
 			prefill: preset.assistantPrefix,
 			authorsNote: preset.authorsNote,
 			authorsNoteDepth: preset.authorsNoteDepth,
+			authorsNotePosition: (preset.authorsNotePosition as "in_prompt" | "in_chat" | "after_chat") ?? "in_chat",
 			summary: preset.summaryPrompt,
 			tools: preset.toolsPrompt,
 			customInjections: (() => { try { return JSON.parse(preset.customInjectionsJson); } catch { return []; } })(),

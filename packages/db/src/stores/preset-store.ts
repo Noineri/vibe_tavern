@@ -15,6 +15,7 @@ export interface CreatePresetData {
   assistantPrefix?: string;
   authorsNote?: string;
   authorsNoteDepth?: number;
+  authorsNotePosition?: string;
   summaryPrompt?: string;
   toolsPrompt?: string;
   scriptAiSystemPrompt?: string;
@@ -37,6 +38,7 @@ export interface PromptPreset {
   assistantPrefix: string;
   authorsNote: string;
   authorsNoteDepth: number;
+  authorsNotePosition: string;
   summaryPrompt: string;
   toolsPrompt: string;
   scriptAiSystemPrompt: string;
@@ -102,6 +104,7 @@ export class PresetStore {
         assistantPrefix: data.assistantPrefix ?? '',
         authorsNote: data.authorsNote ?? '',
         authorsNoteDepth: data.authorsNoteDepth ?? 4,
+        authorsNotePosition: data.authorsNotePosition ?? 'in_chat',
         summaryPrompt: data.summaryPrompt ?? '',
         toolsPrompt: data.toolsPrompt ?? '',
         scriptAiSystemPrompt: data.scriptAiSystemPrompt ?? '',
@@ -136,6 +139,7 @@ export class PresetStore {
     if (data.assistantPrefix !== undefined) values.assistantPrefix = data.assistantPrefix;
     if (data.authorsNote !== undefined) values.authorsNote = data.authorsNote;
     if (data.authorsNoteDepth !== undefined) values.authorsNoteDepth = data.authorsNoteDepth;
+    if (data.authorsNotePosition !== undefined) values.authorsNotePosition = data.authorsNotePosition;
     if (data.summaryPrompt !== undefined) values.summaryPrompt = data.summaryPrompt;
     if (data.toolsPrompt !== undefined) values.toolsPrompt = data.toolsPrompt;
     if (data.scriptAiSystemPrompt !== undefined) values.scriptAiSystemPrompt = data.scriptAiSystemPrompt;
@@ -193,6 +197,7 @@ export class PresetStore {
         assistantPrefix: original.assistantPrefix,
         authorsNote: original.authorsNote,
         authorsNoteDepth: original.authorsNoteDepth,
+        authorsNotePosition: original.authorsNotePosition,
         summaryPrompt: original.summaryPrompt,
         toolsPrompt: original.toolsPrompt,
         scriptAiSystemPrompt: original.scriptAiSystemPrompt ?? '',
@@ -233,6 +238,7 @@ export class PresetStore {
       assistantPrefix: '',
       authorsNote: '',
       authorsNoteDepth: 4,
+      authorsNotePosition: 'in_chat',
       summaryPrompt: '',
       toolsPrompt: '',
       scriptAiSystemPrompt: '',
@@ -251,6 +257,7 @@ export class PresetStore {
       assistantPrefix: row.assistantPrefix,
       authorsNote: row.authorsNote,
       authorsNoteDepth: row.authorsNoteDepth,
+      authorsNotePosition: row.authorsNotePosition,
       summaryPrompt: row.summaryPrompt,
       toolsPrompt: row.toolsPrompt,
       scriptAiSystemPrompt: row.scriptAiSystemPrompt,
@@ -270,6 +277,7 @@ export class PresetStore {
       assistantPrefix: row.assistantPrefix,
       authorsNote: row.authorsNote,
       authorsNoteDepth: row.authorsNoteDepth,
+      authorsNotePosition: row.authorsNotePosition,
       summaryPrompt: row.summaryPrompt,
       toolsPrompt: row.toolsPrompt,
       scriptAiSystemPrompt: row.scriptAiSystemPrompt ?? '',

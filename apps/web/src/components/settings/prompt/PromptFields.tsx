@@ -39,6 +39,7 @@ type DraftData = {
   prefill: string;
   authorsNote: string;
   authorsNoteDepth: number;
+  authorsNotePosition: string;
   summary: string;
   tools: string;
   scriptAiSystemPrompt: string;
@@ -55,7 +56,7 @@ const textareaCls = "w-full rounded-md border border-border bg-s2 font-ui text-[
 const labelCls = "mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3";
 const labelAccentCls = "mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-accent";
 
-type TextDraftKey = Exclude<keyof DraftData, "authorsNoteDepth">;
+type TextDraftKey = Exclude<keyof DraftData, "authorsNoteDepth" | "authorsNotePosition">;
 
 function findScrollParent(el: HTMLElement): HTMLElement | null {
   let parent = el.parentElement;
@@ -192,17 +193,31 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey 
         <div className="mb-[7px] flex items-center justify-between">
           <label className={labelCls + " mb-0"}>{t("authors_note_label")}</label>
           <div className="flex items-center gap-2">
-            <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{t("insert_depth_label")}</label>
-            <CustomTooltip content={t("insert_depth_hint")}>
-            <input
-              className="h-[30px] w-16 rounded-md border border-border bg-s2 px-2 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors focus:border-accent disabled:opacity-60"
-              type="number"
-              min={0}
-              value={draft?.authorsNoteDepth ?? 4}
-              onChange={(e) => onUpdateField("authorsNoteDepth", Number(e.target.value))}
+            <select
+              className="h-[30px] rounded-md border border-border bg-s2 px-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors focus:border-accent disabled:opacity-60"
+              value={draft?.authorsNotePosition ?? "in_chat"}
+              onChange={(e) => onUpdateField("authorsNotePosition", e.target.value)}
               disabled={disabled}
-            />
-            </CustomTooltip>
+            >
+              <option value="in_prompt">{t("an_position_in_prompt")}</option>
+              <option value="in_chat">{t("an_position_in_chat")}</option>
+              <option value="after_chat">{t("an_position_after_chat")}</option>
+            </select>
+            {(draft?.authorsNotePosition ?? "in_chat") === "in_chat" && (
+              <>
+                <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{t("insert_depth_label")}</label>
+                <CustomTooltip content={t("insert_depth_hint")}>
+                <input
+                  className="h-[30px] w-16 rounded-md border border-border bg-s2 px-2 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors focus:border-accent disabled:opacity-60"
+                  type="number"
+                  min={0}
+                  value={draft?.authorsNoteDepth ?? 4}
+                  onChange={(e) => onUpdateField("authorsNoteDepth", Number(e.target.value))}
+                  disabled={disabled}
+                />
+                </CustomTooltip>
+              </>
+            )}
           </div>
         </div>
         {ta("authorsNote", t("authors_note_placeholder"), 100)}

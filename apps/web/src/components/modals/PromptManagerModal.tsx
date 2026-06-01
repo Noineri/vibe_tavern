@@ -25,6 +25,7 @@ type DraftData = {
   prefill: string;
   authorsNote: string;
   authorsNoteDepth: number;
+  authorsNotePosition: "in_prompt" | "in_chat" | "after_chat";
   summary: string;
   tools: string;
   scriptAiSystemPrompt: string;
@@ -43,6 +44,7 @@ interface PromptManagerModalProps {
     prefill?: string;
     authorsNote?: string;
     authorsNoteDepth?: number;
+    authorsNotePosition?: string;
     summary?: string;
     tools?: string;
     scriptAiSystemPrompt?: string;
@@ -58,7 +60,7 @@ interface PromptManagerModalProps {
 
 const emptyDraft: DraftData = {
   name: "", bindModel: "", system: "", jailbreak: "",
-  prefill: "", authorsNote: "", authorsNoteDepth: 4, summary: "", tools: "", scriptAiSystemPrompt: "",
+  prefill: "", authorsNote: "", authorsNoteDepth: 4, authorsNotePosition: "in_chat", summary: "", tools: "", scriptAiSystemPrompt: "",
   customInjections: [],
 };
 
@@ -88,6 +90,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         prefill: activePreset.prefill ?? "",
         authorsNote: activePreset.authorsNote ?? "",
         authorsNoteDepth: activePreset.authorsNoteDepth ?? 4,
+        authorsNotePosition: activePreset.authorsNotePosition ?? "in_chat",
         summary: activePreset.summary,
         tools: activePreset.tools,
         scriptAiSystemPrompt: activePreset.scriptAiSystemPrompt ?? "",
@@ -145,6 +148,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       prefill: "",
       authorsNote: "",
       authorsNoteDepth: 4,
+      authorsNotePosition: "in_chat",
       summary: "",
       tools: "",
       scriptAiSystemPrompt: "",
@@ -184,6 +188,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         authorsNote: result.authors.join("\n\n"),
         prefill: "",
         authorsNoteDepth: 4,
+        authorsNotePosition: "in_chat",
         summary: "",
         tools: "",
         scriptAiSystemPrompt: "",

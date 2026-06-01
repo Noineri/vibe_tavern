@@ -56,6 +56,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			prefill: preset.assistantPrefix,
 			authorsNote: preset.authorsNote,
 			authorsNoteDepth: preset.authorsNoteDepth,
+			authorsNotePosition: (preset.authorsNotePosition as "in_prompt" | "in_chat" | "after_chat") ?? "in_chat",
 			customInjections,
 		};
 	}
