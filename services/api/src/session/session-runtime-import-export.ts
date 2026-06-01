@@ -33,7 +33,7 @@ export interface ImportExportModuleDeps {
 	resolveDefaultPersonaId(): Promise<PersonaId>;
 	resolveDefaultPromptPresetId(): Promise<PromptPresetId>;
 	getSnapshot(chatId: ChatId): Promise<import("./session-runtime.js").SessionSnapshot>;
-	seedImportedOpening(chatId: ChatId, firstMessage: string): Promise<void>;
+	seedImportedOpening(chatId: ChatId, firstMessage: string, alternateGreetings?: string[]): Promise<void>;
 }
 
 export interface ImportResult {
@@ -356,7 +356,7 @@ export async function importJson(
 
 		const createdId = chat.id as ChatId;
 		deps.chatOrder.add(createdId);
-		await deps.seedImportedOpening(createdId, imported.normalized.firstMessage);
+		await deps.seedImportedOpening(createdId, imported.normalized.firstMessage, imported.normalized.alternateGreetings);
 
 		return {
 			activeChatId: createdId,

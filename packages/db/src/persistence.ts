@@ -21,13 +21,16 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
   const db = await createDb(dbPath);
   const fileStore = createFileStore(dataDir);
   const content = new ContentStore({ fileStore });
+  const chats = new ChatStore(db);
+  await chats.migrateGreetingVariants();
+
   return {
     db,
     content,
     characters: new CharacterStore(db, { content }),
     personas: new PersonaStore(db, { content }),
     providers: new ProviderStore(db),
-    chats: new ChatStore(db),
+    chats,
     chatSummaries: new ChatSummaryStore(db, { content }),
     presets: new PresetStore(db, { content }),
     uiSettings: new UiSettingsStore(db),

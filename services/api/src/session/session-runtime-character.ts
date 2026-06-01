@@ -162,7 +162,7 @@ export interface CharacterRuntimeDeps {
   getSnapshot: (chatId: ChatId) => Promise<SessionSnapshot>;
   resolveDefaultPersonaId: () => Promise<PersonaId>;
   resolveDefaultPromptPresetId: () => Promise<PromptPresetId>;
-  seedImportedOpening: (chatId: ChatId, firstMessage: string) => Promise<void>;
+  seedImportedOpening: (chatId: ChatId, firstMessage: string, alternateGreetings?: string[]) => Promise<void>;
   discardPendingPromptTrace: (chatId: ChatId) => void;
 }
 
@@ -258,7 +258,7 @@ export class CharacterRuntime {
     this.deps.chatOrder.add(createdChatId);
 
     if (input.firstMessage?.trim()) {
-      await this.deps.seedImportedOpening(createdChatId, input.firstMessage);
+      await this.deps.seedImportedOpening(createdChatId, input.firstMessage, input.alternateGreetings ?? []);
     }
 
     return {
@@ -480,7 +480,7 @@ export class CharacterRuntime {
     this.deps.chatOrder.add(createdChatId);
 
     if (source.firstMessage?.trim()) {
-      await this.deps.seedImportedOpening(createdChatId, source.firstMessage);
+      await this.deps.seedImportedOpening(createdChatId, source.firstMessage, source.alternateGreetings);
     }
 
     return {

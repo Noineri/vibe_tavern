@@ -31,9 +31,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const { t } = useT();
   const chat = useChatController();
   const [copied, setCopied] = useState(false);
-  const [greetingIndex, setGreetingIndex] = useState(() =>
-    useSnapshotStore.getState().activeChat?.selectedGreetingIndex ?? 0
-  );
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [variantControlsOverlay, setVariantControlsOverlay] = useState<VariantControlsOverlayState | null>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
@@ -81,36 +78,15 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // Greeting logic
   const isGreeting = !!msg && input.messageId === firstAssistantMsgId;
 
-  const alternateGreetings = useMemo(() => {
-    if (!isGreeting || !macroContext || !chatMeta) return [];
-    return chatMeta.character.alternateGreetings.map(g => replaceUiMacros(g, macroContext));
-  }, [isGreeting, macroContext, chatMeta?.character?.alternateGreetings]);
-
-  const greetingOptions = useMemo(() => {
-    if (!isGreeting || !msg) return undefined;
-    return [msg.displayContent, ...alternateGreetings];
-  }, [isGreeting, msg?.displayContent, alternateGreetings]);
-
-  const greetingCarouselVariants = useMemo(
-    () => greetingOptions?.map((content) => ({ content })) ?? [],
-    [greetingOptions],
-  );
-
   const isUser = msg?.role === "user";
-  const greetingActive = !isUser && !!greetingOptions && greetingOptions.length > 1;
 
   // -- Variant slide: direction derived locally to prevent phantom renders --
   const prevVariantIndexRef = useRef(selectedVariantIndex);
-  const prevGreetingIndexRef = useRef(greetingIndex);
   const directionRef = useRef(1);
 
   if (selectedVariantIndex !== prevVariantIndexRef.current) {
     directionRef.current = selectedVariantIndex > prevVariantIndexRef.current ? 1 : -1;
     prevVariantIndexRef.current = selectedVariantIndex;
-  }
-  if (greetingIndex !== prevGreetingIndexRef.current) {
-    directionRef.current = greetingIndex > prevGreetingIndexRef.current ? 1 : -1;
-    prevGreetingIndexRef.current = greetingIndex;
   }
   const direction = directionRef.current;
 
@@ -120,12 +96,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       if (bottomPinRafRef.current !== undefined) window.cancelAnimationFrame(bottomPinRafRef.current);
     };
   }, []);
-
-  // Sync local greeting index when the persisted value changes (e.g. after API sync).
-  const persistedGreetingIndex = useSnapshotStore((s) => s.activeChat?.selectedGreetingIndex ?? 0);
-  useEffect(() => {
-    setGreetingIndex(persistedGreetingIndex);
-  }, [persistedGreetingIndex]);
 
   // Streaming text for regeneration
   const globalStreamingText = activeGen?.streamingText ?? "";
@@ -179,7 +149,8 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const selectedVariant = variants[selectedVariantIndex] ?? variants[0];
   const activeContent = selectedVariant ? selectedVariant.content : msg.displayContent;
 
-  const renderContent = greetingActive ? (greetingOptions[greetingIndex] ?? msg.displayContent) : activeContent;
+  const renderContent = activeContent;
+  const greetingActive = isGreeting && !isUser && variantCount > 1;
 
   const isStreamingHere = !isUser && messageActionId === input.messageId && (globalStreamingText || globalStreamingReasoning);
   const activeStreamingText = isStreamingHere ? globalStreamingText : null;
@@ -230,16 +201,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     };
 
     pin();
-  };
-
-  const handleSelectGreeting = (targetIndex: number, swipeDirection: SwipeDirection) => {
-    useSnapshotStore.getState().setSwipeDirection(swipeDirection);
-    const changed = targetIndex !== greetingIndex;
-    setGreetingIndex(targetIndex);
-    // Persist the selected greeting index so prompt assembly uses it.
-    if (changed) {
-      void chat.handleSetGreetingIndex(targetIndex);
-    }
   };
 
   const handleSelectVariant = (targetIndex: number, swipeDirection: SwipeDirection) => {
@@ -316,14 +277,14 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               <span className="ml-auto flex items-center gap-1 text-[calc(var(--ui-fs)-3px)] text-t3">
                 <button type="button"
                   className={cn("cursor-pointer text-t3 transition-colors duration-100", isMobile ? "active:text-accent" : "hover:text-accent")}
-                  disabled={!canSwitchVariant || greetingIndex <= 0}
-                  onClick={() => { handleSelectGreeting(Math.max(0, greetingIndex - 1), -1); }}
+                  disabled={!canSwitchVariant || selectedVariantIndex <= 0}
+                  onClick={() => { handleSelectVariant(Math.max(0, selectedVariantIndex - 1), -1); }}
                 >◀</button>
-                {t("greeting_counter").replace("{n}", String(greetingIndex + 1)).replace("{total}", String(greetingOptions!.length))}
+                {t("greeting_counter").replace("{n}", String(selectedVariantIndex + 1)).replace("{total}", String(variantCount))}
                 <button type="button"
                   className={cn("cursor-pointer text-t3 transition-colors duration-100", isMobile ? "active:text-accent" : "hover:text-accent")}
-                  disabled={!canSwitchVariant || greetingIndex >= greetingOptions!.length - 1}
-                  onClick={() => { handleSelectGreeting(Math.min(greetingOptions!.length - 1, greetingIndex + 1), 1); }}
+                  disabled={!canSwitchVariant || selectedVariantIndex >= variantCount - 1}
+                  onClick={() => { handleSelectVariant(Math.min(variantCount - 1, selectedVariantIndex + 1), 1); }}
                 >▶</button>
               </span>
             )}
@@ -359,7 +320,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
                       <div className="flex items-center gap-2.5 min-h-[44px] px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2 cursor-pointer" onClick={() => { setMobileMenuOpen(false); void navigator.clipboard?.writeText(msg.displayContent); setCopied(true); setTimeout(() => setCopied(false), 1000); }}>
                         {copied ? <Icons.Check /> : <Icons.Copy />}<span className={copied ? 'text-success-text' : ''}>{copied ? t("copied") : copyLabel}</span>
                       </div>
-                      <div className="flex items-center gap-2.5 min-h-[44px] px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2 cursor-pointer" onClick={() => { setMobileMenuOpen(false); chat.handleStartEdit(msg, isGreeting ? renderContent : undefined); }}>
+                      <div className="flex items-center gap-2.5 min-h-[44px] px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2 cursor-pointer" onClick={() => { setMobileMenuOpen(false); chat.handleStartEdit(msg); }}>
                         <Icons.Edit />{editLabel}
                       </div>
                       <div style={{ borderTop: '1px solid var(--border)' }}>
@@ -428,30 +389,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               {!isUser && (reasoningText || reasoningDuration) && (
                 <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
               )}
-              {isGreeting ? (
-                isMobile && greetingActive ? (
-                  <MobileVariantCarousel
-                    selectedVariantIndex={greetingIndex}
-                    variants={greetingCarouselVariants}
-                    onSelectVariant={handleSelectGreeting}
-                  />
-                ) : (
-                  <div className="relative overflow-hidden">
-                    <AnimatePresence mode="popLayout" initial={false}>
-                      <motion.div
-                        key={`g-${greetingIndex}`}
-                        initial={{ x: direction * 40, opacity: 0 }}
-                        animate={{ x: 0, opacity: 1 }}
-                        transition={{ type: "spring", stiffness: 400, damping: 35 }}
-                        translate="yes"
-                        className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
-                      >
-                        <Markdown text={renderContent} />
-                      </motion.div>
-                    </AnimatePresence>
-                  </div>
-                )
-              ) : isMobile && variantCount > 1 ? (
+              {isMobile && variantCount > 1 ? (
                 <MobileVariantCarousel
                   selectedVariantIndex={selectedVariantIndex}
                   variants={variants}
@@ -510,7 +448,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               onBranch={() => void chat.handleFork(msg.id)}
               onCopy={() => { void navigator.clipboard?.writeText(msg.displayContent); setCopied(true); setTimeout(() => setCopied(false), 1000); }}
               onDelete={() => void chat.handleDeleteMessage(msg.id)}
-              onEdit={() => chat.handleStartEdit(msg, isGreeting ? renderContent : undefined)}
+              onEdit={() => chat.handleStartEdit(msg)}
               onRegenerate={() => void chat.handleRegenerateMessage(msg.id)}
               onResend={() => void chat.handleResend()}
               onSelectVariant={handleSelectVariant}
@@ -524,6 +462,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               canResend={canResend}
               canSwitchVariant={canSwitchVariant}
               isBusy={isBusy}
+              isGreeting={isGreeting}
               isUser={isUser}
               regenLabel={regenLabel}
               resendLabel={t("resend")}
@@ -763,7 +702,7 @@ function DesktopMessageActions(props: DesktopMessageActionsProps) {
       {canBranch && <span className={desktopActionClass} onClick={() => { if (!isBusy) onBranch(); }}><Icons.Branch />{branchLabel}</span>}
       {canRegenerate && <span className={desktopActionClass} onClick={() => { if (!isBusy) onRegenerate(); }}><Icons.Regen />{regenLabel}</span>}
 
-      {!isUser && variantCount > 1 && canSwitchVariant && (
+      {!isUser && !isGreeting && variantCount > 1 && canSwitchVariant && (
         <VariantControls
           controlsRef={variantControlsRef}
           hidden={hiddenVariantControls}
@@ -791,6 +730,7 @@ type MobileMessageActionsProps = {
   canResend: boolean;
   canSwitchVariant: boolean;
   isBusy: boolean;
+  isGreeting: boolean;
   isUser: boolean;
   regenLabel: string;
   resendLabel: string;
@@ -810,6 +750,7 @@ function MobileMessageActions(props: MobileMessageActionsProps) {
     canResend,
     canSwitchVariant,
     isBusy,
+    isGreeting,
     isUser,
     regenLabel,
     resendLabel,
@@ -838,7 +779,7 @@ function MobileMessageActions(props: MobileMessageActionsProps) {
           <Icons.Branch />
         </div>
       )}
-      {!isUser && variantCount > 1 && canSwitchVariant && (
+      {!isUser && !isGreeting && variantCount > 1 && canSwitchVariant && (
         <VariantControls
           mobile
           isBusy={isBusy}

@@ -224,7 +224,7 @@ export interface Chat {
   activeBranchId: ChatBranchId;
   promptPresetId: PromptPresetId;
   toolProfileId: ToolProfileId;
-  /** Which alternate greeting is active for this chat. 0 = firstMessage, 1+ = alternateGreetings[n-1]. */
+  /** @deprecated Greeting selection is now stored as the selected variant on the first assistant message. */
   selectedGreetingIndex: number;
   createdAt: Timestamp;
   updatedAt: Timestamp;
