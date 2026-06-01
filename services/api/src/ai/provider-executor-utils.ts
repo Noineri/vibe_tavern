@@ -10,6 +10,7 @@ import type { LanguageModelV1 } from "ai";
 import { mapProfileToSdkModel } from "./provider-profile-mapper.js";
 import { getProviderCapabilities } from "./provider-capabilities.js";
 import type { ProviderType } from "@vibe-tavern/domain";
+import { log } from "@vibe-tavern/domain";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -67,7 +68,7 @@ export function toSdkMessages(
       const r = record as { role?: unknown; content?: unknown };
       if (typeof r.role !== "string" || typeof r.content !== "string") return null;
       if (r.role !== "system" && r.role !== "user" && r.role !== "assistant") {
-        console.warn(`[toSdkMessages] FILTERED out role="${r.role}", content.length=${(r.content as string)?.length ?? 0}`);
+        log.tag("sdk-msgs").warn("FILTERED out role=%s, content.length=%d", r.role, (r.content as string)?.length ?? 0);
         return null;
       }
       return { role: r.role as SdkMessage["role"], content: r.content };
