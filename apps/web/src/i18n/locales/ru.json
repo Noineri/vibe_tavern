@@ -297,7 +297,7 @@
   "sampler_rep_penalty": "Штраф повторений",
   "stop_seqs_label": "Стоп-последовательности",
   "stop_seqs_placeholder": "Введите и нажмите Enter…",
-  "stop_seqs_hint": "Строки, останавливающие генерацию. Enter вставляет \\n, Shift+Enter или запятая для добавления.",
+  "stop_seqs_hint": "Enter вставляет \\n, Tab вставляет \\t. Shift+Enter или запятая для добавления.",
   "logit_bias_label": "Logit Bias",
   "logit_bias_tokens": "токен(а) настроено",
   "logit_bias_empty": "Токены не настроены",
