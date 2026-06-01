@@ -483,11 +483,12 @@ export function CharacterForm({
                 className={selectCls}
                 value={mesExampleMode || "always"}
                 disabled={isSaving}
-                onChange={(e) => setValue("mesExampleMode", e.target.value as "always" | "once" | "depth", { shouldDirty: true })}
+                onChange={(e) => setValue("mesExampleMode", e.target.value as "always" | "once" | "depth" | "disabled", { shouldDirty: true })}
               >
                 <option value="always">{t("activation_always")}</option>
                 <option value="once">{t("activation_once")}</option>
                 <option value="depth">{t("activation_depth")}</option>
+                <option value="disabled">{t("activation_disabled")}</option>
               </select>
               </CustomTooltip>
             </div>
