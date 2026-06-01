@@ -99,7 +99,18 @@ export interface PromptAssemblyContext {
     /** Where to place the author's note: in_prompt (system block), in_chat (at depth), or after_chat (depth=0). Defaults to in_chat. */
     authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat" | null;
     /** Custom injection blocks (advanced mode). */
-    customInjections?: Array<{ name: string; content: string; depth: number; role: string; enabled: boolean }>;
+    customInjections?: Array<{
+      identifier?: string;
+      name: string;
+      content: string;
+      depth: number;
+      role: string;
+      enabled: boolean;
+      injectionPosition?: 0 | 1 | "relative" | "absolute";
+      injectionOrder?: number;
+      promptOrderIndex?: number;
+      promptOrderPlacement?: "before_chat" | "after_chat";
+    }>;
   } | null;
   /** Assembly mode. Defaults to `"chat"` when not specified. */
   mode?: AssemblyMode;

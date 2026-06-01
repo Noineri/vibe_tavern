@@ -289,21 +289,34 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     }
   }
 
-  // Custom injections (advanced mode)
+  // Custom injections (advanced/ST mode)
   for (const injection of (context.preset?.customInjections ?? [])) {
     if (!injection.enabled || !injection.content?.trim()) continue;
+
+    const isAbsolute = injection.injectionPosition === 1 || injection.injectionPosition === "absolute" || injection.injectionPosition == null;
+    const role = injection.role === "user" || injection.role === "assistant" ? injection.role : "system";
+    const orderIndex = injection.promptOrderIndex ?? 10_000;
+
     const layer = makeLayer({
-      id: `preset_injection_${injection.name}`,
+      id: `preset_injection_${injection.identifier ?? injection.name}`,
       sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
       sourceId: context.preset?.id ?? "",
       sourceName: injection.name,
-      position: "in_chat",
-      priority: (PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote ?? 170) - (injection.depth ?? 0),
+      position: isAbsolute
+        ? "in_chat"
+        : injection.promptOrderPlacement === "after_chat" ? "in_chat" : "in_prompt",
+      priority: isAbsolute
+        ? (injection.injectionOrder ?? 100)
+        : Math.max(1, 800 - orderIndex / 1000),
+      role,
+      reason: isAbsolute
+        ? `included (ST absolute depth=${injection.depth ?? 0}, order=${injection.injectionOrder ?? 100})`
+        : `included (ST relative ${injection.promptOrderPlacement ?? "before_chat"}, orderIndex=${orderIndex})`,
       text: injection.content,
     });
-    layer.injectionDepth = injection.depth ?? 0;
-    if (injection.role === "user" || injection.role === "assistant") {
-      layer.role = injection.role;
+
+    if (isAbsolute || injection.promptOrderPlacement === "after_chat") {
+      layer.injectionDepth = isAbsolute ? (injection.depth ?? 0) : 0;
     }
     layers.push(layer);
   }
@@ -728,17 +741,17 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   // Build final messages array
   const messages = [
     ...beforePrompt.map((layer) => ({
-      role: "system" as const,
+      role: layer.role ?? ("system" as const),
       content: layer.text,
       layerId: layer.id,
     })),
     ...inPrompt.map((layer) => ({
-      role: "system" as const,
+      role: layer.role ?? ("system" as const),
       content: layer.text,
       layerId: layer.id,
     })),
     ...inChatBlock.map((layer) => ({
-      role: "system" as const,
+      role: layer.role ?? ("system" as const),
       content: layer.text,
       layerId: layer.id,
     })),

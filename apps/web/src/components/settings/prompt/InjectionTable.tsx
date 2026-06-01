@@ -6,11 +6,16 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 
 export interface InjectionRow {
+  identifier?: string;
   name: string;
   content: string;
   depth: number;
   role: "system" | "user" | "assistant";
   enabled: boolean;
+  injectionPosition?: 0 | 1 | "relative" | "absolute";
+  injectionOrder?: number;
+  promptOrderIndex?: number;
+  promptOrderPlacement?: "before_chat" | "after_chat";
 }
 
 type PromptCanvasDraft = {

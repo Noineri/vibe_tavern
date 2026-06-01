@@ -85,7 +85,7 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
   function toggleBlock(index: number) {
     setMappings((prev) =>
       prev.map((m, i) =>
-        i === index ? { ...m, enabled: !m.enabled, target: !m.enabled ? "skip" : smartDefault(m.block.identifier) } : m
+        i === index ? { ...m, enabled: !m.enabled, target: m.enabled ? "skip" : smartDefault(m.block.identifier) } : m
       )
     );
   }
@@ -139,11 +139,16 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
         case "authors": result.authors.push(m.block.content); break;
         case "injection":
           result.injections.push({
+            identifier: m.block.identifier,
             name: m.block.name,
             content: m.block.content,
             depth: m.block.injectionDepth,
             role: m.block.role,
             enabled: true,
+            injectionPosition: m.block.injectionPosition,
+            injectionOrder: m.block.injectionOrder,
+            promptOrderIndex: m.block.promptOrderIndex,
+            promptOrderPlacement: m.block.promptOrderPlacement,
           });
           break;
       }
