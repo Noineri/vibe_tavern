@@ -137,7 +137,28 @@ export function ChipInput({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter" || e.key === "Tab" || e.key === ",") {
+      if (e.key === "Enter" && e.shiftKey) {
+        // Shift+Enter commits the chip
+        e.preventDefault();
+        addChip(inputValue);
+        return;
+      }
+      if (e.key === "Enter") {
+        // Enter inserts \n literal (parsed to newline on commit)
+        e.preventDefault();
+        const input = inputRef.current;
+        const start = input?.selectionStart ?? inputValue.length;
+        const end = input?.selectionEnd ?? inputValue.length;
+        const next = `${inputValue.slice(0, start)}\n${inputValue.slice(end)}`;
+        const caret = start + 2;
+        setInputValue(next);
+        requestAnimationFrame(() => {
+          inputRef.current?.focus();
+          inputRef.current?.setSelectionRange(caret, caret);
+        });
+        return;
+      }
+      if (e.key === "Tab" || e.key === ",") {
         e.preventDefault();
         addChip(inputValue);
       } else if (e.key === "Backspace" && inputValue === "" && values.length > 0) {

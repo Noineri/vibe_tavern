@@ -299,7 +299,7 @@
   "sampler_rep_penalty": "Rep. Penalty",
   "stop_seqs_label": "Stop Sequences",
   "stop_seqs_placeholder": "Type and press Enter…",
-  "stop_seqs_hint": "Strings that stop generation. Use \\n for newline, \\t for tab. Press Enter or comma to add.",
+  "stop_seqs_hint": "Strings that stop generation. Enter inserts \\n, Shift+Enter or comma to add.",
   "logit_bias_label": "Logit Bias",
   "logit_bias_tokens": "token(s) configured",
   "logit_bias_empty": "No tokens configured",
