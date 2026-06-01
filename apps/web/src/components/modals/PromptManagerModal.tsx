@@ -10,7 +10,7 @@ import { Icons } from "../shared/icons.js";
 import { SaveButton } from "../shared/SaveBar.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { PresetList, PromptFields } from "../settings/prompt/index.js";
-import { InjectionTable } from "../settings/prompt/InjectionTable.js";
+import { PromptOrderCanvas } from "../settings/prompt/InjectionTable.js";
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 
@@ -339,7 +339,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
 
             {advancedMode && (
               <div className="mx-5 mt-3 rounded-md border border-border2 bg-s1 px-4 py-3">
-                <InjectionTable
+                <PromptOrderCanvas
                   injections={draft.customInjections}
                   onChange={(injections) => { setDraft((d) => ({ ...d, customInjections: injections })); setDirty(true); setSaveState("idle"); }}
                 />

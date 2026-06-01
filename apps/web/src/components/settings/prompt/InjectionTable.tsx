@@ -19,7 +19,11 @@ interface InjectionTableProps {
 
 const roleOptions = ["system", "user", "assistant"] as const;
 
-export function InjectionTable({ injections, onChange }: InjectionTableProps) {
+export function InjectionTable(props: InjectionTableProps) {
+  return <PromptOrderCanvas {...props} />;
+}
+
+export function PromptOrderCanvas({ injections, onChange }: InjectionTableProps) {
   const { t } = useT();
 
   function update(index: number, patch: Partial<InjectionRow>) {
@@ -30,27 +34,73 @@ export function InjectionTable({ injections, onChange }: InjectionTableProps) {
 
   return (
     <div>
-      <div className="mb-2.5 flex items-center gap-2">
-        {injections.length === 0 ? (
-          <span className="flex-1 font-ui text-[11px] text-t4">{t("preset_injections_empty")}</span>
-        ) : (
-          <span className="flex-1 font-ui text-[11px] text-t4">{injections.filter(i => i.enabled).length}/{injections.length} active</span>
-        )}
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">{t("preset_prompt_order_canvas_title")}</div>
+          <div className="mt-0.5 font-ui text-[11px] text-t4">{t("preset_prompt_order_canvas_hint")}</div>
+        </div>
         <button type="button"
-          className="flex cursor-pointer items-center gap-1 rounded border border-border bg-surface px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:border-accent hover:text-accent-t"
+          className="flex shrink-0 cursor-pointer items-center gap-1 rounded border border-border bg-surface px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:border-accent hover:text-accent-t"
           onClick={add}
         >
           + {t("preset_injection_add")}
         </button>
       </div>
 
-      {injections.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          {injections.map((inj, i) => (
-            <InjectionRowView key={i} injection={inj} index={i} onUpdate={update} onRemove={remove} />
-          ))}
+      <div className="flex flex-col gap-1.5">
+        <PromptOrderMarker label={t("prompt_slot_world_info_before")} kind="marker" />
+        <PromptOrderMarker label={t("system_prompt")} kind="builtIn" />
+        <PromptOrderMarker label={t("prompt_slot_character_description")} kind="builtIn" />
+        <PromptOrderMarker label={t("prompt_slot_character_personality")} kind="builtIn" />
+        <PromptOrderMarker label={t("scenario")} kind="builtIn" />
+        <PromptOrderMarker label={t("prompt_slot_persona")} kind="builtIn" />
+
+        <div className="my-1 rounded-md border border-dashed border-border2 bg-s2/35 p-2">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.08em] text-t4">{t("preset_injections_title")}</span>
+            <span className="rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">
+              {injections.filter(i => i.enabled).length}/{injections.length}
+            </span>
+            <div className="h-px flex-1 bg-border2" />
+          </div>
+          {injections.length === 0 ? (
+            <div className="rounded border border-border2 bg-s1 px-3 py-2 font-ui text-[11px] text-t4">
+              {t("preset_injections_empty")}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {injections.map((inj, i) => (
+                <InjectionRowView key={i} injection={inj} index={i} onUpdate={update} onRemove={remove} />
+              ))}
+            </div>
+          )}
         </div>
-      )}
+
+        <PromptOrderMarker label={t("prompt_slot_chat_history")} kind="chat" />
+        <PromptOrderMarker label={t("prompt_slot_world_info_after")} kind="marker" />
+        <PromptOrderMarker label={t("prompt_slot_dialogue_examples")} kind="marker" />
+        <PromptOrderMarker label={t("post_history_instructions")} kind="builtIn" />
+      </div>
+    </div>
+  );
+}
+
+function PromptOrderMarker({ label, kind }: { label: string; kind: "builtIn" | "marker" | "chat" }) {
+  return (
+    <div className={cn(
+      "flex items-center gap-2 rounded-md border px-3 py-2 font-ui text-[12px]",
+      kind === "chat" ? "border-accent/35 bg-accent/10 text-accent-t" :
+      kind === "marker" ? "border-border2 bg-s1 text-t4" :
+      "border-border bg-s2/70 text-t2",
+    )}>
+      <span className={cn(
+        "h-1.5 w-1.5 rounded-full",
+        kind === "chat" ? "bg-accent" : kind === "marker" ? "bg-t4" : "bg-t3",
+      )} />
+      <span className="flex-1">{label}</span>
+      <span className="rounded bg-black/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] opacity-70">
+        {kind === "chat" ? "marker" : kind === "marker" ? "slot" : "built-in"}
+      </span>
     </div>
   );
 }
