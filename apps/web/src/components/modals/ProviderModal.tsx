@@ -485,7 +485,7 @@ export function ProviderModal({
                     )}
 
                     <ProviderCapabilityPanel capabilities={capabilities} />
-                    <ProviderSamplerPanel form={form} updateForm={autoSaveField} />
+                    <ProviderSamplerPanel form={form} updateForm={autoSaveField} capabilities={capabilities} />
                   </>
                 )}
               </>

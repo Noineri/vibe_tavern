@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useT } from '../../../i18n/context.js';
 import type { FormState } from '../../modals/ProviderModal.js';
 import { ChipInput } from '../../shared/ChipInput.js';
+import { LogitBiasPanel } from './LogitBiasPanel.js';
 import { Icons } from '../../shared/icons.js';
 import { cn } from '../../../lib/cn.js';
 import { CustomTooltip } from '../../shared/Tooltip.js';
@@ -173,9 +174,10 @@ const CUSTOM_SAMPLER_DEFAULTS = {
 interface ProviderSamplerPanelProps {
   form: FormState;
   updateForm: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
+  capabilities?: { logitBias?: boolean; [k: string]: unknown } | null;
 }
 
-export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelProps) {
+export function ProviderSamplerPanel({ form, updateForm, capabilities }: ProviderSamplerPanelProps) {
   const { t } = useT();
   const [advOpen, setAdvOpen] = useState(false);
   const disabled = !form.customSamplers;
@@ -386,17 +388,12 @@ export function ProviderSamplerPanel({ form, updateForm }: ProviderSamplerPanelP
               />
             </div>
 
-            {/* Logit Bias — placeholder, will be replaced with Token Workbench */}
-            <div className={cn("mt-4", disabled && "opacity-40 pointer-events-none")}>
-              <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
-                {t("logit_bias_label")}
-              </label>
-              <div className="font-ui text-[12px] text-t3">
-                {form.logitBias.length > 0
-                  ? `${form.logitBias.length} ${t("logit_bias_tokens")}`
-                  : t("logit_bias_empty")}
-              </div>
-            </div>
+            <LogitBiasPanel
+              entries={form.logitBias}
+              onChange={(v) => updateForm('logitBias', v)}
+              disabled={disabled}
+              supported={capabilities?.logitBias !== false}
+            />
           </div>
         )}
       </div>
