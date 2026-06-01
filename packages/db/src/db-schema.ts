@@ -307,6 +307,7 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   presencePenalty: real('presence_penalty').notNull().default(0),
   repetitionPenalty: real('repetition_penalty').notNull().default(1.0),
   stopSequencesJson: text('stop_sequences_json'),
+  logitBiasJson: text('logit_bias_json'),
   seed: text('seed'),
   reasoningEffort: text('reasoning_effort').notNull().default('auto'),
   showReasoning: integer('show_reasoning').notNull().default(0),

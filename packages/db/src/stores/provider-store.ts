@@ -50,6 +50,7 @@ export interface CreateProviderData {
   presencePenalty?: number;
   repetitionPenalty?: number;
   stopSequences?: string[];
+  logitBias?: Array<{ tokenId: number; bias: number; text?: string }>;
   seed?: string | null;
   reasoningEffort?: string;
   showReasoning?: boolean;
@@ -129,6 +130,7 @@ export class ProviderStore {
         presencePenalty: data.presencePenalty ?? 0,
         repetitionPenalty: data.repetitionPenalty ?? 1.0,
         stopSequencesJson: data.stopSequences ? JSON.stringify(data.stopSequences) : null,
+        logitBiasJson: data.logitBias?.length ? JSON.stringify(data.logitBias) : null,
         seed: data.seed ?? null,
         reasoningEffort: data.reasoningEffort ?? 'auto',
         showReasoning: data.showReasoning ? 1 : 0,
@@ -164,6 +166,7 @@ export class ProviderStore {
     if (data.presencePenalty !== undefined) values.presencePenalty = data.presencePenalty;
     if (data.repetitionPenalty !== undefined) values.repetitionPenalty = data.repetitionPenalty;
     if (data.stopSequences !== undefined) values.stopSequencesJson = JSON.stringify(data.stopSequences);
+    if (data.logitBias !== undefined) values.logitBiasJson = data.logitBias.length ? JSON.stringify(data.logitBias) : null;
     if (data.seed !== undefined) values.seed = data.seed;
     if (data.reasoningEffort !== undefined) values.reasoningEffort = data.reasoningEffort;
     if (data.showReasoning !== undefined) values.showReasoning = data.showReasoning ? 1 : 0;
@@ -222,6 +225,7 @@ export class ProviderStore {
         presencePenalty: original.presencePenalty,
         repetitionPenalty: original.repetitionPenalty,
         stopSequencesJson: original.stopSequencesJson,
+        logitBiasJson: original.logitBiasJson,
         seed: original.seed,
         reasoningEffort: original.reasoningEffort,
         showReasoning: original.showReasoning,
@@ -344,6 +348,7 @@ export class ProviderStore {
       presencePenalty: row.presencePenalty,
       repetitionPenalty: row.repetitionPenalty,
       stopSequences: row.stopSequencesJson ? JSON.parse(row.stopSequencesJson) : [],
+      logitBias: row.logitBiasJson ? JSON.parse(row.logitBiasJson) : [],
       seed: row.seed,
       reasoningEffort: row.reasoningEffort,
       showReasoning: row.showReasoning === 1,

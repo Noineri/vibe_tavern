@@ -300,6 +300,8 @@
   "stop_seqs_label": "Stop Sequences",
   "stop_seqs_placeholder": "User:, \\nUser",
   "logit_bias_label": "Logit Bias",
+  "logit_bias_tokens": "token(s) configured",
+  "logit_bias_empty": "No tokens configured",
 
   "capabilities": "Capabilities",
   "cap_non_streaming": "Non-streaming",
