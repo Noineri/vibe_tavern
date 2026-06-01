@@ -7,9 +7,7 @@
  */
 
 import type { ProviderType } from "@vibe-tavern/domain";
-import type { SdkSupportKind } from "./provider-profile-mapper.js";
 
-export type { SdkSupportKind };
 
 export interface ProviderCapabilityFlags {
   /** Provider can produce a complete non-streamed reply. */
@@ -20,8 +18,8 @@ export interface ProviderCapabilityFlags {
   streaming: boolean;
   /** Provider supports prefill (prefixing assistant content). */
   prefill: boolean;
-  /** How this provider kind maps to the AI SDK. */
-  sdkSupport: SdkSupportKind;
+  /** Provider supports logit bias (token-level output control). */
+  logitBias: boolean;
 }
 
 /** Capability map keyed by provider type. */
@@ -41,42 +39,42 @@ export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
     abortSignal: true,
     streaming: true,
     prefill: true,
-    sdkSupport: "native",
+    logitBias: true,
   },
   anthropic: {
     nonStreamGeneration: true,
     abortSignal: true,
     streaming: true,
     prefill: false,
-    sdkSupport: "native",
+    logitBias: false,
   },
   google: {
     nonStreamGeneration: true,
     abortSignal: true,
     streaming: true,
     prefill: false,
-    sdkSupport: "native",
+    logitBias: false,
   },
   ollama: {
     nonStreamGeneration: true,
     abortSignal: true,
     streaming: true,
     prefill: true,
-    sdkSupport: "openai_fallback",
+    logitBias: true,
   },
   llamacpp: {
     nonStreamGeneration: true,
     abortSignal: true,
     streaming: true,
     prefill: true,
-    sdkSupport: "openai_fallback",
+    logitBias: true,
   },
   koboldcpp: {
     nonStreamGeneration: false,
     abortSignal: false,
     streaming: false,
     prefill: false,
-    sdkSupport: "unsupported",
+    logitBias: false,
   },
 };
 

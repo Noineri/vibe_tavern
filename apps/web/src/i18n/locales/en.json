@@ -306,7 +306,7 @@
   "cap_streaming": "Streaming",
   "cap_abort": "Abort",
   "cap_prefill": "Prefill",
-  "cap_sdk": "SDK",
+  "cap_logit_bias": "Logit Bias",
   "cap_vision": "Vision",
   "cap_reasoning": "Reasoning",
   "cap_tools": "Tools",

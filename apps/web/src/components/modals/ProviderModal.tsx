@@ -127,7 +127,7 @@ interface Capabilities {
   abortSignal: boolean;
   streaming: boolean;
   prefill: boolean;
-  sdkSupport: string;
+  logitBias: boolean;
   vision?: boolean;
   reasoning?: boolean;
   tools?: boolean;
@@ -138,13 +138,13 @@ interface Capabilities {
 function getCapabilities(type: string): Capabilities {
   switch (type) {
     case "anthropic": case "google":
-      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: false, sdkSupport: "native" };
+      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: false, logitBias: false };
     case "ollama": case "llamacpp":
-      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, sdkSupport: "openai_fallback" };
+      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: true };
     case "koboldcpp":
-      return { nonStreamGeneration: false, abortSignal: false, streaming: false, prefill: false, sdkSupport: "unsupported" };
+      return { nonStreamGeneration: false, abortSignal: false, streaming: false, prefill: false, logitBias: false };
     default:
-      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, sdkSupport: "native" };
+      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: true };
   }
 }
 

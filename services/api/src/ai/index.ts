@@ -25,13 +25,11 @@ export {
 } from "./provider-capabilities.js";
 
 export type {
-  SdkSupportKind,
   ProviderMappingResult,
 } from "./provider-profile-mapper.js";
 
 export {
   mapProfileToSdkModel,
-  isNativeSdkProvider,
   isUnsupportedProvider,
 } from "./provider-profile-mapper.js";
 
