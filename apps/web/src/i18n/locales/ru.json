@@ -301,6 +301,11 @@
   "logit_bias_label": "Logit Bias",
   "logit_bias_tokens": "токен(а) настроено",
   "logit_bias_empty": "Токены не настроены",
+  "logit_bias_unsupported": "Не поддерживается этим провайдером",
+  "logit_bias_tokenize_placeholder": "Слово или текст для токенизации…",
+  "logit_bias_tokenize_btn": "Токенизировать",
+  "logit_bias_manual_placeholder": "ID токена вручную…",
+  "logit_bias_empty_hint": "Введите текст и нажмите «Токенизировать» или добавьте ID токена вручную.",
 
   "capabilities": "Возможности",
   "cap_non_streaming": "Без стриминга",
