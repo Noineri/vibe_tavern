@@ -188,6 +188,9 @@ export function ProviderModal({
   // ── Auto-save flash indicator ──
   const [autoSaveFlash, setAutoSaveFlash] = useState(false);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lazyAutoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasPendingLazyAutoSave = useRef(false);
+  const latestFormRef = useRef<FormState | null>(null);
 
   // ── Load cached models for a profile ──
   const loadCached = async (profileId: string | null) => {
@@ -207,10 +210,19 @@ export function ProviderModal({
   }, [isOpen]);
 
   useEffect(() => {
+    latestFormRef.current = form;
+  }, [form]);
+
+  useEffect(() => {
     if (!isOpen) return;
     const h = (e: MouseEvent) => { if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setModelListOpen(false); };
     document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h);
   }, [isOpen]);
+
+  useEffect(() => () => {
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    if (lazyAutoSaveTimer.current) clearTimeout(lazyAutoSaveTimer.current);
+  }, []);
 
   if (!isOpen) return null;
 
@@ -235,21 +247,62 @@ export function ProviderModal({
     setDirty(true);
   };
 
-  // Auto-save: persists a single field immediately (samplers, toggles, model).
+  const showAutoSaveFlash = () => {
+    setAutoSaveFlash(true);
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => setAutoSaveFlash(false), 1200);
+  };
+
+  const persistForm = (next: FormState) => {
+    const parsed = saveProviderDraftSchema.safeParse(toProviderDraft(next));
+    if (parsed.success) void onSaveProfile(next);
+  };
+
+  const flushLazyAutoSave = () => {
+    if (!hasPendingLazyAutoSave.current) return;
+    if (lazyAutoSaveTimer.current) {
+      clearTimeout(lazyAutoSaveTimer.current);
+      lazyAutoSaveTimer.current = null;
+    }
+    const next = latestFormRef.current;
+    hasPendingLazyAutoSave.current = false;
+    if (next) {
+      persistForm(next);
+      showAutoSaveFlash();
+    }
+  };
+
+  // Auto-save: persists a single field immediately (model selection, simple toggles).
   const autoSaveField = <K extends keyof FormState>(k: K, v: FormState[K]) => {
     setForm((f) => {
       if (!f) return f;
       const next = { ...f, [k]: v };
-      const parsed = saveProviderDraftSchema.safeParse(toProviderDraft(next));
-      if (parsed.success) {
-        // Fire-and-forget save to backend
-        void onSaveProfile(next);
-      }
+      latestFormRef.current = next;
+      persistForm(next);
       return next;
     });
+    showAutoSaveFlash();
+  };
+
+  // Lazy auto-save: update UI immediately, persist only after the user pauses.
+  // Used for sampler fields and especially logit bias sliders to avoid request storms.
+  const lazyAutoSaveField = <K extends keyof FormState>(k: K, v: FormState[K]) => {
+    setForm((f) => {
+      if (!f) return f;
+      const next = { ...f, [k]: v };
+      latestFormRef.current = next;
+      return next;
+    });
+    hasPendingLazyAutoSave.current = true;
     setAutoSaveFlash(true);
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(() => setAutoSaveFlash(false), 1200);
+    if (lazyAutoSaveTimer.current) clearTimeout(lazyAutoSaveTimer.current);
+    lazyAutoSaveTimer.current = setTimeout(() => {
+      const next = latestFormRef.current;
+      hasPendingLazyAutoSave.current = false;
+      lazyAutoSaveTimer.current = null;
+      if (next) persistForm(next);
+      showAutoSaveFlash();
+    }, 900);
   };
 
   // ── Profile selection ──
@@ -306,7 +359,10 @@ export function ProviderModal({
   };
 
   // ── Close ──
-  const handleClose = () => dirty ? setConfirmClose(true) : onClose();
+  const handleClose = () => {
+    flushLazyAutoSave();
+    dirty ? setConfirmClose(true) : onClose();
+  };
 
   // ── Test connection ──
   const handleTestConnection = async () => {
@@ -485,7 +541,7 @@ export function ProviderModal({
                     )}
 
                     <ProviderCapabilityPanel capabilities={capabilities} />
-                    <ProviderSamplerPanel form={form} updateForm={autoSaveField} capabilities={capabilities} />
+                    <ProviderSamplerPanel form={form} updateForm={lazyAutoSaveField} capabilities={capabilities} />
                   </>
                 )}
               </>
