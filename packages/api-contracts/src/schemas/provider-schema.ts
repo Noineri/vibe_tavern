@@ -58,3 +58,8 @@ export const testChatSchema = z.object({
 export const testChatProfileSchema = z.object({
   model: z.string(),
 });
+
+export const tokenizeSchema = z.object({
+  text: z.string().min(1),
+  model: z.string().optional(),
+});

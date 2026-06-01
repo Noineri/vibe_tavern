@@ -3,6 +3,7 @@ import type { RuntimeApi } from "./types.js";
 import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";
 import { isDomainError, providerError } from "../errors.js";
+import { tokenizeText } from "../ai/tokenizer-service.js";
 
 export function createProviderRoutes(runtime: RuntimeApi) {
   return new Hono()
@@ -84,6 +85,12 @@ export function createProviderRoutes(runtime: RuntimeApi) {
         return c.json({ error: "model is required." }, 400);
       }
       return c.json(await runtime.testProviderChatByProfile(c.req.param("providerId"), model));
+    })
+    // ── Tokenize ──
+    .post("/api/tokenize", zValidator("json", schemas.tokenizeSchema), async (c) => {
+      const body = c.req.valid("json");
+      const tokens = tokenizeText(body.text, body.model);
+      return c.json({ tokens });
     })
   ;
 }

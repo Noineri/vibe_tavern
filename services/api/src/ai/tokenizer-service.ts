@@ -182,6 +182,59 @@ export function countTokensDefault(text: string): number {
 	}
 }
 
+export interface TokenizedToken {
+	id: number;
+	text: string;
+}
+
+/**
+ * Tokenize text into individual tokens with their IDs and text representations.
+ * Uses cl100k_base (GPT-4 class) tokenizer as the default.
+ */
+export function tokenizeText(text: string, model?: string): TokenizedToken[] {
+	if (!text) return [];
+
+	try {
+		const family = model ? resolveTokenizerFamily(model) : null;
+
+		if (family?.type === "tiktoken") {
+			const enc = getTiktoken(family.encoding);
+			const ids = Array.from(enc.encode(text));
+			return ids.map((id) => {
+				const decoded = enc.decode([id]);
+				return { id, text: typeof decoded === "string" ? decoded : Buffer.from(decoded).toString() };
+			});
+		}
+
+		if (family?.type === "web") {
+			const cached = webTokenizerCache.get(family.file);
+			if (cached) {
+				const ids = Array.from(cached.encode(text));
+				return ids.map((id) => {
+					const bytes = cached.decode(Int32Array.from([id]));
+					return { id, text: Buffer.from(bytes).toString() };
+				});
+			}
+		}
+
+		// Fallback to cl100k_base
+		const enc = getTiktoken("cl100k_base");
+		const ids = Array.from(enc.encode(text));
+		return ids.map((id) => {
+			const decoded = enc.decode([id]);
+			return { id, text: typeof decoded === "string" ? decoded : Buffer.from(decoded).toString() };
+		});
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Count tokens using cl100k_base (GPT-4 class tokenizer).
+ * Good universal default for prompt pipeline — much more accurate than
+ * byte estimation for all languages, even for non-OpenAI models.
+ */
+
 /**
  * Pre-load all web-tokenizer models so countTokens() can stay synchronous.
  * Call once at server startup.
