@@ -25,13 +25,16 @@ function baseContext(overrides = {}) {
 
 describe("assemblePrompt", () => {
   describe("character layers", () => {
-    it("includes character_base layer with name, description, scenario", () => {
+    it("includes character description and scenario as separate prompt-order slots", () => {
       const result = assemblePrompt(baseContext());
       const base = result.layers.find((l) => l.id === "character_base");
+      const scenario = result.layers.find((l) => l.id === "character_scenario");
       expect(base).toBeTruthy();
       expect(base.text).toContain("Character: Aria");
       expect(base.text).toContain("A fire mage.");
-      expect(base.text).toContain("Scenario: The tower burns.");
+      expect(base.text).not.toContain("Scenario:");
+      expect(scenario).toBeTruthy();
+      expect(scenario.text).toContain("Scenario: The tower burns.");
     });
 
     it("includes character_system_prompt layer when provided", () => {
@@ -54,13 +57,15 @@ describe("assemblePrompt", () => {
       expect(sys).toBeUndefined();
     });
 
-    it("omits scenario from character_base when not provided", () => {
+    it("omits character_scenario when not provided", () => {
       const result = assemblePrompt(baseContext({
         character: { id: "char_1", name: "Aria", description: "A mage." },
       }));
       const base = result.layers.find((l) => l.id === "character_base");
+      const scenario = result.layers.find((l) => l.id === "character_scenario");
       expect(base).toBeTruthy();
       expect(base.text).not.toContain("Scenario");
+      expect(scenario).toBeUndefined();
     });
   });
 

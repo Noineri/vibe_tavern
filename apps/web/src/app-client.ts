@@ -387,6 +387,9 @@ export async function createPromptPreset(input: {
   authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat";
   summary?: string;
   tools?: string;
+  customInjections?: PromptPresetDto["customInjections"];
+  promptOrder?: PromptPresetDto["promptOrder"];
+  scriptAiSystemPrompt?: string;
 }): Promise<PromptPresetDto> {
   const response = await client.api["prompt-presets"].$post({ json: input });
   return unwrapRpc<PromptPresetDto>(response);

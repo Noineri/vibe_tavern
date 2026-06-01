@@ -282,6 +282,7 @@ export const promptPresets = sqliteTable('prompt_presets', {
   toolsPrompt: text('tools_prompt').notNull().default(''),
   scriptAiSystemPrompt: text('script_ai_system_prompt').notNull().default(''),
   customInjectionsJson: text('custom_injections_json').notNull().default('[]'),
+  promptOrderJson: text('prompt_order_json').notNull().default('[]'),
   contentHash: text('content_hash'),
   hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),
   createdAt: text('created_at').notNull(),

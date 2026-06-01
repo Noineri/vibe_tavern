@@ -20,6 +20,7 @@ export interface CreatePresetData {
   toolsPrompt?: string;
   scriptAiSystemPrompt?: string;
   customInjectionsJson?: string;
+  promptOrderJson?: string;
 }
 
 export type UpdatePresetData = Partial<CreatePresetData>;
@@ -43,6 +44,7 @@ export interface PromptPreset {
   toolsPrompt: string;
   scriptAiSystemPrompt: string;
   customInjectionsJson: string;
+  promptOrderJson: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -109,6 +111,7 @@ export class PresetStore {
         toolsPrompt: data.toolsPrompt ?? '',
         scriptAiSystemPrompt: data.scriptAiSystemPrompt ?? '',
         customInjectionsJson: data.customInjectionsJson ?? '[]',
+        promptOrderJson: data.promptOrderJson ?? '[]',
         createdAt: now,
         updatedAt: now,
       })
@@ -144,6 +147,7 @@ export class PresetStore {
     if (data.toolsPrompt !== undefined) values.toolsPrompt = data.toolsPrompt;
     if (data.scriptAiSystemPrompt !== undefined) values.scriptAiSystemPrompt = data.scriptAiSystemPrompt;
     if (data.customInjectionsJson !== undefined) values.customInjectionsJson = data.customInjectionsJson;
+    if (data.promptOrderJson !== undefined) values.promptOrderJson = data.promptOrderJson;
 
     const [row] = await this.db
       .update(promptPresets)
@@ -202,6 +206,7 @@ export class PresetStore {
         toolsPrompt: original.toolsPrompt,
         scriptAiSystemPrompt: original.scriptAiSystemPrompt ?? '',
         customInjectionsJson: original.customInjectionsJson,
+        promptOrderJson: original.promptOrderJson,
         createdAt: now,
         updatedAt: now,
       })
@@ -243,6 +248,7 @@ export class PresetStore {
       toolsPrompt: '',
       scriptAiSystemPrompt: '',
       customInjectionsJson: '[]',
+      promptOrderJson: '[]',
       bindProviderPresetId: null,
     });
   }
@@ -262,6 +268,7 @@ export class PresetStore {
       toolsPrompt: row.toolsPrompt,
       scriptAiSystemPrompt: row.scriptAiSystemPrompt,
       customInjections: JSON.parse(row.customInjectionsJson || '[]'),
+      promptOrder: JSON.parse(row.promptOrderJson || '[]'),
     };
   }
 
@@ -282,6 +289,7 @@ export class PresetStore {
       toolsPrompt: row.toolsPrompt,
       scriptAiSystemPrompt: row.scriptAiSystemPrompt ?? '',
       customInjectionsJson: row.customInjectionsJson,
+      promptOrderJson: row.promptOrderJson,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

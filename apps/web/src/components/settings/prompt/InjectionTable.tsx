@@ -1,9 +1,27 @@
-import { useState } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
+import type { PromptOrderEntry } from "@vibe-tavern/domain";
+import {
+  closestCenter,
+  DndContext,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useT } from "../../../i18n/context.js";
 import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
+import { AutoTextarea } from "../../shared/auto-textarea.js";
 
 export interface InjectionRow {
   identifier?: string;
@@ -32,6 +50,8 @@ interface InjectionTableProps {
   onChange: (injections: InjectionRow[]) => void;
   draft?: PromptCanvasDraft | null;
   onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number) => void;
+  promptOrder?: PromptOrderEntry[];
+  onPromptOrderChange?: (promptOrder: PromptOrderEntry[]) => void;
 }
 
 const roleOptions = ["system", "user", "assistant"] as const;
@@ -40,14 +60,117 @@ export function InjectionTable(props: InjectionTableProps) {
   return <PromptOrderCanvas {...props} />;
 }
 
-export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField }: InjectionTableProps) {
+export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, promptOrder = [], onPromptOrderChange }: InjectionTableProps) {
   const { t } = useT();
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 2 } }),
+    useSensor(TouchSensor, { activationConstraint: { distance: 1 } }),
+  );
 
   function update(index: number, patch: Partial<InjectionRow>) {
     onChange(injections.map((inj, i) => i === index ? { ...inj, ...patch } : inj));
   }
   function remove(index: number) { onChange(injections.filter((_, i) => i !== index)); }
-  function add() { onChange([...injections, { name: "", content: "", depth: 4, role: "system", enabled: true }]); }
+  function add() {
+    const suffix = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+    onChange([...injections, { identifier: `custom_${suffix}`, name: "", content: "", depth: 4, role: "system", enabled: true, injectionPosition: 0, promptOrderPlacement: "before_chat" }]);
+  }
+  function togglePromptSlot(identifier: string) {
+    const existing = promptOrder.find((entry) => entry.identifier === identifier);
+    const enabled = existing?.enabled ?? true;
+    const next = existing
+      ? promptOrder.map((entry) => entry.identifier === identifier ? { ...entry, enabled: !enabled } : entry)
+      : [...promptOrder, { identifier, enabled: false, kind: "built_in" as const }];
+    onPromptOrderChange?.(next);
+  }
+  function slotEnabled(identifier: string) {
+    return promptOrder.find((entry) => entry.identifier === identifier)?.enabled ?? true;
+  }
+  function customIdentifier(injection: InjectionRow, index: number) {
+    return injection.identifier || `custom_${index}`;
+  }
+
+  type CanvasItem =
+    | { key: string; identifier: string; kind: "slot"; defaultOrder: number; render: () => ReactNode }
+    | { key: string; identifier: string; kind: "field"; defaultOrder: number; render: () => ReactNode }
+    | { key: string; identifier: string; kind: "custom"; defaultOrder: number; injectionIndex: number; render: () => ReactNode };
+
+  const hasStoredOrdering = promptOrder.some((entry) => entry.order != null);
+  const promptOrderIndex = (identifier: string) => promptOrder.findIndex((entry) => entry.identifier === identifier);
+  const promptOrderValue = (identifier: string, fallback: number) => {
+    const index = promptOrderIndex(identifier);
+    if (!hasStoredOrdering || index < 0) return fallback;
+    return promptOrder[index]!.order ?? index;
+  };
+
+  const fixedItems: CanvasItem[] = [
+    { key: "slot:worldInfoBefore", identifier: "worldInfoBefore", kind: "slot", defaultOrder: 0, render: () => <PromptOrderMarker identifier="worldInfoBefore" label={t("prompt_slot_world_info_before")} kind="marker" enabled={slotEnabled("worldInfoBefore")} onToggle={togglePromptSlot} /> },
+    { key: "field:main", identifier: "main", kind: "field", defaultOrder: 10, render: () => <EditablePromptCard identifier="main" enabled={slotEnabled("main")} onToggle={togglePromptSlot} label={t("system_prompt")} role="system" value={draft?.system ?? ""} placeholder={t("system_prompt_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("system", value)} /> },
+    { key: "slot:charDescription", identifier: "charDescription", kind: "slot", defaultOrder: 20, render: () => <PromptOrderMarker identifier="charDescription" label={t("prompt_slot_character_description")} kind="builtIn" enabled={slotEnabled("charDescription")} onToggle={togglePromptSlot} /> },
+    { key: "slot:charPersonality", identifier: "charPersonality", kind: "slot", defaultOrder: 30, render: () => <PromptOrderMarker identifier="charPersonality" label={t("prompt_slot_character_personality")} kind="builtIn" enabled={slotEnabled("charPersonality")} onToggle={togglePromptSlot} /> },
+    { key: "slot:scenario", identifier: "scenario", kind: "slot", defaultOrder: 40, render: () => <PromptOrderMarker identifier="scenario" label={t("scenario")} kind="builtIn" enabled={slotEnabled("scenario")} onToggle={togglePromptSlot} /> },
+    { key: "slot:personaDescription", identifier: "personaDescription", kind: "slot", defaultOrder: 50, render: () => <PromptOrderMarker identifier="personaDescription" label={t("prompt_slot_persona")} kind="builtIn" enabled={slotEnabled("personaDescription")} onToggle={togglePromptSlot} /> },
+    { key: "field:authorsNote", identifier: "authorsNote", kind: "field", defaultOrder: 60, render: () => <EditableAuthorNoteCard identifier="authorsNote" enabled={slotEnabled("authorsNote")} onToggle={togglePromptSlot} draft={draft} onUpdateField={onUpdateField} /> },
+    { key: "slot:chatHistory", identifier: "chatHistory", kind: "slot", defaultOrder: 100, render: () => <PromptOrderMarker identifier="chatHistory" label={t("prompt_slot_chat_history")} kind="chat" enabled={slotEnabled("chatHistory")} onToggle={togglePromptSlot} /> },
+    { key: "slot:worldInfoAfter", identifier: "worldInfoAfter", kind: "slot", defaultOrder: 110, render: () => <PromptOrderMarker identifier="worldInfoAfter" label={t("prompt_slot_world_info_after")} kind="marker" enabled={slotEnabled("worldInfoAfter")} onToggle={togglePromptSlot} /> },
+    { key: "slot:dialogueExamples", identifier: "dialogueExamples", kind: "slot", defaultOrder: 120, render: () => <PromptOrderMarker identifier="dialogueExamples" label={t("prompt_slot_dialogue_examples")} kind="marker" enabled={slotEnabled("dialogueExamples")} onToggle={togglePromptSlot} /> },
+    { key: "field:jailbreak", identifier: "jailbreak", kind: "field", defaultOrder: 130, render: () => <EditablePromptCard identifier="jailbreak" enabled={slotEnabled("jailbreak")} onToggle={togglePromptSlot} label={t("post_history_instructions")} role="system" value={draft?.jailbreak ?? ""} placeholder={t("jailbreak_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("jailbreak", value)} /> },
+    { key: "field:assistantPrefill", identifier: "assistantPrefill", kind: "field", defaultOrder: 140, render: () => <EditablePromptCard label={t("prefill_assistant")} role="assistant" value={draft?.prefill ?? ""} placeholder={t("prefill_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("prefill", value)} /> },
+  ];
+
+  const customItems: CanvasItem[] = injections.map((inj, i) => {
+    const identifier = customIdentifier(inj, i);
+    const defaultOrder = inj.promptOrderIndex ?? (inj.promptOrderPlacement === "after_chat" ? 125 + i : 70 + i);
+    return {
+      key: `custom:${identifier}`,
+      identifier,
+      kind: "custom" as const,
+      defaultOrder,
+      injectionIndex: i,
+      render: () => <InjectionRowView injection={inj} index={i} onUpdate={update} onRemove={remove} />,
+    };
+  });
+
+  const canvasItems = [...fixedItems, ...customItems]
+    .sort((a, b) => promptOrderValue(a.identifier, a.defaultOrder) - promptOrderValue(b.identifier, b.defaultOrder));
+
+  function commitCanvasOrder(items: CanvasItem[]) {
+    const chatOrder = items.findIndex((item) => item.identifier === "chatHistory");
+    const entries: PromptOrderEntry[] = items.map((item, index) => {
+      const existing = promptOrder.find((entry) => entry.identifier === item.identifier);
+      return {
+        identifier: item.identifier,
+        enabled: existing?.enabled ?? true,
+        order: index,
+        kind: item.kind === "custom" ? "custom" : "built_in",
+      };
+    });
+    onPromptOrderChange?.(entries);
+
+    const orderByIdentifier = new Map(items.map((item, index) => [item.identifier, index]));
+    onChange(injections.map((inj, index) => {
+      const identifier = customIdentifier(inj, index);
+      const order = orderByIdentifier.get(identifier);
+      if (order == null) return inj;
+      const placement = chatOrder >= 0 && order > chatOrder ? "after_chat" : "before_chat";
+      const isRelative = inj.injectionPosition === 0 || inj.injectionPosition === "relative" || inj.injectionPosition == null;
+      return {
+        ...inj,
+        identifier,
+        promptOrderIndex: order,
+        ...(isRelative ? { injectionPosition: 0 as const, promptOrderPlacement: placement as "before_chat" | "after_chat" } : {}),
+      };
+    }));
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const from = canvasItems.findIndex((item) => item.key === active.id);
+    const to = canvasItems.findIndex((item) => item.key === over.id);
+    if (from < 0 || to < 0) return;
+    commitCanvasOrder(arrayMove(canvasItems, from, to));
+  }
 
   return (
     <div>
@@ -64,79 +187,89 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField }
         </button>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <PromptOrderMarker label={t("prompt_slot_world_info_before")} kind="marker" />
-        <EditablePromptCard
-          label={t("system_prompt")}
-          role="system"
-          value={draft?.system ?? ""}
-          placeholder={t("system_prompt_placeholder")}
-          disabled={!draft || !onUpdateField}
-          onChange={(value) => onUpdateField?.("system", value)}
-        />
-        <PromptOrderMarker label={t("prompt_slot_character_description")} kind="builtIn" />
-        <PromptOrderMarker label={t("prompt_slot_character_personality")} kind="builtIn" />
-        <PromptOrderMarker label={t("scenario")} kind="builtIn" />
-        <PromptOrderMarker label={t("prompt_slot_persona")} kind="builtIn" />
-        <EditableAuthorNoteCard draft={draft} onUpdateField={onUpdateField} />
-
-        <div className="my-1 rounded-md border border-dashed border-border2 bg-s2/35 p-2">
-          <div className="mb-2 flex items-center gap-2">
-            <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.08em] text-t4">{t("preset_injections_title")}</span>
-            <span className="rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">
-              {injections.filter(i => i.enabled).length}/{injections.length}
-            </span>
-            <div className="h-px flex-1 bg-border2" />
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={canvasItems.map((item) => item.key)} strategy={verticalListSortingStrategy}>
+          <div className="flex flex-col gap-1.5">
+            {canvasItems.map((item) => (
+              <SortableCanvasItem key={item.key} id={item.key}>
+                {item.render()}
+              </SortableCanvasItem>
+            ))}
           </div>
-          {injections.length === 0 ? (
-            <div className="rounded border border-border2 bg-s1 px-3 py-2 font-ui text-[11px] text-t4">
-              {t("preset_injections_empty")}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              {injections.map((inj, i) => (
-                <InjectionRowView key={i} injection={inj} index={i} onUpdate={update} onRemove={remove} />
-              ))}
-            </div>
-          )}
-        </div>
-
-        <PromptOrderMarker label={t("prompt_slot_chat_history")} kind="chat" />
-        <PromptOrderMarker label={t("prompt_slot_world_info_after")} kind="marker" />
-        <PromptOrderMarker label={t("prompt_slot_dialogue_examples")} kind="marker" />
-        <EditablePromptCard
-          label={t("post_history_instructions")}
-          role="system"
-          value={draft?.jailbreak ?? ""}
-          placeholder={t("jailbreak_placeholder")}
-          disabled={!draft || !onUpdateField}
-          onChange={(value) => onUpdateField?.("jailbreak", value)}
-        />
-        <EditablePromptCard
-          label={t("prefill_assistant")}
-          role="assistant"
-          value={draft?.prefill ?? ""}
-          placeholder={t("prefill_placeholder")}
-          disabled={!draft || !onUpdateField}
-          onChange={(value) => onUpdateField?.("prefill", value)}
-        />
-      </div>
+        </SortableContext>
+      </DndContext>
     </div>
   );
 }
 
-function PromptOrderMarker({ label, kind }: { label: string; kind: "builtIn" | "marker" | "chat" }) {
+function SortableCanvasItem({ id, children }: { id: string; children: ReactNode }) {
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 40 : undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "flex items-stretch gap-1 rounded-md",
+        isDragging && "opacity-90 shadow-theme-md"
+      )}
+    >
+      <button
+        ref={setActivatorNodeRef}
+        type="button"
+        className="flex w-6 shrink-0 touch-none cursor-grab select-none items-center justify-center rounded border border-transparent font-mono text-[13px] text-t4 transition-colors hover:border-border hover:bg-s2 hover:text-t2 active:cursor-grabbing"
+        aria-label="Drag prompt item"
+        {...attributes}
+        {...listeners}
+      >
+        ⋮⋮
+      </button>
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+}
+
+function PromptOrderMarker({ identifier, label, kind, enabled = true, onToggle }: {
+  identifier: string;
+  label: string;
+  kind: "builtIn" | "marker" | "chat";
+  enabled?: boolean;
+  onToggle?: (identifier: string) => void;
+}) {
   return (
     <div className={cn(
-      "flex items-center gap-2 rounded-md border px-3 py-2 font-ui text-[12px]",
+      "flex items-center gap-2 rounded-md border px-3 py-2 font-ui text-[12px] transition-colors",
+      !enabled && "opacity-55",
       kind === "chat" ? "border-accent/35 bg-accent/10 text-accent-t" :
       kind === "marker" ? "border-border2 bg-s1 text-t4" :
       "border-border bg-s2/70 text-t2",
     )}>
-      <span className={cn(
-        "h-1.5 w-1.5 rounded-full",
-        kind === "chat" ? "bg-accent" : kind === "marker" ? "bg-t4" : "bg-t3",
-      )} />
+      <CustomTooltip content={enabled ? "Enabled" : "Disabled"}>
+        <button
+          type="button"
+          className={cn(
+            "flex h-[18px] w-[18px] shrink-0 cursor-pointer items-center justify-center rounded text-[13px] transition-colors",
+            enabled ? "text-accent hover:bg-accent/10" : "text-t4 hover:text-t2"
+          )}
+          onClick={() => onToggle?.(identifier)}
+        >
+          {enabled ? "●" : "○"}
+        </button>
+      </CustomTooltip>
       <span className="flex-1">{label}</span>
       <span className="rounded bg-black/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] opacity-70">
         {kind === "chat" ? "marker" : kind === "marker" ? "slot" : "read-only"}
@@ -145,7 +278,10 @@ function PromptOrderMarker({ label, kind }: { label: string; kind: "builtIn" | "
   );
 }
 
-function EditablePromptCard({ label, role, value, placeholder, disabled, onChange }: {
+function EditablePromptCard({ identifier, enabled = true, onToggle, label, role, value, placeholder, disabled, onChange }: {
+  identifier?: string;
+  enabled?: boolean;
+  onToggle?: (identifier: string) => void;
   label: string;
   role: "system" | "user" | "assistant";
   value: string;
@@ -155,9 +291,24 @@ function EditablePromptCard({ label, role, value, placeholder, disabled, onChang
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="rounded-md border border-border bg-surface">
+    <div className={cn("rounded-md border border-border bg-surface", !enabled && "opacity-55")}>
       <div className="flex cursor-pointer select-none items-center gap-2.5 px-3 py-2" onClick={() => setExpanded((v) => !v)}>
-        <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+        {identifier ? (
+          <CustomTooltip content={enabled ? "Enabled" : "Disabled"}>
+            <button
+              type="button"
+              className={cn(
+                "flex h-[18px] w-[18px] shrink-0 cursor-pointer items-center justify-center rounded text-[13px] transition-colors",
+                enabled ? "text-accent hover:bg-accent/10" : "text-t4 hover:text-t2"
+              )}
+              onClick={(e) => { e.stopPropagation(); onToggle?.(identifier); }}
+            >
+              {enabled ? "●" : "○"}
+            </button>
+          </CustomTooltip>
+        ) : (
+          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+        )}
         <span className="flex-1 font-ui text-[12px] text-t1">{label}</span>
         <TokenCounter text={value} />
         <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{role}</span>
@@ -166,11 +317,13 @@ function EditablePromptCard({ label, role, value, placeholder, disabled, onChang
       </div>
       {expanded && (
         <div className="border-t border-border2 px-3 pb-3 pt-2">
-          <textarea
-            className="min-h-[110px] w-full resize-y rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
+          <AutoTextarea
+            className="min-h-[110px] w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
+            style={{}}
             value={value}
             placeholder={placeholder}
             disabled={disabled}
+            maxHeight={420}
             onChange={(e) => onChange(e.target.value)}
           />
         </div>
@@ -179,7 +332,10 @@ function EditablePromptCard({ label, role, value, placeholder, disabled, onChang
   );
 }
 
-function EditableAuthorNoteCard({ draft, onUpdateField }: {
+function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, onUpdateField }: {
+  identifier?: string;
+  enabled?: boolean;
+  onToggle?: (identifier: string) => void;
   draft?: PromptCanvasDraft | null;
   onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number) => void;
 }) {
@@ -188,9 +344,24 @@ function EditableAuthorNoteCard({ draft, onUpdateField }: {
   const disabled = !draft || !onUpdateField;
   const position = draft?.authorsNotePosition ?? "in_chat";
   return (
-    <div className="rounded-md border border-border bg-surface">
+    <div className={cn("rounded-md border border-border bg-surface", !enabled && "opacity-55")}>
       <div className="flex cursor-pointer select-none items-center gap-2.5 px-3 py-2" onClick={() => setExpanded((v) => !v)}>
-        <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+        {identifier ? (
+          <CustomTooltip content={enabled ? "Enabled" : "Disabled"}>
+            <button
+              type="button"
+              className={cn(
+                "flex h-[18px] w-[18px] shrink-0 cursor-pointer items-center justify-center rounded text-[13px] transition-colors",
+                enabled ? "text-accent hover:bg-accent/10" : "text-t4 hover:text-t2"
+              )}
+              onClick={(e) => { e.stopPropagation(); onToggle?.(identifier); }}
+            >
+              {enabled ? "●" : "○"}
+            </button>
+          </CustomTooltip>
+        ) : (
+          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+        )}
         <span className="flex-1 font-ui text-[12px] text-t1">{t("authors_note_label")}</span>
         <TokenCounter text={draft?.authorsNote ?? ""} />
         <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{position}</span>
@@ -226,11 +397,13 @@ function EditableAuthorNoteCard({ draft, onUpdateField }: {
               </label>
             )}
           </div>
-          <textarea
-            className="min-h-[100px] w-full resize-y rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
+          <AutoTextarea
+            className="min-h-[100px] w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
+            style={{}}
             value={draft?.authorsNote ?? ""}
             placeholder={t("authors_note_placeholder")}
             disabled={disabled}
+            maxHeight={420}
             onChange={(e) => onUpdateField?.("authorsNote", e.target.value)}
           />
         </div>
@@ -332,10 +505,12 @@ function InjectionRowView({ injection, index, onUpdate, onRemove }: {
             </label>
           </div>
 
-          <textarea
-            className="w-full min-h-[90px] rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent resize-y"
+          <AutoTextarea
+            className="min-h-[90px] w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent"
+            style={{}}
             value={injection.content}
             placeholder={t("preset_injection_content")}
+            maxHeight={420}
             onChange={(e) => onUpdate(index, { content: e.target.value })}
           />
         </div>

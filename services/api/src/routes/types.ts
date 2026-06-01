@@ -86,8 +86,8 @@ export interface RuntimeApi {
   renameChat: (chatId: string, title: string) => unknown;
   setGreetingIndex: (chatId: string, greetingIndex: number) => unknown;
   listPromptPresets: () => unknown;
-  createPromptPreset: (body: { name: string; bindModel?: string; system?: string; jailbreak?: string; summary?: string; tools?: string }) => unknown;
-  updatePromptPreset: (presetId: string, body: { name?: string; bindModel?: string; system?: string; jailbreak?: string; summary?: string; tools?: string }) => unknown;
+  createPromptPreset: (body: Record<string, unknown> & { name: string }) => unknown;
+  updatePromptPreset: (presetId: string, body: Record<string, unknown>) => unknown;
   deletePromptPreset: (presetId: string) => void;
   uploadAsset: (file: File) => Promise<{ assetId: string; url: string }>;
   serveAsset: (assetId: string) => Promise<{ body: Uint8Array; contentType: string } | null>;

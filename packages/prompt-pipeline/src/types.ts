@@ -111,6 +111,7 @@ export interface PromptAssemblyContext {
       promptOrderIndex?: number;
       promptOrderPlacement?: "before_chat" | "after_chat";
     }>;
+    promptOrder?: Array<{ identifier: string; enabled: boolean; order?: number; kind?: "built_in" | "custom" }>;
   } | null;
   /** Assembly mode. Defaults to `"chat"` when not specified. */
   mode?: AssemblyMode;

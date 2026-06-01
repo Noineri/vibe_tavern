@@ -6,7 +6,7 @@ import { Modal } from "../shared/Modal.js";
 import { Icons } from "../shared/icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { Checkbox } from "../shared/Checkbox.js";
-import { parseStPreset, type ParsedStPreset, type StPresetBlock } from "../../lib/st-preset-parser.js";
+import { parseStPreset, type ParsedStPreset, type StPresetBlock, type StPromptOrderBlock } from "../../lib/st-preset-parser.js";
 import type { InjectionRow } from "../settings/prompt/InjectionTable.js";
 
 type TargetMapping = "system" | "post" | "authors" | "injection" | "skip";
@@ -30,6 +30,7 @@ export interface PresetImportResult {
   post: string[];
   authors: string[];
   injections: InjectionRow[];
+  promptOrder: StPromptOrderBlock[];
   target: 'current' | 'new';
   newPresetName?: string;
 }
@@ -131,7 +132,7 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
 
   function handleImport() {
     if (counts.total === 0) return;
-    const result: PresetImportResult = { system: [], post: [], authors: [], injections: [], target: importTarget, newPresetName: newPresetName || undefined };
+    const result: PresetImportResult = { system: [], post: [], authors: [], injections: [], promptOrder: parsed?.promptOrder ?? [], target: importTarget, newPresetName: newPresetName || undefined };
     for (const m of selected) {
       switch (m.target) {
         case "system": result.system.push(m.block.content); break;

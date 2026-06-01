@@ -24,8 +24,15 @@ export class PromptPresetService {
     bindModel?: string;
     system?: string;
     jailbreak?: string;
+    prefill?: string;
+    authorsNote?: string;
+    authorsNoteDepth?: number;
+    authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat";
     summary?: string;
     tools?: string;
+    customInjections?: unknown[];
+    promptOrder?: unknown[];
+    scriptAiSystemPrompt?: string;
   }): Promise<PromptPresetDto> {
     return createPromptPreset(this.deps, input);
   }
@@ -35,8 +42,15 @@ export class PromptPresetService {
     bindModel?: string;
     system?: string;
     jailbreak?: string;
+    prefill?: string;
+    authorsNote?: string;
+    authorsNoteDepth?: number;
+    authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat";
     summary?: string;
     tools?: string;
+    customInjections?: unknown[];
+    promptOrder?: unknown[];
+    scriptAiSystemPrompt?: string;
   }): Promise<PromptPresetDto> {
     return updatePromptPreset(this.deps, presetId, patch);
   }

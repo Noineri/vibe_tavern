@@ -728,8 +728,8 @@ export class RuntimeApiAdapter {
 	// ─── Presets ──────────────────────────────────────────────────────────
 
 	listPromptPresets = () => this.promptPresetService.listPromptPresets();
-	createPromptPreset = (body: { name: string; bindModel?: string; system?: string; jailbreak?: string; summary?: string; tools?: string }) => this.promptPresetService.createPromptPreset(body);
-	updatePromptPreset = (presetId: string, body: { name?: string; bindModel?: string; system?: string; jailbreak?: string; summary?: string; tools?: string }) => this.promptPresetService.updatePromptPreset(presetId, body);
+	createPromptPreset = (body: Parameters<PromptPresetService["createPromptPreset"]>[0]) => this.promptPresetService.createPromptPreset(body);
+	updatePromptPreset = (presetId: string, body: Parameters<PromptPresetService["updatePromptPreset"]>[1]) => this.promptPresetService.updatePromptPreset(presetId, body);
 	deletePromptPreset = (presetId: string) => this.promptPresetService.deletePromptPreset(presetId);
 
 	// ─── Assets ───────────────────────────────────────────────────────────

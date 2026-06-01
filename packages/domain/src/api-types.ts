@@ -60,9 +60,19 @@ export interface PromptPresetDto {
   summary: string;
   tools: string;
   customInjections: CustomInjection[];
+  promptOrder: PromptOrderEntry[];
   scriptAiSystemPrompt: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── Advanced Prompt Order (attached to PromptPreset) ───────────────────────
+
+export interface PromptOrderEntry {
+  identifier: string;
+  enabled: boolean;
+  order?: number;
+  kind?: "built_in" | "custom";
 }
 
 // ─── Custom Injections (attached to PromptPreset) ───────────────────────────

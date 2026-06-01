@@ -12,9 +12,17 @@ export interface StPresetBlock {
   promptOrderPlacement?: "before_chat" | "after_chat";
 }
 
+export interface StPromptOrderBlock {
+  identifier: string;
+  enabled: boolean;
+  order?: number;
+  kind: "built_in" | "custom";
+}
+
 export interface ParsedStPreset {
   name: string;
   blocks: StPresetBlock[];
+  promptOrder: StPromptOrderBlock[];
 }
 
 interface StPromptEntry {
@@ -67,7 +75,8 @@ export function parseStPreset(jsonText: string): ParsedStPreset {
 
   const name = data.name || "Unnamed preset";
 
-  const orderMap = resolvePromptOrder(data.prompt_order);
+  const promptOrder = resolvePromptOrder(data.prompt_order);
+  const orderMap = promptOrder?.map ?? null;
 
   // Collect non-empty blocks
   const rawBlocks: StPromptEntry[] = data.prompts.filter(
@@ -77,7 +86,7 @@ export function parseStPreset(jsonText: string): ParsedStPreset {
   // XML wrapper reconstruction: merge -open / -close pairs
   const merged = mergeXmlWrappers(rawBlocks, orderMap);
 
-  return { name, blocks: merged };
+  return { name, blocks: merged, promptOrder: promptOrder?.entries ?? [] };
 }
 
 function mergeXmlWrappers(
@@ -144,7 +153,22 @@ function mergeXmlWrappers(
   return result;
 }
 
-function resolvePromptOrder(promptOrder: StPromptOrderSet[] | undefined): Map<string, StOrderInfo> | null {
+const BUILT_IN_PROMPT_IDENTIFIERS = new Set([
+  "worldInfoBefore",
+  "main",
+  "worldInfoAfter",
+  "charDescription",
+  "charPersonality",
+  "scenario",
+  "personaDescription",
+  "chatHistory",
+  "dialogueExamples",
+  "jailbreak",
+  "nsfw",
+  "authorsNote",
+]);
+
+function resolvePromptOrder(promptOrder: StPromptOrderSet[] | undefined): { map: Map<string, StOrderInfo>; entries: StPromptOrderBlock[] } | null {
   if (!Array.isArray(promptOrder) || promptOrder.length === 0) return null;
 
   const sets = promptOrder
@@ -162,6 +186,7 @@ function resolvePromptOrder(promptOrder: StPromptOrderSet[] | undefined): Map<st
 
   const chatIndex = preferred.order.findIndex((item) => item.identifier === "chatHistory");
   const map = new Map<string, StOrderInfo>();
+  const entries: StPromptOrderBlock[] = [];
   preferred.order.forEach((item, index) => {
     map.set(item.identifier, {
       enabled: item.enabled,
@@ -170,8 +195,14 @@ function resolvePromptOrder(promptOrder: StPromptOrderSet[] | undefined): Map<st
         ? { placement: index < chatIndex ? "before_chat" : "after_chat" }
         : {}),
     });
+    entries.push({
+      identifier: item.identifier,
+      enabled: item.enabled,
+      order: item.order ?? index,
+      kind: BUILT_IN_PROMPT_IDENTIFIERS.has(item.identifier) ? "built_in" : "custom",
+    });
   });
-  return map;
+  return { map, entries };
 }
 
 function extractOrderArray(entry: StPromptOrderSet): StPromptOrderEntry[] | undefined {
