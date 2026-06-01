@@ -11,7 +11,7 @@
  * provider uses its own defaults.
  */
 
-import { PROVIDER_TYPE } from "@vibe-tavern/domain";
+import { PROVIDER_TYPE, normalizeProviderType, resolveLogitBiasSupport } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 
 // ---------------------------------------------------------------------------
@@ -74,7 +74,7 @@ export function buildSamplerConfig(
 
   if (profile.topP != null) config.topP = profile.topP;
 
-  const providerType = profile.providerPreset;
+  const providerType = normalizeProviderType(profile.providerPreset);
 
   switch (providerType) {
     // -- OpenAI-compatible providers (openai_compat, ollama, llamacpp) --------
@@ -98,12 +98,16 @@ export function buildSamplerConfig(
       if (profile.repetitionPenalty != null) openaiOptions.repetition_penalty = profile.repetitionPenalty;
 
       // Logit bias: map entries to Record<number, number>
-      if (profile.logitBias?.length) {
-        const biasMap: Record<string, number> = {};
-        for (const entry of profile.logitBias) {
-          biasMap[String(entry.tokenId)] = entry.bias;
+      if (profile.logitBias?.length && resolveLogitBiasSupport(profile.providerPreset, profile.defaultModel, profile.endpoint).supported) {
+        const currentModel = profile.defaultModel ?? "";
+        const usableEntries = profile.logitBias.filter((entry) => currentModel.length > 0 && entry.model === currentModel);
+        if (usableEntries.length > 0) {
+          const biasMap: Record<string, number> = {};
+          for (const entry of usableEntries) {
+            biasMap[String(entry.tokenId)] = entry.bias;
+          }
+          (openaiOptions as Record<string, unknown>).logitBias = biasMap;
         }
-        (openaiOptions as Record<string, unknown>).logitBias = biasMap;
       }
 
       // reasoningEffort only for openai_compat

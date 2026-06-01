@@ -392,7 +392,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
               entries={form.logitBias}
               onChange={(v) => updateForm('logitBias', v)}
               disabled={disabled}
-              supported={capabilities?.logitBias !== false}
+              supported={capabilities?.logitBias === true}
+              model={form.model}
             />
           </div>
         )}

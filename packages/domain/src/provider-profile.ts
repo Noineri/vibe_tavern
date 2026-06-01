@@ -26,7 +26,7 @@ export interface StoredProviderProfileRecord {
   presencePenalty: number;
   repetitionPenalty: number;
   stopSequences: string[];
-  logitBias: Array<{ tokenId: number; bias: number; text?: string }>;
+  logitBias: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed: string | null;
   reasoningEffort: string;
   showReasoning: boolean;

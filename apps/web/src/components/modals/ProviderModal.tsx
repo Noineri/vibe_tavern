@@ -3,6 +3,7 @@ import { useT } from "../../i18n/context.js";
 import { Modal } from "../shared/Modal.js";
 import { cn } from "../../lib/cn.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../../app-client.js";
+import { resolveLogitBiasSupport } from "@vibe-tavern/domain";
 import type { ProviderProbeResponse } from "@vibe-tavern/domain";
 import { saveProviderDraftSchema } from "@vibe-tavern/api-contracts";
 import { PROVIDER_PRESETS } from "../../provider-presets.js";
@@ -39,7 +40,7 @@ export interface FormState {
   maxTokens: number;
   contextBudget: number;
   stopSequences: string[];
-  logitBias: Array<{ tokenId: number; bias: number; text?: string }>;
+  logitBias: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed: string | null;
   reasoningEffort: string;
   showReasoning: boolean;
@@ -77,7 +78,8 @@ interface ProviderModalProps {
 }
 
 function profileToForm(p: ProviderProfileRecord): FormState {
-  const preset = PROVIDER_PRESETS.find((f) => f.type === p.providerPreset && f.baseUrl === p.endpoint);
+  const preset = PROVIDER_PRESETS.find((f) => f.id === p.providerPreset)
+    ?? PROVIDER_PRESETS.find((f) => f.type === p.providerPreset && f.baseUrl === p.endpoint);
   return {
     id: p.id, name: p.name, providerPreset: preset?.id ?? "",
     baseUrl: p.endpoint, apiKey: "", hasStoredApiKey: p.hasStoredApiKey,
@@ -137,16 +139,16 @@ interface Capabilities {
   premium?: boolean;
 }
 
-function getCapabilities(type: string): Capabilities {
+function getCapabilities(type: string, providerPreset: string, model: string, endpoint: string): Capabilities {
   switch (type) {
     case "anthropic": case "google":
       return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: false, logitBias: false };
     case "ollama": case "llamacpp":
-      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: true };
+      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: resolveLogitBiasSupport(providerPreset, model, endpoint).supported };
     case "koboldcpp":
       return { nonStreamGeneration: false, abortSignal: false, streaming: false, prefill: false, logitBias: false };
     default:
-      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: true };
+      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: resolveLogitBiasSupport(providerPreset, model, endpoint).supported };
   }
 }
 
@@ -416,7 +418,7 @@ export function ProviderModal({
   const showConfig = headerMode === "view" && !isNew;
   const providerType = form ? (PROVIDER_PRESETS.find((f) => f.id === form.providerPreset)?.type ?? "openai_compat") : "openai_compat";
   const selectedModel = form ? models.find((model) => model.id === form.model) : null;
-  const capabilities = form ? { ...getCapabilities(providerType), ...selectedModel?.capabilities } : null;
+  const capabilities = form ? { ...getCapabilities(providerType, form.providerPreset, form.model, form.baseUrl), ...selectedModel?.capabilities } : null;
   const filteredProfiles = profileSearch.trim()
     ? providerProfiles.filter((p) => p.name.toLowerCase().includes(profileSearch.toLowerCase()) || p.providerPreset.toLowerCase().includes(profileSearch.toLowerCase()))
     : providerProfiles;
