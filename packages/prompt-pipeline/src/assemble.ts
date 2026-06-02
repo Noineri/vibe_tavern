@@ -372,9 +372,10 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   }
 
   // Custom injections (advanced/ST mode)
+  // For custom injections, `customInjections[i].enabled` is the authoritative enabled flag.
+  // `promptOrder` is used for ordering/placement only (not enabled) — kept authoritative for built-in slots elsewhere.
   for (const injection of (context.preset?.customInjections ?? [])) {
     if (!injection.enabled || !injection.content?.trim()) continue;
-    if (injection.identifier && !promptOrderEnabled(context, injection.identifier)) continue;
 
     const isAbsolute = injection.injectionPosition === 1 || injection.injectionPosition === "absolute" || injection.injectionPosition == null;
     const role = injection.role === "user" || injection.role === "assistant" ? injection.role : "system";

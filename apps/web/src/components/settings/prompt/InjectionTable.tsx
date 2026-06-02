@@ -81,12 +81,26 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
   );
 
   function update(index: number, patch: Partial<InjectionRow>) {
-    onChange(injections.map((inj, i) => i === index ? { ...inj, ...patch } : inj));
+    const next = injections.map((inj, i) => i === index ? { ...inj, ...patch } : inj);
+    onChange(next);
+    // Keep promptOrder.enabled in sync with customInjections[i].enabled —
+    // assemble.ts checks both, so toggling the row must flip both to stay consistent.
+    if (Object.prototype.hasOwnProperty.call(patch, "enabled")) {
+      const identifier = customIdentifier(next[index]!, index);
+      syncPromptOrderEnabled(identifier, patch.enabled!);
+    }
   }
   function remove(index: number) { onChange(injections.filter((_, i) => i !== index)); }
   function add() {
     const suffix = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
     onChange([...injections, { identifier: `custom_${suffix}`, name: "", content: "", depth: 4, role: "system", enabled: true, injectionPosition: 0, promptOrderPlacement: "before_chat" }]);
+  }
+  function syncPromptOrderEnabled(identifier: string, enabled: boolean) {
+    const existing = promptOrder.find((entry) => entry.identifier === identifier);
+    const next = existing
+      ? promptOrder.map((entry) => entry.identifier === identifier ? { ...entry, enabled } : entry)
+      : [...promptOrder, { identifier, enabled, kind: "custom" as const }];
+    onPromptOrderChange?.(next);
   }
   function togglePromptSlot(identifier: string) {
     const existing = promptOrder.find((entry) => entry.identifier === identifier);
