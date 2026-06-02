@@ -18,6 +18,7 @@ const promptPresetCoreSchema = z.object({
     order: z.number().optional(),
     kind: z.enum(["built_in", "custom"]).optional(),
   })).optional(),
+  advancedMode: z.boolean().optional(),
   scriptAiSystemPrompt: z.string().optional(),
 });
 

@@ -423,6 +423,7 @@ export interface ImportResult {
 			tools: preset.toolsPrompt,
 			customInjections: (() => { try { return JSON.parse(preset.customInjectionsJson); } catch { return []; } })(),
 			promptOrder: (() => { try { return JSON.parse(preset.promptOrderJson); } catch { return []; } })(),
+			advancedMode: preset.advancedMode,
 			scriptAiSystemPrompt: preset.scriptAiSystemPrompt ?? "",
 			createdAt: preset.createdAt,
 			updatedAt: preset.updatedAt,

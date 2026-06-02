@@ -188,30 +188,52 @@ function applyMacros(text: string | null | undefined, variableContext: PromptVar
  * Called before any layer construction so all downstream text is fully resolved.
  */
 function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyContext {
-  // Reset variable state for this assembly pass so setvar/getvar start clean
+  // Reset variable state for this assembly pass so setvar/getvar start clean.
   phaseOneMacroEngine.resetVariables();
-  const variableContext = buildAssemblyVariableContext(context);
+
+  // First resolve character/persona fields from the raw context. Then build a
+  // second variable context from those resolved fields so ST macros such as
+  // {{description}}, {{personality}}, {{scenario}}, and {{persona}} expand to
+  // the final field text inside preset-owned prompt-order/custom injection
+  // blocks, lore, memory, and chat messages.
+  const baseVariableContext = buildAssemblyVariableContext(context);
+  const resolvedCharacter = {
+    ...context.character,
+    description: applyMacros(context.character.description, baseVariableContext),
+    scenario: context.character.scenario != null ? applyMacros(context.character.scenario, baseVariableContext) : context.character.scenario,
+    systemPrompt: context.character.systemPrompt != null ? applyMacros(context.character.systemPrompt, baseVariableContext) : context.character.systemPrompt,
+    personality: context.character.personality != null ? applyMacros(context.character.personality, baseVariableContext) : context.character.personality,
+    mesExample: context.character.mesExample != null ? applyMacros(context.character.mesExample, baseVariableContext) : context.character.mesExample,
+    postHistoryInstructions: context.character.postHistoryInstructions != null ? applyMacros(context.character.postHistoryInstructions, baseVariableContext) : context.character.postHistoryInstructions,
+    depthPrompt: context.character.depthPrompt != null ? applyMacros(context.character.depthPrompt, baseVariableContext) : context.character.depthPrompt,
+  };
+  const resolvedPersona = context.persona ? {
+    ...context.persona,
+    description: applyMacros(context.persona.description, baseVariableContext),
+  } : context.persona;
+  const variableContext = buildAssemblyVariableContext({
+    ...context,
+    character: resolvedCharacter,
+    persona: resolvedPersona,
+  });
+
   return {
     ...context,
-    character: {
-      ...context.character,
-      description: applyMacros(context.character.description, variableContext),
-      scenario: context.character.scenario != null ? applyMacros(context.character.scenario, variableContext) : context.character.scenario,
-      systemPrompt: context.character.systemPrompt != null ? applyMacros(context.character.systemPrompt, variableContext) : context.character.systemPrompt,
-      personality: context.character.personality != null ? applyMacros(context.character.personality, variableContext) : context.character.personality,
-      mesExample: context.character.mesExample != null ? applyMacros(context.character.mesExample, variableContext) : context.character.mesExample,
-      postHistoryInstructions: context.character.postHistoryInstructions != null ? applyMacros(context.character.postHistoryInstructions, variableContext) : context.character.postHistoryInstructions,
-    },
-    persona: context.persona ? {
-      ...context.persona,
-      description: applyMacros(context.persona.description, variableContext),
-    } : context.persona,
+    character: resolvedCharacter,
+    persona: resolvedPersona,
     preset: context.preset ? {
       ...context.preset,
       text: applyMacros(context.preset.text, variableContext),
       jailbreak: context.preset.jailbreak != null ? applyMacros(context.preset.jailbreak, variableContext) : context.preset.jailbreak,
+      prefill: context.preset.prefill != null ? applyMacros(context.preset.prefill, variableContext) : context.preset.prefill,
+      authorsNote: context.preset.authorsNote != null ? applyMacros(context.preset.authorsNote, variableContext) : context.preset.authorsNote,
       summary: context.preset.summary != null ? applyMacros(context.preset.summary, variableContext) : context.preset.summary,
       tools: context.preset.tools != null ? applyMacros(context.preset.tools, variableContext) : context.preset.tools,
+      customInjections: context.preset.customInjections?.map((injection) => ({
+        ...injection,
+        name: applyMacros(injection.name, variableContext),
+        content: applyMacros(injection.content, variableContext),
+      })),
     } : context.preset,
     lore: context.lore?.map((entry) => ({
       ...entry,
@@ -229,7 +251,12 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
       })),
     },
     chat: {
+      ...context.chat,
       recentMessages: context.chat.recentMessages.map((msg) => ({
+        ...msg,
+        content: applyMacros(msg.content, variableContext),
+      })),
+      scriptInjections: context.chat.scriptInjections?.map((msg) => ({
         ...msg,
         content: applyMacros(msg.content, variableContext),
       })),

@@ -96,6 +96,44 @@ describe("Prompt pipeline: macro resolution in assembled prompt", () => {
     expect(preset).toBeTruthy();
     expect(preset!.text).toBe("The user is A careful archivist..");
   });
+
+  it("resolves ST field macros inside custom injection content", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [] },
+      character: {
+        id: "char_1",
+        name: "Aria",
+        description: "A mage.",
+        personality: "Careful.",
+        scenario: "The tower burns.",
+      },
+      persona: { id: "pers_1", name: "Olya", description: "A careful archivist." },
+      preset: {
+        id: "p1",
+        text: "",
+        customInjections: [{
+          identifier: "database",
+          name: "Database",
+          content: "<scenario>\n{{scenario}}\n</scenario>\n<{{char}}>\n{{personality}}\n{{description}}\n</{{char}}>\n<{{user}}>\n{{persona}}\n</{{user}}>",
+          depth: 4,
+          role: "system",
+          enabled: true,
+          injectionPosition: "relative",
+        }],
+      },
+    });
+
+    const injection = result.layers.find((l) => l.id === "preset_injection_database");
+    expect(injection).toBeTruthy();
+    expect(injection!.text).toContain("<scenario>\nThe tower burns.\n</scenario>");
+    expect(injection!.text).toContain("<Aria>\nCareful.\nA mage.\n</Aria>");
+    expect(injection!.text).toContain("<Olya>\nA careful archivist.\n</Olya>");
+    expect(injection!.text).not.toContain("{{scenario}}");
+    expect(injection!.text).not.toContain("{{personality}}");
+    expect(injection!.text).not.toContain("{{description}}");
+    expect(injection!.text).not.toContain("{{persona}}");
+  });
 });
 
 // ─── Macro engine: direct resolution ───

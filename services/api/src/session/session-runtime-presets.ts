@@ -8,7 +8,7 @@ function safeParseJson<T>(json: string, fallback: T): T {
   try { return JSON.parse(json); } catch { return fallback; }
 }
 
-function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: string | null; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; summaryPrompt: string; toolsPrompt: string; customInjectionsJson: string; promptOrderJson: string; scriptAiSystemPrompt: string | null; createdAt: string; updatedAt: string; }): PromptPresetDto {
+function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: string | null; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; summaryPrompt: string; toolsPrompt: string; customInjectionsJson: string; promptOrderJson: string; advancedMode?: boolean | number | null; scriptAiSystemPrompt: string | null; createdAt: string; updatedAt: string; }): PromptPresetDto {
   return {
     id: p.id,
     name: p.name,
@@ -23,6 +23,7 @@ function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: str
     tools: p.toolsPrompt,
     customInjections: safeParseJson(p.customInjectionsJson, []),
     promptOrder: safeParseJson(p.promptOrderJson, []),
+    advancedMode: Boolean(p.advancedMode),
     scriptAiSystemPrompt: p.scriptAiSystemPrompt ?? "",
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
@@ -51,6 +52,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
   tools?: string;
   customInjections?: unknown[];
   promptOrder?: unknown[];
+  advancedMode?: boolean;
   scriptAiSystemPrompt?: string;
 }): Promise<PromptPresetDto> {
   const trimmed = (input.name ?? "").trim();
@@ -70,6 +72,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
     toolsPrompt: input.tools ?? "",
     customInjectionsJson: input.customInjections != null ? JSON.stringify(input.customInjections) : undefined,
     promptOrderJson: input.promptOrder != null ? JSON.stringify(input.promptOrder) : undefined,
+    advancedMode: input.advancedMode ?? false,
     scriptAiSystemPrompt: input.scriptAiSystemPrompt ?? "",
   });
   return mapPresetToDto(created);
@@ -88,6 +91,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
   tools?: string;
   customInjections?: unknown[];
   promptOrder?: unknown[];
+  advancedMode?: boolean;
   scriptAiSystemPrompt?: string;
 }): Promise<PromptPresetDto> {
   try {
@@ -104,6 +108,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
       toolsPrompt: patch.tools,
       customInjectionsJson: patch.customInjections != null ? JSON.stringify(patch.customInjections) : undefined,
       promptOrderJson: patch.promptOrder != null ? JSON.stringify(patch.promptOrder) : undefined,
+      advancedMode: patch.advancedMode,
       scriptAiSystemPrompt: patch.scriptAiSystemPrompt,
     });
     return mapPresetToDto(updated);
