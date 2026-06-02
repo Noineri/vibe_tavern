@@ -14,7 +14,7 @@ import { useChatStore } from "../stores/index.js";
 export interface PresetControllerActions {
   loadPromptPresets: () => Promise<PromptPresetDto[]>;
   handleSetActivePromptPresetId: (presetId: string | null) => Promise<void>;
-  handleCreatePromptPreset: (input: { name: string; bindModel?: string; system?: string; jailbreak?: string; prefill?: string; authorsNote?: string; authorsNoteDepth?: number; summary?: string; tools?: string }) => Promise<{ id: string } | null>;
+  handleCreatePromptPreset: (input: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">> & { name: string }) => Promise<{ id: string } | null>;
   handleUpdatePromptPreset: (presetId: string, patch: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">>) => Promise<boolean>;
   handleDeletePromptPreset: (presetId: string) => Promise<boolean>;
 }
@@ -35,7 +35,7 @@ export function usePresetController(): PresetControllerActions {
     }
   }
 
-  async function handleCreatePromptPreset(input: { name: string; bindModel?: string; system?: string; jailbreak?: string; prefill?: string; authorsNote?: string; authorsNoteDepth?: number; authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat"; summary?: string; tools?: string }): Promise<{ id: string } | null> {
+  async function handleCreatePromptPreset(input: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">> & { name: string }): Promise<{ id: string } | null> {
     try {
       const created = await createPromptPresetAction(input);
       await handleSetActivePromptPresetId(created.id);

@@ -389,6 +389,7 @@ export async function createPromptPreset(input: {
   tools?: string;
   customInjections?: PromptPresetDto["customInjections"];
   promptOrder?: PromptPresetDto["promptOrder"];
+  advancedMode?: boolean;
   scriptAiSystemPrompt?: string;
 }): Promise<PromptPresetDto> {
   const response = await client.api["prompt-presets"].$post({ json: input });

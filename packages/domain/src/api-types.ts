@@ -61,6 +61,7 @@ export interface PromptPresetDto {
   tools: string;
   customInjections: CustomInjection[];
   promptOrder: PromptOrderEntry[];
+  advancedMode: boolean;
   scriptAiSystemPrompt: string;
   createdAt: string;
   updatedAt: string;

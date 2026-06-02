@@ -32,6 +32,7 @@ export class PromptPresetService {
     tools?: string;
     customInjections?: unknown[];
     promptOrder?: unknown[];
+    advancedMode?: boolean;
     scriptAiSystemPrompt?: string;
   }): Promise<PromptPresetDto> {
     return createPromptPreset(this.deps, input);
@@ -50,6 +51,7 @@ export class PromptPresetService {
     tools?: string;
     customInjections?: unknown[];
     promptOrder?: unknown[];
+    advancedMode?: boolean;
     scriptAiSystemPrompt?: string;
   }): Promise<PromptPresetDto> {
     return updatePromptPreset(this.deps, presetId, patch);

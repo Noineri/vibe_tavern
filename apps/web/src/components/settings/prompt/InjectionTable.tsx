@@ -1,13 +1,18 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { PromptOrderEntry } from "@vibe-tavern/domain";
 import {
   closestCenter,
   DndContext,
+  DragOverlay,
   MouseSensor,
+  pointerWithin,
   TouchSensor,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   arrayMove,
@@ -22,6 +27,7 @@ import { cn } from "../../../lib/cn.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
+import { useIsMobile } from "../../../hooks/use-mobile.js";
 
 export interface InjectionRow {
   identifier?: string;
@@ -56,12 +62,19 @@ interface InjectionTableProps {
 
 const roleOptions = ["system", "user", "assistant"] as const;
 
+const stablePromptCanvasCollision: CollisionDetection = (args) => {
+  const pointerMatches = pointerWithin(args);
+  return pointerMatches.length > 0 ? pointerMatches : closestCenter(args);
+};
+
 export function InjectionTable(props: InjectionTableProps) {
   return <PromptOrderCanvas {...props} />;
 }
 
 export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, promptOrder = [], onPromptOrderChange }: InjectionTableProps) {
   const { t } = useT();
+  const isMobile = useIsMobile();
+  const [activeDragKey, setActiveDragKey] = useState<string | null>(null);
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 2 } }),
     useSensor(TouchSensor, { activationConstraint: { distance: 1 } }),
@@ -127,7 +140,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
       kind: "custom" as const,
       defaultOrder,
       injectionIndex: i,
-      render: () => <InjectionRowView injection={inj} index={i} onUpdate={update} onRemove={remove} />,
+      render: () => <InjectionRowView injection={inj} index={i} isMobile={isMobile} onUpdate={update} onRemove={remove} />,
     };
   });
 
@@ -163,7 +176,14 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     }));
   }
 
+  const activeDragItem = activeDragKey ? canvasItems.find((item) => item.key === activeDragKey) : null;
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveDragKey(String(event.active.id));
+  }
+
   function handleDragEnd(event: DragEndEvent) {
+    setActiveDragKey(null);
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const from = canvasItems.findIndex((item) => item.key === active.id);
@@ -171,6 +191,17 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     if (from < 0 || to < 0) return;
     commitCanvasOrder(arrayMove(canvasItems, from, to));
   }
+
+  const dragOverlay = (
+    <DragOverlay dropAnimation={null} zIndex={700}>
+      {activeDragItem ? (
+        <div className="pointer-events-none flex w-full items-stretch gap-1 rounded-md shadow-theme-md">
+          <div className="flex w-6 shrink-0 items-center justify-center rounded border border-border bg-s2 font-mono text-[13px] text-t4">⋮⋮</div>
+          <div className="min-w-0 flex-1">{activeDragItem.render()}</div>
+        </div>
+      ) : null}
+    </DragOverlay>
+  );
 
   return (
     <div>
@@ -187,22 +218,29 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
         </button>
       </div>
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={stablePromptCanvasCollision}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => setActiveDragKey(null)}
+      >
         <SortableContext items={canvasItems.map((item) => item.key)} strategy={verticalListSortingStrategy}>
           <div className="flex flex-col gap-1.5">
             {canvasItems.map((item) => (
-              <SortableCanvasItem key={item.key} id={item.key}>
+              <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
                 {item.render()}
               </SortableCanvasItem>
             ))}
           </div>
         </SortableContext>
+        {typeof document === "undefined" ? dragOverlay : createPortal(dragOverlay, document.body)}
       </DndContext>
     </div>
   );
 }
 
-function SortableCanvasItem({ id, children }: { id: string; children: ReactNode }) {
+function SortableCanvasItem({ id, overlayActive, children }: { id: string; overlayActive: boolean; children: ReactNode }) {
   const {
     attributes,
     listeners,
@@ -225,7 +263,7 @@ function SortableCanvasItem({ id, children }: { id: string; children: ReactNode 
       style={style}
       className={cn(
         "flex items-stretch gap-1 rounded-md",
-        isDragging && "opacity-90 shadow-theme-md"
+        (isDragging || overlayActive) && "opacity-0"
       )}
     >
       <button
@@ -412,13 +450,15 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
   );
 }
 
-function InjectionRowView({ injection, index, onUpdate, onRemove }: {
+function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
   injection: InjectionRow; index: number;
+  isMobile: boolean;
   onUpdate: (i: number, p: Partial<InjectionRow>) => void;
   onRemove: (i: number) => void;
 }) {
   const { t } = useT();
   const [expanded, setExpanded] = useState(false);
+  const [editingName, setEditingName] = useState(false);
   const enabled = injection.enabled;
 
   return (
@@ -442,13 +482,38 @@ function InjectionRowView({ injection, index, onUpdate, onRemove }: {
         </CustomTooltip>
 
         {/* Name */}
-        <input
-          className={cn("min-w-[80px] flex-1 border-0 bg-transparent font-ui text-[calc(var(--ui-fs)-1px)] outline-none placeholder:text-t4", enabled ? "text-t1" : "text-t3")}
-          value={injection.name}
-          placeholder={t("preset_injection_name")}
-          onChange={(e) => { e.stopPropagation(); onUpdate(index, { name: e.target.value }); }}
-          onClick={(e) => e.stopPropagation()}
-        />
+        <div className="flex min-w-[80px] flex-1 items-center gap-1.5 overflow-hidden">
+          {editingName ? (
+            <input
+              autoFocus
+              className={cn("min-w-0 flex-1 rounded border border-border bg-s2 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-1px)] outline-none focus:border-accent placeholder:text-t4", enabled ? "text-t1" : "text-t3")}
+              value={injection.name}
+              placeholder={t("preset_injection_name")}
+              onChange={(e) => onUpdate(index, { name: e.target.value })}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={() => setEditingName(false)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); setEditingName(false); }
+                if (e.key === "Escape") { e.preventDefault(); setEditingName(false); }
+              }}
+            />
+          ) : (
+            <>
+              <span className={cn("min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)]", enabled ? "text-t1" : "text-t3", !injection.name && "text-t4")}>{injection.name || t("preset_injection_name")}</span>
+              <button
+                type="button"
+                className={cn(
+                  "flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-t4 transition-all hover:bg-s2 hover:text-accent focus:bg-s2 focus:text-accent",
+                  isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus:opacity-100"
+                )}
+                onClick={(e) => { e.stopPropagation(); setEditingName(true); }}
+                aria-label={t("preset_injection_name")}
+              >
+                {Ic.edit()}
+              </button>
+            </>
+          )}
+        </div>
 
         {/* Depth badge */}
         <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3 tabular-nums">

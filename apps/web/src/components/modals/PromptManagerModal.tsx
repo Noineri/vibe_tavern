@@ -30,6 +30,7 @@ type DraftData = {
   scriptAiSystemPrompt: string;
   customInjections: InjectionRow[];
   promptOrder: PromptOrderEntry[];
+  advancedMode: boolean;
 };
 
 interface PromptManagerModalProps {
@@ -44,12 +45,13 @@ interface PromptManagerModalProps {
     prefill?: string;
     authorsNote?: string;
     authorsNoteDepth?: number;
-    authorsNotePosition?: string;
+    authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat";
     summary?: string;
     tools?: string;
     scriptAiSystemPrompt?: string;
     customInjections?: InjectionRow[];
     promptOrder?: PromptOrderEntry[];
+    advancedMode?: boolean;
   }) => Promise<{ id: string } | null>;
   onUpdate: (
     presetId: string,
@@ -65,6 +67,7 @@ const emptyDraft: DraftData = {
   prefill: "", authorsNote: "", authorsNoteDepth: 4, authorsNotePosition: "in_chat", summary: "", tools: "", scriptAiSystemPrompt: "",
   customInjections: [],
   promptOrder: [],
+  advancedMode: false,
 };
 
 function mergePromptOrder(current: PromptOrderEntry[], imported: PromptOrderEntry[]): PromptOrderEntry[] {
@@ -85,7 +88,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
-  const [advancedMode, setAdvancedMode] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const isMobile = useIsMobile();
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
@@ -107,6 +109,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         scriptAiSystemPrompt: activePreset.scriptAiSystemPrompt ?? "",
         customInjections: (activePreset as PromptPresetDto).customInjections ?? [],
         promptOrder: activePreset.promptOrder ?? [],
+        advancedMode: activePreset.advancedMode ?? false,
       });
     } else {
       setDraft({ ...emptyDraft });
@@ -165,6 +168,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       tools: "",
       scriptAiSystemPrompt: "",
       promptOrder: [],
+      advancedMode: false,
     }).then((created) => {
       if (created?.id) input.setActivePresetId(created.id);
     });
@@ -207,6 +211,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         scriptAiSystemPrompt: "",
         customInjections: result.injections,
         promptOrder: result.promptOrder,
+        advancedMode: true,
       }).then((created) => {
         if (created?.id) input.setActivePresetId(created.id);
       });
@@ -218,6 +223,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         if (result.authors.length) next.authorsNote = d.authorsNote + (d.authorsNote ? "\n\n" : "") + result.authors.join("\n\n");
         if (result.injections.length) next.customInjections = [...d.customInjections, ...result.injections];
         if (result.promptOrder.length) next.promptOrder = mergePromptOrder(d.promptOrder, result.promptOrder);
+        if (result.injections.length || result.promptOrder.length) next.advancedMode = true;
         return next;
       });
       setDirty(true);
@@ -225,6 +231,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     }
     setImportModalOpen(false);
   };
+
+  const advancedMode = draft.advancedMode;
 
   return (
     <Modal open={true} onClose={handleClose}>
@@ -261,7 +269,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       )}
 
       <div
-        className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] w-[880px] h-[760px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}
+        className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[880px] h-[840px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}
         onClick={(event) => event.stopPropagation()}
       >
         <div className={cn("shrink-0 items-start justify-between border-b border-border", isMobile ? "flex pt-4 px-4 pb-3" : "flex pt-[18px] px-5 pb-[14px]")}>
@@ -329,7 +337,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                     "cursor-pointer select-none rounded-[5px] px-2.5 py-1 font-ui text-[11px] transition-all duration-150",
                     !advancedMode ? "bg-s2 font-medium text-accent shadow-sm" : "text-t2 hover:text-t1",
                   )}
-                  onClick={() => setAdvancedMode(false)}
+                  onClick={() => { if (advancedMode) updateDraft("advancedMode", false); }}
                 >
                   {t("preset_simple_mode_short")}
                 </button>
@@ -341,7 +349,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                     "cursor-pointer select-none rounded-[5px] px-2.5 py-1 font-ui text-[11px] transition-all duration-150",
                     advancedMode ? "bg-s2 font-medium text-accent shadow-sm" : "text-t2 hover:text-t1",
                   )}
-                  onClick={() => setAdvancedMode(true)}
+                  onClick={() => { if (!advancedMode) updateDraft("advancedMode", true); }}
                 >
                   {t("preset_advanced_mode_short")}
                 </button>

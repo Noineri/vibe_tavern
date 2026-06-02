@@ -120,6 +120,13 @@
       "when": 1780050000000,
       "tag": "0017_prompt_order",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1780100000000,
+      "tag": "0018_preset_advanced_mode",
+      "breakpoints": true
     }
   ]
 }
