@@ -55,7 +55,7 @@ result.prefill            // string | null — assistant prefill from preset
 | `identity` | `{ chatId }` | Chat identifier for traceability |
 | `character` | `object` | Name, description, scenario, personality, systemPrompt, mesExample, postHistoryInstructions |
 | `persona` | `object \| null` | Name, description, pronouns |
-| `preset` | `object \| null` | System prompt (`text`), jailbreak, summary prompt, tools prompt, prefill, author's note, custom injections |
+| `preset` | `object \| null` | System prompt (`text`), jailbreak, summary prompt, tools prompt, prefill, author's note, custom injections, `promptOrder`, `advancedMode` |
 | `mode` | `AssemblyMode` | `"chat"` \| `"continue"` \| `"regenerate"` \| `"summary"` \| `"tool_call"` |
 | `lore` | `array` | Activated lore entries (title, content, priority, position, depth, role) |
 | `memory` | `object` | `{ summary: [...], retrieval: [...] }` |
@@ -258,6 +258,17 @@ The tokenizer counts `{{`/`}}` depth, so nested macros like `{{if {{getvar::x}}}
 
 Variables (`setvar`/`getvar`) persist across all `resolve()` calls on the same engine instance within one assembly pass. The engine calls `resetVariables()` at the start of each `assemblePrompt()` call.
 
+### Two-Pass Resolution (ST field macros in custom injections)
+
+Character/persona fields (`{{description}}`, `{{personality}}`, `{{scenario}}`, `{{persona}}`, etc.) are resolved **first**, then a second variable context is built from those resolved fields. This lets `{{scenario}}` and `{{personality}}` resolve correctly inside custom injection content (ST parity).
+
+Before the fix, `{{scenario}}` inside a custom injection would return empty because custom injections were resolved against the **pre-resolution** variable context. After the fix, the order is:
+
+1. Build variable context from raw character/persona fields.
+2. Resolve all character/persona **fields** (description, personality, scenario, etc.).
+3. Build a fresh variable context using the resolved fields.
+4. Resolve all remaining text (custom injections, author's note, etc.) with this enriched context.
+
 ### Supported Macros
 
 #### Identity
@@ -332,6 +343,12 @@ Variables (`setvar`/`getvar`) persist across all `resolve()` calls on the same e
 | `{{roll::1d20}}` | Dice roll | Total as string |
 | `{{roll::3d6+2}}` | With modifier | Total as string |
 | `{{roll::d6}}` | Shorthand (1 die) | Total as string |
+
+**Dice caveats:**
+
+- Only `[N]dK[+/-M]` syntax — no `kh`/`kl`/`!` keep/explode.
+- The roll is re-evaluated on **every prompt assembly**, including regenerations. For stable per-message dice (same number on regen), use a `/roll` script template instead — see `apps/web/src/components/build/editors/scriptTemplates.ts` (`dice` template), which caches results in `context.state` keyed by message content.
+- For D&D advantage/disadvantage and `d%` percentile notation, use the script template — `{{roll}}` doesn't support them.
 
 #### Conditionals
 
@@ -447,6 +464,36 @@ The pipeline produces:
 [assistant] Welcome to the tower, Olya.
 [user] I step inside.
 ```
+
+---
+
+## Advanced Prompt Mode
+
+A preset can switch to **Advanced Mode** (SilkyTavern-compatible) via `advancedMode: true` on `PromptPresetDto`. The flag is **per-preset** and persisted in `prompt_presets.advanced_mode`.
+
+When advanced mode is active:
+
+- The Prompt Manager UI shows an editable canvas (`PromptOrderCanvas`) instead of the basic fields.
+- The preset stores an explicit `promptOrder: PromptOrderEntry[]` (identifier, enabled, order, kind).
+- **Custom injections** become the primary authoring surface — each injection has its own `identifier`, `name`, `content`, `role`, `depth`, `injectionPosition`, `injectionOrder`, `enabled`.
+- Built-in slots (`main`, `jailbreak`, `authorsNote`, `chatHistory`, `worldInfoBefore/After`, `charDescription`, `charPersonality`, `scenario`, `personaDescription`, `dialogueExamples`) participate in the same order list and can be reordered/toggled.
+
+### `enabled` flag — authoritative source
+
+There are two places where enabled state lives:
+
+1. `customInjections[i].enabled` — the toggle on the injection row in the UI.
+2. `promptOrder[identifier].enabled` — the toggle on the slot/marker in the prompt-order canvas.
+
+For **custom injections**, the **authoritative source is `customInjections[i].enabled`**. `promptOrder` is used only for `order`/`placement` (matching SilkyTavern semantics).
+
+For **built-in slots** (`main`, `jailbreak`, `authorsNote`, etc.), the authoritative source is `promptOrder[identifier].enabled` because there is no `customInjections` entry for them.
+
+The UI (`InjectionTable.tsx`) keeps both flags in sync for custom injections when the row toggle is clicked — but the assembly layer only consults the authoritative source, so a desynced `promptOrder` entry cannot disable a custom injection.
+
+### Importing ST presets
+
+ST preset JSON imports fill both `customInjections` and `promptOrder` from the original `prompts` and `prompt_order` arrays. The import preserves each entry's `enabled` flag as-is; toggling re-enables an injection through the same UI flow.
 
 ---
 
