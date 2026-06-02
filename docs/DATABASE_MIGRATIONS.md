@@ -80,6 +80,14 @@ On a fresh DB, `ensureSchema()` creates the full schema directly.
 Then the migrator marks all known migrations as applied — no need to
 run them sequentially against an empty DB.
 
+### Migration log
+
+| File | What it adds |
+|------|--------------|
+| `0001`–`0016` | Initial schema: chats, characters, personas, providers, presets, lorebooks, scripts, logit bias, etc. |
+| `0017_prompt_order.sql` | `prompt_order_json` column on `prompt_presets` for Advanced Prompt Mode ordering. |
+| `0018_preset_advanced_mode.sql` | `advanced_mode` integer column on `prompt_presets` (per-preset Advanced Mode flag, defaults to 0). |
+
 ## When to implement
 
 When the first post-release schema change is needed. Until then,

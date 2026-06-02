@@ -189,6 +189,49 @@ context.random() / randomInt(min, max) / pick(arr) / weightedPick(entries)   // 
 
 **Error handling:** Per-script try/catch. Errors are collected but execution continues to the next script. Script state is persisted as JSON on the `chats` table, keyed by script ID.
 
+### Top-level `return` is a `SyntaxError`
+
+`vm.runInNewContext` parses script bodies as **Program**, not function bodies — bare `return;` throws `SyntaxError: Return statements are only valid inside functions`. Wrap any early-exit logic in an IIFE:
+
+```js
+(() => {
+  if (context.chat.messageCount < 10) return;
+  // ...rest of script
+})();
+```
+
+Built-in templates that need early exit (`memory`, `dice`) already follow this pattern.
+
+### Built-in Script Templates
+
+**File:** `apps/web/src/components/build/editors/scriptTemplates.ts`
+
+The ScriptEditor offers pre-built templates you can insert with one click:
+
+| Key | Name | What it does |
+|-----|------|--------------|
+| `relationship` | Relationship Progression | Evolves `character.personality`/`scenario` based on `messageCount` |
+| `events` | Scenario Events | Triggers scenario changes from keywords in the last message |
+| `memory` | Conversation Memory | Detects hobbies/preferences mentioned in chat and adds them to personality |
+| `lorebook` | Dynamic Lorebook | Keyword-triggered backstory injection |
+| `advanced_lore` | Advanced Lorebook | Multi-pass activation with priorities, filters, recursive triggers |
+| `hp` | HP Tracker | Persistent HP system with damage/heal keywords; uses `context.state` |
+| `dice` | Dice Roller (`/roll`) | Parses `/roll dN[+/-M]` in the last user message, caches results in `context.state` for regen-stability. Supports `d%`, multiple dice, and `adv`/`dis` (D&D advantage/disadvantage) |
+| `random` | Random Event | 5% chance per turn to inject an ambient flavor event |
+
+#### Dice Roller (`/roll`) — pattern for stable randomness
+
+```text
+/roll d20           → 🎲 1d20 → 14   [14]
+/roll 2d6+3         → 🎲 2d6+3 → 11   [4 + 4]
+/roll 2d20 adv      → 🎲 2d20 → 17   [17] (advantage, dropped 4)
+/roll d%            → 🎲 1d% → 78    [78]
+```
+
+The script caches results in `context.state` under a key derived from the last message's content+length — **the same input message always returns the same dice values on regeneration**. The cache is per-chat (`scriptState` on the `chats` table). Output is injected as a system message visible to the LLM in trace, not shown in the UI.
+
+This pattern (cache keyed by input content in `context.state`) is the recommended way to implement any "honest" random outcome that must survive regen.
+
 ---
 
 ## AI Execution Layer
