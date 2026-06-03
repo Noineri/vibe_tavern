@@ -59,6 +59,8 @@ export interface PromptPresetDto {
   authorsNotePosition: "in_prompt" | "in_chat" | "after_chat";
   summary: string;
   tools: string;
+  nsfw: string;
+  enhanceDefinitions: string;
   customInjections: CustomInjection[];
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;

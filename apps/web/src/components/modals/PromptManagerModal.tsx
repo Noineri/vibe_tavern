@@ -27,6 +27,8 @@ type DraftData = {
   authorsNotePosition: "in_prompt" | "in_chat" | "after_chat";
   summary: string;
   tools: string;
+  nsfw: string;
+  enhanceDefinitions: string;
   scriptAiSystemPrompt: string;
   customInjections: InjectionRow[];
   promptOrder: PromptOrderEntry[];
@@ -48,6 +50,8 @@ interface PromptManagerModalProps {
     authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat";
     summary?: string;
     tools?: string;
+    nsfw?: string;
+    enhanceDefinitions?: string;
     scriptAiSystemPrompt?: string;
     customInjections?: InjectionRow[];
     promptOrder?: PromptOrderEntry[];
@@ -64,7 +68,7 @@ interface PromptManagerModalProps {
 
 const emptyDraft: DraftData = {
   name: "", bindModel: "", system: "", jailbreak: "",
-  prefill: "", authorsNote: "", authorsNoteDepth: 4, authorsNotePosition: "in_chat", summary: "", tools: "", scriptAiSystemPrompt: "",
+  prefill: "", authorsNote: "", authorsNoteDepth: 4, authorsNotePosition: "in_chat", summary: "", tools: "", nsfw: "", enhanceDefinitions: "", scriptAiSystemPrompt: "",
   customInjections: [],
   promptOrder: [],
   advancedMode: false,
@@ -106,6 +110,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         authorsNotePosition: activePreset.authorsNotePosition ?? "in_chat",
         summary: activePreset.summary,
         tools: activePreset.tools,
+        nsfw: activePreset.nsfw ?? "",
+        enhanceDefinitions: activePreset.enhanceDefinitions ?? "",
         scriptAiSystemPrompt: activePreset.scriptAiSystemPrompt ?? "",
         customInjections: (activePreset as PromptPresetDto).customInjections ?? [],
         promptOrder: activePreset.promptOrder ?? [],
@@ -203,6 +209,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         system: result.system.join("\n\n"),
         jailbreak: result.post.join("\n\n"),
         authorsNote: result.authors.join("\n\n"),
+        nsfw: result.nsfw.join("\n\n"),
+        enhanceDefinitions: result.enhanceDefinitions.join("\n\n"),
         prefill: "",
         authorsNoteDepth: 4,
         authorsNotePosition: "in_chat",
@@ -221,6 +229,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         if (result.system.length) next.system = d.system + (d.system ? "\n\n" : "") + result.system.join("\n\n");
         if (result.post.length) next.jailbreak = d.jailbreak + (d.jailbreak ? "\n\n" : "") + result.post.join("\n\n");
         if (result.authors.length) next.authorsNote = d.authorsNote + (d.authorsNote ? "\n\n" : "") + result.authors.join("\n\n");
+        if (result.nsfw.length) next.nsfw = d.nsfw + (d.nsfw ? "\n\n" : "") + result.nsfw.join("\n\n");
+        if (result.enhanceDefinitions.length) next.enhanceDefinitions = d.enhanceDefinitions + (d.enhanceDefinitions ? "\n\n" : "") + result.enhanceDefinitions.join("\n\n");
         if (result.injections.length) next.customInjections = [...d.customInjections, ...result.injections];
         if (result.promptOrder.length) next.promptOrder = mergePromptOrder(d.promptOrder, result.promptOrder);
         if (result.injections.length || result.promptOrder.length) next.advancedMode = true;

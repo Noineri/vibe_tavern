@@ -18,6 +18,8 @@ export interface CreatePresetData {
   authorsNotePosition?: string;
   summaryPrompt?: string;
   toolsPrompt?: string;
+  nsfwPrompt?: string;
+  enhanceDefinitionsPrompt?: string;
   scriptAiSystemPrompt?: string;
   customInjectionsJson?: string;
   promptOrderJson?: string;
@@ -43,6 +45,8 @@ export interface PromptPreset {
   authorsNotePosition: string;
   summaryPrompt: string;
   toolsPrompt: string;
+  nsfwPrompt: string;
+  enhanceDefinitionsPrompt: string;
   scriptAiSystemPrompt: string;
   customInjectionsJson: string;
   promptOrderJson: string;
@@ -111,6 +115,8 @@ export class PresetStore {
         authorsNotePosition: data.authorsNotePosition ?? 'in_chat',
         summaryPrompt: data.summaryPrompt ?? '',
         toolsPrompt: data.toolsPrompt ?? '',
+        nsfwPrompt: data.nsfwPrompt ?? '',
+        enhanceDefinitionsPrompt: data.enhanceDefinitionsPrompt ?? '',
         scriptAiSystemPrompt: data.scriptAiSystemPrompt ?? '',
         customInjectionsJson: data.customInjectionsJson ?? '[]',
         promptOrderJson: data.promptOrderJson ?? '[]',
@@ -148,6 +154,8 @@ export class PresetStore {
     if (data.authorsNotePosition !== undefined) values.authorsNotePosition = data.authorsNotePosition;
     if (data.summaryPrompt !== undefined) values.summaryPrompt = data.summaryPrompt;
     if (data.toolsPrompt !== undefined) values.toolsPrompt = data.toolsPrompt;
+    if (data.nsfwPrompt !== undefined) values.nsfwPrompt = data.nsfwPrompt;
+    if (data.enhanceDefinitionsPrompt !== undefined) values.enhanceDefinitionsPrompt = data.enhanceDefinitionsPrompt;
     if (data.scriptAiSystemPrompt !== undefined) values.scriptAiSystemPrompt = data.scriptAiSystemPrompt;
     if (data.customInjectionsJson !== undefined) values.customInjectionsJson = data.customInjectionsJson;
     if (data.promptOrderJson !== undefined) values.promptOrderJson = data.promptOrderJson;
@@ -208,6 +216,8 @@ export class PresetStore {
         authorsNotePosition: original.authorsNotePosition,
         summaryPrompt: original.summaryPrompt,
         toolsPrompt: original.toolsPrompt,
+        nsfwPrompt: original.nsfwPrompt,
+        enhanceDefinitionsPrompt: original.enhanceDefinitionsPrompt,
         scriptAiSystemPrompt: original.scriptAiSystemPrompt ?? '',
         customInjectionsJson: original.customInjectionsJson,
         promptOrderJson: original.promptOrderJson,
@@ -251,6 +261,8 @@ export class PresetStore {
       authorsNotePosition: 'in_chat',
       summaryPrompt: '',
       toolsPrompt: '',
+      nsfwPrompt: '',
+      enhanceDefinitionsPrompt: '',
       scriptAiSystemPrompt: '',
       customInjectionsJson: '[]',
       promptOrderJson: '[]',
@@ -272,6 +284,8 @@ export class PresetStore {
       authorsNotePosition: row.authorsNotePosition,
       summaryPrompt: row.summaryPrompt,
       toolsPrompt: row.toolsPrompt,
+      nsfwPrompt: row.nsfwPrompt,
+      enhanceDefinitionsPrompt: row.enhanceDefinitionsPrompt,
       scriptAiSystemPrompt: row.scriptAiSystemPrompt,
       customInjections: JSON.parse(row.customInjectionsJson || '[]'),
       promptOrder: JSON.parse(row.promptOrderJson || '[]'),
@@ -294,6 +308,8 @@ export class PresetStore {
       authorsNotePosition: row.authorsNotePosition,
       summaryPrompt: row.summaryPrompt,
       toolsPrompt: row.toolsPrompt,
+      nsfwPrompt: row.nsfwPrompt,
+      enhanceDefinitionsPrompt: row.enhanceDefinitionsPrompt,
       scriptAiSystemPrompt: row.scriptAiSystemPrompt ?? '',
       customInjectionsJson: row.customInjectionsJson,
       promptOrderJson: row.promptOrderJson,

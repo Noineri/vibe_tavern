@@ -165,6 +165,7 @@ const BUILT_IN_PROMPT_IDENTIFIERS = new Set([
   "dialogueExamples",
   "jailbreak",
   "nsfw",
+  "enhanceDefinitions",
   "authorsNote",
 ]);
 

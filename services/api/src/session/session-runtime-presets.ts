@@ -8,7 +8,7 @@ function safeParseJson<T>(json: string, fallback: T): T {
   try { return JSON.parse(json); } catch { return fallback; }
 }
 
-function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: string | null; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; summaryPrompt: string; toolsPrompt: string; customInjectionsJson: string; promptOrderJson: string; advancedMode?: boolean | number | null; scriptAiSystemPrompt: string | null; createdAt: string; updatedAt: string; }): PromptPresetDto {
+function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: string | null; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; summaryPrompt: string; toolsPrompt: string; nsfwPrompt: string; enhanceDefinitionsPrompt: string; customInjectionsJson: string; promptOrderJson: string; advancedMode?: boolean | number | null; scriptAiSystemPrompt: string | null; createdAt: string; updatedAt: string; }): PromptPresetDto {
   return {
     id: p.id,
     name: p.name,
@@ -21,6 +21,8 @@ function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: str
     authorsNotePosition: (p.authorsNotePosition as AuthorsNotePosition) ?? "in_chat",
     summary: p.summaryPrompt,
     tools: p.toolsPrompt,
+    nsfw: p.nsfwPrompt ?? "",
+    enhanceDefinitions: p.enhanceDefinitionsPrompt ?? "",
     customInjections: safeParseJson(p.customInjectionsJson, []),
     promptOrder: safeParseJson(p.promptOrderJson, []),
     advancedMode: Boolean(p.advancedMode),
@@ -50,6 +52,8 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
   authorsNotePosition?: AuthorsNotePosition;
   summary?: string;
   tools?: string;
+  nsfw?: string;
+  enhanceDefinitions?: string;
   customInjections?: unknown[];
   promptOrder?: unknown[];
   advancedMode?: boolean;
@@ -70,6 +74,8 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
     authorsNotePosition: input.authorsNotePosition ?? "in_chat",
     summaryPrompt: input.summary ?? "",
     toolsPrompt: input.tools ?? "",
+    nsfwPrompt: input.nsfw ?? "",
+    enhanceDefinitionsPrompt: input.enhanceDefinitions ?? "",
     customInjectionsJson: input.customInjections != null ? JSON.stringify(input.customInjections) : undefined,
     promptOrderJson: input.promptOrder != null ? JSON.stringify(input.promptOrder) : undefined,
     advancedMode: input.advancedMode ?? false,
@@ -89,6 +95,8 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
   authorsNotePosition?: AuthorsNotePosition;
   summary?: string;
   tools?: string;
+  nsfw?: string;
+  enhanceDefinitions?: string;
   customInjections?: unknown[];
   promptOrder?: unknown[];
   advancedMode?: boolean;
@@ -106,6 +114,8 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
       authorsNotePosition: patch.authorsNotePosition,
       summaryPrompt: patch.summary,
       toolsPrompt: patch.tools,
+      nsfwPrompt: patch.nsfw,
+      enhanceDefinitionsPrompt: patch.enhanceDefinitions,
       customInjectionsJson: patch.customInjections != null ? JSON.stringify(patch.customInjections) : undefined,
       promptOrderJson: patch.promptOrder != null ? JSON.stringify(patch.promptOrder) : undefined,
       advancedMode: patch.advancedMode,

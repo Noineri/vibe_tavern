@@ -52,6 +52,7 @@ function makeLayer(input: {
   reason?: string;
   role?: string;
   subPosition?: number;
+  insertionOrder?: number;
   text: string;
 }): PromptLayer {
   return {
@@ -67,6 +68,7 @@ function makeLayer(input: {
     text: input.text.trim(),
     ...(input.role ? { role: input.role as "system" | "user" | "assistant" } : {}),
     ...(input.subPosition != null ? { subPosition: input.subPosition } : {}),
+    ...(input.insertionOrder != null ? { insertionOrder: input.insertionOrder } : {}),
   };
 }
 
@@ -78,13 +80,21 @@ function sortLayers(layers: PromptLayer[]): PromptLayer[] {
   return [...layers].sort((a, b) => {
     const posDiff = PROMPT_LAYER_POSITION_RANK[a.position] - PROMPT_LAYER_POSITION_RANK[b.position];
     if (posDiff !== 0) return posDiff;
-    // Within same position, sort by subPosition (lower = earlier), then by priority descending
+    // Within same position, sort by subPosition (lower = earlier), then by
+    // explicit insertionOrder when provided. This is important for ST World
+    // Info: entry insertion_order controls final order within the WI marker,
+    // independently from lorebook/link ordering.
     if (a.subPosition != null && b.subPosition != null && a.subPosition !== b.subPosition) {
       return a.subPosition - b.subPosition;
     }
     // Layers without subPosition go after those with it
     if (a.subPosition != null && b.subPosition == null) return -1;
     if (a.subPosition == null && b.subPosition != null) return 1;
+    if (a.insertionOrder != null && b.insertionOrder != null && a.insertionOrder !== b.insertionOrder) {
+      return a.insertionOrder - b.insertionOrder;
+    }
+    if (a.insertionOrder != null && b.insertionOrder == null) return -1;
+    if (a.insertionOrder == null && b.insertionOrder != null) return 1;
     return b.priority - a.priority;
   });
 }
@@ -97,17 +107,19 @@ function promptOrderEnabled(context: PromptAssemblyContext, identifier: string):
 }
 
 const DEFAULT_PROMPT_ORDER: Record<string, number> = {
-  worldInfoBefore: 0,
-  main: 10,
-  charDescription: 20,
-  charPersonality: 30,
-  scenario: 40,
-  personaDescription: 50,
+  main: 0,
+  worldInfoBefore: 10,
+  personaDescription: 20,
+  charDescription: 30,
+  charPersonality: 40,
+  scenario: 50,
   authorsNote: 60,
+  enhanceDefinitions: 70,
+  nsfw: 75,
+  worldInfoAfter: 80,
+  dialogueExamples: 90,
   chatHistory: 100,
-  worldInfoAfter: 110,
-  dialogueExamples: 120,
-  jailbreak: 130,
+  jailbreak: 110,
 };
 
 function hasPromptOrderLayout(context: PromptAssemblyContext): boolean {
@@ -132,23 +144,13 @@ function promptOrderPlacement(context: PromptAssemblyContext, identifier: string
   return itemOrder > chatOrder ? "after_chat" : "before_chat";
 }
 
-function maxPromptOrderRank(context: PromptAssemblyContext, identifiers: string[]): number {
-  return Math.max(...identifiers.map((identifier) => promptOrderRank(context, identifier)));
-}
-
 function lorePromptSubPosition(
   context: PromptAssemblyContext,
   lorePosition: string | undefined,
   worldInfoIdentifier: string,
   fallbackSubPosition: number | undefined,
 ): number | undefined {
-  if (!hasPromptOrderLayout(context)) return fallbackSubPosition;
-
   switch (lorePosition) {
-    case "after_char":
-      // ST "after character" is anchored after the whole character/persona block,
-      // not wherever the generic worldInfoAfter prompt-order item happens to sit.
-      return maxPromptOrderRank(context, ["charDescription", "charPersonality", "scenario", "personaDescription"]) + 0.1;
     case "top_an":
       return promptOrderRank(context, "authorsNote") - 0.1;
     case "bottom_an":
@@ -158,7 +160,7 @@ function lorePromptSubPosition(
     case "after_examples":
       return promptOrderRank(context, "dialogueExamples") + 0.1;
     default:
-      return promptOrderRank(context, worldInfoIdentifier, fallbackSubPosition);
+      return promptOrderRank(context, worldInfoIdentifier, DEFAULT_PROMPT_ORDER[worldInfoIdentifier] ?? fallbackSubPosition);
   }
 }
 
@@ -401,11 +403,40 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     }
   }
 
+  // Enhance Definitions — built-in ST prompt block (disabled by default, content-driven)
+  if (context.preset?.enhanceDefinitions?.trim() && promptOrderEnabled(context, "enhanceDefinitions")) {
+    const layer = applyPromptOrderPosition(context, makeLayer({
+      id: PROMPT_LAYER_ID.promptPresetEnhanceDefinitions,
+      sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+      sourceId: context.preset.id,
+      sourceName: "Enhance Definitions",
+      priority: PROMPT_LAYER_PRIORITY.presetEnhanceDefinitions,
+      text: context.preset.enhanceDefinitions,
+    }), "enhanceDefinitions");
+    layers.push(layer);
+  }
+
+  // NSFW — built-in ST prompt block (placed after worldInfoAfter, before chatHistory)
+  if (context.preset?.nsfw?.trim() && promptOrderEnabled(context, "nsfw")) {
+    const layer = applyPromptOrderPosition(context, makeLayer({
+      id: PROMPT_LAYER_ID.promptPresetNsfw,
+      sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+      sourceId: context.preset.id,
+      sourceName: "NSFW",
+      priority: PROMPT_LAYER_PRIORITY.presetNsfw,
+      text: context.preset.nsfw,
+    }), "nsfw");
+    layers.push(layer);
+  }
+
   // Custom injections (advanced/ST mode)
   // For custom injections, `customInjections[i].enabled` is the authoritative enabled flag.
   // `promptOrder` is used for ordering/placement only (not enabled) — kept authoritative for built-in slots elsewhere.
+  // Skip built-in identifiers that are handled as dedicated fields (nsfw, enhanceDefinitions).
+  const BUILTIN_FIELD_IDENTIFIERS = new Set(["nsfw", "enhanceDefinitions"]);
   for (const injection of (context.preset?.customInjections ?? [])) {
     if (!injection.enabled || !injection.content?.trim()) continue;
+    if (BUILTIN_FIELD_IDENTIFIERS.has(injection.identifier ?? injection.name)) continue;
 
     const isAbsolute = injection.injectionPosition === 1 || injection.injectionPosition === "absolute" || injection.injectionPosition == null;
     const role = injection.role === "user" || injection.role === "assistant" ? injection.role : "system";
@@ -511,15 +542,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     );
   }
 
-  for (const loreEntry of [...(context.lore ?? [])].sort((a, b) => {
-    // Sort by: position → subPosition → sortOrder asc → priority desc
-    const posA = a.position ?? 'in_prompt';
-    const posB = b.position ?? 'in_prompt';
-    if (posA !== posB) return posA.localeCompare(posB);
-    const sortDiff = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
-    if (sortDiff !== 0) return sortDiff;
-    return (b.priority ?? 100) - (a.priority ?? 100);
-  })) {
+  for (const loreEntry of context.lore ?? []) {
     if (!loreEntry.content.trim()) {
       droppedLayers.push({ id: loreEntry.id, reason: PROMPT_LAYER_REASON.emptyLoreContent });
       continue;
@@ -529,7 +552,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     // If the position is already a pipeline position, pass through unchanged.
     const resolvedPosition = (() => {
       switch (loreEntry.position) {
-        case "before_char":    return "before_prompt";
+        case "before_char":    return "in_prompt";
         case "after_char":     return "in_prompt";
         case "before_examples": return "in_prompt";
         case "after_examples":  return "in_prompt";
@@ -558,7 +581,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       }
     })();
 
-    const worldInfoIdentifier = resolvedPosition === "before_prompt" ? "worldInfoBefore" : "worldInfoAfter";
+    const worldInfoIdentifier = loreEntry.position === "before_char" ? "worldInfoBefore" : "worldInfoAfter";
     if (!promptOrderEnabled(context, worldInfoIdentifier)) {
       droppedLayers.push({ id: loreEntry.id, reason: `skipped: ${worldInfoIdentifier} disabled by prompt order` });
       continue;
@@ -573,12 +596,20 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       priority: loreEntry.priority,
       role: loreEntry.role,
       subPosition: lorePromptSubPosition(context, loreEntry.position, worldInfoIdentifier, subPos),
+      insertionOrder: loreEntry.sortOrder,
       reason: PROMPT_LAYER_REASON.activatedLoreEntry,
       text: joinNonEmpty([loreEntry.title ? PROMPT_FORMAT.loreHeader(loreEntry.title) : null, loreEntry.content]),
     });
 
+    const placement = promptOrderPlacement(context, worldInfoIdentifier);
+    if (placement === "after_chat" && layer.position !== "hidden_system") {
+      layer.position = "in_chat";
+      layer.injectionDepth = 0;
+    }
+
     // at_depth injects into chat history at a specific depth
     if (loreEntry.position === "at_depth") {
+      layer.position = "in_chat";
       layer.injectionDepth = loreEntry.depth ?? 4;
     }
 
@@ -854,7 +885,12 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     .sort((a, b) => {
       const depthDiff = b.injectionDepth! - a.injectionDepth!;
       if (depthDiff !== 0) return depthDiff;
-      return (b.subPosition ?? b.priority) - (a.subPosition ?? a.priority);
+      const subDiff = (b.subPosition ?? b.priority) - (a.subPosition ?? a.priority);
+      if (subDiff !== 0) return subDiff;
+      if (a.insertionOrder != null && b.insertionOrder != null && a.insertionOrder !== b.insertionOrder) {
+        return b.insertionOrder - a.insertionOrder;
+      }
+      return a.priority - b.priority;
     }); // deepest first; same-depth reverse order because splice inserts at a fixed index
   // in_chat layers WITHOUT a depth are collected into a single block placed before history.
   const inChatBlock = inChat.filter((l) => typeof l.injectionDepth !== "number");
