@@ -883,6 +883,6 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     ],
     droppedLayers,
     finalPayload: { messages },
-    prefill: context.preset?.prefill || null,
+    prefill: (context.preset?.prefill && promptOrderEnabled(context, "assistantPrefill")) ? context.preset.prefill : null,
   };
 }
