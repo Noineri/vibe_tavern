@@ -67,6 +67,12 @@ export class LiveChatOrchestrator {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
     }
+
+    // Extract thinking tags from content (some models embed <thinking> in text)
+    const { mainContent: sendText, reasoning: sendReasoning } = extractThinkingTags(reply, reasoning);
+    reply = sendText;
+    reasoning = sendReasoning;
+
     const latencyMs = Date.now() - startedAt;
     logSendDebug("live.send.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
     const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
@@ -119,6 +125,12 @@ export class LiveChatOrchestrator {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
     }
+
+    // Extract thinking tags from content (some models embed <thinking> in text)
+    const { mainContent: genText, reasoning: genReasoning } = extractThinkingTags(reply, reasoning);
+    reply = genText;
+    reasoning = genReasoning;
+
     const latencyMs = Date.now() - startedAt;
     logSendDebug("live.generateReply.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
     const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
@@ -176,6 +188,12 @@ export class LiveChatOrchestrator {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
     }
+
+    // Extract thinking tags from content (some models embed <thinking> in text)
+    const { mainContent: regenText, reasoning: regenReasoning } = extractThinkingTags(reply, reasoning);
+    reply = regenText;
+    reasoning = regenReasoning;
+
     const latencyMs = Date.now() - startedAt;
     logSendDebug("live.regenerate.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
     const snapshot = await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
