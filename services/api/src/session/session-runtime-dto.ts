@@ -12,6 +12,7 @@ export interface ClientProviderProfileRecord {
   endpoint: string;
   defaultModel: string | null;
   contextBudget: number | null;
+  pinContextBudget: boolean;
   maxTokens: number;
   temperature: number;
   topP: number;
@@ -142,6 +143,7 @@ export function toClientProviderProfile(profile: import("@vibe-tavern/domain").S
     endpoint: profile.endpoint,
     defaultModel: profile.defaultModel,
     contextBudget: profile.contextBudget,
+    pinContextBudget: profile.pinContextBudget,
     maxTokens: profile.maxTokens,
     temperature: profile.temperature,
     topP: profile.topP,
@@ -157,10 +159,10 @@ export function toClientProviderProfile(profile: import("@vibe-tavern/domain").S
     showReasoning: profile.showReasoning,
     streamResponse: profile.streamResponse,
     customSamplers: profile.customSamplers,
+    hasStoredApiKey: !!profile.apiKey,
     isActive: profile.isActive,
     createdAt: profile.createdAt,
     updatedAt: profile.updatedAt,
-    hasStoredApiKey: Boolean(profile.apiKey),
   };
 }
 

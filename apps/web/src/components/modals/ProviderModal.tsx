@@ -39,6 +39,7 @@ export interface FormState {
   repetitionPenalty: number;
   maxTokens: number;
   contextBudget: number;
+  pinContextBudget: boolean;
   stopSequences: string[];
   logitBias: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed: string | null;
@@ -88,7 +89,7 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     frequencyPenalty: p.frequencyPenalty,
     presencePenalty: p.presencePenalty,
     repetitionPenalty: p.repetitionPenalty,
-    maxTokens: p.maxTokens, contextBudget: p.contextBudget ?? 16000,
+    maxTokens: p.maxTokens, contextBudget: p.contextBudget ?? 16000, pinContextBudget: p.pinContextBudget ?? false,
     stopSequences: p.stopSequences,
     logitBias: p.logitBias ?? [],
     seed: p.seed ?? null, showReasoning: p.showReasoning,
@@ -107,6 +108,7 @@ function toProviderDraft(form: FormState) {
     apiKey: form.apiKey || null,
     defaultModel: form.model || null,
     contextBudget: form.contextBudget || null,
+    pinContextBudget: form.pinContextBudget,
     temperature: form.temperature,
     topP: form.topP,
     minP: form.minP,

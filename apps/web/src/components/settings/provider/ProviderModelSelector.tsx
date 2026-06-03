@@ -125,12 +125,14 @@ export function ProviderModelSelector({
                         <div
                           key={m.id}
                           onClick={() => {
-                            console.log('[MODEL-SELECT]', { modelId: m.id, contextLength: m.contextLength, willSet: m.contextLength ?? 16000 });
+                            console.log('[MODEL-SELECT]', { modelId: m.id, contextLength: m.contextLength, pinContextBudget: form.pinContextBudget, willSet: m.contextLength ?? 16000 });
                             updateForm('model', m.id);
-                            if (m.contextLength != null && m.contextLength > 0) {
-                              updateForm('contextBudget', m.contextLength);
-                            } else {
-                              updateForm('contextBudget', 16000);
+                            if (!form.pinContextBudget) {
+                              if (m.contextLength != null && m.contextLength > 0) {
+                                updateForm('contextBudget', m.contextLength);
+                              } else {
+                                updateForm('contextBudget', 16000);
+                              }
                             }
                             setModelListOpen(false);
                             setModelSearch('');

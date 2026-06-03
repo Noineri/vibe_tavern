@@ -279,6 +279,8 @@
   "sampler_max_context_hint": "Установите -1, чтобы модель сама решала, сколько писать.",
   "context_length": "Размер контекста",
   "context_auto": "Авто",
+  "context_pin_locked": "Размер контекста закреплён — не изменится при переключении моделей",
+  "context_pin_unlocked": "Закрепить размер контекста",
   "sampler_temperature": "Температура",
   "reasoning_effort": "Усилие рассуждения",
   "effort_low": "Низкое",

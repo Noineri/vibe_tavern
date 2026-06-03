@@ -281,6 +281,8 @@
   "sampler_max_context_hint": "Set to -1 to let the model decide how much to write.",
   "context_length": "Context Size",
   "context_auto": "Auto",
+  "context_pin_locked": "Context size is pinned — won't change when switching models",
+  "context_pin_unlocked": "Pin context size",
   "sampler_temperature": "Temperature",
   "reasoning_effort": "Reasoning Effort",
   "effort_low": "Low",
