@@ -18,9 +18,22 @@ export interface ModalProps {
   compact?: boolean;
   /** When true, overlay is not rendered (caller provides its own or it's nested). */
   hideOverlay?: boolean;
+  /** Accessible title for Radix Dialog. Hidden visually by default. */
+  title?: string;
+  /** Accessible description for Radix Dialog. Hidden visually by default. */
+  description?: string;
 }
 
-export function Modal({ open, onClose, children, overlayClassName, compact, hideOverlay }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  children,
+  overlayClassName,
+  compact,
+  hideOverlay,
+  title = "Dialog",
+  description = "Application dialog",
+}: ModalProps) {
   const isMobile = useIsMobile();
   return (
     <Dialog.Root open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -44,6 +57,8 @@ export function Modal({ open, onClose, children, overlayClassName, compact, hide
           onPointerDownOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
         >
+          <Dialog.Title className="sr-only">{title}</Dialog.Title>
+          <Dialog.Description className="sr-only">{description}</Dialog.Description>
           {children}
             {/* Portal anchor for nested Radix components (Select, Popover).
                 Positioned as a zero-size fixed element inside Dialog.Content.
