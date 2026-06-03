@@ -92,7 +92,7 @@ export function DropdownSelect({
         <Select.Content
           position="popper"
           sideOffset={4}
-          className="z-[200] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
+          className="z-[400] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
           style={{ width: "var(--radix-select-trigger-width)", maxHeight: 260 }}
         >
           {/* Search input */}
