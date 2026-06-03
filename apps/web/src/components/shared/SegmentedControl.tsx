@@ -1,8 +1,9 @@
+import { type ReactNode } from 'react';
 import { cn } from "../../lib/cn.js";
 
 interface SegmentedOption {
   value: string;
-  label: string;
+  label: ReactNode;
 }
 
 interface SegmentedControlProps {

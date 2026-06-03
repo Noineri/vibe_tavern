@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { Toggle } from '../../shared/Toggle.js';
 import { useT } from '../../../i18n/context.js';
 import { Icons } from '../../shared/icons.js';
 import { useIsMobile } from '../../../hooks/use-mobile.js';
+import { SegmentedControl } from '../../shared/SegmentedControl.js';
+import { DropdownSelect } from '../../shared/DropdownSelect.js';
 
 interface TweaksSettings {
   theme: 'dark' | 'light';
@@ -36,48 +37,98 @@ export function TweaksPanel({ settings, setSetting, onOpenMobileAccess, onClose 
   }, [isMobile, onClose]);
 
   if (isMobile) return null;
+
+  const themeOptions = [
+    { value: 'light', label: '☀' },
+    { value: 'dark', label: '🌙' },
+  ];
+
+  const fontSizeOptions = [
+    { value: '17', label: <span className="font-body text-[11px] font-semibold">Aa</span> },
+    { value: '18', label: <span className="font-body text-[13px] font-semibold">Aa</span> },
+    { value: '19', label: <span className="font-body text-[15px] font-semibold">Aa</span> },
+  ];
+
+  const uiFontSizeOptions = [
+    { value: '16', label: <span className="font-body text-[11px] font-semibold">Aa</span> },
+    { value: '17', label: <span className="font-body text-[13px] font-semibold">Aa</span> },
+    { value: '18', label: <span className="font-body text-[15px] font-semibold">Aa</span> },
+  ];
+
+  const widthOptions = [
+    { value: 'narrow', label: <Icons.widthNarrow /> },
+    { value: 'medium', label: <Icons.widthMedium /> },
+    { value: 'wide', label: <Icons.widthWide /> },
+  ];
+
+  const langOptions = [
+    { id: 'en', label: 'English' },
+    { id: 'ru', label: 'Русский' },
+  ];
+
   return (
-    <div ref={panelRef} className="fixed right-4 top-[68px] z-[300] w-[260px] rounded-lg border border-border2 bg-surface shadow-[0_12px_28px_rgba(0,0,0,0.45)] p-3">
+    <div ref={panelRef} className="fixed right-4 top-[68px] z-[300] w-[280px] rounded-lg border border-border2 bg-surface shadow-[0_12px_28px_rgba(0,0,0,0.45)] p-3">
       <div className="mb-3 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t1">{t("tweaks_title")}</div>
+
+      {/* Theme */}
       <div className="flex items-center justify-between gap-3 py-2">
-        <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_dark_theme")}</span>
-        <Toggle checked={settings.theme === 'dark'} onChange={checked => setSetting('theme', checked ? 'dark' : 'light')} />
+        <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_theme")}</span>
+        <SegmentedControl
+          value={settings.theme}
+          options={themeOptions}
+          onChange={v => setSetting('theme', v as 'dark' | 'light')}
+          compact
+        />
       </div>
+
+      {/* Message font size */}
       <div className="flex items-center justify-between gap-3 py-2">
         <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_font_size")}</span>
-        <select className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none pl-[7px] sel-arrow" value={settings.fontSize} onChange={e => setSetting('fontSize', parseInt(e.target.value))}>
-          <option value={17}>{t("tweaks_small")}</option>
-          <option value={18}>{t("tweaks_medium")}</option>
-          <option value={19}>{t("tweaks_large")}</option>
-        </select>
+        <SegmentedControl
+          value={String(settings.fontSize)}
+          options={fontSizeOptions}
+          onChange={v => setSetting('fontSize', parseInt(v))}
+          compact
+        />
       </div>
+
+      {/* UI font size */}
       <div className="flex items-center justify-between gap-3 py-2">
         <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_ui_font_size")}</span>
-        <select className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none pl-[7px] sel-arrow" value={settings.uiFontSize} onChange={e => setSetting('uiFontSize', parseInt(e.target.value))}>
-          <option value={16}>{t("tweaks_small")}</option>
-          <option value={17}>{t("tweaks_medium")}</option>
-          <option value={18}>{t("tweaks_large")}</option>
-        </select>
+        <SegmentedControl
+          value={String(settings.uiFontSize)}
+          options={uiFontSizeOptions}
+          onChange={v => setSetting('uiFontSize', parseInt(v))}
+          compact
+        />
       </div>
+
+      {/* Message width */}
       <div className="flex items-center justify-between gap-3 py-2">
         <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_message_width")}</span>
-        <select className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none pl-[7px] sel-arrow" value={settings.messageWidth} onChange={e => setSetting('messageWidth', e.target.value as 'narrow' | 'medium' | 'wide')}>
-          <option value="narrow">{t("tweaks_narrow")}</option>
-          <option value="medium">{t("tweaks_medium")}</option>
-          <option value="wide">{t("tweaks_wide")}</option>
-        </select>
+        <SegmentedControl
+          value={settings.messageWidth}
+          options={widthOptions}
+          onChange={v => setSetting('messageWidth', v as 'narrow' | 'medium' | 'wide')}
+          compact
+        />
       </div>
+
+      {/* Language */}
       <div className="flex items-center justify-between gap-3 py-2">
         <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_language")}</span>
-        <select className="rounded border border-border bg-s2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t1 outline-none pl-[7px] sel-arrow" value={settings.lang} onChange={e => setSetting('lang', e.target.value)}>
-          <option value="en">EN</option>
-          <option value="ru">RU</option>
-        </select>
+        <DropdownSelect
+          value={settings.lang}
+          options={langOptions}
+          onChange={v => setSetting('lang', v)}
+          className="w-[110px]"
+        />
       </div>
+
       <div className="mt-2 border-t border-border2 pt-2">
         <div className="flex items-center justify-between gap-3 py-2">
           <span className="flex items-center gap-1.5 text-[calc(var(--ui-fs)-2px)] text-t2">
-            <Icons.Phone />
+            <Icons.phone />
             {t("mobile_access")}
           </span>
           <button type="button"
