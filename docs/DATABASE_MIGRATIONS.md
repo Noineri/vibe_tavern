@@ -87,7 +87,7 @@ run them sequentially against an empty DB.
 | `0001`–`0016` | Initial schema: chats, characters, personas, providers, presets, lorebooks, scripts, logit bias, etc. |
 | `0017_prompt_order.sql` | `prompt_order_json` column on `prompt_presets` for Advanced Prompt Mode ordering. |
 | `0018_preset_advanced_mode.sql` | `advanced_mode` integer column on `prompt_presets` (per-preset Advanced Mode flag, defaults to 0). |
-| `0018_melted_loa.sql` | Checkpoint: no-op migration with schema snapshot aligning drizzle-kit with all manual migrations. |
+| `0018_melted_loa.sql` | **Checkpoint** (journal idx 18): no-op SQL with schema snapshot. Aligns drizzle-kit with all manual migrations so `db:generate` produces clean incremental diffs. |
 | `0019_milky_titania.sql` | `pin_context_budget` boolean column on `provider_profiles` (pin context size when switching models). |
 
 ## When to implement
