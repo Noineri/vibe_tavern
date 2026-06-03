@@ -242,6 +242,7 @@
   "api_key_stored": "Сохранён на сервере",
   "api_key_placeholder": "sk-...",
   "api_key_saved": "API ключ сохранён",
+  "api_key_not_required": "API ключ не требуется",
   "no_api_key": "Нет API ключа",
   "edit_settings_btn": "Изменить настройки",
   "provider_active": "✓ Активен",

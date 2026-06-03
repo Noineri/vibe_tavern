@@ -243,6 +243,7 @@
   "api_key_stored": "Stored on backend",
   "api_key_placeholder": "sk-...",
   "api_key_saved": "API Key stored",
+  "api_key_not_required": "API key not required",
   "no_api_key": "No API key",
   "edit_settings_btn": "Edit settings",
   "provider_active": "✓ Active",

@@ -1,4 +1,4 @@
-import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, normalizeProviderType, PROVIDER_TYPE, type ChatId } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime, SessionSnapshot } from "../session/session-runtime.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
@@ -58,7 +58,7 @@ export class ChatSummaryService {
     if (!profile) {
       throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
     }
-    if (!profile.apiKey?.trim()) {
+    if (providerRequiresApiKey(profile.providerPreset) && !profile.apiKey?.trim()) {
       throw validation("Selected provider has no saved API key.");
     }
     const model = input.model?.trim() || profile.defaultModel?.trim();
@@ -119,7 +119,7 @@ export class ChatSummaryService {
     if (!profile) {
       throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
     }
-    if (!profile.apiKey?.trim()) {
+    if (providerRequiresApiKey(profile.providerPreset) && !profile.apiKey?.trim()) {
       throw validation("Selected provider has no saved API key.");
     }
     const model = input.model?.trim() || profile.defaultModel?.trim();
@@ -249,6 +249,26 @@ export class ChatSummaryService {
     const snapshot = await this.sessionRuntime.chatLifecycle.updateChatSummary(chatId, summary);
     return { summary, snapshot };
   }
+}
+
+const API_KEY_OPTIONAL_PROVIDER_PRESETS = new Set([
+  PROVIDER_TYPE.ollama,
+  PROVIDER_TYPE.llamaCpp,
+  PROVIDER_TYPE.koboldCpp,
+  "vllm",
+  "ooba",
+  "tabby",
+  "aphrodite",
+]);
+
+function providerRequiresApiKey(providerPreset: string): boolean {
+  const preset = providerPreset.trim();
+  if (API_KEY_OPTIONAL_PROVIDER_PRESETS.has(preset)) return false;
+
+  const providerType = normalizeProviderType(preset);
+  return providerType === PROVIDER_TYPE.openaiCompat
+    || providerType === PROVIDER_TYPE.anthropic
+    || providerType === PROVIDER_TYPE.google;
 }
 
 function normalizeRangePoint(value: number, minimum: number): number {
