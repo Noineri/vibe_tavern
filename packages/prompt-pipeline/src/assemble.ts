@@ -132,6 +132,36 @@ function promptOrderPlacement(context: PromptAssemblyContext, identifier: string
   return itemOrder > chatOrder ? "after_chat" : "before_chat";
 }
 
+function maxPromptOrderRank(context: PromptAssemblyContext, identifiers: string[]): number {
+  return Math.max(...identifiers.map((identifier) => promptOrderRank(context, identifier)));
+}
+
+function lorePromptSubPosition(
+  context: PromptAssemblyContext,
+  lorePosition: string | undefined,
+  worldInfoIdentifier: string,
+  fallbackSubPosition: number | undefined,
+): number | undefined {
+  if (!hasPromptOrderLayout(context)) return fallbackSubPosition;
+
+  switch (lorePosition) {
+    case "after_char":
+      // ST "after character" is anchored after the whole character/persona block,
+      // not wherever the generic worldInfoAfter prompt-order item happens to sit.
+      return maxPromptOrderRank(context, ["charDescription", "charPersonality", "scenario", "personaDescription"]) + 0.1;
+    case "top_an":
+      return promptOrderRank(context, "authorsNote") - 0.1;
+    case "bottom_an":
+      return promptOrderRank(context, "authorsNote") + 0.1;
+    case "before_examples":
+      return promptOrderRank(context, "dialogueExamples") - 0.1;
+    case "after_examples":
+      return promptOrderRank(context, "dialogueExamples") + 0.1;
+    default:
+      return promptOrderRank(context, worldInfoIdentifier, fallbackSubPosition);
+  }
+}
+
 function applyPromptOrderPosition(context: PromptAssemblyContext, layer: PromptLayer, identifier: string): PromptLayer {
   const placement = promptOrderPlacement(context, identifier);
   layer.subPosition = promptOrderRank(context, identifier);
@@ -542,7 +572,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       position: resolvedPosition,
       priority: loreEntry.priority,
       role: loreEntry.role,
-      subPosition: hasPromptOrderLayout(context) ? promptOrderRank(context, worldInfoIdentifier, subPos) : subPos,
+      subPosition: lorePromptSubPosition(context, loreEntry.position, worldInfoIdentifier, subPos),
       reason: PROMPT_LAYER_REASON.activatedLoreEntry,
       text: joinNonEmpty([loreEntry.title ? PROMPT_FORMAT.loreHeader(loreEntry.title) : null, loreEntry.content]),
     });

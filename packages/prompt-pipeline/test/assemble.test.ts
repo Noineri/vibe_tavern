@@ -146,6 +146,43 @@ describe("assemblePrompt", () => {
       expect(lore).toBeTruthy();
       expect(lore.position).toBe("before_prompt");
     });
+
+    it("keeps after_char lore after character layers even if worldInfoAfter prompt order is earlier", () => {
+      const result = assemblePrompt(baseContext({
+        preset: {
+          id: "preset_1",
+          text: "Global system instructions.",
+          promptOrder: [
+            { identifier: "main", order: 0, enabled: true },
+            { identifier: "worldInfoAfter", order: 10, enabled: true },
+            { identifier: "charDescription", order: 20, enabled: true },
+            { identifier: "charPersonality", order: 30, enabled: true },
+            { identifier: "scenario", order: 40, enabled: true },
+            { identifier: "personaDescription", order: 50, enabled: true },
+            { identifier: "chatHistory", order: 100, enabled: true },
+          ],
+        },
+        character: {
+          id: "char_1",
+          name: "Aria",
+          description: "A fire mage.",
+          personality: "Careful.",
+          scenario: "The tower burns.",
+          systemPrompt: null,
+        },
+        persona: { id: "persona_1", name: "User", description: "An archivist." },
+        lore: [
+          { id: "after_char", title: "After", content: "After character lore.", priority: 10, position: "after_char" },
+        ],
+      }));
+
+      const ids = result.finalPayload.messages.map((message) => message.layerId);
+      const loreIndex = ids.indexOf("lore_after_char");
+      expect(loreIndex).toBeGreaterThan(ids.indexOf("character_base"));
+      expect(loreIndex).toBeGreaterThan(ids.indexOf("character_personality"));
+      expect(loreIndex).toBeGreaterThan(ids.indexOf("character_scenario"));
+      expect(loreIndex).toBeGreaterThan(ids.indexOf("persona"));
+    });
   });
 
   describe("memory", () => {
