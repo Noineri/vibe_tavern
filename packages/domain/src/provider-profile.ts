@@ -16,6 +16,7 @@ export interface StoredProviderProfileRecord {
   apiKey: string | null;
   defaultModel: string | null;
   contextBudget: number | null;
+  pinContextBudget: boolean;
   maxTokens: number;
   temperature: number;
   topP: number;

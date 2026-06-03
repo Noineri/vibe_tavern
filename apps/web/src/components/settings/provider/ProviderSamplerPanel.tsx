@@ -226,11 +226,31 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
           <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
             {t("context_length")}
           </label>
-          <InlineNumField
-            value={form.contextBudget}
-            placeholder={t("context_auto")}
-            onBlur={(v) => updateForm('contextBudget', v)}
-          />
+          <div className="flex items-center gap-1.5">
+            <InlineNumField
+              value={form.contextBudget}
+              placeholder={t("context_auto")}
+              onBlur={(v) => updateForm('contextBudget', v)}
+            />
+            <CustomTooltip content={form.pinContextBudget ? t("context_pin_locked") : t("context_pin_unlocked")}>
+              <button type="button"
+                className={cn(
+                  "flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-md border transition-colors",
+                  form.pinContextBudget
+                    ? "border-accent bg-accent/15 text-accent"
+                    : "border-border bg-s2 text-t3 hover:border-border2 hover:text-t2",
+                )}
+                onClick={() => updateForm('pinContextBudget', !form.pinContextBudget)}
+              >
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  {form.pinContextBudget
+                    ? <><path d="M9.828 1.172a2.828 2.828 0 1 1 4 4L12.5 6.5l-4-4 1.328-1.328z"/><path d="M5 14l-3 1 1-3 7.5-7.5 2 2L5 14z"/></>
+                    : <><path d="M9.828 1.172a2.828 2.828 0 1 1 4 4L12.5 6.5l-4-4 1.328-1.328z"/><path d="M8 6.5 5 14l-3 1 1-3 7.5-7.5" strokeLinecap="round"/><line x1="4" y1="4" x2="12" y2="12"/></>
+                  }
+                </svg>
+              </button>
+            </CustomTooltip>
+          </div>
         </div>
 
         {/* Temperature */}

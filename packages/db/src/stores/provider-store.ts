@@ -63,6 +63,7 @@ export interface CreateProviderData {
   showReasoning?: boolean;
   streamResponse?: boolean;
   customSamplers?: boolean;
+  pinContextBudget?: boolean;
 }
 
 export type UpdateProviderData = Partial<CreateProviderData>;
@@ -143,6 +144,7 @@ export class ProviderStore {
         showReasoning: data.showReasoning ? 1 : 0,
         streamResponse: data.streamResponse !== undefined ? (data.streamResponse ? 1 : 0) : 1,
         customSamplers: data.customSamplers ? 1 : 0,
+        pinContextBudget: data.pinContextBudget ?? false,
         isActive: 0,
         createdAt: now,
         updatedAt: now,
@@ -179,6 +181,7 @@ export class ProviderStore {
     if (data.showReasoning !== undefined) values.showReasoning = data.showReasoning ? 1 : 0;
     if (data.streamResponse !== undefined) values.streamResponse = data.streamResponse ? 1 : 0;
     if (data.customSamplers !== undefined) values.customSamplers = data.customSamplers ? 1 : 0;
+    if (data.pinContextBudget !== undefined) values.pinContextBudget = data.pinContextBudget;
 
     const [row] = await this.db
       .update(providerProfiles)
@@ -238,6 +241,7 @@ export class ProviderStore {
         showReasoning: original.showReasoning,
         streamResponse: original.streamResponse,
         customSamplers: original.customSamplers,
+        pinContextBudget: original.pinContextBudget,
         isActive: 0,
         createdAt: now,
         updatedAt: now,
@@ -345,6 +349,7 @@ export class ProviderStore {
       apiKey: row.apiKey,
       defaultModel: row.defaultModel,
       contextBudget: row.contextBudget,
+      pinContextBudget: row.pinContextBudget,
       maxTokens: row.maxTokens,
       temperature: row.temperature,
       topP: row.topP,
