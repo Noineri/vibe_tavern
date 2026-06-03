@@ -10,6 +10,7 @@ import { AvatarCropModal } from '../shared/AvatarCropModal.js';
 import { CustomTooltip } from '../shared/Tooltip.js';
 import type { AvatarCropResult } from '../shared/AvatarCropModal.js';
 import { useT } from '../../i18n/context.js';
+import { SegmentedControl } from '../shared/SegmentedControl.js';
 
 const createCharacterFormSchema = z.object({
   name: z.string().min(1),
@@ -364,16 +365,16 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("depth_prompt")}</label>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1">
-                  <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("role")}</span>
-                  <select
-                    className="h-6 rounded-md border border-border bg-s2 pl-1.5 sel-arrow text-[11px] font-ui text-t1 outline-none focus:border-accent"
+                  <SegmentedControl
                     value={depthPromptRole}
-                    onChange={e => setValue('depthPromptRole', e.target.value, { shouldDirty: true })}
-                  >
-                    <option value="system">system</option>
-                    <option value="user">user</option>
-                    <option value="assistant">assistant</option>
-                  </select>
+                    options={[
+                      { value: "system", label: "system" },
+                      { value: "user", label: "user" },
+                      { value: "assistant", label: "assistant" },
+                    ]}
+                    onChange={v => setValue('depthPromptRole', v, { shouldDirty: true })}
+                    compact
+                  />
                 </div>
                 <div className="flex items-center gap-1">
                   <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
