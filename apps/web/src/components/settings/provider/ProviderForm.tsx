@@ -107,11 +107,9 @@ export function ProviderForm({
           <label className={labelCls + " mb-[7px]"}>{t("api_format_label")}</label>
           <DropdownSelect
             value={form.providerPreset || ''}
-            options={[
-              { id: '', label: t("custom") },
-              ...filteredPresets.map((f) => ({ id: f.id, label: f.label })),
-            ]}
-            defaultOption=""
+            options={filteredPresets.map((f) => ({ id: f.id, label: f.label }))}
+            placeholder={t("custom")}
+            defaultOption={t("custom")}
             onChange={(val) => {
               if (val) applyPreset(val);
             }}
