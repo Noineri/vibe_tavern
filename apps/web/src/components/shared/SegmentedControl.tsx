@@ -14,6 +14,8 @@ interface SegmentedControlProps {
   disabled?: boolean;
   /** Render as a more compact variant for tight spaces */
   compact?: boolean;
+  /** Stretch full width with equal segment sizing */
+  fill?: boolean;
 }
 
 /**
@@ -27,11 +29,13 @@ export function SegmentedControl({
   className,
   disabled,
   compact,
+  fill,
 }: SegmentedControlProps) {
   return (
     <div
       className={cn(
-        "inline-flex rounded-md border border-border bg-s3 p-0.5",
+        "rounded-md border border-border bg-s3 p-0.5",
+        fill ? "flex w-full" : "inline-flex",
         compact ? "gap-0" : "gap-0.5",
         disabled && "pointer-events-none opacity-40",
         className,
@@ -41,7 +45,7 @@ export function SegmentedControl({
       {options.map((opt) => {
         const active = opt.value === value;
         return (
-          <button  key={opt.value}
+          <button key={opt.value}
             type="button"
             role="radio"
             aria-checked={active}
@@ -49,6 +53,7 @@ export function SegmentedControl({
             onClick={() => onChange(opt.value)}
             className={cn(
               "cursor-pointer rounded-[5px] font-ui transition-all duration-150 select-none",
+              fill && "flex min-w-0 flex-1 items-center justify-center",
               compact ? "px-2.5 py-1 text-[11px]" : "px-3 py-1.5 text-[13px]",
               active
                 ? "bg-s2 text-accent shadow-sm font-medium"

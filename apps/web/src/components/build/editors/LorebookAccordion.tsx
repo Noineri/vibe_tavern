@@ -170,7 +170,8 @@ export function LorebookAccordion({
               ]}
               onChange={onEditLbScope}
               compact
-              className={cn(isMobile && "min-h-[44px]")}
+              fill={isMobile}
+              className={cn(isMobile && "[&_button]:py-0.5")}
             />
             {/* Save (✓) и Cancel (✕) — на мобиле 44px touch target, новая строка */}
             <div className={cn("flex items-center gap-1", isMobile && "w-full justify-end")}>
