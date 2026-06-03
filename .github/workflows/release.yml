@@ -92,8 +92,8 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Ensure Rolldown native binding
-        run: bun add -d @rolldown/binding-win32-x64-msvc@1.0.0-rc.17
+      - name: Ensure native frontend bindings
+        run: bun add -d @rolldown/binding-win32-x64-msvc@1.0.0-rc.17 lightningcss-win32-x64-msvc@1.32.0
 
       - run: choco install innosetup --yes --no-progress
 
@@ -126,8 +126,8 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Ensure Rolldown native binding
-        run: bun add -d @rolldown/binding-linux-x64-gnu@1.0.0-rc.17
+      - name: Ensure native frontend bindings
+        run: bun add -d @rolldown/binding-linux-x64-gnu@1.0.0-rc.17 lightningcss-linux-x64-gnu@1.32.0
 
       - run: bun scripts/build-android-arm64.ts
 
