@@ -16,9 +16,6 @@ Simple installation and startup on any platform: **Windows** • **Linux** • *
 
 Single `.exe` for Windows. Experimental **Android** version for Termux.
 
-> [!NOTE]
-> Vibe Tavern in active development, so bugs, incomplete features and breaking changes are to be expected. Don't forget to make backups of your data directory before any updates.
-
 </div>
 
 ---
@@ -28,6 +25,9 @@ Single `.exe` for Windows. Experimental **Android** version for Termux.
 Vibe Tavern — self-hosted AI-roleplaying web app developed with [Bun](https://bun.sh) + [React](https://react.dev). You can create characters, manage lore, build prompts and chat through any OpenAI-compatible API. Simple UI which doesn't force you to understand a clutter of settings.
 
 > **Status:** 🛠️ Beta-2. Basic roleplaying functionality tested and stable. [What is not yet ready →](#what-is-not-yet-ready)
+
+> [!NOTE]
+> Vibe Tavern in active development, so bugs, incomplete features and breaking changes are to be expected. Don't forget to make backups of your data directory before any updates.
 
 ---
 
