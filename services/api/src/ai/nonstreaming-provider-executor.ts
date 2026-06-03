@@ -11,7 +11,7 @@ import type { GenerationResult } from "./provider-execution-types.js";
 import type { ProviderExecutionInput } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
-import type { ProviderType } from "@vibe-tavern/domain";
+import { normalizeProviderType, type ProviderType } from "@vibe-tavern/domain";
 import { cancelled, providerError } from "../errors.js";
 import { logSendDebug } from "../send-debug-log.js";
 
@@ -23,7 +23,7 @@ export async function nonstreamingProviderExecute(
     const messages = toSdkMessages(input.prompt);
     const { systemPrompt, conversationMessages } = prepareSdkMessages(messages, {
       prefill: input.prefill,
-      providerType: input.profile.providerPreset as ProviderType,
+      providerType: normalizeProviderType(input.profile.providerPreset),
     });
 
     const samplerConfig = buildSamplerConfig(input.profile);

@@ -158,7 +158,7 @@ async function repairMissingTables(sqlite: Database, migrationsFolder: string): 
       .filter(t => !t.startsWith('__drizzle'));
 
     // Extract ALTER TABLE ... ADD COLUMN statements
-    const alterCols = [...sqlContent.matchAll(/ALTER\s+TABLE\s+[`"']?(\w+)\s+ADD\s+COLUMN\s+[`"']?(\w+)/gmi)]
+    const alterCols = [...sqlContent.matchAll(/ALTER\s+TABLE\s+[`"']?(\w+)[`"']?\s+ADD\s+(?:COLUMN\s+)?[`"']?(\w+)/gmi)]
       .map(m => ({ table: m[1], column: m[2] }));
 
     // Check if any table from this migration is missing
@@ -246,18 +246,17 @@ async function ensureAlterColumns(sqlite: Database, migrationsFolder: string): P
     const sqlContent = await Bun.file(sqlPath).text();
 
     // Only check ALTER TABLE ... ADD COLUMN (CREATE TABLE is handled by migrate)
-    const alterCols = [...sqlContent.matchAll(/ALTER\s+TABLE\s+[`"']?(\w+)\s+ADD\s+COLUMN\s+[`"']?(\w+)/gmi)]
+    const alterCols = [...sqlContent.matchAll(/ALTER\s+TABLE\s+[`"']?(\w+)[`"']?\s+ADD\s+(?:COLUMN\s+)?[`"']?(\w+)/gmi)]
       .map(m => ({ table: m[1], column: m[2] }));
 
     for (const { table, column } of alterCols) {
       if (hasColumn(table, column)) continue;
-      const stmt = `ALTER TABLE "${table}" ADD COLUMN "${column}"`;
-      // Derive column type from the SQL
-      const typeMatch = sqlContent.match(new RegExp(`ALTER\\s+TABLE\\s+[\`"']?${table}[\`"']?\\s+ADD\\s+COLUMN\\s+[\`"']?${column}[\`"']?\\s+(\\S+)`, 'i'));
-      const colType = typeMatch?.[1] ?? 'text';
+      // Derive column type + optional default/not-null from the SQL
+      const typeMatch = sqlContent.match(new RegExp(`ALTER\\s+TABLE\\s+[\`"']?${table}[\`"']?\\s+ADD\\s+(?:COLUMN\\s+)?[\`"']?${column}[\`"']?\\s+([^;\n]+)`, 'i'));
+      const colDef = typeMatch?.[1]?.trim() ?? 'text';
       try {
-        sqlite.exec(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${colType}`);
-        console.log(`[db] Pre-flight: added ${table}.${column} (${colType})`);
+        sqlite.exec(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${colDef}`);
+        console.log(`[db] Pre-flight: added ${table}.${column} (${colDef})`);
         fixed++;
         // Invalidate column cache for this table
         columnCache.delete(table.toLowerCase());
