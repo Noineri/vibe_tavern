@@ -234,7 +234,7 @@
   "profile_name_placeholder": "напр. OpenRouter RP",
   "profile_name_exists": "Профиль с таким именем уже существует",
   "provider_preset_label": "Пресет провайдера",
-  "custom": "Пользовательский",
+  "custom": "Иной",
   "api_format_label": "Формат API",
   "preset_endpoint_label": "Эндпоинт пресета",
   "custom_endpoint_label": "Пользовательский эндпоинт (необязательно)",
