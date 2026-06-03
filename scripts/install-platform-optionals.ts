@@ -1,3 +1,15 @@
+/**
+ * Install platform-specific optional dependencies that `bun install --frozen-lockfile` skips.
+ *
+ * WHY THIS SCRIPT EXISTS:
+ *   Bun issue #16696 — `bun install --frozen-lockfile` silently skips platform-specific
+ *   optional dependencies (native bindings like rolldown, lightningcss, tailwindcss/oxide)
+ *   in workspace setups. This script parses bun.lock, finds the packages matching the
+ *   current OS/CPU/libc, and installs them explicitly via `bun install --no-save`.
+ *
+ *   See: https://github.com/oven-sh/bun/issues/16696
+ */
+
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -46,7 +58,15 @@ async function run(command: string[]) {
 }
 
 async function main() {
-	const text = await readFile(LOCKFILE, "utf8");
+	const lockPath = LOCKFILE;
+	if (!await Bun.file(lockPath).exists()) {
+		console.error("[native-optionals] ERROR: bun.lock not found at", lockPath);
+		process.exit(1);
+	}
+	const text = await readFile(lockPath, "utf8");
+	if (text.length < 100) {
+		console.warn("[native-optionals] WARNING: bun.lock is suspiciously small (" + text.length + " bytes)");
+	}
 	const specs = new Set<string>();
 	const entryRe = /^\s*"([^"]+)": \["([^"]+)",\s*"[^"]*",\s*\{([^}]*)\}/gm;
 	for (const match of text.matchAll(entryRe)) {
@@ -56,6 +76,13 @@ async function main() {
 		if (!matchesLibc(name)) continue;
 		const spec = specFromEntry(name, resolved);
 		if (spec) specs.add(spec);
+	}
+
+	if (specs.size === 0) {
+		console.warn("[native-optionals] WARNING: No platform optional deps found for os=" + os + " cpu=" + cpu + (libc ? " libc=" + libc : ""));
+		console.warn("[native-optionals] This may indicate a bun.lock format change. Expected at least 3 deps (rolldown, lightningcss, tailwindcss/oxide).");
+	} else if (specs.size < 3) {
+		console.warn("[native-optionals] WARNING: Only " + specs.size + " platform optional deps found. Expected at least 3 (rolldown, lightningcss, tailwindcss/oxide).");
 	}
 
 	if (specs.size === 0) {

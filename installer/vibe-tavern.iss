@@ -20,10 +20,12 @@
 #endif
 
 #define AppName "Vibe Tavern"
-#define AppVersion "0.1.0"
+#if !Defined(AppVersion)
+  #define AppVersion "0.0.0-dev"
+#endif
 #define AppPublisher "Vibe Tavern"
 #define AppExeName "vibe-tavern.exe"
-#define AppURL "https://github.com/user/vibe-tavern"
+#define AppURL "https://github.com/Noineri/vibe_tavern"
 
 [Setup]
 AppId={{B7E8F1A2-3D4C-5E6F-8A9B-0C1D2E3F4A5B}
