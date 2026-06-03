@@ -17,8 +17,36 @@ function resolveToken(source: MobileAccessTokenSource): string | undefined {
 	return typeof token === "string" && token.trim() ? token : undefined;
 }
 
-function isLoopback(remoteIp: unknown): boolean {
-	return remoteIp === "127.0.0.1" || remoteIp === "::1" || remoteIp === "::ffff:127.0.0.1";
+/**
+ * Returns true for loopback addresses AND RFC 1918 private subnets.
+ *
+ * Why private subnets? When the app runs inside Docker, the host's browser
+ * connects through Docker's bridge NAT (typically 172.17.x.x or 172.18.x.x).
+ * The request is functionally local — same machine — but the TCP remote IP is
+ * no longer 127.0.0.1. Treating private IPs as trusted preserves the "local
+ * access is passwordless" UX while still requiring a token for truly remote
+ * connections (public IPs).
+ */
+function isTrustedClient(remoteIp: unknown): boolean {
+	if (typeof remoteIp !== "string") return false;
+	// Loopback
+	if (remoteIp === "127.0.0.1" || remoteIp === "::1" || remoteIp === "::ffff:127.0.0.1") return true;
+
+	// Parse IPv4 (strip IPv6-mapped prefix if present)
+	const v4 = remoteIp.replace(/^::ffff:/, "");
+	const parts = v4.split(".");
+	if (parts.length !== 4) return false;
+	const octets = parts.map(Number);
+	if (octets.some((o) => Number.isNaN(o))) return false;
+
+	// 10.0.0.0/8
+	if (octets[0] === 10) return true;
+	// 172.16.0.0/12
+	if (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) return true;
+	// 192.168.0.0/16
+	if (octets[0] === 192 && octets[1] === 168) return true;
+
+	return false;
 }
 
 function isPublicAssetRead(path: string, method: string): boolean {
@@ -40,7 +68,7 @@ export function createMobileAuthMiddleware(options: MobileAuthOptions): Middlewa
 	return async (c, next) => {
 		// Skip auth for loopback connections (real TCP remote IP from Bun)
 		const remoteIp = c.get("remoteIp");
-		if (isLoopback(remoteIp)) {
+		if (isTrustedClient(remoteIp)) {
 			return await next();
 		}
 
