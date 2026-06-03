@@ -27,7 +27,9 @@ export function TweaksPanel({ settings, setSetting, onOpenMobileAccess, onClose 
   useEffect(() => {
     if (isMobile) return;
     function handleClick(e: MouseEvent) {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+      const target = e.target as HTMLElement;
+      if (target.closest('[data-dropdown-select-content="true"]')) return;
+      if (panelRef.current && !panelRef.current.contains(target)) {
         onClose?.();
       }
     }
@@ -122,6 +124,7 @@ export function TweaksPanel({ settings, setSetting, onOpenMobileAccess, onClose 
           options={langOptions}
           onChange={v => setSetting('lang', v)}
           className="w-[110px]"
+          searchable={false}
         />
       </div>
 

@@ -19,6 +19,7 @@ interface DropdownSelectProps {
   onChange: (value: string) => void;
   className?: string;
   disabled?: boolean;
+  searchable?: boolean;
 }
 
 export function DropdownSelect({
@@ -30,6 +31,7 @@ export function DropdownSelect({
   onChange,
   className,
   disabled,
+  searchable = true,
 }: DropdownSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -40,7 +42,7 @@ export function DropdownSelect({
   const filtered = options
     .filter((o) => o.id !== '') // empty-id options rendered as defaultOption below
     .filter((o) =>
-      o.label.toLowerCase().includes(search.toLowerCase()),
+      !searchable || o.label.toLowerCase().includes(search.toLowerCase()),
     );
 
   // Radix Select doesn't accept empty string as value.
@@ -53,7 +55,7 @@ export function DropdownSelect({
 
   function handleOpenChange(isOpen: boolean) {
     setOpen(isOpen);
-    if (isOpen) setSearch("");
+    if (isOpen && searchable) setSearch("");
   }
 
   // When inside a Modal, portal into the Modal's anchor element
@@ -95,40 +97,42 @@ export function DropdownSelect({
           position="popper"
           sideOffset={4}
           className="z-[400] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
+          data-dropdown-select-content="true"
           style={{ width: "var(--radix-select-trigger-width)", maxHeight: 260 }}
         >
-          {/* Search input */}
-          <div className="border-b border-border2 bg-s2 p-2">
-            <input
-              type="text"
-              placeholder={searchPlaceholder}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => {
-                // Arrow keys, Enter, Escape: let them reach Radix Select handler
-                // Radix listens on Content level, events bubble from input → Content
-                if (
-                  e.key === "ArrowDown" ||
-                  e.key === "ArrowUp" ||
-                  e.key === "Enter" ||
-                  e.key === "Escape" ||
-                  e.key === "Home" ||
-                  e.key === "End"
-                ) {
-                  // Blur input so Radix can move focus to items
-                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                    (e.target as HTMLElement).blur();
+          {searchable && (
+            <div className="border-b border-border2 bg-s2 p-2">
+              <input
+                type="text"
+                placeholder={searchPlaceholder}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  // Arrow keys, Enter, Escape: let them reach Radix Select handler
+                  // Radix listens on Content level, events bubble from input → Content
+                  if (
+                    e.key === "ArrowDown" ||
+                    e.key === "ArrowUp" ||
+                    e.key === "Enter" ||
+                    e.key === "Escape" ||
+                    e.key === "Home" ||
+                    e.key === "End"
+                  ) {
+                    // Blur input so Radix can move focus to items
+                    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                      (e.target as HTMLElement).blur();
+                    }
+                    return;
                   }
-                  return;
-                }
-                // Prevent Radix type-ahead from intercepting typing in search box
-                if (e.key.length === 1) e.stopPropagation();
-              }}
-              className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[12px] text-t1 outline-none focus:border-accent"
-            />
-          </div>
-          <Select.Viewport className="max-h-[190px] overflow-y-auto p-1">
+                  // Prevent Radix type-ahead from intercepting typing in search box
+                  if (e.key.length === 1) e.stopPropagation();
+                }}
+                className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[12px] text-t1 outline-none focus:border-accent"
+              />
+            </div>
+          )}
+          <Select.Viewport className={cn(searchable ? "max-h-[190px]" : "max-h-[240px]", "overflow-y-auto p-1")}>
             {defaultOption && (
               <Select.Item
                 value="__default__"
