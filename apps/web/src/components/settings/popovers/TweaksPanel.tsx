@@ -39,8 +39,8 @@ export function TweaksPanel({ settings, setSetting, onOpenMobileAccess, onClose 
   if (isMobile) return null;
 
   const themeOptions = [
-    { value: 'light', label: '☀' },
-    { value: 'dark', label: '🌙' },
+    { value: 'light', label: <Icons.sun /> },
+    { value: 'dark', label: <Icons.moon /> },
   ];
 
   const fontSizeOptions = [
