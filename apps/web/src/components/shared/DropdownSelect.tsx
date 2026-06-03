@@ -4,6 +4,8 @@ import { cn } from "../../lib/cn.js";
 import { Ic } from "./icons.js";
 import { getModalPortal } from "./modal-helpers.js";
 
+const EMPTY_SELECT_VALUE = "__dropdown_select_empty__";
+
 interface DropdownOption {
   id: string;
   label: string;
@@ -45,12 +47,12 @@ export function DropdownSelect({
       !searchable || o.label.toLowerCase().includes(search.toLowerCase()),
     );
 
-  // Radix Select doesn't accept empty string as value.
-  // Use a sentinel for the "default" (empty) option.
-  const radixValue = value || (defaultOption ? "__default__" : undefined);
+  // Radix Select doesn't accept empty string as value and treats undefined as uncontrolled.
+  // Keep the component controlled for its full lifetime with a stable sentinel.
+  const radixValue = value || EMPTY_SELECT_VALUE;
 
   function handleValueChange(val: string) {
-    onChange(val === "__default__" ? "" : val);
+    onChange(val === EMPTY_SELECT_VALUE ? "" : val);
   }
 
   function handleOpenChange(isOpen: boolean) {
@@ -135,7 +137,7 @@ export function DropdownSelect({
           <Select.Viewport className={cn(searchable ? "max-h-[190px]" : "max-h-[240px]", "overflow-y-auto p-1")}>
             {defaultOption && (
               <Select.Item
-                value="__default__"
+                value={EMPTY_SELECT_VALUE}
                 className={cn(
                   "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] outline-none transition-colors",
                   !value
