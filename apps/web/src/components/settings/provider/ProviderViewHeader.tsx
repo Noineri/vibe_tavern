@@ -14,7 +14,8 @@ export function ProviderViewHeader({ form, isActive, onEdit, onActivate }: Provi
   const { t } = useT();
   const preset = PROVIDER_PRESETS.find((p) => p.id === form.providerPreset);
   const presetLabel = preset?.label ?? form.providerPreset;
-  const hasKey = form.hasStoredApiKey || Boolean(form.apiKey);
+  const keyNotRequired = preset?.noApiKey === true;
+  const hasKey = keyNotRequired || form.hasStoredApiKey || Boolean(form.apiKey);
 
   return (
     <div className="mb-6">
@@ -26,7 +27,7 @@ export function ProviderViewHeader({ form, isActive, onEdit, onActivate }: Provi
             <span className="h-1 w-1 rounded-full bg-t4" />
             {hasKey ? (
               <span className="flex items-center gap-1.5 text-success">
-                <Icons.Check /> {t("api_key_saved")}
+                <Icons.Check /> {keyNotRequired ? t("api_key_not_required") : t("api_key_saved")}
               </span>
             ) : (
               <span className="flex items-center gap-1.5 text-warning">
