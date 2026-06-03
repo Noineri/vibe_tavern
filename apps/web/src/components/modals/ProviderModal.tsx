@@ -210,7 +210,7 @@ export function ProviderModal({
       const p = providerProfiles.find((pr) => pr.id === target);
       if (p) { setEditingId(p.id); setForm(profileToForm(p)); void loadCached(p.id); }
     }
-    setTestOk(null); setHeaderMode("view"); setIsNew(false); setDirty(false);
+    setTestOk(null); setHeaderMode("view"); setIsNew(false); setDirty(false); setConfirmClose(false); setConfirmDelete(false);
   }, [isOpen]);
 
   useEffect(() => {
@@ -430,7 +430,7 @@ export function ProviderModal({
 
   return (
     <Modal open={true} onClose={handleClose}>
-      {confirmClose && <ConfirmCloseModal onCancel={() => setConfirmClose(false)} onConfirm={() => { setDirty(false); onClose(); }} />}
+      {confirmClose && <ConfirmCloseModal onCancel={() => setConfirmClose(false)} onConfirm={() => { setConfirmClose(false); setDirty(false); onClose(); }} />}
       {confirmDelete && (
         <DestructiveConfirmModal
           title={t("delete_provider_title")}
