@@ -7,6 +7,11 @@
     "services/*",
     "packages/*"
   ],
+  "trustedDependencies": [
+    "@tailwindcss/oxide",
+    "lightningcss",
+    "rolldown"
+  ],
   "scripts": {
     "build": "bun run build:api-stack && bun run --filter @vibe-tavern/web build",
     "build:api-stack": "bun run --filter @vibe-tavern/domain build && bun run --filter @vibe-tavern/api-contracts build && bun run --filter @vibe-tavern/prompt-pipeline build && bun run --filter @vibe-tavern/db build && bun run --filter @vibe-tavern/import-export build && bun run --filter @vibe-tavern/api build",
