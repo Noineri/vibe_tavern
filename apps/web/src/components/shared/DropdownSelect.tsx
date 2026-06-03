@@ -37,9 +37,11 @@ export function DropdownSelect({
   const selected = options.find((o) => o.id === value);
   const display = selected?.label || value || placeholder;
 
-  const filtered = options.filter((o) =>
-    o.label.toLowerCase().includes(search.toLowerCase()),
-  );
+  const filtered = options
+    .filter((o) => o.id !== '') // empty-id options rendered as defaultOption below
+    .filter((o) =>
+      o.label.toLowerCase().includes(search.toLowerCase()),
+    );
 
   // Radix Select doesn't accept empty string as value.
   // Use a sentinel for the "default" (empty) option.
