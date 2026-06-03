@@ -133,6 +133,7 @@ export interface ProviderProfileRecord {
   endpoint: string;
   defaultModel: string | null;
   contextBudget: number | null;
+  pinContextBudget: boolean;
   maxTokens: number;
   temperature: number;
   topP: number;
@@ -769,6 +770,7 @@ export async function saveProviderProfile(input: {
   apiKey?: string | null;
   defaultModel?: string | null;
   contextBudget?: number | null;
+  pinContextBudget?: boolean;
   temperature?: number;
   topP?: number;
   minP?: number;
@@ -876,6 +878,7 @@ export async function updateProviderProfile(
     apiKey?: string | null;
     defaultModel?: string | null;
     contextBudget?: number | null;
+    pinContextBudget?: boolean;
     temperature?: number;
     topP?: number;
     minP?: number;
