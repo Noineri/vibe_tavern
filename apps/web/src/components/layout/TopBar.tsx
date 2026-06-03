@@ -174,7 +174,7 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
             <div className={cn("flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t1", tweaksOpen && "bg-accent-dim text-accent-t")}
               tabIndex={0}
               onClick={() => useModalStore.getState().setTweaksOpen(!tweaksOpen)}>
-              <Icons.settings />
+              <Icons.sliders />
             </div>
           </CustomTooltip>
         </div>
