@@ -43,6 +43,14 @@ export interface ProviderMappingResult {
 
 export { normalizeProviderType };
 
+function normalizeLocalOpenAiCompatibleBaseUrl(endpoint: string): string | undefined {
+  const normalized = (endpoint || "").trim().replace(/\/+$/, "");
+  if (!normalized) return undefined;
+  if (normalized.endsWith("/v1")) return normalized;
+  if (normalized.endsWith("/api")) return `${normalized.slice(0, -"/api".length)}/v1`;
+  return `${normalized}/v1`;
+}
+
 // ---------------------------------------------------------------------------
 // Mapper implementation
 // ---------------------------------------------------------------------------
@@ -104,29 +112,31 @@ export function mapProfileToSdkModel(
 
     // -- OpenAI-compatible fallback ------------------------------------------
     case PROVIDER_TYPE.ollama: {
-      const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
+      const endpoint = normalizeLocalOpenAiCompatibleBaseUrl(profile.endpoint);
       const apiKey = profile.apiKey ?? "";
-      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined, fetch: createReasoningAwareFetch() });
+      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint, fetch: createReasoningAwareFetch() });
       return {
         model: provider(model),
         
         capabilities,
         limitations: [
+          "Uses Ollama's OpenAI-compatible /v1 endpoint for generation.",
           "Sampling parameters top_k, typical_p, min_p, rep_pen, freq_pen, pres_pen are not forwarded via OpenAI-compatible adapter.",
-          "Model list/probe uses Ollama's /api/tags endpoint, not the OpenAI /v1/models endpoint.",
+          "Model list uses Ollama's native /api/tags endpoint.",
         ],
       };
     }
 
     case PROVIDER_TYPE.llamaCpp: {
-      const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
+      const endpoint = normalizeLocalOpenAiCompatibleBaseUrl(profile.endpoint);
       const apiKey = profile.apiKey ?? "";
-      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined, fetch: createReasoningAwareFetch() });
+      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint, fetch: createReasoningAwareFetch() });
       return {
         model: provider(model),
         
         capabilities,
         limitations: [
+          "Uses llama.cpp server's OpenAI-compatible /v1 endpoint for generation.",
           "Sampling parameters top_k, typical_p, min_p, rep_pen, freq_pen, pres_pen are not forwarded via OpenAI-compatible adapter.",
           "Model selection is limited to the single loaded model on the llama.cpp server.",
         ],

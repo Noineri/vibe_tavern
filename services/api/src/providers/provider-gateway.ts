@@ -102,6 +102,14 @@ export function normalizeOpenAiCompatibleBaseUrl(baseUrl: string): string {
 	return normalized;
 }
 
+function normalizeLocalOpenAiCompatibleBaseUrl(baseUrl: string): string {
+	const normalized = normalizeOpenAiCompatibleBaseUrl(baseUrl);
+	if (!normalized) return "";
+	if (normalized.endsWith("/v1")) return normalized;
+	if (normalized.endsWith("/api")) return `${normalized.slice(0, -"/api".length)}/v1`;
+	return `${normalized}/v1`;
+}
+
 export async function probeProviderConnection(input: {
 	baseUrl: string;
 	apiKey: string;
@@ -113,8 +121,27 @@ export async function probeProviderConnection(input: {
 			return probeGoogleConnection(input);
 		case "anthropic":
 			return probeAnthropicConnection(input);
+		case "ollama":
+			return probeOllamaConnection(input);
+		case "llamacpp":
+			return probeOpenAiCompatibleConnection({ ...input, baseUrl: normalizeLocalOpenAiCompatibleBaseUrl(input.baseUrl) });
 		default:
 			return probeOpenAiCompatibleConnection(input);
+	}
+}
+
+async function probeOllamaConnection(input: {
+	baseUrl: string;
+	apiKey: string;
+}): Promise<ProviderProbeResult> {
+	try {
+		const models = await listOllamaModels(input);
+		return { success: true, modelCount: models.length };
+	} catch (error) {
+		return {
+			success: false,
+			error: error instanceof Error ? error.message : String(error),
+		};
 	}
 }
 
@@ -314,6 +341,9 @@ export async function testProviderChat(
 			return testGoogleChat(input);
 		case "anthropic":
 			return testAnthropicChat(input);
+		case "ollama":
+		case "llamacpp":
+			return testOpenAiCompatChat({ ...input, baseUrl: normalizeLocalOpenAiCompatibleBaseUrl(input.baseUrl) });
 		default:
 			return testOpenAiCompatChat(input);
 	}
@@ -511,6 +541,8 @@ export async function listProviderModels(
 			return listGoogleModels(input);
 		case "ollama":
 			return listOllamaModels(input);
+		case "llamacpp":
+			return listOpenAiCompatModels({ ...input, baseUrl: normalizeLocalOpenAiCompatibleBaseUrl(input.baseUrl) });
 		default:
 			return listOpenAiCompatModels(input);
 	}
