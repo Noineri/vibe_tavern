@@ -147,7 +147,7 @@ describe("assemblePrompt", () => {
       expect(lore.position).toBe("before_prompt");
     });
 
-    it("keeps after_char lore after character layers even if worldInfoAfter prompt order is earlier", () => {
+    it("follows ST prompt-order marker placement for after_char lore", () => {
       const result = assemblePrompt(baseContext({
         preset: {
           id: "preset_1",
@@ -178,10 +178,34 @@ describe("assemblePrompt", () => {
 
       const ids = result.finalPayload.messages.map((message) => message.layerId);
       const loreIndex = ids.indexOf("lore_after_char");
-      expect(loreIndex).toBeGreaterThan(ids.indexOf("character_base"));
-      expect(loreIndex).toBeGreaterThan(ids.indexOf("character_personality"));
-      expect(loreIndex).toBeGreaterThan(ids.indexOf("character_scenario"));
-      expect(loreIndex).toBeGreaterThan(ids.indexOf("persona"));
+      expect(loreIndex).toBeLessThan(ids.indexOf("character_base"));
+      expect(loreIndex).toBeLessThan(ids.indexOf("character_personality"));
+      expect(loreIndex).toBeLessThan(ids.indexOf("character_scenario"));
+      expect(loreIndex).toBeLessThan(ids.indexOf("persona"));
+    });
+
+    it("orders ST world info entries by per-entry insertion order, not input lorebook order", () => {
+      const result = assemblePrompt(baseContext({
+        preset: {
+          id: "preset_1",
+          text: "Global system instructions.",
+          promptOrder: [
+            { identifier: "main", order: 0, enabled: true },
+            { identifier: "worldInfoAfter", order: 10, enabled: true },
+            { identifier: "chatHistory", order: 100, enabled: true },
+          ],
+        },
+        lore: [
+          { id: "book_b_late", title: "Late", content: "Late lore.", priority: 999, sortOrder: 200, position: "after_char" },
+          { id: "book_a_early", title: "Early", content: "Early lore.", priority: 1, sortOrder: 10, position: "after_char" },
+          { id: "book_c_middle", title: "Middle", content: "Middle lore.", priority: 500, sortOrder: 100, position: "after_char" },
+        ],
+      }));
+
+      const loreIds = result.finalPayload.messages
+        .map((message) => message.layerId)
+        .filter((id) => typeof id === "string" && id.startsWith("lore_"));
+      expect(loreIds).toEqual(["lore_book_a_early", "lore_book_c_middle", "lore_book_b_late"]);
     });
   });
 
@@ -243,21 +267,42 @@ describe("assemblePrompt", () => {
   });
 
   describe("layer ordering", () => {
-    it("layers are sorted by position then priority descending", () => {
+    it("uses ST-compatible default prompt order for worldInfoAfter before chat history", () => {
       const result = assemblePrompt(baseContext({
         preset: { id: "p1", text: "Preset." },
         lore: [
-          { id: "l1", title: "Lore", content: "Lore text.", priority: 10 },
+          { id: "l1", title: "Lore", content: "Lore text.", priority: 10, position: "after_char" },
         ],
       }));
       const ids = result.layers.map((l) => l.id);
-      const presetIdx = ids.indexOf("system_preset");
+      const presetIdx = ids.indexOf("prompt_preset_system");
       const baseIdx = ids.indexOf("character_base");
       const loreIdx = ids.indexOf("lore_l1");
       const histIdx = ids.indexOf("recent_history");
       expect(presetIdx).toBeLessThan(baseIdx);
       expect(baseIdx).toBeLessThan(loreIdx);
-      expect(histIdx).toBeLessThan(loreIdx);
+      expect(loreIdx).toBeLessThan(histIdx);
+    });
+
+    it("places world info after chat when the ST prompt-order marker is after chatHistory", () => {
+      const result = assemblePrompt(baseContext({
+        preset: {
+          id: "p1",
+          text: "Preset.",
+          promptOrder: [
+            { identifier: "main", order: 0, enabled: true },
+            { identifier: "charDescription", order: 10, enabled: true },
+            { identifier: "chatHistory", order: 20, enabled: true },
+            { identifier: "worldInfoAfter", order: 30, enabled: true },
+          ],
+        },
+        lore: [
+          { id: "l1", title: "Lore", content: "Lore text.", priority: 10, position: "after_char" },
+        ],
+      }));
+
+      const ids = result.finalPayload.messages.map((message) => message.layerId ?? message.messageId);
+      expect(ids.indexOf("msg_2")).toBeLessThan(ids.indexOf("lore_l1"));
     });
   });
 

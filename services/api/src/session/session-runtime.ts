@@ -421,6 +421,8 @@ export interface ImportResult {
 			authorsNotePosition: (preset.authorsNotePosition as "in_prompt" | "in_chat" | "after_chat") ?? "in_chat",
 			summary: preset.summaryPrompt,
 			tools: preset.toolsPrompt,
+			nsfw: preset.nsfwPrompt ?? "",
+			enhanceDefinitions: preset.enhanceDefinitionsPrompt ?? "",
 			customInjections: (() => { try { return JSON.parse(preset.customInjectionsJson); } catch { return []; } })(),
 			promptOrder: (() => { try { return JSON.parse(preset.promptOrderJson); } catch { return []; } })(),
 			advancedMode: preset.advancedMode,

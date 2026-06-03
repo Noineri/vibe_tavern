@@ -30,6 +30,8 @@ export class PromptPresetService {
     authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat";
     summary?: string;
     tools?: string;
+    nsfw?: string;
+    enhanceDefinitions?: string;
     customInjections?: unknown[];
     promptOrder?: unknown[];
     advancedMode?: boolean;
@@ -49,6 +51,8 @@ export class PromptPresetService {
     authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat";
     summary?: string;
     tools?: string;
+    nsfw?: string;
+    enhanceDefinitions?: string;
     customInjections?: unknown[];
     promptOrder?: unknown[];
     advancedMode?: boolean;

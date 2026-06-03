@@ -9,7 +9,7 @@ import { Checkbox } from "../shared/Checkbox.js";
 import { parseStPreset, type ParsedStPreset, type StPresetBlock, type StPromptOrderBlock } from "../../lib/st-preset-parser.js";
 import type { InjectionRow } from "../settings/prompt/InjectionTable.js";
 
-type TargetMapping = "system" | "post" | "authors" | "injection" | "skip";
+type TargetMapping = "system" | "post" | "authors" | "nsfw" | "enhanceDefinitions" | "injection" | "skip";
 
 interface BlockMapping {
   block: StPresetBlock;
@@ -21,6 +21,8 @@ const TARGET_OPTIONS: { value: TargetMapping; labelKey: string }[] = [
   { value: "system", labelKey: "preset_import_target_system" },
   { value: "post", labelKey: "preset_import_target_post" },
   { value: "authors", labelKey: "preset_import_target_authors" },
+  { value: "nsfw", labelKey: "preset_import_target_nsfw" },
+  { value: "enhanceDefinitions", labelKey: "preset_import_target_enhance_defs" },
   { value: "injection", labelKey: "preset_import_target_injection" },
   { value: "skip", labelKey: "preset_import_target_skip" },
 ];
@@ -29,6 +31,8 @@ export interface PresetImportResult {
   system: string[];
   post: string[];
   authors: string[];
+  nsfw: string[];
+  enhanceDefinitions: string[];
   injections: InjectionRow[];
   promptOrder: StPromptOrderBlock[];
   target: 'current' | 'new';
@@ -42,7 +46,9 @@ interface PresetImportModalProps {
 
 function smartDefault(identifier: string): TargetMapping {
   if (identifier === "main") return "system";
-  if (identifier === "nsfw" || identifier === "jailbreak") return "post";
+  if (identifier === "jailbreak") return "post";
+  if (identifier === "nsfw") return "nsfw";
+  if (identifier === "enhanceDefinitions") return "enhanceDefinitions";
   return "injection";
 }
 
@@ -125,6 +131,8 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
     system: selected.filter((m) => m.target === "system").length,
     post: selected.filter((m) => m.target === "post").length,
     authors: selected.filter((m) => m.target === "authors").length,
+    nsfw: selected.filter((m) => m.target === "nsfw").length,
+    enhanceDefinitions: selected.filter((m) => m.target === "enhanceDefinitions").length,
     injection: selected.filter((m) => m.target === "injection").length,
     total: selected.length,
     all: mappings.length,
@@ -132,12 +140,14 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
 
   function handleImport() {
     if (counts.total === 0) return;
-    const result: PresetImportResult = { system: [], post: [], authors: [], injections: [], promptOrder: parsed?.promptOrder ?? [], target: importTarget, newPresetName: newPresetName || undefined };
+    const result: PresetImportResult = { system: [], post: [], authors: [], nsfw: [], enhanceDefinitions: [], injections: [], promptOrder: parsed?.promptOrder ?? [], target: importTarget, newPresetName: newPresetName || undefined };
     for (const m of selected) {
       switch (m.target) {
         case "system": result.system.push(m.block.content); break;
         case "post": result.post.push(m.block.content); break;
         case "authors": result.authors.push(m.block.content); break;
+        case "nsfw": result.nsfw.push(m.block.content); break;
+        case "enhanceDefinitions": result.enhanceDefinitions.push(m.block.content); break;
         case "injection":
           result.injections.push({
             identifier: m.block.identifier,
@@ -215,6 +225,8 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
                 {counts.system > 0 && <span className="rounded bg-blue-500/15 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-blue-400">{counts.system} system</span>}
                 {counts.post > 0 && <span className="rounded bg-purple-500/15 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-purple-400">{counts.post} post</span>}
                 {counts.authors > 0 && <span className="rounded bg-amber-500/15 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-amber-400">{counts.authors} author</span>}
+                {counts.nsfw > 0 && <span className="rounded bg-rose-500/15 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-rose-400">{counts.nsfw} nsfw</span>}
+                {counts.enhanceDefinitions > 0 && <span className="rounded bg-cyan-500/15 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-cyan-400">{counts.enhanceDefinitions} enhance</span>}
                 {counts.injection > 0 && <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-emerald-400">{counts.injection} injection</span>}
               </div>
 

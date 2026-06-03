@@ -280,6 +280,8 @@ export const promptPresets = sqliteTable('prompt_presets', {
   authorsNotePosition: text('authors_note_position').notNull().default('in_chat'),
   summaryPrompt: text('summary_prompt').notNull().default(''),
   toolsPrompt: text('tools_prompt').notNull().default(''),
+  nsfwPrompt: text('nsfw_prompt').notNull().default(''),
+  enhanceDefinitionsPrompt: text('enhance_definitions_prompt').notNull().default(''),
   scriptAiSystemPrompt: text('script_ai_system_prompt').notNull().default(''),
   customInjectionsJson: text('custom_injections_json').notNull().default('[]'),
   promptOrderJson: text('prompt_order_json').notNull().default('[]'),
