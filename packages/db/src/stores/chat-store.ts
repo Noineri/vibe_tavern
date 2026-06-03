@@ -2,6 +2,7 @@ import { eq, and, desc, asc, lte, sql } from 'drizzle-orm';
 import { chats, chatBranches, characters, messages, messageVariants, promptTraces } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
+import { extractThinkingTags } from '@vibe-tavern/domain';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
@@ -591,17 +592,24 @@ export class ChatStore {
   async editMessage(id: string, content: string): Promise<Message> {
     const now = this.clock.now();
 
+    // Extract thinking tags from edited content
+    const { mainContent, reasoning: extractedReasoning } = extractThinkingTags(content);
+
     await this.db.transaction(async (tx) => {
       await tx
         .update(messages)
-        .set({ content, state: 'edited', updatedAt: now })
+        .set({ content: mainContent, state: 'edited', updatedAt: now })
         .where(eq(messages.id, id))
         .run();
 
-      // Also update the selected variant
+      // Also update the selected variant content + reasoning
+      const variantUpdate: Record<string, unknown> = { content: mainContent };
+      if (extractedReasoning !== undefined) {
+        variantUpdate.reasoning = extractedReasoning;
+      }
       await tx
         .update(messageVariants)
-        .set({ content })
+        .set(variantUpdate)
         .where(
           and(eq(messageVariants.messageId, id), eq(messageVariants.isSelected, 1)),
         )
