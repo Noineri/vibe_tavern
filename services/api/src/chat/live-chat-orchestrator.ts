@@ -9,6 +9,7 @@ import { nonstreamingProviderExecute } from "../ai/nonstreaming-provider-executo
 import { streamProviderExecutor } from "../ai/stream-provider-executor.js";
 import { logSendDebug } from "../send-debug-log.js";
 import { extractThinkingTags } from "../ai/extract-thinking-tags.js";
+import { ensurePrefillInResponse } from "../ai/ensure-prefill-in-response.js";
 
 /**
  * Coordinates the prepare → execute → append cycle for all AI generation paths:
@@ -48,6 +49,7 @@ export class LiveChatOrchestrator {
     });
     const startedAt = Date.now();
     logSendDebug("live.send.provider.start", { chatId: input.chatId, providerId: input.profile.id, model: input.model });
+    const prefill = prepared.prompt.prefill ?? undefined;
     let reply: string;
     let reasoning: string | undefined;
     try {
@@ -57,9 +59,9 @@ export class LiveChatOrchestrator {
         model: input.model,
         prompt: prepared.prompt,
         signal: input.signal,
-        prefill: prepared.prompt.prefill ?? undefined,
+        prefill,
       });
-      reply = result.text;
+      reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
@@ -99,6 +101,7 @@ export class LiveChatOrchestrator {
       contextBudget: input.profile.contextBudget,
       responseReserve: input.profile.maxTokens,
     });
+    const prefill = prompt.prefill ?? undefined;
     const startedAt = Date.now();
     let reply: string;
     let reasoning: string | undefined;
@@ -108,9 +111,9 @@ export class LiveChatOrchestrator {
         model: input.model,
         prompt,
         signal: input.signal,
-        prefill: prompt.prefill ?? undefined,
+        prefill,
       });
-      reply = result.text;
+      reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
@@ -154,6 +157,7 @@ export class LiveChatOrchestrator {
       messageId: input.messageId,
       promptMessageCount: countPromptMessages(prompt),
     });
+    const prefill = prompt.prefill ?? undefined;
     const startedAt = Date.now();
     logSendDebug("live.regenerate.provider.start", { chatId: input.chatId, providerId: input.profile.id, model: input.model });
     let reply: string;
@@ -164,9 +168,9 @@ export class LiveChatOrchestrator {
         model: input.model,
         prompt,
         signal: input.signal,
-        prefill: prompt.prefill ?? undefined,
+        prefill,
       });
-      reply = result.text;
+      reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
@@ -201,6 +205,7 @@ export class LiveChatOrchestrator {
   }): AsyncGenerator<{ event: string; data: string }> {
     logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: input.model });
     const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, input.model, input.profile.maxTokens);
+    const prefill = prepared.prompt.prefill ?? undefined;
     const { streamResult, startedAt } = await this.startStream(input, prepared.prompt);
 
     yield* this.drainStream({
@@ -209,6 +214,7 @@ export class LiveChatOrchestrator {
       signal: input.signal,
       startedAt,
       debugLabel: "live.send-stream",
+      prefill,
       onAbort: async (text, reasoning, reasoningDurationMs, latencyMs) => {
         if (text) {
           await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
@@ -244,6 +250,7 @@ export class LiveChatOrchestrator {
       contextBudget: input.profile.contextBudget,
       responseReserve: input.profile.maxTokens,
     });
+    const prefill = prompt.prefill ?? undefined;
     const { streamResult, startedAt } = await this.startStream(input, prompt);
 
     yield* this.drainStream({
@@ -252,6 +259,7 @@ export class LiveChatOrchestrator {
       signal: input.signal,
       startedAt,
       debugLabel: "live.generateReply-stream",
+      prefill,
       onAbort: async (text, reasoning, reasoningDurationMs, latencyMs) => {
         if (text) {
           await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
@@ -289,6 +297,7 @@ export class LiveChatOrchestrator {
       contextBudget: input.profile.contextBudget,
       responseReserve: input.profile.maxTokens,
     });
+    const prefill = prompt.prefill ?? undefined;
     const { streamResult, startedAt } = await this.startStream(input, prompt);
 
     yield* this.drainStream({
@@ -298,6 +307,7 @@ export class LiveChatOrchestrator {
       startedAt,
       debugLabel: "live.regenerate-stream",
       omitMessageCountInFinish: true,
+      prefill,
       onAbort: async (text, reasoning, reasoningDurationMs, latencyMs) => {
         if (text) {
           await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
@@ -369,10 +379,11 @@ export class LiveChatOrchestrator {
     startedAt: number;
     debugLabel: string;
     omitMessageCountInFinish?: boolean;
+    prefill?: string;
     onAbort: (text: string, reasoning: string, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<void>;
     onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<SessionSnapshot>;
   }): AsyncGenerator<{ event: string; data: string }> {
-    const { streamResult, signal, startedAt, debugLabel, onAbort, onFinal, omitMessageCountInFinish } = input;
+    const { streamResult, signal, startedAt, debugLabel, onAbort, onFinal, omitMessageCountInFinish, prefill } = input;
 
     let textAccumulator = "";
     let reasoningAccumulator = "";
@@ -436,7 +447,8 @@ export class LiveChatOrchestrator {
     const rawReasoning = reasoningAccumulator || (await streamResult.reasoning) || undefined;
 
     // Some providers return <thinking> tags in content instead of reasoning_content
-    const { mainContent: finalText, reasoning: finalReasoning } = extractThinkingTags(rawText, rawReasoning);
+    const textWithPrefill = ensurePrefillInResponse(rawText, prefill);
+    const { mainContent: finalText, reasoning: finalReasoning } = extractThinkingTags(textWithPrefill, rawReasoning);
 
     if (reasoningStartMs && reasoningDurationMs === null) {
       reasoningDurationMs = Date.now() - reasoningStartMs;
