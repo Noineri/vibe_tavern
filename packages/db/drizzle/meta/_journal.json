@@ -145,6 +145,13 @@
     {
       "idx": 20,
       "version": "6",
+      "when": 1780469500000,
+      "tag": "0020_authors_note_position",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
       "when": 1780469669687,
       "tag": "0021_true_angel",
       "breakpoints": true

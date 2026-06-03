@@ -9,7 +9,7 @@ import { streamText } from "ai";
 import type { ProviderExecutor, ProviderStreamResult, ProviderStreamChunk, ProviderStreamFinish } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
-import type { ProviderType } from "@vibe-tavern/domain";
+import { normalizeProviderType, type ProviderType } from "@vibe-tavern/domain";
 import { log } from "@vibe-tavern/domain";
 import { cancelled, providerError } from "../errors.js";
 import { REASONING_START_MARKER, REASONING_END_MARKER } from "./openai-reasoning-fetch.js";
@@ -140,7 +140,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
     const messages = toSdkMessages(input.prompt);
     const { systemPrompt, conversationMessages } = prepareSdkMessages(messages, {
       prefill: input.prefill,
-      providerType: input.profile.providerPreset as ProviderType,
+      providerType: normalizeProviderType(input.profile.providerPreset),
     });
 
     // DEBUG: log what actually goes to the provider
