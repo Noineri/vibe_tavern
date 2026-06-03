@@ -300,6 +300,7 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   apiKey: text('api_key'),
   defaultModel: text('default_model'),
   contextBudget: integer('context_budget'),
+  pinContextBudget: integer('pin_context_budget', { mode: 'boolean' }).notNull().default(false),
   maxTokens: integer('max_tokens').notNull().default(2000),
   temperature: real('temperature').notNull().default(1.0),
   topP: real('top_p').notNull().default(1.0),

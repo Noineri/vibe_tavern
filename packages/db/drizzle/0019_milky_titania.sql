@@ -1,0 +1,1 @@
+ALTER TABLE `provider_profiles` ADD `pin_context_budget` integer DEFAULT false NOT NULL;
