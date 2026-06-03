@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
-import { listProviderModels } from "../src/providers/provider-gateway.js";
+import { listProviderModels, probeProviderConnection, testProviderChat } from "../src/providers/provider-gateway.js";
 
 const originalFetch = globalThis.fetch;
 
@@ -35,6 +35,13 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Response {
 		);
 	}
 
+	if (urlStr.endsWith("/chat/completions")) {
+		return new Response(
+			JSON.stringify({ choices: [{ message: { content: "hello from local" } }] }),
+			{ status: 200, headers: { "Content-Type": "application/json" } },
+		);
+	}
+
 	if (urlStr.endsWith("/api/tags")) {
 		// Ollama
 		return new Response(
@@ -59,7 +66,39 @@ afterEach(() => {
 	globalThis.fetch = originalFetch;
 });
 
-describe("listProviderModels", () => {
+describe("provider gateway", () => {
+	const baseInput = { baseUrl: "http://localhost:11434/v1", apiKey: "test-key" };
+
+	describe("connection probes", () => {
+		it("probes Ollama via native /api/tags", async () => {
+			const result = await probeProviderConnection({
+				baseUrl: "http://localhost:11434",
+				apiKey: "",
+				providerType: "ollama",
+			});
+
+			expect(result).toEqual({ success: true, modelCount: 2 });
+			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			expect(callArgs[0]).toBe("http://localhost:11434/api/tags");
+		});
+	});
+
+	describe("testProviderChat", () => {
+		it("uses Ollama OpenAI-compatible /v1 chat endpoint when base URL is root", async () => {
+			const result = await testProviderChat({
+				baseUrl: "http://localhost:11434",
+				apiKey: "",
+				model: "llama3:8b",
+				providerType: "ollama",
+			});
+
+			expect(result).toEqual({ success: true, reply: "hello from local" });
+			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			expect(callArgs[0]).toBe("http://localhost:11434/v1/chat/completions");
+		});
+	});
+
+	describe("listProviderModels", () => {
 	const baseInput = { baseUrl: "http://localhost:11434/v1", apiKey: "test-key" };
 
 	// ─── Dispatch logic ─────────────────────────────────────────────────
@@ -180,6 +219,21 @@ describe("listProviderModels", () => {
 		});
 	});
 
+	// ─── llama.cpp ──────────────────────────────────────────────────────
+
+	describe("llamacpp", () => {
+		it("uses OpenAI-compatible /v1 model endpoint when base URL is root", async () => {
+			await listProviderModels({
+				baseUrl: "http://localhost:8080",
+				apiKey: "",
+				providerType: "llamacpp",
+			});
+
+			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			expect(callArgs[0]).toBe("http://localhost:8080/v1/models");
+		});
+	});
+
 	// ─── Ollama ─────────────────────────────────────────────────────────
 
 	describe("ollama", () => {
@@ -218,5 +272,6 @@ describe("listProviderModels", () => {
 				listProviderModels({ baseUrl: "http://localhost:11434", apiKey: "", providerType: "ollama" }),
 			).rejects.toThrow("Ollama model list failed: 404");
 		});
+	});
 	});
 });
