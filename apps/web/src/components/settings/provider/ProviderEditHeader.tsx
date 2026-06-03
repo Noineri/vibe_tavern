@@ -70,8 +70,8 @@ export function ProviderEditHeader({
           <SegmentedControl
             value={presetGroup ?? ''}
             options={[
-              { value: '', label: t("custom") },
               ...PRESET_GROUPS.map((g) => ({ value: g.id, label: g.label })),
+              { value: '', label: t("custom") },
             ]}
             onChange={(g) => { if (!g) { updateForm('providerPreset', ''); } else { const first = PROVIDER_PRESETS.find((f) => f.group === g); if (first) applyPreset(first.id); } }}
           />
@@ -84,9 +84,9 @@ export function ProviderEditHeader({
           <label className={labelCls + " mb-[7px]"}>{t("api_format_label")}</label>
           <DropdownSelect
             value={form.providerPreset || ''}
-            options={filteredPresets.map((f) => ({ id: f.id, label: f.label }))}
+            options={presetGroup ? filteredPresets.map((f) => ({ id: f.id, label: f.label })) : []}
             placeholder={t("custom")}
-            defaultOption={t("custom")}
+            disabled={!presetGroup}
             onChange={(val) => { if (val) applyPreset(val); }}
           />
         </div>
