@@ -89,7 +89,11 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - run: bun install --frozen-lockfile
+      - name: Install dependencies
+        run: bun install
+
+      - name: Ensure Rolldown native binding
+        run: bun add -d @rolldown/binding-win32-x64-msvc@1.0.0-rc.17
 
       - run: choco install innosetup --yes --no-progress
 
@@ -119,7 +123,11 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - run: bun install --frozen-lockfile
+      - name: Install dependencies
+        run: bun install
+
+      - name: Ensure Rolldown native binding
+        run: bun add -d @rolldown/binding-linux-x64-gnu@1.0.0-rc.17
 
       - run: bun scripts/build-android-arm64.ts
 
