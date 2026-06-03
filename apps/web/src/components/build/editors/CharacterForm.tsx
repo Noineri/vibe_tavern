@@ -12,6 +12,7 @@ import { useT } from "../../../i18n/context.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
+import { SegmentedControl } from "../../shared/SegmentedControl.js";
 
 export interface CharacterFormProps {
   form: UseFormReturn<BuildCharacterDraft>;
@@ -477,19 +478,19 @@ export function CharacterForm({
           <label className={lblCls}>{t("dialog_examples")}</label>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1">
-              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("activation_label")}</span>
               <CustomTooltip content={t(`mes_example_mode_tooltip_${mesExampleMode || "always"}`)}>
-              <select
-                className={selectCls}
+              <SegmentedControl
                 value={mesExampleMode || "always"}
+                options={[
+                  { value: "always", label: t("activation_always") },
+                  { value: "once", label: t("activation_once") },
+                  { value: "depth", label: t("activation_depth") },
+                  { value: "disabled", label: t("activation_disabled") },
+                ]}
+                onChange={(v) => setValue("mesExampleMode", v as "always" | "once" | "depth" | "disabled", { shouldDirty: true })}
                 disabled={isSaving}
-                onChange={(e) => setValue("mesExampleMode", e.target.value as "always" | "once" | "depth" | "disabled", { shouldDirty: true })}
-              >
-                <option value="always">{t("activation_always")}</option>
-                <option value="once">{t("activation_once")}</option>
-                <option value="depth">{t("activation_depth")}</option>
-                <option value="disabled">{t("activation_disabled")}</option>
-              </select>
+                compact
+              />
               </CustomTooltip>
             </div>
             <div className={"flex items-center gap-1" + ((mesExampleMode || "always") !== "depth" ? " opacity-30 pointer-events-none" : "")}>
@@ -559,17 +560,17 @@ export function CharacterForm({
           <label className={lblCls}>{t("depth_prompt")}</label>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1">
-              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("role")}</span>
-              <select
-                className={selectCls}
+              <SegmentedControl
                 value={depthPromptRole || "system"}
+                options={[
+                  { value: "system", label: "system" },
+                  { value: "user", label: "user" },
+                  { value: "assistant", label: "assistant" },
+                ]}
+                onChange={(v) => setValue("depthPromptRole", v, { shouldDirty: true })}
                 disabled={isSaving}
-                onChange={(e) => setValue("depthPromptRole", e.target.value, { shouldDirty: true })}
-              >
-                <option value="system">system</option>
-                <option value="user">user</option>
-                <option value="assistant">assistant</option>
-              </select>
+                compact
+              />
             </div>
             <div className="flex items-center gap-1">
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>

@@ -28,6 +28,7 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
+import { SegmentedControl } from "../../shared/SegmentedControl.js";
 
 export interface InjectionRow {
   identifier?: string;
@@ -424,16 +425,17 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
       {expanded && (
         <div className="border-t border-border2 px-3 pb-3 pt-2">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <select
-              className="rounded border border-border bg-s2 px-1.5 py-0.5 font-mono text-[11px] text-t1 outline-none cursor-pointer focus:border-accent disabled:opacity-60"
+            <SegmentedControl
               value={position}
+              options={[
+                { value: "in_prompt", label: t("an_position_in_prompt") },
+                { value: "in_chat", label: t("an_position_in_chat") },
+                { value: "after_chat", label: t("an_position_after_chat") },
+              ]}
+              onChange={(v) => onUpdateField?.("authorsNotePosition", v)}
               disabled={disabled}
-              onChange={(e) => onUpdateField?.("authorsNotePosition", e.target.value)}
-            >
-              <option value="in_prompt">{t("an_position_in_prompt")}</option>
-              <option value="in_chat">{t("an_position_in_chat")}</option>
-              <option value="after_chat">{t("an_position_after_chat")}</option>
-            </select>
+              compact
+            />
             {position === "in_chat" && (
               <label className="flex items-center gap-1.5 font-ui text-[11px] text-t4">
                 {t("insert_depth_label")}
@@ -574,13 +576,12 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
             {/* Role select */}
             <label className="flex items-center gap-1.5 font-ui text-[11px] text-t4">
               Role
-              <select
-                className="rounded border border-border bg-s2 px-1.5 py-0.5 font-mono text-[11px] text-t1 outline-none cursor-pointer focus:border-accent"
+              <SegmentedControl
                 value={injection.role}
-                onChange={(e) => onUpdate(index, { role: e.target.value as InjectionRow["role"] })}
-              >
-                {roleOptions.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
+                options={roleOptions.map(r => ({ value: r, label: r }))}
+                onChange={(v) => onUpdate(index, { role: v as InjectionRow["role"] })}
+                compact
+              />
             </label>
           </div>
 

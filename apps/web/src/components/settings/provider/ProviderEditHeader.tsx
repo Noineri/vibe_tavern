@@ -4,6 +4,8 @@ import { PROVIDER_PRESETS, getPresetGroup, PRESET_GROUPS } from '../../../provid
 import type { FormState } from '../../modals/ProviderModal.js';
 import { Icons } from '../../shared/icons.js';
 import { cn } from '../../../lib/cn.js';
+import { SegmentedControl } from '../../shared/SegmentedControl.js';
+import { DropdownSelect } from '../../shared/DropdownSelect.js';
 
 const labelCls = 'block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3';
 const inputCls = 'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent px-[13px]';
@@ -65,10 +67,14 @@ export function ProviderEditHeader({
         </div>
         <div className="mb-4">
           <label className={labelCls + " mb-[7px]"}>{t("provider_preset_label")}</label>
-          <select value={presetGroup ?? ''} onChange={(e) => { const g = e.target.value; if (!g) { updateForm('providerPreset', ''); } else { const first = PROVIDER_PRESETS.find((f) => f.group === g); if (first) applyPreset(first.id); } }} className={selectCls}>
-            <option value="">{t("custom")}</option>
-            {PRESET_GROUPS.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
-          </select>
+          <SegmentedControl
+            value={presetGroup ?? ''}
+            options={[
+              { value: '', label: t("custom") },
+              ...PRESET_GROUPS.map((g) => ({ value: g.id, label: g.label })),
+            ]}
+            onChange={(g) => { if (!g) { updateForm('providerPreset', ''); } else { const first = PROVIDER_PRESETS.find((f) => f.group === g); if (first) applyPreset(first.id); } }}
+          />
         </div>
       </div>
 
@@ -76,10 +82,15 @@ export function ProviderEditHeader({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="mb-4">
           <label className={labelCls + " mb-[7px]"}>{t("api_format_label")}</label>
-          <select value={form.providerPreset || ''} onChange={(e) => { const val = e.target.value; if (val) applyPreset(val); }} className={selectCls}>
-            <option value="">{t("custom")}</option>
-            {filteredPresets.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-          </select>
+          <DropdownSelect
+            value={form.providerPreset || ''}
+            options={[
+              { id: '', label: t("custom") },
+              ...filteredPresets.map((f) => ({ id: f.id, label: f.label })),
+            ]}
+            defaultOption=""
+            onChange={(val) => { if (val) applyPreset(val); }}
+          />
         </div>
         <div className="mb-4">
           <label className={labelCls + " mb-[7px]"}>{t("preset_endpoint_label")}</label>

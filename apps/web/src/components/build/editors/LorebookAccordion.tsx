@@ -13,6 +13,7 @@ import { Ic, Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { Checkbox } from "../../shared/Checkbox.js";
+import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import {
   listLoreEntries,
@@ -158,38 +159,39 @@ export function LorebookAccordion({
               onKeyDown={(e) => e.key === "Enter" && onSaveEdit()}
               autoFocus
             />
-            {/* Scope selector — на мобиле растягивается */}
-            <select
-              className={cn(
-                "h-7 rounded border border-accent bg-bg px-1.5 text-[11px] text-t1 outline-none",
-                isMobile && "min-h-[44px] flex-1"
-              )}
+            {/* Scope selector */}
+            <SegmentedControl
               value={editLbScope}
-              onChange={(e) => onEditLbScope(e.target.value)}
-            >
-              <option value="global">{t("scope_global")}</option>
-              <option value="character">{t("scope_char")}</option>
-              <option value="persona">{t("scope_persona")}</option>
-              <option value="chat">{t("scope_chat")}</option>
-            </select>
-            {/* Save (✓) и Cancel (✕) — на мобиле 44px touch target */}
-            <div
-              className={cn(
-                "flex shrink-0 cursor-pointer items-center justify-center rounded text-accent-t hover:bg-s2",
-                isMobile ? "h-11 w-11" : "h-5 w-5"
-              )}
-              onClick={onSaveEdit}
-            >
-              <Ic.check />
-            </div>
-            <div
-              className={cn(
-                "flex shrink-0 cursor-pointer items-center justify-center rounded text-t3 hover:bg-s2",
-                isMobile ? "h-11 w-11" : "h-5 w-5"
-              )}
-              onClick={onCancelEdit}
-            >
-              <Ic.close />
+              options={[
+                { value: "global", label: t("scope_global") },
+                { value: "character", label: t("scope_char") },
+                { value: "persona", label: t("scope_persona") },
+                { value: "chat", label: t("scope_chat") },
+              ]}
+              onChange={onEditLbScope}
+              compact
+              className={cn(isMobile && "min-h-[44px]")}
+            />
+            {/* Save (✓) и Cancel (✕) — на мобиле 44px touch target, новая строка */}
+            <div className={cn("flex items-center gap-1", isMobile && "w-full justify-end")}>
+              <div
+                className={cn(
+                  "flex shrink-0 cursor-pointer items-center justify-center rounded text-accent-t hover:bg-s2",
+                  isMobile ? "h-11 w-11" : "h-5 w-5"
+                )}
+                onClick={onSaveEdit}
+              >
+                <Ic.check />
+              </div>
+              <div
+                className={cn(
+                  "flex shrink-0 cursor-pointer items-center justify-center rounded text-t3 hover:bg-s2",
+                  isMobile ? "h-11 w-11" : "h-5 w-5"
+                )}
+                onClick={onCancelEdit}
+              >
+                <Ic.close />
+              </div>
             </div>
           </div>
         ) : (

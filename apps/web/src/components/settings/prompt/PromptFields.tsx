@@ -5,6 +5,7 @@ import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { PrefillField } from "./PrefillField.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useT } from "../../../i18n/context.js";
+import { SegmentedControl } from "../../shared/SegmentedControl.js";
 
 function SectionHeader({ title }: { title: string }) {
   return (
@@ -196,16 +197,17 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey,
             <div className="mb-[7px] flex items-center justify-between">
               <label className={labelCls + " mb-0"}>{t("authors_note_label")}</label>
               <div className="flex items-center gap-2">
-                <select
-                  className="h-[30px] rounded-md border border-border bg-s2 px-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors focus:border-accent disabled:opacity-60"
+                <SegmentedControl
                   value={draft?.authorsNotePosition ?? "in_chat"}
-                  onChange={(e) => onUpdateField("authorsNotePosition", e.target.value)}
+                  options={[
+                    { value: "in_prompt", label: t("an_position_in_prompt") },
+                    { value: "in_chat", label: t("an_position_in_chat") },
+                    { value: "after_chat", label: t("an_position_after_chat") },
+                  ]}
+                  onChange={(v) => onUpdateField("authorsNotePosition", v)}
                   disabled={disabled}
-                >
-                  <option value="in_prompt">{t("an_position_in_prompt")}</option>
-                  <option value="in_chat">{t("an_position_in_chat")}</option>
-                  <option value="after_chat">{t("an_position_after_chat")}</option>
-                </select>
+                  compact
+                />
                 {(draft?.authorsNotePosition ?? "in_chat") === "in_chat" && (
                   <>
                     <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{t("insert_depth_label")}</label>

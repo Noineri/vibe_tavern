@@ -4,6 +4,7 @@ import { Icons } from "../shared/icons.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
 import { useT } from "../../i18n/context.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
+import { DropdownSelect } from "../shared/DropdownSelect.js";
 
 const textareaCls = "w-full rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent resize-none";
 const labelCls = "block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3 mb-[7px]";
@@ -197,16 +198,12 @@ export function SummaryTab({
         <div className="relative z-20 shrink-0 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3 mt-4">
           <div className="min-w-0">
             <label className={labelCls}>{t('summarize_provider_label')}</label>
-            <select
+            <DropdownSelect
               value={selectedProviderId}
+              options={providers.map(p => ({ id: p.id, label: p.name }))}
+              onChange={onProviderChange}
               disabled={disabled || isSummarizing}
-              onChange={e => onProviderChange(e.target.value)}
-              className={selectCls}
-            >
-              {providers.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
+            />
           </div>
           <div className="min-w-0" ref={modelDropdownRef}>
             <label className={labelCls}>{t('summarize_model_label')}</label>

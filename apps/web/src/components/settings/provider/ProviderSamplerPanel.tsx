@@ -6,6 +6,7 @@ import { LogitBiasPanel } from './LogitBiasPanel.js';
 import { Icons } from '../../shared/icons.js';
 import { cn } from '../../../lib/cn.js';
 import { CustomTooltip } from '../../shared/Tooltip.js';
+import { SegmentedControl } from '../../shared/SegmentedControl.js';
 
 /* ── SamplerField sub-component ────────────────────────────────────── */
 
@@ -268,15 +269,15 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
           <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
             {t("reasoning_effort")}
           </label>
-          <select
+          <SegmentedControl
             value={form.reasoningEffort}
-            onChange={(e) => updateForm('reasoningEffort', e.target.value)}
-            className={selectCls}
-          >
-            <option value="low">{t("effort_low")}</option>
-            <option value="medium">{t("effort_medium")}</option>
-            <option value="high">{t("effort_high")}</option>
-          </select>
+            options={[
+              { value: "low", label: t("effort_low") },
+              { value: "medium", label: t("effort_medium") },
+              { value: "high", label: t("effort_high") },
+            ]}
+            onChange={(v) => updateForm('reasoningEffort', v)}
+          />
         </div>
       </div>
 
