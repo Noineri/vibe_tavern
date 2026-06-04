@@ -25,6 +25,7 @@ import { PromptPresetService } from "../prompt/prompt-preset-service.js";
 import { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
 import { LiveChatOrchestrator } from "../chat/live-chat-orchestrator.js";
 import { ChatSummaryService } from "../chat/chat-summary-service.js";
+import { getChatModeStrategy } from "../chat/chat-mode-strategy.js";
 import { AssetService } from "../asset-service.js";
 import { RuntimeApiAdapter } from "../runtime-api-adapter.js";
 import { createApp } from "./app-factory.js";
@@ -87,7 +88,7 @@ await mkdir(resolve(dataDir, "assets"), { recursive: true });
 	const events = new EventBus();
 	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
 	events.on("message.appended", ({ chatId }) => chatSummaryService.triggerAutoSummary(chatId));
-	const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime.chatRuntime, providerOrchestrator, events);
+	const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime.chatRuntime, providerOrchestrator, events, getChatModeStrategy("rp"));
 	const assetService = new AssetService(resolve(dataDir, "assets"));
 	const mobileAccessService = new MobileAccessService(dataDir);
 

@@ -5,6 +5,7 @@ import type { SessionSnapshot } from "../session/session-runtime.js";
 import type { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ProviderStreamResult } from "../ai/provider-execution-types.js";
+import type { ChatModeStrategy } from "./chat-mode-strategy.js";
 import { nonstreamingProviderExecute } from "../ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../ai/stream-provider-executor.js";
 import { logSendDebug } from "../send-debug-log.js";
@@ -15,13 +16,15 @@ import { ensurePrefillInResponse } from "../ai/ensure-prefill-in-response.js";
  * Coordinates the prepare → execute → append cycle for all AI generation paths:
  * send, generate (continue), regenerate — each with streaming and non-streaming variants.
  *
- * Delegates prompt assembly to {@link ChatRuntime} and AI execution to the provider layer.
+ * Delegates prompt assembly to {@link ChatRuntime}, AI execution to the provider layer,
+ * and mode-specific behavior to {@link ChatModeStrategy}.
  */
 export class LiveChatOrchestrator {
   constructor(
     private readonly chatRuntime: ChatRuntime,
     private readonly providers: ProviderOrchestrator,
     private readonly events: EventBus,
+    private readonly strategy: ChatModeStrategy,
   ) {}
 
   // ─── Non-streaming methods ────────────────────────────────────────────
@@ -79,7 +82,7 @@ export class LiveChatOrchestrator {
       reasoning,
     });
     logSendDebug("live.send.append.done", { chatId: input.chatId, messageCount: snapshot.messages.length });
-    this.notifyAssistantAppended(input.chatId);
+    this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
 
     return {
       preparedMessageCount: prepared.snapshot.messages.length,
@@ -136,7 +139,7 @@ export class LiveChatOrchestrator {
     const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
       reasoning,
     });
-    this.notifyAssistantAppended(input.chatId);
+    this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
     return {
       promptMessageCount: countPromptMessages(prompt),
       reply,
@@ -239,7 +242,7 @@ export class LiveChatOrchestrator {
             reasoning: reasoning || undefined,
             reasoningDurationMs,
           });
-          this.notifyAssistantAppended(input.chatId);
+          this.notifyAssistantAppended(input.chatId, "");
         }
       },
       onFinal: async (text, reasoning, reasoningDurationMs, latencyMs) => {
@@ -248,7 +251,7 @@ export class LiveChatOrchestrator {
           reasoningDurationMs,
         });
         logSendDebug("live.send-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
-        this.notifyAssistantAppended(input.chatId);
+        this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
         return snapshot;
       },
     });
@@ -284,7 +287,7 @@ export class LiveChatOrchestrator {
             reasoning: reasoning || undefined,
             reasoningDurationMs,
           });
-          this.notifyAssistantAppended(input.chatId);
+          this.notifyAssistantAppended(input.chatId, "");
         }
       },
       onFinal: async (text, reasoning, reasoningDurationMs, latencyMs) => {
@@ -293,7 +296,7 @@ export class LiveChatOrchestrator {
           reasoningDurationMs,
         });
         logSendDebug("live.generateReply-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
-        this.notifyAssistantAppended(input.chatId);
+        this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
         return snapshot;
       },
     });
@@ -355,8 +358,10 @@ export class LiveChatOrchestrator {
    * Starts a stream provider execution with error handling.
    * Discards the pending prompt trace on failure.
    */
-  private notifyAssistantAppended(chatId: string): void {
-    this.events.emit("message.appended", { chatId, messageId: "", role: "assistant" });
+  private notifyAssistantAppended(chatId: string, messageId: string): void {
+    this.events.emit("message.appended", { chatId, messageId, role: "assistant" });
+    // Delegate mode-specific post-append work (no-op for RP, future hooks for Novel/Group)
+    void this.strategy.onMessageAppended({ chatId, messageId, events: this.events });
   }
 
   private async startStream(
