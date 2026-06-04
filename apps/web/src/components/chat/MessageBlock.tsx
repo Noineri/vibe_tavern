@@ -528,18 +528,21 @@ function VariantControls(props: VariantControlsProps) {
 
   if (mobile) {
     return (
-      <>
-        <div className="mx-1 h-4 w-px bg-border"/>
-        <div
-          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded text-t3 active:bg-s2"
+      <div className="inline-flex items-center justify-center gap-1 rounded-lg bg-s1/60 px-1 py-0.5">
+        <button
+          type="button"
+          className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:opacity-35 [&_svg]:h-5 [&_svg]:w-5"
+          disabled={!canGoPrevious}
           onClick={selectPrevious}
-        ><Icons.Caret direction="l" /></div>
-        <span className="min-w-6 text-center text-[12px] tabular-nums text-t3">{selectedVariantIndex + 1}/{variantCount}</span>
-        <div
-          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded text-t3 active:bg-s2"
+        ><Icons.Caret direction="l" /></button>
+        <span className="min-w-12 text-center font-ui text-[13px] tabular-nums text-t2">{selectedVariantIndex + 1}/{variantCount}</span>
+        <button
+          type="button"
+          className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:opacity-35 [&_svg]:h-5 [&_svg]:w-5"
+          disabled={!canGoNext}
           onClick={selectNext}
-        ><Icons.Caret direction="r" /></div>
-      </>
+        ><Icons.Caret direction="r" /></button>
+      </div>
     );
   }
 

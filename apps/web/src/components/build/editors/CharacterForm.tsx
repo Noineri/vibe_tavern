@@ -196,9 +196,18 @@ export function CharacterForm({
           {name || t("unnamed")}
         </div>
         {isMobile ? (
-          <span className="shrink-0 font-ui text-[11px] tabular-nums text-t3">
-            {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
-          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="font-ui text-[11px] tabular-nums text-t3">
+              {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
+            </span>
+            <button type="button"
+              className="min-h-9 cursor-pointer rounded-md border-0 bg-accent px-3 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold text-white transition-all disabled:opacity-40"
+              disabled={!canSave || !isDirty}
+              onClick={onSave}
+            >
+              {isSaving ? t("saving") : t("save")}
+            </button>
+          </div>
         ) : (
         <div className="flex items-center gap-2">
           <span className="font-ui text-[11px] tabular-nums text-t3">
@@ -269,23 +278,16 @@ export function CharacterForm({
       </div>
       {/* Mobile action bar */}
       {isMobile && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="mb-3 flex items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button type="button"
-            className="min-h-[44px] cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:opacity-40"
-            disabled={!canSave || !isDirty}
-            onClick={onSave}
-          >
-            {isSaving ? t("saving") : t("save")}
-          </button>
-          <button type="button"
-            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
+            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
             onClick={() => setImportModalOpen(true)}
             disabled={isSaving}
           >
             {Ic.import()}
           </button>
           <button type="button"
-            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
+            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
             onClick={onExportJson}
             disabled={isSaving}
           >
@@ -293,7 +295,7 @@ export function CharacterForm({
           </button>
           {hasAvatar && (
             <button type="button"
-              className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
+              className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
               onClick={onExportPng}
               disabled={isSaving}
             >
@@ -301,14 +303,14 @@ export function CharacterForm({
             </button>
           )}
           <button type="button"
-            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
+            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
             onClick={onDuplicate}
             disabled={isSaving}
           >
             {Ic.copy()}
           </button>
           <button type="button"
-            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-danger active:bg-danger/10"
+            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-danger active:bg-danger/10 [&_svg]:h-5 [&_svg]:w-5"
             onClick={onDelete}
             disabled={isSaving}
           >
@@ -474,10 +476,10 @@ export function CharacterForm({
 
       {/* Message Examples */}
       <div className="mb-5">
-        <div className="mb-1.5 flex items-center justify-between">
+        <div className="mb-1.5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
           <label className={lblCls}>{t("dialog_examples")}</label>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex min-w-0 items-center gap-1 sm:min-w-fit">
               <CustomTooltip content={t(`mes_example_mode_tooltip_${mesExampleMode || "always"}`)}>
               <SegmentedControl
                 value={mesExampleMode || "always"}
@@ -490,14 +492,15 @@ export function CharacterForm({
                 onChange={(v) => setValue("mesExampleMode", v as "always" | "once" | "depth" | "disabled", { shouldDirty: true })}
                 disabled={isSaving}
                 compact
+                mobileFill
               />
               </CustomTooltip>
             </div>
-            <div className={"flex items-center gap-1" + ((mesExampleMode || "always") !== "depth" ? " opacity-30 pointer-events-none" : "")}>
+            <div className={"flex min-h-8 items-center justify-between gap-2 sm:justify-start" + ((mesExampleMode || "always") !== "depth" ? " opacity-30 pointer-events-none" : "")}>
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
               <input
                 type="number"
-                className="h-6 w-12 rounded-md border border-border bg-s2 px-1 text-center text-[11px] font-ui text-t1 outline-none focus:border-accent num-spinless"
+                className="h-8 w-14 rounded-md border border-border bg-s2 px-1 text-center text-[12px] font-ui text-t1 outline-none focus:border-accent num-spinless sm:h-6 sm:w-12 sm:text-[11px]"
                 min={0}
                 max={999}
                 disabled={isSaving || (mesExampleMode || "always") !== "depth"}
@@ -556,10 +559,10 @@ export function CharacterForm({
 
       {/* Depth Prompt */}
       <div className="mb-5">
-        <div className="mb-1.5 flex items-center justify-between">
+        <div className="mb-1.5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
           <label className={lblCls}>{t("depth_prompt")}</label>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex min-w-0 items-center gap-1 sm:min-w-fit">
               <SegmentedControl
                 value={depthPromptRole || "system"}
                 options={[
@@ -570,13 +573,14 @@ export function CharacterForm({
                 onChange={(v) => setValue("depthPromptRole", v, { shouldDirty: true })}
                 disabled={isSaving}
                 compact
+                mobileFill
               />
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex min-h-8 items-center justify-between gap-2 sm:justify-start">
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
               <input
                 type="number"
-                className="h-6 w-12 rounded-md border border-border bg-s2 px-1 text-center text-[11px] font-ui text-t1 outline-none focus:border-accent num-spinless"
+                className="h-8 w-14 rounded-md border border-border bg-s2 px-1 text-center text-[12px] font-ui text-t1 outline-none focus:border-accent num-spinless sm:h-6 sm:w-12 sm:text-[11px]"
                 min={0}
                 max={999}
                 disabled={isSaving}

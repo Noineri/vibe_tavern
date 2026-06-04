@@ -16,6 +16,8 @@ interface SegmentedControlProps {
   compact?: boolean;
   /** Stretch full width with equal segment sizing */
   fill?: boolean;
+  /** Stretch full width only on mobile; desktop keeps natural inline sizing */
+  mobileFill?: boolean;
 }
 
 /**
@@ -30,12 +32,13 @@ export function SegmentedControl({
   disabled,
   compact,
   fill,
+  mobileFill,
 }: SegmentedControlProps) {
   return (
     <div
       className={cn(
         "rounded-md border border-border bg-s3 p-0.5",
-        fill ? "flex w-full" : "inline-flex",
+        fill ? "flex w-full" : mobileFill ? "flex w-full sm:inline-flex sm:w-auto" : "inline-flex",
         compact ? "gap-0" : "gap-0.5",
         disabled && "pointer-events-none opacity-40",
         className,
@@ -53,14 +56,14 @@ export function SegmentedControl({
             onClick={() => onChange(opt.value)}
             className={cn(
               "cursor-pointer rounded-[5px] font-ui transition-all duration-150 select-none",
-              fill && "flex min-w-0 flex-1 items-center justify-center",
-              compact ? "px-2.5 py-1 text-[11px]" : "px-3 py-1.5 text-[13px]",
+              (fill || mobileFill) && "flex min-w-0 flex-1 items-center justify-center truncate sm:flex-none",
+              compact ? "min-h-9 px-2.5 py-1 text-[11px] sm:min-h-0" : "min-h-10 px-3 py-1.5 text-[13px] sm:min-h-0",
               active
                 ? "bg-s2 text-accent shadow-sm font-medium"
                 : "text-t2 hover:text-t1",
             )}
           >
-            {opt.label}
+            <span className="min-w-0 truncate sm:overflow-visible sm:whitespace-normal sm:text-clip">{opt.label}</span>
           </button>
         );
       })}

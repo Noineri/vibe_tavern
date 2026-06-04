@@ -329,7 +329,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           )}
           {(!isMobile || mobileDetailOpen) && (
           <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-            <div className="mx-5 mt-4 flex shrink-0 items-center justify-between gap-3">
+            <div className={cn("mt-4 flex shrink-0 items-center justify-between gap-3", isMobile ? "mx-3" : "mx-5")}>
               <div>
                 <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
                   {advancedMode ? t("preset_advanced_mode") : t("preset_simple_mode")}
@@ -367,7 +367,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             </div>
 
             {advancedMode && (
-              <div className="mx-5 mt-3 rounded-md border border-border2 bg-s1 px-4 py-3">
+              <div className={cn("mt-3 rounded-md border border-border2 bg-s1 py-3", isMobile ? "mx-3 px-2.5" : "mx-5 px-4")}>
                 <PromptOrderCanvas
                   injections={draft.customInjections}
                   onChange={(injections) => { setDraft((d) => ({ ...d, customInjections: injections })); setDirty(true); setSaveState("idle"); }}
@@ -391,7 +391,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         </div>
 
         {(!isMobile || mobileDetailOpen) && (
-        <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "py-2.5 px-3" : "py-3.5 px-5")}>
+        <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "flex-wrap px-3 py-2.5" : "py-3.5 px-5")}>
           {activePreset && (
           <span
             className={cn("flex cursor-pointer items-center gap-1 font-ui text-t3 transition-all hover:text-t1", isMobile ? "text-[12px]" : "text-[calc(var(--ui-fs)-2px)]")}
@@ -408,7 +408,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               <Icons.Trash /> {t("delete_preset")}
             </span>
           )}
-          <div className="ml-auto flex items-center gap-2.5">
+          <div className="ml-auto flex min-w-0 items-center gap-2.5">
             {!isMobile && (
             <button type="button"
               className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1"

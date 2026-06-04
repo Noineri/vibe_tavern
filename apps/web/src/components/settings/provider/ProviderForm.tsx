@@ -12,7 +12,7 @@ import { DropdownSelect } from '../../shared/DropdownSelect.js';
 const labelCls =
   'block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3';
 const inputCls =
-  'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent px-[13px]';
+  'w-full h-11 sm:h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent px-[13px]';
 const selectCls =
   'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent pl-[13px] sel-arrow';
 const pwCls = 'font-mono tracking-[0.05em]';
@@ -97,6 +97,7 @@ export function ProviderForm({
                 if (first) applyPreset(first.id);
               }
             }}
+            mobileFill
           />
         </div>
       </div>
@@ -179,10 +180,10 @@ export function ProviderForm({
           </div>
         ) : (
           <div>
-            <div className="flex gap-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
               <button type="button"
                 className={cn(
-                  'rounded-md border font-ui text-[13px] font-medium transition-colors px-4 py-1.5',
+                  'min-h-11 rounded-md border px-4 py-2 font-ui text-[13px] font-medium transition-colors sm:min-h-0 sm:py-1.5',
                   testOk === true
                     ? 'border-success/30 bg-success/10 text-success'
                     : testOk === false
@@ -195,7 +196,7 @@ export function ProviderForm({
                 {testing ? t("testing") : t("test_connection")}
               </button>
               <button type="button"
-                className="rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50"
+                className="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
                 onClick={() => void onTestChat()}
                 disabled={testingChat}
               >
@@ -221,7 +222,7 @@ export function ProviderForm({
             {chatResult && (
               <div className="mt-3">
                 {chatResult.reply && (
-                  <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] text-success italic">
+                  <span className="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] italic text-success">
                     &ldquo;
                     {chatResult.reply.length > 200
                       ? chatResult.reply.slice(0, 200) + '...'
@@ -230,7 +231,7 @@ export function ProviderForm({
                   </span>
                 )}
                 {chatResult.error && (
-                  <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger">
+                  <span className="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger">
                     <Icons.Close />
                     {chatResult.error}
                   </span>

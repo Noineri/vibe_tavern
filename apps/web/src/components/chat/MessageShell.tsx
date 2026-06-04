@@ -500,23 +500,29 @@ function MobileMessageActions(props: {
   } = props;
 
   return (
-    <div className="mt-1.5 flex items-center gap-3">
-      {canResend && (
-        <div className="flex h-7 w-7 cursor-pointer items-center justify-center rounded text-t3 active:bg-s2" onClick={() => { if (!isBusy) onResend(); }} title={resendLabel}>
-          <Icons.Regen />
-        </div>
-      )}
-      {canRegenerate && (
-        <div className="flex h-7 w-7 cursor-pointer items-center justify-center rounded text-t3 active:bg-s2" onClick={() => { if (!isBusy) onRegenerate(); }} title={regenLabel}>
-          <Icons.Regen />
-        </div>
-      )}
-      {canBranch && (
-        <div className="flex h-7 w-7 cursor-pointer items-center justify-center rounded text-t3 active:bg-s2" onClick={() => { if (!isBusy) onBranch(); }} title={branchLabel}>
-          <Icons.Branch />
-        </div>
-      )}
-      {!isUser && !isGreeting && variantControls}
+    <div className="mt-2 grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2">
+      <div className="flex justify-start">
+        {canBranch && (
+          <button type="button" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onBranch(); }} title={branchLabel}>
+            <Icons.Branch />
+          </button>
+        )}
+      </div>
+      <div className="flex min-w-0 justify-center">
+        {!isUser && !isGreeting && variantControls}
+      </div>
+      <div className="flex justify-end">
+        {canResend && (
+          <button type="button" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onResend(); }} title={resendLabel}>
+            <Icons.Regen />
+          </button>
+        )}
+        {canRegenerate && (
+          <button type="button" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onRegenerate(); }} title={regenLabel}>
+            <Icons.Regen />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
