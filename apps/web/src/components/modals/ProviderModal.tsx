@@ -556,8 +556,8 @@ export function ProviderModal({
 
         {/* ═══ FOOTER ═══ */}
         {(!isMobile || mobileDetailOpen) && (
-        <div className={cn("shrink-0 items-center justify-between border-t border-border", isMobile ? "flex px-4 py-3" : "flex px-6 py-4")}>
-          <div className="flex gap-4">
+        <div className={cn("shrink-0 items-center justify-between border-t border-border", isMobile ? "flex flex-wrap gap-2 px-4 py-3" : "flex px-6 py-4")}>
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
             <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>
               <Icons.Copy /> {t("duplicate")}
             </span>
@@ -567,7 +567,7 @@ export function ProviderModal({
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 font-ui text-[12px] text-t3 transition-opacity duration-300" style={{ opacity: autoSaveFlash ? 1 : 0 }}>
+          <div className="flex min-w-0 items-center gap-2 font-ui text-[12px] text-t3 transition-opacity duration-300" style={{ opacity: autoSaveFlash ? 1 : 0 }}>
             <Icons.Floppy /> {t("autosaving")}
           </div>
         </div>

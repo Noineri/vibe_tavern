@@ -173,7 +173,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey,
   ), [draft, disabled, onUpdateField, resetKey]);
 
   return (
-    <div className="flex flex-col gap-6 scroll-smooth p-5">
+    <div className="flex min-w-0 flex-col gap-6 scroll-smooth p-3 sm:p-5">
       {!hideChatPrompts && (
         <>
           <SectionHeader title={t("prompt_section_chat")} />
@@ -194,9 +194,9 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey,
           />
 
           <div>
-            <div className="mb-[7px] flex items-center justify-between">
+            <div className="mb-[7px] flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
               <label className={labelCls + " mb-0"}>{t("authors_note_label")}</label>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <SegmentedControl
                   value={draft?.authorsNotePosition ?? "in_chat"}
                   options={[
@@ -207,13 +207,14 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey,
                   onChange={(v) => onUpdateField("authorsNotePosition", v)}
                   disabled={disabled}
                   compact
+                  mobileFill
                 />
                 {(draft?.authorsNotePosition ?? "in_chat") === "in_chat" && (
-                  <>
+                  <div className="flex items-center justify-between gap-2 sm:justify-start">
                     <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{t("insert_depth_label")}</label>
                     <CustomTooltip content={t("insert_depth_hint")}>
                     <input
-                      className="h-[30px] w-16 rounded-md border border-border bg-s2 px-2 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors focus:border-accent disabled:opacity-60"
+                      className="h-9 w-20 rounded-md border border-border bg-s2 px-2 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors focus:border-accent disabled:opacity-60 sm:h-[30px] sm:w-16"
                       type="number"
                       min={0}
                       value={draft?.authorsNoteDepth ?? 4}
@@ -221,7 +222,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey,
                       disabled={disabled}
                     />
                     </CustomTooltip>
-                  </>
+                  </div>
                 )}
               </div>
             </div>

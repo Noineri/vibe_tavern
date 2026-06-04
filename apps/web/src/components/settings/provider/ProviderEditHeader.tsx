@@ -8,7 +8,7 @@ import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import { DropdownSelect } from '../../shared/DropdownSelect.js';
 
 const labelCls = 'block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3';
-const inputCls = 'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent px-[13px]';
+const inputCls = 'w-full h-11 sm:h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent px-[13px]';
 const selectCls = 'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent pl-[13px] sel-arrow';
 
 interface ProviderEditHeaderProps {
@@ -74,6 +74,7 @@ export function ProviderEditHeader({
               { value: '', label: t("custom") },
             ]}
             onChange={(g) => { if (!g) { updateForm('providerPreset', ''); } else { const first = PROVIDER_PRESETS.find((f) => f.group === g); if (first) applyPreset(first.id); } }}
+            mobileFill
           />
         </div>
       </div>
@@ -109,10 +110,10 @@ export function ProviderEditHeader({
       </div>
 
       {/* Test connection + Save */}
-      <div className="mt-2 flex items-center gap-3">
+      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <button type="button"
           className={cn(
-            'flex items-center gap-2 rounded-md border py-2 px-4 font-ui text-[13px] font-medium transition-colors',
+            'flex min-h-11 items-center justify-center gap-2 rounded-md border px-4 py-2 font-ui text-[13px] font-medium transition-colors sm:min-h-0',
             testOk === true ? 'border-success/30 bg-success/10 text-success' :
             testOk === false ? 'border-danger/30 bg-danger/10 text-danger' :
             'border-border bg-s2 text-t2 hover:border-border2 hover:text-t1',
@@ -125,11 +126,11 @@ export function ProviderEditHeader({
         </button>
         <div className="flex-1" />
         {!isNew && onCancel && (
-          <button type="button" onClick={onCancel} className="rounded-md border border-border bg-transparent py-2 px-4 font-ui text-[13px] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1">
+          <button type="button" onClick={onCancel} className="min-h-11 rounded-md border border-border bg-transparent px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1 sm:min-h-0">
             {t("cancel")}
           </button>
         )}
-        <button type="button" onClick={onSave} className="rounded-md bg-accent py-2 px-5 font-ui text-[13px] font-medium text-white shadow-lg shadow-accent/20 transition-all hover:bg-accent-t">
+        <button type="button" onClick={onSave} className="min-h-11 rounded-md bg-accent px-5 py-2 font-ui text-[13px] font-medium text-white shadow-lg shadow-accent/20 transition-all hover:bg-accent-t sm:min-h-0">
           {t("save_settings_btn")}
         </button>
       </div>

@@ -7,6 +7,7 @@ import type { AssemblePromptResponse, PromptTraceRecordDto } from "@vibe-tavern/
 import type { AppSnapshot } from "../../app-client.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
+import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { CharacterForm } from "./editors/CharacterForm.js";
 import { formatTraceTimestamp } from "../layout/app-shell-helpers.js";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
@@ -122,7 +123,7 @@ interface BuildModeInnerProps {
 }
 
 function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, currentTraceIndex, setSelectedTraceId, promptTraceHistory, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete, onCreateChat, hasAvatar }: BuildModeInnerProps) {
-  const { t } = useT();
+  const { t, locale } = useT();
   const isMobile = useIsMobile();
   const panels = useBuildPanels();
   const setBuildTab = useCharacterStore((s) => s.setBuildTab);
@@ -133,6 +134,8 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
   });
 
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [traceSearch, setTraceSearch] = useState("");
+  const [expandedTraceLayerIds, setExpandedTraceLayerIds] = useState<Set<string>>(() => new Set());
 
   const prevCharIdRef = useRef(character.id);
   useEffect(() => {
@@ -170,6 +173,21 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
       : undefined;
 
   const ctx = { characterId, chatId: activeChatId, personaId };
+
+  function formatTokenCount(count: number): string {
+    const formatted = count.toLocaleString(locale);
+    if (locale === "ru") {
+      const mod10 = count % 10;
+      const mod100 = count % 100;
+      const label = mod10 === 1 && mod100 !== 11
+        ? "токен"
+        : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)
+          ? "токена"
+          : "токенов";
+      return `${formatted} ${label}`;
+    }
+    return `${formatted} ${count === 1 ? "token" : "tokens"}`;
+  }
 
   const activePanel = panels.find((p) => p.id === buildTab);
   const isFullBleed = activePanel?.fullBleed === true;
@@ -220,6 +238,141 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
   function renderTraceContent(): ReactNode {
     const trace = activeTrace;
     const totalTokens = trace ? (trace.tokenAccounting?.total ?? trace.layers.reduce((sum, l) => sum + l.tokenCount, 0)) : 0;
+    const downloadPayload = () => {
+      const blob = new Blob([promptPayloadText], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `prompt-payload-${activeTrace && 'id' in activeTrace ? (activeTrace as { id: string }).id : 'trace'}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+
+    if (isMobile) {
+      const q = traceSearch.trim().toLowerCase();
+      const visibleLayers = trace?.layers.filter((layer) => {
+        if (!q) return true;
+        return [layer.sourceName, layer.sourceType, layer.sourceId, layer.text]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(q));
+      }) ?? [];
+      const toggleLayer = (layerId: string) => {
+        setExpandedTraceLayerIds((prev) => {
+          const next = new Set(prev);
+          if (next.has(layerId)) next.delete(layerId);
+          else next.add(layerId);
+          return next;
+        });
+      };
+      return (
+        <div className="pb-4">
+          <h1 className="mb-4 font-body text-[22px] font-semibold leading-tight text-t1">{t("build_prompt_trace")}</h1>
+
+          <label className="mb-3 flex h-8 items-center gap-2 rounded-md border border-border bg-s2 px-2.5 font-ui text-[13px] text-t3">
+            <span className="text-t4">⌕</span>
+            <input
+              type="search"
+              value={traceSearch}
+              onChange={(e) => setTraceSearch(e.target.value)}
+              placeholder={t("trace_search_placeholder")}
+              className="min-w-0 flex-1 bg-transparent text-t1 outline-none placeholder:text-t4"
+            />
+          </label>
+
+          <p className="mb-5 font-ui text-[14px] leading-[1.55] text-t3">{t("trace_mobile_hint")}</p>
+
+          {trace && 'id' in trace ? (
+            <div className="mb-3 grid grid-cols-[40px_minmax(0,1fr)_40px] items-center gap-2">
+              <button type="button"
+                className="flex h-10 w-10 items-center justify-center rounded-md bg-s2 font-ui text-lg text-t3 active:bg-s3 disabled:opacity-35"
+                disabled={currentTraceIndex >= promptTraceHistory.length - 1}
+                onClick={() => {
+                  const prev = promptTraceHistory[currentTraceIndex + 1];
+                  if (prev) setSelectedTraceId(prev.id);
+                }}
+              >‹</button>
+              <DropdownSelect
+                value={(trace as PromptTraceRecordDto).id}
+                onChange={setSelectedTraceId}
+                searchable={false}
+                className="h-10 min-w-0 rounded-md bg-s2 px-3 py-0 text-[13px]"
+                options={promptTraceHistory.map((item, index) => {
+                  const itemTotal = item.tokenAccounting?.total ?? item.layers.reduce((sum, layer) => sum + layer.tokenCount, 0);
+                  return {
+                    id: item.id,
+                    label: t("trace_turn").replace("{n}", String(promptTraceHistory.length - index)),
+                    detail: formatTokenCount(itemTotal),
+                  };
+                })}
+              />
+              <button type="button"
+                className="flex h-10 w-10 items-center justify-center rounded-md bg-s2 font-ui text-lg text-t3 active:bg-s3 disabled:opacity-35"
+                disabled={currentTraceIndex <= 0}
+                onClick={() => {
+                  const next = promptTraceHistory[currentTraceIndex - 1];
+                  if (next) setSelectedTraceId(next.id);
+                }}
+              >›</button>
+            </div>
+          ) : null}
+
+          {trace ? (
+            <div className="flex flex-col gap-2">
+              {visibleLayers.map((layer, index) => {
+                const isPreset = layer.sourceType === "prompt_preset";
+                const isRetrieval = layer.sourceType.includes("memory") || layer.sourceType === "lore_entry";
+                const expanded = expandedTraceLayerIds.has(layer.id);
+                return (
+                  <div key={layer.id} className={cn(
+                    "overflow-hidden rounded-md border border-border bg-s2 font-ui",
+                    isPreset && "border-l-2 border-l-info",
+                    isRetrieval && "border-l-2 border-l-success",
+                    !isPreset && !isRetrieval && "border-l-2 border-l-danger",
+                  )}>
+                    <button
+                      type="button"
+                      className="flex w-full cursor-pointer flex-col px-3.5 py-3 text-left active:bg-s3"
+                      onClick={() => toggleLayer(layer.id)}
+                      aria-expanded={expanded}
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="min-w-0 flex-1 font-semibold text-t2">{index + 1}. {layer.sourceName ?? layer.sourceType}</div>
+                        <span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
+                      </div>
+                      <div className="mt-1 flex min-w-0 items-center gap-2 text-[12px] text-t3">
+                        <span className="min-w-0 flex-1 truncate">{layer.sourceId || layer.sourceType}</span>
+                        <span className="shrink-0 tabular-nums">{formatTokenCount(layer.tokenCount)}</span>
+                      </div>
+                    </button>
+                    {expanded && (
+                      <div className="border-t border-border bg-bg p-3 whitespace-pre-wrap font-mono text-[11px] leading-[1.55] text-t1">
+                        {layer.text}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {visibleLayers.length === 0 && (
+                <div className="rounded-md border border-dashed border-border2 bg-s2 px-3 py-6 text-center font-ui text-[13px] text-t3">{t("trace_no_active")}</div>
+              )}
+
+              <div className="mt-4 flex flex-col gap-3">
+                <button type="button" className="h-9 rounded-md bg-s2 px-4 font-ui text-[12px] font-medium text-t2 active:bg-s3" onClick={downloadPayload}>
+                  {t("trace_json_payload")}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-5 flex h-[120px] items-center justify-center rounded-lg border border-dashed border-border2 bg-s2 font-body text-[13px] italic text-t3">
+              {t("trace_no_traces_yet")}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div>
         <div className="mb-1.5 flex items-center justify-between">
@@ -230,7 +383,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
             <div
               className="rounded-full bg-s2 px-2.5 py-1 font-ui text-[13px] text-t2"
             >
-              {t("trace_total_tokens").replace("{n}", String(totalTokens))}
+              {t("trace_total_tokens").replace("{n}", formatTokenCount(totalTokens))}
             </div>
           )}
         </div>
@@ -354,8 +507,8 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
   // ── Mobile: fullscreen editor (navigation via Rail) ──
   if (isMobile) {
     return (
-      <div className={cn("flex h-full flex-col", !isFullBleed && "p-4")}>
-        <div className={cn("flex-1 min-h-0", !isFullBleed && "overflow-y-auto")}>
+      <div className={cn("flex min-h-0 flex-1 flex-col", !isFullBleed && "p-4")}>
+        <div className={cn("flex-1 min-h-0", !isFullBleed && "overflow-y-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden")}>
           {renderPanelContent()}
         </div>
       </div>

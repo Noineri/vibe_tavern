@@ -122,7 +122,7 @@
   "editor": "Редактор",
   "more_characters": "+{n}",
   "characters": "Персонажи",
-  "trace_total_tokens": "Итого: {n} токенов",
+  "trace_total_tokens": "Итого: {n}",
   "trace_no_active": "Нет активной трассировки.",
   "trace_recorded_count": "Записано: {n} трассировок",
   "trace_prefill_label": "Префилл:",
@@ -131,6 +131,9 @@
   "trace_prev": "Пред",
   "trace_next": "След",
   "view_raw_json": "Просмотреть JSON",
+  "trace_search_placeholder": "Поиск...",
+  "trace_mobile_hint": "Точная сборка промпта, отправленного модели на последнем ходу (System, Context, RAG, History).",
+  "trace_json_payload": "Просмотр JSON Payload",
   "trace_no_traces_yet": "Трассировок ещё нет. Отправьте сообщение для записи.",
 
   "placeholder": "Продолжите историю...",
