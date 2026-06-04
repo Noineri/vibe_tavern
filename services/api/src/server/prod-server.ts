@@ -15,6 +15,7 @@
 
 import { resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
+import { EventBus } from "@vibe-tavern/domain";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { createRuntimeStore } from "../session/session-runtime-store.js";
 import { warmupTokenizers, countTokens } from "../ai/tokenizer-service.js";
@@ -83,10 +84,10 @@ await mkdir(resolve(dataDir, "assets"), { recursive: true });
 		getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
 	});
 	const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
+	const events = new EventBus();
 	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
-	const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime.chatRuntime, providerOrchestrator, {
-		onAssistantAppended: (chatId) => chatSummaryService.triggerAutoSummary(chatId),
-	});
+	events.on("message.appended", ({ chatId }) => chatSummaryService.triggerAutoSummary(chatId));
+	const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime.chatRuntime, providerOrchestrator, events);
 	const assetService = new AssetService(resolve(dataDir, "assets"));
 	const mobileAccessService = new MobileAccessService(dataDir);
 
