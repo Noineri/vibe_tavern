@@ -94,28 +94,23 @@ function mapSelectiveLogic(value: unknown): LoreLogic {
 }
 
 function mapPromptLayerPosition(value: unknown): PromptLayerPosition {
-  // SillyTavern World Info insertion positions.
-  // Vibe Tavern stores the ST-style fine-grained positions too; the prompt
-  // assembler later maps these onto canonical prompt layers.
+  // SillyTavern World Info positions are more fine-grained than Vibe Tavern's
+  // canonical prompt layer positions. Preserve execution semantics by mapping
+  // normal prompt-area positions to in_prompt, depth injections to in_chat, and
+  // outlet entries to hidden_system.
   switch (value) {
-    case 0:
-      return "before_char" as PromptLayerPosition;
-    case 1:
-      return "after_char" as PromptLayerPosition;
-    case 2:
-      return "top_an" as PromptLayerPosition;
-    case 3:
-      return "bottom_an" as PromptLayerPosition;
     case 4:
-      return "at_depth" as PromptLayerPosition;
-    case 5:
-      return "before_examples" as PromptLayerPosition;
-    case 6:
-      return "after_examples" as PromptLayerPosition;
+      return "in_chat";
     case 7:
-      return "outlet" as PromptLayerPosition;
+      return "hidden_system";
+    case 0:
+    case 1:
+    case 2:
+    case 3:
+    case 5:
+    case 6:
     default:
-      return "after_char" as PromptLayerPosition;
+      return "in_prompt";
   }
 }
 

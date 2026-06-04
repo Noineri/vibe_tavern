@@ -9,6 +9,10 @@ import { logSendDebug } from "../send-debug-log.js";
 export interface PreparedLiveTurn {
   prompt: AssemblePromptResponse;
   snapshot: SessionSnapshot;
+  userMessage?: {
+    id: MessageId;
+    content: string;
+  };
 }
 
 interface PendingPromptTraceTurn {
@@ -86,6 +90,10 @@ export class ChatRuntime {
     return {
       prompt: assembled.prompt,
       snapshot: await getSnapshot(chatId),
+      userMessage: {
+        id: userMessage.id,
+        content: trimmed,
+      },
     };
   }
 

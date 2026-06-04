@@ -9,7 +9,7 @@ import type { MessageBlockProps } from "../play/play-mode-types.js";
 import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { useT } from "../../i18n/context.js";
-import { MessageReasoning } from "./MessageReasoning.js";
+import "./MessageReasoning.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { replaceUiMacros } from "../../lib/macros.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
@@ -230,6 +230,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     />
   );
 
+  const reasoningForSlot = !isUser && !isEditing
+    ? {
+        reasoning: isStreamingHere ? (activeStreamingReasoning || reasoningText) : reasoningText,
+        reasoningDurationMs: reasoningDuration,
+      }
+    : null;
+
   // ── Message content rendering ──
   const messageContent = isEditing ? (
     <>
@@ -262,18 +269,12 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     </div>
   ) : isGenerating && !renderContent?.trim() ? (
     <div className={isMobile ? "my-0.5 w-full" : ""}>
-      {(reasoningText || reasoningDuration) && (
-        <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
-      )}
       <div className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
         <GenerationDots label={t("generating_response")} />
       </div>
     </div>
   ) : isStreamingHere ? (
     <div className={isMobile ? "my-0.5 w-full" : ""}>
-      {(activeStreamingReasoning || reasoningDuration) && (
-        <MessageReasoning reasoning={activeStreamingReasoning || reasoningText} reasoningDurationMs={reasoningDuration} />
-      )}
       <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
         {activeStreamingText ? <Markdown text={activeStreamingText} /> : null}
         <GenerationDots label={t("generating_response")} />
@@ -281,9 +282,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     </div>
   ) : (
     <div>
-      {!isUser && (reasoningText || reasoningDuration) && (
-        <MessageReasoning reasoning={reasoningText} reasoningDurationMs={reasoningDuration} />
-      )}
       {isMobile && variantCount > 1 ? (
         <MobileVariantCarousel
           selectedVariantIndex={selectedVariantIndex}
@@ -332,7 +330,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       modelId={msg.modelId}
       createdAt={msg.createdAt}
       copied={copied}
-      slotExtras={{}}
+      slotExtras={{ reasoning: reasoningForSlot }}
       variantControlsOverlay={variantControlsOverlay}
       variantControlsRef={variantControlsRef}
       greetingControls={greetingControls}

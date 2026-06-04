@@ -1,7 +1,14 @@
 import { useState } from "react";
+import { registerMessageSlot, type MessageSlotContext } from "../../lib/message-slot-registry.js";
 import { Icons } from "../shared/icons.js";
 import { useT } from "../../i18n/context.js";
 import { Markdown } from "../../lib/markdown.js";
+
+export interface MessageReasoningSlotExtra {
+  reasoning: string | null | undefined;
+  reasoningDurationMs?: number | null;
+  redacted?: boolean;
+}
 
 interface MessageReasoningProps {
   /** The reasoning text content (may be empty for redacted reasoning). */
@@ -19,6 +26,35 @@ interface MessageReasoningProps {
  * Collapsed by default. Shows brain icon + "Reasoning" + duration badge.
  * For redacted reasoning: shows placeholder text instead of reasoning content.
  */
+function getReasoningSlotExtra(ctx: MessageSlotContext): MessageReasoningSlotExtra | null {
+  const value = ctx.extras.reasoning;
+  if (!value || typeof value !== "object") return null;
+  return value as MessageReasoningSlotExtra;
+}
+
+registerMessageSlot({
+  id: "core-message-reasoning",
+  slot: "after_reasoning",
+  order: 0,
+  roles: ["assistant"],
+  visible: (ctx) => {
+    const data = getReasoningSlotExtra(ctx);
+    if (!data) return false;
+    return Boolean(data.redacted || data.reasoning?.trim() || data.reasoningDurationMs);
+  },
+  render: (ctx) => {
+    const data = getReasoningSlotExtra(ctx);
+    if (!data) return null;
+    return (
+      <MessageReasoning
+        reasoning={data.reasoning}
+        reasoningDurationMs={data.reasoningDurationMs}
+        redacted={data.redacted}
+      />
+    );
+  },
+});
+
 export function MessageReasoning({ reasoning, reasoningDurationMs, redacted }: MessageReasoningProps) {
   const { t } = useT();
   const [open, setOpen] = useState(false);

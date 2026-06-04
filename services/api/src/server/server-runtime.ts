@@ -16,6 +16,7 @@ import { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
 import { createProviderProfileService } from "../providers/provider-profile-service.js";
 import { RuntimeApiAdapter } from "../runtime-api-adapter.js";
 import { SessionRuntime } from "../session/session-runtime.js";
+import { createScriptAiFeature } from "../scripts-engine/script-ai-feature.js";
 import { createRuntimeStore } from "../session/session-runtime-store.js";
 import { configureLogDir } from "../send-debug-log.js";
 import { createApp } from "./app-factory.js";
@@ -117,16 +118,16 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 		mobileAccessService,
 	);
 
+	features.register(createScriptAiFeature(runtime));
+
 	// Hono app — with static frontend if available
 	const app = await createApp({
 		runtime,
 		staticDir: config.staticEnabled ? config.staticDir : undefined,
 		mobileAccessToken: () => mobileAccessService.getToken(),
 		enforceMobileAuth: true,
+		configureFeatures: (router) => features.activateAll({ events, router }),
 	});
-
-	// Activate features after app is created (they may mount routes)
-	features.activateAll({ events, router: app });
 
 	if (config.checkPortBeforeListen) {
 		await ensurePortAvailable({ host: config.host, port: config.port, tag });

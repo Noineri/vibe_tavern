@@ -144,12 +144,12 @@ export function DiffPreview({ summary, labels }: { summary: DiffSummary; labels:
         <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{labels.title}</div>
         <div className="font-mono text-[11px] tabular-nums"><span className="text-success-text">+{summary.added}</span> <span className="text-danger-text">-{summary.removed}</span></div>
       </div>
-      <pre className="max-h-[280px] overflow-auto rounded border border-border/60 bg-surface p-2 font-mono text-[11px] leading-[1.45]">
+      <pre className="max-h-[280px] overflow-y-auto overflow-x-hidden rounded border border-border/60 bg-surface p-2 font-mono text-[11px] leading-[1.45]">
         {summary.lines.map((line, idx) => (
           <div
             key={idx}
             className={cn(
-              "min-w-max whitespace-pre-wrap px-2",
+              "min-w-0 whitespace-pre-wrap break-words px-2 [overflow-wrap:anywhere]",
               line.kind === "add" && "bg-success-dim text-success-text",
               line.kind === "remove" && "bg-danger-dim text-danger-text",
               line.kind === "same" && "text-t3/65",

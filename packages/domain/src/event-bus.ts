@@ -9,6 +9,7 @@
 // - One handler failure does not block others (error isolation)
 // - Errors are logged via the domain logger, not swallowed
 // - on() returns an unsubscribe function
+// - AbortSignal can be used to auto-unsubscribe scoped handlers
 // - No middleware, no queuing, no ordering guarantees
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -47,18 +48,33 @@ export class EventBus {
 
   /**
    * Subscribe to an event. Returns an unsubscribe function.
+   *
+   * If an AbortSignal is provided, the handler is removed automatically when
+   * the signal aborts. Aborted signals return a no-op unsubscribe.
    */
-  on<K extends keyof EventMap>(event: K, handler: Handler<EventMap[K]>): () => void {
+  on<K extends keyof EventMap>(event: K, handler: Handler<EventMap[K]>, options?: { signal?: AbortSignal }): () => void {
+    if (options?.signal?.aborted) return () => {};
+
     const key = event as string;
     let set = this.handlers.get(key);
     if (!set) {
       set = new Set();
       this.handlers.set(key, set);
     }
-    set.add(handler as Handler<never>);
-    return () => {
-      set!.delete(handler as Handler<never>);
+
+    const storedHandler = handler as Handler<never>;
+    set.add(storedHandler);
+
+    let isUnsubscribed = false;
+    const unsubscribe = () => {
+      if (isUnsubscribed) return;
+      isUnsubscribed = true;
+      set!.delete(storedHandler);
+      options?.signal?.removeEventListener("abort", unsubscribe);
     };
+
+    options?.signal?.addEventListener("abort", unsubscribe, { once: true });
+    return unsubscribe;
   }
 
   /**

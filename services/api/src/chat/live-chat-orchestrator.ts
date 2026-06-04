@@ -43,23 +43,25 @@ export class LiveChatOrchestrator {
     reply: string;
     snapshot: SessionSnapshot;
   }> {
-    logSendDebug("live.send.prepare.start", { chatId: input.chatId, model: input.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, input.model, input.profile.maxTokens);
+    const provider = await this.resolveProvider(input);
+    logSendDebug("live.send.prepare.start", { chatId: input.chatId, model: provider.model });
+    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens);
+    this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     logSendDebug("live.send.prepare.done", {
       chatId: input.chatId,
       snapshotMessageCount: prepared.snapshot.messages.length,
       promptMessageCount: countPromptMessages(prepared.prompt),
     });
     const startedAt = Date.now();
-    logSendDebug("live.send.provider.start", { chatId: input.chatId, providerId: input.profile.id, model: input.model });
+    logSendDebug("live.send.provider.start", { chatId: input.chatId, providerId: provider.profile.id, model: provider.model });
     const prefill = prepared.prompt.prefill ?? undefined;
     let reply: string;
     let reasoning: string | undefined;
     try {
       // TODO FW-AI5: when stream preference is true, forward the stream as SSE instead of collecting
       const result = await nonstreamingProviderExecute({
-        profile: input.profile,
-        model: input.model,
+        profile: provider.profile,
+        model: provider.model,
         prompt: prepared.prompt,
         signal: input.signal,
         prefill,
@@ -104,11 +106,12 @@ export class LiveChatOrchestrator {
     reply: string;
     snapshot: SessionSnapshot;
   }> {
-    logSendDebug("live.generateReply.start", { chatId: input.chatId, model: input.model });
+    const provider = await this.resolveProvider(input);
+    logSendDebug("live.generateReply.start", { chatId: input.chatId, model: provider.model });
     const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
-      model: input.model,
-      contextBudget: input.profile.contextBudget,
-      responseReserve: input.profile.maxTokens,
+      model: provider.model,
+      contextBudget: provider.profile.contextBudget,
+      responseReserve: provider.profile.maxTokens,
     });
     const prefill = prompt.prefill ?? undefined;
     const startedAt = Date.now();
@@ -116,8 +119,8 @@ export class LiveChatOrchestrator {
     let reasoning: string | undefined;
     try {
       const result = await nonstreamingProviderExecute({
-        profile: input.profile,
-        model: input.model,
+        profile: provider.profile,
+        model: provider.model,
         prompt,
         signal: input.signal,
         prefill,
@@ -160,12 +163,13 @@ export class LiveChatOrchestrator {
     reply: string;
     snapshot: SessionSnapshot;
   }> {
-    logSendDebug("live.regenerate.start", { chatId: input.chatId, messageId: input.messageId, model: input.model });
+    const provider = await this.resolveProvider(input);
+    logSendDebug("live.regenerate.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
     const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
       excludeMessageId: brandId<MessageId>(input.messageId),
-      model: input.model,
-      contextBudget: input.profile.contextBudget,
-      responseReserve: input.profile.maxTokens,
+      model: provider.model,
+      contextBudget: provider.profile.contextBudget,
+      responseReserve: provider.profile.maxTokens,
     });
     logSendDebug("live.regenerate.prompt.ready", {
       chatId: input.chatId,
@@ -174,13 +178,13 @@ export class LiveChatOrchestrator {
     });
     const prefill = prompt.prefill ?? undefined;
     const startedAt = Date.now();
-    logSendDebug("live.regenerate.provider.start", { chatId: input.chatId, providerId: input.profile.id, model: input.model });
+    logSendDebug("live.regenerate.provider.start", { chatId: input.chatId, providerId: provider.profile.id, model: provider.model });
     let reply: string;
     let reasoning: string | undefined;
     try {
       const result = await nonstreamingProviderExecute({
-        profile: input.profile,
-        model: input.model,
+        profile: provider.profile,
+        model: provider.model,
         prompt,
         signal: input.signal,
         prefill,
@@ -224,10 +228,12 @@ export class LiveChatOrchestrator {
     prefill?: string;
     signal?: AbortSignal;
   }): AsyncGenerator<{ event: string; data: string }> {
-    logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: input.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, input.model, input.profile.maxTokens);
+    const provider = await this.resolveProvider(input);
+    logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: provider.model });
+    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens);
+    this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     const prefill = prepared.prompt.prefill ?? undefined;
-    const { streamResult, startedAt } = await this.startStream(input, prepared.prompt);
+    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider }, prepared.prompt);
 
     yield* this.drainStream({
       chatId: input.chatId,
@@ -265,14 +271,15 @@ export class LiveChatOrchestrator {
     prefill?: string;
     signal?: AbortSignal;
   }): AsyncGenerator<{ event: string; data: string }> {
-    logSendDebug("live.generateReply-stream.start", { chatId: input.chatId, model: input.model });
+    const provider = await this.resolveProvider(input);
+    logSendDebug("live.generateReply-stream.start", { chatId: input.chatId, model: provider.model });
     const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
-      model: input.model,
-      contextBudget: input.profile.contextBudget,
-      responseReserve: input.profile.maxTokens,
+      model: provider.model,
+      contextBudget: provider.profile.contextBudget,
+      responseReserve: provider.profile.maxTokens,
     });
     const prefill = prompt.prefill ?? undefined;
-    const { streamResult, startedAt } = await this.startStream(input, prompt);
+    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider }, prompt);
 
     yield* this.drainStream({
       chatId: input.chatId,
@@ -311,15 +318,16 @@ export class LiveChatOrchestrator {
     prefill?: string;
     signal?: AbortSignal;
   }): AsyncGenerator<{ event: string; data: string }> {
-    logSendDebug("live.regenerate-stream.start", { chatId: input.chatId, messageId: input.messageId, model: input.model });
+    const provider = await this.resolveProvider(input);
+    logSendDebug("live.regenerate-stream.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
     const prompt = await this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
       excludeMessageId: brandId<MessageId>(input.messageId),
-      model: input.model,
-      contextBudget: input.profile.contextBudget,
-      responseReserve: input.profile.maxTokens,
+      model: provider.model,
+      contextBudget: provider.profile.contextBudget,
+      responseReserve: provider.profile.maxTokens,
     });
     const prefill = prompt.prefill ?? undefined;
-    const { streamResult, startedAt } = await this.startStream(input, prompt);
+    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider }, prompt);
 
     yield* this.drainStream({
       chatId: input.chatId,
@@ -358,6 +366,24 @@ export class LiveChatOrchestrator {
    * Starts a stream provider execution with error handling.
    * Discards the pending prompt trace on failure.
    */
+  private async resolveProvider(input: {
+    chatId: string;
+    profile: StoredProviderProfileRecord;
+    model: string;
+  }): Promise<{ profile: StoredProviderProfileRecord; model: string }> {
+    return this.strategy.resolveProvider(input);
+  }
+
+  private notifyUserMessageCreated(chatId: string, message?: { id: MessageId; content: string }): void {
+    if (!message) return;
+    this.events.emit("message.created", {
+      chatId,
+      messageId: message.id,
+      role: "user",
+      content: message.content,
+    });
+  }
+
   private notifyAssistantAppended(chatId: string, messageId: string): void {
     this.events.emit("message.appended", { chatId, messageId, role: "assistant" });
     // Delegate mode-specific post-append work (no-op for RP, future hooks for Novel/Group)
