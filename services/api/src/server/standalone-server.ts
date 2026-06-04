@@ -24,6 +24,8 @@ import { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
 import { LiveChatOrchestrator } from "../chat/live-chat-orchestrator.js";
 import { ChatSummaryService } from "../chat/chat-summary-service.js";
 import { getChatModeStrategy } from "../chat/chat-mode-strategy.js";
+import { createChatSummaryFeature } from "../chat/chat-summary-feature.js";
+import { FeatureRegistry } from "../feature-registry.js";
 import { AssetService } from "../asset-service.js";
 import { RuntimeApiAdapter } from "../runtime-api-adapter.js";
 import { createApp } from "./app-factory.js";
@@ -88,8 +90,11 @@ configureLogDir(paths.logsDir);
 	const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
 	const events = new EventBus();
 	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
-	events.on("message.appended", ({ chatId }) => chatSummaryService.triggerAutoSummary(chatId));
 	const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime.chatRuntime, providerOrchestrator, events, getChatModeStrategy("rp"));
+
+	// Feature registry — features subscribe to events and mount routes
+	const features = new FeatureRegistry();
+	features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService }));
 	const assetService = new AssetService(paths.assetsDir);
 	const mobileAccessService = new MobileAccessService(paths.dataDir);
 
@@ -116,6 +121,9 @@ configureLogDir(paths.logsDir);
 		mobileAccessToken: () => mobileAccessService.getToken(),
 		enforceMobileAuth: true,
 	});
+
+	// Activate features after app is created (they may mount routes)
+	features.activateAll({ events, router: app });
 
 	const tlsOptions = tlsConfig ? { tls: tlsConfig } : {};
 	const server = Bun.serve({
