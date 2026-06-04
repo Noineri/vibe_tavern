@@ -16,6 +16,8 @@ export interface AppDeps {
 	mobileAccessToken?: MobileAccessTokenSource;
 	/** Deny remote /api/* requests when mobile access has no token. */
 	enforceMobileAuth?: boolean;
+	/** Mount feature routes before static frontend fallback and final 404 catch-all. */
+	configureFeatures?: (app: Hono) => void;
 }
 
 /**
@@ -87,6 +89,9 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 	});
 
 	app.route("/", apiRouter);
+
+	// Feature routes must be mounted before static fallback and the final 404.
+	deps.configureFeatures?.(app);
 
 	// ─── Static frontend (production only) ───────────────────────────────
 

@@ -39,28 +39,5 @@ export function createScriptRoutes(runtime: RuntimeApi) {
         : { format, jsonText: body.jsonText, scopeType: body.scopeType, characterId: body.characterId, personaId: body.personaId, chatId: body.chatId };
       return c.json(await runtime.importScript(payload), 201);
     })
-    .post("/api/scripts/ai-assistant", async (c) => {
-      const body = await c.req.json();
-      const stream = runtime.streamScriptAiAssistant(body);
-
-      return new Response(
-        new ReadableStream({
-          async start(controller) {
-            const encoder = new TextEncoder();
-            for await (const chunk of stream) {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
-            }
-            controller.close();
-          },
-        }),
-        {
-          headers: {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            Connection: "keep-alive",
-          },
-        },
-      );
-    })
   ;
 }

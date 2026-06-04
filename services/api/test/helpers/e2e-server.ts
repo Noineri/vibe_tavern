@@ -11,6 +11,7 @@
 import { resolve } from "node:path";
 import { rm, mkdir } from "node:fs/promises";
 import { Database } from "bun:sqlite";
+import { EventBus } from "@vibe-tavern/domain";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { createRuntimeStore } from "../../src/session/session-runtime-store.js";
 import { warmupTokenizers, countTokens } from "../../src/ai/tokenizer-service.js";
@@ -19,9 +20,14 @@ import { createProviderProfileService } from "../../src/providers/provider-profi
 import { PromptPresetService } from "../../src/prompt/prompt-preset-service.js";
 import { ProviderOrchestrator } from "../../src/providers/provider-orchestrator.js";
 import { LiveChatOrchestrator } from "../../src/chat/live-chat-orchestrator.js";
+import { getChatModeStrategy } from "../../src/chat/chat-mode-strategy.js";
+import { createChatSummaryFeature } from "../../src/chat/chat-summary-feature.js";
 import { ChatSummaryService } from "../../src/chat/chat-summary-service.js";
 import { AssetService } from "../../src/asset-service.js";
+import { MobileAccessService } from "../../src/mobile-access-service.js";
 import { RuntimeApiAdapter } from "../../src/runtime-api-adapter.js";
+import { FeatureRegistry } from "../../src/feature-registry.js";
+import { createScriptAiFeature } from "../../src/scripts-engine/script-ai-feature.js";
 import { createApp } from "../../src/server/app-factory.js";
 import type { Hono } from "hono";
 
@@ -274,9 +280,16 @@ export async function createTestServer(): Promise<TestServer> {
     getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
   });
   const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
-  const liveChatOrchestrator = new LiveChatOrchestrator(sessionRuntime.chatRuntime, providerOrchestrator);
+  const events = new EventBus();
+  const liveChatOrchestrator = new LiveChatOrchestrator(
+    sessionRuntime.chatRuntime,
+    providerOrchestrator,
+    events,
+    getChatModeStrategy("rp"),
+  );
   const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
   const assetService = new AssetService(resolve(tmpDir, "data", "assets"));
+  const mobileAccessService = new MobileAccessService(resolve(tmpDir, "data"));
 
   const runtime = new RuntimeApiAdapter(
     stores,
@@ -286,15 +299,26 @@ export async function createTestServer(): Promise<TestServer> {
     sessionRuntime,
     promptPresetService,
     assetService,
+    mobileAccessService,
   );
 
-  const app = await createApp({ runtime });
+  const features = new FeatureRegistry();
+  features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService }));
+  features.register(createScriptAiFeature(runtime));
+
+  const app = await createApp({
+    runtime,
+    configureFeatures: (router) => features.activateAll({ events, router }),
+  });
 
   // ── API helper ─────────────────────────────────────────────────────────
   const BASE = "http://localhost";
   const api = (path: string, init?: RequestInit) => app.request(path, init, BASE);
 
   const cleanup = async () => {
+    try {
+      features.deactivateAll();
+    } catch {}
     try {
       stores.db.$client.close?.();
     } catch {}
