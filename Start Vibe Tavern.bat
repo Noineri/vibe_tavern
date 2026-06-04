@@ -2,6 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
+set "BUN_EXE=bun"
 where bun >nul 2>nul
 if errorlevel 1 (
     echo Bun is not installed. Install from https://bun.sh
@@ -24,10 +25,11 @@ if exist "..\mcp\.env" (
 )
 
 echo ============================================
-echo  RP Platform
+echo  Vibe Tavern
 echo ============================================
 echo.
 echo Server: http://127.0.0.1:8787
+if /i "%LOG_LEVEL%"=="debug" echo Log level: debug
 echo.
 
 echo Checking dependencies...
@@ -39,7 +41,7 @@ goto :build
 
 :do_install
 echo Installing dependencies...
-call bun install
+call %BUN_EXE% install
 if errorlevel 1 (
     echo.
     echo Failed to install dependencies.
@@ -50,7 +52,7 @@ if errorlevel 1 (
 :build
 echo.
 echo Building...
-call bun run build
+call %BUN_EXE% run build
 if errorlevel 1 (
     echo.
     echo Build failed.
@@ -64,7 +66,6 @@ echo Starting server...
 echo Press Ctrl+C to stop.
 echo.
 
-REM Проверяем, не занят ли порт
 powershell.exe -NoProfile -Command "$conn = Get-NetTCPConnection -LocalPort 8787 -ErrorAction SilentlyContinue; if ($conn) { $pid = $conn[0].OwningProcess; Write-Host ''; Write-Host 'Port 8787 is already in use by PID' $pid; exit 10 } else { exit 0 }"
 if %ERRORLEVEL%==10 (
     powershell.exe -NoProfile -Command "$pid = (Get-NetTCPConnection -LocalPort 8787 -ErrorAction SilentlyContinue)[0].OwningProcess; Write-Host 'Kill PID' $pid '? [Y/n]'; $a = Read-Host; if ($a -eq '' -or $a -eq 'Y' -or $a -eq 'y') { Stop-Process -Id $pid -Force; Write-Host 'Killed.'; exit 0 } else { Write-Host 'Cancelled.'; exit 1 }"
@@ -74,15 +75,15 @@ if %ERRORLEVEL%==10 (
     )
 )
 
-bun services/api/src/server/prod-server.ts
+%BUN_EXE% services/api/src/server/prod-server.ts
 set "EXIT_CODE=%ERRORLEVEL%"
 
-REM Graceful exits (0=normal, 1=Ctrl+C, 58=window closed) - just exit silently
 if "%EXIT_CODE%"=="0" exit /b 0
 if "%EXIT_CODE%"=="1" exit /b 0
 if "%EXIT_CODE%"=="58" exit /b 0
+if "%EXIT_CODE%"=="3221225786" exit /b 0
+if "%EXIT_CODE%"=="-1073741510" exit /b 0
 
-REM Unexpected crash - show error and wait for keypress
 echo.
 echo Server crashed with exit code %EXIT_CODE%.
 pause

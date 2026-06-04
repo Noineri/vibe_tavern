@@ -97,7 +97,7 @@ Download and run latest `.exe` from [Releases](https://github.com/Noineri/vibe_t
 
 #### Option 2:
 
-Download zip archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract it and run `Start RP Platform.bat`
+Download zip archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract it and run `Start Vibe Tavern.bat`
 
 ### Linux / macOS
 

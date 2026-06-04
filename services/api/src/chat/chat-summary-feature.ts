@@ -8,7 +8,7 @@ import type { ProviderProfileService } from "../providers/provider-profile-servi
 // ChatSummary Feature — wraps ChatSummaryService as a FeatureModule
 // ────────────────────────────────────────────────────────────────────────────
 // Subscribes to "message.appended" events and triggers auto-summary.
-// This replaces the direct wiring in prod-server/standalone-server.
+// This replaces direct summary wiring in the shared server runtime.
 // ────────────────────────────────────────────────────────────────────────────
 
 export function createChatSummaryFeature(deps: {
