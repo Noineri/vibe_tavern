@@ -1,4 +1,4 @@
-import { brandId } from "@vibe-tavern/domain";
+import { brandId, EventBus } from "@vibe-tavern/domain";
 import type { ChatId, MessageId } from "@vibe-tavern/domain";
 import type { ChatRuntime } from "../session/session-runtime-chat.js";
 import type { SessionSnapshot } from "../session/session-runtime.js";
@@ -21,7 +21,7 @@ export class LiveChatOrchestrator {
   constructor(
     private readonly chatRuntime: ChatRuntime,
     private readonly providers: ProviderOrchestrator,
-    private readonly hooks: { onAssistantAppended?: (chatId: string) => void | Promise<void> } = {},
+    private readonly events: EventBus,
   ) {}
 
   // ─── Non-streaming methods ────────────────────────────────────────────
@@ -356,13 +356,7 @@ export class LiveChatOrchestrator {
    * Discards the pending prompt trace on failure.
    */
   private notifyAssistantAppended(chatId: string): void {
-    if (!this.hooks.onAssistantAppended) return;
-    void Promise.resolve(this.hooks.onAssistantAppended(chatId)).catch((err) => {
-      logSendDebug("live.assistantAppendedHook.error", {
-        chatId,
-        message: err instanceof Error ? err.message : String(err),
-      });
-    });
+    this.events.emit("message.appended", { chatId, messageId: "", role: "assistant" });
   }
 
   private async startStream(
