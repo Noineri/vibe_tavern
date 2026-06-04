@@ -97,7 +97,7 @@ Vibe Tavern — это локальное веб-приложение напис
 
 #### Вариант 2:
 
-Скачай из [Releases](https://github.com/Noineri/vibe_tavern/releases) zip архив, распакуй и запусти файл `Start RP Platform.bat`
+Скачай из [Releases](https://github.com/Noineri/vibe_tavern/releases) zip архив, распакуй и запусти файл `Start Vibe Tavern.bat`
 
 ### Linux / macOS
 
