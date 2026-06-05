@@ -296,6 +296,12 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
     instructions: context.instructions ? {
       toolInstructions: context.instructions.toolInstructions != null ? applyMacros(context.instructions.toolInstructions, variableContext) : context.instructions.toolInstructions,
     } : context.instructions,
+    aiAssistant: context.aiAssistant ? {
+      ...context.aiAssistant,
+      systemPrompt: applyMacros(context.aiAssistant.systemPrompt, variableContext),
+      instruction: applyMacros(context.aiAssistant.instruction, variableContext),
+      existingContent: context.aiAssistant.existingContent != null ? applyMacros(context.aiAssistant.existingContent, variableContext) : context.aiAssistant.existingContent,
+    } : context.aiAssistant,
   };
 }
 
@@ -1034,6 +1040,23 @@ function assembleAiAssistant(context: PromptAssemblyContext): PromptAssemblyResu
       priority: PROMPT_LAYER_PRIORITY.aiAssistantExisting,
       text: ai.existingContent,
     }));
+  }
+
+  // 5b. Chat history — for chat_impersonate mode
+  if (ai.mode === "chat_impersonate" && context.chat?.recentMessages?.length) {
+    const historyText = context.chat.recentMessages
+      .map((msg) => `[${msg.role}]: ${msg.content}`)
+      .join("\n\n");
+    if (historyText.trim()) {
+      layers.push(makeLayer({
+        id: PROMPT_LAYER_ID.aiAssistantChatHistory,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.chatHistory,
+        sourceId: "chat_history",
+        sourceName: "Chat History",
+        priority: PROMPT_LAYER_PRIORITY.aiAssistantExisting - 5,
+        text: historyText,
+      }));
+    }
   }
 
   // 6. User instruction — always on

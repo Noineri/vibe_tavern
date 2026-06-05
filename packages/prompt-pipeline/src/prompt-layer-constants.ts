@@ -100,6 +100,7 @@ export const PROMPT_LAYER_ID = {
   aiAssistantSystem: "ai_assistant_system",
   aiAssistantContext: "ai_assistant_context",
   aiAssistantExisting: "ai_assistant_existing",
+  aiAssistantChatHistory: "ai_assistant_chat_history",
   aiAssistantInstruction: "ai_assistant_instruction",
 } as const;
 
