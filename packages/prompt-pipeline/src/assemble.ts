@@ -664,6 +664,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   }
 
   let recentMessagesForHistory = context.chat.recentMessages;
+  let compactionSummary: string | undefined;
 
   /*
    * --- Compaction ---
@@ -711,23 +712,13 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         recentMessagesForHistory = context.chat.recentMessages.slice(keepFrom);
         const preservedTokens = estimateTokens(formatRecentMessages(recentMessagesForHistory));
         const droppedCount = context.chat.recentMessages.length - recentMessagesForHistory.length;
-        layers.push(
-          makeLayer({
-            id: PROMPT_LAYER_ID.preflightCompaction,
-            sourceType: PROMPT_LAYER_SOURCE_TYPE.compaction,
-            sourceId: PROMPT_LAYER_SOURCE_ID.preflight,
-            sourceName: "Compaction",
-            priority: PROMPT_LAYER_PRIORITY.preflightCompaction,
-            reason: PROMPT_LAYER_REASON.preflightCompaction(droppedCount),
-            text:
-              `[Preflight compaction] Kept ${recentMessagesForHistory.length} of ` +
-              `${context.chat.recentMessages.length} recent messages ` +
-              `(~${preservedTokens} tokens after compaction, ` +
-              `${totalBeforeCompaction} tokens before, ` +
-              `budget ${context.config.contextBudget}, ` +
-              `responseReserve ${responseReserve}).`,
-          }),
-        );
+        compactionSummary =
+          `Kept ${recentMessagesForHistory.length} of ` +
+          `${context.chat.recentMessages.length} recent messages ` +
+          `(~${preservedTokens} tokens after compaction, ` +
+          `${totalBeforeCompaction} tokens before, ` +
+          `budget ${context.config.contextBudget}, ` +
+          `responseReserve ${responseReserve}).`;
       }
     }
   }
@@ -870,7 +861,9 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   }
 
   const nonHiddenLayers = orderedLayers.filter(
-    (layer) => layer.position !== "hidden_system" && layer.sourceType !== PROMPT_LAYER_SOURCE_TYPE.chatHistory,
+    (layer) =>
+      layer.position !== "hidden_system" &&
+      layer.sourceType !== PROMPT_LAYER_SOURCE_TYPE.chatHistory,
   );
 
   const beforePrompt = nonHiddenLayers.filter((l) => l.position === "before_prompt");
@@ -950,5 +943,6 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     droppedLayers,
     finalPayload: { messages },
     prefill: (context.preset?.prefill && promptOrderEnabled(context, "assistantPrefill")) ? context.preset.prefill : null,
+    compactionSummary: compactionSummary ?? null,
   };
 }

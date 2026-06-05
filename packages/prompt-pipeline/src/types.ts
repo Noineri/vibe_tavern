@@ -180,4 +180,6 @@ export interface PromptAssemblyResult {
   finalPayload: Record<string, unknown>;
   /** Assistant prefill text, passed through from preset for executor use. */
   prefill?: string | null;
+  /** Human-readable compaction summary for the trace UI. Not sent to the model. */
+  compactionSummary?: string | null;
 }

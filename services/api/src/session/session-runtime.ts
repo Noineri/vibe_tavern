@@ -251,6 +251,7 @@ export interface ImportResult {
 				retrievedMemories: assembled.promptTraceDraft.retrievedMemories,
 				finalPayload: assembled.promptTraceDraft.finalPayload,
 				prefill: assembled.promptTraceDraft.prefill,
+				compactionSummary: assembled.promptTraceDraft.compactionSummary,
 			};
 		} catch {
 			return null;

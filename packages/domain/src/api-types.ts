@@ -34,6 +34,8 @@ export interface AssemblePromptResponse {
   retrievedMemories: Array<Record<string, unknown>>;
   finalPayload: Record<string, unknown>;
   prefill?: string | null;
+  /** Human-readable compaction summary shown as a warning badge in the trace UI. Not sent to the model. */
+  compactionSummary?: string | null;
 }
 
 export interface PromptTraceRecordDto extends AssemblePromptResponse {

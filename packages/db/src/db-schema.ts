@@ -367,6 +367,7 @@ export const promptTraces = sqliteTable('prompt_traces', {
   retrievedMemoriesJson: text('retrieved_memories_json').notNull().default('[]'),
   scriptInjectionsJson: text('script_injections_json').notNull().default('[]'),
   prefill: text('prefill'),
+  compactionSummary: text('compaction_summary'),
   latencyMs: integer('latency_ms').notNull(),
   createdAt: text('created_at').notNull(),
 }, (table) => ({

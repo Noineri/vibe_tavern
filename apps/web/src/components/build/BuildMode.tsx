@@ -428,6 +428,14 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
               {promptTraceCount > 0 && t("trace_recorded_count").replace("{n}", String(promptTraceCount))}
             </span>
           )}
+          {trace?.compactionSummary && (
+            <div
+              className="mt-1.5 rounded-[6px] border border-warning/50 bg-warning-dim px-2.5 py-1.5 font-body text-xs text-warning-text"
+            >
+              <strong>{t("trace_compaction_label")}</strong>{" "}
+              <span className="whitespace-pre-wrap">{trace.compactionSummary}</span>
+            </div>
+          )}
           {trace?.prefill && (
             <div
               className="mt-1.5 rounded-[6px] border border-border2 bg-s2 px-2.5 py-1.5 font-body text-xs"

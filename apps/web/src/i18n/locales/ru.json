@@ -126,6 +126,7 @@
   "trace_no_active": "Нет активной трассировки.",
   "trace_recorded_count": "Записано: {n} трассировок",
   "trace_prefill_label": "Префилл:",
+  "trace_compaction_label": "Компакция контекста:",
   "trace_showing": "Трассировка {n}",
   "trace_turn": "Ход {n}",
   "trace_prev": "Пред",
