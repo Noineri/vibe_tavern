@@ -34,7 +34,7 @@ export class AssetService {
     return { assetId, url: `/api/assets/${assetId}` };
   }
 
-  async serve(assetId: string): Promise<{ body: Uint8Array; contentType: string } | null> {
+  async serve(assetId: string): Promise<Response | null> {
     // Prevent path traversal
     if (assetId.includes("/") || assetId.includes("\\") || assetId.includes("..")) {
       return null;
@@ -44,7 +44,12 @@ export class AssetService {
       try {
         const bunFile = Bun.file(filePath);
         if (await bunFile.exists()) {
-          return { body: new Uint8Array(await bunFile.arrayBuffer()), contentType: EXT_TO_MIME[ext] };
+          return new Response(bunFile, {
+            headers: {
+              "Content-Type": EXT_TO_MIME[ext],
+              "Cache-Control": "public, max-age=31536000",
+            },
+          });
         }
       } catch {
         // try next extension

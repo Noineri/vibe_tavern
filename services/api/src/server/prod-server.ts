@@ -216,6 +216,7 @@ await mkdir(resolve(dataDir, "assets"), { recursive: true });
 		hostname: host,
 		idleTimeout: 255,
 		...tlsOptions,
+		...(Bun.env.RP_PLATFORM_HTTP2 === "1" ? { http2: true } : {}),
 	});
 
 	const proto = tlsConfig ? "https" : "http";

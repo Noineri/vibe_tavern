@@ -137,6 +137,7 @@ async function main() {
 			entrypoints: [entrypoint],
 			target: "bun",
 			minify: true,
+			bytecode: true,
 			compile: {
 				outfile,
 				windows: {
