@@ -2,6 +2,9 @@ services:
   vibe_tavern:
     container_name: vibe_tavern
     image: ghcr.io/noineri/vibe_tavern:latest
+    # For mobile access from another device, uncomment and set your host IP:
+    # environment:
+      # VIBE_TAVERN_EXTERNAL_HOST: 192.168.1.66
     ports:
       - "8787:8787"
     volumes:
