@@ -722,7 +722,6 @@
   "lore_entry_ai_prompt_hint": "Current entry content will be sent as edit context. The assistant returns content only.",
   "lore_entry_ai_generated": "Generated entry content",
   "lore_entry_ai_changes": "Changes preview",
-  "lore_entry_ai_diff_too_large": "The lore entry is large, so the inline diff preview is hidden. Review the generated content if needed, then replace the current entry content.",
   "lore_entry_ai_no_changes": "No changes detected.",
   "lore_logic_label": "Logic",
   "lore_position_label": "Position",
