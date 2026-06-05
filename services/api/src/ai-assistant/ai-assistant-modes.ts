@@ -61,7 +61,7 @@ const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
     mode: "chat_impersonate",
     presetKey: "chat_impersonate",
     defaultPromptFile: "chat-impersonate-ai-prompt.md",
-    stripReasoning: false,
+    stripReasoning: true,
     outputFormat: "text",
     jsonSchemaHint: null,
   },

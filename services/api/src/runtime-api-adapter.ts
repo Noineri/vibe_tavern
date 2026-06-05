@@ -675,6 +675,13 @@ export class RuntimeApiAdapter {
 					}));
 			},
 			logDebug: logSendDebug,
+			getChatMessages: async (chatId: string, count: number) => {
+				const chat = await this.stores.chats.getById(chatId);
+				if (!chat) return [];
+				const allMessages = await this.stores.chats.getMessages(chat.activeBranchId);
+				const sliced = allMessages.slice(-count);
+				return sliced.map((m) => ({ id: m.id, role: m.role, content: m.content }));
+			},
 		};
 	}
 
