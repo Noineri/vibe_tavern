@@ -23,7 +23,7 @@
  */
 
 import { join, resolve } from "node:path";
-import { copyFile, cp, rm, mkdir, stat } from "node:fs/promises";
+import { copyFile, cp, rm, mkdir } from "node:fs/promises";
 
 const ROOT = resolve(import.meta.dir, "..");
 const STANDALONE_OUT = join(ROOT, "out", "standalone");
@@ -31,7 +31,7 @@ const WEB_SOURCE = join(ROOT, "out", "apps", "web");
 const WEB_TARGET = join(STANDALONE_OUT, "web");
 
 function exists(path: string): Promise<boolean> {
-	return stat(path).then(() => true, () => false);
+	return Bun.file(path).exists();
 }
 
 async function step(label: string, fn: () => Promise<void>) {
