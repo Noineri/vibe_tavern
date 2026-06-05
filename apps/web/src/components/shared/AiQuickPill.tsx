@@ -7,7 +7,7 @@
  * Gear opens AiQuickSettingsModal (provider/model + mode-specific options).
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { fetchProviderModelsAction } from "../../stores/api-actions/provider-actions.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
@@ -75,16 +75,14 @@ function AiQuickSettingsModal({
 
   const selectedProfile = providerProfiles.find((p) => p.id === providerId);
 
-  // Bootstrap persisted provider/model on first open
+  // Sync from controlled settings when opening; fall back to persisted uiSettings.
   useEffect(() => {
     if (!open) return;
-    if (!providerId && bootstrapUiSettings?.aiAssistantProviderId) {
-      setProviderId(bootstrapUiSettings.aiAssistantProviderId);
-    }
-    if (!modelName && bootstrapUiSettings?.aiAssistantModelName) {
-      setModelName(bootstrapUiSettings.aiAssistantModelName);
-    }
-  }, [open, providerId, modelName, bootstrapUiSettings]);
+    setProviderId(settings.providerId || bootstrapUiSettings?.aiAssistantProviderId || "");
+    setModelName(settings.modelName || bootstrapUiSettings?.aiAssistantModelName || "");
+    setAppendMode(settings.appendMode ?? false);
+    setRecentMessageCount(settings.recentMessageCount ?? 20);
+  }, [open, settings.providerId, settings.modelName, settings.appendMode, settings.recentMessageCount, bootstrapUiSettings]);
 
   useEffect(() => {
     if (!providerId) { setProviderModels([]); return; }

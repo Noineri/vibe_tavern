@@ -13,6 +13,7 @@
  *   - onDeleted (коллбэк после успешного удаления)
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { fetchProviderModelsAction } from "../../../stores/api-actions/provider-actions.js";
@@ -1207,15 +1208,21 @@ function LoreKeysAiPill({
   }, [settings.providerId, bootstrapUiSettings]);
 
   const handleGenerate = async () => {
-    if (!settings.providerId || !entry.content.trim()) return;
+    const providerId = settings.providerId || bootstrapUiSettings?.aiAssistantProviderId || "";
+    const modelName = settings.modelName || bootstrapUiSettings?.aiAssistantModelName || "";
+    if (!entry.content.trim()) return;
+    if (!providerId) {
+      toast.error("Select an AI provider in the gear settings first.");
+      return;
+    }
     setLoading(true);
     try {
       const request: AiAssistantRequestBody = {
         mode: "lore_keys",
         instruction: "",
         existingContent: entry.content,
-        providerProfileId: settings.providerId,
-        model: settings.modelName || undefined,
+        providerProfileId: providerId,
+        model: modelName || undefined,
         enabledLayers: [],
         existingKeys: entry.keys,
         existingSecondaryKeys: entry.secondaryKeys,
@@ -1224,7 +1231,7 @@ function LoreKeysAiPill({
       let raw = "";
       for await (const chunk of streamAiAssistant(request)) {
         if (chunk.type === "text" && chunk.text) raw += chunk.text;
-        if (chunk.type === "error" && chunk.error) { setLoading(false); return; }
+        if (chunk.type === "error" && chunk.error) throw new Error(chunk.error);
         if (chunk.type === "done") break;
       }
       // Parse JSON response
@@ -1239,8 +1246,8 @@ function LoreKeysAiPill({
         if (parsed.keys?.length) updateAct("keys", parsed.keys);
         if (parsed.secondaryKeys?.length) updateAct("secondaryKeys", parsed.secondaryKeys);
       }
-    } catch {
-      // Silent fail for lore_keys
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Key generation failed");
     } finally {
       setLoading(false);
     }
