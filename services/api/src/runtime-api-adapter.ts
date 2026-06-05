@@ -594,15 +594,32 @@ export class RuntimeApiAdapter {
 
 		// Read system prompt from active prompt preset, fallback to default
 		let systemPrompt = await getDefaultScriptAiPrompt();
+		let promptSource = "default_md" as "default_md" | "preset_override" | "preset_empty" | "no_active_preset";
 		try {
 			const settings = await this.stores.uiSettings.get();
 			if (settings?.activePromptPresetId) {
 				const preset = await this.stores.presets.getById(settings.activePromptPresetId);
 				if (preset?.scriptAiSystemPrompt?.trim()) {
 					systemPrompt = preset.scriptAiSystemPrompt;
+					promptSource = "preset_override";
+				} else {
+					promptSource = preset ? "preset_empty" : "no_active_preset";
 				}
+			} else {
+				promptSource = "no_active_preset";
 			}
-		} catch { /* fallback to default */ }
+		} catch (err) {
+			promptSource = "no_active_preset";
+			logSendDebug("api.script-ai.prompt-resolution-error", { error: String(err) });
+		}
+
+		logSendDebug("api.script-ai.prompt-resolved", {
+			source: promptSource,
+			systemPromptLength: systemPrompt.length,
+			systemPromptPreview: systemPrompt.slice(0, 120),
+			model: modelName,
+			providerProfileId: body.providerProfileId,
+		});
 
 		yield* streamScriptCode(body, aiModel, systemPrompt);
 	};
