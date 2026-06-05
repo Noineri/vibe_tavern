@@ -365,6 +365,7 @@ export interface PromptTrace {
   finalPayload: Record<string, unknown>;
   latencyMs: number;
   prefill?: string | null;
+  compactionSummary?: string | null;
   createdAt: Timestamp;
 }
 

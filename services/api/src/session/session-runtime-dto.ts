@@ -76,6 +76,7 @@ export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto
     retrievedMemories: (trace.retrievedMemories ?? []) as Array<Record<string, unknown>>,
     finalPayload: trace.finalPayload,
     prefill: trace.prefill ?? null,
+    compactionSummary: trace.compactionSummary ?? null,
   };
 }
 

@@ -138,6 +138,7 @@ export class ChatRuntime {
         scriptInjections: pending.draft.scriptInjections ?? [],
         latencyMs,
         prefill: pending.draft.prefill,
+        compactionSummary: pending.draft.compactionSummary,
       });
     }
 
@@ -192,6 +193,7 @@ export class ChatRuntime {
         scriptInjections: pending.draft.scriptInjections ?? [],
         latencyMs: input.latencyMs,
         prefill: pending.draft.prefill,
+        compactionSummary: pending.draft.compactionSummary,
       });
     }
     return await getSnapshot(chatId);

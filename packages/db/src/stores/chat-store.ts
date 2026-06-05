@@ -94,6 +94,7 @@ export interface PromptTrace {
   latencyMs: number;
   createdAt: string;
   prefill?: string | null;
+  compactionSummary?: string | null;
 }
 
 // ─── Input types ──────────────────────────────────────────────────────────────
@@ -112,6 +113,7 @@ export interface SaveTraceData {
   scriptInjections: Array<Record<string, unknown>>;
   latencyMs: number;
   prefill?: string | null;
+  compactionSummary?: string | null;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -1003,6 +1005,7 @@ export class ChatStore {
         retrievedMemoriesJson: JSON.stringify(data.retrievedMemories),
         scriptInjectionsJson: JSON.stringify(data.scriptInjections),
         prefill: data.prefill ?? null,
+        compactionSummary: data.compactionSummary ?? null,
         latencyMs: data.latencyMs,
         createdAt: now,
       })
@@ -1139,6 +1142,7 @@ export class ChatStore {
       scriptInjections: JSON.parse(row.scriptInjectionsJson),
       latencyMs: row.latencyMs,
       prefill: row.prefill ?? null,
+      compactionSummary: row.compactionSummary ?? null,
       createdAt: row.createdAt,
     };
   }

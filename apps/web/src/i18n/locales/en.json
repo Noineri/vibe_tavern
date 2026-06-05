@@ -126,6 +126,7 @@
   "trace_no_active": "No active trace.",
   "trace_recorded_count": "Recorded: {n} traces",
   "trace_prefill_label": "Prefill:",
+  "trace_compaction_label": "Context Compaction:",
   "trace_showing": "Showing trace {n}",
   "trace_turn": "Turn {n}",
   "trace_prev": "Prev",

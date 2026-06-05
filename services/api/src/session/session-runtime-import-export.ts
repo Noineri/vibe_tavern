@@ -157,6 +157,7 @@ export async function exportPromptTrace(
 		scriptInjections: trace.scriptInjections as import("@vibe-tavern/domain").PromptTraceRecordDto["scriptInjections"],
 		retrievedMemories: trace.retrievedMemories as Array<Record<string, unknown>>,
 		finalPayload: trace.finalPayload,
+		compactionSummary: trace.compactionSummary ?? null,
 	};
 }
 

@@ -344,6 +344,7 @@ export class PromptAssemblyService {
         finalPayload: result.finalPayload,
         latencyMs: 0,
         prefill: result.prefill,
+        compactionSummary: result.compactionSummary,
       },
     };
   }
