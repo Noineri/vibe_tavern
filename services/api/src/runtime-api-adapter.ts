@@ -404,6 +404,8 @@ export class RuntimeApiAdapter {
 
 	// ─── Lorebook CRUD (wired to store) ────────────────────────────────────
 
+	listAllLorebooks = () => this.stores.lorebooks.listAllLorebooks();
+
 	listLorebooks = (scopeType: string, ownerId?: string) =>
 		this.stores.lorebooks.listLorebooksByScope(scopeType, ownerId);
 

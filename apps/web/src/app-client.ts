@@ -979,6 +979,12 @@ export async function importLorebookEntries(lorebookId: string, body: { format: 
 
 // ── Lorebook-level CRUD ─────────────────────────────────────────────
 
+export async function listAllLorebooks(): Promise<LorebookRecord[]> {
+  const response = await fetch(appendTokenQuery(`${getGatewayBaseUrl()}/api/lorebooks/all`));
+  if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+  return response.json() as Promise<LorebookRecord[]>;
+}
+
 export async function listLorebooks(scopeType: string, ownerId?: string): Promise<LorebookRecord[]> {
   const response = await client.api.lorebooks.$get({ query: { scopeType, ownerId } });
   return unwrapRpc<LorebookRecord[]>(response);

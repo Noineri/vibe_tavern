@@ -23,7 +23,7 @@ import {
   deleteScript,
   testScript,
   importScript,
-  listLorebooks,
+  listAllLorebooks,
   countAiAssistantTokens,
   streamAiAssistant,
   updateUiSettings,
@@ -248,8 +248,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   }, [scope, scopeId]);
 
   const refreshAiLorebooks = useCallback(async () => {
-    setAiLorebooks(await listLorebooks(scope, scopeId));
-  }, [scope, scopeId]);
+    setAiLorebooks(await listAllLorebooks());
+  }, []);
 
   useEffect(() => { void refreshScripts(); }, [refreshScripts]);
   useEffect(() => { if (aiHelperOpen) void refreshAiLorebooks(); }, [aiHelperOpen, refreshAiLorebooks]);

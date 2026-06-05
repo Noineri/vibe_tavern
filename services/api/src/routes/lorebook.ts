@@ -5,6 +5,9 @@ import * as schemas from "@vibe-tavern/api-contracts";
 
 export function createLorebookRoutes(runtime: RuntimeApi) {
   return new Hono()
+    .get("/api/lorebooks/all", async (c) => {
+      return c.json(await runtime.listAllLorebooks());
+    })
     .get("/api/lorebooks", async (c) => {
       const scopeType = c.req.query("scopeType") ?? "character";
       const ownerId = c.req.query("ownerId") ?? undefined;
