@@ -884,6 +884,7 @@
   "script_ai_context": "Контекст",
   "script_ai_context_character": "Персонаж",
   "script_ai_context_persona": "Персона",
+  "script_ai_context_lorebooks": "Лорбуки",
   "script_ai_context_hint": "Включённые элементы будут учтены при генерации.",
   "script_ai_context_empty": "Нет доступных привязок контекста.",
   "script_ai_generate": "Генерировать",

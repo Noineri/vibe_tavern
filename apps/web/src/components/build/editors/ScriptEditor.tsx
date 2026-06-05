@@ -22,8 +22,10 @@ import {
   deleteScript,
   testScript,
   importScript,
+  listLorebooks,
   streamAiAssistant,
   updateUiSettings,
+  type LorebookRecord,
   type ScriptRecord,
 } from "../../../app-client.js";
 
@@ -188,6 +190,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiIncludeCharacter, setAiIncludeCharacter] = useState(true);
   const [aiIncludePersona, setAiIncludePersona] = useState(true);
+  const [aiLorebookIds, setAiLorebookIds] = useState<string[]>([]);
   const [aiStreaming, setAiStreaming] = useState(false);
   const [aiStreamedCode, setAiStreamedCode] = useState("");
   const [aiStreamedReasoning, setAiStreamedReasoning] = useState("");
@@ -204,6 +207,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   })();
 
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
+  const [aiLorebooks, setAiLorebooks] = useState<LorebookRecord[]>([]);
   const providerProfiles = useProviderDataStore((s) => s.profiles);
   const bootstrapUiSettings = useBootstrapStore((s) => s.data?.uiSettings ?? null);
   const personas = useBootstrapStore((s) => s.personas) ?? [];
@@ -224,16 +228,27 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     name: activePersona?.id === personaId ? activePersona.name : allPersonaContext?.name ?? "Persona",
     avatarAssetId: activePersona?.id === personaId ? activePersona.avatarAssetId ?? null : allPersonaContext?.avatarAssetId ?? null,
   } : null;
+  const lorebookContextTargets: LinkTarget[] = aiLorebooks
+    .filter((lb) => lb.enabled)
+    .map((lb) => ({ id: lb.id, name: lb.name, avatarAssetId: null }));
+  const availableLorebookIds = new Set(lorebookContextTargets.map((lb) => lb.id));
+  const selectedLorebookIds = aiLorebookIds.filter((id) => availableLorebookIds.has(id));
   const aiContextLinks: LinkBindingRecord[] = [
     ...(aiIncludeCharacter ? [{ targetType: "character" as const, targetId: characterId }] : []),
     ...(aiIncludePersona && personaId ? [{ targetType: "persona" as const, targetId: personaId }] : []),
+    ...selectedLorebookIds.map((id) => ({ targetType: "lorebook" as const, targetId: id })),
   ];
 
   const refreshScripts = useCallback(async () => {
     setScripts(await listScripts(scope, scopeId));
   }, [scope, scopeId]);
 
+  const refreshAiLorebooks = useCallback(async () => {
+    setAiLorebooks(await listLorebooks(scope, scopeId));
+  }, [scope, scopeId]);
+
   useEffect(() => { void refreshScripts(); }, [refreshScripts]);
+  useEffect(() => { if (aiHelperOpen) void refreshAiLorebooks(); }, [aiHelperOpen, refreshAiLorebooks]);
 
   useEffect(() => {
     if (!bootstrapUiSettings || aiProviderId) return;
@@ -388,9 +403,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     const ac = new AbortController();
     aiAbortRef.current = ac;
     try {
+      const lorebookIds = selectedLorebookIds;
       const enabledLayers = [
         ...(aiIncludeCharacter ? ["character_base"] : []),
         ...(aiIncludePersona && personaId ? ["persona"] : []),
+        ...(lorebookIds.length > 0 ? ["lore"] : []),
       ];
       for await (const chunk of streamAiAssistant({
         mode: "script",
@@ -401,6 +418,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         enabledLayers,
         characterIds: aiIncludeCharacter && characterId ? [characterId] : [],
         personaIds: aiIncludePersona && personaId ? [personaId] : [],
+        lorebookIds,
       }, { signal: ac.signal })) {
         if (chunk.type === "reasoning" && chunk.text) {
           setAiStreamedReasoning(prev => prev + chunk.text);
@@ -519,9 +537,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                       links={aiContextLinks}
                       characters={[characterContextTarget]}
                       personas={personaContextTarget ? [personaContextTarget] : []}
+                      lorebooks={lorebookContextTargets}
                       onSetLinks={(links) => {
                         setAiIncludeCharacter(links.some((l) => l.targetType === "character" && l.targetId === characterId));
                         setAiIncludePersona(Boolean(personaId && links.some((l) => l.targetType === "persona" && l.targetId === personaId)));
+                        setAiLorebookIds(links.filter((l) => l.targetType === "lorebook").map((l) => l.targetId));
                       }}
                       t={t}
                       isMobile={isMobile}
@@ -529,6 +549,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                       emptyLabel={t("script_ai_context_empty")}
                       characterSectionLabel={t("script_ai_context_character")}
                       personaSectionLabel={t("script_ai_context_persona")}
+                      lorebookSectionLabel={t("script_ai_context_lorebooks")}
                     />
                     <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("script_ai_context_hint")}</div>
                   </div>

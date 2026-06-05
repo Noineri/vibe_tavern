@@ -653,12 +653,24 @@ export class RuntimeApiAdapter {
 			},
 			getLoreEntryById: async (id) => {
 				const entry = await this.stores.lorebooks.getEntry(id);
-				if (!entry) return null;
+				if (!entry || !entry.enabled) return null;
 				return {
 					id: entry.id,
 					title: entry.title,
 					content: entry.content,
 				};
+			},
+			getLoreEntriesByLorebookId: async (id) => {
+				const lorebook = await this.stores.lorebooks.getLorebook(id);
+				if (!lorebook?.enabled) return [];
+				const entries = await this.stores.lorebooks.listEntries(id);
+				return entries
+					.filter((entry) => entry.enabled)
+					.map((entry) => ({
+						id: entry.id,
+						title: entry.title,
+						content: entry.content,
+					}));
 			},
 			logDebug: logSendDebug,
 		});

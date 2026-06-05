@@ -887,6 +887,7 @@
   "script_ai_context": "Context",
   "script_ai_context_character": "Character",
   "script_ai_context_persona": "Persona",
+  "script_ai_context_lorebooks": "Lorebooks",
   "script_ai_context_hint": "Enabled items will be included when generating.",
   "script_ai_context_empty": "No context targets available.",
   "script_ai_generate": "Generate",

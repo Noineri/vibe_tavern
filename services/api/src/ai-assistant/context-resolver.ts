@@ -1,8 +1,8 @@
 /**
  * Context resolver for AI assistant requests.
  *
- * Resolves `characterIds[]`, `personaIds[]`, and `loreEntryIds[]` from the
- * request into structured data suitable for the prompt pipeline's
+ * Resolves `characterIds[]`, `personaIds[]`, `loreEntryIds[]`, and
+ * `lorebookIds[]` from the request into structured data suitable for the prompt pipeline's
  * `PromptAssemblyContext`.
  */
 
@@ -41,6 +41,7 @@ export interface ContextResolverDeps {
   getCharacterById(id: string): Promise<ContextCharacter | null>;
   getPersonaById(id: string): Promise<ContextPersona | null>;
   getLoreEntryById(id: string): Promise<ContextLoreEntry | null>;
+  getLoreEntriesByLorebookId?(id: string): Promise<ContextLoreEntry[]>;
 }
 
 // ─── Resolver ────────────────────────────────────────────────────────────────
@@ -51,15 +52,17 @@ export async function resolveContext(
     characterIds?: string[];
     personaIds?: string[];
     loreEntryIds?: string[];
+    lorebookIds?: string[];
   },
 ): Promise<ResolvedContext> {
-  const [characters, personas, lore] = await Promise.all([
+  const [characters, personas, directLore, lorebookLore] = await Promise.all([
     resolveArray(ids.characterIds, deps.getCharacterById),
     resolveArray(ids.personaIds, deps.getPersonaById),
     resolveArray(ids.loreEntryIds, deps.getLoreEntryById),
+    resolveLorebooks(ids.lorebookIds, deps.getLoreEntriesByLorebookId),
   ]);
 
-  return { characters, personas, lore };
+  return { characters, personas, lore: dedupeLore([...directLore, ...lorebookLore]) };
 }
 
 /**
@@ -110,4 +113,24 @@ async function resolveArray<T>(
   if (!ids || ids.length === 0) return [];
   const results = await Promise.all(ids.map(resolver));
   return results.filter((r): r is NonNullable<typeof r> => r !== null);
+}
+
+async function resolveLorebooks(
+  ids: string[] | undefined,
+  resolver: ((id: string) => Promise<ContextLoreEntry[]>) | undefined,
+): Promise<ContextLoreEntry[]> {
+  if (!ids || ids.length === 0 || !resolver) return [];
+  const results = await Promise.all(ids.map(resolver));
+  return results.flat();
+}
+
+function dedupeLore(entries: ContextLoreEntry[]): ContextLoreEntry[] {
+  const seen = new Set<string>();
+  const out: ContextLoreEntry[] = [];
+  for (const entry of entries) {
+    if (seen.has(entry.id)) continue;
+    seen.add(entry.id);
+    out.push(entry);
+  }
+  return out;
 }
