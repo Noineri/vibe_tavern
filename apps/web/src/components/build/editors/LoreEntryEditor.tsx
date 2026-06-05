@@ -12,7 +12,7 @@
  *   - updateAct (коллбэк для изменения полей → автосохранение)
  *   - onDeleted (коллбэк после успешного удаления)
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { fetchProviderModelsAction } from "../../../stores/api-actions/provider-actions.js";
@@ -27,6 +27,7 @@ import { ToggleChips } from "../../shared/ToggleChips.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
+import { buildLineDiff, TextDiffPreview } from "../../shared/TextDiffPreview.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { MessageReasoning } from "../../chat/MessageReasoning.js";
@@ -195,6 +196,13 @@ export function LoreEntryEditor({
     };
   }, [activeCharacter, activePersona, aiIncludeCharacter, aiIncludePersona, aiModelName, aiPrompt, aiProviderId, entry.content, selectedLorebookIds.join("\u0000")]);
 
+  const cleanedAiContent = useMemo(() => aiStreamedContent.trim(), [aiStreamedContent]);
+  const isAiEditMode = Boolean(entry.content.trim());
+  const aiDiffSummary = useMemo(
+    () => (!aiStreaming && aiStreamedContent && isAiEditMode ? buildLineDiff(entry.content, cleanedAiContent) : null),
+    [cleanedAiContent, entry.content, aiStreaming, aiStreamedContent, isAiEditMode],
+  );
+
   useEffect(() => {
     if (!aiHelperOpen) return;
     const request = buildLoreEntryAiRequest();
@@ -249,15 +257,13 @@ export function LoreEntryEditor({
   };
   const handleAiStop = () => { aiAbortRef.current?.abort(); setAiStreaming(false); };
   const handleAiInsert = () => {
-    const generated = aiStreamedContent.trim();
-    if (!generated) return;
-    updateAct("content", entry.content ? `${entry.content.trimEnd()}\n\n${generated}` : generated);
+    if (!cleanedAiContent) return;
+    updateAct("content", entry.content ? `${entry.content.trimEnd()}\n\n${cleanedAiContent}` : cleanedAiContent);
     resetAiHelper();
   };
   const handleAiReplace = () => {
-    const generated = aiStreamedContent.trim();
-    if (!generated) return;
-    updateAct("content", generated);
+    if (!cleanedAiContent) return;
+    updateAct("content", cleanedAiContent);
     resetAiHelper();
   };
 
@@ -1063,14 +1069,31 @@ export function LoreEntryEditor({
                       <MessageReasoning reasoning={aiStreamedReasoning} />
                     </div>
                   )}
-                  {aiStreamedContent && (
+                  {aiStreamedContent && (aiDiffSummary ? (
+                    <>
+                      <TextDiffPreview
+                        summary={aiDiffSummary}
+                        labels={{
+                          title: t("lore_entry_ai_changes"),
+                          tooLarge: t("lore_entry_ai_diff_too_large"),
+                          noChanges: t("lore_entry_ai_no_changes"),
+                        }}
+                      />
+                      {aiDiffSummary.tooLarge && (
+                        <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
+                          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("lore_entry_ai_generated")}</div>
+                          <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap font-mono text-[12px] leading-[1.5] text-t1">{cleanedAiContent}</pre>
+                        </div>
+                      )}
+                    </>
+                  ) : (
                     <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
                       <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("lore_entry_ai_generated")}</div>
                       <pre className="whitespace-pre-wrap font-mono text-[12px] leading-[1.5] text-t1">
                         {aiStreamedContent}{aiStreaming && <span className="animate-pulse text-accent">▌</span>}
                       </pre>
                     </div>
-                  )}
+                  ))}
                   {aiError && (
                     <div className="rounded-md border border-danger bg-danger-dim" style={{ padding: 10, marginBottom: 12 }}>
                       <div className="text-[11px] font-semibold uppercase text-danger-text">{t("script_ai_error")}</div>
