@@ -888,6 +888,7 @@
   "script_ai_context_character": "Character",
   "script_ai_context_persona": "Persona",
   "script_ai_context_hint": "Enabled items will be included when generating.",
+  "script_ai_context_empty": "No context targets available.",
   "script_ai_generate": "Generate",
   "script_ai_stop": "Stop",
   "script_ai_select_provider": "Select provider...",

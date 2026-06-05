@@ -19,6 +19,7 @@
 | `<CodeEditor>` | `<textarea>` for code | `CodeEditor.tsx` | CodeMirror 6 wrapper |
 | `<SaveBar>` | Custom save buttons | `SaveBar.tsx` | Sticky save bar with state |
 | `<TokenCounter>` | Custom token display | `TokenCounter.tsx` | "123 tokens" badge |
+| `<LinkBindingPopover>` | Custom avatar binding chips | `LinkBindingPopover.tsx` | Compact character/persona binding pills + popover |
 | `<MobileExpandTextarea>` | — | `MobileExpandTextarea.tsx` | Fullscreen editor overlay on mobile |
 | `<ConfirmCloseModal>` | Custom confirm | `confirm-close-modal.tsx` | "Discard changes?" dialog |
 | `<DestructiveConfirmModal>` | Custom confirm | `destructive-confirm-modal.tsx` | "Are you sure?" for delete actions |
@@ -176,6 +177,38 @@
 **Why not native `<select>`:** Native selects break in modals (z-index issues), can't be styled, can't have search, and render differently across browsers/OS.
 
 **When to use:** 6+ mutually exclusive options, model/provider selection, any dropdown that needs search.
+
+---
+
+## LinkBindingPopover
+
+**File:** `LinkBindingPopover.tsx`
+**Replaces:** Ad-hoc character/persona binding chips
+
+```tsx
+<LinkBindingPopover
+  links={[{ targetType: "character", targetId: characterId }]}
+  characters={[{ id: characterId, name: characterName, avatarAssetId }]}
+  personas={persona ? [{ id: persona.id, name: persona.name, avatarAssetId: persona.avatarAssetId }] : []}
+  onSetLinks={setLinks}
+  t={t}
+  isMobile={isMobile}
+/>
+```
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `links` | `{ targetType: "character" \| "persona"; targetId: string }[]` | Active bindings |
+| `characters` | `LinkTarget[]` | Available character targets |
+| `personas` | `LinkTarget[]` | Available persona targets |
+| `onSetLinks` | `(links) => void` | Called when a pill/chip toggles |
+| `t` | `(key: string) => string` | i18n resolver |
+| `isMobile` | `boolean` | Uses larger touch targets on mobile |
+| `tooltipLabel` | `string?` | Optional tooltip/aria label for the plus button |
+
+**Styling:** Matches the app's binding UI: active bindings are compact avatar pills (`h-[22px]`, `bg-s2`, `border-border`, `hover:border-danger`); the dashed `+` button opens a popover with selectable avatar chips.
+
+**When to use:** Any UI that binds content to characters/personas (lorebooks, AI assistant context, future scoped resources). Do not recreate these chips manually.
 
 ---
 

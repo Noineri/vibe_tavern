@@ -1,17 +1,16 @@
 /**
- * LorebookLinkPopover — pill-style multi-select for linking a lorebook
- * to multiple characters and/or personas.
+ * LinkBindingPopover — compact avatar pill multi-select for binding UI.
  *
- * Shows a compact row of avatar pills for current links.
- * Clicking "+" opens a popover with chip-style toggles.
+ * Shows active character/persona bindings as 22px avatar pills. Clicking a pill
+ * unlinks it; clicking the dashed "+" opens a small popover with available
+ * character/persona targets.
  */
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { cn } from "../../../lib/cn.js";
-import { CustomTooltip } from "../../shared/Tooltip.js";
-import type { LorebookLinkRecord } from "../../../app-client.js";
+import { cn } from "../../lib/cn.js";
+import { CustomTooltip } from "./Tooltip.js";
 
-// ── Types ──────────────────────────────────────────────────────────────
+export type LinkBindingTargetType = "character" | "persona";
 
 export interface LinkTarget {
   id: string;
@@ -19,27 +18,28 @@ export interface LinkTarget {
   avatarAssetId: string | null;
 }
 
-interface LorebookLinkPopoverProps {
-  /** Current links for this lorebook */
-  links: LorebookLinkRecord[];
-  /** All available characters */
-  characters: LinkTarget[];
-  /** All available personas */
-  personas: LinkTarget[];
-  /** Called when user changes the link set */
-  onSetLinks: (links: Array<{ targetType: "character" | "persona"; targetId: string }>) => void;
-  /** i18n */
-  t: (key: string) => string;
-  isMobile: boolean;
+export interface LinkBindingRecord {
+  targetType: LinkBindingTargetType;
+  targetId: string;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────
+interface LinkBindingPopoverProps {
+  links: LinkBindingRecord[];
+  characters: LinkTarget[];
+  personas: LinkTarget[];
+  onSetLinks: (links: LinkBindingRecord[]) => void;
+  t: (key: string) => string;
+  isMobile: boolean;
+  tooltipLabel?: string;
+  emptyLabel?: string;
+  characterSectionLabel?: string;
+  personaSectionLabel?: string;
+}
 
 function avatarUrl(assetId: string | null): string | undefined {
   return assetId ? `/api/assets/${assetId}` : undefined;
 }
 
-/** Small avatar circle used in both pills and chips */
 function AvatarDot({ target, size = 18 }: { target: LinkTarget; size?: number }) {
   return (
     <div
@@ -64,20 +64,21 @@ function AvatarDot({ target, size = 18 }: { target: LinkTarget; size?: number })
   );
 }
 
-// ── Component ──────────────────────────────────────────────────────────
-
-export function LorebookLinkPopover({
+export function LinkBindingPopover({
   links,
   characters,
   personas,
   onSetLinks,
   t,
   isMobile,
-}: LorebookLinkPopoverProps) {
+  tooltipLabel,
+  emptyLabel,
+  characterSectionLabel,
+  personaSectionLabel,
+}: LinkBindingPopoverProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
@@ -89,7 +90,6 @@ export function LorebookLinkPopover({
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  // Build lookup maps
   const charMap = new Map(characters.map((c) => [c.id, c]));
   const personaMap = new Map(personas.map((p) => [p.id, p]));
 
@@ -97,7 +97,7 @@ export function LorebookLinkPopover({
   const personaLinks = links.filter((l) => l.targetType === "persona");
 
   const toggle = useCallback(
-    (targetType: "character" | "persona", targetId: string) => {
+    (targetType: LinkBindingTargetType, targetId: string) => {
       const exists = links.some(
         (l) => l.targetType === targetType && l.targetId === targetId,
       );
@@ -118,9 +118,9 @@ export function LorebookLinkPopover({
     ? "h-7 text-[12px]"
     : "h-[22px] text-[11px]";
   const pillAvatarSize = isMobile ? 22 : 18;
+  const addLabel = tooltipLabel || t("lore_link_targets") || "Link to characters/personas";
 
-  // ── Inline pill (shown in the trigger row) ──
-  const pill = (target: LinkTarget, type: "character" | "persona") => (
+  const pill = (target: LinkTarget, type: LinkBindingTargetType) => (
     <div
       key={`${type}:${target.id}`}
       className={cn(
@@ -135,8 +135,7 @@ export function LorebookLinkPopover({
     </div>
   );
 
-  // ── Chip toggle (shown inside the popover) ──
-  const chip = (target: LinkTarget, type: "character" | "persona", active: boolean) => (
+  const chip = (target: LinkTarget, type: LinkBindingTargetType, active: boolean) => (
     <div
       key={`${type}:${target.id}`}
       className={cn(
@@ -163,7 +162,6 @@ export function LorebookLinkPopover({
 
   return (
     <div ref={containerRef} className="relative w-fit">
-      {/* Trigger: pills row + add button */}
       <div className="inline-flex items-center gap-1 flex-wrap">
         {charLinks.map((l) => {
           const c = charMap.get(l.targetId);
@@ -173,7 +171,7 @@ export function LorebookLinkPopover({
           const p = personaMap.get(l.targetId);
           return p ? pill(p, "persona") : null;
         })}
-        <CustomTooltip content={t("lore_link_targets") || "Link to characters/personas"}>
+        <CustomTooltip content={addLabel}>
           <button
             type="button"
             className={cn(
@@ -181,7 +179,7 @@ export function LorebookLinkPopover({
               isMobile ? "h-11 w-7" : "h-[22px] w-[22px]",
             )}
             onClick={() => setOpen((v) => !v)}
-            aria-label={t("lore_link_targets") || "Link to characters/personas"}
+            aria-label={addLabel}
           >
             <span
               className={cn(
@@ -195,45 +193,36 @@ export function LorebookLinkPopover({
         </CustomTooltip>
       </div>
 
-      {/* Popover with chips */}
       {open && (
         <div
           className="absolute left-0 z-[200] mt-2 min-w-[240px] max-w-[340px] rounded-lg border border-border bg-surface shadow-theme-lg"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Characters section */}
           {characters.length > 0 && (
             <div className="border-b border-border px-3 py-2.5">
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
-                {t("scope_char") || "Characters"}
+                {characterSectionLabel || t("scope_char") || "Characters"}
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {characters.map((c) => {
-                  const active = charLinks.some((l) => l.targetId === c.id);
-                  return chip(c, "character", active);
-                })}
+                {characters.map((c) => chip(c, "character", charLinks.some((l) => l.targetId === c.id)))}
               </div>
             </div>
           )}
 
-          {/* Personas section */}
           {personas.length > 0 && (
             <div className="px-3 py-2.5">
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
-                {t("scope_persona") || "Personas"}
+                {personaSectionLabel || t("scope_persona") || "Personas"}
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {personas.map((p) => {
-                  const active = personaLinks.some((l) => l.targetId === p.id);
-                  return chip(p, "persona", active);
-                })}
+                {personas.map((p) => chip(p, "persona", personaLinks.some((l) => l.targetId === p.id)))}
               </div>
             </div>
           )}
 
           {characters.length === 0 && personas.length === 0 && (
             <div className="px-3 py-4 text-center text-[12px] text-t3">
-              {t("lore_link_empty")}
+              {emptyLabel || t("lore_link_empty")}
             </div>
           )}
         </div>

@@ -42,7 +42,7 @@ import { useScriptPanel } from "./ScriptEditor.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { LorebookAccordion } from "./LorebookAccordion.js";
 import type { Scope } from "./LorebookAccordion.js";
-import type { LinkTarget } from "./LorebookLinkPopover.js";
+import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { LoreEntryEditor } from "./LoreEntryEditor.js";
 import { LorebookImportModal } from "./LorebookImportModal.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";

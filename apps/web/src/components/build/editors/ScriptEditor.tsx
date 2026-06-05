@@ -11,6 +11,7 @@ import { CodeEditor } from "../../shared/CodeEditor.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { SCRIPT_TEMPLATES } from "./scriptTemplates.js";
+import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { MessageReasoning } from "../../chat/MessageReasoning.js";
@@ -211,13 +212,22 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const allCharacters = useAllCharacters();
   const selectedProfile = providerProfiles.find(p => p.id === aiProviderId);
   const [providerModels, setProviderModels] = useState<Array<{ id: string; label?: string }>>([]);
-  const characterContextName = activeCharacter?.id === characterId
-    ? activeCharacter.name
-    : allCharacters.find(c => c.id === characterId)?.name ?? "Character";
-  const personaContextName = activePersona?.id === personaId
-    ? activePersona.name
-    : personas.find(p => p.id === personaId)?.name ?? "Persona";
-  const canIncludePersona = Boolean(personaId);
+  const allCharacterContext = allCharacters.find(c => c.id === characterId);
+  const allPersonaContext = personas.find(p => p.id === personaId);
+  const characterContextTarget: LinkTarget = {
+    id: characterId,
+    name: activeCharacter?.id === characterId ? activeCharacter.name : allCharacterContext?.name ?? "Character",
+    avatarAssetId: activeCharacter?.id === characterId ? activeCharacter.avatarAssetId ?? null : allCharacterContext?.avatarAssetId ?? null,
+  };
+  const personaContextTarget: LinkTarget | null = personaId ? {
+    id: personaId,
+    name: activePersona?.id === personaId ? activePersona.name : allPersonaContext?.name ?? "Persona",
+    avatarAssetId: activePersona?.id === personaId ? activePersona.avatarAssetId ?? null : allPersonaContext?.avatarAssetId ?? null,
+  } : null;
+  const aiContextLinks: LinkBindingRecord[] = [
+    ...(aiIncludeCharacter ? [{ targetType: "character" as const, targetId: characterId }] : []),
+    ...(aiIncludePersona && personaId ? [{ targetType: "persona" as const, targetId: personaId }] : []),
+  ];
 
   const refreshScripts = useCallback(async () => {
     setScripts(await listScripts(scope, scopeId));
@@ -505,30 +515,21 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                   </div>
                   <div style={{ marginBottom: 16 }}>
                     <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_context")}</label>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        className={cn(
-                          "flex h-7 items-center gap-1.5 rounded-full border px-3 font-ui text-[11px] transition-all",
-                          aiIncludeCharacter ? "border-accent bg-accent-dim text-accent-t" : "border-border bg-s3 text-t3 hover:text-t1",
-                        )}
-                        onClick={() => setAiIncludeCharacter(v => !v)}
-                      >
-                        <Ic.user /> {t("script_ai_context_character")}: {characterContextName}
-                      </button>
-                      {canIncludePersona && (
-                        <button
-                          type="button"
-                          className={cn(
-                            "flex h-7 items-center gap-1.5 rounded-full border px-3 font-ui text-[11px] transition-all",
-                            aiIncludePersona ? "border-accent bg-accent-dim text-accent-t" : "border-border bg-s3 text-t3 hover:text-t1",
-                          )}
-                          onClick={() => setAiIncludePersona(v => !v)}
-                        >
-                          <Ic.user /> {t("script_ai_context_persona")}: {personaContextName}
-                        </button>
-                      )}
-                    </div>
+                    <LinkBindingPopover
+                      links={aiContextLinks}
+                      characters={[characterContextTarget]}
+                      personas={personaContextTarget ? [personaContextTarget] : []}
+                      onSetLinks={(links) => {
+                        setAiIncludeCharacter(links.some((l) => l.targetType === "character" && l.targetId === characterId));
+                        setAiIncludePersona(Boolean(personaId && links.some((l) => l.targetType === "persona" && l.targetId === personaId)));
+                      }}
+                      t={t}
+                      isMobile={isMobile}
+                      tooltipLabel={t("script_ai_context")}
+                      emptyLabel={t("script_ai_context_empty")}
+                      characterSectionLabel={t("script_ai_context_character")}
+                      personaSectionLabel={t("script_ai_context_persona")}
+                    />
                     <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("script_ai_context_hint")}</div>
                   </div>
                   <div style={{ marginBottom: 16 }}>

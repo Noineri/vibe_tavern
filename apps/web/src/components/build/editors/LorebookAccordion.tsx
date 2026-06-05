@@ -22,7 +22,7 @@ import {
   type LorebookLinkRecord,
 } from "../../../app-client.js";
 import { LoreEntryList } from "./LoreEntryList.js";
-import { LorebookLinkPopover, type LinkTarget } from "./LorebookLinkPopover.js";
+import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -442,7 +442,7 @@ export function LorebookAccordion({
                 <label className="mb-1 block text-[11px] font-medium uppercase leading-tight tracking-[0.05em] text-t3/70">
                   {t("lore_link_targets")}
                 </label>
-                <LorebookLinkPopover
+                <LinkBindingPopover
                   links={links}
                   characters={characters}
                   personas={personas}
