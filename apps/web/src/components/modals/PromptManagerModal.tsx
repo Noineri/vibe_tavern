@@ -30,6 +30,7 @@ type DraftData = {
   nsfw: string;
   enhanceDefinitions: string;
   scriptAiSystemPrompt: string;
+  aiAssistantPrompts: Record<string, string>;
   customInjections: InjectionRow[];
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
@@ -69,6 +70,7 @@ interface PromptManagerModalProps {
 const emptyDraft: DraftData = {
   name: "", bindModel: "", system: "", jailbreak: "",
   prefill: "", authorsNote: "", authorsNoteDepth: 4, authorsNotePosition: "in_chat", summary: "", tools: "", nsfw: "", enhanceDefinitions: "", scriptAiSystemPrompt: "",
+  aiAssistantPrompts: {},
   customInjections: [],
   promptOrder: [],
   advancedMode: false,
@@ -80,6 +82,19 @@ function mergePromptOrder(current: PromptOrderEntry[], imported: PromptOrderEntr
     map.set(entry.identifier, { ...map.get(entry.identifier), ...entry });
   }
   return Array.from(map.values()).sort((a, b) => (a.order ?? 10_000) - (b.order ?? 10_000));
+}
+
+function parseAiAssistantPrompts(raw: string | undefined | null): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return Object.fromEntries(
+        Object.entries(parsed).filter(([, v]) => typeof v === "string"),
+      ) as Record<string, string>;
+    }
+  } catch { /* ignore */ }
+  return {};
 }
 
 export function PromptManagerModal(input: PromptManagerModalProps) {
@@ -113,6 +128,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         nsfw: activePreset.nsfw ?? "",
         enhanceDefinitions: activePreset.enhanceDefinitions ?? "",
         scriptAiSystemPrompt: activePreset.scriptAiSystemPrompt ?? "",
+        aiAssistantPrompts: parseAiAssistantPrompts(activePreset.aiAssistantPrompts),
         customInjections: (activePreset as PromptPresetDto).customInjections ?? [],
         promptOrder: activePreset.promptOrder ?? [],
         advancedMode: activePreset.advancedMode ?? false,
@@ -143,7 +159,11 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const handleSave = () => {
     if (!input.activePresetId || !dirty) return;
     setSaveState("saving");
-    void input.onUpdate(input.activePresetId, draft).then((ok) => {
+    const patch = {
+      ...draft,
+      aiAssistantPrompts: JSON.stringify(draft.aiAssistantPrompts),
+    };
+    void input.onUpdate(input.activePresetId, patch).then((ok) => {
       if (!ok) {
         setSaveState("error");
         return;

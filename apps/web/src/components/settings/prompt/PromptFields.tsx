@@ -44,11 +44,12 @@ type DraftData = {
   summary: string;
   tools: string;
   scriptAiSystemPrompt: string;
+  aiAssistantPrompts: Record<string, string>;
 };
 
 interface PromptFieldsProps {
   draft: DraftData | null;
-  onUpdateField: (key: keyof DraftData, value: string | number) => void;
+  onUpdateField: (key: keyof DraftData, value: string | number | Record<string, string>) => void;
   prefillSupported?: boolean;
   resetKey?: string | null;
   hideChatPrompts?: boolean;
@@ -58,7 +59,7 @@ const textareaCls = "w-full rounded-md border border-border bg-s2 font-ui text-[
 const labelCls = "mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3";
 const labelAccentCls = "mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-accent";
 
-type TextDraftKey = Exclude<keyof DraftData, "authorsNoteDepth" | "authorsNotePosition">;
+type TextDraftKey = Exclude<keyof DraftData, "authorsNoteDepth" | "authorsNotePosition" | "aiAssistantPrompts">;
 
 function findScrollParent(el: HTMLElement): HTMLElement | null {
   let parent = el.parentElement;
@@ -157,6 +158,14 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey,
   const { t } = useT();
   const disabled = !draft;
   const [serviceOpen, setServiceOpen] = useState(false);
+  const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
+
+  const aiAssistantModes = [
+    { key: "script", label: "Script AI" },
+    { key: "lore_entry", label: "Lore Entry" },
+    { key: "lore_keys", label: "Lore Keys" },
+    { key: "chat_impersonate", label: "Chat Impersonate" },
+  ] as const;
 
   const ta = useCallback((key: TextDraftKey, placeholder: string, minH = 100, labelKey?: string) => (
     <MobileExpandTextarea value={String(draft?.[key] ?? "")} onChange={(v) => onUpdateField(key, v)} label={labelKey ? t(labelKey) : undefined}>
@@ -254,6 +263,47 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey,
             <ServiceField label={t("script_ai_prompt_field")} description={t("script_ai_prompt_desc")} token={draft?.scriptAiSystemPrompt ?? ""}>
               {ta("scriptAiSystemPrompt", t("script_ai_prompt_placeholder"), 160)}
             </ServiceField>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-md border border-border2 bg-s1/40">
+        <button type="button"
+          className="flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-s2/70"
+          onClick={() => setAiAssistantOpen((v) => !v)}
+        >
+          <span className={cn("font-ui text-[13px] text-t4 transition-transform", aiAssistantOpen && "rotate-180")}>▾</span>
+          <span className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t4">AI Assistant Prompts</span>
+          <div className="h-px flex-1 bg-border" />
+        </button>
+        {aiAssistantOpen && (
+          <div className="flex flex-col gap-6 border-t border-border2 p-3 pt-4">
+            <div className="font-ui text-[calc(var(--ui-fs)-4px)] text-t4">Override default system prompts for each AI assistant mode. Leave empty to use the default.</div>
+            {aiAssistantModes.map(({ key, label }) => {
+              const value = draft?.aiAssistantPrompts?.[key] ?? "";
+              return (
+                <div key={key}>
+                  <div className="mb-[7px] flex items-center justify-between">
+                    <label className="mb-0 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{label}</label>
+                    <TokenCounter text={value} />
+                  </div>
+                  <AutoResizeTextarea
+                    fieldKey={key as TextDraftKey}
+                    value={value}
+                    placeholder={`(uses default ${label} prompt)`}
+                    minHeight={80}
+                    disabled={disabled}
+                    resetKey={resetKey}
+                    onChange={(v) => {
+                      const updated = { ...(draft?.aiAssistantPrompts ?? {}), [key]: v };
+                      // Remove empty entries
+                      if (!v.trim()) delete updated[key];
+                      onUpdateField("aiAssistantPrompts", updated);
+                    }}
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
