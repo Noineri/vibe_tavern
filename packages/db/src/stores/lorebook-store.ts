@@ -183,6 +183,15 @@ export class LorebookStore {
     return this.mapLorebookRow(row);
   }
 
+  async listAllLorebooks(): Promise<Lorebook[]> {
+    const rows = await this.db
+      .select()
+      .from(lorebooks)
+      .orderBy(asc(lorebooks.scopeType), asc(lorebooks.sortOrder), asc(lorebooks.name))
+      .all();
+    return rows.map((r) => this.mapLorebookRow(r));
+  }
+
   async listLorebooksByScope(scopeType: string, ownerId?: string): Promise<Lorebook[]> {
     if (scopeType === 'global') {
       const rows = await this.db
