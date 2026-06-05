@@ -50,6 +50,15 @@ function getPrimaryIPViaUDP(): Promise<string | null> {
 export async function getRecommendedIPs(): Promise<IPResult[]> {
   const results: IPResult[] = [];
 
+  // 0. Check VIBE_TAVERN_EXTERNAL_HOST env var
+  const rawExternal = process.env.VIBE_TAVERN_EXTERNAL_HOST;
+  if (rawExternal) {
+    const cleaned = rawExternal.trim().replace(/^https?:\/\//, "").replace(/:\d+$/, "").trim();
+    if (cleaned) {
+      results.push({ address: cleaned, type: "primary", interfaceName: "env-configured" });
+    }
+  }
+
   // 1. UDP socket trick
   const defaultIP = await getPrimaryIPViaUDP();
   if (defaultIP && isPrivateIP(defaultIP)) {
