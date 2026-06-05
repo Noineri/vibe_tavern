@@ -34,6 +34,19 @@ export interface PersonaRecord {
   avatarAssetId: string | null;
 }
 
+export interface UiSettingsRecord {
+  id: string;
+  theme: string;
+  chatFontSize: number;
+  uiFontSize: number;
+  messageWidth: number;
+  language: string;
+  activePromptPresetId: string | null;
+  aiAssistantProviderId: string | null;
+  aiAssistantModelName: string | null;
+  updatedAt: string;
+}
+
 export interface ChatSummaryRecord {
   id: string;
   chatId: string;
@@ -263,6 +276,7 @@ export async function bootstrapApp(): Promise<{
   isFirstRun: boolean;
   allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
   promptPresets: PromptPresetDto[];
+  uiSettings: UiSettingsRecord;
 }> {
   const baseUrl = getGatewayBaseUrl();
   const token = getMobileToken();
@@ -275,6 +289,7 @@ export async function bootstrapApp(): Promise<{
     isFirstRun?: boolean;
     allCharacters?: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
     promptPresets?: PromptPresetDto[];
+    uiSettings?: UiSettingsRecord;
   }>(response);
 
   return {
@@ -283,7 +298,29 @@ export async function bootstrapApp(): Promise<{
     isFirstRun: data.isFirstRun ?? false,
     allCharacters: data.allCharacters ?? [],
     promptPresets: data.promptPresets ?? [],
+    uiSettings: data.uiSettings ?? {
+      id: "default",
+      theme: "dark",
+      chatFontSize: 15,
+      uiFontSize: 14,
+      messageWidth: 700,
+      language: "en",
+      activePromptPresetId: null,
+      aiAssistantProviderId: null,
+      aiAssistantModelName: null,
+      updatedAt: "",
+    },
   };
+}
+
+export async function fetchUiSettings(): Promise<UiSettingsRecord> {
+  const response = await client.api.settings.ui.$get();
+  return unwrapRpc<UiSettingsRecord>(response);
+}
+
+export async function updateUiSettings(input: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName">>): Promise<UiSettingsRecord> {
+  const response = await client.api.settings.ui.$patch({ json: input });
+  return unwrapRpc<UiSettingsRecord>(response);
 }
 
 export async function fetchChat(chatId: ChatId): Promise<AppSnapshot> {

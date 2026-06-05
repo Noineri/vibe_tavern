@@ -196,6 +196,8 @@ CREATE TABLE ui_settings (
 	message_width integer DEFAULT 700 NOT NULL,
 	language text DEFAULT 'en' NOT NULL,
 	active_prompt_preset_id text,
+	ai_assistant_provider_id text,
+	ai_assistant_model_name text,
 	updated_at text NOT NULL,
 	FOREIGN KEY (active_prompt_preset_id) REFERENCES prompt_presets(id) ON UPDATE no action ON DELETE set null
 );

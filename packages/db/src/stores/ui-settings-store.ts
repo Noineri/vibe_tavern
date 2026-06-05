@@ -89,6 +89,8 @@ export class UiSettingsStore {
       messageWidth: partial.messageWidth ?? UI_SETTINGS_DEFAULTS.messageWidth,
       language: partial.language ?? UI_SETTINGS_DEFAULTS.language,
       activePromptPresetId: partial.activePromptPresetId ?? UI_SETTINGS_DEFAULTS.activePromptPresetId,
+      aiAssistantProviderId: partial.aiAssistantProviderId ?? UI_SETTINGS_DEFAULTS.aiAssistantProviderId,
+      aiAssistantModelName: partial.aiAssistantModelName ?? UI_SETTINGS_DEFAULTS.aiAssistantModelName,
       updatedAt: this.clock.now(),
     }).returning();
     return this.mapRow(row!);
@@ -108,6 +110,8 @@ export class UiSettingsStore {
       messageWidth: UI_SETTINGS_DEFAULTS.messageWidth,
       language: UI_SETTINGS_DEFAULTS.language,
       activePromptPresetId: UI_SETTINGS_DEFAULTS.activePromptPresetId,
+      aiAssistantProviderId: UI_SETTINGS_DEFAULTS.aiAssistantProviderId,
+      aiAssistantModelName: UI_SETTINGS_DEFAULTS.aiAssistantModelName,
       updatedAt: this.clock.now(),
     }).returning();
 

@@ -881,6 +881,10 @@
   "script_ai_model": "Модель",
   "script_ai_prompt": "Опишите, что должен делать скрипт...",
   "script_ai_prompt_hint": "Текущий код из редактора будет отправлен как контекст.",
+  "script_ai_context": "Контекст",
+  "script_ai_context_character": "Персонаж",
+  "script_ai_context_persona": "Персона",
+  "script_ai_context_hint": "Включённые элементы отправляются через prompt pipeline как контекст ассистента."
   "script_ai_generate": "Генерировать",
   "script_ai_stop": "Остановить",
   "script_ai_select_provider": "Выберите провайдер...",

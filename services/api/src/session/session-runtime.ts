@@ -1,4 +1,4 @@
-import { type PromptPreset, type StoreContainer } from "@vibe-tavern/db";
+import { type PromptPreset, type StoreContainer, type UiSettings } from "@vibe-tavern/db";
 import type { PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import {
 	type CharacterId,
@@ -75,6 +75,7 @@ export interface BootstrapState {
 	isFirstRun: boolean;
 	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null }>;
 	promptPresets: PromptPresetDto[];
+	uiSettings: UiSettings;
 }
 
 export interface ImportResult {
@@ -173,10 +174,11 @@ export interface ImportResult {
 
 	async getBootstrapState(): Promise<BootstrapState> {
 		const initialChatId = this.chatOrder.items[0] ?? null;
-		const [userChars, allChats, promptPresets] = await Promise.all([
+		const [userChars, allChats, promptPresets, uiSettings] = await Promise.all([
 			this.stores.characters.listAll(),
 			this.stores.chats.listAll(),
 			this.stores.presets.listAll(),
+			this.stores.uiSettings.get(),
 		]);
 		return {
 			initialChatId,
@@ -190,6 +192,7 @@ export interface ImportResult {
 				avatarFullAssetId: c.avatarFullAssetId,
 			})),
 			promptPresets: promptPresets.map((p) => this.mapPresetToDto(p)),
+			uiSettings,
 		};
 	}
 
