@@ -1,5 +1,5 @@
 import { bootstrapApp, fetchChat, listPersonas } from "../../app-client.js";
-import type { AppSnapshot, PersonaRecord } from "../../app-client.js";
+import type { AppSnapshot, PersonaRecord, UiSettingsRecord } from "../../app-client.js";
 import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
@@ -11,6 +11,7 @@ export interface BootstrapData {
   isFirstRun: boolean;
   allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
   promptPresets: PromptPresetDto[];
+  uiSettings: UiSettingsRecord;
 }
 
 export interface BootstrapState {

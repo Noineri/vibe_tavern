@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { fetchProviderModelsAction } from "../../../stores/api-actions/provider-actions.js";
+import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
+import { useActiveCharacter, useActivePersona, useAllCharacters } from "../../../stores/snapshot-store.js";
 import { Ic } from "../../shared/icons.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
@@ -20,6 +22,7 @@ import {
   testScript,
   importScript,
   streamAiAssistant,
+  updateUiSettings,
   type ScriptRecord,
 } from "../../../app-client.js";
 
@@ -182,6 +185,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const [aiProviderId, setAiProviderId] = useState("");
   const [aiModelName, setAiModelName] = useState("");
   const [aiPrompt, setAiPrompt] = useState("");
+  const [aiIncludeCharacter, setAiIncludeCharacter] = useState(true);
+  const [aiIncludePersona, setAiIncludePersona] = useState(true);
   const [aiStreaming, setAiStreaming] = useState(false);
   const [aiStreamedCode, setAiStreamedCode] = useState("");
   const [aiStreamedReasoning, setAiStreamedReasoning] = useState("");
@@ -199,14 +204,36 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
   const providerProfiles = useProviderDataStore((s) => s.profiles);
+  const bootstrapUiSettings = useBootstrapStore((s) => s.data?.uiSettings ?? null);
+  const personas = useBootstrapStore((s) => s.personas) ?? [];
+  const activeCharacter = useActiveCharacter();
+  const activePersona = useActivePersona();
+  const allCharacters = useAllCharacters();
   const selectedProfile = providerProfiles.find(p => p.id === aiProviderId);
   const [providerModels, setProviderModels] = useState<Array<{ id: string; label?: string }>>([]);
+  const characterContextName = activeCharacter?.id === characterId
+    ? activeCharacter.name
+    : allCharacters.find(c => c.id === characterId)?.name ?? "Character";
+  const personaContextName = activePersona?.id === personaId
+    ? activePersona.name
+    : personas.find(p => p.id === personaId)?.name ?? "Persona";
+  const canIncludePersona = Boolean(personaId);
 
   const refreshScripts = useCallback(async () => {
     setScripts(await listScripts(scope, scopeId));
   }, [scope, scopeId]);
 
   useEffect(() => { void refreshScripts(); }, [refreshScripts]);
+
+  useEffect(() => {
+    if (!bootstrapUiSettings || aiProviderId) return;
+    if (bootstrapUiSettings.aiAssistantProviderId) setAiProviderId(bootstrapUiSettings.aiAssistantProviderId);
+    if (bootstrapUiSettings.aiAssistantModelName) setAiModelName(bootstrapUiSettings.aiAssistantModelName);
+  }, [aiProviderId, bootstrapUiSettings]);
+
+  useEffect(() => {
+    if (!personaId) setAiIncludePersona(false);
+  }, [personaId]);
 
   useEffect(() => {
     if (!aiProviderId) { setProviderModels([]); return; }
@@ -326,8 +353,24 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     handleTestScript(activeScriptId, testInput);
   };
 
+  const persistAiModelSelection = (providerId: string, modelName: string | null) => {
+    void updateUiSettings({ aiAssistantProviderId: providerId || null, aiAssistantModelName: modelName || null }).catch(() => {});
+  };
+
+  const handleAiProviderChange = (id: string) => {
+    setAiProviderId(id);
+    setAiModelName("");
+    persistAiModelSelection(id, null);
+  };
+
+  const handleAiModelChange = (id: string) => {
+    setAiModelName(id);
+    persistAiModelSelection(aiProviderId, id || null);
+  };
+
   const handleAiGenerate = async () => {
     if (!aiProviderId || !aiPrompt) return;
+    persistAiModelSelection(aiProviderId, aiModelName || null);
     setAiStreaming(true);
     setAiError(null);
     setAiStreamedCode("");
@@ -335,7 +378,10 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     const ac = new AbortController();
     aiAbortRef.current = ac;
     try {
-      const enabledLayers = ["character_base", ...(personaId ? ["persona"] : [])];
+      const enabledLayers = [
+        ...(aiIncludeCharacter ? ["character_base"] : []),
+        ...(aiIncludePersona && personaId ? ["persona"] : []),
+      ];
       for await (const chunk of streamAiAssistant({
         mode: "script",
         instruction: aiPrompt,
@@ -343,8 +389,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         providerProfileId: aiProviderId,
         model: aiModelName || undefined,
         enabledLayers,
-        characterIds: characterId ? [characterId] : [],
-        personaIds: personaId ? [personaId] : [],
+        characterIds: aiIncludeCharacter && characterId ? [characterId] : [],
+        personaIds: aiIncludePersona && personaId ? [personaId] : [],
       }, { signal: ac.signal })) {
         if (chunk.type === "reasoning" && chunk.text) {
           setAiStreamedReasoning(prev => prev + chunk.text);
@@ -441,7 +487,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                         options={providerProfiles.map(p => ({ id: p.id, label: p.name }))}
                         placeholder={t("script_ai_select_provider")}
                         searchPlaceholder={t("script_ai_search_provider")}
-                        onChange={id => { setAiProviderId(id); setAiModelName(""); }}
+                        onChange={handleAiProviderChange}
                       />
                     </div>
                     <div>
@@ -452,10 +498,38 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                         placeholder={selectedProfile?.defaultModel || "Default"}
                         searchPlaceholder={t("script_ai_search_model")}
                         defaultOption={selectedProfile?.defaultModel || "Default"}
-                        onChange={id => setAiModelName(id)}
+                        onChange={handleAiModelChange}
                         disabled={!aiProviderId}
                       />
                     </div>
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_context")}</label>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className={cn(
+                          "flex h-7 items-center gap-1.5 rounded-full border px-3 font-ui text-[11px] transition-all",
+                          aiIncludeCharacter ? "border-accent bg-accent-dim text-accent-t" : "border-border bg-s3 text-t3 hover:text-t1",
+                        )}
+                        onClick={() => setAiIncludeCharacter(v => !v)}
+                      >
+                        <Ic.user /> {t("script_ai_context_character")}: {characterContextName}
+                      </button>
+                      {canIncludePersona && (
+                        <button
+                          type="button"
+                          className={cn(
+                            "flex h-7 items-center gap-1.5 rounded-full border px-3 font-ui text-[11px] transition-all",
+                            aiIncludePersona ? "border-accent bg-accent-dim text-accent-t" : "border-border bg-s3 text-t3 hover:text-t1",
+                          )}
+                          onClick={() => setAiIncludePersona(v => !v)}
+                        >
+                          <Ic.user /> {t("script_ai_context_persona")}: {personaContextName}
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("script_ai_context_hint")}</div>
                   </div>
                   <div style={{ marginBottom: 16 }}>
                     <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_prompt")}</label>

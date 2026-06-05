@@ -3,6 +3,15 @@ import type { RuntimeApi } from "./types.js";
 
 export function createSettingsRoutes(runtime: RuntimeApi) {
   return new Hono()
+    .get("/api/settings/ui", async (c) => {
+      const settings = await runtime.getUiSettings();
+      return c.json(settings);
+    })
+    .patch("/api/settings/ui", async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const settings = await runtime.updateUiSettings(body);
+      return c.json(settings);
+    })
     .get("/api/settings/mobile-access", async (c) => {
       const info = await runtime.getMobileAccessInfo();
       return c.json(info);
