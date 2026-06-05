@@ -56,6 +56,12 @@ export interface AiAssistantStreamRequest {
   /** Whole lorebooks to attach as context; backend expands enabled entries. */
   lorebookIds?: string[];
 
+  // Chat impersonate mode extras
+  /** Active chat ID (for chat_impersonate to resolve chat history). */
+  chatId?: string;
+  /** How many recent messages to include (chat_impersonate). Default: 20. */
+  recentMessageCount?: number;
+
   // Lore keys mode extras
   /** Existing primary keys on the entry (for de-duplication). */
   existingKeys?: string[];
@@ -79,6 +85,8 @@ export interface StreamDeps extends ContextResolverDeps {
     aiAssistantPrompts: Record<string, string> | null;
     scriptAiSystemPrompt: string | null;
   }>;
+  /** Resolve chat messages for chat_impersonate mode. */
+  getChatMessages: (chatId: string, count: number) => Promise<Array<{ id: string; role: string; content: string }>>;
   /** Optional debug logger. */
   logDebug?: (event: string, data: Record<string, unknown>) => void;
 }
@@ -133,12 +141,19 @@ async function prepareAiAssistantRequest(
     lorebookIds: request.lorebookIds,
   });
 
-  // 4. Build user message (mode-specific)
+  // 4. Resolve chat history for chat_impersonate
+  let recentMessages: Array<{ id: string; role: string; content: string }> = [];
+  if (request.mode === "chat_impersonate" && request.chatId) {
+    const count = request.recentMessageCount ?? 20;
+    recentMessages = await deps.getChatMessages(request.chatId, count);
+  }
+
+  // 5. Build user message (mode-specific)
   const userMessage = buildUserMessage(request, config);
 
-  // 5. Assemble via pipeline using the selected model tokenizer
+  // 6. Assemble via pipeline using the selected model tokenizer
   const pipelineContext: PromptAssemblyContext = {
-    identity: { chatId: "ai-assistant" },
+    identity: { chatId: request.chatId ?? "ai-assistant" },
     character: toPipelineCharacters(resolvedContext)[0] ?? {
       id: "",
       name: "",
@@ -154,7 +169,7 @@ async function prepareAiAssistantRequest(
       instruction: userMessage,
       systemPrompt,
     },
-    chat: { recentMessages: [] },
+    chat: { recentMessages: recentMessages.map((m) => ({ id: m.id, role: m.role as "system" | "user" | "assistant" | "tool", content: m.content })) },
   };
 
   setModelHint(modelName);
