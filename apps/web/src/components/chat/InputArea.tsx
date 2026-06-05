@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { PersonaQuickSwitch } from "../modals/PersonaQuickSwitch.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
@@ -402,14 +403,20 @@ function ChatImpersonateAiPill({
   }, [settings.providerId, bootstrapUiSettings]);
 
   const handleGenerate = async () => {
-    if (!settings.providerId || !activeChatId) return;
+    const providerId = settings.providerId || bootstrapUiSettings?.aiAssistantProviderId || "";
+    const modelName = settings.modelName || bootstrapUiSettings?.aiAssistantModelName || "";
+    if (!activeChatId) return;
+    if (!providerId) {
+      toast.error("Select an AI provider in the gear settings first.");
+      return;
+    }
     setLoading(true);
     try {
       const request: AiAssistantRequestBody = {
         mode: "chat_impersonate",
         instruction: "Write the next message as the current persona.",
-        providerProfileId: settings.providerId,
-        model: settings.modelName || undefined,
+        providerProfileId: providerId,
+        model: modelName || undefined,
         enabledLayers: [
           ...(characterId ? ["character_base"] : []),
           ...(personaId ? ["persona"] : []),
@@ -425,12 +432,12 @@ function ChatImpersonateAiPill({
           text += chunk.text;
           setDraft(text.trimStart());
         }
-        if (chunk.type === "error" && chunk.error) return;
+        if (chunk.type === "error" && chunk.error) throw new Error(chunk.error);
         if (chunk.type === "done") break;
       }
       if (text.trim()) setDraft(text.trim());
-    } catch {
-      // Keep quick action quiet; user can open settings if provider is missing.
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "AI impersonation failed");
     } finally {
       setLoading(false);
     }
