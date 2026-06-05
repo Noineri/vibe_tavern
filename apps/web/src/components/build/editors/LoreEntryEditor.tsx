@@ -31,6 +31,7 @@ import { buildLineDiff, TextDiffPreview } from "../../shared/TextDiffPreview.js"
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { MessageReasoning } from "../../chat/MessageReasoning.js";
+import { AiQuickPill, type AiQuickSettings } from "../../shared/AiQuickPill.js";
 import {
   testLoreActivation,
   deleteLoreEntry,
@@ -345,30 +346,33 @@ export function LoreEntryEditor({
           <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
             {t("lore_entry_keys")}
           </label>
-          <div
-            className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
-            style={{ minHeight: 38 }}
-          >
-            {entry.keys.map((k) => (
-              <span
-                key={k}
-                className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
-                onClick={() => removeKey("keys", k)}
-              >
-                {k} <Icons.Close />
-              </span>
-            ))}
-            <input
-              className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none"
-              value={keyInput}
-              onChange={(e) => setKeyInput(e.target.value)}
-              onKeyDown={(e) => handleKeyAdd(e, "keys")}
-              placeholder={
-                entry.keys.length === 0
-                  ? t("lore_entry_keys_placeholder")
-                  : ""
-              }
-            />
+          <div className="flex items-start gap-2">
+            <div
+              className="flex flex-1 flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
+              style={{ minHeight: 38 }}
+            >
+              {entry.keys.map((k) => (
+                <span
+                  key={k}
+                  className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
+                  onClick={() => removeKey("keys", k)}
+                >
+                  {k} <Icons.Close />
+                </span>
+              ))}
+              <input
+                className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none"
+                value={keyInput}
+                onChange={(e) => setKeyInput(e.target.value)}
+                onKeyDown={(e) => handleKeyAdd(e, "keys")}
+                placeholder={
+                  entry.keys.length === 0
+                    ? t("lore_entry_keys_placeholder")
+                    : ""
+                }
+              />
+            </div>
+            <LoreKeysAiPill entry={entry} updateAct={updateAct} />
           </div>
         </div>
 
@@ -1173,5 +1177,93 @@ export function LoreEntryEditor({
         </div>
       )}
     </>
+  );
+}
+
+// ── Lore Keys AI Pill ──────────────────────────────────────────────────
+
+function LoreKeysAiPill({
+  entry,
+  updateAct,
+}: {
+  entry: LoreEntryRecord;
+  updateAct: (field: string, value: unknown) => void;
+}) {
+  const [settings, setSettings] = useState<AiQuickSettings>({
+    providerId: "",
+    modelName: "",
+  });
+  const [loading, setLoading] = useState(false);
+  const bootstrapUiSettings = useBootstrapStore((s) => s.data?.uiSettings ?? null);
+
+  // Bootstrap persisted provider/model
+  useEffect(() => {
+    if (settings.providerId || !bootstrapUiSettings) return;
+    setSettings((s) => ({
+      ...s,
+      providerId: bootstrapUiSettings.aiAssistantProviderId ?? "",
+      modelName: bootstrapUiSettings.aiAssistantModelName ?? "",
+    }));
+  }, [settings.providerId, bootstrapUiSettings]);
+
+  const handleGenerate = async () => {
+    if (!settings.providerId || !entry.content.trim()) return;
+    setLoading(true);
+    try {
+      const request: AiAssistantRequestBody = {
+        mode: "lore_keys",
+        instruction: "",
+        existingContent: entry.content,
+        providerProfileId: settings.providerId,
+        model: settings.modelName || undefined,
+        enabledLayers: [],
+        existingKeys: entry.keys,
+        existingSecondaryKeys: entry.secondaryKeys,
+        logic: entry.logic,
+      };
+      let raw = "";
+      for await (const chunk of streamAiAssistant(request)) {
+        if (chunk.type === "text" && chunk.text) raw += chunk.text;
+        if (chunk.type === "error" && chunk.error) { setLoading(false); return; }
+        if (chunk.type === "done") break;
+      }
+      // Parse JSON response
+      const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+      const parsed = JSON.parse(cleaned) as { keys?: string[]; secondaryKeys?: string[] };
+      if (settings.appendMode) {
+        const newKeys = (parsed.keys ?? []).filter((k) => !entry.keys.includes(k));
+        const newSec = (parsed.secondaryKeys ?? []).filter((k) => !entry.secondaryKeys.includes(k));
+        if (newKeys.length) updateAct("keys", [...entry.keys, ...newKeys]);
+        if (newSec.length) updateAct("secondaryKeys", [...entry.secondaryKeys, ...newSec]);
+      } else {
+        if (parsed.keys?.length) updateAct("keys", parsed.keys);
+        if (parsed.secondaryKeys?.length) updateAct("secondaryKeys", parsed.secondaryKeys);
+      }
+    } catch {
+      // Silent fail for lore_keys
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSettingsChange = (s: AiQuickSettings) => {
+    setSettings(s);
+    void updateUiSettings({
+      aiAssistantProviderId: s.providerId || null,
+      aiAssistantModelName: s.modelName || null,
+    }).catch(() => {});
+  };
+
+  return (
+    <AiQuickPill
+      onGenerate={() => void handleGenerate()}
+      onSettingsChange={handleSettingsChange}
+      settings={settings}
+      loading={loading}
+      disabled={!entry.content.trim()}
+      showAppendToggle
+      starTooltip="Generate keys"
+      gearTooltip="Key generation settings"
+    />
   );
 }
