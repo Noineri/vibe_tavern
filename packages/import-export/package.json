@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
-    "smoke:fixtures": "bun run build && bun ../../out/packages/import-export/fixture-smoke.js",
+    "smoke:fixtures": "bun ../../scripts/build.ts import-export && bun ../../out/packages/import-export/fixture-smoke.js",
     "test": "bun test"
   },
   "dependencies": {
