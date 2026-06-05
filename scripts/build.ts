@@ -9,12 +9,12 @@
  */
 
 import { join, relative, resolve } from "node:path";
-import { copyFile, cp, mkdir, stat } from "node:fs/promises";
+import { copyFile, cp, mkdir } from "node:fs/promises";
 
 const ROOT = resolve(import.meta.dir, "..");
 
 function exists(path: string): Promise<boolean> {
-  return stat(path).then(() => true, () => false);
+  return Bun.file(path).exists();
 }
 
 async function copyApiRuntimeAssets() {

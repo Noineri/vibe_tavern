@@ -16,7 +16,7 @@ async function readJsonFile(path: string): Promise<string> {
 }
 
 async function main(): Promise<void> {
-	const workspaceRoot = resolve(import.meta.dirname, "../../../../../../");
+	const workspaceRoot = resolve(import.meta.dir, "../../../../../../");
 	const fixtures = [
 		resolve(workspaceRoot, "Oliver(telepath)", "Oliver.json"),
 		resolve(workspaceRoot, "Silvius", "Silvius.json"),
