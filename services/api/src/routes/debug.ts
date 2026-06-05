@@ -14,9 +14,10 @@ export function createDebugRoutes(runtime: RuntimeApi) {
     .get("/api/bootstrap", async (c) => {
       return c.json(await runtime.bootstrap());
     })
-    .get("/api/defaults/script-ai-prompt", async (c) => {
-      const { getDefaultScriptAiPrompt } = await import("../scripts-engine/script-ai-assistant.js");
-      return c.json({ prompt: await getDefaultScriptAiPrompt() });
+    .get("/api/defaults/ai-assistant-prompt", async (c) => {
+      const { getDefaultPromptForMode } = await import("../ai-assistant/ai-assistant-prompts.js");
+      const mode = c.req.query("mode") ?? "script";
+      return c.json({ prompt: await getDefaultPromptForMode(mode as never) });
     })
   ;
 }

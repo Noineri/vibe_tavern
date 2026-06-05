@@ -16,7 +16,7 @@ import { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
 import { createProviderProfileService } from "../providers/provider-profile-service.js";
 import { RuntimeApiAdapter } from "../runtime-api-adapter.js";
 import { SessionRuntime } from "../session/session-runtime.js";
-import { createScriptAiFeature } from "../scripts-engine/script-ai-feature.js";
+import { createAiAssistantFeature } from "../ai-assistant/ai-assistant-feature.js";
 import { createRuntimeStore } from "../session/session-runtime-store.js";
 import { configureLogDir } from "../send-debug-log.js";
 import { createApp } from "./app-factory.js";
@@ -118,7 +118,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 		mobileAccessService,
 	);
 
-	features.register(createScriptAiFeature(runtime));
+	features.register(createAiAssistantFeature(runtime));
 
 	// Hono app — with static frontend if available
 	const app = await createApp({

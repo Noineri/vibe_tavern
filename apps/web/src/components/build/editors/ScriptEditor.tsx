@@ -19,7 +19,7 @@ import {
   deleteScript,
   testScript,
   importScript,
-  streamScriptAiAssistant,
+  streamAiAssistant,
   type ScriptRecord,
 } from "../../../app-client.js";
 
@@ -335,7 +335,17 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     const ac = new AbortController();
     aiAbortRef.current = ac;
     try {
-      for await (const chunk of streamScriptAiAssistant({ prompt: aiPrompt, existingCode: activeScript?.code || undefined, providerProfileId: aiProviderId, model: aiModelName || undefined })) {
+      const enabledLayers = ["character_base", ...(personaId ? ["persona"] : [])];
+      for await (const chunk of streamAiAssistant({
+        mode: "script",
+        instruction: aiPrompt,
+        existingContent: activeScript?.code || undefined,
+        providerProfileId: aiProviderId,
+        model: aiModelName || undefined,
+        enabledLayers,
+        characterIds: characterId ? [characterId] : [],
+        personaIds: personaId ? [personaId] : [],
+      }, { signal: ac.signal })) {
         if (chunk.type === "reasoning" && chunk.text) {
           setAiStreamedReasoning(prev => prev + chunk.text);
         }

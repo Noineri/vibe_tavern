@@ -2,29 +2,29 @@ import { describe, expect, test } from "bun:test";
 import { EventBus } from "@vibe-tavern/domain";
 import { createApp } from "../src/server/app-factory.js";
 import { FeatureRegistry } from "../src/feature-registry.js";
-import { createScriptAiFeature } from "../src/scripts-engine/script-ai-feature.js";
+import { createAiAssistantFeature } from "../src/ai-assistant/ai-assistant-feature.js";
 import type { RuntimeApi } from "../src/routes/types.js";
 
 describe("feature routes", () => {
   test("mount before final catch-all", async () => {
     const runtime = {
-      async *streamScriptAiAssistant() {
+      async *streamAiAssistant() {
         yield { type: "done" };
       },
     } as unknown as RuntimeApi;
 
     const events = new EventBus();
     const features = new FeatureRegistry();
-    features.register(createScriptAiFeature(runtime));
+    features.register(createAiAssistantFeature(runtime));
 
     const app = await createApp({
       runtime,
       configureFeatures: (router) => features.activateAll({ events, router }),
     });
 
-    const response = await app.request("/api/scripts/ai-assistant", {
+    const response = await app.request("/api/ai-assistant", {
       method: "POST",
-      body: JSON.stringify({ prompt: "test", providerProfileId: "profile-1" }),
+      body: JSON.stringify({ mode: "script", instruction: "test", providerProfileId: "profile-1", enabledLayers: [] }),
       headers: { "Content-Type": "application/json" },
     });
 

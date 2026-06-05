@@ -26,7 +26,7 @@ import {
   splitReasoningFromText,
   type ReasoningSplitState,
   type AiAssistantStreamChunk,
-} from "../scripts-engine/script-ai-assistant.js";
+} from "./reasoning-split.js";
 
 // ─── Request / response types ────────────────────────────────────────────────
 

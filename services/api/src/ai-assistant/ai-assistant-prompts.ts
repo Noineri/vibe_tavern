@@ -16,10 +16,9 @@ const _promptCache = new Map<string, string>();
 
 // ─── Path resolution ─────────────────────────────────────────────────────────
 
-function getAssetDir(): string {
-  // When loaded from source (dev mode), assets are next to the scripts-engine dir.
-  // When loaded from build output, they're next to the compiled file.
-  return resolve(import.meta.dir, "..");
+export async function resolvePromptPathForMode(mode: AiAssistantMode): Promise<string> {
+  const config = getModeConfig(mode);
+  return resolvePromptPath(config.defaultPromptFile);
 }
 
 async function resolvePromptPath(filename: string): Promise<string> {
@@ -31,8 +30,10 @@ async function resolvePromptPath(filename: string): Promise<string> {
     // Standalone artifact: prompt next to executable.
     join(resolve(process.execPath, ".."), filename),
     // API source assets.
-    resolve(import.meta.dir, "..", filename),
+    resolve(import.meta.dir, "..", "..", "assets", filename),
+    join(process.cwd(), "services", "api", "assets", filename),
     // Build output.
+    resolve(import.meta.dir, "..", filename),
     resolve(import.meta.dir, "..", "..", "..", "..", "out", "services", "api", filename),
     join(process.cwd(), "out", "services", "api", filename),
   ].filter(Boolean) as string[];
