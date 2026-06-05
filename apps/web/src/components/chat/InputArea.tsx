@@ -8,6 +8,7 @@ import { useT } from "../../i18n/context.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
+import { AiQuickPill, type AiQuickSettings } from "../shared/AiQuickPill.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 
@@ -16,6 +17,7 @@ import { useActiveTrace, useChatMeta } from "../../stores/chat-selectors.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import type { PromptLayerDto } from "@vibe-tavern/domain";
+import { streamAiAssistant, updateUiSettings, type AiAssistantRequestBody } from "../../app-client.js";
 
 export function InputArea() {
   const { t } = useT();
@@ -165,6 +167,14 @@ export function InputArea() {
                 </div>
               )}
             </div>
+            {activeChatId && (
+              <ChatImpersonateAiPill
+                activeChatId={activeChatId}
+                characterId={chatMeta?.character.id ?? null}
+                personaId={activePersonaId}
+                setDraft={setDraft}
+              />
+            )}
             <div className="relative" ref={modelDropRef}>
               <button type="button" onClick={() => setModelDropOpen(o => !o)} className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2">
                 <Icons.StarFilled />
@@ -243,6 +253,14 @@ export function InputArea() {
               </div>
             </CustomTooltip>
             <PersonaQuickSwitch personas={personas} activePersonaId={activePersonaId} onSelect={character.handleSetChatPersona} />
+            {activeChatId && (
+              <ChatImpersonateAiPill
+                activeChatId={activeChatId}
+                characterId={chatMeta?.character.id ?? null}
+                personaId={activePersonaId}
+                setDraft={setDraft}
+              />
+            )}
             <div className="mx-0.5 h-3.5 w-px shrink-0 bg-border" />
 
             <div className="relative" ref={tokenPopRef}>
@@ -353,6 +371,91 @@ export function InputArea() {
         </div>
       </div>
     );
+}
+
+function ChatImpersonateAiPill({
+  activeChatId,
+  characterId,
+  personaId,
+  setDraft,
+}: {
+  activeChatId: string;
+  characterId: string | null;
+  personaId: string | null;
+  setDraft: (value: string) => void;
+}) {
+  const bootstrapUiSettings = useBootstrapStore((s) => s.data?.uiSettings ?? null);
+  const [settings, setSettings] = useState<AiQuickSettings>({
+    providerId: "",
+    modelName: "",
+    recentMessageCount: 20,
+  });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (settings.providerId || !bootstrapUiSettings) return;
+    setSettings((s) => ({
+      ...s,
+      providerId: bootstrapUiSettings.aiAssistantProviderId ?? "",
+      modelName: bootstrapUiSettings.aiAssistantModelName ?? "",
+    }));
+  }, [settings.providerId, bootstrapUiSettings]);
+
+  const handleGenerate = async () => {
+    if (!settings.providerId || !activeChatId) return;
+    setLoading(true);
+    try {
+      const request: AiAssistantRequestBody = {
+        mode: "chat_impersonate",
+        instruction: "Write the next message as the current persona.",
+        providerProfileId: settings.providerId,
+        model: settings.modelName || undefined,
+        enabledLayers: [
+          ...(characterId ? ["character_base"] : []),
+          ...(personaId ? ["persona"] : []),
+        ],
+        characterIds: characterId ? [characterId] : [],
+        personaIds: personaId ? [personaId] : [],
+        chatId: activeChatId,
+        recentMessageCount: settings.recentMessageCount ?? 20,
+      };
+      let text = "";
+      for await (const chunk of streamAiAssistant(request)) {
+        if (chunk.type === "text" && chunk.text) {
+          text += chunk.text;
+          setDraft(text.trimStart());
+        }
+        if (chunk.type === "error" && chunk.error) return;
+        if (chunk.type === "done") break;
+      }
+      if (text.trim()) setDraft(text.trim());
+    } catch {
+      // Keep quick action quiet; user can open settings if provider is missing.
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSettingsChange = (s: AiQuickSettings) => {
+    setSettings(s);
+    void updateUiSettings({
+      aiAssistantProviderId: s.providerId || null,
+      aiAssistantModelName: s.modelName || null,
+    }).catch(() => {});
+  };
+
+  return (
+    <AiQuickPill
+      onGenerate={() => void handleGenerate()}
+      onSettingsChange={handleSettingsChange}
+      settings={settings}
+      loading={loading}
+      disabled={!activeChatId}
+      showMessageCount
+      starTooltip="Write as persona"
+      gearTooltip="Impersonation settings"
+    />
+  );
 }
 
 function PersonaAvatar({ assetId, size }: { assetId: string | null; size: number }) {
