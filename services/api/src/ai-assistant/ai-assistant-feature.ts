@@ -1,15 +1,11 @@
 import type { FeatureDeps, FeatureModule } from "../feature-module.js";
-import type { StreamDeps } from "./ai-assistant-stream.js";
-import { streamAiAssistant } from "./ai-assistant-stream.js";
+import type { RuntimeApi } from "../routes/types.js";
 
 /**
- * Universal AI Assistant Feature — mounts the `/api/ai-assistant` endpoint.
- *
- * Replaces the old `/api/scripts/ai-assistant` with a unified endpoint that
- * supports all assistant modes via a `mode` field in the request body.
+ * Universal AI Assistant Feature — mounts the single `/api/ai-assistant` endpoint.
  */
 export function createAiAssistantFeature(
-  streamDeps: StreamDeps,
+  runtime: Pick<RuntimeApi, "streamAiAssistant">,
 ): FeatureModule {
   return {
     id: "ai-assistant",
@@ -17,7 +13,7 @@ export function createAiAssistantFeature(
     activate({ router }: FeatureDeps): void {
       router.post("/api/ai-assistant", async (c) => {
         const body = await c.req.json();
-        const stream = streamAiAssistant(body, streamDeps);
+        const stream = runtime.streamAiAssistant(body);
 
         return new Response(
           new ReadableStream({

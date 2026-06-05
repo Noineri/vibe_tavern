@@ -27,7 +27,7 @@ import { AssetService } from "../../src/asset-service.js";
 import { MobileAccessService } from "../../src/mobile-access-service.js";
 import { RuntimeApiAdapter } from "../../src/runtime-api-adapter.js";
 import { FeatureRegistry } from "../../src/feature-registry.js";
-import { createScriptAiFeature } from "../../src/scripts-engine/script-ai-feature.js";
+import { createAiAssistantFeature } from "../../src/ai-assistant/ai-assistant-feature.js";
 import { createApp } from "../../src/server/app-factory.js";
 import type { Hono } from "hono";
 
@@ -304,7 +304,7 @@ export async function createTestServer(): Promise<TestServer> {
 
   const features = new FeatureRegistry();
   features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService }));
-  features.register(createScriptAiFeature(runtime));
+  features.register(createAiAssistantFeature(runtime));
 
   const app = await createApp({
     runtime,

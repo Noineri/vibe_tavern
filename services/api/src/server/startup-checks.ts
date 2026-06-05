@@ -2,7 +2,7 @@ import { readdir, stat, mkdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { resolveMigrationsFolder } from "@vibe-tavern/db";
 import { resolveTokenizerDir } from "../ai/tokenizer-service.js";
-import { resolveScriptAiPromptPath } from "../scripts-engine/script-ai-assistant.js";
+import { resolvePromptPathForMode } from "../ai-assistant/ai-assistant-prompts.js";
 import { resolveRuntimeStorePaths } from "../session/session-runtime-store.js";
 
 export interface StartupFileCheckOptions {
@@ -114,8 +114,8 @@ export async function runStartupFileChecks(options: StartupFileCheckOptions): Pr
 		ok = await checkFile(`tokenizer ${tokenizerFile}`, join(tokenizerDir, tokenizerFile)) && ok;
 	}
 
-	const promptPath = await resolveScriptAiPromptPath();
-	ok = await checkFile("Script AI prompt", promptPath) && ok;
+	const promptPath = await resolvePromptPathForMode("script");
+	ok = await checkFile("AI assistant script prompt", promptPath) && ok;
 
 	if (options.staticDir) {
 		const staticRequired = options.requireStatic ?? false;

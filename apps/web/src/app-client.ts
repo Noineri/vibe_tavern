@@ -1046,16 +1046,30 @@ export interface AiAssistantChunk {
   error?: string;
 }
 
-export async function* streamScriptAiAssistant(body: {
-  prompt: string;
-  existingCode?: string;
+export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate";
+
+export interface AiAssistantRequestBody {
+  mode: AiAssistantMode;
+  instruction: string;
+  existingContent?: string;
   providerProfileId: string;
   model?: string;
-}): AsyncGenerator<AiAssistantChunk> {
-  const response = await fetch(appendTokenQuery(`${getGatewayBaseUrl()}/api/scripts/ai-assistant`), {
+  enabledLayers: string[];
+  characterIds?: string[];
+  personaIds?: string[];
+  loreEntryIds?: string[];
+  recentMessageCount?: number;
+  existingKeys?: string[];
+  existingSecondaryKeys?: string[];
+  logic?: string;
+}
+
+export async function* streamAiAssistant(body: AiAssistantRequestBody, options?: { signal?: AbortSignal }): AsyncGenerator<AiAssistantChunk> {
+  const response = await fetch(appendTokenQuery(`${getGatewayBaseUrl()}/api/ai-assistant`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: options?.signal,
   });
 
   if (!response.ok) {

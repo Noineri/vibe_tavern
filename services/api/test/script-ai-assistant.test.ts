@@ -4,7 +4,7 @@ import {
   splitReasoningFromText,
   type AiAssistantStreamChunk,
   type ReasoningSplitState,
-} from "../src/scripts-engine/script-ai-assistant.js";
+} from "../src/ai-assistant/reasoning-split.js";
 
 function makeState(): ReasoningSplitState {
   return { buffer: "", insideMarkerReasoning: false, insideThinkTag: false };
@@ -18,7 +18,7 @@ function collect(chunks: string[]): AiAssistantStreamChunk[] {
   return out;
 }
 
-describe("Script AI reasoning split", () => {
+describe("AI assistant reasoning split", () => {
   test("separates exact reasoning markers without leaking control chars", () => {
     const chunks = collect([
       `code before\n${REASONING_START_MARKER}thinking${REASONING_END_MARKER}\ncode after`,

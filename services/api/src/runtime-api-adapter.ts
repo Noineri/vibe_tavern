@@ -18,7 +18,8 @@ import {
 	normalizeOpenAiCompatibleBaseUrl,
 } from "./providers/provider-gateway.js";
 import { executeScripts } from "./scripts-engine/script-sandbox.js";
-import { streamScriptCode, getDefaultScriptAiPrompt } from "./scripts-engine/script-ai-assistant.js";
+import { resolveModel } from "./ai/provider-executor-utils.js";
+import { streamAiAssistant, type AiAssistantStreamRequest } from "./ai-assistant/ai-assistant-stream.js";
 
 /**
  * Facade that implements RuntimeApi — the single contract between
@@ -583,45 +584,69 @@ export class RuntimeApiAdapter {
 		});
 	};
 
-	// ─── Script AI Assistant ───────────────────────────────────────────
+	// ─── AI Assistant ───────────────────────────────────────────────────
 
-	streamScriptAiAssistant = async function* (this: RuntimeApiAdapter, body: { prompt: string; existingCode?: string; providerProfileId: string; model?: string }) {
-		const { resolveModel } = await import("./ai/provider-executor-utils.js");
-		const profile = await this.stores.providers.getById(body.providerProfileId);
-		if (!profile) throw new Error(`Provider profile not found: ${body.providerProfileId}`);
-		const modelName = body.model ?? profile.defaultModel ?? "gpt-4o-mini";
-		const aiModel = resolveModel(profile, modelName);
-
-		// Read system prompt from active prompt preset, fallback to default
-		let systemPrompt = await getDefaultScriptAiPrompt();
-		let promptSource = "default_md" as "default_md" | "preset_override" | "preset_empty" | "no_active_preset";
-		try {
-			const settings = await this.stores.uiSettings.get();
-			if (settings?.activePromptPresetId) {
-				const preset = await this.stores.presets.getById(settings.activePromptPresetId);
-				if (preset?.scriptAiSystemPrompt?.trim()) {
-					systemPrompt = preset.scriptAiSystemPrompt;
-					promptSource = "preset_override";
-				} else {
-					promptSource = preset ? "preset_empty" : "no_active_preset";
+	streamAiAssistant = async function* (this: RuntimeApiAdapter, body: AiAssistantStreamRequest) {
+		yield* streamAiAssistant(body, {
+			resolveModel,
+			getProviderProfile: (id) => this.stores.providers.getById(id),
+			getPresetPromptData: async () => {
+				const settings = await this.stores.uiSettings.get();
+				if (!settings?.activePromptPresetId) {
+					return { aiAssistantPrompts: null, scriptAiSystemPrompt: null };
 				}
-			} else {
-				promptSource = "no_active_preset";
-			}
-		} catch (err) {
-			promptSource = "no_active_preset";
-			logSendDebug("api.script-ai.prompt-resolution-error", { error: String(err) });
-		}
-
-		logSendDebug("api.script-ai.prompt-resolved", {
-			source: promptSource,
-			systemPromptLength: systemPrompt.length,
-			systemPromptPreview: systemPrompt.slice(0, 120),
-			model: modelName,
-			providerProfileId: body.providerProfileId,
+				const preset = await this.stores.presets.getById(settings.activePromptPresetId);
+				if (!preset) {
+					return { aiAssistantPrompts: null, scriptAiSystemPrompt: null };
+				}
+				let aiAssistantPrompts: Record<string, string> | null = null;
+				try {
+					const parsed = JSON.parse(preset.aiAssistantPrompts || "{}");
+					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+						aiAssistantPrompts = Object.fromEntries(
+							Object.entries(parsed).filter(([, value]) => typeof value === "string"),
+						) as Record<string, string>;
+					}
+				} catch (err) {
+					logSendDebug("api.ai-assistant.prompt-map-parse-error", { error: String(err), presetId: preset.id });
+				}
+				return {
+					aiAssistantPrompts,
+					scriptAiSystemPrompt: preset.scriptAiSystemPrompt ?? null,
+				};
+			},
+			getCharacterById: async (id) => {
+				const character = await this.stores.characters.getById(id);
+				if (!character) return null;
+				return {
+					id: character.id,
+					name: character.name,
+					description: character.description,
+					personality: character.personalitySummary ?? "",
+					scenario: character.defaultScenario ?? "",
+				};
+			},
+			getPersonaById: async (id) => {
+				const persona = await this.stores.personas.getById(id);
+				if (!persona) return null;
+				return {
+					id: persona.id,
+					name: persona.name,
+					description: persona.description,
+					pronouns: persona.pronouns ?? undefined,
+				};
+			},
+			getLoreEntryById: async (id) => {
+				const entry = await this.stores.lorebooks.getEntry(id);
+				if (!entry) return null;
+				return {
+					id: entry.id,
+					title: entry.title,
+					content: entry.content,
+				};
+			},
+			logDebug: logSendDebug,
 		});
-
-		yield* streamScriptCode(body, aiModel, systemPrompt);
 	};
 
 	// ─── Provider profiles ────────────────────────────────────────────────
