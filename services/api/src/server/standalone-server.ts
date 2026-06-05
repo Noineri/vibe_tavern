@@ -122,6 +122,7 @@ configureLogDir(paths.logsDir);
 		hostname: resolvedHost,
 		idleTimeout: 255,
 		...tlsOptions,
+		...(Bun.env.RP_PLATFORM_HTTP2 === "1" ? { http2: true } : {}),
 	});
 
 	const proto = tlsConfig ? "https" : "http";

@@ -1,4 +1,4 @@
-import { readdir, stat, mkdir } from "node:fs/promises";
+import { readdir, mkdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { resolveMigrationsFolder } from "@vibe-tavern/db";
 import { resolveTokenizerDir } from "../ai/tokenizer-service.js";
@@ -25,7 +25,7 @@ async function fileExists(path: string): Promise<boolean> {
 
 async function checkFile(label: string, path: string, required = true): Promise<boolean> {
 	try {
-		const info = await stat(path);
+		const info = await Bun.file(path).stat();
 		if (!info.isFile()) {
 			console.log(`[startup-check] ❌ ${label}: not a file — ${path}`);
 			return false;
@@ -41,7 +41,7 @@ async function checkFile(label: string, path: string, required = true): Promise<
 
 async function checkDir(label: string, path: string, required = true): Promise<boolean> {
 	try {
-		const info = await stat(path);
+		const info = await Bun.file(path).stat();
 		if (!info.isDirectory()) {
 			console.log(`[startup-check] ❌ ${label}: not a directory — ${path}`);
 			return false;
