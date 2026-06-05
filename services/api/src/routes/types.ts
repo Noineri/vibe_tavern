@@ -63,6 +63,7 @@ export interface RuntimeApi {
   testScript: (scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<unknown>;
   importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<unknown>;
   streamAiAssistant: (body: AiAssistantStreamRequest) => AsyncIterable<AiAssistantStreamChunk>;
+  countAiAssistantTokens: (body: AiAssistantStreamRequest) => Promise<{ tokens: number; model: string; layerCount: number; messageCount: number }>;
   listProviderProfiles: () => unknown;
   fetchProviderProfile: (providerProfileId: string) => unknown;
   activateProviderProfile: (providerProfileId: string) => unknown;

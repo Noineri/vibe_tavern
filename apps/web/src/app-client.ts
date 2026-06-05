@@ -1102,6 +1102,17 @@ export interface AiAssistantRequestBody {
   logic?: string;
 }
 
+export async function countAiAssistantTokens(body: AiAssistantRequestBody, options?: { signal?: AbortSignal }): Promise<{ tokens: number; model: string; layerCount: number; messageCount: number }> {
+  const response = await fetch(appendTokenQuery(`${getGatewayBaseUrl()}/api/ai-assistant/tokens`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: options?.signal,
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  return response.json() as Promise<{ tokens: number; model: string; layerCount: number; messageCount: number }>;
+}
+
 export async function* streamAiAssistant(body: AiAssistantRequestBody, options?: { signal?: AbortSignal }): AsyncGenerator<AiAssistantChunk> {
   const response = await fetch(appendTokenQuery(`${getGatewayBaseUrl()}/api/ai-assistant`), {
     method: "POST",

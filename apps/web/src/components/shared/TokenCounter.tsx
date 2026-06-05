@@ -8,13 +8,15 @@ import { useT } from "../../i18n/context.js";
 
 interface TokenCounterProps {
   text: string;
+  count?: number | null;
   label?: string;
   className?: string;
 }
 
-export function TokenCounter({ text, label, className }: TokenCounterProps) {
+export function TokenCounter({ text, count: providedCount, label, className }: TokenCounterProps) {
   const { t } = useT();
-  const count = useTokenCount(text);
+  const localCount = useTokenCount(text);
+  const count = providedCount ?? localCount;
   return (
     <span
       className={className ?? "flex justify-end font-ui text-[11px] tabular-nums text-t3"}

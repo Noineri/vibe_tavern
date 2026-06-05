@@ -5,12 +5,17 @@ import type { RuntimeApi } from "../routes/types.js";
  * Universal AI Assistant Feature — mounts the single `/api/ai-assistant` endpoint.
  */
 export function createAiAssistantFeature(
-  runtime: Pick<RuntimeApi, "streamAiAssistant">,
+  runtime: Pick<RuntimeApi, "streamAiAssistant" | "countAiAssistantTokens">,
 ): FeatureModule {
   return {
     id: "ai-assistant",
 
     activate({ router }: FeatureDeps): void {
+      router.post("/api/ai-assistant/tokens", async (c) => {
+        const body = await c.req.json();
+        return c.json(await runtime.countAiAssistantTokens(body));
+      });
+
       router.post("/api/ai-assistant", async (c) => {
         const body = await c.req.json();
         const stream = runtime.streamAiAssistant(body);
