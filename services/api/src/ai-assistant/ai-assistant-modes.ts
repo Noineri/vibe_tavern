@@ -46,9 +46,8 @@ const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
     presetKey: "lore_entry",
     defaultPromptFile: "lore-entry-ai-prompt.md",
     stripReasoning: false,
-    outputFormat: "json",
-    jsonSchemaHint:
-      '{ "title": "...", "content": "...", "keys": ["..."], "secondaryKeys": ["..."] }',
+    outputFormat: "text",
+    jsonSchemaHint: null,
   },
   lore_keys: {
     mode: "lore_keys",

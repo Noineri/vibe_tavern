@@ -267,11 +267,10 @@ function buildUserMessage(
     }
 
     case "lore_entry": {
-      let msg = request.instruction;
       if (request.existingContent) {
-        msg = `Here is my current lorebook entry:\n\n${request.existingContent}\n\nModification request:\n${request.instruction}`;
+        return `Here is my current lorebook entry content:\n\n${request.existingContent}\n\nModification request:\n${request.instruction}\n\nReturn the complete updated lorebook entry content only. Do not include a title, keys, JSON, markdown, or explanation.`;
       }
-      return msg;
+      return `${request.instruction}\n\nReturn the lorebook entry content only. Do not include a title, keys, JSON, markdown, or explanation.`;
     }
 
     case "lore_keys": {
