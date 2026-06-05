@@ -1069,28 +1069,20 @@ export function LoreEntryEditor({
                       <MessageReasoning reasoning={aiStreamedReasoning} />
                     </div>
                   )}
-                  {aiStreamedContent && (aiDiffSummary ? (
-                    <>
-                      <TextDiffPreview
-                        summary={aiDiffSummary}
-                        labels={{
-                          title: t("lore_entry_ai_changes"),
-                          tooLarge: t("lore_entry_ai_diff_too_large"),
-                          noChanges: t("lore_entry_ai_no_changes"),
-                        }}
-                      />
-                      {aiDiffSummary.tooLarge && (
-                        <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
-                          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("lore_entry_ai_generated")}</div>
-                          <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap font-mono text-[12px] leading-[1.5] text-t1">{cleanedAiContent}</pre>
-                        </div>
-                      )}
-                    </>
+                  {aiStreamedContent && (aiDiffSummary && !aiDiffSummary.tooLarge ? (
+                    <TextDiffPreview
+                      summary={aiDiffSummary}
+                      labels={{
+                        title: t("lore_entry_ai_changes"),
+                        tooLarge: "",
+                        noChanges: t("lore_entry_ai_no_changes"),
+                      }}
+                    />
                   ) : (
                     <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
                       <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("lore_entry_ai_generated")}</div>
                       <pre className="whitespace-pre-wrap font-mono text-[12px] leading-[1.5] text-t1">
-                        {aiStreamedContent}{aiStreaming && <span className="animate-pulse text-accent">▌</span>}
+                        {(aiDiffSummary?.tooLarge ? cleanedAiContent : aiStreamedContent)}{aiStreaming && <span className="animate-pulse text-accent">▌</span>}
                       </pre>
                     </div>
                   ))}
