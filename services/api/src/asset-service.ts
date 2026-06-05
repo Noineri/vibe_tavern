@@ -43,8 +43,12 @@ export class AssetService {
       const filePath = resolve(this.assetsDir, `${assetId}.${ext}`);
       try {
         const bunFile = Bun.file(filePath);
-        if (await bunFile.exists()) {
-          return new Response(bunFile, {
+        // Eagerly read the file to avoid TOCTOU race with cleanup() unlink:
+        // new Response(Bun.file()) is lazy — the file is opened when the response
+        // is sent, which can race with a pending unlink() from a concurrent delete.
+        const buffer = new Uint8Array(await bunFile.arrayBuffer());
+        if (buffer.length > 0) {
+          return new Response(buffer, {
             headers: {
               "Content-Type": EXT_TO_MIME[ext],
               "Cache-Control": "public, max-age=31536000",
