@@ -386,6 +386,7 @@ export interface PromptPreset {
   summary: string;
   tools: string;
   scriptAiSystemPrompt: string;
+  aiAssistantPrompts: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

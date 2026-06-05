@@ -22,6 +22,7 @@ const promptPresetCoreSchema = z.object({
   })).optional(),
   advancedMode: z.boolean().optional(),
   scriptAiSystemPrompt: z.string().optional(),
+  aiAssistantPrompts: z.string().optional(),
 });
 
 export const createPromptPresetSchema = promptPresetCoreSchema;

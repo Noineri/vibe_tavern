@@ -428,6 +428,7 @@ export interface ImportResult {
 			promptOrder: (() => { try { return JSON.parse(preset.promptOrderJson); } catch { return []; } })(),
 			advancedMode: preset.advancedMode,
 			scriptAiSystemPrompt: preset.scriptAiSystemPrompt ?? "",
+			aiAssistantPrompts: (preset as { aiAssistantPrompts?: string }).aiAssistantPrompts ?? "{}",
 			createdAt: preset.createdAt,
 			updatedAt: preset.updatedAt,
 		};

@@ -283,6 +283,7 @@ export const promptPresets = sqliteTable('prompt_presets', {
   nsfwPrompt: text('nsfw_prompt').notNull().default(''),
   enhanceDefinitionsPrompt: text('enhance_definitions_prompt').notNull().default(''),
   scriptAiSystemPrompt: text('script_ai_system_prompt').notNull().default(''),
+  aiAssistantPrompts: text('ai_assistant_prompts').notNull().default('{}'),
   customInjectionsJson: text('custom_injections_json').notNull().default('[]'),
   promptOrderJson: text('prompt_order_json').notNull().default('[]'),
   advancedMode: integer('advanced_mode').notNull().default(0),
@@ -384,5 +385,7 @@ export const uiSettings = sqliteTable('ui_settings', {
   messageWidth: integer('message_width').notNull().default(700),
   language: text('language').notNull().default('en'),
   activePromptPresetId: text('active_prompt_preset_id').references(() => promptPresets.id, { onDelete: 'set null' }),
+  aiAssistantProviderId: text('ai_assistant_provider_id'),
+  aiAssistantModelName: text('ai_assistant_model_name'),
   updatedAt: text('updated_at').notNull(),
 });

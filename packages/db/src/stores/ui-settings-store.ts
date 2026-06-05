@@ -16,6 +16,8 @@ export interface UiSettings {
   messageWidth: number;
   language: string;
   activePromptPresetId: string | null;
+  aiAssistantProviderId: string | null;
+  aiAssistantModelName: string | null;
   updatedAt: string;
 }
 
@@ -28,6 +30,8 @@ export interface UiSettingsUpdate {
   messageWidth?: number;
   language?: string;
   activePromptPresetId?: string | null;
+  aiAssistantProviderId?: string | null;
+  aiAssistantModelName?: string | null;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -40,6 +44,8 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   messageWidth: 700,
   language: 'en',
   activePromptPresetId: null,
+  aiAssistantProviderId: null,
+  aiAssistantModelName: null,
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -119,6 +125,8 @@ export class UiSettingsStore {
       messageWidth: row.messageWidth,
       language: row.language,
       activePromptPresetId: row.activePromptPresetId,
+      aiAssistantProviderId: row.aiAssistantProviderId ?? null,
+      aiAssistantModelName: row.aiAssistantModelName ?? null,
       updatedAt: row.updatedAt,
     };
   }

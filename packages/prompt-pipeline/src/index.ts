@@ -4,4 +4,4 @@ export { createPhaseOneMacroEngine, createFullMacroEngine } from "./macro-regist
 export { buildPromptVariableContext } from "./prompt-variable-context.js";
 export { PROMPT_LAYER_ID, PROMPT_LAYER_PRIORITY, LAYER_MODES } from "./prompt-layer-constants.js";
 export { setTokenCountFn, setModelHint } from "./compaction.js";
-export type { AssemblyMode } from "./types.js";
+export type { AssemblyMode, AiAssistantMode, PromptAssemblyContext, PromptAssemblyResult, PromptLayer, RecentMessage } from "./types.js";
