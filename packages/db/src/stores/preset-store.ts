@@ -21,6 +21,7 @@ export interface CreatePresetData {
   nsfwPrompt?: string;
   enhanceDefinitionsPrompt?: string;
   scriptAiSystemPrompt?: string;
+  aiAssistantPrompts?: string;
   customInjectionsJson?: string;
   promptOrderJson?: string;
   advancedMode?: boolean;
@@ -48,6 +49,7 @@ export interface PromptPreset {
   nsfwPrompt: string;
   enhanceDefinitionsPrompt: string;
   scriptAiSystemPrompt: string;
+  aiAssistantPrompts: string;
   customInjectionsJson: string;
   promptOrderJson: string;
   advancedMode: boolean;
@@ -118,6 +120,7 @@ export class PresetStore {
         nsfwPrompt: data.nsfwPrompt ?? '',
         enhanceDefinitionsPrompt: data.enhanceDefinitionsPrompt ?? '',
         scriptAiSystemPrompt: data.scriptAiSystemPrompt ?? '',
+        aiAssistantPrompts: data.aiAssistantPrompts ?? '{}',
         customInjectionsJson: data.customInjectionsJson ?? '[]',
         promptOrderJson: data.promptOrderJson ?? '[]',
         advancedMode: data.advancedMode ? 1 : 0,
@@ -157,6 +160,7 @@ export class PresetStore {
     if (data.nsfwPrompt !== undefined) values.nsfwPrompt = data.nsfwPrompt;
     if (data.enhanceDefinitionsPrompt !== undefined) values.enhanceDefinitionsPrompt = data.enhanceDefinitionsPrompt;
     if (data.scriptAiSystemPrompt !== undefined) values.scriptAiSystemPrompt = data.scriptAiSystemPrompt;
+    if (data.aiAssistantPrompts !== undefined) values.aiAssistantPrompts = data.aiAssistantPrompts;
     if (data.customInjectionsJson !== undefined) values.customInjectionsJson = data.customInjectionsJson;
     if (data.promptOrderJson !== undefined) values.promptOrderJson = data.promptOrderJson;
     if (data.advancedMode !== undefined) values.advancedMode = data.advancedMode ? 1 : 0;
@@ -219,6 +223,7 @@ export class PresetStore {
         nsfwPrompt: original.nsfwPrompt,
         enhanceDefinitionsPrompt: original.enhanceDefinitionsPrompt,
         scriptAiSystemPrompt: original.scriptAiSystemPrompt ?? '',
+        aiAssistantPrompts: original.aiAssistantPrompts ?? '{}',
         customInjectionsJson: original.customInjectionsJson,
         promptOrderJson: original.promptOrderJson,
         advancedMode: original.advancedMode,
@@ -264,6 +269,7 @@ export class PresetStore {
       nsfwPrompt: '',
       enhanceDefinitionsPrompt: '',
       scriptAiSystemPrompt: '',
+      aiAssistantPrompts: '{}',
       customInjectionsJson: '[]',
       promptOrderJson: '[]',
       advancedMode: false,
@@ -287,6 +293,7 @@ export class PresetStore {
       nsfwPrompt: row.nsfwPrompt,
       enhanceDefinitionsPrompt: row.enhanceDefinitionsPrompt,
       scriptAiSystemPrompt: row.scriptAiSystemPrompt,
+      aiAssistantPrompts: row.aiAssistantPrompts ?? '{}',
       customInjections: JSON.parse(row.customInjectionsJson || '[]'),
       promptOrder: JSON.parse(row.promptOrderJson || '[]'),
       advancedMode: Boolean(row.advancedMode),
@@ -311,6 +318,7 @@ export class PresetStore {
       nsfwPrompt: row.nsfwPrompt,
       enhanceDefinitionsPrompt: row.enhanceDefinitionsPrompt,
       scriptAiSystemPrompt: row.scriptAiSystemPrompt ?? '',
+      aiAssistantPrompts: row.aiAssistantPrompts ?? '{}',
       customInjectionsJson: row.customInjectionsJson,
       promptOrderJson: row.promptOrderJson,
       advancedMode: Boolean(row.advancedMode),

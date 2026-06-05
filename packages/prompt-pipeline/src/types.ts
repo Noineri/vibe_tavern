@@ -5,13 +5,22 @@ export type { PromptLayerPosition };
 /**
  * Which generation scenario this prompt assembly is for.
  *
- * - `chat`        — normal user turn (system layers + history + new user message)
- * - `continue`    — continuation without a new user message
- * - `regenerate`  — regenerating a specific message in-place
- * - `summary`     — summarization pass (only summary-relevant layers active)
- * - `tool_call`   — tool-calling pass (tool instructions active)
+ * - `chat`          — normal user turn (system layers + history + new user message)
+ * - `continue`      — continuation without a new user message
+ * - `regenerate`    — regenerating a specific message in-place
+ * - `summary`       — summarization pass (only summary-relevant layers active)
+ * - `tool_call`     — tool-calling pass (tool instructions active)
+ * - `ai_assistant`  — AI assistant modes (script, lore, impersonate)
  */
-export type AssemblyMode = "chat" | "continue" | "regenerate" | "summary" | "tool_call";
+export type AssemblyMode = "chat" | "continue" | "regenerate" | "summary" | "tool_call" | "ai_assistant";
+
+/**
+ * AI assistant operating modes.
+ *
+ * Each mode determines the system prompt, user message format, output parsing,
+ * and which context layers are available.
+ */
+export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate";
 
 export interface PromptLayer {
   id: string;
@@ -125,6 +134,19 @@ export interface PromptAssemblyContext {
   } | null;
   /** Assembly mode. Defaults to `"chat"` when not specified. */
   mode?: AssemblyMode;
+  /** AI assistant context. Only used when mode is "ai_assistant". */
+  aiAssistant?: {
+    /** Which assistant mode is active — determines system prompt, output format, etc. */
+    mode: AiAssistantMode;
+    /** Layer IDs the user toggled on (subset of available layers for this mode). */
+    enabledLayers: string[];
+    /** Current field content being edited/refined (auto-attached, not toggleable). */
+    existingContent?: string;
+    /** User's instruction / prompt text. */
+    instruction: string;
+    /** Resolved system prompt (after fallback chain: preset override → default .md). */
+    systemPrompt: string;
+  };
   lore?: Array<{
     id: string;
     title: string;

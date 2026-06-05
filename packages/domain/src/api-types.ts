@@ -67,6 +67,7 @@ export interface PromptPresetDto {
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
   scriptAiSystemPrompt: string;
+  aiAssistantPrompts: string;
   createdAt: string;
   updatedAt: string;
 }

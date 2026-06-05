@@ -8,7 +8,7 @@ function safeParseJson<T>(json: string, fallback: T): T {
   try { return JSON.parse(json); } catch { return fallback; }
 }
 
-function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: string | null; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; summaryPrompt: string; toolsPrompt: string; nsfwPrompt: string; enhanceDefinitionsPrompt: string; customInjectionsJson: string; promptOrderJson: string; advancedMode?: boolean | number | null; scriptAiSystemPrompt: string | null; createdAt: string; updatedAt: string; }): PromptPresetDto {
+function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: string | null; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; summaryPrompt: string; toolsPrompt: string; nsfwPrompt: string; enhanceDefinitionsPrompt: string; customInjectionsJson: string; promptOrderJson: string; advancedMode?: boolean | number | null; scriptAiSystemPrompt: string | null; aiAssistantPrompts?: string | null; createdAt: string; updatedAt: string; }): PromptPresetDto {
   return {
     id: p.id,
     name: p.name,
@@ -27,6 +27,7 @@ function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: str
     promptOrder: safeParseJson(p.promptOrderJson, []),
     advancedMode: Boolean(p.advancedMode),
     scriptAiSystemPrompt: p.scriptAiSystemPrompt ?? "",
+    aiAssistantPrompts: p.aiAssistantPrompts ?? "{}",
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
@@ -58,6 +59,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
   promptOrder?: unknown[];
   advancedMode?: boolean;
   scriptAiSystemPrompt?: string;
+  aiAssistantPrompts?: string;
 }): Promise<PromptPresetDto> {
   const trimmed = (input.name ?? "").trim();
   if (!trimmed) {
@@ -80,6 +82,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
     promptOrderJson: input.promptOrder != null ? JSON.stringify(input.promptOrder) : undefined,
     advancedMode: input.advancedMode ?? false,
     scriptAiSystemPrompt: input.scriptAiSystemPrompt ?? "",
+    aiAssistantPrompts: input.aiAssistantPrompts ?? "{}",
   });
   return mapPresetToDto(created);
 }
@@ -101,6 +104,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
   promptOrder?: unknown[];
   advancedMode?: boolean;
   scriptAiSystemPrompt?: string;
+  aiAssistantPrompts?: string;
 }): Promise<PromptPresetDto> {
   try {
     const updated = await deps.presets.update(presetId as PromptPresetId, {
@@ -120,6 +124,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
       promptOrderJson: patch.promptOrder != null ? JSON.stringify(patch.promptOrder) : undefined,
       advancedMode: patch.advancedMode,
       scriptAiSystemPrompt: patch.scriptAiSystemPrompt,
+      aiAssistantPrompts: patch.aiAssistantPrompts,
     });
     return mapPresetToDto(updated);
   } catch (error) {

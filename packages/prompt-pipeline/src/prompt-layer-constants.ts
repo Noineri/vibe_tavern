@@ -71,6 +71,11 @@ export const PROMPT_LAYER_PRIORITY = {
   characterDepthPrompt: 155,
   recentHistory: 100,
   preflightCompaction: 50,
+  // AI assistant layers
+  aiAssistantSystem: 1000,
+  aiAssistantContext: 900,
+  aiAssistantExisting: 50,
+  aiAssistantInstruction: 10,
 } as const;
 
 export const PROMPT_LAYER_ID = {
@@ -91,6 +96,11 @@ export const PROMPT_LAYER_ID = {
   mesExample: "mes_example",
   characterDepthPrompt: "character_depth_prompt",
   postHistoryInstructions: "post_history_instructions",
+  // AI assistant layers
+  aiAssistantSystem: "ai_assistant_system",
+  aiAssistantContext: "ai_assistant_context",
+  aiAssistantExisting: "ai_assistant_existing",
+  aiAssistantInstruction: "ai_assistant_instruction",
 } as const;
 
 export const PROMPT_LAYER_SOURCE_TYPE = {
@@ -104,6 +114,7 @@ export const PROMPT_LAYER_SOURCE_TYPE = {
   toolProfile: "tool_profile",
   compaction: "compaction",
   chatHistory: "chat_history",
+  aiAssistant: "ai_assistant",
 } as const;
 
 export const PROMPT_LAYER_SOURCE_ID = {
@@ -193,4 +204,9 @@ export const LAYER_MODES: Record<string, AssemblyMode[]> = {
   preflight_compaction:        ["chat", "continue", "regenerate"],
   // Lore and memory layers default to chat modes
   // (lore entries inherit from their source; these are fallbacks)
+  // AI assistant layers
+  ai_assistant_system:      ["ai_assistant"],
+  ai_assistant_context:     ["ai_assistant"],
+  ai_assistant_existing:    ["ai_assistant"],
+  ai_assistant_instruction: ["ai_assistant"],
 };
