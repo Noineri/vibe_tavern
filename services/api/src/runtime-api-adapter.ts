@@ -19,7 +19,7 @@ import {
 } from "./providers/provider-gateway.js";
 import { executeScripts } from "./scripts-engine/script-sandbox.js";
 import { resolveModel } from "./ai/provider-executor-utils.js";
-import { streamAiAssistant, type AiAssistantStreamRequest } from "./ai-assistant/ai-assistant-stream.js";
+import { countAiAssistantTokens, streamAiAssistant, type AiAssistantStreamRequest } from "./ai-assistant/ai-assistant-stream.js";
 
 /**
  * Facade that implements RuntimeApi — the single contract between
@@ -601,10 +601,10 @@ export class RuntimeApiAdapter {
 
 	// ─── AI Assistant ───────────────────────────────────────────────────
 
-	streamAiAssistant = async function* (this: RuntimeApiAdapter, body: AiAssistantStreamRequest) {
-		yield* streamAiAssistant(body, {
+	private createAiAssistantDeps() {
+		return {
 			resolveModel,
-			getProviderProfile: (id) => this.stores.providers.getById(id),
+			getProviderProfile: (id: string) => this.stores.providers.getById(id),
 			getPresetPromptData: async () => {
 				const settings = await this.stores.uiSettings.get();
 				if (!settings?.activePromptPresetId) {
@@ -630,7 +630,7 @@ export class RuntimeApiAdapter {
 					scriptAiSystemPrompt: preset.scriptAiSystemPrompt ?? null,
 				};
 			},
-			getCharacterById: async (id) => {
+			getCharacterById: async (id: string) => {
 				const character = await this.stores.characters.getById(id);
 				if (!character) return null;
 				return {
@@ -641,7 +641,7 @@ export class RuntimeApiAdapter {
 					scenario: character.defaultScenario ?? "",
 				};
 			},
-			getPersonaById: async (id) => {
+			getPersonaById: async (id: string) => {
 				const persona = await this.stores.personas.getById(id);
 				if (!persona) return null;
 				return {
@@ -651,7 +651,7 @@ export class RuntimeApiAdapter {
 					pronouns: persona.pronouns ?? undefined,
 				};
 			},
-			getLoreEntryById: async (id) => {
+			getLoreEntryById: async (id: string) => {
 				const entry = await this.stores.lorebooks.getEntry(id);
 				if (!entry || !entry.enabled) return null;
 				return {
@@ -660,7 +660,7 @@ export class RuntimeApiAdapter {
 					content: entry.content,
 				};
 			},
-			getLoreEntriesByLorebookId: async (id) => {
+			getLoreEntriesByLorebookId: async (id: string) => {
 				const lorebook = await this.stores.lorebooks.getLorebook(id);
 				if (!lorebook?.enabled) return [];
 				const entries = await this.stores.lorebooks.listEntries(id);
@@ -673,8 +673,15 @@ export class RuntimeApiAdapter {
 					}));
 			},
 			logDebug: logSendDebug,
-		});
+		};
+	}
+
+	streamAiAssistant = async function* (this: RuntimeApiAdapter, body: AiAssistantStreamRequest) {
+		yield* streamAiAssistant(body, this.createAiAssistantDeps());
 	};
+
+	countAiAssistantTokens = (body: AiAssistantStreamRequest) =>
+		countAiAssistantTokens(body, this.createAiAssistantDeps());
 
 	// ─── Provider profiles ────────────────────────────────────────────────
 

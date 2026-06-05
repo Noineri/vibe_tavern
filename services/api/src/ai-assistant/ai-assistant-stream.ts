@@ -13,8 +13,10 @@ import { streamText } from "ai";
 import type { LanguageModelV1 } from "ai";
 import {
   assemblePrompt,
+  setModelHint,
   type AiAssistantMode,
   type PromptAssemblyContext,
+  type PromptAssemblyResult,
 } from "@vibe-tavern/prompt-pipeline";
 import type { ResolvedContext, ContextResolverDeps } from "./context-resolver.js";
 import { resolveContext, toPipelineCharacters, toPipelinePersonas, toPipelineLore } from "./context-resolver.js";
@@ -81,85 +83,120 @@ export interface StreamDeps extends ContextResolverDeps {
   logDebug?: (event: string, data: Record<string, unknown>) => void;
 }
 
+// ─── Assembly / token preview ────────────────────────────────────────────────
+
+interface PreparedAiAssistantRequest {
+  config: ReturnType<typeof getModeConfig>;
+  profile: NonNullable<Awaited<ReturnType<StreamDeps["getProviderProfile"]>>>;
+  modelName: string;
+  assembly: PromptAssemblyResult;
+  messages: Array<{
+    role: "system" | "user" | "assistant";
+    content: string;
+  }>;
+}
+
+async function prepareAiAssistantRequest(
+  request: AiAssistantStreamRequest,
+  deps: StreamDeps,
+): Promise<PreparedAiAssistantRequest> {
+  const config = getModeConfig(request.mode);
+
+  // 1. Resolve provider + model
+  const profile = await deps.getProviderProfile(request.providerProfileId);
+  if (!profile) {
+    throw new Error(`Provider profile not found: ${request.providerProfileId}`);
+  }
+  const modelName = request.model ?? profile.defaultModel ?? "gpt-4o-mini";
+
+  // 2. Resolve system prompt via fallback chain
+  const presetData = await deps.getPresetPromptData();
+  const { prompt: systemPrompt, source } = await resolveSystemPrompt(request.mode, {
+    aiAssistantPrompts: presetData.aiAssistantPrompts,
+    scriptAiSystemPrompt: presetData.scriptAiSystemPrompt,
+  });
+
+  deps.logDebug?.("api.ai-assistant.prompt-resolved", {
+    mode: request.mode,
+    source,
+    systemPromptLength: systemPrompt.length,
+    systemPromptPreview: systemPrompt.slice(0, 120),
+    model: modelName,
+    providerProfileId: request.providerProfileId,
+  });
+
+  // 3. Resolve context bindings
+  const resolvedContext: ResolvedContext = await resolveContext(deps, {
+    characterIds: request.characterIds,
+    personaIds: request.personaIds,
+    loreEntryIds: request.loreEntryIds,
+    lorebookIds: request.lorebookIds,
+  });
+
+  // 4. Build user message (mode-specific)
+  const userMessage = buildUserMessage(request, config);
+
+  // 5. Assemble via pipeline using the selected model tokenizer
+  const pipelineContext: PromptAssemblyContext = {
+    identity: { chatId: "ai-assistant" },
+    character: toPipelineCharacters(resolvedContext)[0] ?? {
+      id: "",
+      name: "",
+      description: "",
+    },
+    persona: toPipelinePersonas(resolvedContext)[0] ?? null,
+    lore: toPipelineLore(resolvedContext),
+    mode: "ai_assistant",
+    aiAssistant: {
+      mode: request.mode,
+      enabledLayers: request.enabledLayers,
+      existingContent: request.existingContent,
+      instruction: userMessage,
+      systemPrompt,
+    },
+    chat: { recentMessages: [] },
+  };
+
+  setModelHint(modelName);
+  const assembly = assemblePrompt(pipelineContext);
+  const messages = assembly.finalPayload.messages as Array<{
+    role: "system" | "user" | "assistant";
+    content: string;
+  }>;
+
+  deps.logDebug?.("api.ai-assistant.assembly-complete", {
+    mode: request.mode,
+    layerCount: assembly.layers.length,
+    totalTokenEstimate: assembly.totalTokenEstimate,
+    messageCount: messages.length,
+    droppedLayers: assembly.droppedLayers.length,
+  });
+
+  return { config, profile, modelName, assembly, messages };
+}
+
+export async function countAiAssistantTokens(
+  request: AiAssistantStreamRequest,
+  deps: StreamDeps,
+): Promise<{ tokens: number; model: string; layerCount: number; messageCount: number }> {
+  const prepared = await prepareAiAssistantRequest(request, deps);
+  return {
+    tokens: prepared.assembly.totalTokenEstimate,
+    model: prepared.modelName,
+    layerCount: prepared.assembly.layers.length,
+    messageCount: prepared.messages.length,
+  };
+}
+
 // ─── Main streaming function ─────────────────────────────────────────────────
 
 export async function* streamAiAssistant(
   request: AiAssistantStreamRequest,
   deps: StreamDeps,
 ): AsyncGenerator<AiAssistantStreamChunk> {
-  const config = getModeConfig(request.mode);
-
   try {
-    // 1. Resolve provider + model
-    const profile = await deps.getProviderProfile(request.providerProfileId);
-    if (!profile) {
-      yield { type: "error", error: `Provider profile not found: ${request.providerProfileId}` };
-      return;
-    }
-    const modelName = request.model ?? profile.defaultModel ?? "gpt-4o-mini";
+    const { config, profile, modelName, messages } = await prepareAiAssistantRequest(request, deps);
     const aiModel = deps.resolveModel(profile, modelName);
-
-    // 2. Resolve system prompt via fallback chain
-    const presetData = await deps.getPresetPromptData();
-    const { prompt: systemPrompt, source } = await resolveSystemPrompt(request.mode, {
-      aiAssistantPrompts: presetData.aiAssistantPrompts,
-      scriptAiSystemPrompt: presetData.scriptAiSystemPrompt,
-    });
-
-    deps.logDebug?.("api.ai-assistant.prompt-resolved", {
-      mode: request.mode,
-      source,
-      systemPromptLength: systemPrompt.length,
-      systemPromptPreview: systemPrompt.slice(0, 120),
-      model: modelName,
-      providerProfileId: request.providerProfileId,
-    });
-
-    // 3. Resolve context bindings
-    const resolvedContext: ResolvedContext = await resolveContext(deps, {
-      characterIds: request.characterIds,
-      personaIds: request.personaIds,
-      loreEntryIds: request.loreEntryIds,
-      lorebookIds: request.lorebookIds,
-    });
-
-    // 4. Build user message (mode-specific)
-    const userMessage = buildUserMessage(request, config);
-
-    // 5. Assemble via pipeline
-    const pipelineContext: PromptAssemblyContext = {
-      identity: { chatId: "ai-assistant" },
-      character: toPipelineCharacters(resolvedContext)[0] ?? {
-        id: "",
-        name: "",
-        description: "",
-      },
-      persona: toPipelinePersonas(resolvedContext)[0] ?? null,
-      lore: toPipelineLore(resolvedContext),
-      mode: "ai_assistant",
-      aiAssistant: {
-        mode: request.mode,
-        enabledLayers: request.enabledLayers,
-        existingContent: request.existingContent,
-        instruction: userMessage,
-        systemPrompt,
-      },
-      chat: { recentMessages: [] },
-    };
-
-    const assembly = assemblePrompt(pipelineContext);
-    const messages = assembly.finalPayload.messages as Array<{
-      role: "system" | "user" | "assistant";
-      content: string;
-    }>;
-
-    deps.logDebug?.("api.ai-assistant.assembly-complete", {
-      mode: request.mode,
-      layerCount: assembly.layers.length,
-      totalTokenEstimate: assembly.totalTokenEstimate,
-      messageCount: messages.length,
-      droppedLayers: assembly.droppedLayers.length,
-    });
 
     // 6. Stream via AI SDK
     const result = await streamText({

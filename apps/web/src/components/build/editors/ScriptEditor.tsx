@@ -12,6 +12,7 @@ import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { SCRIPT_TEMPLATES } from "./scriptTemplates.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
+import { TokenCounter } from "../../shared/TokenCounter.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { MessageReasoning } from "../../chat/MessageReasoning.js";
@@ -23,8 +24,10 @@ import {
   testScript,
   importScript,
   listLorebooks,
+  countAiAssistantTokens,
   streamAiAssistant,
   updateUiSettings,
+  type AiAssistantRequestBody,
   type LorebookRecord,
   type ScriptRecord,
 } from "../../../app-client.js";
@@ -194,6 +197,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const [aiStreaming, setAiStreaming] = useState(false);
   const [aiStreamedCode, setAiStreamedCode] = useState("");
   const [aiStreamedReasoning, setAiStreamedReasoning] = useState("");
+  const [aiPromptTokenCount, setAiPromptTokenCount] = useState<number | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
 
   const aiAbortRef = useRef<AbortController | null>(null);
@@ -393,8 +397,52 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     persistAiModelSelection(aiProviderId, id || null);
   };
 
+  const buildScriptAiRequest = useCallback((): AiAssistantRequestBody | null => {
+    if (!aiProviderId) return null;
+    const lorebookIds = selectedLorebookIds;
+    return {
+      mode: "script",
+      instruction: aiPrompt,
+      existingContent: activeScript?.code || undefined,
+      providerProfileId: aiProviderId,
+      model: aiModelName || undefined,
+      enabledLayers: [
+        ...(aiIncludeCharacter ? ["character_base"] : []),
+        ...(aiIncludePersona && personaId ? ["persona"] : []),
+        ...(lorebookIds.length > 0 ? ["lore"] : []),
+      ],
+      characterIds: aiIncludeCharacter && characterId ? [characterId] : [],
+      personaIds: aiIncludePersona && personaId ? [personaId] : [],
+      lorebookIds,
+    };
+  }, [activeScript?.code, aiIncludeCharacter, aiIncludePersona, aiModelName, aiPrompt, aiProviderId, characterId, personaId, selectedLorebookIds.join("\u0000")]);
+
+  useEffect(() => {
+    if (!aiHelperOpen) return;
+    const request = buildScriptAiRequest();
+    if (!request) {
+      setAiPromptTokenCount(null);
+      return;
+    }
+
+    const ac = new AbortController();
+    const timer = setTimeout(() => {
+      countAiAssistantTokens(request, { signal: ac.signal })
+        .then((result) => setAiPromptTokenCount(result.tokens))
+        .catch((err: unknown) => {
+          if (!(err instanceof Error && err.name === "AbortError")) setAiPromptTokenCount(null);
+        });
+    }, 250);
+
+    return () => {
+      clearTimeout(timer);
+      ac.abort();
+    };
+  }, [aiHelperOpen, buildScriptAiRequest]);
+
   const handleAiGenerate = async () => {
-    if (!aiProviderId || !aiPrompt) return;
+    const request = buildScriptAiRequest();
+    if (!request || !aiPrompt) return;
     persistAiModelSelection(aiProviderId, aiModelName || null);
     setAiStreaming(true);
     setAiError(null);
@@ -403,23 +451,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     const ac = new AbortController();
     aiAbortRef.current = ac;
     try {
-      const lorebookIds = selectedLorebookIds;
-      const enabledLayers = [
-        ...(aiIncludeCharacter ? ["character_base"] : []),
-        ...(aiIncludePersona && personaId ? ["persona"] : []),
-        ...(lorebookIds.length > 0 ? ["lore"] : []),
-      ];
-      for await (const chunk of streamAiAssistant({
-        mode: "script",
-        instruction: aiPrompt,
-        existingContent: activeScript?.code || undefined,
-        providerProfileId: aiProviderId,
-        model: aiModelName || undefined,
-        enabledLayers,
-        characterIds: aiIncludeCharacter && characterId ? [characterId] : [],
-        personaIds: aiIncludePersona && personaId ? [personaId] : [],
-        lorebookIds,
-      }, { signal: ac.signal })) {
+      for await (const chunk of streamAiAssistant(request, { signal: ac.signal })) {
         if (chunk.type === "reasoning" && chunk.text) {
           setAiStreamedReasoning(prev => prev + chunk.text);
         }
@@ -558,7 +590,10 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                     <MobileExpandTextarea value={aiPrompt} onChange={setAiPrompt} label={t("script_ai_helper")}>
                       <textarea className="w-full min-h-[100px] rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent resize-none" placeholder={t("script_ai_prompt")} value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
                     </MobileExpandTextarea>
-                    <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("script_ai_prompt_hint")}</div>
+                    <div className="mt-1 flex items-center justify-between gap-3">
+                      <div className="font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("script_ai_prompt_hint")}</div>
+                      {aiPromptTokenCount !== null && <TokenCounter text="" count={aiPromptTokenCount} />}
+                    </div>
                   </div>
                   {aiStreamedReasoning && (
                     <div className="mb-3">
