@@ -1095,6 +1095,7 @@ export interface AiAssistantRequestBody {
   characterIds?: string[];
   personaIds?: string[];
   loreEntryIds?: string[];
+  lorebookIds?: string[];
   recentMessageCount?: number;
   existingKeys?: string[];
   existingSecondaryKeys?: string[];

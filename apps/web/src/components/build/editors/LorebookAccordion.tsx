@@ -446,7 +446,11 @@ export function LorebookAccordion({
                   links={links}
                   characters={characters}
                   personas={personas}
-                  onSetLinks={onSetLinks}
+                  onSetLinks={(nextLinks) => onSetLinks(
+                    nextLinks.filter((l): l is { targetType: "character" | "persona"; targetId: string } =>
+                      l.targetType === "character" || l.targetType === "persona",
+                    ),
+                  )}
                   t={t}
                   isMobile={isMobile}
                 />

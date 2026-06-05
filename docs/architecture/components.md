@@ -19,7 +19,7 @@
 | `<CodeEditor>` | `<textarea>` for code | `CodeEditor.tsx` | CodeMirror 6 wrapper |
 | `<SaveBar>` | Custom save buttons | `SaveBar.tsx` | Sticky save bar with state |
 | `<TokenCounter>` | Custom token display | `TokenCounter.tsx` | "123 tokens" badge |
-| `<LinkBindingPopover>` | Custom avatar binding chips | `LinkBindingPopover.tsx` | Compact character/persona binding pills + popover |
+| `<LinkBindingPopover>` | Custom avatar binding chips | `LinkBindingPopover.tsx` | Compact character/persona/lorebook binding pills + popover |
 | `<MobileExpandTextarea>` | — | `MobileExpandTextarea.tsx` | Fullscreen editor overlay on mobile |
 | `<ConfirmCloseModal>` | Custom confirm | `confirm-close-modal.tsx` | "Discard changes?" dialog |
 | `<DestructiveConfirmModal>` | Custom confirm | `destructive-confirm-modal.tsx` | "Are you sure?" for delete actions |
@@ -183,13 +183,14 @@
 ## LinkBindingPopover
 
 **File:** `LinkBindingPopover.tsx`
-**Replaces:** Ad-hoc character/persona binding chips
+**Replaces:** Ad-hoc character/persona/lorebook binding chips
 
 ```tsx
 <LinkBindingPopover
   links={[{ targetType: "character", targetId: characterId }]}
   characters={[{ id: characterId, name: characterName, avatarAssetId }]}
   personas={persona ? [{ id: persona.id, name: persona.name, avatarAssetId: persona.avatarAssetId }] : []}
+  lorebooks={[{ id: lorebook.id, name: lorebook.name, avatarAssetId: null }]}
   onSetLinks={setLinks}
   t={t}
   isMobile={isMobile}
@@ -198,9 +199,10 @@
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `links` | `{ targetType: "character" \| "persona"; targetId: string }[]` | Active bindings |
+| `links` | `{ targetType: "character" \| "persona" \| "lorebook"; targetId: string }[]` | Active bindings |
 | `characters` | `LinkTarget[]` | Available character targets |
 | `personas` | `LinkTarget[]` | Available persona targets |
+| `lorebooks` | `LinkTarget[]?` | Available lorebook targets |
 | `onSetLinks` | `(links) => void` | Called when a pill/chip toggles |
 | `t` | `(key: string) => string` | i18n resolver |
 | `isMobile` | `boolean` | Uses larger touch targets on mobile |
@@ -208,7 +210,7 @@
 
 **Styling:** Matches the app's binding UI: active bindings are compact avatar pills (`h-[22px]`, `bg-s2`, `border-border`, `hover:border-danger`); the dashed `+` button opens a popover with selectable avatar chips.
 
-**When to use:** Any UI that binds content to characters/personas (lorebooks, AI assistant context, future scoped resources). Do not recreate these chips manually.
+**When to use:** Any UI that binds content to characters/personas/lorebooks (lorebooks, AI assistant context, future scoped resources). Do not recreate these chips manually.
 
 ---
 

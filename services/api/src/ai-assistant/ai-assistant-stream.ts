@@ -51,6 +51,8 @@ export interface AiAssistantStreamRequest {
   personaIds?: string[];
   /** Lore entries to attach as context. */
   loreEntryIds?: string[];
+  /** Whole lorebooks to attach as context; backend expands enabled entries. */
+  lorebookIds?: string[];
 
   // Lore keys mode extras
   /** Existing primary keys on the entry (for de-duplication). */
@@ -118,6 +120,7 @@ export async function* streamAiAssistant(
       characterIds: request.characterIds,
       personaIds: request.personaIds,
       loreEntryIds: request.loreEntryIds,
+      lorebookIds: request.lorebookIds,
     });
 
     // 4. Build user message (mode-specific)
