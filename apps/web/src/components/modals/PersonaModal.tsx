@@ -53,9 +53,13 @@ export function PersonaModal(input: PersonaModalProps) {
   const { t } = useT();
   const isOpen = useModalStore((s) => s.isPersonaModalOpen);
   const setIsOpen = useModalStore((s) => s.setIsPersonaModalOpen);
-  const onClose = () => setIsOpen(false);
+  const onClose = () => {
+    void discardCreatedDraft();
+    setIsOpen(false);
+  };
   const [selectedId, setSelectedId] = useState<string | null>(input.activePersonaId);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [createdDraftPersonaId, setCreatedDraftPersonaId] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -96,6 +100,15 @@ export function PersonaModal(input: PersonaModalProps) {
     });
   }
 
+  function discardCreatedDraft(): void {
+    const draftId = createdDraftPersonaId;
+    if (!draftId) return;
+    setCreatedDraftPersonaId(null);
+    setEditingId((current) => current === draftId ? null : current);
+    setSelectedId((current) => current === draftId ? input.activePersonaId : current);
+    void input.onDeletePersona(draftId).catch(() => undefined);
+  }
+
   function commitEdit(): void {
     if (!editingId) return;
     const name = form.getValues("name");
@@ -109,10 +122,15 @@ export function PersonaModal(input: PersonaModalProps) {
       ? (pronounsCustom.trim() || null)
       : (pronouns || null);
     input.onSaveEdit(editingId, { name: name.trim(), description, pronouns: resolved, avatarAssetId, avatarFullAssetId });
+    if (createdDraftPersonaId === editingId) setCreatedDraftPersonaId(null);
     setEditingId(null);
   }
 
   function cancelEdit(): void {
+    if (editingId === createdDraftPersonaId) {
+      discardCreatedDraft();
+      return;
+    }
     setEditingId(null);
   }
 
@@ -441,8 +459,10 @@ export function PersonaModal(input: PersonaModalProps) {
         className={cn("flex shrink-0 items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "mx-4 mb-2 min-h-[48px] text-[14px]" : "mx-5 mb-2 py-3 text-sm")}
         style={{ color: "var(--t2)" }}
         onClick={async () => {
+          discardCreatedDraft();
           const created = await input.onCreatePersona({ name: t("new_persona_default"), description: "" });
           if (created) {
+            setCreatedDraftPersonaId(created.id);
             setSelectedId(created.id);
             setEditingId(created.id);
             form.reset({

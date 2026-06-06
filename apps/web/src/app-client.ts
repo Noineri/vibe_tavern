@@ -709,6 +709,18 @@ export async function selectMessageVariant(
   return normalizeSnapshot(data);
 }
 
+export async function deleteMessageVariant(
+  chatId: ChatId,
+  messageId: string,
+  variantIndex: number,
+): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].messages[":messageId"].variants[":variantIndex"].$delete({
+    param: { chatId, messageId, variantIndex: String(variantIndex) },
+  });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
+}
+
 export async function editChatMessage(
   chatId: ChatId,
   messageId: string,

@@ -172,6 +172,7 @@ export function LorebookEditor({
   };
 
   const handleBackToPick = () => {
+    void discardCreatedLorebookDraft();
     writeStickyWorldLoreTab(null);
     setView("pick");
     setActiveEntryId(null);
@@ -196,6 +197,7 @@ export function LorebookEditor({
   );
   const [editLbName, setEditLbName] = useState("");
   const [editLbScope, setEditLbScope] = useState<Scope>("character");
+  const [createdDraftLorebookId, setCreatedDraftLorebookId] = useState<string | null>(null);
 
   // ── Контекстное меню на мобиле ──
   const [actionMenuLorebookId, setActionMenuLorebookId] = useState<
@@ -324,6 +326,24 @@ export function LorebookEditor({
 
   // ═══ Мутации лорбуков ═══
 
+  async function discardCreatedLorebookDraft(): Promise<void> {
+    const draftId = createdDraftLorebookId;
+    if (!draftId) return;
+    setCreatedDraftLorebookId(null);
+    setEditingLorebookId((current) => current === draftId ? null : current);
+    setExpandedLorebooks((prev) => {
+      const next = new Set(prev);
+      next.delete(draftId);
+      return next;
+    });
+    try {
+      await deleteLorebook(draftId);
+      await refreshLorebooks();
+    } catch {
+      // Best-effort cleanup on cancel/back; avoid blocking navigation.
+    }
+  }
+
   const handleCreateLb = async (body: {
     name: string;
     scopeType: string;
@@ -331,9 +351,11 @@ export function LorebookEditor({
     personaId?: string;
     chatId?: string;
   }) => {
+    await discardCreatedLorebookDraft();
     const newLb = await createLorebook(body);
+    setCreatedDraftLorebookId(newLb.id);
     await refreshLorebooks();
-      setExpandedLorebooks((prev) => new Set([...prev, newLb.id]));
+    setExpandedLorebooks((prev) => new Set([...prev, newLb.id]));
     setEditingLorebookId(newLb.id);
     setEditLbName(newLb.name);
   };
@@ -343,6 +365,7 @@ export function LorebookEditor({
     body: Parameters<typeof updateLorebookMeta>[1]
   ) => {
     await updateLorebookMeta(id, body);
+    if (createdDraftLorebookId === id) setCreatedDraftLorebookId(null);
     await refreshLorebooks();
     setEditingLorebookId(null);
   };
@@ -356,6 +379,7 @@ export function LorebookEditor({
 
   const handleDeleteLb = async (id: string) => {
     await deleteLorebook(id);
+    if (createdDraftLorebookId === id) setCreatedDraftLorebookId(null);
     await refreshLorebooks();
     setConfirmDeleteLorebook(null);
   };
@@ -703,7 +727,13 @@ export function LorebookEditor({
             setEditLbScope(lb.scopeType as Scope);
           }}
           onSaveEdit={saveLorebookEdit}
-          onCancelEdit={() => setEditingLorebookId(null)}
+          onCancelEdit={() => {
+            if (editingLorebookId === createdDraftLorebookId) {
+              void discardCreatedLorebookDraft();
+              return;
+            }
+            setEditingLorebookId(null);
+          }}
           onEditLbName={setEditLbName}
           onEditLbScope={(s: string) => setEditLbScope(s as Scope)}
           onDelete={() => setConfirmDeleteLorebook(lb.id)}

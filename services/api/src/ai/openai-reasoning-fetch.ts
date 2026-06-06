@@ -173,6 +173,44 @@ function rewriteSseStream(body: ReadableStream<Uint8Array>): ReadableStream<Uint
   });
 }
 
+// ─── Non-streaming JSON rewriter ──────────────────────────────────────
+
+const THINKING_TAG_RE = /<(?:thinking|think|thought)>[\s\S]*?<\/(?:thinking|think|thought)>/i;
+
+function getMessageReasoning(message: unknown): string | null {
+  if (!message || typeof message !== "object") return null;
+  const record = message as Record<string, unknown>;
+  const reasoning = typeof record.reasoning === "string" && record.reasoning.trim().length > 0
+    ? record.reasoning
+    : typeof record.reasoning_content === "string" && record.reasoning_content.trim().length > 0
+      ? record.reasoning_content
+      : null;
+  return reasoning;
+}
+
+function rewriteNonStreamingJson(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object") return payload;
+  const record = payload as { choices?: unknown };
+  if (!Array.isArray(record.choices)) return payload;
+
+  let changed = false;
+  const rewritten = structuredClone(payload) as { choices?: Array<{ message?: Record<string, unknown> }> };
+  for (const choice of rewritten.choices ?? []) {
+    const message = choice.message;
+    const reasoning = getMessageReasoning(message);
+    if (!message || !reasoning) continue;
+
+    const content = message.content;
+    if (typeof content === "string") {
+      if (THINKING_TAG_RE.test(content)) continue;
+      message.content = `<thinking>${reasoning.trim()}</thinking>${content.trim() ? `\n\n${content}` : ""}`;
+      changed = true;
+    }
+  }
+
+  return changed ? rewritten : payload;
+}
+
 // ─── Fetch wrapper ─────────────────────────────────────────────────────
 
 export interface ReasoningFetchOptions {
@@ -197,20 +235,43 @@ export function createReasoningAwareFetch(
     ): Promise<Response> {
       const response = await baseFetch(input as RequestInfo, init);
 
-    // Only intercept streaming Chat Completions responses
+    // Only intercept Chat Completions responses
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     const isChatCompletions = url.includes("/chat/completions");
-    const isStreaming = response.headers.get("content-type")?.includes("text/event-stream");
+    const contentType = response.headers.get("content-type") ?? "";
+    const isStreaming = contentType.includes("text/event-stream");
 
-    if (!isChatCompletions || !isStreaming || !response.body) {
+    if (!isChatCompletions) {
       return response;
     }
 
-    return new Response(rewriteSseStream(response.body), {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-    });
+    if (isStreaming && response.body) {
+      return new Response(rewriteSseStream(response.body), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    }
+
+    if (contentType.includes("application/json")) {
+      try {
+        const payload = await response.clone().json();
+        const rewritten = rewriteNonStreamingJson(payload);
+        if (rewritten !== payload) {
+          const headers = new Headers(response.headers);
+          headers.delete("content-length");
+          return new Response(JSON.stringify(rewritten), {
+            status: response.status,
+            statusText: response.statusText,
+            headers,
+          });
+        }
+      } catch {
+        return response;
+      }
+    }
+
+    return response;
   },
   { preconnect: (baseFetch as { preconnect?: (...args: unknown[]) => void }).preconnect ?? (() => {}) },
   ) as typeof globalThis.fetch;

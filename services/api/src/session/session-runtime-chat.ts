@@ -204,6 +204,11 @@ export class ChatRuntime {
     return await this.deps.getSnapshot(chatId);
   }
 
+  async deleteMessageVariant(chatId: ChatId, messageId: MessageId, variantIndex: number): Promise<SessionSnapshot> {
+    await this.deps.chats.deleteVariant(messageId, variantIndex);
+    return await this.deps.getSnapshot(chatId);
+  }
+
   async editMessage(chatId: ChatId, messageId: string, content: string): Promise<SessionSnapshot> {
     await this.deps.chatApp.editMessage(messageId, content);
     return await this.deps.getSnapshot(chatId);

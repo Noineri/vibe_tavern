@@ -5,6 +5,7 @@ import {
   deleteBranch,
   deleteChat,
   deleteChatMessage,
+  deleteMessageVariant,
   editChatMessage,
   fetchChat,
   forkBranch,
@@ -98,6 +99,11 @@ export async function editMessageAction(chatId: ChatId, messageId: string, conte
 
 export async function deleteMessageAction(chatId: ChatId, messageId: string): Promise<void> {
   const snapshot = await deleteChatMessage(chatId, messageId);
+  syncSnapshot(snapshot);
+}
+
+export async function deleteVariantAction(chatId: ChatId, messageId: string, variantIndex: number): Promise<void> {
+  const snapshot = await deleteMessageVariant(chatId, messageId, variantIndex);
   syncSnapshot(snapshot);
 }
 

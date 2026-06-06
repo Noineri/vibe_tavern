@@ -7,7 +7,6 @@
   "no_provider": "Нет провайдера",
   "no_model_selected": "Модель не выбрана",
   "select_character_start_chat": "Выберите персонажа и начните новый чат",
-
   "sidebar_characters": "Персонажи",
   "sidebar_chats": "Чаты",
   "sidebar_prompt_manager": "Менеджер промптов",
@@ -44,7 +43,6 @@
   "sidebar_character_actions": "Действия с персонажем",
   "sidebar_chat_actions": "Действия с чатом",
   "sidebar_chat_branches": "Ветки чата",
-
   "ws_title": "Добро пожаловать",
   "ws_sub": "Выберите, как начать",
   "ws_create": "Создать персонажа",
@@ -59,14 +57,12 @@
   "ws_creating": "Создание…",
   "ws_create_btn": "Создать",
   "ws_name_placeholder": "Имя персонажа",
-
   "topbar_memory": "Память",
   "topbar_prompt_preset": "Пресет промптов",
   "topbar_build_mode": "Редактор",
   "topbar_play_mode": "Вернуться к игре",
   "topbar_default": "По умолчанию",
   "topbar_interface_settings": "Настройки интерфейса",
-
   "unnamed": "Безымянный",
   "char_import_to_draft": "Импортировать карточку персонажа в черновик",
   "saving": "Сохранение...",
@@ -116,7 +112,6 @@
   "import_failed": "Ошибка импорта",
   "tokens_label": "токенов",
   "create_character_manual": "Создать персонажа",
-
   "build_char_card": "Карта персонажа",
   "build_prompt_trace": "Трассировка промпта",
   "editor": "Редактор",
@@ -136,7 +131,6 @@
   "trace_mobile_hint": "Точная сборка промпта, отправленного модели на последнем ходу (System, Context, RAG, History).",
   "trace_json_payload": "Просмотр JSON Payload",
   "trace_no_traces_yet": "Трассировок ещё нет. Отправьте сообщение для записи.",
-
   "placeholder": "Продолжите историю...",
   "speak_as": "Говорить как",
   "multi_persona_tooltip": "Мульти-персона режим",
@@ -162,7 +156,6 @@
   "send_message": "Отправить сообщение",
   "type_a_message": "Введите сообщение",
   "generating_response": "Генерация ответа",
-
   "copy": "Копировать",
   "copied": "Скопировано",
   "edit": "Редактировать",
@@ -173,7 +166,6 @@
   "cancel_edit": "Отмена",
   "message_user_label": "Вы",
   "greeting_counter": "Приветствие {n}/{total}",
-
   "character_import_title": "Импорт персонажа",
   "character_import_sub": "Загрузите PNG карточку персонажа или JSON файл.",
   "click_or_drop_file": "Нажмите или перетащите файл персонажа сюда",
@@ -218,7 +210,6 @@
   "importing_file": "Импорт файла...",
   "drop_png_json": "Перетащите PNG или JSON сюда или нажмите для выбора файла",
   "import_surface_desc": "PNG или JSON карточки персонажей создают новый чат. JSON лорбука прикрепляется к текущему персонажу.",
-
   "provider_settings_title": "Настройки провайдера",
   "provider_settings_desc": "Управление подключениями и параметрами генерации для AI провайдеров.",
   "provider_select_profile": "Выберите профиль или создайте новый.",
@@ -278,7 +269,6 @@
   "failed_to_fetch_models": "Не удалось загрузить модели.",
   "request_failed": "Ошибка запроса.",
   "endpoint_url_required": "Требуется URL эндпоинта.",
-
   "sampler_basic_settings": "Основные настройки",
   "sampler_max_context": "Токены ответа",
   "sampler_max_context_hint": "Установите -1, чтобы модель сама решала, сколько писать.",
@@ -316,7 +306,6 @@
   "logit_bias_manual_placeholder": "ID токена вручную…",
   "logit_bias_empty_hint": "Введите текст и нажмите «Токенизировать» или добавьте ID токена вручную.",
   "logit_bias_tooltip": "Сдвигает вероятность отдельных токенов после токенизации. Отрицательные значения подавляют токен (-100 почти банит), положительные делают его вероятнее. Введите слово/фразу, токенизируйте и настройте слайдеры. Осторожно: ID токенов зависят от модели/токенизатора.",
-
   "capabilities": "Возможности",
   "cap_non_streaming": "Без стриминга",
   "cap_streaming": "Стриминг",
@@ -333,7 +322,6 @@
   "prefill_unknown": "Поддержка префилла неизвестна до загрузки возможностей провайдера.",
   "prefill_supported_badge": "поддерживается",
   "prefill_placeholder": "Начало ответа ассистента...",
-
   "persona_manager_title": "Менеджер персон",
   "persona_manager_sub": "Чей голос вы используете в чате?",
   "no_personas": "Нет персон",
@@ -358,7 +346,6 @@
   "delete_failed": "Ошибка удаления.",
   "persona_selection": "Переключить персону",
   "manage_personas": "Управление персонами",
-
   "prompt_manager_title": "Менеджер промптов",
   "prompt_manager_sub": "Системные, пост-исторические и инструкции саммари/инструментов для каждого пресета.",
   "unsaved_changes_title": "Несохранённые изменения",
@@ -454,7 +441,6 @@
   "prompt_section_service_desc": "Эти промпты используются для отдельных операций и не влияют на чат.",
   "summary_desc": "Системный промпт для генерации сводки памяти чата.",
   "script_ai_prompt_desc": "Системный промпт для ИИ-ассистента в редакторе скриптов.",
-
   "context_memory_title": "Память",
   "scenario_memory": "Память",
   "context_memory_sub": "Создайте краткую сводку старой истории чата для памяти модели.",
@@ -507,7 +493,6 @@
   "summary_label_prefix": "Сводка",
   "summary_timestamp_saved": "сохранено",
   "toggle_context_summary": "Включить в контекст",
-
   "world_info_count": "Мировая информация",
   "new_lore_entry": "Новая запись",
   "untitled": "Без названия",
@@ -544,14 +529,12 @@
   "delete_lore_confirm": "Удалить запись",
   "select_or_create": "Выберите запись или создайте новую",
   "lore_request_failed": "Ошибка запроса: {error}",
-
   "close_without_saving_body": "Закрытие приведёт к потере изменений.",
   "keep_editing": "Продолжить редактирование",
   "close_without_saving": "Закрыть без сохранения",
   "confirm": "Подтвердить",
   "character_avatar_alt": "Аватар персонажа",
   "drag_scroll_zoom": "перетаскивание · прокрутка для масштабирования",
-
   "char_card_saved": "Карточка персонажа сохранена.",
   "char_save_failed": "Не удалось сохранить персонажа.",
   "char_avatar_saved": "Аватар персонажа сохранён.",
@@ -583,7 +566,6 @@
   "failed_to_export_trace": "Не удалось экспортировать трассировку промпта.",
   "failed_to_rename_chat": "Не удалось переименовать чат.",
   "failed_to_create_chat": "Не удалось создать чат.",
-
   "generation_cancelled": "Генерация отменена.",
   "message_send_failed": "Ошибка отправки сообщения.",
   "message_unavailable_no_provider": "Отправка сообщений недоступна, пока не активирован профиль провайдера.",
@@ -595,7 +577,6 @@
   "regen_failed": "Ошибка перегенерации.",
   "cannot_delete_main_branch": "Нельзя удалить: активная ветка является основным таймлайном.",
   "branch_delete_failed": "Ошибка удаления ветки.",
-
   "could_not_load_app_state": "Не удалось загрузить состояние приложения.",
   "connecting_status": "подключение...",
   "connected_status": "подключено",
@@ -603,7 +584,6 @@
   "not_connected_status": "не подключено",
   "model_selected_local": "Модель выбрана. Чат использует сохранённый локальный профиль провайдера.",
   "no_provider_profile_hint": "Сохраните или выберите профиль провайдера, подключитесь, затем выберите модель.",
-
   "provider_load_failed": "Не удалось загрузить сохранённые профили провайдеров.",
   "provider_save_connect_failed": "Не удалось сохранить и подключить профиль провайдера.",
   "provider_load_profile_failed": "Не удалось загрузить сохранённый профиль.",
@@ -615,12 +595,10 @@
   "provider_duplicate_failed": "Не удалось дублировать профиль провайдера.",
   "provider_refresh_models_failed": "Не удалось обновить список моделей.",
   "new_profile": "Новый профиль",
-
   "preset_set_failed": "Не удалось установить пресет промптов.",
   "preset_create_failed": "Не удалось создать пресет.",
   "preset_save_failed": "Не удалось сохранить пресет.",
   "preset_delete_failed": "Не удалось удалить пресет.",
-
   "import_unsupported_type": "Неподдерживаемый формат файла. Загрузите PNG карточку персонажа, JSON файл или SillyTavern JSONL чат.",
   "import_character_failed": "Не удалось импортировать персонажа",
   "import_lorebook_title": "Импорт лорбука",
@@ -647,7 +625,6 @@
   "import_target_lorebook": "Выберите целевой лорбук:",
   "import_back": "Назад",
   "import_next": "Далее",
-
   "tweaks_title": "Настройки",
   "tweaks_language": "Язык",
   "tweaks_theme": "Тема",
@@ -660,7 +637,6 @@
   "tweaks_small": "Мелкий",
   "tweaks_large": "Крупный",
   "tweaks_dark_theme": "Тёмная тема",
-
   "mobile_access": "Мобильный доступ",
   "mobile_access_desc": "Подключитесь с телефона",
   "mobile_access_off": "Выкл",
@@ -682,7 +658,6 @@
   "mobile_access_loading": "Загрузка...",
   "mobile_token_required": "Требуется токен доступа",
   "mobile_token_required_desc": "Отсканируйте QR-код в десктопном приложении для подключения",
-
   "back": "← Назад",
   "confirm_delete": "Подтвердить удаление",
   "reasoning": "Размышления",
@@ -930,5 +905,8 @@
   "preview": "Превью",
   "expand_fullscreen": "Развернуть",
   "edit_field": "Правка",
-  "done_btn": "Готово"
+  "done_btn": "Готово",
+  "delete_message_body": "Выбери: удалить только текущий свайп-вариант или всё сообщение целиком.",
+  "delete_swipe_btn": "Удалить этот свайп",
+  "delete_message_btn": "Удалить сообщение"
 }
