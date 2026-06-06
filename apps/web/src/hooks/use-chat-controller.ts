@@ -28,6 +28,7 @@ import {
   forkBranchAction,
   activateBranchAction,
   deleteBranchAction,
+  renameBranchAction,
 } from "../stores/api-actions/chat-actions.js";
 
 export interface ChatControllerActions {
@@ -45,6 +46,7 @@ export interface ChatControllerActions {
   handleFork: (messageId?: string) => Promise<void>;
   handleActivateBranch: (branchId: ChatBranchId) => Promise<void>;
   handleDeleteActiveBranch: () => Promise<void>;
+  handleRenameBranch: (branchId: ChatBranchId, label: string) => Promise<void>;
 }
 
 export function useChatController(): ChatControllerActions {
@@ -430,6 +432,12 @@ export function useChatController(): ChatControllerActions {
     }
   }
 
+  async function handleRenameBranch(branchId: ChatBranchId, label: string): Promise<void> {
+    const activeChatId = getActiveChatId();
+    if (!activeChatId) return;
+    await renameBranchAction(activeChatId, branchId, label);
+  }
+
   return {
     handleSend,
     handleCancelGeneration,
@@ -445,5 +453,6 @@ export function useChatController(): ChatControllerActions {
     handleFork,
     handleActivateBranch,
     handleDeleteActiveBranch,
+    handleRenameBranch,
   };
 }

@@ -44,6 +44,10 @@ export function createChatRoutes(runtime: RuntimeApi) {
     .post("/api/chats/:chatId/messages/:messageId/branch", async (c) => {
       return c.json(await runtime.branchChat(c.req.param("chatId"), c.req.param("messageId")));
     })
+    .patch("/api/chats/:chatId/branches/:branchId", zValidator("json", schemas.renameBranchSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.renameBranch(c.req.param("chatId"), c.req.param("branchId"), body.label));
+    })
     .post("/api/chats/:chatId/messages/:messageId/regenerate", async (c) => {
       const chatId = c.req.param("chatId");
       const messageId = c.req.param("messageId");

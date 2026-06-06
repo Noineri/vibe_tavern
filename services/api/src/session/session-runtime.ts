@@ -203,6 +203,8 @@ export interface ImportResult {
 	async getSnapshot(chatId: ChatId): Promise<SessionSnapshot> {
 		const { chat, branch, messages: branchMessages } = await this.chatApp.getChatState(chatId);
 		const branches = await this.stores.chats.getBranches(chat.id);
+		const branchMsgCounts = await this.stores.chats.getBranchMessageCounts(chat.id);
+		const branchesWithCounts = branches.map((b) => ({ ...b, messageCount: branchMsgCounts.get(b.id) ?? 0 }));
 		const character = await this.resolver.getCharacter(chat.characterId);
 		const persona = await this.resolver.getPersona(
 			chat.personaId ?? await this.persona.resolveDefaultId(),
@@ -223,7 +225,7 @@ export interface ImportResult {
 			allCharacters: await this.getAllCharacterEntries(),
 			activeChat: chat,
 			activeBranch: branch,
-			branches,
+			branches: branchesWithCounts,
 			messages: messagesWithVariants,
 			summaries: branchSummaries.map((summary) => ({
 				id: summary.id,

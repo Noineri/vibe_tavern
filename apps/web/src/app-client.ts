@@ -776,6 +776,16 @@ export async function activateBranch(
   return normalizeSnapshot(data);
 }
 
+export async function renameBranch(
+  chatId: ChatId,
+  branchId: ChatBranchId,
+  label: string,
+): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].branches[":branchId"].$patch({ param: { chatId, branchId }, json: { label } });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
+}
+
 export async function deleteBranch(
   chatId: ChatId,
   branchId: ChatBranchId,

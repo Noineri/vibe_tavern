@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, lte, sql } from 'drizzle-orm';
+import { eq, and, desc, asc, lte, count } from 'drizzle-orm';
 import { chats, chatBranches, characters, messages, messageVariants, promptTraces } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
@@ -40,6 +40,7 @@ export interface ChatBranch {
   forkedFromMessageId: string | null;
   label: string;
   createdAt: string;
+  messageCount?: number;
 }
 
 /**
@@ -323,6 +324,19 @@ export class ChatStore {
     return rows.map((row) => this.mapRowBranch(row));
   }
 
+  async getBranchMessageCounts(chatId: string): Promise<Map<string, number>> {
+    const rows = await this.db
+      .select({
+        branchId: messages.branchId,
+        count: count(),
+      })
+      .from(messages)
+      .where(eq(messages.chatId, chatId))
+      .groupBy(messages.branchId)
+      .all();
+    return new Map(rows.map((r) => [r.branchId, r.count]));
+  }
+
   async getActiveBranch(chatId: string): Promise<ChatBranch | null> {
     const chat = await this.getById(chatId);
     if (!chat) return null;
@@ -423,7 +437,7 @@ export class ChatStore {
 
     // Cannot delete the last branch of a chat
     const countRow = await this.db
-      .select({ count: sql<number>`count(*)` })
+      .select({ count: count() })
       .from(chatBranches)
       .where(eq(chatBranches.chatId, branch.chatId))
       .get();

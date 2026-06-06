@@ -28,3 +28,7 @@ export const renameChatSchema = z.object({
 export const setGreetingIndexSchema = z.object({
   greetingIndex: z.number().int().min(0),
 });
+
+export const renameBranchSchema = z.object({
+  label: z.string().min(1),
+});

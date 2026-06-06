@@ -908,5 +908,6 @@
   "done_btn": "Готово",
   "delete_message_body": "Выбери: удалить только текущий свайп-вариант или всё сообщение целиком.",
   "delete_swipe_btn": "Удалить этот свайп",
-  "delete_message_btn": "Удалить сообщение"
+  "delete_message_btn": "Удалить сообщение",
+  "rename_branch_prompt": "Имя ветки:"
 }

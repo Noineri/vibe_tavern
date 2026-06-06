@@ -13,6 +13,7 @@ export interface RuntimeApi {
   exportPromptTrace: (traceId: string) => Promise<unknown>;
   updateChatSettings: (chatId: string, body: { title: string; subtitle: string; scenario: string; systemPrompt: string }) => unknown;
   branchChat: (chatId: string, messageId: string) => unknown;
+  renameBranch: (chatId: string, branchId: string, label: string) => unknown;
   regenerateMessage: (chatId: string, messageId: string, body: unknown, signal?: AbortSignal) => Promise<unknown>;
   regenerateMessageStream: (chatId: string, messageId: string, body: unknown, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
   selectVariant: (chatId: string, messageId: string, variantIndex: number) => unknown;
