@@ -22,6 +22,7 @@ import {
   generateReplyAction,
   editMessageAction,
   deleteMessageAction,
+  deleteVariantAction,
   switchChatAction,
   selectVariantAction,
   forkBranchAction,
@@ -37,6 +38,7 @@ export interface ChatControllerActions {
   handleCancelEdit: () => void;
   handleSaveMessageEdit: (messageId: string) => Promise<void>;
   handleDeleteMessage: (messageId: string) => Promise<void>;
+  handleDeleteVariant: (messageId: string, variantIndex: number) => Promise<void>;
   handleRegenerateMessage: (messageId: string) => Promise<void>;
   handleSelectMessageVariant: (messageId: string, variantIndex: number) => Promise<void>;
   handleResend: () => Promise<void>;
@@ -318,7 +320,7 @@ export function useChatController(): ChatControllerActions {
 
   async function handleDeleteMessage(messageId: string): Promise<void> {
     const activeChatId = getActiveChatId();
-    if (!activeChatId || !window.confirm(getT()("delete_message_title"))) return;
+    if (!activeChatId) return;
 
     const cs = useChatStore.getState();
     cs.setMessageActionId(messageId);
@@ -328,6 +330,19 @@ export function useChatController(): ChatControllerActions {
         useChatStore.getState().setEditingMessageId(null);
         useChatStore.getState().setEditingDraft("");
       }
+    } finally {
+      useChatStore.getState().setMessageActionId(null);
+    }
+  }
+
+  async function handleDeleteVariant(messageId: string, variantIndex: number): Promise<void> {
+    const activeChatId = getActiveChatId();
+    if (!activeChatId) return;
+
+    const cs = useChatStore.getState();
+    cs.setMessageActionId(messageId);
+    try {
+      await deleteVariantAction(activeChatId, messageId, variantIndex);
     } finally {
       useChatStore.getState().setMessageActionId(null);
     }
@@ -423,6 +438,7 @@ export function useChatController(): ChatControllerActions {
     handleCancelEdit,
     handleSaveMessageEdit,
     handleDeleteMessage,
+    handleDeleteVariant,
     handleRegenerateMessage,
     handleSelectMessageVariant,
     handleResend,

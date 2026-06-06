@@ -85,6 +85,15 @@ export function createChatRoutes(runtime: RuntimeApi) {
         ),
       );
     })
+    .delete("/api/chats/:chatId/messages/:messageId/variants/:variantIndex", async (c) => {
+      return c.json(
+        await runtime.deleteVariant(
+          c.req.param("chatId"),
+          c.req.param("messageId"),
+          Number(c.req.param("variantIndex")),
+        ),
+      );
+    })
     .patch("/api/chats/:chatId/messages/:messageId", zValidator("json", schemas.editMessageSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(await runtime.editMessage(c.req.param("chatId"), c.req.param("messageId"), body.content ?? ""));

@@ -324,6 +324,9 @@ export class RuntimeApiAdapter {
 	selectVariant = (chatId: string, messageId: string, variantIndex: number) =>
 		this.sessionRuntime.chatRuntime.selectMessageVariant(brandId<ChatId>(chatId), brandId<MessageId>(messageId), variantIndex);
 
+	deleteVariant = (chatId: string, messageId: string, variantIndex: number) =>
+		this.sessionRuntime.chatRuntime.deleteMessageVariant(brandId<ChatId>(chatId), brandId<MessageId>(messageId), variantIndex);
+
 	editMessage = (chatId: string, messageId: string, content: string) =>
 		this.sessionRuntime.chatRuntime.editMessage(brandId<ChatId>(chatId), messageId, content);
 

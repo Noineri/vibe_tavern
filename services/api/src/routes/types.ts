@@ -16,6 +16,7 @@ export interface RuntimeApi {
   regenerateMessage: (chatId: string, messageId: string, body: unknown, signal?: AbortSignal) => Promise<unknown>;
   regenerateMessageStream: (chatId: string, messageId: string, body: unknown, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
   selectVariant: (chatId: string, messageId: string, variantIndex: number) => unknown;
+  deleteVariant: (chatId: string, messageId: string, variantIndex: number) => unknown;
   editMessage: (chatId: string, messageId: string, content: string) => unknown;
   deleteMessage: (chatId: string, messageId: string) => unknown;
   sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<unknown>;
