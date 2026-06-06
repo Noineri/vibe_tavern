@@ -6,9 +6,8 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test || exit 0"
+    "test": "bun test"
   },
   "dependencies": {
     "@vibe-tavern/domain": "0.3.4",

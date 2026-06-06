@@ -1,4 +1,4 @@
-import { cp, copyFile, mkdir, stat } from "node:fs/promises";
+import { cp, copyFile, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -7,7 +7,7 @@ const API_OUT = join(ROOT, "out", "services", "api");
 const DB_MIGRATIONS = join(ROOT, "packages", "db", "drizzle");
 
 async function exists(path: string): Promise<boolean> {
-  return stat(path).then(() => true, () => false);
+  return Bun.file(path).exists();
 }
 
 const promptSource = join(API_ASSETS, "script-ai-prompt.md");

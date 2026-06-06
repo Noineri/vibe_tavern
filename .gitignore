@@ -69,3 +69,6 @@ mobile/android/.gradle/
 mobile/android/**/build/
 *.apk
 *.aab
+
+# Install hash cache (skip-install optimization)
+.install-hash

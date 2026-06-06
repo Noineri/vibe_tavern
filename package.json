@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "build": "bun run build:api-stack && bun run --filter @vibe-tavern/web build",
-    "build:api-stack": "bun run --filter @vibe-tavern/domain build && bun run --filter @vibe-tavern/api-contracts build && bun run --filter @vibe-tavern/prompt-pipeline build && bun run --filter @vibe-tavern/db build && bun run --filter @vibe-tavern/import-export build && bun run --filter @vibe-tavern/api build",
+    "build:api-stack": "bun scripts/build.ts api-stack",
     "build:prod": "bun scripts/build.ts api-stack",
     "build:standalone": "bun scripts/build-standalone.ts",
     "build:android-arm64": "bun scripts/build-android-arm64.ts",
@@ -22,6 +22,7 @@
     "dev": "bun run build && bun services/api/src/server/prod-server.ts",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun run --filter '*' test",
+    "test:parallel": "bun test --parallel",
     "check": "bun run typecheck && bun run test",
     "dev:api": "bun run --filter @vibe-tavern/api dev",
     "dev:web": "bun run --filter @vibe-tavern/web dev",

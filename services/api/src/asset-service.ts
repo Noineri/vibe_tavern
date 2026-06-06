@@ -34,7 +34,7 @@ export class AssetService {
     return { assetId, url: `/api/assets/${assetId}` };
   }
 
-  async serve(assetId: string): Promise<{ body: Uint8Array; contentType: string } | null> {
+  async serve(assetId: string): Promise<Response | null> {
     // Prevent path traversal
     if (assetId.includes("/") || assetId.includes("\\") || assetId.includes("..")) {
       return null;
@@ -43,8 +43,17 @@ export class AssetService {
       const filePath = resolve(this.assetsDir, `${assetId}.${ext}`);
       try {
         const bunFile = Bun.file(filePath);
-        if (await bunFile.exists()) {
-          return { body: new Uint8Array(await bunFile.arrayBuffer()), contentType: EXT_TO_MIME[ext] };
+        // Eagerly read the file to avoid TOCTOU race with cleanup() unlink:
+        // new Response(Bun.file()) is lazy — the file is opened when the response
+        // is sent, which can race with a pending unlink() from a concurrent delete.
+        const buffer = new Uint8Array(await bunFile.arrayBuffer());
+        if (buffer.length > 0) {
+          return new Response(buffer, {
+            headers: {
+              "Content-Type": EXT_TO_MIME[ext],
+              "Cache-Control": "public, max-age=31536000",
+            },
+          });
         }
       } catch {
         // try next extension
