@@ -1,4 +1,4 @@
-import { cp, copyFile, mkdir } from "node:fs/promises";
+import { cp, copyFile, mkdir, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -10,11 +10,11 @@ async function exists(path: string): Promise<boolean> {
   return Bun.file(path).exists();
 }
 
-const promptSource = join(API_ASSETS, "script-ai-prompt.md");
 const tokenizerSource = join(API_ASSETS, "tokenizers");
 
-if (!(await exists(promptSource))) {
-  throw new Error(`Script AI prompt source not found: ${promptSource}`);
+const promptFiles = (await readdir(API_ASSETS)).filter((f) => f.endsWith(".md"));
+if (promptFiles.length === 0) {
+  throw new Error(`No .md prompt files found in ${API_ASSETS}`);
 }
 if (!(await exists(tokenizerSource))) {
   throw new Error(`Tokenizer source not found: ${tokenizerSource}`);
@@ -24,8 +24,11 @@ if (!(await exists(DB_MIGRATIONS))) {
 }
 
 await mkdir(API_OUT, { recursive: true });
-await copyFile(promptSource, join(API_OUT, "script-ai-prompt.md"));
+for (const file of promptFiles) {
+  await copyFile(join(API_ASSETS, file), join(API_OUT, file));
+}
 await cp(tokenizerSource, join(API_OUT, "tokenizers"), { recursive: true });
 await cp(DB_MIGRATIONS, join(API_OUT, "drizzle"), { recursive: true });
 
 console.log("[copy-api-assets] copied runtime assets to out/services/api");
+console.log(`  Prompts: ${promptFiles.join(", ")}`);
