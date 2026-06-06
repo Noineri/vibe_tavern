@@ -27,14 +27,14 @@ The frontend uses **Zustand as single source of truth**. No React Query, no SWR,
 
 Components subscribe to **focused slices**, never the entire snapshot:
 
-- `stores/snapshot-store.ts` — canonical selectors: `useChatList()`, `useOrderedMessages()`, `useActiveCharacter()`, `useActivePersona()`.
-- `stores/chat-selectors.ts` — derived selectors: `useDisplayMessage(id)`, `useMessageOrder()`, `useMacroContext()`, `useActiveTrace(traceId)`.
+- `stores/snapshot-store.ts` — canonical selectors: `useChatList()`, `useOrderedMessages()`, `useActiveCharacter()`, `useActivePersona()`, `useDisplayMessage()`, `useMessage()`, `useBranches()`.
+- `stores/chat-selectors.ts` — **deprecated** selectors, being migrated to `snapshot-store.ts`. Currently contains `useDisplayMessage(id)`, `useMessageOrder()`, `useMacroContext()`, `useActiveTrace(traceId)` with `@deprecated` JSDoc tags pointing to the canonical versions in snapshot-store.
 
 **`useDisplayMessage(messageId)`** is the most important selector. It computes the full display-ready message object from raw store data — including resolved macro content, variant data, and streaming state. `MessageBlock` uses this to re-render only when its specific message changes.
 
 ### Selector rules
 
-1. Never return freshly allocated objects from selectors without memoization (`useShallow` or `reselect`).
+1. Never return freshly allocated objects from selectors without memoization (`useShallow` or `useMemo`).
 2. Effects that write to Zustand must use primitive dependencies and equality guards.
 3. `AppShell` does NOT receive a large `snapshot` prop — it reads exact fields from stores.
 

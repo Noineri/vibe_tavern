@@ -246,6 +246,12 @@ Switch the active variant (swipe) for a message.
 
 **Response:** `ChatSnapshot`
 
+### `DELETE /api/chats/:chatId/messages/:messageId/variants/:variantIndex`
+
+Delete a specific variant (swipe). Must not be the last variant.
+
+**Response:** `ChatSnapshot`
+
 ### `PATCH /api/chats/:chatId/messages/:messageId`
 
 Edit message content.
@@ -277,6 +283,14 @@ Switch to a different branch.
 ### `DELETE /api/chats/:chatId/branches/:branchId`
 
 Delete a branch and all its messages.
+
+**Response:** `ChatSnapshot`
+
+### `PATCH /api/chats/:chatId/branches/:branchId`
+
+Rename a branch.
+
+**Body:** `{ label: string }`
 
 **Response:** `ChatSnapshot`
 
@@ -357,6 +371,22 @@ Update memory/summary configuration.
   }
 }
 ```
+
+**Response:** `ChatSnapshot`
+
+### `POST /api/chats/:chatId/summary`
+
+Summarize chat messages using AI (legacy endpoint).
+
+**Body:** `{ "providerProfileId": "provider_1", "model": "gpt-4o-mini", "maxMessages": 50 }`
+
+**Response:** `{ "summary": "..." }`
+
+### `PUT /api/chats/:chatId/summary`
+
+Save or replace the chat summary text.
+
+**Body:** `{ "summary": "Summary text..." }`
 
 **Response:** `ChatSnapshot`
 

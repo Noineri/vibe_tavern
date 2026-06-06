@@ -101,7 +101,7 @@
 
 ## AD-006: Monorepo with Strict Package Boundaries
 
-**Context:** Code is split across 7 packages with one-directional dependencies.
+**Context:** Code is split across 5 workspace packages plus 2 apps/services with one-directional dependencies.
 
 **Decision:** `domain` → `db` / `api-contracts` / `prompt-pipeline` / `import-export` → `api` → `web`.
 
@@ -119,12 +119,13 @@
 
 **Context:** Frontend needs a state management solution for the backend snapshot + UI state.
 
-**Decision:** Zustand with Immer for immutable updates and Reselect for memoized selectors.
+**Decision:** Zustand with Immer for immutable updates. Derived data is memoized with `useMemo` and Zustand's `useShallow` where needed.
 
 **Rationale:**
 - **No boilerplate** — no actions, reducers, dispatchers, providers, or middleware. `create((set, get) => ({ ... }))` is the entire API.
 - **No context** — Zustand stores are plain JS modules. No `<Provider>` wrapping. Store updates don't trigger React re-renders unless the subscribed slice actually changes.
 - **External store compatibility** — `useSyncExternalStore` integration means React treats Zustand like any other external data source.
+- **Focused selectors** — components subscribe to narrow slices; derived arrays/objects use `useShallow`/`useMemo` to avoid unnecessary renders.
 - **Snapshot pattern** — the backend sends a monolithic snapshot. Zustand's `set()` replaces the entire state atomically. Redux would need a "hydrate" action that touches multiple reducers.
 
 **Trade-off:** Less structured than Redux. No time-travel debugging without extra setup. Acceptable for a local-first app where the backend is the source of truth.
