@@ -34,3 +34,12 @@ coverage/
 .opencode/
 *.bat
 LICENSE
+
+# Shell script (not needed in Docker)
+Vibe_Tavern.sh
+
+# Install hash cache
+.install-hash
+
+# Planning artifacts
+.omo/

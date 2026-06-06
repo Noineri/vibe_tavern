@@ -13,7 +13,8 @@ COPY packages/domain/package.json packages/domain/
 COPY packages/import-export/package.json packages/import-export/
 COPY packages/prompt-pipeline/package.json packages/prompt-pipeline/
 COPY services/api/package.json services/api/
-RUN bun install --frozen-lockfile
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile
 
 # Source & build
 COPY . .
@@ -43,8 +44,9 @@ ENV VIBE_TAVERN_EXTERNAL_HOST=
 
 EXPOSE 8787
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD bun -e "fetch('http://localhost:8787/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"
+RUN apk add --no-cache tini
 
 USER bun
+
+ENTRYPOINT ["tini", "--"]
 CMD ["bun", "out/services/api/prod-server.js"]
