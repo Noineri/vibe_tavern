@@ -1271,6 +1271,7 @@ function LoreKeysAiPill({
       showAppendToggle
       starTooltip="Generate keys"
       gearTooltip="Key generation settings"
+      size="md"
     />
   );
 }

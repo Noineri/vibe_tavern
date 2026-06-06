@@ -141,7 +141,7 @@ export function InputArea() {
       )}>
         <div className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
           {/* Toolbar row: persona + starred models */}
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
             <div className="relative" ref={mobilePersonaRef}>
               <button type="button" onClick={() => setMobilePersonaOpen(o => !o)} className="flex h-9 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2">
                 {activePersonaId ? (
@@ -174,9 +174,10 @@ export function InputArea() {
                 characterId={chatMeta?.character.id ?? null}
                 personaId={activePersonaId}
                 setDraft={setDraft}
+                size="lg"
               />
             )}
-            <div className="relative" ref={modelDropRef}>
+            <div className="relative ml-auto" ref={modelDropRef}>
               <button type="button" onClick={() => setModelDropOpen(o => !o)} className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2">
                 <Icons.StarFilled />
               </button>
@@ -379,11 +380,13 @@ function ChatImpersonateAiPill({
   characterId,
   personaId,
   setDraft,
+  size,
 }: {
   activeChatId: string;
   characterId: string | null;
   personaId: string | null;
   setDraft: (value: string) => void;
+  size?: "sm" | "md" | "lg";
 }) {
   const bootstrapUiSettings = useBootstrapStore((s) => s.data?.uiSettings ?? null);
   const [settings, setSettings] = useState<AiQuickSettings>({
@@ -461,6 +464,7 @@ function ChatImpersonateAiPill({
       showMessageCount
       starTooltip="Write as persona"
       gearTooltip="Impersonation settings"
+      size={size}
     />
   );
 }
