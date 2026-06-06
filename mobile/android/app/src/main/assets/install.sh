@@ -35,8 +35,8 @@ yes | apt full-upgrade -y 2>/dev/null || true
 
 echo ""
 echo "📦 Step 2/5: Installing Termux packages..."
-yes | pkg update -y
-yes | pkg install -y curl tar proot-distro procps
+pkg update -y
+pkg install -y curl tar proot-distro procps
 
 echo ""
 echo "🐧 Step 3/5: Ensuring proot Ubuntu exists..."

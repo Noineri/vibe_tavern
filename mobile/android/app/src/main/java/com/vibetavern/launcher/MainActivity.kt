@@ -60,46 +60,85 @@ class MainActivity : AppCompatActivity() {
     private val PREF_INSTALLED = "installed_once"
     private val PREF_LANGUAGE = "language"
     private val serverUrl = "http://127.0.0.1:8787"
-    private val launcherBuildLabel = "orchestrator-v2-startlog-safe-step4-2026-05-29-0028"
+    private val launcherBuildLabel = "orchestrator-v3-archive-diagnostics-2026-06-06-0315"
     private val bundledArchiveName = "vibe-tavern-android-arm64.tgz"
     private val installerScriptName = "vibe-tavern-install-v5.sh"
     private val archiveServerPort = 8790
     private val sharedArchivePath = "/sdcard/Download/$bundledArchiveName"
     private val sharedInstallerPath = "/sdcard/Download/$installerScriptName"
     private val localArchiveUrl = "http://127.0.0.1:$archiveServerPort/$bundledArchiveName"
+    private var installerArchivePath = sharedArchivePath
 
     // ========== One-time setup script (proot-distro Ubuntu + bundled archive) ==========
     private val setupScript: String
         get() = """
             set -euo pipefail
-            ARCHIVE_PATH="$sharedArchivePath"
+            ARCHIVE_PATH="$installerArchivePath"
             ARCHIVE_URL="$localArchiveUrl"
             LOG="${'$'}HOME/vibe-tavern-install.log"
             exec > >(tee -a "${'$'}LOG") 2>&1
             echo "=== Vibe Tavern install: $(date) ==="
 
-            if [ ! -f "${'$'}ARCHIVE_PATH" ]; then
-              ARCHIVE_PATH="${'$'}(ls -t /sdcard/Download/vibe-tavern-android-arm64*.tgz /sdcard/Download/vibe-tavern-android-arm64*.tar.gz 2>/dev/null | head -n1 || true)"
-            fi
+            # Important: do not wildcard-pick old archives from Downloads.
+            # The launcher must install the archive bundled in this APK, copied to
+            # the exact path below, or fall back to the APK localhost server.
 
             echo '📦 Step 1/5: Updating system packages (fixes broken curl on fresh Termux)...'
             yes | apt update -y 2>/dev/null || true
             yes | apt full-upgrade -y 2>/dev/null || true
 
             echo '📦 Step 2/5: Installing Termux packages...'
-            yes | pkg update -y
-            yes | pkg install -y curl tar proot-distro procps
-            yes | termux-setup-storage 2>/dev/null || true
+            pkg update -y
+            pkg install -y curl tar proot-distro procps
+            termux-setup-storage 2>/dev/null || true
             termux-wake-lock 2>/dev/null || true
 
             echo '📦 Step 3/5: Getting archive...'
+            echo "HOME=${'$'}HOME"
+            echo "TERMUX_VERSION=${'$'}{TERMUX_VERSION:-unknown}"
+            echo 'Downloads listing for Vibe Tavern files:'
+            ls -lah /sdcard/Download/vibe-tavern-* 2>/dev/null || echo 'No /sdcard/Download/vibe-tavern-* files visible to Termux.'
+            echo
             TERMUX_ARCHIVE="${'$'}HOME/$bundledArchiveName"
+            RENAMED_ARCHIVE="${'$'}ARCHIVE_PATH.gz"
+            rm -f "${'$'}TERMUX_ARCHIVE"
             if [ -n "${'$'}ARCHIVE_PATH" ] && [ -f "${'$'}ARCHIVE_PATH" ]; then
+              echo "Using archive from Downloads: ${'$'}ARCHIVE_PATH"
               cp "${'$'}ARCHIVE_PATH" "${'$'}TERMUX_ARCHIVE"
+            elif [ -n "${'$'}RENAMED_ARCHIVE" ] && [ -f "${'$'}RENAMED_ARCHIVE" ]; then
+              echo "Using Android-renamed archive from Downloads: ${'$'}RENAMED_ARCHIVE"
+              cp "${'$'}RENAMED_ARCHIVE" "${'$'}TERMUX_ARCHIVE"
             else
-              echo "Archive not visible in Downloads; downloading from APK localhost server: ${'$'}ARCHIVE_URL"
-              curl -fL "${'$'}ARCHIVE_URL" -o "${'$'}TERMUX_ARCHIVE"
+              echo 'Archive is not visible at the expected Downloads paths:'
+              echo "  ${'$'}ARCHIVE_PATH"
+              echo "  ${'$'}RENAMED_ARCHIVE"
+              echo 'This is OK only if the APK localhost fallback is reachable.'
+              echo "Checking APK localhost archive server: ${'$'}ARCHIVE_URL"
+              if ! curl --fail --head --connect-timeout 5 "${'$'}ARCHIVE_URL"; then
+                echo 'HEAD check failed; trying full download anyway for the real error...'
+              fi
+              echo "Trying APK localhost archive server: ${'$'}ARCHIVE_URL"
+              if ! curl --fail --location --verbose --connect-timeout 10 --retry 3 --retry-delay 1 "${'$'}ARCHIVE_URL" -o "${'$'}TERMUX_ARCHIVE"; then
+                echo
+                echo '❌ Could not get the bundled archive.'
+                echo 'Likely causes:'
+                echo '  1) Android/Termux storage permission is missing, so Downloads is invisible;'
+                echo '  2) the APK background localhost archive server was killed or did not start;'
+                echo '  3) this APK build does not contain vibe-tavern-android-arm64.tgz.'
+                echo
+                echo 'Fix: return to the APK and tap Install / Update again. If it repeats, reinstall the APK built with the bundled archive.'
+                exit 23
+              fi
             fi
+            if [ ! -s "${'$'}TERMUX_ARCHIVE" ]; then
+              echo "❌ Archive copy/download produced an empty file: ${'$'}TERMUX_ARCHIVE"
+              exit 24
+            fi
+            if ! tar -tzf "${'$'}TERMUX_ARCHIVE" >/dev/null; then
+              echo "❌ Archive is not a valid gzip tarball: ${'$'}TERMUX_ARCHIVE"
+              exit 25
+            fi
+            ls -lh "${'$'}TERMUX_ARCHIVE"
 
             echo '🐧 Step 4/5: Setting up proot Ubuntu...'
             yes | proot-distro install ubuntu 2>/dev/null || true
@@ -432,16 +471,19 @@ class MainActivity : AppCompatActivity() {
         setProgress(tr("📦 Copying bundled archive and opening Termux installer…", "📦 Копирую архив и открываю установщик в Termux…"), visible = true)
         statusText.text = tr("📦 Installation/update runs in Termux", "📦 Установка/обновление выполняется в Termux")
         startArchiveServer()
-        copyBundledArchiveToDownloads()
+        val copiedArchivePath = copyBundledArchiveToDownloads()
+        installerArchivePath = copiedArchivePath ?: sharedArchivePath
+        val archiveCopiedToDownloads = copiedArchivePath != null
 
         tryRegisterResultReceiver()
 
         try {
-            if (!copyInstallerScriptToDownloads()) {
+            val copiedInstallerPath = copyInstallerScriptToDownloads()
+            if (copiedInstallerPath == null) {
                 setProgress(tr("❌ Failed to copy installer script to Downloads.", "❌ Не удалось скопировать установщик в Downloads."), visible = false)
                 return
             }
-            runTermuxInstallerVisible()
+            runTermuxInstallerVisible(archiveCopiedToDownloads, installerArchivePath, copiedInstallerPath)
         } catch (e: Exception) {
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             clipboard.setPrimaryClip(ClipData.newPlainText("vibe-setup", "bash -x $sharedInstallerPath"))
@@ -454,24 +496,44 @@ class MainActivity : AppCompatActivity() {
         startPolling(maxAttempts = 1200, waitingLabel = tr("Installing / waiting for server", "Установка / ожидание сервера"), markInstalledOnSuccess = true)
     }
 
-    private fun runTermuxInstallerVisible() {
+    private fun runTermuxInstallerVisible(archiveCopiedToDownloads: Boolean, archivePath: String, installerPath: String) {
+        val archiveCopyStatus = if (archiveCopiedToDownloads) "copied" else "copy_failed"
         val command = """
             clear
             echo '=== Vibe Tavern installer ==='
-            echo 'Archive in Downloads:'
-            ls -lh '$sharedArchivePath' || true
+            echo 'APK archive copy to Downloads: $archiveCopyStatus'
+            echo 'Actual archive path passed to installer:'
+            echo '$archivePath'
+            ls -lh '$archivePath' || true
+            echo 'Android-renamed archive candidate:'
+            ls -lh '$archivePath.gz' || true
+            echo 'All visible Vibe Tavern downloads:'
+            ls -lah /sdcard/Download/vibe-tavern-* 2>/dev/null || true
             echo 'Archive URL fallback: $localArchiveUrl'
-            echo 'Installer:'
-            ls -lh '$sharedInstallerPath' || true
+            echo 'Actual installer path:'
+            echo '$installerPath'
+            ls -lh '$installerPath' || true
             echo
-            if [ ! -f '$sharedInstallerPath' ]; then
+            if [ ! -f '$installerPath' ]; then
               echo 'ERROR: installer script was not copied to Downloads.'
               echo 'Press Enter to close.'
               read -r _
               exit 1
             fi
             echo 'Starting installer with trace...'
-            bash -x '$sharedInstallerPath'
+            bash -x '$installerPath'
+            code=${'$'}?
+            echo
+            if [ "${'$'}code" -eq 0 ]; then
+              echo '✅ Installer finished successfully.'
+            else
+              echo "❌ Installer failed with exit code ${'$'}code."
+              echo "Log file in Termux: ${'$'}HOME/vibe-tavern-install.log"
+            fi
+            echo
+            echo 'Press Enter to close this Termux session.'
+            read -r _
+            exit "${'$'}code"
         """.trimIndent()
         runTermuxInline(command, visible = true, sessionName = "Vibe Tavern Installer")
     }
@@ -513,13 +575,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun copyBundledArchiveToDownloads(): Boolean {
-        return copyToDownloads(bundledArchiveName, "application/gzip") { output ->
+    private fun copyBundledArchiveToDownloads(): String? {
+        // Use octet-stream so Android's DownloadProvider is less likely to
+        // rename vibe-tavern-android-arm64.tgz to vibe-tavern-android-arm64.tgz.gz.
+        // If Android still renames due to conflicts, copyToDownloads returns the
+        // actual display name so Termux installs the file that was just created.
+        return copyToDownloads(bundledArchiveName, "application/octet-stream") { output ->
             assets.open(bundledArchiveName).use { input -> input.copyTo(output) }
         }
     }
 
-    private fun copyInstallerScriptToDownloads(): Boolean {
+    private fun copyInstallerScriptToDownloads(): String? {
         return copyToDownloads(installerScriptName, "text/x-shellscript") { output ->
             output.write(setupScript.toByteArray(Charsets.UTF_8))
         }
@@ -529,13 +595,13 @@ class MainActivity : AppCompatActivity() {
         displayName: String,
         mimeType: String,
         writeContent: (java.io.OutputStream) -> Unit,
-    ): Boolean {
+    ): String? {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 contentResolver.delete(
                     MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                    "${MediaStore.MediaColumns.DISPLAY_NAME}=?",
-                    arrayOf(displayName),
+                    "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?",
+                    arrayOf("$displayName%"),
                 )
                 val values = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
@@ -543,20 +609,33 @@ class MainActivity : AppCompatActivity() {
                     put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
-                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false
-                contentResolver.openOutputStream(uri)?.use(writeContent) ?: return false
+                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
+                contentResolver.openOutputStream(uri)?.use(writeContent) ?: return null
                 values.clear()
                 values.put(MediaStore.MediaColumns.IS_PENDING, 0)
                 contentResolver.update(uri, values, null, null)
+
+                val actualDisplayName = contentResolver.query(
+                    uri,
+                    arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
+                    null,
+                    null,
+                    null,
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                } ?: displayName
+                "/sdcard/Download/$actualDisplayName"
             } else {
                 val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                 downloads.mkdirs()
+                downloads.listFiles { file -> file.name.startsWith(displayName) }
+                    ?.forEach { file -> file.delete() }
                 val target = File(downloads, displayName)
                 target.outputStream().use(writeContent)
+                target.absolutePath
             }
-            true
         } catch (_: Exception) {
-            false
+            null
         }
     }
 
