@@ -15,6 +15,7 @@ import type { ProviderProfileRecord } from "../../app-client.js";
 import { Ic } from "./icons.js";
 import { cn } from "../../lib/cn.js";
 import { DropdownSelect } from "./DropdownSelect.js";
+import { CustomTooltip } from "./Tooltip.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -37,6 +38,8 @@ export interface AiQuickPillProps {
   starTooltip?: string;
   /** Tooltip for the gear button. */
   gearTooltip?: string;
+  /** Size variant: "sm" matches persona pill (24px), "md" matches lorebook key input (38px), "lg" matches mobile toolbar (36px). */
+  size?: "sm" | "md" | "lg";
 }
 
 export interface AiQuickSettings {
@@ -217,44 +220,56 @@ export function AiQuickPill({
   showMessageCount,
   starTooltip,
   gearTooltip,
+  size = "sm",
 }: AiQuickPillProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // sm=24px (desktop chat), lg=36px (mobile toolbar h-9), md=38px (lorebook key input)
+  const heightClass = size === "md" ? "h-[38px]" : size === "lg" ? "h-9" : "h-6";
+  const pxClass = size === "md" ? "px-[10px]" : size === "lg" ? "px-[11px]" : "px-[7px]";
 
   return (
     <>
       <div
         className={cn(
-          "inline-flex items-stretch rounded-md border border-border bg-s3 overflow-hidden",
+          "inline-flex items-center rounded-full bg-accent-dim overflow-hidden",
+          heightClass,
           disabled && "opacity-40 pointer-events-none",
         )}
       >
-        <button
-          type="button"
-          className={cn(
-            "flex items-center justify-center px-1.5 py-1 transition-all",
-            "hover:bg-s2 hover:text-accent-t",
-            loading && "pointer-events-none",
-          )}
-          onClick={onGenerate}
-          disabled={disabled || loading}
-          title={starTooltip}
-        >
-          {loading ? (
-            <span className="block h-[13px] w-[13px] animate-spin rounded-full border-2 border-t-transparent border-accent" />
-          ) : (
-            <Ic.star />
-          )}
-        </button>
-        <div className="w-px bg-border" />
-        <button
-          type="button"
-          className="flex items-center justify-center px-1.5 py-1 text-t3 transition-all hover:bg-s2 hover:text-t1"
-          onClick={() => setSettingsOpen(true)}
-          disabled={disabled}
-          title={gearTooltip}
-        >
-          <Ic.settings />
-        </button>
+        <CustomTooltip content={starTooltip}>
+          <button
+            type="button"
+            className={cn(
+              "flex h-full items-center justify-center text-accent-t transition-all",
+              pxClass,
+              "hover:bg-accent/20",
+              loading && "pointer-events-none",
+            )}
+            onClick={onGenerate}
+            disabled={disabled || loading}
+          >
+            {loading ? (
+              <span className="block h-[13px] w-[13px] animate-spin rounded-full border-2 border-t-transparent border-accent-t" />
+            ) : (
+              <Ic.sparkles />
+            )}
+          </button>
+        </CustomTooltip>
+        <div className="w-px h-3 bg-accent/20" />
+        <CustomTooltip content={gearTooltip}>
+          <button
+            type="button"
+            className={cn(
+              "flex h-full items-center justify-center text-accent-t/70 transition-all hover:bg-accent/20 hover:text-accent-t",
+              pxClass,
+            )}
+            onClick={() => setSettingsOpen(true)}
+            disabled={disabled}
+          >
+            <Ic.settings />
+          </button>
+        </CustomTooltip>
       </div>
       <AiQuickSettingsModal
         open={settingsOpen}
