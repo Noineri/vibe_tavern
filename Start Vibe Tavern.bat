@@ -75,15 +75,32 @@ if %ERRORLEVEL%==10 (
     )
 )
 
-%BUN_EXE% services/api/src/server/prod-server.ts
+rem ── Create log directory ──
+if not exist "logs" mkdir logs
+
+rem ── Generate timestamp via PowerShell ──
+for /f "usebackq" %%T in (`powershell.exe -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd_HHmmss'"`) do set "TIMESTAMP=%%T"
+set "LOG_FILE=logs\server-!TIMESTAMP!.log"
+
+echo Logging to !LOG_FILE!
+echo.
+
+rem ── Run bun with live output + log to file ──
+powershell.exe -NoProfile -Command "& bun services/api/src/server/prod-server.ts 2>&1 | Tee-Object -FilePath '!LOG_FILE!' -Append; exit $LASTEXITCODE"
 set "EXIT_CODE=%ERRORLEVEL%"
 
-if "%EXIT_CODE%"=="0" exit /b 0
-if "%EXIT_CODE%"=="1" exit /b 0
-if "%EXIT_CODE%"=="58" exit /b 0
-if "%EXIT_CODE%"=="3221225786" exit /b 0
-if "%EXIT_CODE%"=="-1073741510" exit /b 0
-
 echo.
-echo Server crashed with exit code %EXIT_CODE%.
+if "%EXIT_CODE%"=="0" (
+    echo Server stopped cleanly.
+) else if "%EXIT_CODE%"=="1" (
+    echo Server stopped ^(code 1^).
+) else if "%EXIT_CODE%"=="3221225786" (
+    echo Server stopped ^(Ctrl+C^).
+) else if "%EXIT_CODE%"=="-1073741510" (
+    echo Server stopped ^(Ctrl+C^).
+) else (
+    echo Server exited with code %EXIT_CODE%.
+)
+echo Log saved to !LOG_FILE!
+echo.
 pause

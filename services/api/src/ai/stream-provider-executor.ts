@@ -5,7 +5,7 @@
  * the full response (this brief) or forward as SSE (FW-AI5).
  */
 
-import { streamText } from "ai";
+import { streamText, APICallError } from "ai";
 import type { ProviderExecutor, ProviderStreamResult, ProviderStreamChunk, ProviderStreamFinish, SentConfigSnapshot } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
@@ -196,6 +196,10 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
     };
   } catch (error) {
     if (input.signal?.aborted) throw cancelled();
+    // AI SDK v5 throws NoOutputGeneratedError when stream produced nothing (e.g. immediate abort)
+    if (error && typeof error === "object" && "vercel.ai.error" in error) {
+      throw cancelled();
+    }
     throw providerError(error instanceof Error ? error.message : String(error));
   }
 };
