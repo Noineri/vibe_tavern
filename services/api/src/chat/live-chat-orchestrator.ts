@@ -497,9 +497,24 @@ export class LiveChatOrchestrator {
 
     // ── Finalize ──
     const latencyMs = Date.now() - startedAt;
-    const finish = await streamResult.finished;
-    const rawText = textAccumulator || (await streamResult.text);
-    const rawReasoning = reasoningAccumulator || (await streamResult.reasoning) || undefined;
+    let finish: Awaited<typeof streamResult.finished>;
+    try {
+      finish = await streamResult.finished;
+    } catch {
+      finish = { finishReason: "error" } as Awaited<typeof streamResult.finished>;
+    }
+    let rawText: string;
+    try {
+      rawText = textAccumulator || (await streamResult.text);
+    } catch {
+      rawText = textAccumulator;
+    }
+    let rawReasoning: string | undefined;
+    try {
+      rawReasoning = reasoningAccumulator || (await streamResult.reasoning) || undefined;
+    } catch {
+      rawReasoning = reasoningAccumulator || undefined;
+    }
 
     // Some providers return <thinking> tags in content instead of reasoning_content
     const textWithPrefill = ensurePrefillInResponse(rawText, prefill);
