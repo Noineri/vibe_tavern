@@ -197,18 +197,49 @@ export class LorebookStore {
       const rows = await this.db
         .select()
         .from(lorebooks)
-        .where(and(eq(lorebooks.scopeType, 'global')))
+        .where(eq(lorebooks.scopeType, 'global'))
+        .orderBy(asc(lorebooks.sortOrder), asc(lorebooks.name))
         .all();
       return rows.map((r) => this.mapLorebookRow(r));
     }
+
     if (!ownerId) return [];
+
     const fkCol = scopeType === 'character' ? lorebooks.characterId
       : scopeType === 'persona' ? lorebooks.personaId
       : lorebooks.chatId;
+
+    const directCondition = and(eq(lorebooks.scopeType, scopeType), eq(fkCol, ownerId));
+
+    // Character/persona tabs show both directly scoped lorebooks and lorebooks
+    // linked via the junction table. Chat scope remains direct-only because
+    // lorebook_links currently supports character/persona targets only.
+    if (scopeType === 'character' || scopeType === 'persona') {
+      const linkedRows = await this.db
+        .select({ lorebookId: lorebookLinks.lorebookId })
+        .from(lorebookLinks)
+        .where(and(eq(lorebookLinks.targetType, scopeType), eq(lorebookLinks.targetId, ownerId)))
+        .all();
+
+      const linkedIds = [...new Set(linkedRows.map((row) => row.lorebookId))];
+      const whereCondition = linkedIds.length > 0
+        ? or(directCondition, inArray(lorebooks.id, linkedIds))
+        : directCondition;
+
+      const rows = await this.db
+        .select()
+        .from(lorebooks)
+        .where(whereCondition)
+        .orderBy(asc(lorebooks.scopeType), asc(lorebooks.sortOrder), asc(lorebooks.name))
+        .all();
+      return rows.map((r) => this.mapLorebookRow(r));
+    }
+
     const rows = await this.db
       .select()
       .from(lorebooks)
-      .where(and(eq(lorebooks.scopeType, scopeType), eq(fkCol, ownerId)))
+      .where(directCondition)
+      .orderBy(asc(lorebooks.sortOrder), asc(lorebooks.name))
       .all();
     return rows.map((r) => this.mapLorebookRow(r));
   }

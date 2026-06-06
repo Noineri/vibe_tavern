@@ -388,6 +388,7 @@ function ChatImpersonateAiPill({
   setDraft: (value: string) => void;
   size?: "sm" | "md" | "lg";
 }) {
+  const { t } = useT();
   const bootstrapUiSettings = useBootstrapStore((s) => s.data?.uiSettings ?? null);
   const [settings, setSettings] = useState<AiQuickSettings>({
     providerId: "",
@@ -462,8 +463,8 @@ function ChatImpersonateAiPill({
       loading={loading}
       disabled={!activeChatId}
       showMessageCount
-      starTooltip="Write as persona"
-      gearTooltip="Impersonation settings"
+      starTooltip={t("ai_pill_impersonate")}
+      gearTooltip={t("ai_pill_impersonate_settings")}
       size={size}
     />
   );
