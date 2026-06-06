@@ -3,6 +3,7 @@ import {
   activateBranch,
   createChat,
   deleteBranch,
+  renameBranch,
   deleteChat,
   deleteChatMessage,
   deleteMessageVariant,
@@ -131,6 +132,11 @@ export async function activateBranchAction(chatId: ChatId, branchId: ChatBranchI
 
 export async function deleteBranchAction(chatId: ChatId, branchId: ChatBranchId): Promise<void> {
   const snapshot = await deleteBranch(chatId, branchId);
+  syncSnapshot(snapshot);
+}
+
+export async function renameBranchAction(chatId: ChatId, branchId: ChatBranchId, label: string): Promise<void> {
+  const snapshot = await renameBranch(chatId, branchId, label);
   syncSnapshot(snapshot);
 }
 

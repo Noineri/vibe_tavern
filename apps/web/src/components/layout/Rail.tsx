@@ -8,7 +8,7 @@ import { initials } from "./app-shell-helpers.js";
 import { CharacterImportModal, ChatImportModal } from "../modals/ImportModals.js";
 import { useT } from "../../i18n/context.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
-import { activateBranchAction } from "../../stores/api-actions/chat-actions.js";
+import { activateBranchAction, renameBranchAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatMeta } from "../../stores/chat-selectors.js";
 import { useNavigationStore, useChatStore, useModalStore } from "../../stores/index.js";
 import { useCharacterStore } from "../../stores/character-store.js";
@@ -520,7 +520,10 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                                         onClick={(e) => { e.stopPropagation(); void activateBranchAction(ch.id as ChatId, b.id as ChatBranchId); }}
                                       >
                                         <span className={cn("inline-block h-2 w-2 rounded-full shrink-0", b.id === activeBranchId ? "bg-accent" : "bg-border2")} />
-                                        <span className="truncate">{b.label}</span>
+                                        <span className="truncate">{b.label || t("sidebar_unnamed_branch")}</span>
+                                        <button type="button" className="ml-auto shrink-0 cursor-pointer rounded p-1 text-t3 transition-all active:bg-s3 active:text-t1" onClick={(e) => { e.stopPropagation(); const newLabel = prompt(t("rename_branch_prompt"), b.label); if (newLabel !== null && newLabel !== b.label) void renameBranchAction(ch.id as ChatId, b.id as ChatBranchId, newLabel); }}>
+                                          <Ic.edit />
+                                        </button>
                                       </div>
                                     ))}
                                   </div>

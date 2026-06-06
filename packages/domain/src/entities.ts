@@ -237,6 +237,7 @@ export interface ChatBranch {
   forkedFromMessageId: MessageId | null;
   label: string;
   createdAt: Timestamp;
+  messageCount?: number;
 }
 
 export interface ChatSummary {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ChatId } from "@vibe-tavern/domain";
 import { initials } from "./app-shell-helpers.js";
@@ -13,7 +13,6 @@ import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js
 import { useChatMeta } from "../../stores/chat-selectors.js";
 import { useNavigationStore, useChatStore, useCharacterStore, useModalStore } from "../../stores/index.js";
 import { buildCharacterTabs } from "../../lib/character-tabs.js";
-import { useMemo } from "react";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { useBuildPanels } from "../../hooks/use-build-panels.js";
 
@@ -238,32 +237,6 @@ export function Sidebar() {
                             <div className="truncate text-[calc(var(--ui-fs)-3px)] text-t3">{chatItem.messageCount} msgs</div>
                           </div>
                         </div>
-                        {/* Ветки под активным чатом */}
-                        {isActive && branches.length > 0 && (
-                          <div className="ml-5 mr-2 mt-0.5 mb-1 flex flex-col border-l-2 border-border pl-3">
-                            {branches.map((branch) => {
-                              const isActiveBranch = branch.id === activeBranchId;
-                              return (
-                                <div
-                                  key={branch.id}
-                                  className={cn(
-                                    'relative flex cursor-pointer items-center gap-1.5 rounded py-1 pr-2 text-[calc(var(--ui-fs)-2px)] transition-colors hover:bg-s2',
-                                    isActiveBranch ? 'text-accent-t font-medium' : 'text-t2',
-                                  )}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    void chat.handleActivateBranch(branch.id);
-                                  }}
-                                >
-                                  {/* Точка-коннектор на линии */}
-                                  <div className={cn('absolute -left-[17px] top-1/2 h-[2px] w-3', isActiveBranch ? 'bg-accent' : 'bg-border')} />
-                                  <div className={cn('h-1.5 w-1.5 rounded-full shrink-0', isActiveBranch ? 'bg-accent' : 'bg-t3')} />
-                                  <span className="truncate">{branch.label || t("sidebar_unnamed_branch")}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
                       </div>
                     );
                   })
@@ -642,7 +615,7 @@ export function Sidebar() {
                                 <div
                                   key={branch.id}
                                   className={cn(
-                                    'relative cursor-pointer rounded py-[5px] pl-1.5 pr-2 transition-colors duration-100',
+                                    'group/branch relative cursor-pointer rounded py-[5px] pl-1.5 pr-2 transition-colors duration-100',
                                     isActiveBranch ? 'bg-accent-dim hover:bg-accent-dim' : 'hover:bg-s2/70'
                                   )}
                                   onClick={(event) => {
@@ -651,12 +624,15 @@ export function Sidebar() {
                                   }}
                                 >
                                   <div className={cn('absolute -left-[14px] top-[14px] h-[2px] w-3', isActiveBranch ? 'bg-accent' : 'bg-border')} />
-                                  <div className={cn(
-                                    'mb-px min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] font-medium text-t2',
-                                    isActiveBranch && 'text-accent-t'
-                                  )}>{branch.label || t("sidebar_unnamed_branch")}</div>
+                                  <div className="flex items-center gap-1">
+                                    <div className={cn(
+                                      'min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] font-medium text-t2',
+                                      isActiveBranch && 'text-accent-t'
+                                    )}>{branch.label || t("sidebar_unnamed_branch")}</div>
+                                    <SidebarBranchRename branchId={branch.id} initialLabel={branch.label || ""} onRename={(label) => void chat.handleRenameBranch(branch.id, label)} />
+                                  </div>
                                   <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] text-t3">
-                                    {formatShortDate(branch.createdAt)}
+                                    {branch.messageCount ?? 0} msgs · {formatShortDate(branch.createdAt)}
                                   </div>
                                 </div>
                               );
@@ -858,5 +834,48 @@ export function Sidebar() {
           />
         )}
       </div>
+  );
+}
+
+function SidebarBranchRename({ branchId, initialLabel, onRename }: { branchId: string; initialLabel: string; onRename: (label: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(initialLabel);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { t } = useT();
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        className="w-full min-w-0 rounded border border-accent bg-s2 px-1 py-0.5 text-[calc(var(--ui-fs)-3px)] text-t1 outline-none"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => {
+          const trimmed = value.trim();
+          if (trimmed && trimmed !== initialLabel) onRename(trimmed);
+          else setValue(initialLabel);
+          setEditing(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); }
+          if (e.key === "Escape") { setValue(initialLabel); setEditing(false); }
+        }}
+        onClick={(e) => e.stopPropagation()}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="shrink-0 cursor-pointer rounded p-0.5 text-t3 opacity-0 transition-all hover:bg-s3 hover:text-t1 group-hover/branch:opacity-100"
+      onClick={(e) => { e.stopPropagation(); setValue(initialLabel); setEditing(true); }}
+    >
+      <Icons.Edit />
+    </button>
   );
 }

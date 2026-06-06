@@ -214,6 +214,11 @@ export class ChatRuntime {
     return await this.deps.getSnapshot(chatId);
   }
 
+  async renameBranch(chatId: ChatId, branchId: string, label: string): Promise<SessionSnapshot> {
+    await this.deps.chats.renameBranch(branchId, label);
+    return await this.deps.getSnapshot(chatId);
+  }
+
   async deleteMessage(chatId: ChatId, messageId: string): Promise<SessionSnapshot> {
     await this.deps.chatApp.deleteMessage(messageId);
     return await this.deps.getSnapshot(chatId);
