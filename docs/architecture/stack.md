@@ -143,7 +143,7 @@ Accessible primitives for dialogs, selects, tooltips.
 - **Focus management** — focus trap in modals, arrow key navigation in selects, proper ARIA attributes.
 - **Portal support** — `DropdownSelect` portals into modal focus scope. Native `<select>` can't portal and breaks z-index in modals.
 
-### Zustand ^5 + Immer ^11 + Reselect ^5
+### Zustand ^5 + Immer ^11
 
 State management.
 
@@ -154,7 +154,7 @@ State management.
 
 **Why Immer:** `produce(draft => { draft.chats[id].messages.push(msg) })` — mutable syntax for immutable updates. Avoids spread operator hell for deeply nested state.
 
-**Why Reselect:** Memoized selectors for derived data. `useDisplayMessage(id)` computes message + variants + streaming state without re-computing on every render.
+**Memoization:** `useMemo` + `useShallow` from Zustand for derived data. `useDisplayMessage(id)` computes message + variants + streaming state without re-computing on every render.
 
 ### React Hook Form + Zod resolver
 
@@ -188,11 +188,17 @@ Avatar cropping tool. Provides circular crop overlay with zoom/pan. Outputs 480�
 
 QR code generation for the web Mobile Access flow. Renders `http(s)://IP:PORT/#token=UUID` as a scannable QR/copy URL; the browser stores the token locally before API bootstrap.
 
+### @dnd-kit/core + @dnd-kit/sortable + @dnd-kit/utilities
+
+Drag-and-drop primitives. Used for lore entry reordering in the lorebook editor — sortable list with drag handles.
+
+**Why dnd-kit (not react-beautiful-dnd):** Active maintenance, better touch support, `SortableContext` for list reordering with minimal boilerplate.
+
 ---
 
 ## Monorepo Structure
 
-Bun workspace with 7 packages:
+Bun workspace with 5 packages + 2 apps:
 
 ```
 vibe-tavern/

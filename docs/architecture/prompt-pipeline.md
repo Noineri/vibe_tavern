@@ -56,7 +56,7 @@ result.prefill            // string | null — assistant prefill from preset
 | `character` | `object` | Name, description, scenario, personality, systemPrompt, mesExample, postHistoryInstructions |
 | `persona` | `object \| null` | Name, description, pronouns |
 | `preset` | `object \| null` | System prompt (`text`), jailbreak, summary prompt, tools prompt, prefill, author's note, custom injections, `promptOrder`, `advancedMode` |
-| `mode` | `AssemblyMode` | `"chat"` \| `"continue"` \| `"regenerate"` \| `"summary"` \| `"tool_call"` |
+| `mode` | `AssemblyMode` | `"chat"` \| `"continue"` \| `"regenerate"` \| `"summary"` \| `"tool_call"` \| `"ai_assistant"` |
 | `lore` | `array` | Activated lore entries (title, content, priority, position, depth, role) |
 | `memory` | `object` | `{ summary: [...], retrieval: [...] }` |
 | `chat` | `object` | `recentMessages`, `scriptInjections` |
@@ -199,6 +199,18 @@ Layers are filtered by the current `AssemblyMode`. Not all layers belong in ever
 | Example messages | ✓ | ✓ | ✓ | ✓ | — |
 | Recent history | ✓ | ✓ | ✓ | — | — |
 | Summary preset | — | — | — | ✓ | — |
+
+### `ai_assistant` mode
+
+`ai_assistant` uses a simplified assembly path (`assembleAiAssistant`) instead of the normal chat/layer filtering flow. It builds layers from:
+
+- AI assistant system prompt
+- Character context (if enabled)
+- Persona context (if enabled)
+- Lore entries (if enabled)
+- Existing content
+- Chat history for `chat_impersonate` mode
+- User instruction (emitted as the final user message)
 
 ---
 
@@ -501,10 +513,10 @@ ST preset JSON imports fill both `customInjections` and `promptOrder` from the o
 
 ```bash
 # All prompt-pipeline tests
-npx bun test packages/prompt-pipeline/test/
+bun test packages/prompt-pipeline/test/
 
 # Just macro tests
-npx bun test packages/prompt-pipeline/test/macro-resolution.test.ts
+bun test packages/prompt-pipeline/test/macro-resolution.test.ts
 ```
 
 Test files:
@@ -515,3 +527,5 @@ Test files:
 | `macro-resolution.test.ts` | All macro types, variables, conditionals, random, roll, nested if |
 | `lore-activation.test.ts` | Lore keyword matching, logic operators, cooldown, group weights |
 | `macros.test.ts` | Legacy macro tests (skipped — module removed) |
+| `prompt-order.test.ts` | Prompt order overrides and ST-compatible insertion positions |
+| `st-injections.test.ts` | SillyTavern-style prompt injections and placement behavior |

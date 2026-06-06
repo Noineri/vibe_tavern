@@ -66,9 +66,9 @@ session/SessionRuntime
 ├── session/CharacterRuntime   (CRUD characters, archive, duplicate, promote system char)
 ├── session/PersonaRuntime     (CRUD personas, resolve defaults)
 ├── session/ChatOrderService   (in-memory ordered list by lastAccessedAt)
-├── session/LorebookRuntime    (CRUD lorebooks and entries, scope-aware listing)
-├── session/PresetRuntime      (preset-related methods)
-└── StoreContainer             (all DB stores behind a facade)
+├── StoreContainer             (all DB stores behind a facade)
+└── direct methods             (lorebook CRUD, preset CRUD, scripts, provider profiles —
+                                delegated straight to stores, no sub-runtime class)
 ```
 
 **Why decomposition (not one god class):** Each sub-runtime owns a clear domain boundary. Dependencies flow one way — `ChatRuntime` uses `StoreContainer` but doesn't know about `PersonaRuntime`. The top-level `SessionRuntime` wires them together.

@@ -25,6 +25,12 @@
 | `<DestructiveConfirmModal>` | Custom confirm | `destructive-confirm-modal.tsx` | "Are you sure?" for delete actions |
 | `<EmptyState>` | Custom empty states | `empty-state.tsx` | Icon + title + CTA placeholder |
 | `<Icons.* />` | Emoji / SVG inline | `icons.tsx` | All UI icons as React components |
+| `<ChipInput>` | Custom tag input | `ChipInput.tsx` | Tag/chip input with add/remove |
+| `<AiQuickPill>` | — | `AiQuickPill.tsx` | Compact AI model quick-select pill |
+| `<AvatarCropModal>` | — | `AvatarCropModal.tsx` | Circular crop overlay using react-easy-crop |
+| `<TextDiffPreview>` | — | `TextDiffPreview.tsx` | Side-by-side or inline text diff view |
+| `<save-btn>` | `<button>` for save | `save-btn.tsx` | Save button with loading state |
+| `textarea-helpers` | — | `textarea-helpers.ts` | Shared utilities for textarea behavior (not a component) |
 
 ---
 
@@ -510,3 +516,57 @@ For row-based selection lists (preset import, injection table), use the circle t
 ```
 
 Native checkboxes are only acceptable for functional filter toggles (e.g., "Show only selected"), not for per-row selection.
+
+---
+
+## ChipInput
+
+**File:** `ChipInput.tsx`
+**Purpose:** Reusable tag/chip input with add/remove behavior.
+
+Used for compact list-style fields such as stop sequences and other token-like inputs. Prefer this over ad-hoc comma-separated text fields when the user needs to manage discrete values.
+
+---
+
+## AiQuickPill
+
+**File:** `AiQuickPill.tsx`
+**Purpose:** Compact AI/model quick-action pill.
+
+Use for small inline AI actions where a full button would be visually too heavy.
+
+---
+
+## AvatarCropModal
+
+**File:** `AvatarCropModal.tsx`
+**Purpose:** Avatar crop dialog backed by `react-easy-crop`.
+
+Provides a circular crop overlay with zoom/pan controls and exports a normalized square image suitable for character/persona avatars.
+
+---
+
+## TextDiffPreview
+
+**File:** `TextDiffPreview.tsx`
+**Purpose:** Preview text changes before applying them.
+
+Use when AI-assisted edits or bulk transformations need a visible before/after review step.
+
+---
+
+## save-btn
+
+**File:** `save-btn.tsx`
+**Purpose:** Shared save button helper/component.
+
+Use when a save action needs consistent disabled/loading/saved visual treatment but does not require the full sticky `<SaveBar>`.
+
+---
+
+## textarea-helpers
+
+**File:** `textarea-helpers.ts`
+**Purpose:** Shared textarea behavior utilities.
+
+Not a React component. Keep textarea sizing/selection helper logic here instead of duplicating it across editors.
