@@ -1,6 +1,7 @@
-import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { cn } from "../../../lib/cn.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
+import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { PrefillField } from "./PrefillField.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
@@ -61,84 +62,6 @@ const labelAccentCls = "mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] fon
 
 type TextDraftKey = Exclude<keyof DraftData, "authorsNoteDepth" | "authorsNotePosition" | "aiAssistantPrompts">;
 
-function findScrollParent(el: HTMLElement): HTMLElement | null {
-  let parent = el.parentElement;
-  while (parent) {
-    const style = window.getComputedStyle(parent);
-    if (/(auto|scroll)/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight) return parent;
-    parent = parent.parentElement;
-  }
-  return null;
-}
-
-function resizeTextarea(el: HTMLTextAreaElement, allowShrink: boolean): void {
-  const scrollParent = findScrollParent(el);
-  const scrollTop = scrollParent?.scrollTop ?? 0;
-
-  if (allowShrink) el.style.height = "auto";
-
-  const minHeight = Number.parseFloat(window.getComputedStyle(el).minHeight) || 0;
-  const nextHeight = Math.max(el.scrollHeight, minHeight);
-  const currentHeight = el.getBoundingClientRect().height;
-
-  if (allowShrink || nextHeight > currentHeight) {
-    el.style.height = `${nextHeight}px`;
-  }
-
-  // While typing in a long field, avoid browser scroll anchoring reacting to
-  // textarea shrink-grow recalculation and making the modal jump.
-  if (!allowShrink && scrollParent) scrollParent.scrollTop = scrollTop;
-}
-
-function AutoResizeTextarea({
-  fieldKey,
-  value,
-  placeholder,
-  minHeight,
-  disabled,
-  resetKey,
-  onChange,
-}: {
-  fieldKey: TextDraftKey;
-  value: string;
-  placeholder: string;
-  minHeight: number;
-  disabled: boolean;
-  resetKey?: string | null;
-  onChange: (value: string) => void;
-}) {
-  const ref = useRef<HTMLTextAreaElement | null>(null);
-  const prevResetKeyRef = useRef(resetKey);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    const resetChanged = prevResetKeyRef.current !== resetKey;
-    prevResetKeyRef.current = resetKey;
-    const isActive = document.activeElement === el;
-
-    resizeTextarea(el, resetChanged || !isActive);
-    if (resetChanged) el.scrollTop = 0;
-  }, [value, resetKey, minHeight]);
-
-  return (
-    <textarea
-      key={`${resetKey ?? "none"}:${fieldKey}`}
-      ref={ref}
-      className={cn(textareaCls, "px-[13px] py-[9px]")}
-      style={{ minHeight }}
-      value={value}
-      onChange={(e) => {
-        onChange(e.target.value);
-        resizeTextarea(e.currentTarget, false);
-      }}
-      placeholder={placeholder}
-      disabled={disabled}
-    />
-  );
-}
-
 function FieldSection({ label, labelClassName, token, children }: {
   label: string;
   labelClassName?: string;
@@ -154,7 +77,7 @@ function FieldSection({ label, labelClassName, token, children }: {
   );
 }
 
-export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey, hideChatPrompts = false }: PromptFieldsProps) {
+export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatPrompts = false }: PromptFieldsProps) {
   const { t } = useT();
   const disabled = !draft;
   const [serviceOpen, setServiceOpen] = useState(false);
@@ -168,17 +91,16 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey,
 
   const ta = useCallback((key: TextDraftKey, placeholder: string, minH = 100, labelKey?: string) => (
     <MobileExpandTextarea value={String(draft?.[key] ?? "")} onChange={(v) => onUpdateField(key, v)} label={labelKey ? t(labelKey) : undefined}>
-    <AutoResizeTextarea
-      fieldKey={key}
+    <AutoTextarea
+      className={cn(textareaCls, "px-[13px] py-[9px]")}
+      style={{ minHeight: minH }}
       value={String(draft?.[key] ?? "")}
       placeholder={placeholder}
-      minHeight={minH}
       disabled={disabled}
-      resetKey={resetKey}
-      onChange={(value) => onUpdateField(key, value)}
+      onChange={(e) => onUpdateField(key, e.target.value)}
     />
     </MobileExpandTextarea>
-  ), [draft, disabled, onUpdateField, resetKey]);
+  ), [draft, disabled, onUpdateField]);
 
   return (
     <div className="flex min-w-0 flex-col gap-6 scroll-smooth p-3 sm:p-5">
@@ -272,14 +194,14 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey,
                     <label className="mb-0 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{t(labelKey)}</label>
                     <TokenCounter text={value} />
                   </div>
-                  <AutoResizeTextarea
-                    fieldKey={key as TextDraftKey}
+                  <AutoTextarea
+                    className={cn(textareaCls, "px-[13px] py-[9px]")}
+                    style={{ minHeight: 80 }}
                     value={value}
                     placeholder={t("ai_assistant_mode_default_placeholder")}
-                    minHeight={80}
                     disabled={disabled}
-                    resetKey={resetKey}
-                    onChange={(v) => {
+                    onChange={(e) => {
+                      const v = e.target.value;
                       const updated = { ...(draft?.aiAssistantPrompts ?? {}), [key]: v };
                       if (!v.trim()) delete updated[key];
                       onUpdateField("aiAssistantPrompts", updated);

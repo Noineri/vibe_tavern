@@ -1,24 +1,24 @@
 /**
- * Provider profile mapper — maps stored provider profiles to AI SDK configuration.
+ * Provider profile mapper - maps stored provider profiles to AI SDK configuration.
  *
  * Each provider kind has exactly one outcome:
  * - **supported native**: has a dedicated AI SDK provider package (openai_compat, anthropic, google).
- * - **supported fallback**: uses OpenAI-compatible adapter via createOpenAI (ollama, llamacpp).
- * - **unsupported**: throws a deterministic ProviderExecutionError (koboldcpp — lacks OpenAI-compat /v1/chat/completions).
+ * - **supported fallback**: uses OpenAI-compatible adapter (ollama, llamacpp).
+ * - **unsupported**: throws a deterministic ProviderExecutionError (koboldcpp - lacks OpenAI-compat /v1/chat/completions).
  *
  * Limitations of fallback providers:
  * - Ollama: sampling parameters (top_k, typical_p, min_p, rep_pen, freq_pen, pres_pen)
  *   are not forwarded through the OpenAI-compatible adapter. They are silently dropped.
  * - LlamaCpp: same parameter limitations as Ollama. Also, model selection is limited
  *   to the single loaded model (no multi-model switching).
- * - KoboldCpp: unsupported — the /api/v1/generate endpoint is not OpenAI-compatible.
+ * - KoboldCpp: unsupported - the /api/v1/generate endpoint is not OpenAI-compatible.
  *   Users must switch to a supported provider kind.
  */
 
-import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import type { LanguageModelV1 } from "ai";
+import type { LanguageModel } from "ai";
 import { PROVIDER_TYPE, normalizeProviderType } from "@vibe-tavern/domain";
 import type { ProviderType } from "@vibe-tavern/domain";
 import { providerError } from "../errors.js";
@@ -34,7 +34,7 @@ import { createReasoningAwareFetch } from "./openai-reasoning-fetch.js";
 
 export interface ProviderMappingResult {
   /** The resolved AI SDK language model. */
-  model: LanguageModelV1;
+  model: LanguageModel;
   /** Capability flags for this provider kind. */
   capabilities: ProviderCapabilityFlags;
   /** Human-readable description of any limitations. */
@@ -43,9 +43,9 @@ export interface ProviderMappingResult {
 
 export { normalizeProviderType };
 
-function normalizeLocalOpenAiCompatibleBaseUrl(endpoint: string): string | undefined {
+function normalizeLocalOpenAiCompatibleBaseUrl(endpoint: string): string {
   const normalized = (endpoint || "").trim().replace(/\/+$/, "");
-  if (!normalized) return undefined;
+  if (!normalized) return "http://localhost:11434/v1";
   if (normalized.endsWith("/v1")) return normalized;
   if (normalized.endsWith("/api")) return `${normalized.slice(0, -"/api".length)}/v1`;
   return `${normalized}/v1`;
@@ -56,7 +56,7 @@ function normalizeLocalOpenAiCompatibleBaseUrl(endpoint: string): string | undef
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve a stored provider profile + model name into an AI SDK LanguageModelV1.
+ * Resolve a stored provider profile + model name into an AI SDK LanguageModel.
  *
  * This is the single canonical mapping point. Every provider kind has an explicit
  * outcome.
@@ -73,9 +73,9 @@ export function mapProfileToSdkModel(
     case PROVIDER_TYPE.openaiCompat: {
       const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
       const apiKey = profile.apiKey ?? "";
-      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined, fetch: createReasoningAwareFetch() });
+      const provider = createOpenAICompatible({ name: "openai_compat", apiKey: apiKey || "not-needed", baseURL: endpoint || "https://api.openai.com/v1", fetch: createReasoningAwareFetch() });
       return {
-        model: provider(model),
+        model: provider.chatModel(model),
         
         capabilities,
         limitations: [],
@@ -88,7 +88,7 @@ export function mapProfileToSdkModel(
       const provider = createAnthropic({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
       return {
         model: provider(model),
-        
+
         capabilities,
         limitations: [],
       };
@@ -104,7 +104,7 @@ export function mapProfileToSdkModel(
       const provider = createGoogleGenerativeAI({ apiKey: apiKey || "not-needed", baseURL: googleBaseUrl });
       return {
         model: provider(model),
-        
+
         capabilities,
         limitations: [],
       };
@@ -114,10 +114,10 @@ export function mapProfileToSdkModel(
     case PROVIDER_TYPE.ollama: {
       const endpoint = normalizeLocalOpenAiCompatibleBaseUrl(profile.endpoint);
       const apiKey = profile.apiKey ?? "";
-      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint, fetch: createReasoningAwareFetch() });
+      const provider = createOpenAICompatible({ name: "ollama", apiKey: apiKey || "not-needed", baseURL: endpoint, fetch: createReasoningAwareFetch() });
       return {
-        model: provider(model),
-        
+        model: provider.chatModel(model),
+
         capabilities,
         limitations: [
           "Uses Ollama's OpenAI-compatible /v1 endpoint for generation.",
@@ -130,9 +130,9 @@ export function mapProfileToSdkModel(
     case PROVIDER_TYPE.llamaCpp: {
       const endpoint = normalizeLocalOpenAiCompatibleBaseUrl(profile.endpoint);
       const apiKey = profile.apiKey ?? "";
-      const provider = createOpenAI({ apiKey: apiKey || "not-needed", baseURL: endpoint, fetch: createReasoningAwareFetch() });
+      const provider = createOpenAICompatible({ name: "llamacpp", apiKey: apiKey || "not-needed", baseURL: endpoint, fetch: createReasoningAwareFetch() });
       return {
-        model: provider(model),
+        model: provider.chatModel(model),
         
         capabilities,
         limitations: [

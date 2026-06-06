@@ -1,0 +1,1 @@
+ALTER TABLE `prompt_traces` ADD `sent_config_json` text;

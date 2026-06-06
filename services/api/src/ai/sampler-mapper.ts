@@ -5,7 +5,7 @@
  * Both executors (nonstreaming, streaming) spread the returned SamplerConfig
  * into their generateText() / streamText() call.
  *
- * When `customSamplers` is false, only basic params (temperature, maxTokens,
+ * When `customSamplers` is false, only basic params (temperature, maxOutputTokens,
  * stopSequences, seed, reasoningEffort) are sent to the provider. All advanced
  * sampler fields (topP, topK, minP, topA, penalties) are skipped so the
  * provider uses its own defaults.
@@ -22,7 +22,7 @@ import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 export interface SamplerConfig {
   temperature?: number;
   topP?: number;
-  maxTokens?: number;
+  maxOutputTokens?: number;
   stopSequences?: string[];
   frequencyPenalty?: number;
   presencePenalty?: number;
@@ -48,11 +48,11 @@ export interface SamplerConfig {
 export function buildSamplerConfig(
   profile: StoredProviderProfileRecord,
 ): SamplerConfig {
-  // -- Always-sent params: temperature, maxTokens, stopSequences --
+  // -- Always-sent params: temperature, maxOutputTokens, stopSequences --
   const config: SamplerConfig = {};
 
   if (profile.temperature != null) config.temperature = profile.temperature;
-  if (profile.maxTokens != null && profile.maxTokens > 0) config.maxTokens = profile.maxTokens;
+  if (profile.maxTokens != null && profile.maxTokens > 0) config.maxOutputTokens = profile.maxTokens;
 
   if (profile.stopSequences.length > 0) {
     config.stopSequences = profile.stopSequences;
@@ -91,11 +91,14 @@ export function buildSamplerConfig(
         if (!isNaN(parsed)) config.seed = parsed;
       }
 
-      // providerOptions.openai namespace
-      const openaiOptions: Record<string, number | string | boolean | number[] | null> = {};
-      if (profile.topK != null) openaiOptions.top_k = profile.topK;
-      if (profile.minP != null) openaiOptions.min_p = profile.minP;
-      if (profile.repetitionPenalty != null) openaiOptions.repetition_penalty = profile.repetitionPenalty;
+      // providerOptions.<providerName> namespace — must match createOpenAICompatible({ name })
+      const providerOptionsKey = providerType === PROVIDER_TYPE.openaiCompat ? "openai_compat"
+        : providerType === PROVIDER_TYPE.ollama ? "ollama"
+        : "llamacpp";
+      const providerOpts: Record<string, number | string | boolean | number[] | null> = {};
+      if (profile.topK != null) providerOpts.top_k = profile.topK;
+      if (profile.minP != null) providerOpts.min_p = profile.minP;
+      if (profile.repetitionPenalty != null) providerOpts.repetition_penalty = profile.repetitionPenalty;
 
       // Logit bias: map entries to Record<number, number>
       if (profile.logitBias?.length && resolveLogitBiasSupport(profile.providerPreset, profile.defaultModel, profile.endpoint).supported) {
@@ -106,7 +109,7 @@ export function buildSamplerConfig(
           for (const entry of usableEntries) {
             biasMap[String(entry.tokenId)] = entry.bias;
           }
-          (openaiOptions as Record<string, unknown>).logitBias = biasMap;
+          (providerOpts as Record<string, unknown>).logitBias = biasMap;
         }
       }
 
@@ -115,11 +118,11 @@ export function buildSamplerConfig(
         providerType === PROVIDER_TYPE.openaiCompat &&
         profile.reasoningEffort != null
       ) {
-        openaiOptions.reasoningEffort = profile.reasoningEffort;
+        providerOpts.reasoningEffort = profile.reasoningEffort;
       }
 
-      if (Object.keys(openaiOptions).length > 0) {
-        config.providerOptions = { openai: openaiOptions };
+      if (Object.keys(providerOpts).length > 0) {
+        config.providerOptions = { [providerOptionsKey]: providerOpts };
       }
       break;
     }
@@ -133,14 +136,14 @@ export function buildSamplerConfig(
 
     // -- Google ---------------------------------------------------------------
     case PROVIDER_TYPE.google: {
-      // Only temperature, topP, maxTokens, stopSequences (already set above)
+      // Only temperature, topP, maxOutputTokens, stopSequences (already set above)
       break;
     }
 
     // -- KoboldCpp (unsupported) and unknown ----------------------------------
     case PROVIDER_TYPE.koboldCpp:
     default: {
-      // Native params only (temperature, topP, maxTokens, stopSequences)
+      // Native params only (temperature, topP, maxOutputTokens, stopSequences)
       break;
     }
   }

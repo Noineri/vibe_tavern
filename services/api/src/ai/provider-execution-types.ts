@@ -35,7 +35,7 @@ export interface ProviderProfileRef {
 /** Model selection and generation parameters. */
 export interface GenerationModelSettings {
   model: string;
-  maxTokens?: number | null;
+  maxOutputTokens?: number | null;
   temperature?: number | null;
   topP?: number | null;
   minP?: number | null;
@@ -68,12 +68,24 @@ export interface GenerationResult {
   reasoning?: string;
   /** Usage metadata if the provider returns it. */
   usage?: GenerationUsage;
+  /** Snapshot of what was sent to the provider. */
+  sentConfig?: SentConfigSnapshot;
 }
 
 export interface GenerationUsage {
-  promptTokens?: number;
-  completionTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
   totalTokens?: number;
+}
+
+/** Snapshot of what was actually sent to the provider for a generation call. */
+export interface SentConfigSnapshot {
+  /** System prompt role: 'system' (standard) or undefined if no system prompt. */
+  systemRole: "system" | undefined;
+  /** Sampler config that was spread into streamText()/generateText(). */
+  samplerConfig: Record<string, unknown>;
+  /** Number of conversation messages sent (excluding system). */
+  messageCount: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,8 +103,8 @@ export type ProviderStreamChunk =
 export interface ProviderStreamFinish {
   finishReason: "stop" | "length" | "content-filter" | "tool-calls" | "error" | "cancelled";
   usage?: {
-    promptTokens?: number;
-    completionTokens?: number;
+    inputTokens?: number;
+    outputTokens?: number;
     totalTokens?: number;
   };
 }
@@ -106,6 +118,8 @@ export interface ProviderStreamResult {
   reasoning: Promise<string | undefined>;
   /** True if a redacted-reasoning chunk was encountered. */
   hasRedactedReasoning: boolean;
+  /** Snapshot of what was sent to the provider. */
+  sentConfig?: SentConfigSnapshot;
 }
 
 /** Input to the streaming executor. */
@@ -115,7 +129,7 @@ export interface ProviderExecutionInput {
   prompt: AssemblePromptResponse;
   signal?: AbortSignal;
   prefill?: string;
-  /** Override the profile's maxTokens for this specific call (e.g. summarization). */
+  /** Override the profile's maxOutputTokens for this specific call (e.g. summarization). */
   overrideMaxTokens?: number;
   /** AI SDK tools to pass to streamText(). AI SDK handles validation, execution, and multi-turn loop. */
   tools?: ToolSet;

@@ -52,9 +52,9 @@ export function TweaksPanel({ settings, setSetting, onOpenMobileAccess, onClose 
   ];
 
   const uiFontSizeOptions = [
-    { value: '16', label: <span className="font-body text-[11px] font-semibold">Aa</span> },
+    { value: '15', label: <span className="font-body text-[10px] font-semibold">Aa</span> },
     { value: '17', label: <span className="font-body text-[13px] font-semibold">Aa</span> },
-    { value: '18', label: <span className="font-body text-[15px] font-semibold">Aa</span> },
+    { value: '19', label: <span className="font-body text-[16px] font-semibold">Aa</span> },
   ];
 
   const widthOptions = [

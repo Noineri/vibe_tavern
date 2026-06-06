@@ -15,7 +15,7 @@ const fakeGenerateText = mock(async (opts: { messages: unknown }) => {
   return {
     text: "Hello from AI",
     finishReason: "stop",
-    usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+    usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
   };
 });
 
@@ -25,7 +25,7 @@ const fakeStreamText = mock((opts: { messages: unknown }) => {
     textStream: (async function* () { yield "Hello from stream"; })(),
     text: Promise.resolve("Hello from stream"),
     finishReason: Promise.resolve("stop"),
-    usage: Promise.resolve({ promptTokens: 10, completionTokens: 5, totalTokens: 15 }),
+    usage: Promise.resolve({ inputTokens: 10, outputTokens: 5, totalTokens: 15 }),
   };
 });
 

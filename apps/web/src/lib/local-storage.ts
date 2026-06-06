@@ -14,7 +14,7 @@ export interface TweaksSettings {
 }
 
 export const MESSAGE_WIDTH_MAP: Record<string, string> = { narrow: "680px", medium: "820px", wide: "960px" };
-export const DEFAULT_TWEAKS: TweaksSettings = { fontSize: 17, uiFontSize: 16, messageWidth: "medium", lang: "en", showRail: false };
+export const DEFAULT_TWEAKS: TweaksSettings = { fontSize: 17, uiFontSize: 17, messageWidth: "medium", lang: "en", showRail: false };
 
 export function readSavedTheme(): ThemeMode {
   try {

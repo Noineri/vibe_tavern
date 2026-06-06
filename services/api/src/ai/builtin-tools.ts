@@ -25,7 +25,7 @@ export function getBuiltinTools() {
   return {
     roll_dice: tool({
       description: "Roll one or more dice with a specified number of sides. Returns each roll and their total.",
-      parameters: z.object({
+      inputSchema: z.object({
         sides: z.number().int().min(2).describe("Number of sides on each die (e.g. 6, 20)"),
         count: z.number().int().min(1).max(100).optional().describe("Number of dice to roll (default: 1)"),
       }),
