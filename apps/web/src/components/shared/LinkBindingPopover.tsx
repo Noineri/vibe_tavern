@@ -185,8 +185,8 @@ export function LinkBindingPopover({
           <button
             type="button"
             className={cn(
-              "group flex shrink-0 grow-0 items-start justify-center text-t3 transition-colors hover:text-accent-t",
-              isMobile ? "h-11 w-7" : "h-[22px] w-[22px]",
+              "group flex shrink-0 grow-0 justify-center text-t3 transition-colors hover:text-accent-t",
+              isMobile ? "h-11 w-7 items-center" : "h-[22px] w-[22px] items-start",
             )}
             onClick={() => setOpen((v) => !v)}
             aria-label={addLabel}
