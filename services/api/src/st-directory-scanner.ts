@@ -9,7 +9,7 @@
  *   OpenAI Settings/ ← .json (prompt presets, optional)
  */
 
-import { readdir, stat, mkdir } from "node:fs/promises";
+import { readdir, mkdir } from "node:fs/promises";
 import { join, extname, basename, resolve } from "node:path";
 import {
 	importCharacterCardV3Json,
@@ -70,7 +70,7 @@ export async function scanSillyTavernDirectory(dirPath: string): Promise<StDirec
 	const resolved = resolve(dirPath);
 
 	// Validate the directory exists and looks like a ST data folder
-	const dirStat = await stat(resolved).catch(() => null);
+	const dirStat = await Bun.file(resolved).stat().catch(() => null);
 	if (!dirStat?.isDirectory()) {
 		throw new Error(`"${resolved}" is not a directory.`);
 	}
@@ -110,7 +110,7 @@ export async function scanSillyTavernDirectory(dirPath: string): Promise<StDirec
 	const chatSubdirs = await safeReaddir(chatsDir);
 	for (const sub of chatSubdirs) {
 		const subPath = join(chatsDir, sub);
-		const subStat = await stat(subPath).catch(() => null);
+		const subStat = await Bun.file(subPath).stat().catch(() => null);
 		if (!subStat?.isDirectory()) continue;
 
 		const jsonlFiles = await safeReaddir(subPath);
@@ -297,7 +297,7 @@ export async function importSillyTavernDirectory(
 
 	for (const sub of chatSubdirs) {
 		const subPath = join(chatsDir, sub);
-		const subStat = await stat(subPath).catch(() => null);
+		const subStat = await Bun.file(subPath).stat().catch(() => null);
 		if (!subStat?.isDirectory()) continue;
 
 		// Match folder name to a character (case-insensitive)

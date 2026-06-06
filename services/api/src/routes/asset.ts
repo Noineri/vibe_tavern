@@ -18,7 +18,7 @@ export function createAssetRoutes(runtime: RuntimeApi) {
       if (!result) {
         return c.json({ error: "Asset not found" }, 404);
       }
-      return c.body(new ReadableStream({ start(controller) { controller.enqueue(result.body); controller.close(); } }), 200, { "Content-Type": result.contentType, "Cache-Control": "public, max-age=31536000" });
+      return result;
     })
   ;
 }
