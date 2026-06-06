@@ -8,6 +8,7 @@ import { useMessageOrder, useMacroContext, useChatMeta } from "../../stores/inde
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { MessageBlock } from "./MessageBlock.js";
 import { MessageReasoning } from "./MessageReasoning.js";
+import { StreamingMarkdown } from "./StreamingMarkdown.js";
 import { TranslateErrorBoundary } from "../layout/TranslateErrorBoundary.js";
 import { initials } from "../layout/app-shell-helpers.js";
 import { useT } from "../../i18n/context.js";
@@ -216,12 +217,14 @@ const _dots = (
 function StreamingContent(_props: { characterName: string }) {
   const gen = useActiveGeneration();
   const streamingText = gen?.streamingText ?? "";
+  const streamingCommittedText = gen?.streamingCommittedText ?? "";
+  const streamingTailText = gen?.streamingTailText ?? streamingText;
   const streamingReasoning = gen?.streamingReasoningText ?? "";
   if (streamingText) {
     return (
       <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
         {streamingReasoning && <MessageReasoning reasoning={streamingReasoning} />}
-        <Markdown text={streamingText} />
+        <StreamingMarkdown committedText={streamingCommittedText} tailText={streamingTailText} />
         {_dots}
       </div>
     );

@@ -28,12 +28,19 @@ export async function nonstreamingProviderExecute(
 
     const samplerConfig = buildSamplerConfig(input.profile);
     if (input.overrideMaxTokens != null) {
-      samplerConfig.maxTokens = input.overrideMaxTokens;
+      samplerConfig.maxOutputTokens = input.overrideMaxTokens;
     }
     logSendDebug("provider.nonstream.samplerConfig", {
       providerType: input.profile.providerPreset,
       samplerConfig,
     });
+    const sentConfig = {
+      systemRole: systemPrompt ? "system" as const : undefined,
+      samplerConfig: samplerConfig as Record<string, unknown>,
+      messageCount: conversationMessages.length,
+    };
+    logSendDebug("provider.nonstream.sentConfig", sentConfig);
+
     const result = await generateText({
       model,
       messages: conversationMessages,
@@ -45,11 +52,11 @@ export async function nonstreamingProviderExecute(
     logSendDebug("provider.nonstream.result", {
       textLength: result.text.length,
       textPreview: result.text.slice(0, 200),
-      reasoningLength: result.reasoning?.length ?? undefined,
-      reasoningDetailsCount: result.reasoningDetails.length ?? undefined,
+      reasoningLength: result.reasoningText?.length ?? undefined,
+      reasoningPartsCount: result.reasoning.length ?? undefined,
       finishReason: result.finishReason,
       usage: result.usage
-        ? { promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens, totalTokens: result.usage.totalTokens }
+        ? { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, totalTokens: result.usage.totalTokens }
         : null,
       providerMetadata: result.providerMetadata
         ? JSON.stringify(result.providerMetadata).slice(0, 500)
@@ -59,14 +66,15 @@ export async function nonstreamingProviderExecute(
 
     return {
       text: result.text,
-      reasoning: result.reasoning ?? undefined,
+      reasoning: result.reasoningText ?? undefined,
       usage: result.usage
         ? {
-            promptTokens: result.usage.promptTokens,
-            completionTokens: result.usage.completionTokens,
+            inputTokens: result.usage.inputTokens,
+            outputTokens: result.usage.outputTokens,
             totalTokens: result.usage.totalTokens,
           }
         : undefined,
+      sentConfig,
     };
   } catch (error) {
     if (input.signal?.aborted) throw cancelled();

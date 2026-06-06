@@ -367,6 +367,11 @@ export interface PromptTrace {
   latencyMs: number;
   prefill?: string | null;
   compactionSummary?: string | null;
+  sentConfig?: {
+    systemRole: string | undefined;
+    samplerConfig: Record<string, unknown>;
+    messageCount: number;
+  } | null;
   createdAt: Timestamp;
 }
 

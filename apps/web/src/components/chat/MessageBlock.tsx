@@ -15,6 +15,7 @@ import { replaceUiMacros } from "../../lib/macros.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { MessageShell, type MessageShellAuthorInfo } from "./MessageShell.js";
 import { Modal } from "../shared/Modal.js";
+import { StreamingMarkdown } from "./StreamingMarkdown.js";
 
 type SwipeDirection = -1 | 1;
 
@@ -92,6 +93,8 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   // Streaming text for regeneration
   const globalStreamingText = activeGen?.streamingText ?? "";
+  const globalStreamingCommittedText = activeGen?.streamingCommittedText ?? "";
+  const globalStreamingTailText = activeGen?.streamingTailText ?? globalStreamingText;
   const globalStreamingReasoning = activeGen?.streamingReasoningText ?? "";
 
   // Separator logic
@@ -145,6 +148,8 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   const isStreamingHere = !isUser && messageActionId === input.messageId && (globalStreamingText || globalStreamingReasoning);
   const activeStreamingText = isStreamingHere ? globalStreamingText : null;
+  const activeStreamingCommittedText = isStreamingHere ? globalStreamingCommittedText : "";
+  const activeStreamingTailText = isStreamingHere ? globalStreamingTailText : "";
   const activeStreamingReasoning = isStreamingHere ? globalStreamingReasoning : null;
 
   // Reasoning from persisted variant data only (not streaming)
@@ -278,7 +283,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   ) : isStreamingHere ? (
     <div className={isMobile ? "my-0.5 w-full" : ""}>
       <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-        {activeStreamingText ? <Markdown text={activeStreamingText} /> : null}
+        {activeStreamingText ? <StreamingMarkdown committedText={activeStreamingCommittedText} tailText={activeStreamingTailText} /> : null}
         <GenerationDots label={t("generating_response")} />
       </div>
     </div>

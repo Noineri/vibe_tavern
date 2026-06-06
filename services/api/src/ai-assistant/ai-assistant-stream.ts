@@ -10,7 +10,7 @@
  */
 
 import { streamText } from "ai";
-import type { LanguageModelV1 } from "ai";
+import type { LanguageModel } from "ai";
 import {
   assemblePrompt,
   setModelHint,
@@ -72,7 +72,7 @@ export interface AiAssistantStreamRequest {
 }
 
 export interface StreamDeps extends ContextResolverDeps {
-  resolveModel: (profile: { providerPreset: string; endpoint: string; apiKey: string | null }, model: string) => LanguageModelV1;
+  resolveModel: (profile: { providerPreset: string; endpoint: string; apiKey: string | null }, model: string) => LanguageModel;
   getProviderProfile: (id: string) => Promise<{
     id: string;
     providerPreset: string;

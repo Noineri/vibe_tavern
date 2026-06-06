@@ -2,173 +2,110 @@
 
 > Audit snapshot of native HTML controls in `apps/web/src` that may be candidates for replacement with shared components.
 >
-> Generated from `rg` searches on 2026-05-30. This is an index for later review, not an implementation plan.
+> Generated on 2026-06-06.
 
 ---
 
 ## Replacement Targets
 
-| Native pattern | Current count | Preferred shared component | Notes |
-|----------------|---------------|----------------------------|-------|
-| `<select>` | 15 | `DropdownSelect` or `SegmentedControl` | Highest-value cleanup. Native selects are visually inconsistent. |
-| `title={...}` native attribute | ~17 direct/indirect | `CustomTooltip` | Some `title` hits are component props and should not be changed. |
-| `<input type="checkbox">` | 0 | `Checkbox`, `Toggle`, `ToggleChips` | Already clean outside shared components. |
-| `<textarea>` | 22 | `AutoTextarea`, `MobileExpandTextarea`, `CodeEditor` | Review case-by-case. Chat input and specialized editors may stay native. |
-| `<input type="range">` | 8 | Shared slider not yet extracted | Several are range sliders; `DualRangeSlider` currently lives locally in `ContextMemoryModal`. |
-| `<input type="number">` | many | No shared number component yet | Candidate for future `NumberInput` only if styling/validation duplication becomes painful. |
-| `<input type="file">` | 9 | Usually keep native-hidden | Most are hidden file inputs behind custom buttons/dropzones. |
-
----
-
-## Native `<select>` Candidates
-
-### Replace with `SegmentedControl`
-
-Small fixed option sets, all options should be visible at once.
-
-| File | Line | Purpose | Options | Suggested replacement |
-|------|------|---------|---------|-----------------------|
-| `components/settings/popovers/TweaksPanel.tsx` | 48 | Chat font size | small / medium / large | `SegmentedControl compact` |
-| `components/settings/popovers/TweaksPanel.tsx` | 56 | UI font size | small / medium / large | `SegmentedControl compact` |
-| `components/settings/popovers/TweaksPanel.tsx` | 64 | Message width | narrow / medium / wide | `SegmentedControl compact` |
-| `components/settings/popovers/TweaksPanel.tsx` | 72 | Language | EN / RU | `SegmentedControl compact` |
-| `components/build/editors/CharacterForm.tsx` | 482 | Example message activation mode | always / once / depth | `SegmentedControl compact` (keep tooltip wrapper) |
-| `components/build/editors/CharacterForm.tsx` | 562 | Depth prompt role | system / user / assistant | `SegmentedControl compact` |
-| `components/modals/CreateCharacterModal.tsx` | 368 | Depth prompt role | system / user / assistant | `SegmentedControl compact` |
-| `components/build/editors/LorebookAccordion.tsx` | 136 | Lorebook scope while renaming | global / character / persona / chat | `SegmentedControl compact` or keep if too cramped on mobile |
-| `components/settings/prompt/InjectionTable.tsx` | 141 | Injection role | roleOptions, currently 3 roles | `SegmentedControl compact` |
-| `components/settings/provider/ProviderSamplerPanel.tsx` | 248 | Reasoning effort | low / medium / high | `SegmentedControl` |
-
-### Replace with `DropdownSelect`
-
-Dynamic or potentially long option lists.
-
-| File | Line | Purpose | Notes |
-|------|------|---------|-------|
-| `components/context/SummaryTab.tsx` | 200 | Summarization provider | Dynamic provider list. Use `DropdownSelect`; no need for search if list is short, but component includes it. |
-| `components/settings/provider/ProviderForm.tsx` | 84 | Provider preset group | `PRESET_GROUPS`; include custom/default option. |
-| `components/settings/provider/ProviderForm.tsx` | 111 | API format / provider preset | `filteredPresets`; include custom/default option. |
-| `components/settings/provider/ProviderEditHeader.tsx` | 68 | Provider preset group | Same logic as `ProviderForm`; likely extract shared provider-preset selector. |
-| `components/settings/provider/ProviderEditHeader.tsx` | 79 | API format / provider preset | Same logic as `ProviderForm`; likely extract shared provider-preset selector. |
-
-### DropdownSelect keyboard caveat
-
-Do not promise arrow-key navigation for `DropdownSelect`. The search `<input>` captures focus, and Radix Select's focus-driven keyboard model does not handle this reliably. This is acceptable for now because search is the primary navigation path.
-
----
-
-## Native `title` Attribute Candidates
-
-Only replace true native DOM `title` attributes. Ignore component props like `<ImportModalFrame title=...>` or `<DestructiveConfirmModal title=...>`.
-
-### High-value replacements
-
-| File | Line | Element | Suggested change |
-|------|------|---------|------------------|
-| `components/layout/Rail.tsx` | 29 | `Ico` wrapper uses native `title` | Wrap returned `<div>` in `CustomTooltip`. This fixes all `Ico` callsites. |
-| `components/layout/Rail.tsx` | 300 | Create character rail button | `CustomTooltip` |
-| `components/layout/Rail.tsx` | 305 | Import character rail button | `CustomTooltip` |
-| `components/layout/Rail.tsx` | 319 | Character avatar button | `CustomTooltip`; content = character name |
-| `components/layout/Rail.tsx` | 332 | `+N` more characters button | `CustomTooltip` |
-| `components/layout/Rail.tsx` | 348 | Chat indicator button | `CustomTooltip`; content = chat title |
-| `components/layout/Rail.tsx` | 358 | New chat button | `CustomTooltip` |
-| `components/chat/MessageBlock.tsx` | 814 | Resend button | `CustomTooltip` |
-| `components/chat/MessageBlock.tsx` | 819 | Regenerate button | `CustomTooltip` |
-| `components/chat/MessageBlock.tsx` | 824 | Branch button | `CustomTooltip` |
-| `components/settings/provider/ProviderModelSelector.tsx` | 232 | Refresh models button | `CustomTooltip` |
-| `components/modals/ContextMemoryModal.tsx` | 545 | Pin/unpin model button | `CustomTooltip` |
-
-### Lower-priority / maybe keep
-
-| File | Line | Element | Reason |
-|------|------|---------|--------|
-| `components/settings/popovers/AvatarPanel.tsx` | 209 | Draggable/zoomable image container | This is a non-button interaction hint. Native title is not great, but wrapping the whole drag surface in a tooltip may interfere with pointer behavior. |
-
-### False positives from `rg 'title={...'`
-
-These are component props, not native DOM `title` attributes:
-
-- `components/modals/ImportModals.tsx` — `ImportModalFrame`, `ImportDropZone`
-- `components/modals/PersonaModal.tsx` — `DestructiveConfirmModal`
-- `components/modals/PromptManagerModal.tsx` — `DestructiveConfirmModal`
-- `components/modals/ProviderModal.tsx` — `DestructiveConfirmModal`
-- `components/settings/prompt/PromptFields.tsx` — `SectionHeader`
-- `components/settings/prompt/PresetList.tsx` — `EmptyState`
+| Native pattern | Current status | Preferred shared component | Notes |
+|----------------|----------------|----------------------------|-------|
+| `<select>` | **CLEARED** | `DropdownSelect` / `SegmentedControl` | All instances successfully replaced. |
+| `title={...}` | **ON HOLD** | `CustomTooltip` | Bug: Tooltips might not trigger properly on mobile. Need to investigate the tooltip logic before replacing existing native titles. |
+| `<textarea>` | **PENDING** | `AutoTextarea`, `MobileExpandTextarea` | High priority for form standardisation. |
+| `<input type="range">` | **PENDING** | Shared single/dual slider | No shared component yet. Dual slider exists in memory modal, but single slider is needed for samplers. |
+| `<input type="number">` | **PENDING** | `NumberInput` (to be created) | High duplication. Candidate for a new shared component. |
 
 ---
 
 ## Native `<textarea>` Candidates
 
-There are 22 native textareas outside `components/shared/`. Many should probably be moved to `AutoTextarea` now that shrinking-on-delete is fixed.
+Replace these with `AutoTextarea` (and wrap in `MobileExpandTextarea` where the text can be very long).
 
-| File | Lines | Suggested replacement | Notes |
-|------|-------|-----------------------|-------|
-| `components/modals/CreateCharacterModal.tsx` | 248, 257, 297, 313, 323, 332, 344, 354, 391, 401 | `AutoTextarea` + `MobileExpandTextarea` for long fields | High-value: create modal has many repeated native textareas. |
-| `components/build/editors/LoreEntryEditor.tsx` | 187 | `AutoTextarea` + `MobileExpandTextarea` | Lore entry content can be long. |
-| `components/settings/prompt/PrefillField.tsx` | 29 | `AutoTextarea` | Small straightforward replacement. |
-| `components/settings/prompt/InjectionTable.tsx` | 151 | `AutoTextarea` | Injection content field. |
-| `components/context/SummaryTab.tsx` | 160 | `AutoTextarea` | Summary prompt/instructions field. |
-| `components/modals/ContextMemoryModal.tsx` | 484 | `AutoTextarea` | Memory/summary modal text field. |
-| `components/build/editors/ScriptEditor.tsx` | 393 | `CodeEditor` or keep native | Script import code should probably use `CodeEditor`; might be overkill in modal. |
-| `components/build/editors/ScriptEditor.tsx` | 453 | `AutoTextarea` | AI prompt field. |
-| `components/layout/WelcomeScreen.tsx` | 101, 110 | `AutoTextarea` or keep | Onboarding/import fields; review UI behavior. |
-| `components/settings/prompt/PromptFields.tsx` | 122 | `AutoTextarea` | Currently has a local resize helper with shrink limitations; likely replace with shared helper/component. |
-| `components/chat/InputArea.tsx` | 194, 225 | Keep native for now | Chat composer has custom keyboard/submit/mobile behavior; do not blindly replace. |
-
----
-
-## Native Range Inputs
-
-Current range sliders:
-
-| File | Lines | Purpose | Recommendation |
-|------|-------|---------|----------------|
-| `components/modals/ContextMemoryModal.tsx` | 75, 81 | Local `DualRangeSlider` implementation | Consider extracting to `components/shared/DualRangeSlider.tsx`. |
-| `components/modals/ContextMemoryModal.tsx` | 598, 633 | Single range controls for summary ranges | Could share styling with extracted slider. |
-| `components/context/SummaryTab.tsx` | 176 | Summary range slider | Could share styling. |
-| `components/settings/popovers/MobileSettings.tsx` | 126, 143 | Mobile font size sliders | Keep until shared `Slider` exists. |
-| `components/settings/provider/ProviderSamplerPanel.tsx` | 70 | Sampler slider | Consider a shared `NumberSlider` pair because it has range + numeric input. |
+| File | Purpose | Notes |
+|------|---------|-------|
+| `components/modals/CreateCharacterModal.tsx` | Character creation fields | High-value target, many repeated textareas. |
+| `components/build/editors/CharacterForm.tsx` | Character edit fields | Same as above. |
+| `components/build/editors/LoreEntryEditor.tsx` | Lore entry content | Essential for expanding text on mobile. |
+| `components/build/editors/ScriptEditor.tsx` | Script AI prompt, import field | Script code uses `CodeEditor`, but AI prompt uses native. |
+| `components/context/SummaryTab.tsx` | Summary instructions | Straightforward replacement. |
+| `components/modals/ContextMemoryModal.tsx` | Memory field | Straightforward replacement. |
+| `components/layout/WelcomeScreen.tsx` | Onboarding fields | Check UX behavior. |
+| `components/settings/prompt/InjectionTable.tsx` | Injection content | |
+| `components/settings/prompt/PrefillField.tsx` | Prefill text | |
+| `components/chat/InputArea.tsx` | Chat composer | **DO NOT REPLACE**. Has custom keyboard/submit/mobile behavior. |
 
 ---
 
-## Native Number Inputs
+## Native Number Inputs (`<input type="number">`)
 
-There are many `type="number"` inputs across provider samplers, prompt depth, lore entry settings, summary ranges, etc. No shared `NumberInput` exists yet.
+There are ~20 native number inputs. They currently look different and duplicate validation logic.
+**Recommendation**: Create a shared `<NumberInput>` component with consistent styling, min/max clamping, and wheel-scroll suppression.
 
-Recommended later extraction:
-
-```tsx
-<NumberInput
-  value={value}
-  min={0}
-  max={100}
-  step={1}
-  onChange={setValue}
-/>
-```
-
-Potential benefits:
-- consistent height/border/font styling
-- clamped parsing (`Number.isFinite`, min/max)
-- optional empty-value handling
-- wheel-scroll suppression if desired
-
-Do not replace yet unless we create the shared component first.
+| File | Purpose |
+|------|---------|
+| `components/build/editors/CharacterForm.tsx` | Example messages depth / Chat history depth |
+| `components/build/editors/LorebookAccordion.tsx` | Lorebook recursive depth |
+| `components/build/editors/LoreEntryEditor.tsx` | Order, Display Index, Probability, Depth limit, Weight |
+| `components/modals/ContextMemoryModal.tsx` | Summary intervals, token thresholds |
+| `components/context/SummaryTab.tsx` | Summary interval |
+| `components/modals/CreateCharacterModal.tsx` | Depth settings |
+| `components/settings/prompt/InjectionTable.tsx` | Injection depth |
+| `components/settings/prompt/PromptFields.tsx` | Depth limits |
+| `components/settings/provider/ProviderSamplerPanel.tsx` | Sampler configuration |
+| `components/settings/provider/LogitBiasPanel.tsx` | Logit bias values |
+| `components/shared/AiQuickPill.tsx` | Quick action parameters |
 
 ---
 
-## Native File Inputs
+## Native Range Inputs (`<input type="range">`)
 
-Found 9 native file inputs. Most are hidden (`className="hidden"`) and triggered by custom buttons/dropzones.
+| File | Purpose | Recommendation |
+|------|---------|----------------|
+| `components/modals/ContextMemoryModal.tsx` | Local `DualRangeSlider` | Extract to `components/shared/DualRangeSlider.tsx`. |
+| `components/settings/provider/ProviderSamplerPanel.tsx` | Sampler sliders | **Requires a single-value slider**. Do not use DualRangeSlider here. Needs a new shared slider/number pair component. |
+| `components/settings/popovers/MobileSettings.tsx` | Font size sliders | Keep native until a standard single slider is built. |
 
-Recommendation: keep as-is unless we extract a shared `FilePicker`/`DropZone`. Native file inputs are necessary; the important part is that visible UI is custom.
+---
+
+## Native `title` Attribute Candidates (ON HOLD)
+
+*Investigation needed: User reported `CustomTooltip` does not trigger on mobile devices.*
+Do not mass-replace native `title` until mobile behavior is fixed.
+
+| File | Element |
+|------|---------|
+| `components/layout/Rail.tsx` | Create/Import buttons, Avatars, Chats, Settings icons |
+| `components/chat/MessageShell.tsx` | Branch, Resend, Regenerate buttons |
+| `components/chat/MessageBlock.tsx` | Delete message button |
+| `components/settings/provider/ProviderModelSelector.tsx` | Refresh models button |
+| `components/modals/ContextMemoryModal.tsx` | Pin/unpin model button |
+
+---
+
+## Reusable Modal Patterns (Proposed)
+
+### 1. `MasterDetailModal`
+**Problem:** `PersonaModal`, `PromptManagerModal`, and `ProviderModal` all independently implement a two-column layout (list of items on the left, editor on the right).
+**Solution:** Extract a generic `<MasterDetailModal>` layout component with two modes:
+- **Desktop:** Two columns side-by-side.
+- **Mobile:** Single column with automatic "Back" button navigation between the list view and the editor view.
+
+### 2. `DropZone` / `ImportSurface` Unification
+**Problem:** `ImportModals.tsx` uses `<ImportSurface>`, but `PresetImportModal.tsx` duplicates the drag-and-drop file reading states and UI manually.
+**Solution:** Expand `<ImportSurface>` (or create a `<SharedDropZone>`) to handle generic file parsing (text vs. images) and drop states automatically, so all import modals can share the same wrapper and logic.
+
+### 3. `AiAssistantModal`
+**Problem:** The inline AI assistant UI (provider select, context binding, prompt textarea, token counter, streaming output, diff preview, apply/replace buttons) is heavily duplicated across `ScriptEditor.tsx`, `LoreEntryEditor.tsx`, and a simplified version exists in `AiQuickPill.tsx`. This causes massive duplication of complex state logic and API calls.
+**Solution:** Extract a generic `<AiAssistantModal>` (or popover/drawer) that manages the model selection and streaming internally. It should accept callbacks like `onApply(text)` and `onReplace(text)` so it can be cleanly dropped into any editor without duplicating the UI and state logic.
 
 ---
 
 ## Priority Suggestions
 
-1. **Replace all native `<select>`** — cleanest, visible UX improvement, low risk.
-2. **Replace native `title` on Rail + MessageBlock + ProviderModelSelector** — improves tooltip consistency.
-3. **Replace simple native `<textarea>` with `AutoTextarea`** — now safe because shrink-on-delete is fixed.
-4. **Extract slider components later** — useful but broader scope.
-5. **Leave hidden file inputs and chat composer native** unless there is a specific UX issue.
+1. **Mass-replace `<textarea>` with `<AutoTextarea>`**.
+2. **Build `<NumberInput>` shared component** and replace the 20+ instances across forms and samplers.
+3. **Build `<MasterDetailModal>` framework** to unify Provider, Persona, and Prompt Manager modals.
+4. **Build `<AiAssistantModal>`** to deduplicate the complex AI generation UI across all editors.
+5. **Investigate `<CustomTooltip>` mobile bug**, fix it, then replace all `title=` attributes.
+6. **Build a generic single `<Slider>` component** for samplers and settings.

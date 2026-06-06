@@ -68,6 +68,9 @@ export class LiveChatOrchestrator {
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
+      if (result.sentConfig) {
+        this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: result.sentConfig });
+      }
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
@@ -127,6 +130,9 @@ export class LiveChatOrchestrator {
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
+      if (result.sentConfig) {
+        this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: result.sentConfig });
+      }
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
@@ -191,6 +197,9 @@ export class LiveChatOrchestrator {
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
+      if (result.sentConfig) {
+        this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: result.sentConfig });
+      }
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
@@ -234,6 +243,7 @@ export class LiveChatOrchestrator {
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     const prefill = prepared.prompt.prefill ?? undefined;
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider }, prepared.prompt);
+    if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
 
     yield* this.drainStream({
       chatId: input.chatId,
@@ -280,6 +290,7 @@ export class LiveChatOrchestrator {
     });
     const prefill = prompt.prefill ?? undefined;
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider }, prompt);
+    if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
 
     yield* this.drainStream({
       chatId: input.chatId,
@@ -328,6 +339,7 @@ export class LiveChatOrchestrator {
     });
     const prefill = prompt.prefill ?? undefined;
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider }, prompt);
+    if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
 
     yield* this.drainStream({
       chatId: input.chatId,

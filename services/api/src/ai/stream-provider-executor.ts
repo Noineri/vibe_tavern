@@ -6,7 +6,7 @@
  */
 
 import { streamText } from "ai";
-import type { ProviderExecutor, ProviderStreamResult, ProviderStreamChunk, ProviderStreamFinish } from "./provider-execution-types.js";
+import type { ProviderExecutor, ProviderStreamResult, ProviderStreamChunk, ProviderStreamFinish, SentConfigSnapshot } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
 import { normalizeProviderType, type ProviderType } from "@vibe-tavern/domain";
@@ -40,39 +40,51 @@ function createMappedStream(
     const partTypes = new Set<string>();
 
     for await (const part of fullStream) {
-      const p = part as { type: string; textDelta?: string; text?: string; toolCallId?: string; toolName?: string; args?: unknown; error?: unknown; isError?: boolean };
+      const p = part as { type: string };
       chunkCount++;
       partTypes.add(p.type);
 
       // ── Provider error in stream ──
       if (p.type === "error") {
-        const errMsg = p.error instanceof Error ? p.error.message : typeof p.error === "string" ? p.error : JSON.stringify(p.error);
+        const pErr = part as { type: string; errorText?: string; error?: unknown };
+        const errMsg = pErr.errorText ?? (pErr.error instanceof Error ? pErr.error.message : typeof pErr.error === "string" ? pErr.error : JSON.stringify(pErr.error));
         logSendDebug("reasoning.stream-error", { chunkCount, error: errMsg, partTypes: [...partTypes].sort() });
         throw providerError(`Provider stream error: ${errMsg}`);
       }
 
       // ── Tool calls (informational — AI SDK handles execution) ──
-      if (p.type === "tool-call" && p.toolCallId && p.toolName) {
-        const args = (typeof p.args === "object" && p.args !== null ? p.args : {}) as Record<string, unknown>;
-        yield { type: "tool-call", toolCallId: p.toolCallId, toolName: p.toolName, args };
-        continue;
+      if (p.type === "tool-call") {
+        const tc = part as { type: string; toolCallId?: string; toolName?: string; args?: unknown };
+        if (tc.toolCallId && tc.toolName) {
+          const args = (typeof tc.args === "object" && tc.args !== null ? tc.args : {}) as Record<string, unknown>;
+          yield { type: "tool-call", toolCallId: tc.toolCallId, toolName: tc.toolName, args };
+          continue;
+        }
       }
 
       // ── Tool results (informational — forwarded for SSE) ──
-      if (p.type === "tool-result" && p.toolCallId) {
-        yield { type: "tool-result", toolCallId: p.toolCallId, toolName: String(p.toolName ?? ""), isError: p.isError };
-        continue;
+      if (p.type === "tool-result") {
+        const tr = part as { type: string; toolCallId?: string; toolName?: string; isError?: boolean };
+        if (tr.toolCallId) {
+          yield { type: "tool-result", toolCallId: tr.toolCallId, toolName: String(tr.toolName ?? ""), isError: tr.isError };
+          continue;
+        }
       }
 
-      if (p.type === "text-delta" && p.textDelta) {
+      // AI SDK v5 fullStream part fields:
+      //   text-delta     → `text` (string)
+      //   reasoning-delta → `delta` (string)
+      const p2 = part as { type: string; text?: string; delta?: string; toolCallId?: string; toolName?: string; args?: unknown; errorText?: string; isError?: boolean };
+
+      if (p.type === "text-delta" && p2.text) {
         // ── Marker protocol (OpenAI Chat Completions reasoning) ──
-        if (p.textDelta === REASONING_START_MARKER) {
+        if (p2.text === REASONING_START_MARKER) {
           inReasoning = true;
           reasoningCount++;
           logSendDebug("reasoning.marker.start", { chunkCount });
           continue;
         }
-        if (p.textDelta === REASONING_END_MARKER) {
+        if (p2.text === REASONING_END_MARKER) {
           inReasoning = false;
           logSendDebug("reasoning.marker.end", { chunkCount, reasoningCount });
           continue;
@@ -80,18 +92,18 @@ function createMappedStream(
 
         if (inReasoning) {
           reasoningCount++;
-          yield { type: "reasoning-delta", textDelta: p.textDelta };
+          yield { type: "reasoning-delta", textDelta: p2.text };
         } else {
-          yield { type: "text-delta", delta: p.textDelta };
+          yield { type: "text-delta", delta: p2.text };
         }
-      } else if (p.type === "reasoning" && (p.textDelta ?? p.text)) {
-        // ── Native reasoning parts (Anthropic, Responses API) ──
+      } else if (p.type === "reasoning-delta" && p2.delta) {
+        // ── Native reasoning parts (AI SDK v5: reasoning-start/reasoning-delta/reasoning-end) ──
         reasoningCount++;
-        yield { type: "reasoning-delta", textDelta: p.textDelta ?? p.text ?? "" };
+        yield { type: "reasoning-delta", textDelta: p2.delta };
       } else if (p.type === "redacted-reasoning") {
         hasRedacted = true;
       }
-      // reasoning-signature, source, tool-call, etc. — silently ignored
+      // reasoning-start, reasoning-end, text-start, text-end, source, etc. — silently ignored
     }
 
     logSendDebug("reasoning.stream-complete", {
@@ -110,7 +122,7 @@ function createMappedStream(
  */
 function mapFinish(result: { finishReason: Promise<unknown>; usage: Promise<unknown> }): Promise<ProviderStreamFinish> {
   return Promise.all([result.finishReason, result.usage]).then(([reason, usage]) => {
-    const usageRecord = usage as { promptTokens?: number; completionTokens?: number; totalTokens?: number } | undefined;
+    const usageRecord = usage as { inputTokens?: number; outputTokens?: number; totalTokens?: number } | undefined;
     let finishReason: ProviderStreamFinish["finishReason"] = "stop";
     if (reason === "length") finishReason = "length";
     else if (reason === "content-filter") finishReason = "content-filter";
@@ -120,8 +132,8 @@ function mapFinish(result: { finishReason: Promise<unknown>; usage: Promise<unkn
     return {
       finishReason,
       usage: usageRecord ? {
-        promptTokens: usageRecord.promptTokens,
-        completionTokens: usageRecord.completionTokens,
+        inputTokens: usageRecord.inputTokens,
+        outputTokens: usageRecord.outputTokens,
         totalTokens: usageRecord.totalTokens,
       } : undefined,
     };
@@ -153,6 +165,13 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
     }
 
     const samplerConfig = buildSamplerConfig(input.profile);
+    const sentConfig: SentConfigSnapshot = {
+      systemRole: systemPrompt ? "system" : undefined,
+      samplerConfig: samplerConfig as Record<string, unknown>,
+      messageCount: conversationMessages.length,
+    };
+    logger.debug("sentConfig: %o", sentConfig);
+
     const result = streamText({
       model,
       messages: conversationMessages,
@@ -171,8 +190,9 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       stream,
       finished,
       text: result.text,
-      reasoning: result.reasoning as Promise<string | undefined>,
+      reasoning: result.reasoningText as Promise<string | undefined>,
       hasRedactedReasoning: hasRedacted,
+      sentConfig,
     };
   } catch (error) {
     if (input.signal?.aborted) throw cancelled();

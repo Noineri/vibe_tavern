@@ -6,7 +6,7 @@
  * stream-provider-executor.ts and nonstreaming-provider-executor.ts.
  */
 
-import type { LanguageModelV1 } from "ai";
+import type { LanguageModel } from "ai";
 import { mapProfileToSdkModel } from "./provider-profile-mapper.js";
 import { getProviderCapabilities } from "./provider-capabilities.js";
 import type { ProviderType } from "@vibe-tavern/domain";
@@ -41,7 +41,7 @@ export interface PreparedMessages {
 export function resolveModel(
   profile: { providerPreset: string; endpoint: string; apiKey: string | null },
   model: string,
-): LanguageModelV1 {
+): LanguageModel {
   const mapping = mapProfileToSdkModel(profile, model);
   return mapping.model;
 }

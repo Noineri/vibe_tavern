@@ -7,6 +7,8 @@ import type { ChatGenerationStatus } from "../app-client.js";
 export interface ChatGenerationState {
   isSending: boolean;
   streamingText: string;
+  streamingCommittedText: string;
+  streamingTailText: string;
   streamingReasoningText: string;
   generationStatus: ChatGenerationStatus;
   pendingUserMessageContent: string | null;
@@ -17,6 +19,8 @@ function defaultGenState(): ChatGenerationState {
   return {
     isSending: false,
     streamingText: "",
+    streamingCommittedText: "",
+    streamingTailText: "",
     streamingReasoningText: "",
     generationStatus: "idle" as ChatGenerationStatus,
     pendingUserMessageContent: null,
@@ -61,6 +65,9 @@ export interface ChatActions {
 
   /** Set the streaming text to an absolute value (used by streaming reveal animation). */
   setStreamingText: (chatId: string, text: string) => void;
+
+  /** Set streaming markdown parts: stable markdown prefix + plain live tail. */
+  setStreamingParts: (chatId: string, committedText: string, tailText: string) => void;
 
   /** Append a reasoning delta. */
   appendReasoningText: (chatId: string, delta: string) => void;
@@ -139,8 +146,8 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
         generations: {
           ...s.generations,
           [chatId]: gen
-            ? { ...gen, streamingText: gen.streamingText + delta }
-            : { ...defaultGenState(), streamingText: delta },
+            ? { ...gen, streamingText: gen.streamingText + delta, streamingTailText: gen.streamingTailText + delta }
+            : { ...defaultGenState(), streamingText: delta, streamingTailText: delta },
         },
       };
     });
@@ -153,8 +160,23 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
         generations: {
           ...s.generations,
           [chatId]: gen
-            ? { ...gen, streamingText: text }
-            : { ...defaultGenState(), streamingText: text },
+            ? { ...gen, streamingText: text, streamingCommittedText: text, streamingTailText: "" }
+            : { ...defaultGenState(), streamingText: text, streamingCommittedText: text, streamingTailText: "" },
+        },
+      };
+    });
+  },
+
+  setStreamingParts: (chatId, committedText, tailText) => {
+    set((s) => {
+      const gen = s.generations[chatId];
+      const streamingText = committedText + tailText;
+      return {
+        generations: {
+          ...s.generations,
+          [chatId]: gen
+            ? { ...gen, streamingText, streamingCommittedText: committedText, streamingTailText: tailText }
+            : { ...defaultGenState(), streamingText, streamingCommittedText: committedText, streamingTailText: tailText },
         },
       };
     });
@@ -205,6 +227,8 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
             ...gen,
             isSending: false,
             streamingText: "",
+            streamingCommittedText: "",
+            streamingTailText: "",
             streamingReasoningText: "",
             pendingUserMessageContent: null,
             abortController: null,
@@ -229,6 +253,8 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
             ...g,
             isSending: false,
             streamingText: "",
+            streamingCommittedText: "",
+            streamingTailText: "",
             streamingReasoningText: "",
             pendingUserMessageContent: null,
             abortController: null,

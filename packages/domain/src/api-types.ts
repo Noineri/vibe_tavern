@@ -36,6 +36,12 @@ export interface AssemblePromptResponse {
   prefill?: string | null;
   /** Human-readable compaction summary shown as a warning badge in the trace UI. Not sent to the model. */
   compactionSummary?: string | null;
+  /** Snapshot of what was actually sent to the provider (system role, sampler config, message count). */
+  sentConfig?: {
+    systemRole: string | undefined;
+    samplerConfig: Record<string, unknown>;
+    messageCount: number;
+  };
 }
 
 export interface PromptTraceRecordDto extends AssemblePromptResponse {

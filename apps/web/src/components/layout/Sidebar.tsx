@@ -151,8 +151,8 @@ export function Sidebar() {
                   <CustomTooltip key={tab.id} content={tab.name} side="right">
                     <div
                       className={cn(
-                        'relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-all duration-150 hover:rounded-xl hover:bg-s2',
-                        (isActive || isFlyout) && 'rounded-xl bg-accent-dim',
+                        'relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-all duration-150',
+                        (isActive || isFlyout) ? 'rounded-xl bg-accent-dim hover:bg-accent-dim' : 'hover:rounded-xl hover:bg-s2',
                       )}
                       onClick={() => {
                         useChatStore.getState().setSelectedCharacterId(tab.id);
@@ -343,8 +343,8 @@ export function Sidebar() {
                     <div
                       key={tab.id}
                       className={cn(
-                        'group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] transition-colors duration-100 hover:bg-s2 hover:text-t1',
-                        isActive ? 'bg-accent-dim text-accent-t' : 'text-t2'
+                        'group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] transition-colors duration-100',
+                        isActive ? 'bg-accent-dim text-accent-t hover:bg-accent-dim hover:text-accent-t' : 'text-t2 hover:bg-s2 hover:text-t1'
                       )}
                       style={{ zIndex: menuOpen ? 100 : 1 }}
                       onClick={() => {
@@ -753,7 +753,10 @@ export function Sidebar() {
                     {characterTabs.map(tab => (
                       <div
                         key={tab.id}
-                        className={cn('flex cursor-pointer items-center gap-2.5 transition-colors hover:bg-s2', tab.id === snapshot?.character?.id && 'bg-accent-dim')}
+                        className={cn(
+                          'flex cursor-pointer items-center gap-2.5 transition-colors',
+                          tab.id === snapshot?.character?.id ? 'bg-accent-dim hover:bg-accent-dim' : 'hover:bg-s2'
+                        )}
                         style={{ padding: '6px 12px' }}
                         onClick={() => {
                           if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); }

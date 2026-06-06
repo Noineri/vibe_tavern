@@ -101,6 +101,14 @@ export class ChatRuntime {
     this.pendingPromptTraceByChat.delete(chatId);
   }
 
+  /** Patch the pending prompt trace with executor-level data (e.g. sentConfig). */
+  patchPendingTrace(chatId: ChatId, patch: { sentConfig?: AssemblePromptResponse["sentConfig"] }): void {
+    const pending = this.pendingPromptTraceByChat.get(chatId);
+    if (pending && patch.sentConfig) {
+      (pending.draft as Record<string, unknown>).sentConfig = patch.sentConfig;
+    }
+  }
+
   async appendAssistantReply(
     chatId: ChatId,
     content: string,
@@ -139,6 +147,7 @@ export class ChatRuntime {
         latencyMs,
         prefill: pending.draft.prefill,
         compactionSummary: pending.draft.compactionSummary,
+        sentConfig: (pending.draft as Record<string, unknown>).sentConfig as AssemblePromptResponse["sentConfig"],
       });
     }
 
@@ -194,6 +203,7 @@ export class ChatRuntime {
         latencyMs: input.latencyMs,
         prefill: pending.draft.prefill,
         compactionSummary: pending.draft.compactionSummary,
+        sentConfig: (pending.draft as Record<string, unknown>).sentConfig as AssemblePromptResponse["sentConfig"],
       });
     }
     return await getSnapshot(chatId);

@@ -370,6 +370,7 @@ export const promptTraces = sqliteTable('prompt_traces', {
   prefill: text('prefill'),
   compactionSummary: text('compaction_summary'),
   latencyMs: integer('latency_ms').notNull(),
+  sentConfigJson: text('sent_config_json'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   chatBranchIdx: index('idx_prompt_traces_chat_branch').on(table.chatId, table.branchId, table.createdAt),
