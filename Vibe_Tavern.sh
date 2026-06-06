@@ -77,5 +77,9 @@ fi
 echo "Installing dependencies..."
 bun install --frozen-lockfile --production
 
+echo "Building..."
+bun scripts/install-platform-optionals.ts
+bun scripts/build.ts prod
+
 echo "Starting server..."
 exec bun out/services/api/prod-server.js
