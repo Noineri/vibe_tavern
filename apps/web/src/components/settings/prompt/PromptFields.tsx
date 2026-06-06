@@ -160,9 +160,10 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey,
   const [serviceOpen, setServiceOpen] = useState(false);
 
   const aiAssistantModes = [
-    { key: "lore_entry", label: "Lore Entry AI" },
-    { key: "lore_keys", label: "Lore Keys AI" },
-    { key: "chat_impersonate", label: "Chat Impersonate AI" },
+    { key: "script", labelKey: "ai_assistant_mode_script" },
+    { key: "lore_entry", labelKey: "ai_assistant_mode_lore_entry" },
+    { key: "lore_keys", labelKey: "ai_assistant_mode_lore_keys" },
+    { key: "chat_impersonate", labelKey: "ai_assistant_mode_chat_impersonate" },
   ] as const;
 
   const ta = useCallback((key: TextDraftKey, placeholder: string, minH = 100, labelKey?: string) => (
@@ -258,28 +259,23 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, resetKey,
               {ta("summary", t("summary_placeholder"), 100)}
             </ServiceField>
 
-            <ServiceField label={t("script_ai_prompt_field")} description={t("script_ai_prompt_desc")} token={draft?.scriptAiSystemPrompt ?? ""}>
-              {ta("scriptAiSystemPrompt", t("script_ai_prompt_placeholder"), 160)}
-            </ServiceField>
+            <SectionHeader title={t("ai_assistant_section")} />
+            <div className="font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("ai_assistant_section_desc")}</div>
 
-            <div className="flex items-center gap-3">
-              <span className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t4">AI Assistant</span>
-              <div className="h-px flex-1 bg-border" />
-              <div className="font-ui text-[calc(var(--ui-fs)-4px)] text-t4">Override default prompts per mode. Leave empty to use defaults.</div>
-            </div>
-
-            {aiAssistantModes.map(({ key, label }) => {
-              const value = draft?.aiAssistantPrompts?.[key] ?? "";
+            {aiAssistantModes.map(({ key, labelKey }) => {
+              const value = key === "script"
+                ? (draft?.aiAssistantPrompts?.[key] || draft?.scriptAiSystemPrompt || "")
+                : (draft?.aiAssistantPrompts?.[key] ?? "");
               return (
                 <div key={key}>
                   <div className="mb-[7px] flex items-center justify-between">
-                    <label className="mb-0 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{label}</label>
+                    <label className="mb-0 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{t(labelKey)}</label>
                     <TokenCounter text={value} />
                   </div>
                   <AutoResizeTextarea
                     fieldKey={key as TextDraftKey}
                     value={value}
-                    placeholder={`(default ${label} prompt)`}
+                    placeholder={t("ai_assistant_mode_default_placeholder")}
                     minHeight={80}
                     disabled={disabled}
                     resetKey={resetKey}

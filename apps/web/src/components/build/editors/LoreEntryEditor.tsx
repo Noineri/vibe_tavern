@@ -33,6 +33,7 @@ import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { MessageReasoning } from "../../chat/MessageReasoning.js";
 import { AiQuickPill, type AiQuickSettings } from "../../shared/AiQuickPill.js";
+import { useT } from "../../../i18n/context.js";
 import {
   testLoreActivation,
   deleteLoreEntry,
@@ -1190,6 +1191,7 @@ function LoreKeysAiPill({
   entry: LoreEntryRecord;
   updateAct: (field: string, value: unknown) => void;
 }) {
+  const { t } = useT();
   const [settings, setSettings] = useState<AiQuickSettings>({
     providerId: "",
     modelName: "",
@@ -1269,8 +1271,8 @@ function LoreKeysAiPill({
       loading={loading}
       disabled={!entry.content.trim()}
       showAppendToggle
-      starTooltip="Generate keys"
-      gearTooltip="Key generation settings"
+      starTooltip={t("ai_pill_generate_keys")}
+      gearTooltip={t("ai_pill_generate_keys_settings")}
       size="md"
     />
   );
