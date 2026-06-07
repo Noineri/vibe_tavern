@@ -2,17 +2,13 @@
  * Provider profile mapper - maps stored provider profiles to AI SDK configuration.
  *
  * Each provider kind has exactly one outcome:
- * - **supported native**: has a dedicated AI SDK provider package (openai_compat, anthropic, google).
- * - **supported fallback**: uses OpenAI-compatible adapter (ollama, llamacpp).
- * - **unsupported**: throws a deterministic ProviderExecutionError (koboldcpp - lacks OpenAI-compat /v1/chat/completions).
+ * - **supported SDK-native**: dedicated AI SDK package (openai_compat, anthropic, google).
+ * - **supported local-native**: custom LanguageModelV3 adapter (ollama, koboldcpp).
+ * - **supported fallback**: OpenAI-compatible adapter (llamacpp).
  *
- * Limitations of fallback providers:
- * - Ollama: sampling parameters (top_k, typical_p, min_p, rep_pen, freq_pen, pres_pen)
- *   are not forwarded through the OpenAI-compatible adapter. They are silently dropped.
- * - LlamaCpp: same parameter limitations as Ollama. Also, model selection is limited
- *   to the single loaded model (no multi-model switching).
- * - KoboldCpp: unsupported - the /api/v1/generate endpoint is not OpenAI-compatible.
- *   Users must switch to a supported provider kind.
+ * Local-native providers use their own HTTP APIs so sampler fields can be
+ * forwarded losslessly instead of being silently dropped by OpenAI-compatible
+ * shims.
  */
 
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -28,6 +24,7 @@ import {
 } from "./provider-capabilities.js";
 import { createReasoningAwareFetch } from "./openai-reasoning-fetch.js";
 import { createKoboldCppModel } from "./koboldcpp-adapter.js";
+import { createOllamaModel } from "./ollama-adapter.js";
 
 // ---------------------------------------------------------------------------
 // SDK support classification
@@ -113,16 +110,16 @@ export function mapProfileToSdkModel(
 
     // -- OpenAI-compatible fallback ------------------------------------------
     case PROVIDER_TYPE.ollama: {
-      const endpoint = normalizeLocalOpenAiCompatibleBaseUrl(profile.endpoint);
-      const apiKey = profile.apiKey ?? "";
-      const provider = createOpenAICompatible({ name: "ollama", apiKey: apiKey || "not-needed", baseURL: endpoint, fetch: createReasoningAwareFetch() });
+      const endpoint = (profile.endpoint || "").replace(/\/+$/, "") || "http://localhost:11434";
+      const ollamaModel = createOllamaModel({
+        baseURL: endpoint,
+        modelId: model,
+      });
       return {
-        model: provider.chatModel(model),
-
+        model: ollamaModel,
         capabilities,
         limitations: [
-          "Uses Ollama's OpenAI-compatible /v1 endpoint for generation.",
-          "Sampling parameters top_k, typical_p, min_p, rep_pen, freq_pen, pres_pen are not forwarded via OpenAI-compatible adapter.",
+          "Uses Ollama native /api/chat endpoint for full sampler support.",
           "Model list uses Ollama's native /api/tags endpoint.",
         ],
       };
