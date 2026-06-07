@@ -137,6 +137,38 @@ describe("buildSamplerConfig", () => {
       );
       expect((config.providerOptions!.openai_compat as Record<string, unknown>).logit_bias).toBeUndefined();
     });
+
+    it("filters logit_bias to entries matching current model", () => {
+      const config = buildSamplerConfig(
+        profile("openai", {
+          defaultModel: "gpt-4o-mini",
+          endpoint: "https://api.openai.com/v1",
+          logitBias: [
+            { tokenId: 100, bias: -100, model: "gpt-4o-mini" },
+            { tokenId: 200, bias: 50, model: "gpt-4o" },
+            { tokenId: 300, bias: -50, model: "gpt-4o-mini" },
+          ],
+        }),
+      );
+      const bias = (config.providerOptions!.openai_compat as Record<string, unknown>).logit_bias as Record<string, number>;
+      expect(Object.keys(bias)).toHaveLength(2);
+      expect(bias["100"]).toBe(-100);
+      expect(bias["300"]).toBe(-50);
+      expect(bias["200"]).toBeUndefined();
+    });
+
+    it("omits logit_bias when no entries match current model", () => {
+      const config = buildSamplerConfig(
+        profile("openai", {
+          defaultModel: "gpt-4o-mini",
+          endpoint: "https://api.openai.com/v1",
+          logitBias: [
+            { tokenId: 100, bias: -100, model: "claude-3" },
+          ],
+        }),
+      );
+      expect((config.providerOptions!.openai_compat as Record<string, unknown>).logit_bias).toBeUndefined();
+    });
   });
 
   // ─── Ollama ────────────────────────────────────────────────────────────

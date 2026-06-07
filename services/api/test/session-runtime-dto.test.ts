@@ -214,6 +214,33 @@ describe("toClientProviderProfile", () => {
     expect(client.streamResponse).toBe(true);
     expect(client.isActive).toBe(true);
   });
+
+  it("includes logitBias entries from stored profile", () => {
+    const withBias = {
+      ...fullProfile,
+      logitBias: [
+        { tokenId: 123, bias: -100, text: " bad", sourceText: " bad", model: "gpt-4" },
+        { tokenId: 456, bias: 50, text: " good", sourceText: " good", model: "gpt-4" },
+      ],
+    } as StoredProviderProfileRecord;
+    const client = toClientProviderProfile(withBias);
+    expect(client.logitBias).toHaveLength(2);
+    expect(client.logitBias[0]).toEqual({ tokenId: 123, bias: -100, text: " bad", sourceText: " bad", model: "gpt-4" });
+    expect(client.logitBias[1].bias).toBe(50);
+  });
+
+  it("returns empty array when profile has no logitBias", () => {
+    const noBias = { ...fullProfile, logitBias: [] } as StoredProviderProfileRecord;
+    const client = toClientProviderProfile(noBias);
+    expect(client.logitBias).toEqual([]);
+  });
+
+  it("preserves customSamplers and pinContextBudget flags", () => {
+    const custom = { ...fullProfile, customSamplers: true, pinContextBudget: true } as StoredProviderProfileRecord;
+    const client = toClientProviderProfile(custom);
+    expect(client.customSamplers).toBe(true);
+    expect(client.pinContextBudget).toBe(true);
+  });
 });
 
 // ─── resolveStoredApiKey ─────────────────────────────────────────────────
