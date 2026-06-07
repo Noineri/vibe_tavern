@@ -342,10 +342,62 @@ export async function testProviderChat(
 		case "anthropic":
 			return testAnthropicChat(input);
 		case "ollama":
+			return testOllamaChat(input);
 		case "llamacpp":
 			return testOpenAiCompatChat({ ...input, baseUrl: normalizeLocalOpenAiCompatibleBaseUrl(input.baseUrl) });
 		default:
 			return testOpenAiCompatChat(input);
+	}
+}
+
+async function testOllamaChat(
+	input: ProviderConnectionInput,
+): Promise<TestChatResult> {
+	const baseUrl = (input.baseUrl || "").replace(/\/+$/, "").replace(/\/v1$/, "");
+	if (!baseUrl) return { success: false, error: "Provider endpoint is required." };
+	if (!input.model) return { success: false, error: "Model is required." };
+
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), TEST_CHAT_TIMEOUT_MS);
+
+	try {
+		const response = await fetch(`${baseUrl}/api/chat`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Accept: "application/json" },
+			body: JSON.stringify({
+				model: input.model,
+				messages: [{ role: "user", content: "Hi" }],
+				stream: false,
+				options: { num_predict: 64, temperature: 0.7 },
+			}),
+			signal: controller.signal,
+		});
+		clearTimeout(timer);
+
+		if (!response.ok) {
+			const errorText = await response.text().catch(() => "");
+			return {
+				success: false,
+				error: `${response.status} ${response.statusText}${errorText ? `: ${errorText.slice(0, 200)}` : ""}`,
+			};
+		}
+
+		const payload = (await response.json()) as { message?: { content?: string } };
+		const content = payload.message?.content?.trim() ?? "";
+		return { success: true, reply: content || "(empty response)" };
+	} catch (error) {
+		clearTimeout(timer);
+		const msg = error instanceof Error ? error.message : "Unknown error";
+		if (
+			error instanceof Error &&
+			(error.name === "TimeoutError" || /aborted/i.test(error.message))
+		) {
+			return {
+				success: false,
+				error: `Timed out after ${Math.floor(TEST_CHAT_TIMEOUT_MS / 1000)}s.`,
+			};
+		}
+		return { success: false, error: msg };
 	}
 }
 
@@ -775,10 +827,11 @@ async function listOllamaModels(
 		throw new Error(`Ollama model list failed: ${response.status} ${response.statusText}`);
 	}
 
-	interface OllamaModel { name: string; model?: string; }
+	interface OllamaModel { name: string; model?: string; capabilities?: string[]; }
 	const payload = (await response.json()) as { models?: OllamaModel[] };
 	const records = Array.isArray(payload.models) ? payload.models : [];
 	return records
+		.filter((r) => !r.capabilities?.includes("embedding") || r.capabilities?.includes("completion"))
 		.map((r) => {
 			const id = (r.name ?? r.model ?? "").trim();
 			return id ? { id, label: id } : null;

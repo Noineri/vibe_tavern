@@ -77,7 +77,7 @@ export function buildSamplerConfig(
   const providerType = normalizeProviderType(profile.providerPreset);
 
   switch (providerType) {
-    // -- OpenAI-compatible providers (openai_compat, ollama, llamacpp) --------
+    // -- OpenAI-compatible providers + local native Ollama ---------------------
     case PROVIDER_TYPE.openaiCompat:
     case PROVIDER_TYPE.ollama:
     case PROVIDER_TYPE.llamaCpp: {
@@ -98,7 +98,12 @@ export function buildSamplerConfig(
       const providerOpts: Record<string, number | string | boolean | number[] | null> = {};
       if (profile.topK != null) providerOpts.top_k = profile.topK;
       if (profile.minP != null) providerOpts.min_p = profile.minP;
-      if (profile.repetitionPenalty != null) providerOpts.repetition_penalty = profile.repetitionPenalty;
+      if (profile.repetitionPenalty != null) {
+        // Ollama's native name is repeat_penalty; OpenAI-compatible llama.cpp
+        // style providers commonly accept repetition_penalty.
+        if (providerType === PROVIDER_TYPE.ollama) providerOpts.repeat_penalty = profile.repetitionPenalty;
+        else providerOpts.repetition_penalty = profile.repetitionPenalty;
+      }
 
       // Logit bias: map entries to Record<number, number>
       if (profile.logitBias?.length && resolveLogitBiasSupport(profile.providerPreset, profile.defaultModel, profile.endpoint).supported) {

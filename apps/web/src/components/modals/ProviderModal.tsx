@@ -148,7 +148,7 @@ function getCapabilities(type: string, providerPreset: string, model: string, en
     case "ollama": case "llamacpp":
       return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: resolveLogitBiasSupport(providerPreset, model, endpoint).supported };
     case "koboldcpp":
-      return { nonStreamGeneration: false, abortSignal: false, streaming: false, prefill: false, logitBias: false };
+      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: false, logitBias: false };
     default:
       return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: resolveLogitBiasSupport(providerPreset, model, endpoint).supported };
   }

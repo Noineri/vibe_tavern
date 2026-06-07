@@ -42,6 +42,13 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Response {
 		);
 	}
 
+	if (urlStr.endsWith("/api/chat")) {
+		return new Response(
+			JSON.stringify({ message: { role: "assistant", content: "hello from ollama native" }, done: true }),
+			{ status: 200, headers: { "Content-Type": "application/json" } },
+		);
+	}
+
 	if (urlStr.endsWith("/api/tags")) {
 		// Ollama
 		return new Response(
@@ -84,7 +91,7 @@ describe("provider gateway", () => {
 	});
 
 	describe("testProviderChat", () => {
-		it("uses Ollama OpenAI-compatible /v1 chat endpoint when base URL is root", async () => {
+		it("uses Ollama native /api/chat endpoint when base URL is root", async () => {
 			const result = await testProviderChat({
 				baseUrl: "http://localhost:11434",
 				apiKey: "",
@@ -92,9 +99,11 @@ describe("provider gateway", () => {
 				providerType: "ollama",
 			});
 
-			expect(result).toEqual({ success: true, reply: "hello from local" });
+			expect(result).toEqual({ success: true, reply: "hello from ollama native" });
 			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
-			expect(callArgs[0]).toBe("http://localhost:11434/v1/chat/completions");
+			expect(callArgs[0]).toBe("http://localhost:11434/api/chat");
+			const body = JSON.parse(callArgs[1]?.body as string);
+			expect(body).toMatchObject({ model: "llama3:8b", stream: false, options: { num_predict: 64 } });
 		});
 	});
 

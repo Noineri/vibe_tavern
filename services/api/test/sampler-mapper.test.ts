@@ -181,12 +181,12 @@ describe("buildSamplerConfig", () => {
       expect(config.seed).toBe(42);
     });
 
-    it("sets providerOptions.ollama with topK, minP, repetitionPenalty but NOT reasoningEffort", () => {
+    it("sets providerOptions.ollama with topK, minP, repeat_penalty but NOT reasoningEffort", () => {
       const config = buildSamplerConfig(profile("ollama"));
       expect(config.providerOptions!.ollama).toEqual({
         top_k: 80,
         min_p: 0.05,
-        repetition_penalty: 1.15,
+        repeat_penalty: 1.15,
       });
     });
 
