@@ -45,6 +45,7 @@ export function MessageList() {
   const isSending = useIsSending();
   const pendingUserMessageContent = activeGen?.pendingUserMessageContent ?? null;
   const streamingRevealedText = activeGen?.streamingRevealedText ?? "";
+  const streamingReasoningText = activeGen?.streamingReasoningText ?? "";
 
   const [atBottom, setAtBottom] = useState(true);
   const isMobile = useIsMobile();
@@ -56,13 +57,21 @@ export function MessageList() {
     if (isSending && !userScrolledUpRef.current) {
       scrollToBottom(scrollerElRef.current);
     }
-  }, [streamingRevealedText, isSending]);
+  }, [streamingRevealedText, streamingReasoningText, isSending]);
 
   useEffect(() => {
     if (isSending) {
       wasSendingRef.current = true;
       if (!userScrolledUpRef.current) {
-        scrollToBottom(scrollerElRef.current);
+        const el = scrollerElRef.current;
+        if (el) {
+          scrollToBottom(el);
+          const timers = [
+            setTimeout(() => scrollToBottom(el), 50),
+            setTimeout(() => scrollToBottom(el), 150),
+          ];
+          return () => timers.forEach(clearTimeout);
+        }
       }
     } else if (wasSendingRef.current) {
       wasSendingRef.current = false;
