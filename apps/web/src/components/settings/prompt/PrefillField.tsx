@@ -1,4 +1,6 @@
 import { useT } from "../../../i18n/context.js";
+import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
+import { AutoTextarea } from "../../shared/auto-textarea.js";
 
 interface PrefillFieldProps {
   prefill: string;
@@ -26,13 +28,17 @@ export function PrefillField({ prefill, onUpdate, disabled, prefillSupported }: 
           </span>
         )}
       </div>
-      <textarea
-        className={textareaCls + " px-[13px] py-[9px] min-h-[60px]"}
-        value={prefill}
-        onChange={(e) => onUpdate(e.target.value)}
-        disabled={disabled}
-        placeholder={t("prefill_placeholder")}
-      />
+      <MobileExpandTextarea value={prefill} onChange={onUpdate} label={t("prefill_assistant")}>
+        <AutoTextarea
+          className={textareaCls + " px-[13px] py-[9px] min-h-[60px]"}
+          style={{}}
+          maxHeight={300}
+          value={prefill}
+          onChange={(e) => onUpdate(e.target.value)}
+          disabled={disabled}
+          placeholder={t("prefill_placeholder")}
+        />
+      </MobileExpandTextarea>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
+import { NumberInput } from "../../shared/NumberInput.js";
 
 export interface CharacterFormProps {
   form: UseFormReturn<BuildCharacterDraft>;
@@ -498,14 +499,13 @@ export function CharacterForm({
             </div>
             <div className={"flex min-h-8 items-center justify-between gap-2 sm:justify-start" + ((mesExampleMode || "always") !== "depth" ? " opacity-30 pointer-events-none" : "")}>
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
-              <input
-                type="number"
-                className="h-8 w-14 rounded-md border border-border bg-s2 px-1 text-center text-[12px] font-ui text-t1 outline-none focus:border-accent num-spinless sm:h-6 sm:w-12 sm:text-[11px]"
+              <NumberInput
+                className="h-8 w-[100px] sm:h-6 sm:w-[90px]"
                 min={0}
                 max={999}
                 disabled={isSaving || (mesExampleMode || "always") !== "depth"}
                 value={mesExampleDepth ?? 4}
-                onChange={(e) => setValue("mesExampleDepth", Number(e.target.value), { shouldDirty: true })}
+                onChange={(v) => setValue("mesExampleDepth", v, { shouldDirty: true })}
               />
             </div>
           </div>
@@ -578,14 +578,13 @@ export function CharacterForm({
             </div>
             <div className="flex min-h-8 items-center justify-between gap-2 sm:justify-start">
               <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
-              <input
-                type="number"
-                className="h-8 w-14 rounded-md border border-border bg-s2 px-1 text-center text-[12px] font-ui text-t1 outline-none focus:border-accent num-spinless sm:h-6 sm:w-12 sm:text-[11px]"
+              <NumberInput
+                className="h-8 w-[100px] sm:h-6 sm:w-[90px]"
                 min={0}
                 max={999}
                 disabled={isSaving}
                 value={depthPromptDepth ?? 4}
-                onChange={(e) => setValue("depthPromptDepth", Number(e.target.value), { shouldDirty: true })}
+                onChange={(v) => setValue("depthPromptDepth", v, { shouldDirty: true })}
               />
             </div>
           </div>

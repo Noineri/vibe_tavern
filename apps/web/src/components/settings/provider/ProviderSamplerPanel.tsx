@@ -8,6 +8,7 @@ import { cn } from '../../../lib/cn.js';
 import { CustomTooltip } from '../../shared/Tooltip.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import type { SamplerCapabilityFlags, SamplerFieldId } from '@vibe-tavern/domain';
+import { NumberInput } from '../../shared/NumberInput.js';
 
 /* ── SamplerField sub-component ────────────────────────────────────── */
 
@@ -35,36 +36,12 @@ function SamplerField({
   disabled = false,
 }: SamplerFieldProps) {
   const val = value ?? min;
-  const [raw, setRaw] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // Sync local state when parent value changes externally
-  useEffect(() => {
-    if (raw === null) return; // not editing
-    // If the input is not focused, parent change takes priority
-    if (document.activeElement !== inputRef.current) {
-      setRaw(null);
-    }
-  }, [value, raw]);
-
-  const commit = (text: string) => {
-    const trimmed = text.trim();
-    if (trimmed === '') {
-      onChange(min);
-    } else {
-      const parsed = isInteger ? parseInt(trimmed, 10) : parseFloat(trimmed);
-      onChange(isNaN(parsed) ? min : parsed);
-    }
-    setRaw(null);
-  };
 
   // Range always commits immediately (no typing involved)
   const handleRangeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = isInteger ? parseInt(e.target.value, 10) : parseFloat(e.target.value);
     if (!isNaN(v)) onChange(v);
   };
-
-  const displayValue = raw !== null ? raw : val;
 
   return (
     <div className="mb-0 flex flex-col justify-end">
@@ -90,20 +67,15 @@ function SamplerField({
             disabled && "opacity-40"
           )}
         />
-        <input
-          ref={inputRef}
-          type="number"
+        <NumberInput
+          className="h-[30px] w-[60px] shrink-0"
           min={min}
           max={max}
           step={step}
-          value={displayValue}
-          onChange={(e) => setRaw(e.target.value)}
-          onBlur={() => { if (raw !== null) commit(raw); }}
+          value={val}
+          onChange={onChange}
           disabled={disabled}
-          className={cn(
-            "!h-[30px] !w-[58px] shrink-0 rounded border border-border bg-s2 p-0 text-center font-ui text-[12px] text-t1 outline-none transition-colors focus:border-accent",
-            disabled && "opacity-40"
-          )}
+          hideControls
         />
       </div>
     </div>
@@ -146,18 +118,11 @@ function InlineNumField({
   const [raw, setRaw] = useState<string | null>(null);
   const displayValue = raw !== null ? raw : (value || '');
   return (
-    <input
-      type="number"
-      value={displayValue}
-      placeholder={placeholder}
-      onChange={(e) => setRaw(e.target.value)}
-      onBlur={() => {
-        if (raw === null) return;
-        const trimmed = raw.trim();
-        onBlur(trimmed === '' ? 0 : Number(trimmed) || 0);
-        setRaw(null);
-      }}
-      className={textInputCls}
+    <NumberInput
+      className="h-[38px] w-full"
+      hideControls
+      value={value}
+      onChange={(v) => onBlur(v)}
     />
   );
 }
@@ -607,19 +572,22 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
 
             {/* Stop Sequences — full width */}
             {supports('stopSequences') && (
-              <div className={cn("mt-4", disabled && "opacity-40 pointer-events-none")}>
+            <div className={cn("mt-4", disabled && "opacity-40 pointer-events-none")}>
+              <CustomTooltip content={t("stop_seqs_hint")}>
                 <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
                   {t("stop_seqs_label")}
                 </label>
-                <ChipInput
-                  values={form.stopSequences}
-                  onChange={(v) => updateForm('stopSequences', v)}
-                  placeholder={t("stop_seqs_placeholder")}
-                  disabled={disabled}
-                  showPresets
-                  tooltip={t("stop_seqs_hint")}
-                />
-              </div>
+              </CustomTooltip>
+              <ChipInput
+                values={form.stopSequences}
+                onChange={(v) => updateForm('stopSequences', v)}
+                placeholder={t("stop_seqs_placeholder")}
+                disabled={disabled}
+                showPresets
+                presetsLabel={t("special_chars_label")}
+                tooltip={t("special_chars_hint")}
+              />
+            </div>
             )}
 
             {capabilities?.logitBias && supports('logitBias') && (

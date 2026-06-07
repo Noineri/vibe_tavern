@@ -10,6 +10,7 @@ import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { AiQuickPill, type AiQuickSettings } from "../shared/AiQuickPill.js";
+import { AutoTextarea } from "../shared/auto-textarea.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 
@@ -234,8 +235,10 @@ export function InputArea() {
         className="relative z-10 shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3.5 transition-opacity duration-200"
       >
         <div className="rounded-lg border border-border bg-bg transition-colors duration-150 focus-within:border-border2">
-          <textarea
-            className="max-h-40 min-h-[55px] w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[16.5px] leading-[1.65] text-t1 outline-none placeholder:text-t4"
+          <AutoTextarea
+            className="min-h-[55px] w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[15.5px] leading-tight text-t1 outline-none placeholder:text-t4"
+            style={{}}
+            maxHeight={250}
             placeholder={t("placeholder")}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
@@ -245,7 +248,7 @@ export function InputArea() {
                 if (canSend) void chat.handleSend();
               }
             }}
-            rows={2}
+            rows={1}
           />
 
           <div className="relative flex items-center gap-[7px] pt-1.5 pb-[9px] pl-3 pr-[135px]">
