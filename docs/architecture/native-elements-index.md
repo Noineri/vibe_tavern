@@ -12,9 +12,9 @@
 |----------------|----------------|----------------------------|-------|
 | `<select>` | **CLEARED** | `DropdownSelect` / `SegmentedControl` | All instances successfully replaced. |
 | `title={...}` | **ON HOLD** | `CustomTooltip` | Bug: Tooltips might not trigger properly on mobile. Need to investigate the tooltip logic before replacing existing native titles. |
-| `<textarea>` | **PENDING** | `AutoTextarea`, `MobileExpandTextarea` | High priority for form standardisation. |
+| `<textarea>` | **CLEARED** | `AutoTextarea`, `MobileExpandTextarea` | Replaced across forms and editors. |
 | `<input type="range">` | **PENDING** | Shared single/dual slider | No shared component yet. Dual slider exists in memory modal, but single slider is needed for samplers. |
-| `<input type="number">` | **PENDING** | `NumberInput` (to be created) | High duplication. Candidate for a new shared component. |
+| `<input type="number">` | **CLEARED** | `NumberInput` | Shared component created and applied globally. |
 
 ---
 
@@ -91,6 +91,34 @@ Do not mass-replace native `title` until mobile behavior is fixed.
 - **Desktop:** Two columns side-by-side.
 - **Mobile:** Single column with automatic "Back" button navigation between the list view and the editor view.
 
+#### Review note — `vibe_tavern_front_polish` modal refactor (2026-06-07)
+
+A sibling worktree introduced `components/shared/MasterDetailLayout.tsx` and migrated `ProviderModal`, `PromptManagerModal`, and `ContextMemoryModal` to it.
+
+**Assessment:** good first step, but it is currently a shared layout shell rather than the intended full responsive modal framework.
+
+**What is good:**
+- Centralizes the repeated master/detail body structure.
+- Keeps a sane scroll model: outer panel `overflow-hidden`, body `min-h-0 flex-1`, detail pane `overflow-y-auto`, footer outside the scroll region.
+- Web typecheck passes in the sibling worktree.
+
+**Gaps before adopting as the standard:**
+- `MasterDetailLayout` still receives `isMobile` from every caller instead of owning `useIsMobile()` internally.
+- Mobile drill-down state (`mobileDetailOpen`) is still owned and duplicated by each modal.
+- Each modal still hand-builds its own mobile detail header, back button, close button, and footer wrapper.
+- The result does not yet satisfy the goal that the shared component “itself determines whether to show mobile or desktop view.”
+
+**Recommended API direction:**
+- Promote this into a true `MasterDetailModal` or `ResponsiveMasterDetailLayout` that calls `useIsMobile()` internally.
+- Either own the mobile detail state internally or expose it via render props:
+  - `openDetail()`
+  - `closeDetail()`
+  - `isDetailOpen`
+- Provide a standard mobile detail header API: `title`, `onBack`, `onClose`, optional actions.
+- Let list rows call `openDetail()` on mobile without each modal reimplementing the same branching.
+
+**Merge caution:** the sibling worktree predates the advanced local-provider sampler work. Its `ProviderModal` does not include the newer fields and UI behavior (`typicalP`, `tfsZ`, Mirostat, DRY/XTC, sampler capabilities, hidden API key for local providers, local connection status, ARM local-preset filtering). Rebase/merge carefully to avoid losing those changes.
+
 ### 2. `DropZone` / `ImportSurface` Unification
 **Problem:** `ImportModals.tsx` uses `<ImportSurface>`, but `PresetImportModal.tsx` duplicates the drag-and-drop file reading states and UI manually.
 **Solution:** Expand `<ImportSurface>` (or create a `<SharedDropZone>`) to handle generic file parsing (text vs. images) and drop states automatically, so all import modals can share the same wrapper and logic.
@@ -103,8 +131,8 @@ Do not mass-replace native `title` until mobile behavior is fixed.
 
 ## Priority Suggestions
 
-1. **Mass-replace `<textarea>` with `<AutoTextarea>`**.
-2. **Build `<NumberInput>` shared component** and replace the 20+ instances across forms and samplers.
+1. ~~**Mass-replace `<textarea>` with `<AutoTextarea>`**.~~ (DONE)
+2. ~~**Build `<NumberInput>` shared component** and replace the 20+ instances across forms and samplers.~~ (DONE)
 3. **Build `<MasterDetailModal>` framework** to unify Provider, Persona, and Prompt Manager modals.
 4. **Build `<AiAssistantModal>`** to deduplicate the complex AI generation UI across all editors.
 5. **Investigate `<CustomTooltip>` mobile bug**, fix it, then replace all `title=` attributes.
