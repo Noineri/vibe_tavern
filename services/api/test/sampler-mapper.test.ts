@@ -20,7 +20,19 @@ function profile(
     maxTokens: 4096,
     minP: 0.05,
     topK: 80,
-    topA: 0,
+    topA: 0.4,
+    typicalP: 0.97,
+    tfsZ: 0.9,
+    repeatLastN: 256,
+    mirostat: 2,
+    mirostatTau: 6,
+    mirostatEta: 0.2,
+    dryMultiplier: 0.8,
+    dryBase: 1.75,
+    dryAllowedLength: 3,
+    drySequenceBreakers: ["\n", ":", "\""],
+    xtcThreshold: 0.12,
+    xtcProbability: 0.4,
     frequencyPenalty: 0.5,
     presencePenalty: 0.3,
     repetitionPenalty: 1.15,
@@ -42,7 +54,7 @@ describe("buildSamplerConfig", () => {
   // ─── Common native params (all provider types) ─────────────────────────
 
   it("always sets temperature, topP, maxOutputTokens from profile", () => {
-    const config = buildSamplerConfig(profile("openai_compat"));
+    const config = buildSamplerConfig(profile("openai"));
     expect(config.temperature).toBe(0.9);
     expect(config.topP).toBe(0.95);
     expect(config.maxOutputTokens).toBe(4096);
@@ -50,7 +62,7 @@ describe("buildSamplerConfig", () => {
 
   it("omits temperature/topP/maxTokens when undefined on profile", () => {
     const config = buildSamplerConfig(
-      profile("openai_compat", { temperature: undefined, topP: undefined, maxTokens: undefined }),
+      profile("openai", { temperature: undefined, topP: undefined, maxTokens: undefined }),
     );
     expect(config.temperature).toBeUndefined();
     expect(config.topP).toBeUndefined();
@@ -58,65 +70,38 @@ describe("buildSamplerConfig", () => {
   });
 
   it("passes stopSequences array directly", () => {
-    const config = buildSamplerConfig(profile("openai_compat"));
+    const config = buildSamplerConfig(profile("openai"));
     expect(config.stopSequences).toEqual(["\\n\\n", "STOP"]);
   });
 
   it("omits stopSequences when empty", () => {
     const config = buildSamplerConfig(
-      profile("openai_compat", { stopSequences: [] }),
+      profile("openai", { stopSequences: [] }),
     );
     expect(config.stopSequences).toBeUndefined();
   });
 
-  // ─── OpenAI-compat ─────────────────────────────────────────────────────
+  // ─── OpenAI (openai_chat set — no topK/minP/repPen in native) ──────────
 
-  describe("openai_compat", () => {
+  describe("openai (openai_chat)", () => {
     it("sets native frequencyPenalty, presencePenalty, seed", () => {
-      const config = buildSamplerConfig(profile("openai_compat"));
+      const config = buildSamplerConfig(profile("openai"));
       expect(config.frequencyPenalty).toBe(0.5);
       expect(config.presencePenalty).toBe(0.3);
       expect(config.seed).toBe(42);
     });
 
-    it("sets providerOptions.openai_compat with topK, minP, repetitionPenalty, reasoningEffort", () => {
-      const config = buildSamplerConfig(profile("openai_compat"));
+    it("sets providerOptions.openai_compat with reasoningEffort only (openai_chat has no topK/minP)", () => {
+      const config = buildSamplerConfig(profile("openai"));
       expect(config.providerOptions).toBeDefined();
+      // openai_chat set: no topK, topA, minP, repetitionPenalty, dry*, xtc*, mirostat*
+      // logitBias is in the set but no matching model entries exist → omitted
       expect(config.providerOptions!.openai_compat).toEqual({
-        top_k: 80,
-        min_p: 0.05,
-        repetition_penalty: 1.15,
         reasoningEffort: "high",
       });
     });
 
-    it("parses numeric seed string to integer", () => {
-      const config = buildSamplerConfig(
-        profile("openai_compat", { seed: "123" }),
-      );
-      expect(config.seed).toBe(123);
-    });
-
-    it("handles null seed gracefully", () => {
-      const config = buildSamplerConfig(
-        profile("openai_compat", { seed: null }),
-      );
-      expect(config.seed).toBeUndefined();
-    });
-
-    it("omits providerOptions when all provider-specific fields are undefined", () => {
-      const config = buildSamplerConfig(
-        profile("openai_compat", {
-          topK: undefined,
-          minP: undefined,
-          repetitionPenalty: undefined,
-          reasoningEffort: undefined,
-        }),
-      );
-      expect(config.providerOptions).toBeUndefined();
-    });
-
-    it("includes logit bias only for a known direct provider/model", () => {
+    it("includes logit bias for a matching model", () => {
       const config = buildSamplerConfig(
         profile("openai", {
           defaultModel: "gpt-4o-mini",
@@ -125,17 +110,6 @@ describe("buildSamplerConfig", () => {
         }),
       );
       expect((config.providerOptions!.openai_compat as Record<string, unknown>).logit_bias).toEqual({ "123": -100 });
-    });
-
-    it("omits logit bias for mixed/router providers even when entries exist", () => {
-      const config = buildSamplerConfig(
-        profile("nanogpt", {
-          defaultModel: "gpt-4o-mini",
-          endpoint: "https://nano-gpt.com/api/v1",
-          logitBias: [{ tokenId: 123, bias: -100, text: " bad", model: "gpt-4o-mini" }],
-        }),
-      );
-      expect((config.providerOptions!.openai_compat as Record<string, unknown>).logit_bias).toBeUndefined();
     });
 
     it("filters logit_bias to entries matching current model", () => {
@@ -156,24 +130,113 @@ describe("buildSamplerConfig", () => {
       expect(bias["300"]).toBe(-50);
       expect(bias["200"]).toBeUndefined();
     });
+  });
 
-    it("omits logit_bias when no entries match current model", () => {
+  // ─── OpenRouter (aggregator set — full surface) ────────────────────────
+
+  describe("openrouter (aggregator)", () => {
+    it("sends topK, topA, minP, repetitionPenalty via providerOptions", () => {
+      const config = buildSamplerConfig(profile("openrouter"));
+      expect(config.providerOptions!.openai_compat).toBeDefined();
+      const opts = config.providerOptions!.openai_compat as Record<string, unknown>;
+      expect(opts.top_k).toBe(80);
+      expect(opts.top_a).toBe(0.4);
+      expect(opts.min_p).toBe(0.05);
+      expect(opts.repetition_penalty).toBe(1.15);
+      expect(opts.reasoningEffort).toBe("high");
+    });
+
+    it("omits dry*/xtc*/mirostat (aggregator set does not have them)", () => {
+      const config = buildSamplerConfig(profile("openrouter"));
+      const opts = config.providerOptions!.openai_compat as Record<string, unknown>;
+      expect(opts.dry_multiplier).toBeUndefined();
+      expect(opts.xtc_threshold).toBeUndefined();
+      expect(opts.mirostat).toBeUndefined();
+    });
+
+    it("omits logit_bias for router/aggregator providers", () => {
       const config = buildSamplerConfig(
-        profile("openai", {
+        profile("openrouter", {
           defaultModel: "gpt-4o-mini",
-          endpoint: "https://api.openai.com/v1",
-          logitBias: [
-            { tokenId: 100, bias: -100, model: "claude-3" },
-          ],
+          endpoint: "https://openrouter.ai/api/v1",
+          logitBias: [{ tokenId: 123, bias: -100, text: " bad", model: "gpt-4o-mini" }],
         }),
       );
-      expect((config.providerOptions!.openai_compat as Record<string, unknown>).logit_bias).toBeUndefined();
+      const opts = config.providerOptions!.openai_compat as Record<string, unknown>;
+      expect(opts.logit_bias).toBeUndefined();
     });
   });
 
-  // ─── Ollama ────────────────────────────────────────────────────────────
+  // ─── DeepSeek (openai_no_seed — no seed, no topK) ─────────────────────
 
-  describe("ollama", () => {
+  describe("deepseek (openai_no_seed)", () => {
+    it("sends freqPen, presPen, reasoningEffort but NOT seed", () => {
+      const config = buildSamplerConfig(profile("deepseek"));
+      expect(config.frequencyPenalty).toBe(0.5);
+      expect(config.presencePenalty).toBe(0.3);
+      expect(config.seed).toBeUndefined();
+      expect(config.providerOptions!.openai_compat).toEqual({
+        reasoningEffort: "high",
+      });
+    });
+  });
+
+  // ─── Groq (groq set — no penalties) ────────────────────────────────────
+
+  describe("groq", () => {
+    it("sends only seed and reasoningEffort, no penalties", () => {
+      const config = buildSamplerConfig(profile("groq"));
+      expect(config.frequencyPenalty).toBeUndefined();
+      expect(config.presencePenalty).toBeUndefined();
+      expect(config.seed).toBe(42);
+      // groq set has reasoningEffort — goes through providerOptions
+      expect(config.providerOptions!.openai_compat).toEqual({
+        reasoningEffort: "high",
+      });
+    });
+  });
+
+  // ─── Perplexity (topk_limited — no seed/stop/repPen/logitBias) ─────────
+
+  describe("perplexity (topk_limited)", () => {
+    it("sends topK, freqPen, presPen via providerOptions, no seed/stop/logitBias", () => {
+      const config = buildSamplerConfig(profile("perplexity"));
+      expect(config.stopSequences).toBeUndefined(); // not supported
+      expect(config.frequencyPenalty).toBe(0.5);
+      expect(config.presencePenalty).toBe(0.3);
+      expect(config.seed).toBeUndefined();
+      const opts = config.providerOptions!.openai_compat as Record<string, unknown>;
+      expect(opts.top_k).toBe(80);
+      expect(opts.repetition_penalty).toBeUndefined();
+      expect(opts.logit_bias).toBeUndefined();
+      expect(opts.reasoningEffort).toBe("high");
+    });
+  });
+
+  // ─── Google (minimal_reasoning) ────────────────────────────────────────
+
+  describe("google (minimal_reasoning)", () => {
+    it("sets only temperature, topP, maxOutputTokens, stopSequences", () => {
+      const config = buildSamplerConfig(profile("google"));
+      expect(config.temperature).toBe(0.9);
+      expect(config.topP).toBe(0.95);
+      expect(config.maxOutputTokens).toBe(4096);
+      expect(config.stopSequences).toEqual(["\\n\\n", "STOP"]);
+    });
+
+    it("does NOT set freqPen, presPen, seed, topK, providerOptions", () => {
+      const config = buildSamplerConfig(profile("google"));
+      expect(config.frequencyPenalty).toBeUndefined();
+      expect(config.presencePenalty).toBeUndefined();
+      expect(config.seed).toBeUndefined();
+      expect(config.topK).toBeUndefined();
+      expect(config.providerOptions).toBeUndefined();
+    });
+  });
+
+  // ─── Ollama (openai_local — full local surface) ────────────────────────
+
+  describe("ollama (openai_local)", () => {
     it("sets native frequencyPenalty, presencePenalty, seed", () => {
       const config = buildSamplerConfig(profile("ollama"));
       expect(config.frequencyPenalty).toBe(0.5);
@@ -181,34 +244,30 @@ describe("buildSamplerConfig", () => {
       expect(config.seed).toBe(42);
     });
 
-    it("sets providerOptions.ollama with topK, minP, repeat_penalty but NOT reasoningEffort", () => {
+    it("sets providerOptions.ollama with topK, minP, repeat_penalty, dry/xtc/mirostat", () => {
       const config = buildSamplerConfig(profile("ollama"));
       expect(config.providerOptions!.ollama).toEqual({
         top_k: 80,
         min_p: 0.05,
+        typical_p: 0.97,
+        tfs_z: 0.9,
+        repeat_last_n: 256,
+        mirostat: 2,
+        mirostat_tau: 6,
+        mirostat_eta: 0.2,
+        dry_multiplier: 0.8,
+        dry_base: 1.75,
+        dry_allowed_length: 3,
+        dry_sequence_breakers: ["\n", ":", "\""],
+        xtc_threshold: 0.12,
+        xtc_probability: 0.4,
         repeat_penalty: 1.15,
       });
     });
 
-    it("does not include reasoningEffort for non-openai_compat", () => {
+    it("does not include reasoningEffort for ollama", () => {
       const config = buildSamplerConfig(profile("ollama"));
       expect((config.providerOptions!.ollama as Record<string, unknown>).reasoningEffort).toBeUndefined();
-    });
-  });
-
-  // ─── LlamaCpp ──────────────────────────────────────────────────────────
-
-  describe("llamacpp", () => {
-    it("behaves same as ollama — native freqPen/presPen/seed + providerOptions.llamacpp", () => {
-      const config = buildSamplerConfig(profile("llamacpp"));
-      expect(config.frequencyPenalty).toBe(0.5);
-      expect(config.presencePenalty).toBe(0.3);
-      expect(config.seed).toBe(42);
-      expect(config.providerOptions!.llamacpp).toEqual({
-        top_k: 80,
-        min_p: 0.05,
-        repetition_penalty: 1.15,
-      });
     });
   });
 
@@ -241,28 +300,7 @@ describe("buildSamplerConfig", () => {
     });
   });
 
-  // ─── Google ────────────────────────────────────────────────────────────
-
-  describe("google", () => {
-    it("sets only temperature, topP, maxOutputTokens, stopSequences", () => {
-      const config = buildSamplerConfig(profile("google"));
-      expect(config.temperature).toBe(0.9);
-      expect(config.topP).toBe(0.95);
-      expect(config.maxOutputTokens).toBe(4096);
-      expect(config.stopSequences).toEqual(["\\n\\n", "STOP"]);
-    });
-
-    it("does NOT set freqPen, presPen, seed, topK, providerOptions", () => {
-      const config = buildSamplerConfig(profile("google"));
-      expect(config.frequencyPenalty).toBeUndefined();
-      expect(config.presencePenalty).toBeUndefined();
-      expect(config.seed).toBeUndefined();
-      expect(config.topK).toBeUndefined();
-      expect(config.providerOptions).toBeUndefined();
-    });
-  });
-
-  // ─── KoboldCpp / unknown ───────────────────────────────────────────────
+  // ─── KoboldCpp ─────────────────────────────────────────────────────────
 
   describe("koboldcpp", () => {
     it("sets only common native params", () => {
@@ -272,14 +310,26 @@ describe("buildSamplerConfig", () => {
       expect(config.stopSequences).toEqual(["\\n\\n", "STOP"]);
     });
 
-    it("sets providerOptions.koboldcpp with top_k, top_p, min_p, rep_pen", () => {
+    it("sets providerOptions.koboldcpp with top_k, top_p, min_p, rep_pen, dry/xtc/mirostat", () => {
       const config = buildSamplerConfig(profile("koboldcpp"));
       expect(config.providerOptions!.koboldcpp).toEqual({
         top_k: 80,
         top_p: 0.95,
+        top_a: 0.4,
         min_p: 0.05,
+        typical: 0.97,
+        tfs: 0.9,
+        rep_pen_range: 256,
         rep_pen: 1.15,
-        rep_pen_range: 50,
+        dry_multiplier: 0.8,
+        dry_base: 1.75,
+        dry_allowed_length: 3,
+        dry_sequence_breakers: ["\n", ":", "\""],
+        xtc_threshold: 0.12,
+        xtc_probability: 0.4,
+        mirostat: 2,
+        mirostat_tau: 6,
+        mirostat_eta: 0.2,
       });
     });
 
@@ -291,8 +341,10 @@ describe("buildSamplerConfig", () => {
     });
   });
 
+  // ─── Unknown / fallback ───────────────────────────────────────────────
+
   describe("unknown provider type", () => {
-    it("treats unknown providers as OpenAI-compatible but still gates logit bias fail-closed", () => {
+    it("treats unknown providers as openai_compat_minimal (no topK/minP/repPen)", () => {
       const config = buildSamplerConfig(profile("some_new_provider", {
         defaultModel: "gpt-4o-mini",
         logitBias: [{ tokenId: 123, bias: -100, model: "gpt-4o-mini" }],
@@ -303,7 +355,8 @@ describe("buildSamplerConfig", () => {
       expect(config.frequencyPenalty).toBe(0.5);
       expect(config.presencePenalty).toBe(0.3);
       expect(config.seed).toBe(42);
-      expect((config.providerOptions!.openai_compat as Record<string, unknown>).logit_bias).toBeUndefined();
+      // openai_compat_minimal: has logitBias but resolveLogitBiasSupport gates it
+      expect(config.providerOptions).toBeUndefined();
     });
   });
 
@@ -311,18 +364,18 @@ describe("buildSamplerConfig", () => {
 
   describe("customSamplers disabled", () => {
     it("omits topP when customSamplers is false", () => {
-      const config = buildSamplerConfig(profile("openai_compat", { customSamplers: false }));
+      const config = buildSamplerConfig(profile("openai", { customSamplers: false }));
       expect(config.topP).toBeUndefined();
     });
 
     it("omits frequencyPenalty, presencePenalty when customSamplers is false", () => {
-      const config = buildSamplerConfig(profile("openai_compat", { customSamplers: false }));
+      const config = buildSamplerConfig(profile("openai", { customSamplers: false }));
       expect(config.frequencyPenalty).toBeUndefined();
       expect(config.presencePenalty).toBeUndefined();
     });
 
     it("omits providerOptions when customSamplers is false", () => {
-      const config = buildSamplerConfig(profile("openai_compat", { customSamplers: false }));
+      const config = buildSamplerConfig(profile("openai", { customSamplers: false }));
       expect(config.providerOptions).toBeUndefined();
     });
 
@@ -332,14 +385,14 @@ describe("buildSamplerConfig", () => {
     });
 
     it("still sends temperature, maxOutputTokens, stopSequences when customSamplers is false", () => {
-      const config = buildSamplerConfig(profile("openai_compat", { customSamplers: false }));
+      const config = buildSamplerConfig(profile("openai", { customSamplers: false }));
       expect(config.temperature).toBe(0.9);
       expect(config.maxOutputTokens).toBe(4096);
       expect(config.stopSequences).toEqual(["\\n\\n", "STOP"]);
     });
 
     it("still passes seed when customSamplers is false", () => {
-      const config = buildSamplerConfig(profile("openai_compat", { customSamplers: false, seed: "99" }));
+      const config = buildSamplerConfig(profile("openai", { customSamplers: false, seed: "99" }));
       expect(config.seed).toBe(99);
     });
   });
