@@ -1,23 +1,15 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useProviderDataStore } from "../../../stores/provider-data-store.js";
-import { fetchProviderModelsAction } from "../../../stores/api-actions/provider-actions.js";
-import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
-import { useActiveCharacter, useActivePersona, useAllCharacters } from "../../../stores/snapshot-store.js";
+import { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import { Ic } from "../../shared/icons.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CodeEditor } from "../../shared/CodeEditor.js";
-import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { SCRIPT_TEMPLATES } from "./scriptTemplates.js";
-import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
-import { TokenCounter } from "../../shared/TokenCounter.js";
-import { buildLineDiff, TextDiffPreview } from "../../shared/TextDiffPreview.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
-import { MessageReasoning } from "../../chat/MessageReasoning.js";
+import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import {
   listScripts,
   createScript,
@@ -25,16 +17,8 @@ import {
   deleteScript,
   testScript,
   importScript,
-  listAllLorebooks,
-  countAiAssistantTokens,
-  streamAiAssistant,
-  updateUiSettings,
-  type AiAssistantRequestBody,
-  type LorebookRecord,
   type ScriptRecord,
 } from "../../../app-client.js";
-
-
 // ── Types ──────────────────────────────────────────────────────────────
 
 type Scope = "global" | "character" | "persona" | "chat";
@@ -80,19 +64,6 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const [importCode, setImportCode] = useState("");
   const [apiRefOpen, setApiRefOpen] = useState(false);
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
-  const [aiProviderId, setAiProviderId] = useState("");
-  const [aiModelName, setAiModelName] = useState("");
-  const [aiPrompt, setAiPrompt] = useState("");
-  const [aiIncludeCharacter, setAiIncludeCharacter] = useState(true);
-  const [aiIncludePersona, setAiIncludePersona] = useState(true);
-  const [aiLorebookIds, setAiLorebookIds] = useState<string[]>([]);
-  const [aiStreaming, setAiStreaming] = useState(false);
-  const [aiStreamedCode, setAiStreamedCode] = useState("");
-  const [aiStreamedReasoning, setAiStreamedReasoning] = useState("");
-  const [aiPromptTokenCount, setAiPromptTokenCount] = useState<number | null>(null);
-  const [aiError, setAiError] = useState<string | null>(null);
-
-  const aiAbortRef = useRef<AbortController | null>(null);
 
   // ── Queries (replaced with local state + async fetch) ────
   const scopeId = (() => {
@@ -103,78 +74,14 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   })();
 
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
-  const [aiLorebooks, setAiLorebooks] = useState<LorebookRecord[]>([]);
-  const providerProfiles = useProviderDataStore((s) => s.profiles);
-  const bootstrapUiSettings = useBootstrapStore((s) => s.data?.uiSettings ?? null);
-  const personas = useBootstrapStore((s) => s.personas) ?? [];
-  const activeCharacter = useActiveCharacter();
-  const activePersona = useActivePersona();
-  const allCharacters = useAllCharacters();
-  const selectedProfile = providerProfiles.find(p => p.id === aiProviderId);
-  const [providerModels, setProviderModels] = useState<Array<{ id: string; label?: string }>>([]);
-  const allCharacterContext = allCharacters.find(c => c.id === characterId);
-  const allPersonaContext = personas.find(p => p.id === personaId);
-  const characterContextTarget: LinkTarget = {
-    id: characterId,
-    name: activeCharacter?.id === characterId ? activeCharacter.name : allCharacterContext?.name ?? "Character",
-    avatarAssetId: activeCharacter?.id === characterId ? activeCharacter.avatarAssetId ?? null : allCharacterContext?.avatarAssetId ?? null,
-  };
-  const personaContextTarget: LinkTarget | null = personaId ? {
-    id: personaId,
-    name: activePersona?.id === personaId ? activePersona.name : allPersonaContext?.name ?? "Persona",
-    avatarAssetId: activePersona?.id === personaId ? activePersona.avatarAssetId ?? null : allPersonaContext?.avatarAssetId ?? null,
-  } : null;
-  const lorebookContextTargets: LinkTarget[] = aiLorebooks
-    .filter((lb) => lb.enabled)
-    .map((lb) => ({ id: lb.id, name: lb.name, avatarAssetId: null }));
-  const availableLorebookIds = new Set(lorebookContextTargets.map((lb) => lb.id));
-  const selectedLorebookIds = aiLorebookIds.filter((id) => availableLorebookIds.has(id));
-  const aiContextLinks: LinkBindingRecord[] = [
-    ...(aiIncludeCharacter ? [{ targetType: "character" as const, targetId: characterId }] : []),
-    ...(aiIncludePersona && personaId ? [{ targetType: "persona" as const, targetId: personaId }] : []),
-    ...selectedLorebookIds.map((id) => ({ targetType: "lorebook" as const, targetId: id })),
-  ];
 
   const refreshScripts = useCallback(async () => {
     setScripts(await listScripts(scope, scopeId));
   }, [scope, scopeId]);
 
-  const refreshAiLorebooks = useCallback(async () => {
-    setAiLorebooks(await listAllLorebooks());
-  }, []);
-
   useEffect(() => { void refreshScripts(); }, [refreshScripts]);
-  useEffect(() => { if (aiHelperOpen) void refreshAiLorebooks(); }, [aiHelperOpen, refreshAiLorebooks]);
-
-  useEffect(() => {
-    if (!bootstrapUiSettings || aiProviderId) return;
-    if (bootstrapUiSettings.aiAssistantProviderId) setAiProviderId(bootstrapUiSettings.aiAssistantProviderId);
-    if (bootstrapUiSettings.aiAssistantModelName) setAiModelName(bootstrapUiSettings.aiAssistantModelName);
-  }, [aiProviderId, bootstrapUiSettings]);
-
-  useEffect(() => {
-    if (!personaId) setAiIncludePersona(false);
-  }, [personaId]);
-
-  useEffect(() => {
-    if (!aiProviderId) { setProviderModels([]); return; }
-    let cancelled = false;
-    void fetchProviderModelsAction(aiProviderId).then(response => {
-      if (!cancelled) {
-        const models = (response && "models" in response ? response.models : []) as Array<{ id: string; label?: string }>;
-        setProviderModels(models);
-      }
-    });
-    return () => { cancelled = true; };
-  }, [aiProviderId]);
 
   const activeScript = scripts.find(s => s.id === activeScriptId) ?? null;
-  const cleanedAiCode = useMemo(() => cleanAiCode(aiStreamedCode), [aiStreamedCode]);
-  const isAiEditMode = Boolean(activeScript?.code?.trim());
-  const aiDiffSummary = useMemo(
-    () => (!aiStreaming && aiStreamedCode && isAiEditMode ? buildLineDiff(activeScript?.code ?? "", cleanedAiCode) : null),
-    [activeScript?.code, aiStreaming, aiStreamedCode, isAiEditMode, cleanedAiCode],
-  );
 
   // ── Mutations (replaced with async handlers) ─────────────
   const [creatingScript, setCreatingScript] = useState(false);
@@ -274,102 +181,6 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     handleTestScript(activeScriptId, testInput);
   };
 
-  const persistAiModelSelection = (providerId: string, modelName: string | null) => {
-    void updateUiSettings({ aiAssistantProviderId: providerId || null, aiAssistantModelName: modelName || null }).catch(() => {});
-  };
-
-  const handleAiProviderChange = (id: string) => {
-    setAiProviderId(id);
-    setAiModelName("");
-    persistAiModelSelection(id, null);
-  };
-
-  const handleAiModelChange = (id: string) => {
-    setAiModelName(id);
-    persistAiModelSelection(aiProviderId, id || null);
-  };
-
-  const buildScriptAiRequest = useCallback((): AiAssistantRequestBody | null => {
-    if (!aiProviderId) return null;
-    const lorebookIds = selectedLorebookIds;
-    return {
-      mode: "script",
-      instruction: aiPrompt,
-      existingContent: activeScript?.code || undefined,
-      providerProfileId: aiProviderId,
-      model: aiModelName || undefined,
-      enabledLayers: [
-        ...(aiIncludeCharacter ? ["character_base"] : []),
-        ...(aiIncludePersona && personaId ? ["persona"] : []),
-        ...(lorebookIds.length > 0 ? ["lore"] : []),
-      ],
-      characterIds: aiIncludeCharacter && characterId ? [characterId] : [],
-      personaIds: aiIncludePersona && personaId ? [personaId] : [],
-      lorebookIds,
-    };
-  }, [activeScript?.code, aiIncludeCharacter, aiIncludePersona, aiModelName, aiPrompt, aiProviderId, characterId, personaId, selectedLorebookIds.join("\u0000")]);
-
-  useEffect(() => {
-    if (!aiHelperOpen) return;
-    const request = buildScriptAiRequest();
-    if (!request) {
-      setAiPromptTokenCount(null);
-      return;
-    }
-
-    const ac = new AbortController();
-    const timer = setTimeout(() => {
-      countAiAssistantTokens(request, { signal: ac.signal })
-        .then((result) => setAiPromptTokenCount(result.tokens))
-        .catch((err: unknown) => {
-          if (!(err instanceof Error && err.name === "AbortError")) setAiPromptTokenCount(null);
-        });
-    }, 250);
-
-    return () => {
-      clearTimeout(timer);
-      ac.abort();
-    };
-  }, [aiHelperOpen, buildScriptAiRequest]);
-
-  const handleAiGenerate = async () => {
-    const request = buildScriptAiRequest();
-    if (!request || !aiPrompt) return;
-    persistAiModelSelection(aiProviderId, aiModelName || null);
-    setAiStreaming(true);
-    setAiError(null);
-    setAiStreamedCode("");
-    setAiStreamedReasoning("");
-    const ac = new AbortController();
-    aiAbortRef.current = ac;
-    try {
-      for await (const chunk of streamAiAssistant(request, { signal: ac.signal })) {
-        if (chunk.type === "reasoning" && chunk.text) {
-          setAiStreamedReasoning(prev => prev + chunk.text);
-        }
-        if (chunk.type === "text" && chunk.text) {
-          setAiStreamedCode(prev => prev + chunk.text);
-        }
-        if (chunk.type === "error" && chunk.error) { setAiError(chunk.error); setAiStreaming(false); return; }
-        if (chunk.type === "done") { setAiStreaming(false); return; }
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name !== "AbortError") setAiError(String(err));
-      setAiStreaming(false);
-    }
-  };
-
-  const resetAiHelper = () => {
-    setAiHelperOpen(false);
-    setAiStreamedCode("");
-    setAiStreamedReasoning("");
-    setAiPrompt("");
-  };
-  const handleAiStop = () => { aiAbortRef.current?.abort(); setAiStreaming(false); };
-  const handleAiInsert = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: (activeScript?.code || "") + "\n\n" + cleanedAiCode }); resetAiHelper(); };
-  const handleAiReplace = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: cleanedAiCode }); resetAiHelper(); };
-  const handleAiApplyChanges = () => { if (!activeScriptId || !aiStreamedCode) return; handleUpdateScript(activeScriptId, { code: cleanedAiCode }); resetAiHelper(); };
-
   // ── Modals ───────────────────────────────────────────────
   const modals = (
     <>
@@ -419,136 +230,25 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
           </div>
         </div>
       )}
-      {aiHelperOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60">
-          <div className="flex w-[560px] max-w-[90vw] flex-col overflow-hidden rounded-xl border border-border bg-surface" style={{ maxHeight: "85vh" }} onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-border" style={{ padding: "16px 20px" }}>
-              <span className="text-sm font-semibold text-t1">{t("script_ai_helper")}</span>
-              <div className={cn("flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1", aiStreaming && "pointer-events-none opacity-30")} onClick={() => setAiHelperOpen(false)}><Ic.close /></div>
-            </div>
-            <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
-              {providerProfiles.length === 0 ? (
-                <div className="py-6 text-center font-ui text-[13px] text-t3">{t("script_ai_no_providers")}</div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 16 }}>
-                    <div>
-                      <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_connection")}</label>
-                      <DropdownSelect
-                        value={aiProviderId}
-                        options={providerProfiles.map(p => ({ id: p.id, label: p.name }))}
-                        placeholder={t("script_ai_select_provider")}
-                        searchPlaceholder={t("script_ai_search_provider")}
-                        onChange={handleAiProviderChange}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_model")}</label>
-                      <DropdownSelect
-                        value={aiModelName}
-                        options={providerModels.map(m => ({ id: m.id, label: m.label || m.id }))}
-                        placeholder={selectedProfile?.defaultModel || "Default"}
-                        searchPlaceholder={t("script_ai_search_model")}
-                        defaultOption={selectedProfile?.defaultModel || "Default"}
-                        onChange={handleAiModelChange}
-                        disabled={!aiProviderId}
-                      />
-                    </div>
-                  </div>
-                  <div style={{ marginBottom: 16 }}>
-                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_context")}</label>
-                    <LinkBindingPopover
-                      links={aiContextLinks}
-                      characters={[characterContextTarget]}
-                      personas={personaContextTarget ? [personaContextTarget] : []}
-                      lorebooks={lorebookContextTargets}
-                      onSetLinks={(links) => {
-                        setAiIncludeCharacter(links.some((l) => l.targetType === "character" && l.targetId === characterId));
-                        setAiIncludePersona(Boolean(personaId && links.some((l) => l.targetType === "persona" && l.targetId === personaId)));
-                        setAiLorebookIds(links.filter((l) => l.targetType === "lorebook").map((l) => l.targetId));
-                      }}
-                      t={t}
-                      isMobile={isMobile}
-                      tooltipLabel={t("script_ai_context")}
-                      emptyLabel={t("script_ai_context_empty")}
-                      characterSectionLabel={t("script_ai_context_character")}
-                      personaSectionLabel={t("script_ai_context_persona")}
-                      lorebookSectionLabel={t("script_ai_context_lorebooks")}
-                    />
-                    <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("script_ai_context_hint")}</div>
-                  </div>
-                  <div style={{ marginBottom: 16 }}>
-                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_prompt")}</label>
-                    <MobileExpandTextarea value={aiPrompt} onChange={setAiPrompt} label={t("script_ai_helper")}>
-                      <AutoTextarea className="w-full min-h-[100px] rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent resize-none" style={{}} maxHeight={300} placeholder={t("script_ai_prompt")} value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
-                    </MobileExpandTextarea>
-                    <div className="mt-1 flex items-center justify-between gap-3">
-                      <div className="font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("script_ai_prompt_hint")}</div>
-                      {aiPromptTokenCount !== null && <TokenCounter text="" count={aiPromptTokenCount} />}
-                    </div>
-                  </div>
-                  {aiStreamedReasoning && (
-                    <div className="mb-3">
-                      <MessageReasoning reasoning={aiStreamedReasoning} />
-                    </div>
-                  )}
-                  {aiStreamedCode && (aiDiffSummary ? (
-                    <>
-                      <TextDiffPreview
-                        summary={aiDiffSummary}
-                        labels={{
-                          title: t("script_ai_changes"),
-                          tooLarge: t("script_ai_diff_too_large"),
-                          noChanges: t("script_ai_no_changes"),
-                        }}
-                      />
-                      {aiDiffSummary.tooLarge && (
-                        <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
-                          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_ai_generated")}</div>
-                          <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap font-mono text-[12px] leading-[1.5] text-t1">{cleanedAiCode}</pre>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 12 }}>
-                      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_ai_generated")}</div>
-                      <pre className="whitespace-pre-wrap font-mono text-[12px] leading-[1.5] text-t1">{aiStreamedCode}{aiStreaming && <span className="animate-pulse text-accent">▌</span>}</pre>
-                    </div>
-                  ))}
-                  {aiError && (
-                    <div className="rounded-md border border-danger bg-danger-dim" style={{ padding: 10, marginBottom: 12 }}>
-                      <div className="text-[11px] font-semibold uppercase text-danger-text">{t("script_ai_error")}</div>
-                      <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">{aiError}</pre>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-            {providerProfiles.length > 0 && (
-              <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
-                {aiStreamedCode && !aiStreaming && (
-                  isAiEditMode ? (
-                    <>
-                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleAiReplace}>{t("script_ai_replace")}</button>
-                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleAiApplyChanges}>{t("script_ai_apply")}</button>
-                    </>
-                  ) : (
-                    <>
-                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleAiInsert}>{t("script_ai_insert")}</button>
-                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleAiReplace}>{t("script_ai_replace")}</button>
-                    </>
-                  )
-                )}
-                {aiStreaming ? (
-                  <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={handleAiStop}>{t("script_ai_stop")}</button>
-                ) : (
-                  <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", aiProviderId && aiPrompt ? "bg-accent text-on-accent" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleAiGenerate} disabled={!aiProviderId || !aiPrompt}>{t("script_ai_generate")}</button>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <AiAssistantModal
+        mode="full"
+        apiMode="script"
+        isOpen={aiHelperOpen}
+        onClose={() => setAiHelperOpen(false)}
+        existingContent={activeScript?.code ?? ""}
+        onInsert={(text) => {
+          if (!activeScriptId) return;
+          void handleUpdateScript(activeScriptId, { code: text });
+        }}
+        onReplace={(text) => {
+          if (!activeScriptId) return;
+          void handleUpdateScript(activeScriptId, { code: text });
+        }}
+        scopeContext={{
+          characterId: characterId,
+          personaId: personaId ?? undefined,
+        }}
+      />
     </>
   );
 
