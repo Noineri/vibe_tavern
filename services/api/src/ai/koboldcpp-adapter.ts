@@ -41,6 +41,12 @@ interface KoboldGenerateRequest {
   tfs?: number;
   rep_pen?: number;
   rep_pen_range?: number;
+  dry_multiplier?: number;
+  dry_base?: number;
+  dry_allowed_length?: number;
+  dry_sequence_breakers?: string[];
+  xtc_threshold?: number;
+  xtc_probability?: number;
   mirostat?: number;
   mirostat_tau?: number;
   mirostat_eta?: number;
