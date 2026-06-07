@@ -976,6 +976,7 @@
   "import_md_parsed": "Parsed Character",
   "import_md_apply": "Apply to Editor",
   "import_md_start": "Import",
+  "import_md_reparse": "Re-import",
   "import_md_parsing": "Parsing character data...",
   "ai_param_temperature": "Temperature",
   "ai_param_max_tokens": "Max Tokens"
