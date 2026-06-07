@@ -32,10 +32,12 @@ describe("sampler params", () => {
     expect(caps.minP).toBe(true);
     expect(caps.repetitionPenalty).toBe(true);
     expect(caps.reasoningEffort).toBe(true);
-    // Aggregators don't expose local-only fields
+    // Aggregators don't expose mirostat/tfs/typicalP (OpenRouter passthrough only)
+    expect(caps.typicalP).toBe(false);
+    expect(caps.tfsZ).toBe(false);
+    expect(caps.mirostat).toBe(false);
     expect(caps.dryMultiplier).toBe(false);
     expect(caps.xtcProbability).toBe(false);
-    expect(caps.mirostat).toBe(false);
   });
 
   it("resolves minimal_reasoning for Google/ZAI/AI21", () => {

@@ -48,8 +48,10 @@ export type SamplerCapabilityFlags = Record<SamplerFieldId, boolean>;
 // ---------------------------------------------------------------------------
 
 export type SamplerSetId =
-  // Group A — Cloud aggregators (near-full sampler surface)
+  // Group A — Cloud aggregator (OpenRouter — broad, no mirostat/tfs)
   | "aggregator"
+  // NanoGPT — near-full surface including mirostat, tfs, typicalP
+  | "nanogpt"
   // Group B — Local / vLLM-based (full sampler surface)
   | "openai_local"
   // Group C — Minimal samplers + reasoning control
@@ -114,13 +116,36 @@ function set(...fields: SamplerFieldId[]): SamplerCapabilityFlags {
 
 export const SAMPLER_SETS: Record<SamplerSetId, SamplerCapabilityFlags> = {
   // ── Group A: Cloud Aggregators ──────────────────────────────────────────
-  // OpenRouter, NanoGPT — near-full surface including topA, minP, repPen
+  // OpenRouter — broad surface but does NOT natively document mirostat/tfs/typicalP
+  // (may passthrough to backend, but not guaranteed)
   aggregator: set(
     "temperature",
     "topP",
     "topK",
     "topA",
     "minP",
+    "frequencyPenalty",
+    "presencePenalty",
+    "repetitionPenalty",
+    "stopSequences",
+    "seed",
+    "logitBias",
+    "reasoningEffort",
+  ),
+
+  // NanoGPT — near-full surface including mirostat, tfs, typicalP
+  nanogpt: set(
+    "temperature",
+    "topP",
+    "topK",
+    "topA",
+    "minP",
+    "typicalP",
+    "tfsZ",
+    "repeatLastN",
+    "mirostat",
+    "mirostatTau",
+    "mirostatEta",
     "frequencyPenalty",
     "presencePenalty",
     "repetitionPenalty",
@@ -305,7 +330,7 @@ const LOCAL_OPENAI_COMPAT_PRESETS = new Set([
 const PRESET_SAMPLER_SET_MAP: Record<string, SamplerSetId> = {
   // Group A — aggregators
   openrouter: "aggregator",
-  nanogpt: "aggregator",
+  nanogpt: "nanogpt",
   // Group B — cloud vLLM
   chutes: "openai_local",
   // Group C — minimal + reasoning
