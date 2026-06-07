@@ -28,12 +28,12 @@ export interface ProviderCapabilityFlags {
 export type ProviderCapabilityMap = Record<ProviderType, ProviderCapabilityFlags>;
 
 /**
- * Conservative capability declarations for all current provider kinds.
+ * Capability declarations for all current provider kinds.
  *
- * Local OpenAI-compatible backends may expose more sampler fields than cloud
- * OpenAI-compatible providers; preset-level UI uses resolveSamplerCapabilities()
- * for those finer distinctions. This provider-type map is the backend-safe
- * default.
+ * `openai_compat` is intentionally broad: in this app it covers aggregators and
+ * non-OpenAI model-family providers, not only the real OpenAI Chat API. The
+ * stricter OpenAI-only sampler surface is selected by preset-level
+ * resolveSamplerCapabilities("openai", ...).
  */
 export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
   openai_compat: {
@@ -42,7 +42,7 @@ export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
     streaming: true,
     prefill: true,
     logitBias: true,
-    samplers: SAMPLER_SETS.openai_chat,
+    samplers: SAMPLER_SETS.openai_compat_minimal,
   },
   anthropic: {
     nonStreamGeneration: true,
@@ -58,7 +58,7 @@ export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
     streaming: true,
     prefill: false,
     logitBias: false,
-    samplers: SAMPLER_SETS.google,
+    samplers: SAMPLER_SETS.minimal_reasoning,
   },
   ollama: {
     nonStreamGeneration: true,
@@ -66,7 +66,7 @@ export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
     streaming: true,
     prefill: true,
     logitBias: true,
-    samplers: SAMPLER_SETS.ollama_native,
+    samplers: SAMPLER_SETS.openai_local,
   },
   llamacpp: {
     nonStreamGeneration: true,
@@ -74,7 +74,7 @@ export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
     streaming: true,
     prefill: true,
     logitBias: true,
-    samplers: SAMPLER_SETS.llamacpp_openai,
+    samplers: SAMPLER_SETS.openai_local,
   },
   koboldcpp: {
     nonStreamGeneration: true,
