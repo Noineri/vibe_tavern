@@ -13,6 +13,7 @@ import { streamText, streamObject } from "ai";
 import type { LanguageModel } from "ai";
 import {
   assemblePrompt,
+  estimateMessageArrayTokens,
   setModelHint,
   type AiAssistantMode,
   type PromptAssemblyContext,
@@ -104,7 +105,7 @@ interface PreparedAiAssistantRequest {
   config: ReturnType<typeof getModeConfig>;
   profile: NonNullable<Awaited<ReturnType<StreamDeps["getProviderProfile"]>>>;
   modelName: string;
-  assembly: PromptAssemblyResult;
+  assembly: PromptAssemblyResult | null;
   messages: Array<{
     role: "system" | "user" | "assistant";
     content: string;
@@ -147,7 +148,7 @@ async function prepareAiAssistantRequest(
       config,
       profile,
       modelName,
-      assembly: null as any,
+      assembly: null,
       messages: [
         { role: "system" as const, content: systemPrompt },
         { role: "user" as const, content: userContent },
@@ -217,10 +218,21 @@ export async function countAiAssistantTokens(
   deps: StreamDeps,
 ): Promise<{ tokens: number; model: string; layerCount: number; messageCount: number }> {
   const prepared = await prepareAiAssistantRequest(request, deps);
+  if (prepared.assembly) {
+    return {
+      tokens: prepared.assembly.totalTokenEstimate,
+      model: prepared.modelName,
+      layerCount: prepared.assembly.layers.length,
+      messageCount: prepared.messages.length,
+    };
+  }
+
+  // md_import bypasses prompt assembly, but still uses the shared tokenizer.
+  setModelHint(prepared.modelName);
   return {
-    tokens: prepared.assembly.totalTokenEstimate,
+    tokens: estimateMessageArrayTokens(prepared.messages),
     model: prepared.modelName,
-    layerCount: prepared.assembly.layers.length,
+    layerCount: prepared.messages.length,
     messageCount: prepared.messages.length,
   };
 }
