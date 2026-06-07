@@ -1,4 +1,4 @@
-import { useMemo, useRef, useCallback, useState } from "react";
+import { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Markdown } from "../../lib/markdown.js";
 import { avatarUrl } from "../../lib/avatar.js";
@@ -22,6 +22,10 @@ const msgWrapM = "w-full px-3";
 const sepWrap = msgWrap + " my-[6px] mt-2";
 const sepWrapM = msgWrapM + " my-[6px] mt-2";
 
+function scrollToBottom(el: HTMLElement | null) {
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
 export function MessageList() {
   const { t } = useT();
   const chatMeta = useChatMeta();
@@ -30,6 +34,7 @@ export function MessageList() {
     persona: chatMeta.persona,
   } : null;
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const scrollerElRef = useRef<HTMLElement | null>(null);
 
   const activeGen = useActiveGeneration();
   const isSending = useIsSending();
@@ -38,7 +43,64 @@ export function MessageList() {
   const [atBottom, setAtBottom] = useState(true);
   const isMobile = useIsMobile();
 
-  // Read from normalized store selectors
+  const autoScrollRafRef = useRef<number | undefined>(undefined);
+  const userScrolledUpRef = useRef(false);
+  const wasSendingRef = useRef(false);
+  const msgCountAtGenEndRef = useRef<number | undefined>(undefined);
+  const settledRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (isSending) {
+      wasSendingRef.current = true;
+      scrollToBottom(scrollerElRef.current);
+    } else if (wasSendingRef.current) {
+      wasSendingRef.current = false;
+      userScrolledUpRef.current = false;
+    }
+  }, [isSending]);
+
+  useEffect(() => {
+    const scroller = scrollerElRef.current;
+    if (!scroller) return;
+
+    let lastTouchY: number | null = null;
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) {
+        userScrolledUpRef.current = true;
+      } else {
+        const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
+        if (nearBottom) userScrolledUpRef.current = false;
+      }
+    };
+    const onTouchStart = (e: TouchEvent) => {
+      lastTouchY = e.touches[0]?.clientY ?? null;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (lastTouchY === null) return;
+      const y = e.touches[0]?.clientY;
+      if (y !== undefined && y > lastTouchY + 10) userScrolledUpRef.current = true;
+      if (y !== undefined && y < lastTouchY - 10) {
+        const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
+        if (nearBottom) userScrolledUpRef.current = false;
+      }
+      lastTouchY = y ?? null;
+    };
+    const onTouchEnd = () => { lastTouchY = null; };
+
+    scroller.addEventListener('wheel', onWheel, { passive: true });
+    scroller.addEventListener('touchstart', onTouchStart, { passive: true });
+    scroller.addEventListener('touchmove', onTouchMove, { passive: true });
+    scroller.addEventListener('touchend', onTouchEnd, { passive: true });
+
+    return () => {
+      scroller.removeEventListener('wheel', onWheel);
+      scroller.removeEventListener('touchstart', onTouchStart);
+      scroller.removeEventListener('touchmove', onTouchMove);
+      scroller.removeEventListener('touchend', onTouchEnd);
+    };
+  }, []);
+
   const messageOrder = useMessageOrder();
   const macroContext = useMacroContext();
   const lastPersistedMessage = useSnapshotStore((s) => {
@@ -46,11 +108,6 @@ export function MessageList() {
     return lastMessageId ? s.messagesById[lastMessageId] : null;
   });
 
-  // When a user message is pending, it is rendered in the footer immediately.
-  // If a snapshot refresh lands mid-generation after the backend persisted the
-  // same user message, hide that last persisted user row to avoid a ghost
-  // duplicate. Only filter the final row when its content matches pending text;
-  // otherwise an older user message could disappear before persistence catches up.
   const displayMessageIds = useMemo(() => {
     if (!pendingUserMessageContent || messageOrder.length === 0) return messageOrder;
 
@@ -63,6 +120,56 @@ export function MessageList() {
 
     return messageOrder;
   }, [lastPersistedMessage, messageOrder, pendingUserMessageContent]);
+
+  useEffect(() => {
+    if (displayMessageIds.length === 0) return;
+    const el = scrollerElRef.current;
+    if (!el) return;
+
+    let cancelled = false;
+    const timers = [
+      setTimeout(() => { if (!cancelled) scrollToBottom(el); }, 150),
+      setTimeout(() => { if (!cancelled) scrollToBottom(el); }, 400),
+      setTimeout(() => { if (!cancelled && !userScrolledUpRef.current) scrollToBottom(el); settledRef.current = true; }, 850),
+    ];
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+    };
+  }, [displayMessageIds.length]);
+
+  useEffect(() => {
+    if (!isSending) {
+      if (autoScrollRafRef.current !== undefined) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = undefined;
+      }
+
+      if (msgCountAtGenEndRef.current !== undefined && displayMessageIds.length > msgCountAtGenEndRef.current) {
+        msgCountAtGenEndRef.current = undefined;
+        setTimeout(() => {
+          scrollToBottom(scrollerElRef.current);
+        }, 200);
+      }
+      return;
+    }
+
+    msgCountAtGenEndRef.current = displayMessageIds.length;
+
+    const pin = () => {
+      if (!userScrolledUpRef.current) scrollToBottom(scrollerElRef.current);
+      autoScrollRafRef.current = requestAnimationFrame(pin);
+    };
+
+    autoScrollRafRef.current = requestAnimationFrame(pin);
+
+    return () => {
+      if (autoScrollRafRef.current !== undefined) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = undefined;
+      }
+    };
+  }, [isSending, displayMessageIds.length]);
 
   const displayPendingUserMessageContent = useMemo(
     () => pendingUserMessageContent && macroContext
@@ -87,6 +194,8 @@ export function MessageList() {
       />
     );
   }, [displayMessageIds]);
+
+  const Header = useCallback(() => <div style={{ height: 28 }} />, []);
 
   const Footer = useCallback(() => (
     <>
@@ -162,6 +271,8 @@ export function MessageList() {
           );
         })()
       )}
+
+      <div style={{ height: 12 }} />
     </>
   ), [displayPendingUserMessageContent, displayMessageIds, isSending,
       personaAvatarAssetId, personaName, characterAvatarAssetId, characterName, t, isMobile]);
@@ -171,22 +282,23 @@ export function MessageList() {
         <div className={cn("relative flex-1 flex flex-col min-h-0", isMobile && "overscroll-y-none")}>
           <Virtuoso
             ref={virtuosoRef}
+            scrollerRef={(ref) => { scrollerElRef.current = ref as HTMLElement | null; }}
             computeItemKey={(index) => displayMessageIds[index]}
             totalCount={displayMessageIds.length}
-            initialTopMostItemIndex={Math.max(0, displayMessageIds.length - 1)}
-            followOutput="smooth"
+            initialTopMostItemIndex={{ index: Math.max(0, displayMessageIds.length - 1), align: "end" }}
+            followOutput={isSending ? "auto" : "smooth"}
             overscan={{ main: 4000, reverse: 4000 }}
             itemContent={itemContent}
-            components={{ Footer }}
-            className="flex-1 pt-7 pb-3"
+            components={{ Header, Footer }}
+            className="flex-1"
             style={{ overflowY: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
             atBottomStateChange={setAtBottom}
           />
-          {!atBottom && displayMessageIds.length > 0 && (
+          {!atBottom && settledRef.current && displayMessageIds.length > 0 && (
             isMobile ? (
               <button type="button"
                 className="absolute bottom-4 right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-surface/80 backdrop-blur-sm border border-border shadow-lg transition-all duration-300 active:scale-95"
-                onClick={() => virtuosoRef.current?.scrollToIndex({ index: 999999, behavior: "smooth", align: "end" })}
+                onClick={() => { userScrolledUpRef.current = false; scrollToBottom(scrollerElRef.current); }}
               >
                 <Icons.Caret direction="d" />
               </button>
@@ -194,7 +306,7 @@ export function MessageList() {
               <CustomTooltip content={t("scroll_to_bottom")} side="left">
                 <button type="button"
                   className="absolute bottom-6 right-8 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-on-accent shadow-lg transition-transform hover:scale-110 active:scale-95"
-                  onClick={() => virtuosoRef.current?.scrollToIndex({ index: 999999, behavior: "smooth", align: "end" })}
+                  onClick={() => { userScrolledUpRef.current = false; scrollToBottom(scrollerElRef.current); }}
                 >
                   <Icons.Caret direction="d" />
                 </button>
