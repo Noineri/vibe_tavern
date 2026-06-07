@@ -589,23 +589,15 @@ export function Rail({ hidden }: { hidden?: boolean }) {
             setRenameDraft(ch?.title ?? "");
           }},
           { icon: <Ic.download />, label: t("sidebar_export_jsonl"), action: () => character.handleExportChatJsonl(chatMenuId) },
-          { icon: <Ic.del />, label: activeCharChats.length <= 1 ? t("sidebar_clear_chat") : t("delete"), danger: true, action: () => {
+          { icon: <Ic.del />, label: character.getChatRemovalMode(chatMenuId) === "clear" ? t("sidebar_clear_chat") : t("delete"), danger: true, action: () => {
             const ch = activeCharChats.find(c => c.id === chatMenuId);
-            if (activeCharChats.length <= 1) {
-              setConfirmDestroy({
-                title: t("sidebar_clear_chat"),
-                body: <>{t("sidebar_clear_chat_confirm")} <b>{ch?.title}</b></>,
-                confirmLabel: t("sidebar_clear_chat"),
-                onConfirm: () => character.handleClearChat(chatMenuId),
-              });
-            } else {
-              setConfirmDestroy({
-                title: t("sidebar_delete_chat"),
-                body: <>{t("sidebar_are_you_sure")} <b>{ch?.title}</b></>,
-                confirmLabel: t("delete"),
-                onConfirm: () => character.handleDeleteChat(chatMenuId),
-              });
-            }
+            const clearsOnRemove = character.getChatRemovalMode(chatMenuId) === "clear";
+            setConfirmDestroy({
+              title: clearsOnRemove ? t("sidebar_clear_chat") : t("sidebar_delete_chat"),
+              body: clearsOnRemove ? <>{t("sidebar_clear_chat_confirm")} <b>{ch?.title}</b></> : <>{t("sidebar_are_you_sure")} <b>{ch?.title}</b></>,
+              confirmLabel: clearsOnRemove ? t("sidebar_clear_chat") : t("delete"),
+              onConfirm: () => character.handleRemoveChat(chatMenuId),
+            });
           }},
         ]
       )}

@@ -462,6 +462,8 @@ export function Sidebar() {
               ) : (
                 chats.map((chatItem) => {
                   const isActive = chatItem.id === activeChatId;
+                  const chatRemovalMode = character.getChatRemovalMode(chatItem.id);
+                  const clearsOnRemove = chatRemovalMode === "clear";
                   const chatMenuOpen = chatMenuId === chatItem.id;
                   const branchPopOpen = branchPopId === chatItem.id;
                   const branchCount = isActive ? branches.length : 0;
@@ -592,14 +594,16 @@ export function Sidebar() {
                             onClick={() => {
                               setChatMenuId(null); setChatMenuPos(null);
                               setConfirmDestroy({
-                                title: t("sidebar_delete_chat"),
-                                body: <>{t("sidebar_are_you_sure")} <b>{chatItem.title}</b></>,
-                                confirmLabel: t("delete"),
-                                onConfirm: () => character.handleDeleteChat(chatItem.id),
+                                title: clearsOnRemove ? t("sidebar_clear_chat") : t("sidebar_delete_chat"),
+                                body: clearsOnRemove
+                                  ? <>{t("sidebar_clear_chat_confirm")} <b>{chatItem.title}</b></>
+                                  : <>{t("sidebar_are_you_sure")} <b>{chatItem.title}</b></>,
+                                confirmLabel: clearsOnRemove ? t("sidebar_clear_chat") : t("delete"),
+                                onConfirm: () => character.handleRemoveChat(chatItem.id),
                               });
                             }}
                           >
-                            <Icons.Trash /> {t("delete")}
+                            <Icons.Trash /> {clearsOnRemove ? t("sidebar_clear_chat") : t("delete")}
                           </div>
                         </div>,
                         document.body

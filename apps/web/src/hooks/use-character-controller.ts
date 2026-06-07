@@ -43,6 +43,8 @@ import {
   switchChatAction,
 } from "../stores/api-actions/chat-actions.js";
 
+export type ChatRemovalMode = "delete" | "clear";
+
 export interface CharacterControllerActions {
   handleSaveCharacter: (draftInput: BuildCharacterDraft) => Promise<void>;
   handleAvatarUpload: (file: File, originalFile?: File | null) => Promise<void>;
@@ -61,6 +63,8 @@ export interface CharacterControllerActions {
   handleUnarchiveCharacter: (characterId: string) => Promise<void>;
   handleDeleteCharacter: (characterId: string) => Promise<void>;
   handleDuplicateCharacter: (characterId: string) => Promise<void>;
+  getChatRemovalMode: (chatId: ChatId) => ChatRemovalMode;
+  handleRemoveChat: (chatId: ChatId) => Promise<void>;
   handleDeleteChat: (chatId: ChatId) => Promise<void>;
   handleClearChat: (chatId: ChatId) => Promise<void>;
   handleRenameChat: (chatId: ChatId, title: string) => Promise<void>;
@@ -340,14 +344,39 @@ export function useCharacterController(): CharacterControllerActions {
     }
   }
 
-  async function handleDeleteChat(chatId: ChatId): Promise<void> {
+  function getChatRemovalMode(chatId: ChatId): ChatRemovalMode {
     const snapshot = getSnapshot();
-    const characterId = snapshot?.character.id;
+    const targetChat = snapshot?.chats.find((c) => c.id === chatId);
+    const characterId = targetChat?.characterId ?? snapshot?.character.id;
+    if (!snapshot || !characterId) return "delete";
+
+    const characterChatCount = snapshot.chats.filter((c) => c.characterId === characterId).length;
+    return characterChatCount <= 1 ? "clear" : "delete";
+  }
+
+  async function handleRemoveChat(chatId: ChatId): Promise<void> {
+    if (getChatRemovalMode(chatId) === "clear") {
+      await handleClearChat(chatId);
+      return;
+    }
+    await handleDeleteChat(chatId);
+  }
+
+  async function handleDeleteChat(chatId: ChatId): Promise<void> {
+    if (getChatRemovalMode(chatId) === "clear") {
+      await handleClearChat(chatId);
+      return;
+    }
+
+    const snapshot = getSnapshot();
+    const targetChat = snapshot?.chats.find((c) => c.id === chatId);
+    const characterId = targetChat?.characterId ?? snapshot?.character.id;
+
     // Find next chat for the same character before deleting
     let nextChatId: string | null = null;
     if (snapshot && characterId) {
       const remaining = snapshot.chats
-        .filter(c => c.id !== chatId)
+        .filter(c => c.id !== chatId && c.characterId === characterId)
         .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
       nextChatId = remaining[0]?.id ?? null;
     }
@@ -360,7 +389,6 @@ export function useCharacterController(): CharacterControllerActions {
 
   async function handleClearChat(chatId: ChatId): Promise<void> {
     const snapshot = await clearChatAction(chatId);
-    useSnapshotStore.getState().ingestSnapshot(snapshot);
     if (snapshot.activeChat?.id) {
       useChatStore.getState().setActiveChatId(snapshot.activeChat.id as ChatId);
     }
@@ -517,6 +545,8 @@ export function useCharacterController(): CharacterControllerActions {
     handleUnarchiveCharacter,
     handleDeleteCharacter,
     handleDuplicateCharacter,
+    getChatRemovalMode,
+    handleRemoveChat,
     handleDeleteChat,
     handleClearChat,
     handleRenameChat,
