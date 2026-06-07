@@ -111,7 +111,7 @@ export function PresetList({ presets, activePresetId, onSelect, onDrillDown, onA
   };
 
   return (
-    <div className="flex w-full sm:w-[240px] shrink-0 flex-col border-r border-border bg-surface py-2.5">
+    <div className="flex flex-col flex-1 min-h-0 py-2.5">
       <div className="shrink-0 px-[13px]">
         <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3 pt-1 pb-[5px]">
           {t("presets")}

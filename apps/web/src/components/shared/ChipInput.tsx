@@ -92,6 +92,8 @@ interface ChipInputProps {
   showPresets?: boolean;
   /** Tooltip content for the info icon */
   tooltip?: string;
+  /** Label for the presets tooltip trigger (defaults to "?") */
+  presetsLabel?: string;
   className?: string;
 }
 
@@ -102,6 +104,7 @@ export function ChipInput({
   disabled = false,
   showPresets = false,
   tooltip,
+  presetsLabel,
   className,
 }: ChipInputProps) {
   const [inputValue, setInputValue] = useState("");
@@ -273,20 +276,22 @@ export function ChipInput({
         <div className="mt-1.5 flex items-center gap-1.5">
           {tooltip && (
             <CustomTooltip content={tooltip}>
-              <span className="text-[10px] text-t3/60 cursor-help">?</span>
+              <span className="cursor-help font-ui text-[10px] uppercase tracking-wider text-t3/60 transition-colors hover:text-t3">
+                {presetsLabel || "?"}
+              </span>
             </CustomTooltip>
           )}
           {SPECIAL_CHAR_PRESETS.map((preset) => (
-            <button
-              key={preset.value}
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => insertPreset(preset)}
-              className="rounded border border-border2 bg-s3 px-2 py-0.5 font-ui text-[10px] text-t3 transition-colors hover:border-accent hover:text-accent-t"
-              title={preset.tooltip}
-            >
-              {preset.label}
-            </button>
+            <CustomTooltip key={preset.value} content={preset.tooltip}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => insertPreset(preset)}
+                className="rounded border border-border2 bg-s3 px-2 py-0.5 font-ui text-[10px] text-t3 transition-colors hover:border-accent hover:text-accent-t"
+              >
+                {preset.label}
+              </button>
+            </CustomTooltip>
           ))}
         </div>
       )}

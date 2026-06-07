@@ -13,6 +13,7 @@ import { NumberInput } from "../shared/NumberInput.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
+import { MasterDetailLayout } from "../shared/MasterDetailLayout.js";
 import { countTokens } from "../../utils/tokenizer.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import {
@@ -663,28 +664,13 @@ export function ContextMemoryModal({
   /* ─── RENDER ─── */
   return (
     <Modal open={true} onClose={onClose}>
-      <div className={cn(
-        "flex flex-col overflow-hidden bg-surface",
-        isMobile ? "h-full w-full" : "h-[min(86vh,780px)] w-[min(920px,calc(100vw-32px))] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]",
-      )}>
-
-        {/* ── Header ── */}
-        <div className={cn("shrink-0 border-b border-border", isMobile ? "px-3 py-2.5" : "px-5 pt-5")}>
-          {isMobile && mobileDetailOpen ? (
-            <div className="flex items-center gap-2">
-              <button type="button"
-                className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 hover:bg-s2 hover:text-t1"
-                onClick={() => { setMobileDetailOpen(false); setActiveSummaryId(null); }}
-              >
-                <span className="text-lg leading-none">←</span>
-              </button>
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-body text-[calc(var(--ui-fs)+2px)] font-medium text-t1">
-                  {activeSummary?.label || draftLabel || t("new_summary_entry")}
-                </div>
-              </div>
-            </div>
-          ) : (
+      <MasterDetailLayout
+        isMobile={isMobile}
+        isDetailOpen={mobileDetailOpen}
+        containerClassName="h-[min(86vh,780px)] w-[min(920px,calc(100vw-32px))] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
+        masterClassName="flex w-[200px] shrink-0 flex-col border-r border-border bg-s1"
+        header={
+          <div className={cn("shrink-0 border-b border-border", isMobile ? "px-3 py-2.5" : "px-5 pt-5")}>
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className={cn("font-body font-semibold text-t1", isMobile ? "text-[calc(var(--ui-fs)+2px)]" : "text-[20px]")}>
@@ -698,63 +684,51 @@ export function ContextMemoryModal({
                 <Icons.Close />
               </button>
             </div>
-          )}
-          {!isMobile && (
-            <div className="mt-4 flex gap-0">
-              <div className="border-b-2 border-b-accent px-4 py-2 font-ui text-xs font-medium text-accent-t">{t("memory_tab_summary")}</div>
-            </div>
-          )}
-        </div>
-
-        {/* ── Body ── */}
-        {isMobile ? (
-          /* ── Mobile: drill-down ── */
-          mobileDetailOpen ? (
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-              {detailEditor}
-            </div>
-          ) : (
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-              <div className="px-4 pt-3 pb-2 font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3">
-                {t("summary_archive_label")}
+            {!isMobile && (
+              <div className="mt-4 flex gap-0">
+                <div className="border-b-2 border-b-accent px-4 py-2 font-ui text-xs font-medium text-accent-t">{t("memory_tab_summary")}</div>
               </div>
-              {archiveList}
-              <div className="shrink-0 border-t border-border px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] mt-auto">
-                <button type="button"
-                  className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-xs text-t3 hover:border-border hover:bg-s2 hover:text-t1"
-                  onClick={() => void createNewSummary()}
-                  disabled={!activeChatId || saving}
-                >
-                  <Icons.Plus /> {t("new_summary_entry")}
-                </button>
-              </div>
-            </div>
-          )
-        ) : (
-          /* ── Desktop: two-column ── */
-          <div className="flex min-h-0 flex-1">
-            <aside className="flex w-[200px] shrink-0 flex-col border-r border-border">
-              <div className="px-4 py-4 font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3">{t("summary_archive_label")}</div>
-              {archiveList}
-              <div className="border-t border-border p-3">
-                <button type="button"
-                  className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-xs text-t3 hover:border-border hover:bg-s2 hover:text-t1"
-                  onClick={() => void createNewSummary()}
-                  disabled={!activeChatId || saving}
-                >
-                  <Icons.Plus /> {t("new_summary_entry")}
-                </button>
-              </div>
-            </aside>
-            <main className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-              {detailEditor}
-            </main>
+            )}
           </div>
-        )}
-
-        {/* ── Footer ── */}
-        {(!isMobile || mobileDetailOpen) && footer}
-      </div>
+        }
+        mobileDetailHeader={
+          <div className="shrink-0 border-b border-border px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <button type="button"
+                className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 hover:bg-s2 hover:text-t1"
+                onClick={() => { setMobileDetailOpen(false); setActiveSummaryId(null); }}
+              >
+                <span className="text-lg leading-none">←</span>
+              </button>
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-body text-[calc(var(--ui-fs)+2px)] font-medium text-t1">
+                  {activeSummary?.label || draftLabel || t("new_summary_entry")}
+                </div>
+              </div>
+            </div>
+          </div>
+        }
+        masterContent={
+          <>
+            <div className={cn("px-4 font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3", isMobile ? "pt-3 pb-2" : "py-4")}>
+              {t("summary_archive_label")}
+            </div>
+            {archiveList}
+            <div className={cn("shrink-0 border-t border-border p-3", isMobile ? "pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] mt-auto" : "")}>
+              <button type="button"
+                className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-xs text-t3 hover:border-border hover:bg-s2 hover:text-t1"
+                onClick={() => void createNewSummary()}
+                disabled={!activeChatId || saving}
+              >
+                <Icons.Plus /> {t("new_summary_entry")}
+              </button>
+            </div>
+          </>
+        }
+        detailClassName={isMobile ? "p-4" : "p-5"}
+        detailContent={detailEditor}
+        footer={footer}
+      />
     </Modal>
   );
 }
