@@ -85,6 +85,23 @@ describe("assemblePrompt", () => {
       const preset = result.layers.find((l) => l.id === "prompt_preset_system");
       expect(preset).toBeUndefined();
     });
+
+    it("uses the configured Author's Note role", () => {
+      const result = assemblePrompt(baseContext({
+        preset: {
+          id: "preset_1",
+          authorsNote: "Respond strictly in English.",
+          authorsNoteDepth: 1,
+          authorsNotePosition: "in_chat",
+          authorsNoteRole: "user",
+        },
+      }));
+
+      const layer = result.layers.find((l) => l.id === "prompt_preset_authors_note");
+      const payloadMessage = result.finalPayload.messages.find((m) => m.layerId === "prompt_preset_authors_note");
+      expect(layer?.role).toBe("user");
+      expect(payloadMessage?.role).toBe("user");
+    });
   });
 
   describe("persona", () => {

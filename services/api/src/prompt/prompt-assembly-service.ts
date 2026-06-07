@@ -59,6 +59,7 @@ export interface PromptAssemblyResolver {
       authorsNote: string;
       authorsNoteDepth: number;
       authorsNotePosition: string;
+      authorsNoteRole: string;
       customInjections: Array<{
         identifier?: string;
         name: string;
@@ -249,6 +250,7 @@ export class PromptAssemblyService {
             authorsNote: promptPreset.authorsNote,
             authorsNoteDepth: promptPreset.authorsNoteDepth,
             authorsNotePosition: (promptPreset.authorsNotePosition as "in_prompt" | "in_chat" | "after_chat") ?? "in_chat",
+            authorsNoteRole: (promptPreset.authorsNoteRole as "system" | "user" | "assistant") ?? "system",
             customInjections: promptPreset.customInjections,
             promptOrder: promptPreset.promptOrder,
           }

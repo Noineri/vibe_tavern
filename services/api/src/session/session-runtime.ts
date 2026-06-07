@@ -425,6 +425,7 @@ export interface ImportResult {
 			authorsNote: preset.authorsNote,
 			authorsNoteDepth: preset.authorsNoteDepth,
 			authorsNotePosition: (preset.authorsNotePosition as "in_prompt" | "in_chat" | "after_chat") ?? "in_chat",
+			authorsNoteRole: (preset.authorsNoteRole as "system" | "user" | "assistant") ?? "system",
 			summary: preset.summaryPrompt,
 			tools: preset.toolsPrompt,
 			nsfw: preset.nsfwPrompt ?? "",

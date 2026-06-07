@@ -70,6 +70,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			authorsNote: preset.authorsNote,
 			authorsNoteDepth: preset.authorsNoteDepth,
 			authorsNotePosition: (preset.authorsNotePosition as "in_prompt" | "in_chat" | "after_chat") ?? "in_chat",
+			authorsNoteRole: (preset.authorsNoteRole as "system" | "user" | "assistant") ?? "system",
 			nsfw: preset.nsfwPrompt,
 			enhanceDefinitions: preset.enhanceDefinitionsPrompt,
 			customInjections,

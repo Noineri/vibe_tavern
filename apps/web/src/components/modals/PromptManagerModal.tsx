@@ -25,6 +25,7 @@ type DraftData = {
   authorsNote: string;
   authorsNoteDepth: number;
   authorsNotePosition: "in_prompt" | "in_chat" | "after_chat";
+  authorsNoteRole: "system" | "user" | "assistant";
   summary: string;
   tools: string;
   nsfw: string;
@@ -49,6 +50,7 @@ interface PromptManagerModalProps {
     authorsNote?: string;
     authorsNoteDepth?: number;
     authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat";
+    authorsNoteRole?: "system" | "user" | "assistant";
     summary?: string;
     tools?: string;
     nsfw?: string;
@@ -69,7 +71,7 @@ interface PromptManagerModalProps {
 
 const emptyDraft: DraftData = {
   name: "", bindModel: "", system: "", jailbreak: "",
-  prefill: "", authorsNote: "", authorsNoteDepth: 4, authorsNotePosition: "in_chat", summary: "", tools: "", nsfw: "", enhanceDefinitions: "", scriptAiSystemPrompt: "",
+  prefill: "", authorsNote: "", authorsNoteDepth: 4, authorsNotePosition: "in_chat", authorsNoteRole: "system", summary: "", tools: "", nsfw: "", enhanceDefinitions: "", scriptAiSystemPrompt: "",
   aiAssistantPrompts: {},
   customInjections: [],
   promptOrder: [],
@@ -123,6 +125,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         authorsNote: activePreset.authorsNote ?? "",
         authorsNoteDepth: activePreset.authorsNoteDepth ?? 4,
         authorsNotePosition: activePreset.authorsNotePosition ?? "in_chat",
+        authorsNoteRole: activePreset.authorsNoteRole ?? "system",
         summary: activePreset.summary,
         tools: activePreset.tools,
         nsfw: activePreset.nsfw ?? "",
@@ -190,6 +193,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       authorsNote: "",
       authorsNoteDepth: 4,
       authorsNotePosition: "in_chat",
+      authorsNoteRole: "system",
       summary: "",
       tools: "",
       scriptAiSystemPrompt: "",
@@ -234,6 +238,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         prefill: "",
         authorsNoteDepth: 4,
         authorsNotePosition: "in_chat",
+        authorsNoteRole: result.authorsRole ?? "system",
         summary: "",
         tools: "",
         scriptAiSystemPrompt: "",
@@ -248,7 +253,10 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         const next = { ...d };
         if (result.system.length) next.system = d.system + (d.system ? "\n\n" : "") + result.system.join("\n\n");
         if (result.post.length) next.jailbreak = d.jailbreak + (d.jailbreak ? "\n\n" : "") + result.post.join("\n\n");
-        if (result.authors.length) next.authorsNote = d.authorsNote + (d.authorsNote ? "\n\n" : "") + result.authors.join("\n\n");
+        if (result.authors.length) {
+          next.authorsNote = d.authorsNote + (d.authorsNote ? "\n\n" : "") + result.authors.join("\n\n");
+          next.authorsNoteRole = result.authorsRole ?? d.authorsNoteRole;
+        }
         if (result.nsfw.length) next.nsfw = d.nsfw + (d.nsfw ? "\n\n" : "") + result.nsfw.join("\n\n");
         if (result.enhanceDefinitions.length) next.enhanceDefinitions = d.enhanceDefinitions + (d.enhanceDefinitions ? "\n\n" : "") + result.enhanceDefinitions.join("\n\n");
         if (result.injections.length) next.customInjections = [...d.customInjections, ...result.injections];

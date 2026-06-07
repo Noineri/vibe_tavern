@@ -3,12 +3,13 @@ import type { PromptPresetId, PromptPresetDto } from "@vibe-tavern/domain";
 import { validation, notFound, conflict, isDomainError } from "../errors.js";
 
 type AuthorsNotePosition = "in_prompt" | "in_chat" | "after_chat";
+type AuthorsNoteRole = "system" | "user" | "assistant";
 
 function safeParseJson<T>(json: string, fallback: T): T {
   try { return JSON.parse(json); } catch { return fallback; }
 }
 
-function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: string | null; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; summaryPrompt: string; toolsPrompt: string; nsfwPrompt: string; enhanceDefinitionsPrompt: string; customInjectionsJson: string; promptOrderJson: string; advancedMode?: boolean | number | null; scriptAiSystemPrompt: string | null; aiAssistantPrompts?: string | null; createdAt: string; updatedAt: string; }): PromptPresetDto {
+function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: string | null; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; authorsNoteRole: string; summaryPrompt: string; toolsPrompt: string; nsfwPrompt: string; enhanceDefinitionsPrompt: string; customInjectionsJson: string; promptOrderJson: string; advancedMode?: boolean | number | null; scriptAiSystemPrompt: string | null; aiAssistantPrompts?: string | null; createdAt: string; updatedAt: string; }): PromptPresetDto {
   return {
     id: p.id,
     name: p.name,
@@ -19,6 +20,7 @@ function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: str
     authorsNote: p.authorsNote,
     authorsNoteDepth: p.authorsNoteDepth,
     authorsNotePosition: (p.authorsNotePosition as AuthorsNotePosition) ?? "in_chat",
+    authorsNoteRole: (p.authorsNoteRole as AuthorsNoteRole) ?? "system",
     summary: p.summaryPrompt,
     tools: p.toolsPrompt,
     nsfw: p.nsfwPrompt ?? "",
@@ -51,6 +53,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
   authorsNote?: string;
   authorsNoteDepth?: number;
   authorsNotePosition?: AuthorsNotePosition;
+  authorsNoteRole?: AuthorsNoteRole;
   summary?: string;
   tools?: string;
   nsfw?: string;
@@ -74,6 +77,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
     authorsNote: input.authorsNote ?? "",
     authorsNoteDepth: input.authorsNoteDepth ?? 4,
     authorsNotePosition: input.authorsNotePosition ?? "in_chat",
+    authorsNoteRole: input.authorsNoteRole ?? "system",
     summaryPrompt: input.summary ?? "",
     toolsPrompt: input.tools ?? "",
     nsfwPrompt: input.nsfw ?? "",
@@ -96,6 +100,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
   authorsNote?: string;
   authorsNoteDepth?: number;
   authorsNotePosition?: AuthorsNotePosition;
+  authorsNoteRole?: AuthorsNoteRole;
   summary?: string;
   tools?: string;
   nsfw?: string;
@@ -116,6 +121,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
       authorsNote: patch.authorsNote,
       authorsNoteDepth: patch.authorsNoteDepth,
       authorsNotePosition: patch.authorsNotePosition,
+      authorsNoteRole: patch.authorsNoteRole,
       summaryPrompt: patch.summary,
       toolsPrompt: patch.tools,
       nsfwPrompt: patch.nsfw,

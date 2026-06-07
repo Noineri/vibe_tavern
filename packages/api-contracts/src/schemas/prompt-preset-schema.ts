@@ -9,6 +9,7 @@ const promptPresetCoreSchema = z.object({
   authorsNote: z.string().optional(),
   authorsNoteDepth: z.number().optional(),
   authorsNotePosition: z.enum(["in_prompt", "in_chat", "after_chat"]).optional(),
+  authorsNoteRole: z.enum(["system", "user", "assistant"]).optional(),
   summary: z.string().optional(),
   tools: z.string().optional(),
   nsfw: z.string().optional(),

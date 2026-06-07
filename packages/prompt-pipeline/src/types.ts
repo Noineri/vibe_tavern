@@ -113,6 +113,8 @@ export interface PromptAssemblyContext {
     authorsNoteDepth?: number | null;
     /** Where to place the author's note: in_prompt (system block), in_chat (at depth), or after_chat (depth=0). Defaults to in_chat. */
     authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat" | null;
+    /** Chat-completion role for Author's Note. Defaults to system, matching SillyTavern. */
+    authorsNoteRole?: "system" | "user" | "assistant" | null;
     /** NSFW / jailbreak-adjacent prompt block (ST identifier: nsfw). Placed after worldInfoAfter, before chatHistory by default. */
     nsfw?: string | null;
     /** Enhance Definitions prompt (ST identifier: enhanceDefinitions). Disabled by default in ST. Placed after scenario, before nsfw. */
