@@ -62,6 +62,20 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Response {
 		);
 	}
 
+	if (urlStr.endsWith("/api/v1/model")) {
+		return new Response(
+			JSON.stringify({ result: "koboldcpp/qwen2.5-3b-instruct-q4_k_m" }),
+			{ status: 200, headers: { "Content-Type": "application/json" } },
+		);
+	}
+
+	if (urlStr.endsWith("/api/v1/generate")) {
+		return new Response(
+			JSON.stringify({ results: [{ text: "hello from koboldcpp native" }] }),
+			{ status: 200, headers: { "Content-Type": "application/json" } },
+		);
+	}
+
 	return new Response("Not Found", { status: 404 });
 }
 
@@ -88,6 +102,18 @@ describe("provider gateway", () => {
 			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
 			expect(callArgs[0]).toBe("http://localhost:11434/api/tags");
 		});
+
+		it("probes KoboldCPP via native /api/v1/model", async () => {
+			const result = await probeProviderConnection({
+				baseUrl: "http://localhost:5001",
+				apiKey: "",
+				providerType: "koboldcpp",
+			});
+
+			expect(result).toEqual({ success: true, modelCount: 1 });
+			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			expect(callArgs[0]).toBe("http://localhost:5001/api/v1/model");
+		});
 	});
 
 	describe("testProviderChat", () => {
@@ -104,6 +130,21 @@ describe("provider gateway", () => {
 			expect(callArgs[0]).toBe("http://localhost:11434/api/chat");
 			const body = JSON.parse(callArgs[1]?.body as string);
 			expect(body).toMatchObject({ model: "llama3:8b", stream: false, options: { num_predict: 64 } });
+		});
+
+		it("uses KoboldCPP native /api/v1/generate endpoint", async () => {
+			const result = await testProviderChat({
+				baseUrl: "http://localhost:5001/api/v1",
+				apiKey: "",
+				model: "",
+				providerType: "koboldcpp",
+			});
+
+			expect(result).toEqual({ success: true, reply: "hello from koboldcpp native" });
+			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			expect(callArgs[0]).toBe("http://localhost:5001/api/v1/generate");
+			const body = JSON.parse(callArgs[1]?.body as string);
+			expect(body).toMatchObject({ prompt: "User: Hi\nAssistant:", max_length: 64, temperature: 0.7, stream: false });
 		});
 	});
 
@@ -240,6 +281,31 @@ describe("provider gateway", () => {
 
 			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
 			expect(callArgs[0]).toBe("http://localhost:8080/v1/models");
+		});
+	});
+
+	// ─── KoboldCPP ──────────────────────────────────────────────────────
+
+	describe("koboldcpp", () => {
+		it("strips API suffixes and fetches /api/v1/model", async () => {
+			const models = await listProviderModels({
+				baseUrl: "http://localhost:5001/api/v1",
+				apiKey: "",
+				providerType: "koboldcpp",
+			});
+
+			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			expect(callArgs[0]).toBe("http://localhost:5001/api/v1/model");
+			expect(models).toEqual([
+				{ id: "koboldcpp/qwen2.5-3b-instruct-q4_k_m", label: "koboldcpp/qwen2.5-3b-instruct-q4_k_m" },
+			]);
+		});
+
+		it("throws on non-OK response", async () => {
+			globalThis.fetch = mock(() => new Response("Not Found", { status: 404 }));
+			expect(
+				listProviderModels({ baseUrl: "http://localhost:5001", apiKey: "", providerType: "koboldcpp" }),
+			).rejects.toThrow("KoboldCPP model list failed: 404");
 		});
 	});
 
