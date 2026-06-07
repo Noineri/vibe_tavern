@@ -21,7 +21,7 @@ export async function nonstreamingProviderExecute(
   try {
     const model = resolveModel(input.profile, input.model);
     const messages = toSdkMessages(input.prompt);
-    const { systemPrompt, conversationMessages } = prepareSdkMessages(messages, {
+    const { conversationMessages } = prepareSdkMessages(messages, {
       prefill: input.prefill,
       providerType: normalizeProviderType(input.profile.providerPreset),
     });
@@ -35,7 +35,7 @@ export async function nonstreamingProviderExecute(
       samplerConfig,
     });
     const sentConfig = {
-      systemRole: systemPrompt ? "system" as const : undefined,
+      systemRole: conversationMessages.some((m) => m.role === "system") ? "system" as const : undefined,
       samplerConfig: samplerConfig as Record<string, unknown>,
       messageCount: conversationMessages.length,
     };
@@ -44,7 +44,7 @@ export async function nonstreamingProviderExecute(
     const result = await generateText({
       model,
       messages: conversationMessages,
-      ...(systemPrompt ? { system: systemPrompt } : {}),
+      allowSystemInMessages: true,
       abortSignal: input.signal,
       ...samplerConfig,
     });

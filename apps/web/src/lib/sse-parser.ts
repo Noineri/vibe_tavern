@@ -73,7 +73,13 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
         try {
           const parsed = JSON.parse(data);
 
-          if (currentEvent === "reasoning-delta") {
+          if (currentEvent === "error") {
+            opts.onStatus("failed");
+            const message = typeof parsed.message === "string" && parsed.message.trim()
+              ? parsed.message
+              : "Provider request failed";
+            throw new Error(message);
+          } else if (currentEvent === "reasoning-delta") {
             if (parsed.delta !== undefined && opts.onReasoningChunk) {
               opts.onReasoningChunk(parsed.delta);
             }
@@ -90,7 +96,13 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
             if (parsed.finishReason) finishReason = parsed.finishReason;
             if (parsed.usage) usage = parsed.usage;
           }
-        } catch { /* skip malformed */ }
+        } catch (error) {
+          if (currentEvent === "error") {
+            opts.onStatus("failed");
+            throw error instanceof Error ? error : new Error(data || "Provider request failed");
+          }
+          /* skip malformed */
+        }
 
         currentEvent = "";
         continue;

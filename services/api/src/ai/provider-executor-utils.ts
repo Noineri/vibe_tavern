@@ -22,11 +22,15 @@ export interface SdkMessage {
   content: string;
 }
 
-/** Result of separating system messages from conversation messages. */
+/** Result of preparing messages for provider execution. */
 export interface PreparedMessages {
-  /** Concatenated system prompt (undefined if no system messages). */
-  systemPrompt?: string;
-  /** Conversation messages (non-system), with optional prefill appended. */
+  /**
+   * Top-level system prompt is intentionally unused for chat generation.
+   * System messages remain in `conversationMessages` to preserve the exact
+   * role/order shown in prompt traces.
+   */
+  systemPrompt?: undefined;
+  /** Prompt messages in trace order, with optional prefill appended. */
   conversationMessages: SdkMessage[];
 }
 
@@ -81,25 +85,23 @@ export function toSdkMessages(
 // ---------------------------------------------------------------------------
 
 /**
- * Separate system messages from conversation messages and optionally inject
- * a prefill assistant message.
+ * Preserve prompt message role/order exactly as assembled in the prompt trace,
+ * and optionally inject a provider-supported assistant prefill at the end.
  *
- * This logic was duplicated in both executors — extracted here to ensure
- * consistent behaviour between streaming and non-streaming paths.
+ * Do not extract system messages into the top-level `system` option: that
+ * changes recency/ordering semantics (e.g. an authors note after the latest
+ * user message stops being the final instruction seen by the model).
  */
 export function prepareSdkMessages(
   messages: SdkMessage[],
   options: { prefill?: string; providerType: ProviderType },
 ): PreparedMessages {
   const capabilities = getProviderCapabilities(options.providerType);
-
-  const systemMessages = messages.filter(m => m.role === "system");
-  const conversationMessages = messages.filter(m => m.role !== "system");
-  const systemPrompt = systemMessages.map(m => m.content).join("\n\n") || undefined;
+  const conversationMessages = [...messages];
 
   if (options.prefill && capabilities.prefill) {
     conversationMessages.push({ role: "assistant", content: options.prefill });
   }
 
-  return { systemPrompt, conversationMessages };
+  return { systemPrompt: undefined, conversationMessages };
 }

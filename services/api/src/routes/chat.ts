@@ -6,6 +6,69 @@ import { streamSSE } from "hono/streaming";
 import { logSendDebug } from "../send-debug-log.js";
 import * as schemas from "@vibe-tavern/api-contracts";
 import { readOptionalJson } from "./helpers.js";
+import { extractProviderErrorMessage } from "../ai/provider-error-message.js";
+
+type ChatStreamEvent = { event: string; data: string };
+type RouteAbortBridge = ReturnType<typeof createRouteAbortBridge>;
+type SseStreamWriter = {
+  aborted: boolean;
+  onAbort: (callback: () => void) => void;
+  writeSSE: (options: ChatStreamEvent) => Promise<void>;
+};
+
+function createRouteAbortBridge(requestSignal: AbortSignal, label: string, meta: Record<string, unknown>) {
+  const controller = new AbortController();
+  const abort = (source: string) => {
+    if (controller.signal.aborted) return;
+    logSendDebug(`${label}.abort`, { ...meta, source });
+    controller.abort(new DOMException("Client closed generation stream", "AbortError"));
+  };
+  const onRequestAbort = () => abort("request");
+
+  if (requestSignal.aborted) {
+    abort("request-preaborted");
+  } else {
+    requestSignal.addEventListener("abort", onRequestAbort, { once: true });
+  }
+
+  return {
+    signal: controller.signal,
+    abort,
+    cleanup: () => requestSignal.removeEventListener("abort", onRequestAbort),
+  };
+}
+
+async function writeChatSseEvents(
+  stream: SseStreamWriter,
+  events: AsyncIterable<ChatStreamEvent>,
+  abortBridge: RouteAbortBridge,
+): Promise<void> {
+  stream.onAbort(() => abortBridge.abort("sse"));
+  try {
+    for await (const event of events) {
+      if (stream.aborted) {
+        abortBridge.abort("sse-aborted-flag");
+        break;
+      }
+      await stream.writeSSE({ event: event.event, data: event.data });
+    }
+  } catch (err) {
+    if (abortBridge.signal.aborted || stream.aborted) {
+      abortBridge.abort("sse-write-error");
+      return;
+    }
+
+    const message = extractProviderErrorMessage(err);
+    logSendDebug("api.route.sse.error", { message });
+    try {
+      await stream.writeSSE({ event: "error", data: JSON.stringify({ message }) });
+    } catch {
+      abortBridge.abort("sse-error-write-failed");
+    }
+  } finally {
+    abortBridge.cleanup();
+  }
+}
 
 export function createChatRoutes(runtime: RuntimeApi) {
   return new Hono()
@@ -73,12 +136,9 @@ export function createChatRoutes(runtime: RuntimeApi) {
       const messageId = c.req.param("messageId");
       const body = await readOptionalJson(c.req.raw);
       logSendDebug("api.route.regenerate-stream.start", { chatId, messageId });
-      const gen = runtime.regenerateMessageStream(chatId, messageId, body, c.req.raw.signal);
-      return streamSSE(c, async (stream) => {
-        for await (const event of gen) {
-          await stream.writeSSE({ event: event.event, data: event.data });
-        }
-      });
+      const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.regenerate-stream", { chatId, messageId });
+      const gen = runtime.regenerateMessageStream(chatId, messageId, body, abortBridge.signal);
+      return streamSSE(c, async (stream) => writeChatSseEvents(stream, gen, abortBridge));
     })
     .post("/api/chats/:chatId/messages/:messageId/variants/:variantIndex/select", async (c) => {
       return c.json(
@@ -115,12 +175,9 @@ export function createChatRoutes(runtime: RuntimeApi) {
       const chatId = c.req.param("chatId");
       const body = c.req.valid("json");
       logSendDebug("api.route.messages-stream.post", { chatId, contentLength: body.content?.length ?? 0 });
-      const gen = runtime.sendMessageStream(chatId, body, c.req.raw.signal);
-      return streamSSE(c, async (stream) => {
-        for await (const event of gen) {
-          await stream.writeSSE({ event: event.event, data: event.data });
-        }
-      });
+      const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.messages-stream", { chatId });
+      const gen = runtime.sendMessageStream(chatId, body, abortBridge.signal);
+      return streamSSE(c, async (stream) => writeChatSseEvents(stream, gen, abortBridge));
     })
     .get("/api/chats/:chatId/summaries", async (c) => {
       return c.json(await runtime.listChatSummaries(c.req.param("chatId")));
@@ -162,12 +219,9 @@ export function createChatRoutes(runtime: RuntimeApi) {
     .post("/api/chats/:chatId/generate-reply/stream", async (c) => {
       const chatId = c.req.param("chatId");
       logSendDebug("api.route.generate-reply-stream.post", { chatId });
-      const gen = runtime.generateReplyStream(chatId, c.req.raw.signal);
-      return streamSSE(c, async (stream) => {
-        for await (const event of gen) {
-          await stream.writeSSE({ event: event.event, data: event.data });
-        }
-      });
+      const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.generate-reply-stream", { chatId });
+      const gen = runtime.generateReplyStream(chatId, abortBridge.signal);
+      return streamSSE(c, async (stream) => writeChatSseEvents(stream, gen, abortBridge));
     })
     .post("/api/chats/:chatId/set-persona", zValidator("json", schemas.setPersonaSchema), async (c) => {
       const body = c.req.valid("json");

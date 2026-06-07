@@ -80,11 +80,11 @@ export interface GenerationUsage {
 
 /** Snapshot of what was actually sent to the provider for a generation call. */
 export interface SentConfigSnapshot {
-  /** System prompt role: 'system' (standard) or undefined if no system prompt. */
+  /** Whether any system-role messages were sent in the message array. */
   systemRole: "system" | undefined;
   /** Sampler config that was spread into streamText()/generateText(). */
   samplerConfig: Record<string, unknown>;
-  /** Number of conversation messages sent (excluding system). */
+  /** Number of messages sent to the provider, preserving prompt trace order. */
   messageCount: number;
 }
 
