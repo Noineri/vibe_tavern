@@ -1,10 +1,12 @@
 import React from 'react';
 import { useT } from '../../../i18n/context.js';
 import { useIsMobile } from '../../../hooks/use-mobile.js';
+import { useMasterDetail } from '../../shared/MasterDetailModal.js';
 import type { ProviderProfileRecord } from '../../../app-client.js';
 import { TYPE_LABELS } from '../../../provider-presets.js';
 import { Icons } from '../../shared/icons.js';
 import { cn } from '../../../lib/cn.js';
+import { MasterDetailMobileDrillDown } from '../../shared/MasterDetailModal.js';
 
 interface ProviderProfileListProps {
   filteredProfiles: ProviderProfileRecord[];
@@ -27,6 +29,7 @@ export function ProviderProfileList({
 }: ProviderProfileListProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
+  const { openDetail } = useMasterDetail();
   return (
     <div className="flex flex-col flex-1 min-h-0 pt-5 pb-2.5">
       <div
@@ -52,12 +55,12 @@ export function ProviderProfileList({
           <div
             key={p.id}
             className={cn(
-              'cursor-pointer border-l-[3px] px-4 min-h-[56px] flex items-center active:bg-s2 sm:overflow-hidden sm:whitespace-nowrap sm:text-ellipsis sm:transition-colors',
+              'cursor-pointer border-l-[3px] pl-4 pr-2 min-h-[56px] flex items-center active:bg-s2 sm:overflow-hidden sm:whitespace-nowrap sm:text-ellipsis sm:transition-colors touch-manipulation',
               editingId === p.id
                 ? 'border-l-accent bg-accent-dim text-accent-t'
-                : 'border-l-transparent text-t2'
+                : 'border-l-transparent text-t2 hover:bg-s2'
             )}
-            onClick={() => onSelectProfile(p.id)}
+            onPointerDown={() => onSelectProfile(p.id)}
           >
             <div className="flex w-full items-center gap-3">
               <div
@@ -70,7 +73,7 @@ export function ProviderProfileList({
                     : 'bg-t4'
                 )}
               />
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 py-2">
                 <div className="truncate text-[13px] font-medium">
                   {activeProviderProfileId === p.id ? '★ ' : ''}
                   {p.name}
@@ -84,14 +87,14 @@ export function ProviderProfileList({
                   {TYPE_LABELS[p.providerPreset] || p.providerPreset}
                 </div>
               </div>
-              {isMobile && <div className="ml-auto shrink-0 text-t3"><Icons.Caret direction="r" /></div>}
+              <MasterDetailMobileDrillDown onSelect={() => onSelectProfile(p.id)} className="py-3" />
             </div>
           </div>
         ))}
       </div>
       <div
         className="mx-3 mt-3 cursor-pointer rounded-md border border-dashed border-border2 py-2 text-center font-ui text-[12px] font-medium text-t3 transition-colors hover:border-border hover:text-t1 hover:bg-s2"
-        onClick={() => void onAddProfile()}
+        onClick={() => { void onAddProfile(); openDetail(); }}
       >
         {t("new_profile_btn")}
       </div>

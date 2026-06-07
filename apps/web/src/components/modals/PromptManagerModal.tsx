@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import type { PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
-import { Modal } from "../shared/Modal.js";
-import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { Icons } from "../shared/icons.js";
@@ -13,7 +11,8 @@ import { PresetList, PromptFields } from "../settings/prompt/index.js";
 import { PromptOrderCanvas, type InjectionRow } from "../settings/prompt/InjectionTable.js";
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
-import { MasterDetailLayout } from "../shared/MasterDetailLayout.js";
+import { MasterDetailModal } from "../shared/MasterDetailModal.js";
+import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -112,7 +111,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [importModalOpen, setImportModalOpen] = useState(false);
   const isMobile = useIsMobile();
-  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const activePreset = input.presets.find((p) => p.id === input.activePresetId) ?? null;
 
   useEffect(() => {
@@ -222,7 +220,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     setConfirmDeleteOpen(false);
     setDirty(false);
     setSaveState("idle");
-    setMobileDetailOpen(false);
     void input.onDelete(deleteId);
   };
 
@@ -274,7 +271,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const advancedMode = draft.advancedMode;
 
   return (
-    <Modal open={true} onClose={handleClose}>
+    <>
       {importModalOpen && (
         <PresetImportModal
           onClose={() => setImportModalOpen(false)}
@@ -307,78 +304,27 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         />
       )}
 
-      <MasterDetailLayout
-        isMobile={isMobile}
-        isDetailOpen={mobileDetailOpen}
+      <MasterDetailModal
+        isOpen={true}
+        onClose={handleClose}
+        title={t("prompt_manager_title")}
+        subtitle={t("prompt_manager_sub")}
+        detailTitle={t("prompt_manager_title")}
+        dirty={dirty}
         containerClassName="max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[880px] h-[840px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
-        masterClassName="flex w-[220px] shrink-0 flex-col border-r border-border bg-s1"
-        header={
-          <div className={cn("shrink-0 items-start justify-between border-b border-border", isMobile ? "flex pt-4 px-4 pb-3" : "flex pt-[18px] px-5 pb-[14px]")}>
-            <div className="flex items-center gap-2">
-              <div>
-                <div className={cn("font-body font-medium text-t1", isMobile ? "text-base" : "text-[calc(var(--ui-fs)+4px)] mb-0.5")}>
-                  {t("prompt_manager_title")}
-                  {dirty && (
-                    <CustomTooltip content={t("unsaved_changes_title")}>
-                    <span
-                      className="ml-1.5 inline-block h-[7px] w-[7px] shrink-0 rounded-full bg-accent align-middle"
-                    />
-                    </CustomTooltip>
-                  )}
-                </div>
-                {!isMobile && (
-                <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
-                  {t("prompt_manager_sub")}
-                </div>
-                )}
-              </div>
-            </div>
-            <div
-              className={cn("shrink-0 cursor-pointer items-center justify-center text-t3 transition-all hover:bg-s2 hover:text-t1", isMobile ? "flex h-10 w-10 rounded-lg active:bg-s2" : "flex h-[32px] w-[32px] rounded-[5px]")}
-              onClick={handleClose}
-            >
-              <Icons.Close />
-            </div>
-          </div>
-        }
-        mobileDetailHeader={
-          <div className="flex shrink-0 items-start justify-between border-b border-border pt-4 px-4 pb-3">
-            <div className="flex items-center gap-2">
-              <button type="button" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-t3 active:bg-s2" onClick={() => setMobileDetailOpen(false)}>
-                <Icons.Caret direction="l" />
-              </button>
-              <div>
-                <div className="font-body font-medium text-t1 text-base mb-0.5">
-                  {t("prompt_manager_title")}
-                  {dirty && (
-                    <CustomTooltip content={t("unsaved_changes_title")}>
-                    <span
-                      className="ml-1.5 inline-block h-[7px] w-[7px] shrink-0 rounded-full bg-accent align-middle"
-                    />
-                    </CustomTooltip>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div
-              className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 transition-all hover:bg-s2 hover:text-t1"
-              onClick={handleClose}
-            >
-              <Icons.Close />
-            </div>
-          </div>
-        }
-        masterContent={
+        masterClassName="flex w-[240px] shrink-0 flex-col border-r border-border bg-s1"
+        detailClassName="p-0"
+        headerClassName={isMobile ? "px-4 pt-4 pb-3" : "px-5 pt-[18px] pb-[14px]"}
+        masterContent={() => (
           <PresetList
             presets={input.presets.map((p) => ({ id: p.id, name: p.name }))}
             activePresetId={input.activePresetId}
             onSelect={(id) => { input.setActivePresetId(id); }}
-            onDrillDown={(id) => { input.setActivePresetId(id); if (isMobile) setMobileDetailOpen(true); }}
             onAdd={handleAdd}
             onRename={handleRename}
             onImportPreset={() => setImportModalOpen(true)}
           />
-        }
+        )}
         detailContent={
           <>
             <div className={cn("mt-4 flex shrink-0 items-center justify-between gap-3", isMobile ? "mx-3" : "mx-5")}>
@@ -477,6 +423,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           </div>
         }
       />
-    </Modal>
+    </>
   );
 }

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n/context.js";
-import { Modal } from "../shared/Modal.js";
 import { cn } from "../../lib/cn.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../../app-client.js";
 import { resolveLogitBiasSupport } from "@vibe-tavern/domain";
@@ -20,7 +19,7 @@ import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useModalStore } from "../../stores/modal-store.js";
-import { MasterDetailLayout } from "../shared/MasterDetailLayout.js";
+import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 
 export interface FormState {
   id: string;
@@ -184,7 +183,6 @@ export function ProviderModal({
   const [dirty, setDirty] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
-  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
   // ── Header mode: edit vs view ──
   const [isNew, setIsNew] = useState(false);
@@ -337,7 +335,7 @@ export function ProviderModal({
     await onDeleteProfile(editingId);
     const next = providerProfiles.find((p) => p.id !== editingId);
     if (next) { setEditingId(next.id); setForm(profileToForm(next)); }
-    setConfirmDelete(false); setHeaderMode("view"); setIsNew(false); setDirty(false); setMobileDetailOpen(false);
+    setConfirmDelete(false); setHeaderMode("view"); setIsNew(false); setDirty(false);
   };
 
   // ── Save header (connection settings) ──
@@ -430,7 +428,7 @@ export function ProviderModal({
     : models;
 
   return (
-    <Modal open={true} onClose={handleClose}>
+    <>
       {confirmClose && <ConfirmCloseModal onCancel={() => setConfirmClose(false)} onConfirm={() => { setConfirmClose(false); setDirty(false); onClose(); }} />}
       {confirmDelete && (
         <DestructiveConfirmModal
@@ -442,47 +440,26 @@ export function ProviderModal({
         />
       )}
 
-      <MasterDetailLayout
-        isMobile={isMobile}
-        isDetailOpen={mobileDetailOpen}
+      <MasterDetailModal
+        isOpen={true}
+        onClose={handleClose}
+        title={t("provider_settings_title")}
+        subtitle={t("provider_settings_desc")}
+        detailTitle={form?.name ?? t("provider_settings_title")}
+        dirty={dirty}
         containerClassName="max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[680px] w-[860px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
         masterClassName="flex w-[220px] shrink-0 flex-col border-r border-border bg-s1"
         detailClassName={isMobile ? "p-4" : "p-6"}
-        header={
-          <div className={cn("shrink-0 border-b border-border", isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4")}>
-            <div className="flex items-start justify-between">
-              <div>
-                <div className={cn("font-body font-semibold text-t1", isMobile ? "text-base" : "text-[18px] mb-1")}>
-                  {t("provider_settings_title")}
-                </div>
-                {!isMobile && <div className="font-ui text-[13px] text-t3">{t("provider_settings_desc")}</div>}
-              </div>
-              <div className={cn("shrink-0 cursor-pointer items-center justify-center text-t3 transition-colors hover:bg-s2 hover:text-t1", isMobile ? "flex h-8 w-8 rounded-[5px]" : "flex h-8 w-8 rounded-md")} onClick={handleClose}><Icons.Close /></div>
-            </div>
-          </div>
-        }
-        mobileDetailHeader={
-          <div className="shrink-0 border-b border-border px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 hover:bg-s2 hover:text-t1" onClick={() => setMobileDetailOpen(false)}>
-                <span className="text-lg leading-none">←</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-body text-[calc(var(--ui-fs)+2px)] font-medium text-t1">{form?.name ?? t("provider_settings_title")}</div>
-              </div>
-              <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 hover:bg-s2 hover:text-t1" onClick={handleClose}><Icons.Close /></div>
-            </div>
-          </div>
-        }
-        masterContent={
+        headerClassName={isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4"}
+        masterContent={() => (
           <ProviderProfileList
             filteredProfiles={filteredProfiles} editingId={editingId}
             activeProviderProfileId={activeProviderProfileId} profileSearch={profileSearch}
             onProfileSearchChange={setProfileSearch}
-            onSelectProfile={(id) => { handleSelect(id); if (isMobile) setMobileDetailOpen(true); }}
-            onAddProfile={() => { void handleAdd(); if (isMobile) setMobileDetailOpen(true); }}
+            onSelectProfile={(id) => { handleSelect(id); }}
+            onAddProfile={() => { void handleAdd(); }}
           />
-        }
+        )}
         detailContent={
           !form ? (
             <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
@@ -569,6 +546,6 @@ export function ProviderModal({
           </div>
         }
       />
-    </Modal>
+    </>
   );
 }

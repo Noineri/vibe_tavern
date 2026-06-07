@@ -5,7 +5,7 @@ import type { AutoSummaryConfig, ChatSummaryRecord } from "../../app-client.js";
 import { Ic, Icons } from "../shared/icons.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
-import { Modal } from "../shared/Modal.js";
+import { MasterDetailModal, MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { Toggle } from "../shared/Toggle.js";
@@ -13,7 +13,6 @@ import { NumberInput } from "../shared/NumberInput.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
-import { MasterDetailLayout } from "../shared/MasterDetailLayout.js";
 import { countTokens } from "../../utils/tokenizer.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import {
@@ -161,7 +160,6 @@ export function ContextMemoryModal({
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [historyLimit, setHistoryLimit] = useState(messageHistoryLimit || messageCount || 1);
   const [autoConfig, setAutoConfig] = useState<AutoSummaryConfig>({ ...DEFAULT_AUTO_CONFIG, ...autoSummaryConfig });
-  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const [textareaRef, autoResize] = useAutoResize();
 
@@ -285,7 +283,7 @@ export function ContextMemoryModal({
     setDirty(false);
   }
 
-  async function createNewSummary() {
+  async function createNewSummary(openDetail?: () => void) {
     if (!activeChatId) return;
     setSaving(true);
     try {
@@ -300,7 +298,7 @@ export function ContextMemoryModal({
       });
       setSummaries((prev) => upsertSummary(prev, saved));
       selectSummary(saved);
-      if (isMobile) setMobileDetailOpen(true);
+      if (openDetail) openDetail();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("summary_save_failed"));
     } finally {
@@ -414,29 +412,28 @@ export function ContextMemoryModal({
         <div
           key={s.id}
           className={cn(
-            "group flex cursor-pointer items-center gap-2 border-l-2 border-l-transparent px-3 py-2.5 transition-colors hover:bg-s2",
+            "group flex cursor-pointer items-center gap-2 border-l-2 border-l-transparent px-3 min-h-[56px] transition-colors touch-manipulation hover:bg-s2",
             activeSummaryId === s.id && "border-l-accent bg-accent-dim",
-            isMobile && "py-3",
           )}
-          onClick={() => { selectSummary(s); if (isMobile) setMobileDetailOpen(true); }}
+          onPointerDown={() => selectSummary(s)}
         >
-          <Toggle
-            checked={s.includeInContext}
-            onChange={() => void patchSummary(s, { includeInContext: !s.includeInContext })}
-          />
+          <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+            <Toggle
+              checked={s.includeInContext}
+              onChange={() => void patchSummary(s, { includeInContext: !s.includeInContext })}
+            />
+          </div>
           <div className="min-w-0 flex-1">
             <div className="truncate font-ui text-[12px] text-t1">{s.label || `T${s.summarizedFrom}\u2013T${s.summarizedTo}`}</div>
             <div className="mt-0.5 font-ui text-[10px] text-t4">{s.source === "auto" ? t("summary_source_auto") : t("summary_source_manual")}</div>
           </div>
-          {isMobile && <span className="shrink-0 text-t4">{Ic.caret("r")}</span>}
-          {!isMobile && (
-            <button type="button"
-              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 opacity-0 hover:bg-danger-dim hover:text-danger-text group-hover:opacity-100"
-              onClick={(e) => { e.stopPropagation(); void handleDelete(s.id); }}
-            >
-              <Ic.close />
-            </button>
-          )}
+          <MasterDetailMobileDrillDown onSelect={() => selectSummary(s)} />
+          <button type="button"
+            className="hidden md:flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 opacity-0 hover:bg-danger-dim hover:text-danger-text group-hover:opacity-100"
+            onClick={(e) => { e.stopPropagation(); void handleDelete(s.id); }}
+          >
+            <Ic.close />
+          </button>
         </div>
       ))}
     </div>
@@ -470,13 +467,26 @@ export function ContextMemoryModal({
       <section className="mt-4">
         <div className="mb-2 flex items-center justify-between gap-3">
           <div className={cn(labelCls, "mb-0")}>{t("summary_text_label")}</div>
-          <button type="button"
-            className="h-7 rounded-md bg-s3 px-3 font-ui text-xs text-t2 hover:bg-border2 hover:text-t1 disabled:opacity-40"
-            disabled={!dirty || saving}
-            onClick={() => void handleSave()}
-          >
-            {saving ? t("saving_btn") : t("save_summary_btn")}
-          </button>
+          <div className="flex gap-2">
+            {activeSummaryId && isMobile && (
+              <button type="button"
+                className="flex h-7 w-7 items-center justify-center rounded-md bg-danger-dim text-danger-text hover:bg-danger hover:text-white transition-colors md:hidden"
+                onClick={() => { 
+                  void handleDelete(activeSummaryId); 
+                }}
+                title={t("delete")}
+              >
+                <Icons.Trash />
+              </button>
+            )}
+            <button type="button"
+              className="h-7 rounded-md bg-s3 px-3 font-ui text-xs text-t2 hover:bg-border2 hover:text-t1 disabled:opacity-40"
+              disabled={!dirty || saving}
+              onClick={() => void handleSave()}
+            >
+              {saving ? t("saving_btn") : t("save_summary_btn")}
+            </button>
+          </div>
         </div>
         <input
           className={cn(inputCls, "mb-2 w-full")}
@@ -663,73 +673,41 @@ export function ContextMemoryModal({
 
   /* ─── RENDER ─── */
   return (
-    <Modal open={true} onClose={onClose}>
-      <MasterDetailLayout
-        isMobile={isMobile}
-        isDetailOpen={mobileDetailOpen}
-        containerClassName="h-[min(86vh,780px)] w-[min(920px,calc(100vw-32px))] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
-        masterClassName="flex w-[200px] shrink-0 flex-col border-r border-border bg-s1"
-        header={
-          <div className={cn("shrink-0 border-b border-border", isMobile ? "px-3 py-2.5" : "px-5 pt-5")}>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className={cn("font-body font-semibold text-t1", isMobile ? "text-[calc(var(--ui-fs)+2px)]" : "text-[20px]")}>
-                  {t("context_memory_title")}
-                </div>
-                {!isMobile && <div className="mt-1 font-ui text-[13px] text-t3">{t("context_memory_sub")}</div>}
-              </div>
-              <button  className="flex h-8 w-8 items-center justify-center rounded-md text-t3 hover:bg-s2 hover:text-t1"
-                onClick={onClose} type="button"
-              >
-                <Icons.Close />
-              </button>
-            </div>
-            {!isMobile && (
-              <div className="mt-4 flex gap-0">
-                <div className="border-b-2 border-b-accent px-4 py-2 font-ui text-xs font-medium text-accent-t">{t("memory_tab_summary")}</div>
-              </div>
-            )}
+    <MasterDetailModal
+      isOpen={true}
+      onClose={onClose}
+      title={t("context_memory_title")}
+      subtitle={t("context_memory_sub")}
+      detailTitle={activeSummary?.label || draftLabel || t("new_summary_entry")}
+      dirty={dirty}
+      containerClassName="h-[min(86vh,780px)] w-[min(920px,calc(100vw-32px))] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
+      masterClassName="flex w-[240px] shrink-0 flex-col border-r border-border bg-s1"
+      detailClassName="p-5"
+      headerBottom={
+        !isMobile && (
+          <div className="mt-4 flex gap-0 px-6">
+            <div className="border-b-2 border-b-accent px-4 py-2 font-ui text-xs font-medium text-accent-t">{t("memory_tab_summary")}</div>
           </div>
-        }
-        mobileDetailHeader={
-          <div className="shrink-0 border-b border-border px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <button type="button"
-                className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 hover:bg-s2 hover:text-t1"
-                onClick={() => { setMobileDetailOpen(false); setActiveSummaryId(null); }}
-              >
-                <span className="text-lg leading-none">←</span>
-              </button>
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-body text-[calc(var(--ui-fs)+2px)] font-medium text-t1">
-                  {activeSummary?.label || draftLabel || t("new_summary_entry")}
-                </div>
-              </div>
-            </div>
+        )
+      }
+      masterContent={() => (
+        <div className="flex flex-col min-h-0 h-full">
+          <div className="px-4 py-4 font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3">{t("summary_archive_label")}</div>
+          {archiveList}
+          <div className="border-t border-border p-3 mt-auto">
+            <button type="button"
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-xs text-t3 hover:border-border hover:bg-s2 hover:text-t1"
+              onClick={() => void createNewSummary()}
+              disabled={!activeChatId || saving}
+            >
+              <Icons.Plus /> {t("new_summary_entry")}
+            </button>
           </div>
-        }
-        masterContent={
-          <>
-            <div className={cn("px-4 font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t3", isMobile ? "pt-3 pb-2" : "py-4")}>
-              {t("summary_archive_label")}
-            </div>
-            {archiveList}
-            <div className={cn("shrink-0 border-t border-border p-3", isMobile ? "pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] mt-auto" : "")}>
-              <button type="button"
-                className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-xs text-t3 hover:border-border hover:bg-s2 hover:text-t1"
-                onClick={() => void createNewSummary()}
-                disabled={!activeChatId || saving}
-              >
-                <Icons.Plus /> {t("new_summary_entry")}
-              </button>
-            </div>
-          </>
-        }
-        detailClassName={isMobile ? "p-4" : "p-5"}
-        detailContent={detailEditor}
-        footer={footer}
-      />
-    </Modal>
+        </div>
+      )}
+      detailContent={detailEditor}
+      footer={footer}
+    />
   );
 }
 
