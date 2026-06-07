@@ -12,6 +12,7 @@ export interface BootstrapData {
   allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
   promptPresets: PromptPresetDto[];
   uiSettings: UiSettingsRecord;
+  isArmServer: boolean;
 }
 
 export interface BootstrapState {
