@@ -135,7 +135,7 @@ describe("buildSamplerConfig", () => {
   // ─── OpenRouter (aggregator set — full surface) ────────────────────────
 
   describe("openrouter (aggregator)", () => {
-    it("sends topK, topA, minP, repetitionPenalty via providerOptions", () => {
+    it("sends topK, topA, minP, repetitionPenalty, mirostat, tfs, typicalP via providerOptions", () => {
       const config = buildSamplerConfig(profile("openrouter"));
       expect(config.providerOptions!.openai_compat).toBeDefined();
       const opts = config.providerOptions!.openai_compat as Record<string, unknown>;
@@ -143,6 +143,11 @@ describe("buildSamplerConfig", () => {
       expect(opts.top_a).toBe(0.4);
       expect(opts.min_p).toBe(0.05);
       expect(opts.repetition_penalty).toBe(1.15);
+      expect(opts.typical_p).toBe(0.97);
+      expect(opts.tfs_z).toBe(0.9);
+      expect(opts.mirostat).toBe(2);
+      expect(opts.mirostat_tau).toBe(6);
+      expect(opts.mirostat_eta).toBe(0.2);
       expect(opts.reasoningEffort).toBe("high");
     });
 
