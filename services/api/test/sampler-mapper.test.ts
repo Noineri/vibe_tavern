@@ -135,7 +135,7 @@ describe("buildSamplerConfig", () => {
   // ─── OpenRouter (aggregator set — full surface) ────────────────────────
 
   describe("openrouter (aggregator)", () => {
-    it("sends topK, topA, minP, repetitionPenalty, mirostat, tfs, typicalP via providerOptions", () => {
+    it("sends topK, topA, minP, repetitionPenalty via providerOptions but NOT mirostat/tfs", () => {
       const config = buildSamplerConfig(profile("openrouter"));
       expect(config.providerOptions!.openai_compat).toBeDefined();
       const opts = config.providerOptions!.openai_compat as Record<string, unknown>;
@@ -143,12 +143,11 @@ describe("buildSamplerConfig", () => {
       expect(opts.top_a).toBe(0.4);
       expect(opts.min_p).toBe(0.05);
       expect(opts.repetition_penalty).toBe(1.15);
-      expect(opts.typical_p).toBe(0.97);
-      expect(opts.tfs_z).toBe(0.9);
-      expect(opts.mirostat).toBe(2);
-      expect(opts.mirostat_tau).toBe(6);
-      expect(opts.mirostat_eta).toBe(0.2);
       expect(opts.reasoningEffort).toBe("high");
+      // aggregator set does not include mirostat/tfs/typicalP
+      expect(opts.mirostat).toBeUndefined();
+      expect(opts.tfs_z).toBeUndefined();
+      expect(opts.typical_p).toBeUndefined();
     });
 
     it("omits dry*/xtc*/mirostat (aggregator set does not have them)", () => {
@@ -164,6 +163,45 @@ describe("buildSamplerConfig", () => {
         profile("openrouter", {
           defaultModel: "gpt-4o-mini",
           endpoint: "https://openrouter.ai/api/v1",
+          logitBias: [{ tokenId: 123, bias: -100, text: " bad", model: "gpt-4o-mini" }],
+        }),
+      );
+      const opts = config.providerOptions!.openai_compat as Record<string, unknown>;
+      expect(opts.logit_bias).toBeUndefined();
+    });
+  });
+
+  // ─── NanoGPT (nanogpt — near-full surface with mirostat/tfs) ────────────
+
+  describe("nanogpt (near-full surface)", () => {
+    it("sends topK, topA, minP, mirostat, tfs, typicalP, repetitionPenalty via providerOptions", () => {
+      const config = buildSamplerConfig(profile("nanogpt"));
+      expect(config.providerOptions!.openai_compat).toBeDefined();
+      const opts = config.providerOptions!.openai_compat as Record<string, unknown>;
+      expect(opts.top_k).toBe(80);
+      expect(opts.top_a).toBe(0.4);
+      expect(opts.min_p).toBe(0.05);
+      expect(opts.typical_p).toBe(0.97);
+      expect(opts.tfs_z).toBe(0.9);
+      expect(opts.mirostat).toBe(2);
+      expect(opts.mirostat_tau).toBe(6);
+      expect(opts.mirostat_eta).toBe(0.2);
+      expect(opts.repetition_penalty).toBe(1.15);
+      expect(opts.reasoningEffort).toBe("high");
+    });
+
+    it("omits dry*/xtc (nanogpt set does not have them)", () => {
+      const config = buildSamplerConfig(profile("nanogpt"));
+      const opts = config.providerOptions!.openai_compat as Record<string, unknown>;
+      expect(opts.dry_multiplier).toBeUndefined();
+      expect(opts.xtc_threshold).toBeUndefined();
+    });
+
+    it("omits logit_bias for aggregator providers", () => {
+      const config = buildSamplerConfig(
+        profile("nanogpt", {
+          defaultModel: "gpt-4o-mini",
+          endpoint: "https://nano-gpt.com/api/v1",
           logitBias: [{ tokenId: 123, bias: -100, text: " bad", model: "gpt-4o-mini" }],
         }),
       );

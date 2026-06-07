@@ -21,9 +21,8 @@ describe("sampler params", () => {
     expect(caps.reasoningEffort).toBe(true);
   });
 
-  it("resolves aggregator set for cloud aggregators (OpenRouter, NanoGPT)", () => {
+  it("resolves aggregator set for OpenRouter (no mirostat/tfs)", () => {
     expect(resolveSamplerSet("openrouter", PROVIDER_TYPE.openaiCompat)).toBe("aggregator");
-    expect(resolveSamplerSet("nanogpt", PROVIDER_TYPE.openaiCompat)).toBe("aggregator");
 
     const caps = resolveSamplerCapabilities("openrouter", PROVIDER_TYPE.openaiCompat);
     expect(caps.topP).toBe(true);
@@ -36,6 +35,23 @@ describe("sampler params", () => {
     expect(caps.typicalP).toBe(false);
     expect(caps.tfsZ).toBe(false);
     expect(caps.mirostat).toBe(false);
+    expect(caps.dryMultiplier).toBe(false);
+    expect(caps.xtcProbability).toBe(false);
+  });
+
+  it("resolves nanogpt set with mirostat/tfs/typicalP", () => {
+    expect(resolveSamplerSet("nanogpt", PROVIDER_TYPE.openaiCompat)).toBe("nanogpt");
+
+    const caps = resolveSamplerCapabilities("nanogpt", PROVIDER_TYPE.openaiCompat);
+    expect(caps.topA).toBe(true);
+    expect(caps.minP).toBe(true);
+    expect(caps.typicalP).toBe(true);
+    expect(caps.tfsZ).toBe(true);
+    expect(caps.mirostat).toBe(true);
+    expect(caps.mirostatTau).toBe(true);
+    expect(caps.mirostatEta).toBe(true);
+    expect(caps.repetitionPenalty).toBe(true);
+    expect(caps.reasoningEffort).toBe(true);
     expect(caps.dryMultiplier).toBe(false);
     expect(caps.xtcProbability).toBe(false);
   });
