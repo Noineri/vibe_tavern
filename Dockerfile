@@ -28,7 +28,7 @@ WORKDIR /app
 # Copy only runtime artifacts from builder
 COPY --from=builder /app/out/services/api/prod-server.js ./out/services/api/
 COPY --from=builder /app/out/services/api/prod-server.js.map ./out/services/api/
-COPY --from=builder /app/out/services/api/script-ai-prompt.md ./out/services/api/
+COPY --from=builder /app/out/services/api/*.md ./out/services/api/
 COPY --from=builder /app/out/services/api/tokenizers ./out/services/api/tokenizers/
 COPY --from=builder /app/out/services/api/drizzle ./out/services/api/drizzle/
 COPY --from=builder /app/out/apps/web ./out/apps/web

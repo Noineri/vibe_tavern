@@ -19,15 +19,16 @@ function exists(path: string): Promise<boolean> {
 
 async function copyApiRuntimeAssets() {
   const apiOut = join(ROOT, "out", "services", "api");
-  const promptSource = join(ROOT, "services", "api", "assets", "script-ai-prompt.md");
-  const promptTargets = [join(apiOut, "script-ai-prompt.md")];
+  const promptDir = join(ROOT, "services", "api", "assets");
   const tokenizerSource = join(ROOT, "services", "api", "assets", "tokenizers");
   const tokenizerTargets = [join(apiOut, "tokenizers")];
   const migrationsSource = join(ROOT, "packages", "db", "drizzle");
   const migrationsTarget = join(apiOut, "drizzle");
 
-  if (!(await exists(promptSource))) {
-    throw new Error(`Script AI prompt source not found: ${promptSource}`);
+  const { readdir } = await import("node:fs/promises");
+  const promptFiles = (await readdir(promptDir)).filter((f) => f.endsWith(".md"));
+  if (promptFiles.length === 0) {
+    throw new Error(`No .md prompt files found in ${promptDir}`);
   }
   if (!(await exists(tokenizerSource))) {
     throw new Error(`Tokenizer source not found: ${tokenizerSource}`);
@@ -36,9 +37,12 @@ async function copyApiRuntimeAssets() {
     throw new Error(`DB migrations source not found: ${migrationsSource}`);
   }
 
-  for (const promptTarget of promptTargets) {
-    await mkdir(resolve(promptTarget, ".."), { recursive: true });
-    await copyFile(promptSource, promptTarget);
+  const promptTargets = [];
+  for (const file of promptFiles) {
+    const target = join(apiOut, file);
+    await mkdir(resolve(target, ".."), { recursive: true });
+    await copyFile(join(promptDir, file), target);
+    promptTargets.push(target);
   }
   for (const tokenizerTarget of tokenizerTargets) {
     await cp(tokenizerSource, tokenizerTarget, { recursive: true });

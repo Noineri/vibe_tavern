@@ -90,14 +90,17 @@ async function main() {
 		);
 	});
 
-	await step("Copying Script AI prompt", async () => {
-		const promptSource = join(ROOT, "services", "api", "assets", "script-ai-prompt.md");
-		const promptTarget = join(ANDROID_DIST, "script-ai-prompt.md");
-		if (!(await exists(promptSource))) {
-			throw new Error(`Script AI prompt source not found: ${promptSource}`);
+	await step("Copying AI assistant prompt files", async () => {
+		const { readdir } = await import("node:fs/promises");
+		const promptDir = join(ROOT, "services", "api", "assets");
+		const files = (await readdir(promptDir)).filter((f: string) => f.endsWith(".md"));
+		if (files.length === 0) {
+			throw new Error(`No .md prompt files found in ${promptDir}`);
 		}
-		await copyFile(promptSource, promptTarget);
-		console.log(`   → ${promptTarget}`);
+		for (const file of files) {
+			await copyFile(join(promptDir, file), join(ANDROID_DIST, file));
+			console.log(`   → ${join(ANDROID_DIST, file)}`);
+		}
 	});
 
 	await step("Copying DB migrations", async () => {
