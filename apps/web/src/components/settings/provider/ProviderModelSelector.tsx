@@ -21,6 +21,8 @@ interface ModelOption {
 }
 interface FavoriteModelOption { modelId: string; label: string | null; contextLength: number | null; }
 
+type LocalConnectionStatus = "unknown" | "checking" | "online" | "offline";
+
 interface ProviderModelSelectorProps {
   form: FormState;
   models: ModelOption[];
@@ -37,6 +39,9 @@ interface ProviderModelSelectorProps {
   dropdownRef: React.RefObject<HTMLDivElement | null>;
   onToggleFavoriteModel: (model: ModelOption) => void;
   requiresAuthForModels?: boolean;
+  isLocalProvider?: boolean;
+  localEndpoint?: string;
+  localConnectionStatus?: LocalConnectionStatus;
 }
 
 export function ProviderModelSelector({
@@ -55,6 +60,9 @@ export function ProviderModelSelector({
   dropdownRef,
   onToggleFavoriteModel,
   requiresAuthForModels,
+  isLocalProvider = false,
+  localEndpoint = "",
+  localConnectionStatus = "unknown",
 }: ProviderModelSelectorProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
@@ -69,6 +77,14 @@ export function ProviderModelSelector({
     if (!pricing || pricing.input === undefined || pricing.output === undefined) return null;
     return `$${pricing.input}/$${pricing.output} in/out Mtok`;
   };
+  const statusMeta: Record<LocalConnectionStatus, { label: string; className: string; dotClassName: string }> = {
+    unknown: { label: t("local_connection_unknown"), className: "border-border2 bg-s2 text-t3", dotClassName: "bg-t4" },
+    checking: { label: t("local_connection_checking"), className: "border-accent/30 bg-accent/10 text-accent-t", dotClassName: "bg-accent animate-pulse" },
+    online: { label: t("local_connection_online"), className: "border-success/30 bg-success/10 text-success", dotClassName: "bg-success" },
+    offline: { label: t("local_connection_offline"), className: "border-danger/30 bg-danger/10 text-danger", dotClassName: "bg-danger" },
+  };
+  const localStatus = statusMeta[localConnectionStatus];
+
   const sortedModels = [...filteredModels].sort((a, b) => {
     const aFav = favoriteIds.has(a.id);
     const bFav = favoriteIds.has(b.id);
@@ -83,6 +99,22 @@ export function ProviderModelSelector({
       >
         {t("model_label")}
       </div>
+      {isLocalProvider && (
+        <div className={cn("mb-3 flex flex-col gap-1.5 rounded-md border px-3 py-2 font-ui text-[12px] sm:flex-row sm:items-center sm:justify-between", localStatus.className)}>
+          <span className="inline-flex min-w-0 items-center gap-2">
+            <span className={cn("h-2 w-2 shrink-0 rounded-full", localStatus.dotClassName)} />
+            <span className="shrink-0 font-medium">{localStatus.label}</span>
+            {localEndpoint && (
+              <span className="min-w-0 truncate text-t3">
+                {t("local_connection_endpoint").replace("{url}", localEndpoint)}
+              </span>
+            )}
+          </span>
+          <button type="button" onClick={() => void onFetchModels()} disabled={fetching} className="self-start rounded border border-current/20 px-2 py-0.5 font-ui text-[11px] font-medium opacity-80 transition-opacity hover:opacity-100 disabled:opacity-50 sm:self-auto">
+            {fetching ? t("testing") : t("refresh_models")}
+          </button>
+        </div>
+      )}
       <div className="flex items-end gap-3">
         <div className="flex-1" ref={dropdownRef}>
           <label className={labelCls + " mb-[7px]"}>{t("selected_model_label")}</label>

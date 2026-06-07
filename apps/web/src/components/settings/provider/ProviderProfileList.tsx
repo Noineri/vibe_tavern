@@ -2,7 +2,7 @@ import React from 'react';
 import { useT } from '../../../i18n/context.js';
 import { useIsMobile } from '../../../hooks/use-mobile.js';
 import type { ProviderProfileRecord } from '../../../app-client.js';
-import { TYPE_LABELS } from '../../../provider-presets.js';
+import { PROVIDER_PRESETS, TYPE_LABELS } from '../../../provider-presets.js';
 import { Icons } from '../../shared/icons.js';
 import { cn } from '../../../lib/cn.js';
 
@@ -50,7 +50,11 @@ export function ProviderProfileList({
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {filteredProfiles.map((p) => (
+        {filteredProfiles.map((p) => {
+          const preset = PROVIDER_PRESETS.find((candidate) => candidate.id === p.providerPreset);
+          const hasRequiredAuth = preset?.noApiKey === true || p.hasStoredApiKey;
+
+          return (
           <div
             key={p.id}
             className={cn(
@@ -66,7 +70,7 @@ export function ProviderProfileList({
                 className={cn(
                   'h-2 w-2 shrink-0 rounded-full transition-colors',
                   activeProviderProfileId === p.id
-                    ? p.hasStoredApiKey
+                    ? hasRequiredAuth
                       ? 'bg-success'
                       : 'bg-danger'
                     : 'bg-t4'
@@ -89,7 +93,8 @@ export function ProviderProfileList({
               {isMobile && <div className="ml-auto shrink-0 text-t3"><Icons.Caret direction="r" /></div>}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
       <div
         className="mx-3 mt-3 cursor-pointer rounded-md border border-dashed border-border2 py-2 text-center font-ui text-[12px] font-medium text-t3 transition-colors hover:border-border hover:text-t1 hover:bg-s2"
