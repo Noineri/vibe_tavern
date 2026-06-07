@@ -360,16 +360,19 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
 
             {/* Stop Sequences — full width */}
             <div className={cn("mt-4", disabled && "opacity-40 pointer-events-none")}>
-              <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
-                {t("stop_seqs_label")}
-              </label>
+              <CustomTooltip content={t("stop_seqs_hint")}>
+                <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
+                  {t("stop_seqs_label")}
+                </label>
+              </CustomTooltip>
               <ChipInput
                 values={form.stopSequences}
                 onChange={(v) => updateForm('stopSequences', v)}
                 placeholder={t("stop_seqs_placeholder")}
                 disabled={disabled}
                 showPresets
-                tooltip={t("stop_seqs_hint")}
+                presetsLabel={t("special_chars_label")}
+                tooltip={t("special_chars_hint")}
               />
             </div>
 

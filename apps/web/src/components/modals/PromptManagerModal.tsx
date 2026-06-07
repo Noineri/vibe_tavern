@@ -13,6 +13,7 @@ import { PresetList, PromptFields } from "../settings/prompt/index.js";
 import { PromptOrderCanvas, type InjectionRow } from "../settings/prompt/InjectionTable.js";
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
+import { MasterDetailLayout } from "../shared/MasterDetailLayout.js";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -306,45 +307,68 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         />
       )}
 
-      <div
-        className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[880px] h-[840px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className={cn("shrink-0 items-start justify-between border-b border-border", isMobile ? "flex pt-4 px-4 pb-3" : "flex pt-[18px] px-5 pb-[14px]")}>
-          <div className="flex items-center gap-2">
-            {isMobile && mobileDetailOpen && (
+      <MasterDetailLayout
+        isMobile={isMobile}
+        isDetailOpen={mobileDetailOpen}
+        containerClassName="max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[880px] h-[840px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
+        masterClassName="flex w-[220px] shrink-0 flex-col border-r border-border bg-s1"
+        header={
+          <div className={cn("shrink-0 items-start justify-between border-b border-border", isMobile ? "flex pt-4 px-4 pb-3" : "flex pt-[18px] px-5 pb-[14px]")}>
+            <div className="flex items-center gap-2">
+              <div>
+                <div className={cn("font-body font-medium text-t1", isMobile ? "text-base" : "text-[calc(var(--ui-fs)+4px)] mb-0.5")}>
+                  {t("prompt_manager_title")}
+                  {dirty && (
+                    <CustomTooltip content={t("unsaved_changes_title")}>
+                    <span
+                      className="ml-1.5 inline-block h-[7px] w-[7px] shrink-0 rounded-full bg-accent align-middle"
+                    />
+                    </CustomTooltip>
+                  )}
+                </div>
+                {!isMobile && (
+                <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
+                  {t("prompt_manager_sub")}
+                </div>
+                )}
+              </div>
+            </div>
+            <div
+              className={cn("shrink-0 cursor-pointer items-center justify-center text-t3 transition-all hover:bg-s2 hover:text-t1", isMobile ? "flex h-10 w-10 rounded-lg active:bg-s2" : "flex h-[32px] w-[32px] rounded-[5px]")}
+              onClick={handleClose}
+            >
+              <Icons.Close />
+            </div>
+          </div>
+        }
+        mobileDetailHeader={
+          <div className="flex shrink-0 items-start justify-between border-b border-border pt-4 px-4 pb-3">
+            <div className="flex items-center gap-2">
               <button type="button" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-t3 active:bg-s2" onClick={() => setMobileDetailOpen(false)}>
                 <Icons.Caret direction="l" />
               </button>
-            )}
-            <div>
-              <div className={cn("font-body font-medium text-t1", isMobile ? "text-base" : "text-[calc(var(--ui-fs)+4px)] mb-0.5")}>
-                {t("prompt_manager_title")}
-                {dirty && (
-                  <CustomTooltip content={t("unsaved_changes_title")}>
-                  <span
-                    className="ml-1.5 inline-block h-[7px] w-[7px] shrink-0 rounded-full bg-accent align-middle"
-                  />
-                  </CustomTooltip>
-                )}
+              <div>
+                <div className="font-body font-medium text-t1 text-base mb-0.5">
+                  {t("prompt_manager_title")}
+                  {dirty && (
+                    <CustomTooltip content={t("unsaved_changes_title")}>
+                    <span
+                      className="ml-1.5 inline-block h-[7px] w-[7px] shrink-0 rounded-full bg-accent align-middle"
+                    />
+                    </CustomTooltip>
+                  )}
+                </div>
               </div>
-              {!isMobile && (
-              <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
-                {t("prompt_manager_sub")}
-              </div>
-              )}
+            </div>
+            <div
+              className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 transition-all hover:bg-s2 hover:text-t1"
+              onClick={handleClose}
+            >
+              <Icons.Close />
             </div>
           </div>
-          <div
-            className={cn("shrink-0 cursor-pointer items-center justify-center text-t3 transition-all hover:bg-s2 hover:text-t1", isMobile ? "flex h-10 w-10 rounded-lg active:bg-s2" : "flex h-[32px] w-[32px] rounded-[5px]")}
-            onClick={handleClose}
-          >
-            <Icons.Close />
-          </div>
-        </div>
-
-        <div className="flex min-h-0 flex-1">
-          {(!isMobile || !mobileDetailOpen) && (
+        }
+        masterContent={
           <PresetList
             presets={input.presets.map((p) => ({ id: p.id, name: p.name }))}
             activePresetId={input.activePresetId}
@@ -354,9 +378,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             onRename={handleRename}
             onImportPreset={() => setImportModalOpen(true)}
           />
-          )}
-          {(!isMobile || mobileDetailOpen) && (
-          <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+        }
+        detailContent={
+          <>
             <div className={cn("mt-4 flex shrink-0 items-center justify-between gap-3", isMobile ? "mx-3" : "mx-5")}>
               <div>
                 <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
@@ -414,47 +438,45 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               resetKey={activePreset?.id ?? null}
               hideChatPrompts={advancedMode}
             />
-          </div>
-          )}
-        </div>
-
-        {(!isMobile || mobileDetailOpen) && (
-        <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "flex-wrap px-3 py-2.5" : "py-3.5 px-5")}>
-          {activePreset && (
-          <span
-            className={cn("flex cursor-pointer items-center gap-1 font-ui text-t3 transition-all hover:text-t1", isMobile ? "text-[12px]" : "text-[calc(var(--ui-fs)-2px)]")}
-            onClick={handleDuplicate}
-          >
-            <Icons.Copy /> {t("duplicate_preset_btn")}
-          </span>
-          )}
-          {activePreset && input.presets.length > 1 && (
+          </>
+        }
+        footer={
+          <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "flex-wrap px-3 py-2.5" : "py-3.5 px-5")}>
+            {activePreset && (
             <span
               className={cn("flex cursor-pointer items-center gap-1 font-ui text-t3 transition-all hover:text-t1", isMobile ? "text-[12px]" : "text-[calc(var(--ui-fs)-2px)]")}
-              onClick={() => setConfirmDeleteOpen(true)}
+              onClick={handleDuplicate}
             >
-              <Icons.Trash /> {t("delete_preset")}
+              <Icons.Copy /> {t("duplicate_preset_btn")}
             </span>
-          )}
-          <div className="ml-auto flex min-w-0 items-center gap-2.5">
-            {!isMobile && (
-            <button type="button"
-              className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1"
-              onClick={handleClose}
-            >
-              {t("close")}
-            </button>
             )}
-            <SaveButton
-              dirty={dirty}
-              saveState={saveState}
-              onClick={handleSave}
-              label={t("save")}
-            />
+            {activePreset && input.presets.length > 1 && (
+              <span
+                className={cn("flex cursor-pointer items-center gap-1 font-ui text-t3 transition-all hover:text-t1", isMobile ? "text-[12px]" : "text-[calc(var(--ui-fs)-2px)]")}
+                onClick={() => setConfirmDeleteOpen(true)}
+              >
+                <Icons.Trash /> {t("delete_preset")}
+              </span>
+            )}
+            <div className="ml-auto flex min-w-0 items-center gap-2.5">
+              {!isMobile && (
+              <button type="button"
+                className="h-[37px] cursor-pointer rounded-md border border-border bg-surface py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1"
+                onClick={handleClose}
+              >
+                {t("close")}
+              </button>
+              )}
+              <SaveButton
+                dirty={dirty}
+                saveState={saveState}
+                onClick={handleSave}
+                label={t("save")}
+              />
+            </div>
           </div>
-        </div>
-        )}
-      </div>
+        }
+      />
     </Modal>
   );
 }
