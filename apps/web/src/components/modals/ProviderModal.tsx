@@ -3,8 +3,8 @@ import { useT } from "../../i18n/context.js";
 import { Modal } from "../shared/Modal.js";
 import { cn } from "../../lib/cn.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../../app-client.js";
-import { resolveLogitBiasSupport } from "@vibe-tavern/domain";
-import type { ProviderProbeResponse } from "@vibe-tavern/domain";
+import { resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
+import type { ProviderProbeResponse, SamplerCapabilityFlags } from "@vibe-tavern/domain";
 import { saveProviderDraftSchema } from "@vibe-tavern/api-contracts";
 import { PROVIDER_PRESETS } from "../../provider-presets.js";
 import { Icons } from "../shared/icons.js";
@@ -139,18 +139,19 @@ interface Capabilities {
   tools?: boolean;
   webSearch?: boolean;
   premium?: boolean;
+  samplers: SamplerCapabilityFlags;
 }
 
 function getCapabilities(type: string, providerPreset: string, model: string, endpoint: string): Capabilities {
   switch (type) {
     case "anthropic": case "google":
-      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: false, logitBias: false };
+      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: false, logitBias: false, samplers: resolveSamplerCapabilities(providerPreset, type) };
     case "ollama": case "llamacpp":
-      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: resolveLogitBiasSupport(providerPreset, model, endpoint).supported };
+      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: resolveLogitBiasSupport(providerPreset, model, endpoint).supported, samplers: resolveSamplerCapabilities(providerPreset, type) };
     case "koboldcpp":
-      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: false, logitBias: false };
+      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: false, logitBias: false, samplers: resolveSamplerCapabilities(providerPreset, type) };
     default:
-      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: resolveLogitBiasSupport(providerPreset, model, endpoint).supported };
+      return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: resolveLogitBiasSupport(providerPreset, model, endpoint).supported, samplers: resolveSamplerCapabilities(providerPreset, type) };
   }
 }
 
