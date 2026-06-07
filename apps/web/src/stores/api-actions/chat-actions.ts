@@ -38,6 +38,13 @@ function syncSnapshot(snapshot: AppSnapshot) {
   useSnapshotStore.getState().ingestSnapshot(snapshot);
 }
 
+function syncSelectedCharacterFromSnapshot(snapshot: AppSnapshot): void {
+  const characterId = snapshot.character?.id ?? snapshot.activeChat?.characterId ?? null;
+  if (characterId) {
+    useChatStore.getState().setSelectedCharacterId(characterId);
+  }
+}
+
 const pendingVariantSelectionsByChat = new Map<string, Set<Promise<void>>>();
 
 export async function waitForPendingVariantSelections(chatId: ChatId): Promise<void> {
@@ -54,6 +61,7 @@ export async function fetchChatAction(chatId: ChatId): Promise<void> {
   await waitForPendingVariantSelections(chatId);
   const snapshot = await fetchChat(chatId);
   syncSnapshot(snapshot);
+  syncSelectedCharacterFromSnapshot(snapshot);
 }
 
 export async function setChatPersonaAction(chatId: ChatId, personaId: string): Promise<void> {
@@ -65,6 +73,7 @@ export async function setChatPersonaAction(chatId: ChatId, personaId: string): P
 export async function createChatAction(characterId?: string): Promise<void> {
   const snapshot = await createChat(characterId);
   syncSnapshot(snapshot);
+  syncSelectedCharacterFromSnapshot(snapshot);
   // Auto-select the new chat
   const newChatId = snapshot.chats?.[0]?.id;
   if (newChatId) {
@@ -86,6 +95,7 @@ export async function deleteChatAction(chatId: ChatId): Promise<void> {
 export async function clearChatAction(chatId: ChatId): Promise<AppSnapshot> {
   const snapshot = await clearChat(chatId);
   syncSnapshot(snapshot);
+  syncSelectedCharacterFromSnapshot(snapshot);
   void fetchBootstrapAction({ silent: true });
   return snapshot;
 }
@@ -129,6 +139,7 @@ export async function switchChatAction(chatId: ChatId): Promise<void> {
   await waitForPendingVariantSelections(chatId);
   const snapshot = await fetchChat(chatId);
   syncSnapshot(snapshot);
+  syncSelectedCharacterFromSnapshot(snapshot);
 }
 
 export async function selectVariantAction(chatId: ChatId, messageId: string, variantIndex: number): Promise<void> {
