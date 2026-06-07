@@ -124,7 +124,7 @@ describe("buildSamplerConfig", () => {
           logitBias: [{ tokenId: 123, bias: -100, text: " bad", model: "gpt-4o-mini" }],
         }),
       );
-      expect((config.providerOptions!.openai_compat as Record<string, unknown>).logitBias).toEqual({ "123": -100 });
+      expect((config.providerOptions!.openai_compat as Record<string, unknown>).logit_bias).toEqual({ "123": -100 });
     });
 
     it("omits logit bias for mixed/router providers even when entries exist", () => {
@@ -135,7 +135,7 @@ describe("buildSamplerConfig", () => {
           logitBias: [{ tokenId: 123, bias: -100, text: " bad", model: "gpt-4o-mini" }],
         }),
       );
-      expect((config.providerOptions!.openai_compat as Record<string, unknown>).logitBias).toBeUndefined();
+      expect((config.providerOptions!.openai_compat as Record<string, unknown>).logit_bias).toBeUndefined();
     });
   });
 
@@ -263,7 +263,7 @@ describe("buildSamplerConfig", () => {
       expect(config.frequencyPenalty).toBe(0.5);
       expect(config.presencePenalty).toBe(0.3);
       expect(config.seed).toBe(42);
-      expect((config.providerOptions!.openai_compat as Record<string, unknown>).logitBias).toBeUndefined();
+      expect((config.providerOptions!.openai_compat as Record<string, unknown>).logit_bias).toBeUndefined();
     });
   });
 
