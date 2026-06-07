@@ -23,6 +23,18 @@ export interface StoredProviderProfileRecord {
   topK: number;
   minP: number;
   topA: number;
+  typicalP: number;
+  tfsZ: number;
+  repeatLastN: number;
+  mirostat: number;
+  mirostatTau: number;
+  mirostatEta: number;
+  dryMultiplier: number;
+  dryBase: number;
+  dryAllowedLength: number;
+  drySequenceBreakers: string[];
+  xtcThreshold: number;
+  xtcProbability: number;
   frequencyPenalty: number;
   presencePenalty: number;
   repetitionPenalty: number;
