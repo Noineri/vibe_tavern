@@ -140,6 +140,21 @@ async function prepareAiAssistantRequest(
     providerProfileId: request.providerProfileId,
   });
 
+  // 2b. md_import: skip context resolution, build simple messages
+  if (request.mode === "md_import") {
+    const userContent = request.existingContent ?? request.instruction ?? "";
+    return {
+      config,
+      profile,
+      modelName,
+      assembly: null as any,
+      messages: [
+        { role: "system" as const, content: systemPrompt },
+        { role: "user" as const, content: userContent },
+      ],
+    };
+  }
+
   // 3. Resolve context bindings
   const resolvedContext: ResolvedContext = await resolveContext(deps, {
     characterIds: request.characterIds,
