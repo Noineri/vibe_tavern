@@ -967,5 +967,16 @@
   "rename_branch_prompt": "Имя ветки:",
   "ai_quickpill_settings": "Настройки ИИ",
   "ai_quickpill_recent_messages": "Последние сообщения",
-  "ai_quickpill_append": "Дополнить"
+  "ai_quickpill_append": "Дополнить",
+  "import_md_title": "Импорт из Markdown",
+  "import_md_source": "Источник",
+  "import_md_dropzone": "Перетащите .md файл или нажмите для выбора",
+  "import_md_paste_label": "Или вставьте текст ниже",
+  "import_md_paste_placeholder": "Вставьте описание персонажа в формате Markdown...",
+  "import_md_parsed": "Распознанный персонаж",
+  "import_md_apply": "Применить к редактору",
+  "import_md_start": "Импорт",
+  "import_md_parsing": "Распознаю персонажа...",
+  "ai_param_temperature": "Температура",
+  "ai_param_max_tokens": "Макс. токенов"
 }

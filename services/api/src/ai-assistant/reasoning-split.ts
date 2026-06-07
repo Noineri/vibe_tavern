@@ -1,8 +1,9 @@
 import { REASONING_END_MARKER, REASONING_START_MARKER } from "../ai/openai-reasoning-fetch.js";
 
 export interface AiAssistantStreamChunk {
-  type: "text" | "reasoning" | "error" | "done";
+  type: "text" | "reasoning" | "partial_json" | "error" | "done";
   text?: string;
+  json?: Record<string, unknown>;
   error?: string;
 }
 
