@@ -6,7 +6,7 @@
  * the `reasoning_content` SSE field. This function strips those tags from
  * the main content and returns the reasoning separately.
  *
- * Supported tags: <thinking>, ывал, <thought> (and their closing tags).
+ * Supported tags: <thinking>, <think>, <thought>, <CoT> (and their closing tags).
  *
  * If reasoning was already extracted by the stream executor (via marker
  * protocol or native reasoning parts), the caller's `reasoning` argument
@@ -16,9 +16,9 @@ export function extractThinkingTags(
 	text: string,
 	existingReasoning?: string,
 ): { mainContent: string; reasoning: string | undefined } {
-	const THINKING_RE = /<(?:thinking|think|thought)>[\s\S]*?<\/(?:thinking|think|thought)>/gi;
-	const OPEN_TAG_RE = /^<(?:thinking|think|thought)>\s*/i;
-	const CLOSE_TAG_RE = /\s*<\/(?:thinking|think|thought)>$/i;
+	const THINKING_RE = /<(?:thinking|think|thought|CoT)>[\s\S]*?<\/(?:thinking|think|thought|CoT)>/gi;
+	const OPEN_TAG_RE = /^<(?:thinking|think|thought|CoT)>\s*/i;
+	const CLOSE_TAG_RE = /\s*<\/(?:thinking|think|thought|CoT)>$/i;
 
 	const matches = text.match(THINKING_RE);
 
