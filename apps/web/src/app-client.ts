@@ -1125,12 +1125,13 @@ export async function importScript(body: { format: "js"; code: string; name?: st
 // ── AI Assistant SSE ──────────────────────────────────────────────────
 
 export interface AiAssistantChunk {
-  type: "text" | "reasoning" | "error" | "done";
+  type: "text" | "reasoning" | "partial_json" | "error" | "done";
   text?: string;
+  json?: Record<string, unknown>;
   error?: string;
 }
 
-export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate";
+export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import";
 
 export interface AiAssistantRequestBody {
   mode: AiAssistantMode;

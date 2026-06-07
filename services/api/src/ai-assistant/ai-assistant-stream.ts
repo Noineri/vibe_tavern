@@ -9,7 +9,7 @@
  * parsed JSON result is emitted to the client.
  */
 
-import { streamText } from "ai";
+import { streamText, streamObject } from "ai";
 import type { LanguageModel } from "ai";
 import {
   assemblePrompt,
@@ -21,6 +21,7 @@ import {
 import type { ResolvedContext, ContextResolverDeps } from "./context-resolver.js";
 import { resolveContext, toPipelineCharacters, toPipelinePersonas, toPipelineLore } from "./context-resolver.js";
 import { getModeConfig } from "./ai-assistant-modes.js";
+import { mdImportSchema, type MdImportResult } from "./md-import-schema.js";
 import {
   resolveSystemPrompt,
 } from "./ai-assistant-prompts.js";
@@ -213,6 +214,29 @@ export async function* streamAiAssistant(
     const { config, profile, modelName, messages } = await prepareAiAssistantRequest(request, deps);
     const aiModel = deps.resolveModel(profile, modelName);
 
+    // md_import: use streamObject for structured JSON output
+    if (request.mode === "md_import") {
+      const { fullStream } = await streamObject({
+        model: aiModel,
+        schema: mdImportSchema,
+        messages,
+        allowSystemInMessages: true,
+        temperature: 0.3,
+      });
+
+      for await (const event of fullStream) {
+        if (event.type === "text-delta") {
+          yield { type: "reasoning", text: event.textDelta };
+        } else if (event.type === "object") {
+          yield { type: "partial_json", json: event.object as Record<string, unknown> };
+        } else if (event.type === "error") {
+          yield { type: "error", error: String(event.error) };
+        }
+      }
+      yield { type: "done" };
+      return;
+    }
+
     // 6. Stream via AI SDK
     const result = await streamText({
       model: aiModel,
@@ -311,6 +335,11 @@ function buildUserMessage(
 
     case "chat_impersonate": {
       return request.instruction || "Write a message as this persona would speak in the current conversation.";
+    }
+
+    case "md_import": {
+      const content = request.existingContent ?? request.instruction;
+      return `Parse this character description into structured data:\n\n${content}`;
     }
 
     default:
