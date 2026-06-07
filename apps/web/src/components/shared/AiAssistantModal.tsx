@@ -92,6 +92,37 @@ export function AiAssistantModal({
   const [appendMode, setAppendMode] = useState(false);
   const [recentMessageCount, setRecentMessageCount] = useState(20);
 
+  // BottomSheet drag state
+  const sheetDragRef = useRef({ active: false, startY: 0, currentY: 0 });
+  const sheetRef = useRef<HTMLDivElement>(null);
+
+  const onSheetTouchStart = useCallback((e: React.TouchEvent) => {
+    sheetDragRef.current.active = true;
+    sheetDragRef.current.startY = e.touches[0].clientY;
+    sheetDragRef.current.currentY = e.touches[0].clientY;
+  }, []);
+
+  const onSheetTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!sheetDragRef.current.active) return;
+    const currentY = e.touches[0].clientY;
+    sheetDragRef.current.currentY = currentY;
+    const delta = currentY - sheetDragRef.current.startY;
+    if (delta > 0 && sheetRef.current) {
+      sheetRef.current.style.transform = `translateY(${delta}px)`;
+    }
+  }, []);
+
+  const onSheetTouchEnd = useCallback(() => {
+    if (!sheetDragRef.current.active) return;
+    sheetDragRef.current.active = false;
+    const delta = sheetDragRef.current.currentY - sheetDragRef.current.startY;
+    if (sheetRef.current) {
+      sheetRef.current.style.transform = '';
+      sheetRef.current.style.transition = '';
+    }
+    if (delta > 80) onClose();
+  }, [onClose]);
+
   // Full specific
   const [prompt, setPrompt] = useState("");
   const [includeCharacter, setIncludeCharacter] = useState(true);
@@ -331,11 +362,9 @@ export function AiAssistantModal({
   const title = isFull ? t("script_ai_helper") : t("ai_quickpill_settings");
   const contentWidth = isFull ? "w-[560px]" : "w-[380px]";
 
-  return (
-    <Modal open={isOpen} onClose={onClose} title={title} compact={!isFull}>
-      <div className={cn("flex flex-col bg-surface overflow-hidden border border-border", isMobile && isFull ? "w-full h-full rounded-none" : cn("rounded-xl max-w-[90vw]", contentWidth, isFull && "max-h-[85vh]"))} onClick={(e) => e.stopPropagation()}>
-        
-        {/* Header */}
+  const contentBody = (
+    <>
+      {/* Header */}
         <div className="flex items-center justify-between border-b border-border shrink-0" style={{ padding: "16px 20px" }}>
           <span className="text-sm font-semibold text-t1">{title}</span>
           <div className={cn("flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1", streaming && "pointer-events-none opacity-30")} onClick={onClose}>
@@ -499,6 +528,34 @@ export function AiAssistantModal({
             )}
           </div>
         )}
+      </>
+  );
+
+  if (isMobile && !isFull) {
+    return (
+      <div className="fixed inset-0 z-[500] bg-black/55 backdrop-blur-[2px]" onClick={onClose}>
+        <div
+          ref={sheetRef}
+          className="fixed inset-x-0 bottom-0 z-[501] flex max-h-[85vh] flex-col overflow-hidden rounded-t-2xl border-t border-border2 bg-surface pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
+          style={{ animation: "0.2s ease-out 0s 1 normal none running slideUp", transition: "transform 0s" }}
+          onClick={(e) => e.stopPropagation()}
+          onTouchStart={onSheetTouchStart}
+          onTouchMove={onSheetTouchMove}
+          onTouchEnd={onSheetTouchEnd}
+        >
+          <div className="flex justify-center pt-2 pb-1 shrink-0">
+            <div className="h-1 w-10 rounded-full bg-border" />
+          </div>
+          {contentBody}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Modal open={isOpen} onClose={onClose} title={title} compact={!isFull}>
+      <div className={cn("flex flex-col bg-surface overflow-hidden border border-border", isMobile && isFull ? "w-full h-full rounded-none" : cn("rounded-xl max-w-[90vw]", contentWidth, isFull && "max-h-[85vh]"))} onClick={(e) => e.stopPropagation()}>
+        {contentBody}
       </div>
     </Modal>
   );

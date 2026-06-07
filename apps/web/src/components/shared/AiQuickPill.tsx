@@ -71,7 +71,8 @@ export function AiQuickPill({
     <>
       <div
         className={cn(
-          "inline-flex items-center rounded-full bg-accent-dim overflow-hidden",
+          "inline-flex items-center overflow-hidden",
+          size === "lg" ? "rounded-md bg-s3" : "rounded-full bg-accent-dim",
           heightClass,
           disabled && "opacity-40 pointer-events-none",
         )}
@@ -80,28 +81,29 @@ export function AiQuickPill({
           <button
             type="button"
             className={cn(
-              "flex h-full items-center justify-center text-accent-t transition-all",
+              "flex h-full items-center justify-center transition-all",
               pxClass,
-              "hover:bg-accent/20",
+              size === "lg" ? "text-t3 active:bg-s2" : "text-accent-t hover:bg-accent/20",
               loading && "pointer-events-none",
             )}
             onClick={onGenerate}
             disabled={disabled || loading}
           >
             {loading ? (
-              <span className="block h-[13px] w-[13px] animate-spin rounded-full border-2 border-t-transparent border-accent-t" />
+              <span className={cn("block h-[13px] w-[13px] animate-spin rounded-full border-2 border-t-transparent", size === "lg" ? "border-t3" : "border-accent-t")} />
             ) : (
               <Ic.sparkles />
             )}
           </button>
         </CustomTooltip>
-        <div className="w-px h-3 bg-accent/20" />
+        <div className={cn("w-px h-3", size === "lg" ? "bg-border" : "bg-accent/20")} />
         <CustomTooltip content={gearTooltip}>
           <button
             type="button"
             className={cn(
-              "flex h-full items-center justify-center text-accent-t/70 transition-all hover:bg-accent/20 hover:text-accent-t",
+              "flex h-full items-center justify-center transition-all",
               pxClass,
+              size === "lg" ? "text-t3 active:bg-s2" : "text-accent-t/70 hover:bg-accent/20 hover:text-accent-t",
             )}
             onClick={() => setSettingsOpen(true)}
             disabled={disabled}
