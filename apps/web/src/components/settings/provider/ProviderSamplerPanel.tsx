@@ -60,13 +60,14 @@ function SamplerField({
           )}
         />
         <NumberInput
-          className="h-[30px] w-[110px] shrink-0"
+          className="h-[30px] w-[60px] shrink-0"
           min={min}
           max={max}
           step={step}
           value={val}
           onChange={onChange}
           disabled={disabled}
+          hideControls
         />
       </div>
     </div>
