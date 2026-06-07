@@ -36,16 +36,30 @@ function cleanAiCode(raw: string): string {
   return code.trim();
 }
 
+export interface MdImportResult {
+  name?: string;
+  tagline?: string;
+  description?: string;
+  personality?: string;
+  scenario?: string;
+  firstMessage?: string;
+  exampleMessages?: string[];
+  creatorNotes?: string;
+  additionalCharacters?: Array<{ name: string; description?: string; personality?: string }>;
+}
+
 export interface AiAssistantModalProps {
   mode: "full" | "quickpill";
   isOpen: boolean;
   onClose: () => void;
 
   // --- Full Mode Props ---
-  apiMode?: "script" | "lore_entry";
+  apiMode?: "script" | "lore_entry" | "md_import";
   existingContent?: string;
   onInsert?: (text: string) => void;
   onReplace?: (text: string) => void;
+  /** md_import: callback with checked fields once user clicks Apply. */
+  onMdImportApply?: (fields: Partial<MdImportResult>) => void;
   scopeContext?: {
     characterId?: string;
     personaId?: string | null;
@@ -66,6 +80,7 @@ export function AiAssistantModal({
   existingContent,
   onInsert,
   onReplace,
+  onMdImportApply,
   scopeContext,
   settings,
   onSettingsChange,
@@ -136,6 +151,17 @@ export function AiAssistantModal({
   const [promptTokenCount, setPromptTokenCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // md_import state
+  const [mdContent, setMdContent] = useState("");
+  const [parsedFields, setParsedFields] = useState<Partial<MdImportResult>>({});
+  const [checkedFields, setCheckedFields] = useState<Set<string>>(new Set());
+  const [mdDragOver, setMdDragOver] = useState(false);
+  const mdFileRef = useRef<HTMLInputElement>(null);
+
+  // AI generation params (shared across full modes)
+  const [aiMaxTokens, setAiMaxTokens] = useState<number | null>(null);
+  const [aiTemperature, setAiTemperature] = useState<number | null>(null);
+
   const abortRef = useRef<AbortController | null>(null);
 
   // --- Initialization ---
@@ -155,6 +181,9 @@ export function AiAssistantModal({
       setStreamedReasoning("");
       setError(null);
       setPromptTokenCount(null);
+      setMdContent("");
+      setParsedFields({});
+      setCheckedFields(new Set());
     }
   }, [isOpen, mode, settings, bootstrapUiSettings]);
 
@@ -249,6 +278,18 @@ export function AiAssistantModal({
   // --- Full Mode Request Building ---
   const buildAiRequest = useCallback((): AiAssistantRequestBody | null => {
     if (!providerId || !apiMode) return null;
+    if (apiMode === "md_import") {
+      return {
+        mode: "md_import",
+        instruction: "",
+        existingContent: mdContent || undefined,
+        providerProfileId: providerId,
+        model: modelName || undefined,
+        enabledLayers: [],
+        maxOutputTokens: aiMaxTokens ?? undefined,
+        temperature: aiTemperature ?? 0,
+      };
+    }
     return {
       mode: apiMode,
       instruction: prompt,
@@ -263,6 +304,8 @@ export function AiAssistantModal({
       characterIds: includeCharacter && scopeContext?.characterId ? [scopeContext.characterId] : [],
       personaIds: includePersona && scopeContext?.personaId ? [scopeContext.personaId] : [],
       lorebookIds: selectedLorebookIds,
+      maxOutputTokens: aiMaxTokens ?? undefined,
+      temperature: aiTemperature ?? undefined,
     };
   }, [apiMode, existingContent, includeCharacter, includePersona, modelName, prompt, providerId, scopeContext?.characterId, scopeContext?.personaId, selectedLorebookIds.join("\u0000")]);
 
@@ -292,6 +335,56 @@ export function AiAssistantModal({
 
   // --- Generation ---
   const handleGenerate = async () => {
+    if (apiMode === "md_import") {
+      if (!providerId || !mdContent.trim()) return;
+      persistAiModelSelection(providerId, modelName || null);
+      setStreaming(true);
+      setError(null);
+      setParsedFields({});
+      setCheckedFields(new Set());
+      setStreamedReasoning("");
+
+      const request: AiAssistantRequestBody = {
+        mode: "md_import",
+        instruction: "",
+        existingContent: mdContent,
+        providerProfileId: providerId,
+        model: modelName || undefined,
+        enabledLayers: [],
+        maxOutputTokens: aiMaxTokens ?? undefined,
+        temperature: aiTemperature ?? 0,
+      };
+
+      const ac = new AbortController();
+      abortRef.current = ac;
+
+      try {
+        for await (const chunk of streamAiAssistant(request, { signal: ac.signal })) {
+          if (chunk.type === "reasoning" && chunk.text) {
+            setStreamedReasoning(prev => prev + chunk.text);
+          }
+          if (chunk.type === "partial_json" && chunk.json) {
+            setParsedFields(chunk.json as Partial<MdImportResult>);
+            setCheckedFields(prev => {
+              const next = new Set(prev);
+              for (const [key, value] of Object.entries(chunk.json!)) {
+                if (value != null && value !== "" && !(Array.isArray(value) && value.length === 0)) {
+                  next.add(key);
+                }
+              }
+              return next;
+            });
+          }
+          if (chunk.type === "error" && chunk.error) { setError(chunk.error); setStreaming(false); return; }
+          if (chunk.type === "done") { setStreaming(false); return; }
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name !== "AbortError") setError(String(err));
+        setStreaming(false);
+      }
+      return;
+    }
+
     const request = buildAiRequest();
     if (!request || !prompt.trim()) return;
     persistAiModelSelection(providerId, modelName || null);
@@ -333,6 +426,9 @@ export function AiAssistantModal({
     setStreamedOutput("");
     setStreamedReasoning("");
     setPrompt("");
+    setMdContent("");
+    setParsedFields({});
+    setCheckedFields(new Set());
     onClose();
   };
 
@@ -344,6 +440,17 @@ export function AiAssistantModal({
   const handleActionReplace = () => {
     if (!cleanedOutput || !onReplace) return;
     onReplace(cleanedOutput);
+    resetAndClose();
+  };
+
+  const handleMdImportApply = () => {
+    if (!onMdImportApply) return;
+    const result: Partial<MdImportResult> = {};
+    for (const key of checkedFields) {
+      const value = parsedFields[key as keyof MdImportResult];
+      if (value != null) (result as Record<string, unknown>)[key] = value;
+    }
+    onMdImportApply(result);
     resetAndClose();
   };
 
@@ -359,8 +466,9 @@ export function AiAssistantModal({
 
   // Render variables
   const isFull = mode === "full";
-  const title = isFull ? t("script_ai_helper") : t("ai_quickpill_settings");
-  const contentWidth = isFull ? "w-[560px]" : "w-[380px]";
+  const isMdImport = apiMode === "md_import";
+  const title = isMdImport ? t("import_md_title") : isFull ? t("script_ai_helper") : t("ai_quickpill_settings");
+  const contentWidth = isMdImport ? "w-[620px]" : isFull ? "w-[560px]" : "w-[380px]";
 
   const contentBody = (
     <>
@@ -418,8 +526,130 @@ export function AiAssistantModal({
                 </div>
               )}
 
-              {/* FULL SPECIFIC */}
+              {/* Generation params — shared for all full modes */}
               {isFull && (
+                <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 16 }}>
+                  <div>
+                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_param_temperature")}</label>
+                    <div className="flex items-center gap-2">
+                      <input type="range" min={0} max={2} step={0.1} value={aiTemperature ?? (isMdImport ? 0 : 0.3)} onChange={(e) => setAiTemperature(Number(e.target.value))} className="flex-1 accent-accent" />
+                      <span className="w-8 text-right font-ui text-[11px] tabular-nums text-t3">{(aiTemperature ?? (isMdImport ? 0 : 0.3)).toFixed(1)}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_param_max_tokens")}</label>
+                    <NumberInput min={256} max={64000} value={aiMaxTokens ?? (isMdImport ? 10000 : 4096)} onChange={(v) => setAiMaxTokens(v)} className="w-full" />
+                  </div>
+                </div>
+              )}
+
+              {/* MD IMPORT SPECIFIC */}
+              {isFull && isMdImport && (
+                <>
+                  {/* Dropzone */}
+                  <div style={{ marginBottom: 16 }}>
+                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("import_md_source")}</label>
+                    <div
+                      className={cn(
+                        "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 transition-colors",
+                        mdDragOver ? "border-accent bg-accent-dim/40" : "border-border bg-s2 hover:border-accent hover:bg-accent-dim/30",
+                      )}
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setMdDragOver(true); }}
+                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setMdDragOver(false); }}
+                      onDrop={(e) => {
+                        e.preventDefault(); e.stopPropagation(); setMdDragOver(false);
+                        const file = e.dataTransfer.files?.[0];
+                        if (file) void file.text().then(setMdContent);
+                      }}
+                      onClick={() => mdFileRef.current?.click()}
+                    >
+                      <input ref={mdFileRef} type="file" accept=".md,.txt,.markdown" className="hidden" onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void file.text().then(setMdContent);
+                      }} />
+                      <Ic.import />
+                      <span className="font-ui text-[12px] text-t3">{t("import_md_dropzone")}</span>
+                    </div>
+                  </div>
+
+                  {/* Paste area */}
+                  <div style={{ marginBottom: 16 }}>
+                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("import_md_paste_label")}</label>
+                    <AutoTextarea
+                      className="w-full min-h-[120px] rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-mono text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent resize-none"
+                      style={{}}
+                      maxHeight={300}
+                      placeholder={t("import_md_paste_placeholder")}
+                      value={mdContent}
+                      onChange={(e) => setMdContent(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Reasoning / raw JSON output */}
+                  {streamedReasoning && (
+                    <div style={{ marginBottom: 16 }}>
+                      <MessageReasoning reasoning={streamedReasoning} />
+                    </div>
+                  )}
+
+                  {/* No parsed fields yet but still streaming */}
+                  {streaming && Object.keys(parsedFields).length === 0 && !streamedReasoning && (
+                    <div className="flex items-center gap-2 rounded-md border border-border bg-s2 px-3 py-3" style={{ marginBottom: 16 }}>
+                      <span className="animate-spin text-accent">⟳</span>
+                      <span className="font-ui text-[12px] text-t3">{t("import_md_parsing")}</span>
+                    </div>
+                  )}
+
+                  {/* Parsed fields preview */}
+                  {Object.keys(parsedFields).length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("import_md_parsed")}{streaming && <span className="ml-2 animate-pulse text-accent">●</span>}</div>
+                      <div className="flex flex-col gap-2">
+                        {(Object.entries(parsedFields) as [string, unknown][]).map(([key, value]) => {
+                          if (value == null || value === "" || (Array.isArray(value) && value.length === 0)) return null;
+                          if (key === "additionalCharacters") {
+                            const chars = value as Array<{ name: string; description?: string }>;
+                            return (
+                              <div key={key} className="flex items-start gap-2 rounded-md border border-border bg-bg px-3 py-2">
+                                <input type="checkbox" className="mt-0.5 accent-accent" checked={checkedFields.has(key)} onChange={(e) => {
+                                  setCheckedFields(prev => { const n = new Set(prev); e.target.checked ? n.add(key) : n.delete(key); return n; });
+                                }} />
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-[11px] uppercase text-t3">{key}</div>
+                                  <div className="text-[12px] text-t1">{chars.map(c => c.name).join(", ")}</div>
+                                </div>
+                              </div>
+                            );
+                          }
+                          const str = Array.isArray(value) ? (value as string[]).join("\n---\n") : String(value);
+                          const preview = str.length > 200 ? str.slice(0, 200) + "..." : str;
+                          return (
+                            <div key={key} className="flex items-start gap-2 rounded-md border border-border bg-bg px-3 py-2">
+                              <input type="checkbox" className="mt-0.5 accent-accent" checked={checkedFields.has(key)} onChange={(e) => {
+                                setCheckedFields(prev => { const n = new Set(prev); e.target.checked ? n.add(key) : n.delete(key); return n; });
+                              }} />
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[11px] uppercase text-t3">{key}</div>
+                                <div className="whitespace-pre-wrap font-mono text-[12px] leading-[1.4] text-t1">{preview}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {error && (
+                    <div className="rounded-md border border-danger bg-danger-dim" style={{ padding: 10, marginBottom: 12 }}>
+                      <div className="text-[11px] font-semibold uppercase text-danger-text">{t("script_ai_error")}</div>
+                      <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">{error}</pre>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* FULL SPECIFIC */}
+              {isFull && !isMdImport && (
                 <>
                   <div style={{ marginBottom: 16 }}>
                     <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_context")}</label>
@@ -504,6 +734,17 @@ export function AiAssistantModal({
               <button type="button" className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 text-[12px] font-medium text-on-accent transition-all hover:opacity-90" onClick={handleQuickpillApply}>
                 {t("done_btn")}
               </button>
+            ) : isMdImport ? (
+              <>
+                {Object.keys(parsedFields).length > 0 && !streaming && (
+                  <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleMdImportApply} disabled={checkedFields.size === 0}>{t("import_md_apply")}</button>
+                )}
+                {streaming ? (
+                  <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
+                ) : (
+                  <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", providerId && mdContent.trim() ? "bg-accent text-on-accent" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleGenerate} disabled={!providerId || !mdContent.trim()}>{t("import_md_start")}</button>
+                )}
+              </>
             ) : (
               <>
                 {streamedOutput && !streaming && (

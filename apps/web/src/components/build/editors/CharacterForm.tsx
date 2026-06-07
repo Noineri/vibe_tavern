@@ -6,6 +6,7 @@ import { Ic } from "../../shared/icons";
 import { cn } from "../../../lib/cn";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CharacterImportModal } from "../../modals/ImportModals.js";
+import { AiAssistantModal, type MdImportResult } from "../../shared/AiAssistantModal.js";
 import { extractPngMetadata, parseCharacterMetadata } from "../../../lib/png-reader";
 import { useTokenCount } from "../../../hooks/use-token-count.js";
 import { useT } from "../../../i18n/context.js";
@@ -87,6 +88,7 @@ export function CharacterForm({
   const [tagInput, setTagInput] = useState("");
   const [importError, setImportError] = useState("");
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [mdImportOpen, setMdImportOpen] = useState(false);
   const avaInputRef = useRef<HTMLInputElement>(null);
   const [avatarOrientation, setAvatarOrientation] = useState<"portrait" | "landscape" | null>(null);
 
@@ -154,6 +156,22 @@ export function CharacterForm({
         setImportError(err instanceof Error ? err.message : t("import_failed"));
       }
     })();
+  }
+
+  function handleMdImportApply(fields: Partial<MdImportResult>) {
+    const merged: Partial<BuildCharacterDraft> = {};
+    if (fields.name) merged.name = fields.name;
+    if (fields.tagline) merged.description = fields.tagline;
+    if (fields.description) merged.description = (merged.description ? merged.description + "\n\n" : "") + fields.description;
+    if (fields.personality) merged.personalitySummary = fields.personality;
+    if (fields.scenario) merged.scenario = fields.scenario;
+    if (fields.firstMessage) merged.firstMessage = fields.firstMessage;
+    if (fields.exampleMessages?.length) merged.mesExample = fields.exampleMessages.join("\n<START>\n");
+    if (fields.creatorNotes) merged.creatorNotes = fields.creatorNotes;
+    if (Object.keys(merged).length > 0) {
+      form.reset({ ...form.getValues(), ...merged } as BuildCharacterDraft);
+      onAfterImport?.();
+    }
   }
 
   function toggleTag(tag: string) {
@@ -266,6 +284,16 @@ export function CharacterForm({
             {Ic.import()}
           </button>
           </CustomTooltip>
+          <CustomTooltip content={t("import_md_title")}>
+          <button type="button"
+            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
+            style={{ height: 28, width: 28 }}
+            onClick={() => setMdImportOpen(true)}
+            disabled={isSaving}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v4h4"/><path d="M6 10h4"/></svg>
+          </button>
+          </CustomTooltip>
           <button type="button"
             className="cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
             style={{ height: 28, padding: "0 14px" }}
@@ -286,6 +314,13 @@ export function CharacterForm({
             disabled={isSaving}
           >
             {Ic.import()}
+          </button>
+          <button type="button"
+            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
+            onClick={() => setMdImportOpen(true)}
+            disabled={isSaving}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v4h4"/><path d="M6 10h4"/></svg>
           </button>
           <button type="button"
             className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
@@ -617,6 +652,14 @@ export function CharacterForm({
           onImportFiles={handleImportFiles}
         />
       )}
+
+      <AiAssistantModal
+        mode="full"
+        isOpen={mdImportOpen}
+        onClose={() => setMdImportOpen(false)}
+        apiMode="md_import"
+        onMdImportApply={handleMdImportApply}
+      />
     </div>
   );
 }

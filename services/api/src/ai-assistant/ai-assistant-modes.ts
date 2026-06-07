@@ -65,6 +65,14 @@ const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
     outputFormat: "text",
     jsonSchemaHint: null,
   },
+  md_import: {
+    mode: "md_import",
+    presetKey: "md_import",
+    defaultPromptFile: "md-import-prompt.md",
+    stripReasoning: true,
+    outputFormat: "json",
+    jsonSchemaHint: '{ "name": "...", "tagline": "...", "description": "...", "personality": "...", "scenario": "...", "firstMessage": "...", "exampleMessages": ["..."], "creatorNotes": "...", "additionalCharacters": [{ "name": "...", "description": "..." }] }',
+  },
 };
 
 export function getModeConfig(mode: AiAssistantMode): AiAssistantModeConfig {

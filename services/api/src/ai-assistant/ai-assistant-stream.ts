@@ -9,7 +9,7 @@
  * parsed JSON result is emitted to the client.
  */
 
-import { streamText } from "ai";
+import { streamText, streamObject } from "ai";
 import type { LanguageModel } from "ai";
 import {
   assemblePrompt,
@@ -21,6 +21,7 @@ import {
 import type { ResolvedContext, ContextResolverDeps } from "./context-resolver.js";
 import { resolveContext, toPipelineCharacters, toPipelinePersonas, toPipelineLore } from "./context-resolver.js";
 import { getModeConfig } from "./ai-assistant-modes.js";
+import { mdImportSchema, type MdImportResult } from "./md-import-schema.js";
 import {
   resolveSystemPrompt,
 } from "./ai-assistant-prompts.js";
@@ -69,6 +70,12 @@ export interface AiAssistantStreamRequest {
   existingSecondaryKeys?: string[];
   /** Entry's activation logic mode. */
   logic?: string;
+
+  // MD import extras
+  /** Max output tokens for structured generation (md_import). Default: 10000. */
+  maxOutputTokens?: number;
+  /** Override temperature for this request. Per-mode defaults used if omitted. */
+  temperature?: number;
 }
 
 export interface StreamDeps extends ContextResolverDeps {
@@ -213,12 +220,56 @@ export async function* streamAiAssistant(
     const { config, profile, modelName, messages } = await prepareAiAssistantRequest(request, deps);
     const aiModel = deps.resolveModel(profile, modelName);
 
+    // md_import: use streamObject for structured JSON output
+    if (request.mode === "md_import") {
+      deps.logDebug?.("api.ai-assistant.md-import.start", {
+        model: modelName,
+        messagesCount: messages.length,
+        contentLength: request.existingContent?.length ?? 0,
+      });
+
+      // Emit early text so the client knows the connection is alive
+      yield { type: "reasoning", text: "Parsing character data...\n" };
+
+      try {
+        const { fullStream } = await streamObject({
+          model: aiModel,
+          schema: mdImportSchema,
+          messages,
+          allowSystemInMessages: true,
+          temperature: request.temperature ?? 0,
+          maxOutputTokens: request.maxOutputTokens ?? 10000,
+        });
+
+        let eventCount = 0;
+        for await (const event of fullStream) {
+          eventCount++;
+          if (event.type === "text-delta") {
+            yield { type: "reasoning", text: event.textDelta };
+          } else if (event.type === "object") {
+            yield { type: "partial_json", json: event.object as Record<string, unknown> };
+          } else if (event.type === "error") {
+            deps.logDebug?.("api.ai-assistant.md-import.error", { error: String(event.error), eventCount });
+            yield { type: "error", error: String(event.error) };
+          }
+        }
+
+        deps.logDebug?.("api.ai-assistant.md-import.done", { eventCount });
+      } catch (streamErr) {
+        const msg = streamErr instanceof Error ? streamErr.message : String(streamErr);
+        deps.logDebug?.("api.ai-assistant.md-import.stream-error", { error: msg });
+        yield { type: "error", error: `streamObject failed: ${msg}` };
+      }
+      yield { type: "done" };
+      return;
+    }
+
     // 6. Stream via AI SDK
     const result = await streamText({
       model: aiModel,
       messages,
       allowSystemInMessages: true,
-      temperature: 0.3,
+      temperature: request.temperature ?? 0.3,
     });
 
     const splitState: ReasoningSplitState = {
@@ -311,6 +362,11 @@ function buildUserMessage(
 
     case "chat_impersonate": {
       return request.instruction || "Write a message as this persona would speak in the current conversation.";
+    }
+
+    case "md_import": {
+      const content = request.existingContent ?? request.instruction;
+      return `Parse this character description into structured data:\n\n${content}`;
     }
 
     default:
