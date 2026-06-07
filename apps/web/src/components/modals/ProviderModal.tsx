@@ -3,10 +3,10 @@ import { useT } from "../../i18n/context.js";
 import { Modal } from "../shared/Modal.js";
 import { cn } from "../../lib/cn.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../../app-client.js";
-import { resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
+import { PROVIDER_PRESET_GROUP, resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
 import type { ProviderProbeResponse, SamplerCapabilityFlags } from "@vibe-tavern/domain";
 import { saveProviderDraftSchema } from "@vibe-tavern/api-contracts";
-import { PROVIDER_PRESETS } from "../../provider-presets.js";
+import { PROVIDER_PRESETS, getVisibleProviderPresets } from "../../provider-presets.js";
 import { Icons } from "../shared/icons.js";
 import {
   ProviderProfileList,
@@ -20,6 +20,7 @@ import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useModalStore } from "../../stores/modal-store.js";
+import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 
 export interface FormState {
   id: string;
@@ -34,6 +35,18 @@ export interface FormState {
   minP: number;
   topK: number;
   topA: number;
+  typicalP: number;
+  tfsZ: number;
+  repeatLastN: number;
+  mirostat: number;
+  mirostatTau: number;
+  mirostatEta: number;
+  dryMultiplier: number;
+  dryBase: number;
+  dryAllowedLength: number;
+  drySequenceBreakers: string[];
+  xtcThreshold: number;
+  xtcProbability: number;
   frequencyPenalty: number;
   presencePenalty: number;
   repetitionPenalty: number;
@@ -86,6 +99,18 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     baseUrl: p.endpoint, apiKey: "", hasStoredApiKey: p.hasStoredApiKey,
     model: p.defaultModel ?? "", temperature: p.temperature, topP: p.topP,
     minP: p.minP, topK: p.topK, topA: p.topA,
+    typicalP: p.typicalP ?? 1,
+    tfsZ: p.tfsZ ?? 1,
+    repeatLastN: p.repeatLastN ?? 0,
+    mirostat: p.mirostat ?? 0,
+    mirostatTau: p.mirostatTau ?? 5,
+    mirostatEta: p.mirostatEta ?? 0.1,
+    dryMultiplier: p.dryMultiplier ?? 0,
+    dryBase: p.dryBase ?? 1.75,
+    dryAllowedLength: p.dryAllowedLength ?? 2,
+    drySequenceBreakers: p.drySequenceBreakers ?? [],
+    xtcThreshold: p.xtcThreshold ?? 0.1,
+    xtcProbability: p.xtcProbability ?? 0,
     frequencyPenalty: p.frequencyPenalty,
     presencePenalty: p.presencePenalty,
     repetitionPenalty: p.repetitionPenalty,
@@ -114,6 +139,18 @@ function toProviderDraft(form: FormState) {
     minP: form.minP,
     topK: form.topK,
     topA: form.topA,
+    typicalP: form.typicalP,
+    tfsZ: form.tfsZ,
+    repeatLastN: form.repeatLastN,
+    mirostat: form.mirostat,
+    mirostatTau: form.mirostatTau,
+    mirostatEta: form.mirostatEta,
+    dryMultiplier: form.dryMultiplier,
+    dryBase: form.dryBase,
+    dryAllowedLength: form.dryAllowedLength,
+    drySequenceBreakers: form.drySequenceBreakers,
+    xtcThreshold: form.xtcThreshold,
+    xtcProbability: form.xtcProbability,
     frequencyPenalty: form.frequencyPenalty,
     presencePenalty: form.presencePenalty,
     repetitionPenalty: form.repetitionPenalty,
@@ -163,6 +200,8 @@ export function ProviderModal({
 }: ProviderModalProps) {
   const isOpen = useModalStore((s) => s.isProviderModalOpen);
   const setIsOpen = useModalStore((s) => s.setIsProviderModalOpen);
+  const isArmServer = useBootstrapStore((s) => s.data?.isArmServer ?? false);
+  const visiblePresets = getVisibleProviderPresets(isArmServer);
   const onClose = () => setIsOpen(false);
   const { t } = useT();
 
@@ -235,7 +274,7 @@ export function ProviderModal({
   const updateForm = <K extends keyof FormState>(k: K, v: FormState[K]) => { setForm((f) => f ? { ...f, [k]: v } : f); setDirty(true); };
 
   const applyPreset = (presetId: string) => {
-    const fmt = PROVIDER_PRESETS.find((f) => f.id === presetId);
+    const fmt = visiblePresets.find((f) => f.id === presetId);
     if (!fmt) return;
     setForm((f) => {
       if (!f) return f;
@@ -246,7 +285,7 @@ export function ProviderModal({
         ...f,
         providerPreset: fmt.id,
         baseUrl: fmt.baseUrl,
-        ...(typeChanged ? { apiKey: '', hasStoredApiKey: false } : {}),
+        ...(typeChanged || fmt.noApiKey ? { apiKey: '', hasStoredApiKey: false } : {}),
       };
     });
     setDirty(true);
@@ -400,9 +439,10 @@ export function ProviderModal({
         fetched = await onFetchModels(ep, form.apiKey.trim() || undefined, false, preset?.type);
       }
       if (!fetched.length) setFetchError(t("no_models_returned"));
+      setTestOk(fetched.length > 0);
       setModels(fetched);
       if (fetched.length && (!form.model || !fetched.find((m) => m.id === form.model))) autoSaveField("model", fetched[0].id);
-    } catch (e) { setModels([]); setFetchError(e instanceof Error ? e.message : t("failed_to_fetch_models")); }
+    } catch (e) { setModels([]); setTestOk(false); setFetchError(e instanceof Error ? e.message : t("failed_to_fetch_models")); }
     finally { setFetching(false); }
   };
 
@@ -419,7 +459,9 @@ export function ProviderModal({
   // ── Derived ──
   const isActive = activeProviderProfileId === editingId;
   const showConfig = headerMode === "view" && !isNew;
-  const providerType = form ? (PROVIDER_PRESETS.find((f) => f.id === form.providerPreset)?.type ?? "openai_compat") : "openai_compat";
+  const selectedPreset = form ? PROVIDER_PRESETS.find((f) => f.id === form.providerPreset) : undefined;
+  const providerType = selectedPreset?.type ?? "openai_compat";
+  const isLocalProvider = selectedPreset?.group === PROVIDER_PRESET_GROUP.local;
   const selectedModel = form ? models.find((model) => model.id === form.model) : null;
   const capabilities = form ? { ...getCapabilities(providerType, form.providerPreset, form.model, form.baseUrl), ...selectedModel?.capabilities } : null;
   const filteredProfiles = profileSearch.trim()
@@ -500,6 +542,7 @@ export function ProviderModal({
                     onSave={() => void handleSaveHeader()}
                     onCancel={!isNew ? handleCancelEdit : undefined}
                     isNew={isNew}
+                    isArmServer={isArmServer}
                   />
                 )}
 
@@ -521,7 +564,10 @@ export function ProviderModal({
                       updateForm={autoSaveField} onFetchModels={handleFetchModels} setModelSearch={setModelSearch}
                       setModelListOpen={setModelListOpen} dropdownRef={dropdownRef}
                       onToggleFavoriteModel={(model) => onToggleFavoriteModel(form.id, model)}
-                      requiresAuthForModels={PROVIDER_PRESETS.find((p) => p.id === form.providerPreset)?.requiresAuthForModels ?? false}
+                      requiresAuthForModels={selectedPreset?.requiresAuthForModels ?? false}
+                      isLocalProvider={isLocalProvider}
+                      localEndpoint={form.baseUrl}
+                      localConnectionStatus={fetching || testing ? "checking" : fetchError || testOk === false ? "offline" : testOk === true ? "online" : "unknown"}
                     />
 
                     {/* Test Hi */}
