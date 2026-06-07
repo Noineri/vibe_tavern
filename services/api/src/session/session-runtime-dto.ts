@@ -23,6 +23,7 @@ export interface ClientProviderProfileRecord {
   presencePenalty: number;
   repetitionPenalty: number;
   stopSequences: string[];
+  logitBias: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed: string | null;
   reasoningEffort: string;
   showReasoning: boolean;
@@ -155,6 +156,7 @@ export function toClientProviderProfile(profile: import("@vibe-tavern/domain").S
     presencePenalty: profile.presencePenalty,
     repetitionPenalty: profile.repetitionPenalty,
     stopSequences: profile.stopSequences,
+    logitBias: profile.logitBias,
     seed: profile.seed,
     reasoningEffort: profile.reasoningEffort,
     showReasoning: profile.showReasoning,
