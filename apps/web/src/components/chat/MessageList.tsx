@@ -44,18 +44,37 @@ export function MessageList() {
   const activeGen = useActiveGeneration();
   const isSending = useIsSending();
   const pendingUserMessageContent = activeGen?.pendingUserMessageContent ?? null;
+  const streamingRevealedText = activeGen?.streamingRevealedText ?? "";
 
   const [atBottom, setAtBottom] = useState(true);
   const isMobile = useIsMobile();
   const userScrolledUpRef = useRef(false);
   const wasSendingRef = useRef(false);
-  const settledRef = useRef(false);  useLayoutEffect(() => {
+  const settledRef = useRef(false);
+
+  useEffect(() => {
+    if (isSending) {
+      virtuosoRef.current?.autoscrollToBottom();
+    }
+  }, [streamingRevealedText, isSending]);
+
+  useEffect(() => {
     if (isSending) {
       wasSendingRef.current = true;
-      scrollToBottom(scrollerElRef.current);
+      if (!userScrolledUpRef.current) {
+        scrollToBottom(scrollerElRef.current);
+      }
     } else if (wasSendingRef.current) {
       wasSendingRef.current = false;
       userScrolledUpRef.current = false;
+      
+      virtuosoRef.current?.autoscrollToBottom();
+      const timers = [
+        setTimeout(() => virtuosoRef.current?.autoscrollToBottom(), 150),
+        setTimeout(() => virtuosoRef.current?.autoscrollToBottom(), 400),
+        setTimeout(() => virtuosoRef.current?.autoscrollToBottom(), 800),
+      ];
+      return () => timers.forEach(clearTimeout);
     }
   }, [isSending]);
 
