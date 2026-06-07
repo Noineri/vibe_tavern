@@ -264,7 +264,8 @@ export function LogitBiasPanel({ entries, onChange, disabled, supported, model }
       {/* Manual token ID input */}
       <div className="mt-2 flex gap-2">
         <input
-          type="number"
+          type="text"
+          inputMode="numeric"
           value={manualId}
           onChange={(e) => setManualId(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") handleManualAdd(); }}

@@ -11,6 +11,9 @@ import { CustomTooltip } from '../shared/Tooltip.js';
 import type { AvatarCropResult } from '../shared/AvatarCropModal.js';
 import { useT } from '../../i18n/context.js';
 import { SegmentedControl } from '../shared/SegmentedControl.js';
+import { AutoTextarea } from '../shared/auto-textarea.js';
+import { MobileExpandTextarea } from '../shared/MobileExpandTextarea.js';
+import { NumberInput } from '../shared/NumberInput.js';
 
 const createCharacterFormSchema = z.object({
   name: z.string().min(1),
@@ -246,20 +249,28 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           {/* Description */}
           <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_desc_label")}</label>
-            <textarea
-              className="w-full min-h-[100px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
-              {...register('description')}
-            />
+            <MobileExpandTextarea label={t("char_desc_label")} value={description || ''} onChange={v => setValue('description', v, { shouldDirty: true })}>
+              <AutoTextarea
+                className="w-full min-h-[100px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+                style={{}}
+                maxHeight={400}
+                register={register('description')}
+              />
+            </MobileExpandTextarea>
           </div>
 
           {/* First Message */}
           <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ws_first_msg_label")}</label>
-            <textarea
-              className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
-              placeholder={t("first_message_placeholder")}
-              {...register('firstMessage')}
-            />
+            <MobileExpandTextarea label={t("ws_first_msg_label")} value={firstMessage || ''} onChange={v => setValue('firstMessage', v, { shouldDirty: true })}>
+              <AutoTextarea
+                className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+                style={{}}
+                maxHeight={400}
+                placeholder={t("first_message_placeholder")}
+                register={register('firstMessage')}
+              />
+            </MobileExpandTextarea>
           </div>
 
           {/* Alternate Greetings */}
@@ -295,45 +306,69 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               >+</span>
             </div>
             {alternateGreetings.length > 0 && (
-              <textarea
-                className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+              <MobileExpandTextarea
+                label={t("alternate_greetings")}
                 value={alternateGreetings[altGreetIdx] || ''}
-                onChange={e => {
+                onChange={v => {
                   const next = [...alternateGreetings];
-                  next[altGreetIdx] = e.target.value;
+                  next[altGreetIdx] = v;
                   setValue('alternateGreetings', next, { shouldDirty: true });
                 }}
-                placeholder={t("alternate_greeting_placeholder")}
-              />
+              >
+                <AutoTextarea
+                  className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+                  style={{}}
+                  maxHeight={400}
+                  value={alternateGreetings[altGreetIdx] || ''}
+                  onChange={e => {
+                    const next = [...alternateGreetings];
+                    next[altGreetIdx] = e.target.value;
+                    setValue('alternateGreetings', next, { shouldDirty: true });
+                  }}
+                  placeholder={t("alternate_greeting_placeholder")}
+                />
+              </MobileExpandTextarea>
             )}
           </div>
 
           {/* Mes Example */}
           <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("dialog_examples")}</label>
-            <textarea
-              className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-              {...register('mesExample')}
-              placeholder={t("dialog_examples_placeholder")}
-            />
+            <MobileExpandTextarea label={t("dialog_examples")} value={mesExample || ''} onChange={v => setValue('mesExample', v, { shouldDirty: true })}>
+              <AutoTextarea
+                className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
+                style={{}}
+                maxHeight={400}
+                register={register('mesExample')}
+                placeholder={t("dialog_examples_placeholder")}
+              />
+            </MobileExpandTextarea>
           </div>
 
           {/* Scenario */}
           <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("scenario")}</label>
-            <textarea
-              className="w-full min-h-[100px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
-              {...register('defaultScenario')}
-            />
+            <MobileExpandTextarea label={t("scenario")} value={defaultScenario || ''} onChange={v => setValue('defaultScenario', v, { shouldDirty: true })}>
+              <AutoTextarea
+                className="w-full min-h-[100px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+                style={{}}
+                maxHeight={400}
+                register={register('defaultScenario')}
+              />
+            </MobileExpandTextarea>
           </div>
 
           {/* Personality */}
           <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_personality_label")}</label>
-            <textarea
-              className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
-              {...register('personalitySummary')}
-            />
+            <MobileExpandTextarea label={t("char_personality_label")} value={personalitySummary || ''} onChange={v => setValue('personalitySummary', v, { shouldDirty: true })}>
+              <AutoTextarea
+                className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+                style={{}}
+                maxHeight={400}
+                register={register('personalitySummary')}
+              />
+            </MobileExpandTextarea>
           </div>
 
           {/* Advanced separator */}
@@ -342,21 +377,29 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           {/* Post History Instructions */}
           <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("post_history_instructions")}</label>
-            <textarea
-              className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-              {...register('postHistoryInstructions')}
-              placeholder={t("post_history_placeholder")}
-            />
+            <MobileExpandTextarea label={t("post_history_instructions")} value={postHistoryInstructions || ''} onChange={v => setValue('postHistoryInstructions', v, { shouldDirty: true })}>
+              <AutoTextarea
+                className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
+                style={{}}
+                maxHeight={400}
+                register={register('postHistoryInstructions')}
+                placeholder={t("post_history_placeholder")}
+              />
+            </MobileExpandTextarea>
           </div>
 
           {/* Creator Notes */}
           <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("creator_notes")}</label>
-            <textarea
-              className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
-              {...register('creatorNotes')}
-              placeholder={t("creator_notes_placeholder")}
-            />
+            <MobileExpandTextarea label={t("creator_notes")} value={creatorNotes || ''} onChange={v => setValue('creatorNotes', v, { shouldDirty: true })}>
+              <AutoTextarea
+                className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+                style={{}}
+                maxHeight={400}
+                register={register('creatorNotes')}
+                placeholder={t("creator_notes_placeholder")}
+              />
+            </MobileExpandTextarea>
           </div>
 
           {/* Depth Prompt */}
@@ -378,32 +421,39 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                 </div>
                 <div className="flex items-center gap-1">
                   <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
-                  <input
-                    type="number"
-                    className="h-6 w-12 rounded-md border border-border bg-s2 px-1 text-center text-[11px] font-ui text-t1 outline-none focus:border-accent num-spinless"
+                  <NumberInput
+                    className="h-6 w-[90px]"
                     min={0}
                     max={999}
                     value={depthPromptDepth}
-                    onChange={e => setValue('depthPromptDepth', Number(e.target.value), { shouldDirty: true })}
+                    onChange={v => setValue('depthPromptDepth', v, { shouldDirty: true })}
                   />
                 </div>
               </div>
             </div>
-            <textarea
-              className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-              {...register('depthPrompt')}
-              placeholder={t("depth_prompt_placeholder")}
-            />
+            <MobileExpandTextarea label={t("depth_prompt")} value={depthPrompt || ''} onChange={v => setValue('depthPrompt', v, { shouldDirty: true })}>
+              <AutoTextarea
+                className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
+                style={{}}
+                maxHeight={400}
+                register={register('depthPrompt')}
+                placeholder={t("depth_prompt_placeholder")}
+              />
+            </MobileExpandTextarea>
           </div>
 
           {/* System Prompt Override */}
           <div className="mb-5">
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("system_prompt_override")}</label>
-            <textarea
-              className="w-full min-h-[80px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-              {...register('systemPrompt')}
-              placeholder={t("system_prompt_override_placeholder")}
-            />
+            <MobileExpandTextarea label={t("system_prompt_override")} value={systemPrompt || ''} onChange={v => setValue('systemPrompt', v, { shouldDirty: true })}>
+              <AutoTextarea
+                className="w-full min-h-[80px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
+                style={{}}
+                maxHeight={400}
+                register={register('systemPrompt')}
+                placeholder={t("system_prompt_override_placeholder")}
+              />
+            </MobileExpandTextarea>
           </div>
 
           {/* Tags */}

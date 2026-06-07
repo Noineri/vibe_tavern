@@ -7,6 +7,7 @@ import { PrefillField } from "./PrefillField.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useT } from "../../../i18n/context.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
+import { NumberInput } from "../../shared/NumberInput.js";
 
 function SectionHeader({ title }: { title: string }) {
   return (
@@ -152,18 +153,17 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
                 />
                 {(draft?.authorsNotePosition ?? "in_chat") === "in_chat" && (
                   <CustomTooltip content={`${t("insert_depth_label")}: ${t("insert_depth_hint")}`}>
-                    <label className="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md border border-border bg-s2 px-2 font-ui text-[11px] text-t4 transition-colors focus-within:border-accent">
+                    <div className="flex shrink-0 items-center gap-1.5 font-ui text-[11px] text-t4">
                       <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
                       <span className="sr-only">{t("insert_depth_label")}</span>
-                      <input
-                        className="w-10 bg-transparent text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none disabled:opacity-60 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                        type="number"
+                      <NumberInput
+                        className="h-[30px] w-[90px]"
                         min={0}
                         value={draft?.authorsNoteDepth ?? 4}
-                        onChange={(e) => onUpdateField("authorsNoteDepth", Number(e.target.value))}
+                        onChange={(v) => onUpdateField("authorsNoteDepth", v)}
                         disabled={disabled}
                       />
-                    </label>
+                    </div>
                   </CustomTooltip>
                 )}
               </div>

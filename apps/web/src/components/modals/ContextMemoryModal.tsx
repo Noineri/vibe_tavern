@@ -3,10 +3,13 @@ import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import type { AutoSummaryConfig, ChatSummaryRecord } from "../../app-client.js";
 import { Ic, Icons } from "../shared/icons.js";
+import { SegmentedControl } from "../shared/SegmentedControl.js";
+import { AutoTextarea } from "../shared/auto-textarea.js";
 import { Modal } from "../shared/Modal.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { Toggle } from "../shared/Toggle.js";
+import { NumberInput } from "../shared/NumberInput.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
@@ -480,13 +483,13 @@ export function ContextMemoryModal({
           onChange={(e) => { setDraftLabel(e.target.value); setDirty(true); }}
           placeholder={`T${rangeFrom}\u2013T${rangeTo}`}
         />
-        <MobileExpandTextarea value={draftText} onChange={(v) => { setDraftText(v); setDirty(true); autoResize(); }} label={t("summary_text_label")}>
-          <textarea
-            ref={textareaRef}
+        <MobileExpandTextarea value={draftText} onChange={(v) => { setDraftText(v); setDirty(true); }} label={t("summary_text_label")}>
+          <AutoTextarea
             className={cn(inputCls, "min-h-[86px] w-full resize-y leading-relaxed")}
+            style={{}}
+            maxHeight={400}
             value={draftText}
-            onChange={(e) => { setDraftText(e.target.value); setDirty(true); autoResize(); }}
-            onInput={autoResize}
+            onChange={(e) => { setDraftText(e.target.value); setDirty(true); }}
             placeholder={t("summary_placeholder_short")}
           />
         </MobileExpandTextarea>
@@ -570,11 +573,14 @@ export function ContextMemoryModal({
         </label>
         <div className="mt-3 flex items-center gap-2 font-ui text-[12px] text-t3">
           <span>{t("summary_auto_every")}</span>
-          <input
-            className={cn(inputCls, "h-8 w-20 py-1 text-center")}
-            type="number" min={1} max={500}
+          <NumberInput
+            className="w-[80px] shrink-0"
+            inputClassName="text-center"
+            hideControls
+            min={1}
+            max={500}
             value={autoConfig.everyN}
-            onChange={(e) => setAutoConfig({ ...autoConfig, everyN: Math.max(1, Number(e.target.value) || 1) })}
+            onChange={(v) => setAutoConfig({ ...autoConfig, everyN: v })}
             onBlur={() => void commitMemorySettings()}
           />
           <span>{t("summary_auto_messages")}</span>
@@ -601,11 +607,14 @@ export function ContextMemoryModal({
               onMouseUp={() => void commitMemorySettings()}
               onTouchEnd={() => void commitMemorySettings()}
             />
-            <input
-              className={cn(inputCls, "h-8 w-16 py-1 text-center")}
-              type="number" min={0} max={Math.max(1, messageCount)}
+            <NumberInput
+              className="w-[80px] shrink-0"
+              inputClassName="text-center"
+              hideControls
+              min={0}
+              max={Math.max(1, messageCount)}
               value={historyLimit}
-              onChange={(e) => setHistoryLimit(Math.max(0, Number(e.target.value) || 0))}
+              onChange={(v) => setHistoryLimit(v)}
               onBlur={() => void commitMemorySettings()}
             />
           </div>
@@ -636,11 +645,14 @@ export function ContextMemoryModal({
             onMouseUp={() => void commitMemorySettings()}
             onTouchEnd={() => void commitMemorySettings()}
           />
-          <input
-            className={cn(inputCls, "h-8 w-16 shrink-0 py-1 text-center")}
-            type="number" min={0} max={Math.max(1, messageCount)}
+          <NumberInput
+            className="w-[80px] shrink-0"
+            inputClassName="text-center"
+            hideControls
+            min={0}
+            max={Math.max(1, messageCount)}
             value={historyLimit}
-            onChange={(e) => setHistoryLimit(Math.max(0, Number(e.target.value) || 0))}
+            onChange={(v) => setHistoryLimit(v)}
             onBlur={() => void commitMemorySettings()}
           />
         </div>

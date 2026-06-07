@@ -10,7 +10,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-set "VITE_RP_API_URL=http://127.0.0.1:8787"
+set "VITE_RP_API_URL=http://127.0.0.1:8788"
 
 if exist "..\mcp\.env" (
     for /f "usebackq tokens=1,* delims==" %%A in ("..\mcp\.env") do (
@@ -28,7 +28,7 @@ echo ============================================
 echo  Vibe Tavern
 echo ============================================
 echo.
-echo Server: http://127.0.0.1:8787
+echo Server: http://127.0.0.1:8788
 if /i "%LOG_LEVEL%"=="debug" echo Log level: debug
 echo.
 
@@ -66,9 +66,9 @@ echo Starting server...
 echo Press Ctrl+C to stop.
 echo.
 
-powershell.exe -NoProfile -Command "$conn = Get-NetTCPConnection -LocalPort 8787 -ErrorAction SilentlyContinue; if ($conn) { $pid = $conn[0].OwningProcess; Write-Host ''; Write-Host 'Port 8787 is already in use by PID' $pid; exit 10 } else { exit 0 }"
+powershell.exe -NoProfile -Command "$conn = Get-NetTCPConnection -LocalPort 8788 -ErrorAction SilentlyContinue; if ($conn) { $ProcId = $conn[0].OwningProcess; Write-Host ''; Write-Host 'Port 8788 is already in use by PID' $ProcId; exit 10 } else { exit 0 }"
 if %ERRORLEVEL%==10 (
-    powershell.exe -NoProfile -Command "$pid = (Get-NetTCPConnection -LocalPort 8787 -ErrorAction SilentlyContinue)[0].OwningProcess; Write-Host 'Kill PID' $pid '? [Y/n]'; $a = Read-Host; if ($a -eq '' -or $a -eq 'Y' -or $a -eq 'y') { Stop-Process -Id $pid -Force; Write-Host 'Killed.'; exit 0 } else { Write-Host 'Cancelled.'; exit 1 }"
+    powershell.exe -NoProfile -Command "$ProcId = (Get-NetTCPConnection -LocalPort 8788 -ErrorAction SilentlyContinue)[0].OwningProcess; Write-Host 'Kill PID' $ProcId '? [Y/n]'; $a = Read-Host; if ($a -eq '' -or $a -eq 'Y' -or $a -eq 'y') { Stop-Process -Id $ProcId -Force; Write-Host 'Killed.'; exit 0 } else { Write-Host 'Cancelled.'; exit 1 }"
     if errorlevel 1 (
         pause
         exit /b 1

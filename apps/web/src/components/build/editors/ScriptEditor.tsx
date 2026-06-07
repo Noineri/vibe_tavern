@@ -7,6 +7,7 @@ import { useActiveCharacter, useActivePersona, useAllCharacters } from "../../..
 import { Ic } from "../../shared/icons.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
+import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CodeEditor } from "../../shared/CodeEditor.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
@@ -397,7 +398,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
               <div className="mb-3 text-[13px] text-t2">{t("script_import_paste")}</div>
               <MobileExpandTextarea value={importCode} onChange={setImportCode} label={t("script_import_import")}>
-                <textarea className="w-full min-h-[200px] rounded-md border border-border bg-bg px-3 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent" placeholder={t("script_import_placeholder")} value={importCode} onChange={e => setImportCode(e.target.value)} />
+                <AutoTextarea className="w-full min-h-[200px] rounded-md border border-border bg-bg px-3 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent" style={{}} maxHeight={500} placeholder={t("script_import_placeholder")} value={importCode} onChange={e => setImportCode(e.target.value)} />
               </MobileExpandTextarea>
               {importCode.trim() && (
                 <div className="mt-2 text-[11px] text-accent-t">
@@ -479,7 +480,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                   <div style={{ marginBottom: 16 }}>
                     <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_prompt")}</label>
                     <MobileExpandTextarea value={aiPrompt} onChange={setAiPrompt} label={t("script_ai_helper")}>
-                      <textarea className="w-full min-h-[100px] rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent resize-none" placeholder={t("script_ai_prompt")} value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
+                      <AutoTextarea className="w-full min-h-[100px] rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent resize-none" style={{}} maxHeight={300} placeholder={t("script_ai_prompt")} value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
                     </MobileExpandTextarea>
                     <div className="mt-1 flex items-center justify-between gap-3">
                       <div className="font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("script_ai_prompt_hint")}</div>

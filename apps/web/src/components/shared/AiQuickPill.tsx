@@ -16,6 +16,7 @@ import { Ic } from "./icons.js";
 import { cn } from "../../lib/cn.js";
 import { DropdownSelect } from "./DropdownSelect.js";
 import { CustomTooltip } from "./Tooltip.js";
+import { NumberInput } from "./NumberInput.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -185,13 +186,12 @@ function AiQuickSettingsModal({
                   <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.05em] text-t3">
                     Recent messages
                   </label>
-                  <input
-                    type="number"
+                  <NumberInput
                     min={1}
                     max={100}
                     value={recentMessageCount}
-                    onChange={(e) => setRecentMessageCount(Math.max(1, parseInt(e.target.value) || 20))}
-                    className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
+                    onChange={(v) => setRecentMessageCount(v)}
+                    className="w-full"
                   />
                 </div>
               )}
