@@ -183,6 +183,13 @@
       "when": 1780756111709,
       "tag": "0025_red_the_executioner",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1780760000000,
+      "tag": "0026_advanced_sampler_fields",
+      "breakpoints": true
     }
   ]
 }
