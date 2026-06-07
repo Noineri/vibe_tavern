@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { NumberInput } from "../../shared/NumberInput.js";
 import type { PromptOrderEntry } from "@vibe-tavern/domain";
 import {
   closestCenter,
@@ -452,19 +453,18 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
             />
             {position === "in_chat" && (
               <CustomTooltip content={`${t("insert_depth_label")}: ${t("insert_depth_hint")}`}>
-                <label className="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md border border-border bg-s2 px-2 font-ui text-[11px] text-t4 transition-colors focus-within:border-accent">
+                <div className="flex shrink-0 items-center gap-1.5 font-ui text-[11px] text-t4">
                   <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
                   <span className="sr-only">{t("insert_depth_label")}</span>
-                  <input
-                    type="number"
-                    className="w-10 bg-transparent text-center font-mono text-[12px] text-t1 outline-none disabled:opacity-60 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                    value={draft?.authorsNoteDepth ?? 4}
+                  <NumberInput
+                    className="h-[30px] w-[90px]"
                     min={0}
                     max={99}
+                    value={draft?.authorsNoteDepth ?? 4}
+                    onChange={(v) => onUpdateField?.("authorsNoteDepth", v)}
                     disabled={disabled}
-                    onChange={(e) => onUpdateField?.("authorsNoteDepth", Math.max(0, Number(e.target.value) || 0))}
                   />
-                </label>
+                </div>
               </CustomTooltip>
             )}
           </div>
@@ -580,17 +580,16 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
           <div className="mb-2 flex flex-wrap items-center gap-2">
             {/* Depth editor */}
             <CustomTooltip content={t("insert_depth_label")}>
-              <label className="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md border border-border bg-s2 px-2 font-ui text-[11px] text-t4 transition-colors focus-within:border-accent">
+              <div className="flex shrink-0 items-center gap-1.5 font-ui text-[11px] text-t4">
                 <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
                 <span className="sr-only">{t("insert_depth_label")}</span>
-                <input
-                  type="number"
-                  className="w-10 bg-transparent text-center font-mono text-[12px] text-t1 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                  value={injection.depth}
+                <NumberInput
+                  className="h-[30px] w-[90px]"
                   min={0} max={99}
-                  onChange={(e) => onUpdate(index, { depth: Math.max(0, Number(e.target.value) || 0) })}
+                  value={injection.depth}
+                  onChange={(v) => onUpdate(index, { depth: v })}
                 />
-              </label>
+              </div>
             </CustomTooltip>
 
             {/* Role select */}

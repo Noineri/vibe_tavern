@@ -27,6 +27,8 @@ import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { ToggleChips } from "../../shared/ToggleChips.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
+import { AutoTextarea } from "../../shared/auto-textarea.js";
+import { NumberInput } from "../../shared/NumberInput.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import { buildLineDiff, TextDiffPreview } from "../../shared/TextDiffPreview.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
@@ -398,8 +400,10 @@ export function LoreEntryEditor({
             onChange={(v) => updateAct("content", v)}
             label={t("lore_entry_content")}
           >
-            <textarea
+            <AutoTextarea
               className="w-full min-h-[180px] rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[13px] text-t1 outline-none focus:border-accent leading-[1.6]"
+              style={{}}
+              maxHeight={500}
               value={entry.content}
               onChange={(e) => updateAct("content", e.target.value)}
               placeholder={t("lore_entry_content_placeholder")}
@@ -706,14 +710,10 @@ export function LoreEntryEditor({
                       <label className="mb-1.5 block cursor-help text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
                         {t("lore_depth_label")}
                       </label>
-                      <input
-                        className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
-                        type="number"
-                        min="0"
+                      <NumberInput
+                        min={0}
                         value={entry.depth}
-                        onChange={(e) =>
-                          updateAct("depth", parseInt(e.target.value))
-                        }
+                        onChange={(v) => updateAct("depth", v)}
                       />
                     </div>
                   </CustomTooltip>
@@ -723,14 +723,10 @@ export function LoreEntryEditor({
                     <label className="mb-1.5 block cursor-help text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
                       {t("lore_priority_label")}
                     </label>
-                    <input
-                      className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
-                      type="number"
-                      min="0"
+                    <NumberInput
+                      min={0}
                       value={entry.priority}
-                      onChange={(e) =>
-                        updateAct("priority", parseInt(e.target.value))
-                      }
+                      onChange={(v) => updateAct("priority", v)}
                     />
                   </div>
                 </CustomTooltip>
@@ -740,15 +736,11 @@ export function LoreEntryEditor({
                       {t("lore_probability")}
                     </label>
                   </CustomTooltip>
-                  <input
-                    className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
-                    type="number"
-                    min="0"
-                    max="100"
+                  <NumberInput
+                    min={0}
+                    max={100}
                     value={entry.probability}
-                    onChange={(e) =>
-                      updateAct("probability", parseInt(e.target.value))
-                    }
+                    onChange={(v) => updateAct("probability", v)}
                   />
                 </div>
                 <div>
@@ -757,14 +749,10 @@ export function LoreEntryEditor({
                       {t("lore_scan_depth_override")}
                     </label>
                   </CustomTooltip>
-                  <input
-                    className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
-                    type="number"
-                    min="-1"
+                  <NumberInput
+                    min={-1}
                     value={entry.scanDepthOverride ?? -1}
-                    onChange={(e) =>
-                      updateAct("scanDepthOverride", parseInt(e.target.value))
-                    }
+                    onChange={(v) => updateAct("scanDepthOverride", v)}
                   />
                 </div>
               </div>
@@ -830,14 +818,10 @@ export function LoreEntryEditor({
                     <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
                       {t("lore_sticky_window")}
                     </label>
-                    <input
-                      className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
-                      type="number"
-                      min="0"
+                    <NumberInput
+                      min={0}
                       value={entry.stickyWindow}
-                      onChange={(e) =>
-                        updateAct("stickyWindow", parseInt(e.target.value))
-                      }
+                      onChange={(v) => updateAct("stickyWindow", v)}
                     />
                   </div>
                 </CustomTooltip>
@@ -846,14 +830,10 @@ export function LoreEntryEditor({
                     <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
                       {t("lore_cooldown_window")}
                     </label>
-                    <input
-                      className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
-                      type="number"
-                      min="0"
+                    <NumberInput
+                      min={0}
                       value={entry.cooldownWindow}
-                      onChange={(e) =>
-                        updateAct("cooldownWindow", parseInt(e.target.value))
-                      }
+                      onChange={(v) => updateAct("cooldownWindow", v)}
                     />
                   </div>
                 </CustomTooltip>
@@ -862,14 +842,10 @@ export function LoreEntryEditor({
                     <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
                       {t("lore_delay_window")}
                     </label>
-                    <input
-                      className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
-                      type="number"
-                      min="0"
+                    <NumberInput
+                      min={0}
                       value={entry.delayWindow}
-                      onChange={(e) =>
-                        updateAct("delayWindow", parseInt(e.target.value))
-                      }
+                      onChange={(v) => updateAct("delayWindow", v)}
                     />
                   </div>
                 </CustomTooltip>
@@ -913,14 +889,10 @@ export function LoreEntryEditor({
                         {t("lore_recursion_label")}
                       </label>
                     </CustomTooltip>
-                    <input
-                      className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
-                      type="number"
-                      min="0"
+                    <NumberInput
+                      min={0}
                       value={entry.recursionLevel}
-                      onChange={(e) =>
-                        updateAct("recursionLevel", parseInt(e.target.value))
-                      }
+                      onChange={(v) => updateAct("recursionLevel", v)}
                     />
                   </div>
                 )}
@@ -952,14 +924,10 @@ export function LoreEntryEditor({
                       {t("lore_group_weight")}
                     </label>
                   </CustomTooltip>
-                  <input
-                    className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
-                    type="number"
-                    min="0"
+                  <NumberInput
+                    min={0}
                     value={entry.groupWeight}
-                    onChange={(e) =>
-                      updateAct("groupWeight", parseInt(e.target.value))
-                    }
+                    onChange={(v) => updateAct("groupWeight", v)}
                   />
                 </div>
                 <CustomTooltip content={t("prioritize_inclusion_hint")}>
@@ -1058,8 +1026,10 @@ export function LoreEntryEditor({
                   <div style={{ marginBottom: 16 }}>
                     <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("lore_entry_ai_prompt_label")}</label>
                     <MobileExpandTextarea value={aiPrompt} onChange={setAiPrompt} label={t("script_ai_helper")}>
-                      <textarea
+                      <AutoTextarea
                         className="w-full min-h-[100px] rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent resize-none"
+                        style={{}}
+                        maxHeight={300}
                         placeholder={t("lore_entry_ai_prompt_placeholder")}
                         value={aiPrompt}
                         onChange={(e) => setAiPrompt(e.target.value)}

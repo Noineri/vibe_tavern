@@ -15,6 +15,7 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
+import { NumberInput } from "../../shared/NumberInput.js";
 import {
   listLoreEntries,
   type LorebookRecord,
@@ -395,15 +396,12 @@ export function LorebookAccordion({
                   <label className="mb-1 block text-[11px] font-medium uppercase leading-tight tracking-[0.05em] text-t3/70">
                     {t("lore_token_budget")}
                   </label>
-                  <input
-                    className="h-8 w-full rounded-md border border-border bg-surface px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
-                    type="number"
+                  <NumberInput
+                    className="w-full"
+                    hideControls
                     min={0}
                     value={lorebook.tokenBudget}
-                    onChange={(e) => {
-                      const v = Math.max(0, parseInt(e.target.value) || 0);
-                      onUpdateMeta({ tokenBudget: v });
-                    }}
+                    onChange={(v) => onUpdateMeta({ tokenBudget: v })}
                   />
                 </div>
               </CustomTooltip>
@@ -412,15 +410,12 @@ export function LorebookAccordion({
                   <label className="mb-1 block text-[11px] font-medium uppercase leading-tight tracking-[0.05em] text-t3/70">
                     {t("lore_scan_depth")}
                   </label>
-                  <input
-                    className="h-8 w-full rounded-md border border-border bg-surface px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
-                    type="number"
+                  <NumberInput
+                    className="w-full"
+                    hideControls
                     min={0}
                     value={lorebook.scanDepth}
-                    onChange={(e) => {
-                      const v = Math.max(0, parseInt(e.target.value) || 0);
-                      onUpdateMeta({ scanDepth: v });
-                    }}
+                    onChange={(v) => onUpdateMeta({ scanDepth: v })}
                   />
                 </div>
               </CustomTooltip>
