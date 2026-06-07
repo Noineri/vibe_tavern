@@ -217,6 +217,7 @@ export async function* streamAiAssistant(
     const result = await streamText({
       model: aiModel,
       messages,
+      allowSystemInMessages: true,
       temperature: 0.3,
     });
 
