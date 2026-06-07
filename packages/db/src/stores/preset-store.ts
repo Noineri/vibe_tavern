@@ -16,6 +16,7 @@ export interface CreatePresetData {
   authorsNote?: string;
   authorsNoteDepth?: number;
   authorsNotePosition?: string;
+  authorsNoteRole?: string;
   summaryPrompt?: string;
   toolsPrompt?: string;
   nsfwPrompt?: string;
@@ -44,6 +45,7 @@ export interface PromptPreset {
   authorsNote: string;
   authorsNoteDepth: number;
   authorsNotePosition: string;
+  authorsNoteRole: string;
   summaryPrompt: string;
   toolsPrompt: string;
   nsfwPrompt: string;
@@ -115,6 +117,7 @@ export class PresetStore {
         authorsNote: data.authorsNote ?? '',
         authorsNoteDepth: data.authorsNoteDepth ?? 4,
         authorsNotePosition: data.authorsNotePosition ?? 'in_chat',
+        authorsNoteRole: data.authorsNoteRole ?? 'system',
         summaryPrompt: data.summaryPrompt ?? '',
         toolsPrompt: data.toolsPrompt ?? '',
         nsfwPrompt: data.nsfwPrompt ?? '',
@@ -155,6 +158,7 @@ export class PresetStore {
     if (data.authorsNote !== undefined) values.authorsNote = data.authorsNote;
     if (data.authorsNoteDepth !== undefined) values.authorsNoteDepth = data.authorsNoteDepth;
     if (data.authorsNotePosition !== undefined) values.authorsNotePosition = data.authorsNotePosition;
+    if (data.authorsNoteRole !== undefined) values.authorsNoteRole = data.authorsNoteRole;
     if (data.summaryPrompt !== undefined) values.summaryPrompt = data.summaryPrompt;
     if (data.toolsPrompt !== undefined) values.toolsPrompt = data.toolsPrompt;
     if (data.nsfwPrompt !== undefined) values.nsfwPrompt = data.nsfwPrompt;
@@ -218,6 +222,7 @@ export class PresetStore {
         authorsNote: original.authorsNote,
         authorsNoteDepth: original.authorsNoteDepth,
         authorsNotePosition: original.authorsNotePosition,
+        authorsNoteRole: original.authorsNoteRole,
         summaryPrompt: original.summaryPrompt,
         toolsPrompt: original.toolsPrompt,
         nsfwPrompt: original.nsfwPrompt,
@@ -264,6 +269,7 @@ export class PresetStore {
       authorsNote: '',
       authorsNoteDepth: 4,
       authorsNotePosition: 'in_chat',
+      authorsNoteRole: 'system',
       summaryPrompt: '',
       toolsPrompt: '',
       nsfwPrompt: '',
@@ -288,6 +294,7 @@ export class PresetStore {
       authorsNote: row.authorsNote,
       authorsNoteDepth: row.authorsNoteDepth,
       authorsNotePosition: row.authorsNotePosition,
+      authorsNoteRole: row.authorsNoteRole,
       summaryPrompt: row.summaryPrompt,
       toolsPrompt: row.toolsPrompt,
       nsfwPrompt: row.nsfwPrompt,
@@ -313,6 +320,7 @@ export class PresetStore {
       authorsNote: row.authorsNote,
       authorsNoteDepth: row.authorsNoteDepth,
       authorsNotePosition: row.authorsNotePosition,
+      authorsNoteRole: row.authorsNoteRole,
       summaryPrompt: row.summaryPrompt,
       toolsPrompt: row.toolsPrompt,
       nsfwPrompt: row.nsfwPrompt,

@@ -278,6 +278,7 @@ export const promptPresets = sqliteTable('prompt_presets', {
   authorsNote: text('authors_note').notNull().default(''),
   authorsNoteDepth: integer('authors_note_depth').notNull().default(4),
   authorsNotePosition: text('authors_note_position').notNull().default('in_chat'),
+  authorsNoteRole: text('authors_note_role').notNull().default('system'),
   summaryPrompt: text('summary_prompt').notNull().default(''),
   toolsPrompt: text('tools_prompt').notNull().default(''),
   nsfwPrompt: text('nsfw_prompt').notNull().default(''),

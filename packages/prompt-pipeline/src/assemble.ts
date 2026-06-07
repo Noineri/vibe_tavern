@@ -372,6 +372,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   if (context.preset?.authorsNote?.trim() && promptOrderEnabled(context, "authorsNote")) {
     const position = context.preset.authorsNotePosition ?? "in_chat";
     const depth = context.preset.authorsNoteDepth ?? 4;
+    const role = context.preset.authorsNoteRole ?? "system";
 
     if (position === "in_prompt") {
       // Inside system prompt block
@@ -382,6 +383,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceName: "Author's Note",
         position: "in_prompt",
         priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
+        role,
         subPosition: promptOrderRank(context, "authorsNote", IN_PROMPT_SUB_POSITION.authorNote),
         text: context.preset.authorsNote,
       }), "authorsNote");
@@ -395,6 +397,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceName: "Author's Note",
         position: "in_chat",
         priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
+        role,
         text: context.preset.authorsNote,
       }), "authorsNote");
       if (layer.position === "in_chat" && layer.injectionDepth == null) layer.injectionDepth = 0;
@@ -408,6 +411,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
         sourceName: "Author's Note (depth)",
         position: "in_chat",
         priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
+        role,
         subPosition: promptOrderRank(context, "authorsNote", DEFAULT_PROMPT_ORDER.authorsNote),
         text: context.preset.authorsNote,
       });

@@ -423,6 +423,7 @@ export async function createPromptPreset(input: {
   authorsNote?: string;
   authorsNoteDepth?: number;
   authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat";
+  authorsNoteRole?: "system" | "user" | "assistant";
   summary?: string;
   tools?: string;
   customInjections?: PromptPresetDto["customInjections"];

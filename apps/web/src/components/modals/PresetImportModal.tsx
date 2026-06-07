@@ -31,6 +31,7 @@ export interface PresetImportResult {
   system: string[];
   post: string[];
   authors: string[];
+  authorsRole?: "system" | "user" | "assistant";
   nsfw: string[];
   enhanceDefinitions: string[];
   injections: InjectionRow[];
@@ -145,7 +146,10 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
       switch (m.target) {
         case "system": result.system.push(m.block.content); break;
         case "post": result.post.push(m.block.content); break;
-        case "authors": result.authors.push(m.block.content); break;
+        case "authors":
+          result.authors.push(m.block.content);
+          result.authorsRole ??= m.block.role;
+          break;
         case "nsfw": result.nsfw.push(m.block.content); break;
         case "enhanceDefinitions": result.enhanceDefinitions.push(m.block.content); break;
         case "injection":

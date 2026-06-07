@@ -42,6 +42,7 @@ type DraftData = {
   authorsNote: string;
   authorsNoteDepth: number;
   authorsNotePosition: string;
+  authorsNoteRole: string;
   summary: string;
   tools: string;
   scriptAiSystemPrompt: string;
@@ -60,7 +61,7 @@ const textareaCls = "w-full rounded-md border border-border bg-s2 font-ui text-[
 const labelCls = "mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3";
 const labelAccentCls = "mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-accent";
 
-type TextDraftKey = Exclude<keyof DraftData, "authorsNoteDepth" | "authorsNotePosition" | "aiAssistantPrompts">;
+type TextDraftKey = Exclude<keyof DraftData, "authorsNoteDepth" | "authorsNotePosition" | "authorsNoteRole" | "aiAssistantPrompts">;
 
 function FieldSection({ label, labelClassName, token, children }: {
   label: string;
@@ -124,9 +125,20 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
           />
 
           <div>
-            <div className="mb-[7px] flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mb-[7px] flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
               <label className={labelCls + " mb-0"}>{t("authors_note_label")}</label>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <SegmentedControl
+                  value={draft?.authorsNoteRole ?? "system"}
+                  options={[
+                    { value: "system", label: "system" },
+                    { value: "user", label: "user" },
+                    { value: "assistant", label: "assistant" },
+                  ]}
+                  onChange={(v) => onUpdateField("authorsNoteRole", v)}
+                  disabled={disabled}
+                  compact
+                />
                 <SegmentedControl
                   value={draft?.authorsNotePosition ?? "in_chat"}
                   options={[
@@ -137,22 +149,22 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
                   onChange={(v) => onUpdateField("authorsNotePosition", v)}
                   disabled={disabled}
                   compact
-                  mobileFill
                 />
                 {(draft?.authorsNotePosition ?? "in_chat") === "in_chat" && (
-                  <div className="flex items-center justify-between gap-2 sm:justify-start">
-                    <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{t("insert_depth_label")}</label>
-                    <CustomTooltip content={t("insert_depth_hint")}>
-                    <input
-                      className="h-9 w-20 rounded-md border border-border bg-s2 px-2 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors focus:border-accent disabled:opacity-60 sm:h-[30px] sm:w-16"
-                      type="number"
-                      min={0}
-                      value={draft?.authorsNoteDepth ?? 4}
-                      onChange={(e) => onUpdateField("authorsNoteDepth", Number(e.target.value))}
-                      disabled={disabled}
-                    />
-                    </CustomTooltip>
-                  </div>
+                  <CustomTooltip content={`${t("insert_depth_label")}: ${t("insert_depth_hint")}`}>
+                    <label className="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md border border-border bg-s2 px-2 font-ui text-[11px] text-t4 transition-colors focus-within:border-accent">
+                      <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
+                      <span className="sr-only">{t("insert_depth_label")}</span>
+                      <input
+                        className="w-10 bg-transparent text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none disabled:opacity-60 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        type="number"
+                        min={0}
+                        value={draft?.authorsNoteDepth ?? 4}
+                        onChange={(e) => onUpdateField("authorsNoteDepth", Number(e.target.value))}
+                        disabled={disabled}
+                      />
+                    </label>
+                  </CustomTooltip>
                 )}
               </div>
             </div>

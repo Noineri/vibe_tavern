@@ -176,6 +176,13 @@
       "when": 1780749712522,
       "tag": "0024_odd_iron_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1780756111709,
+      "tag": "0025_red_the_executioner",
+      "breakpoints": true
     }
   ]
 }

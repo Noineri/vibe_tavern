@@ -50,6 +50,7 @@ type PromptCanvasDraft = {
   authorsNote: string;
   authorsNoteDepth: number;
   authorsNotePosition: string;
+  authorsNoteRole: string;
   nsfw: string;
   enhanceDefinitions: string;
 };
@@ -400,6 +401,7 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
   const [expanded, setExpanded] = useState(false);
   const disabled = !draft || !onUpdateField;
   const position = draft?.authorsNotePosition ?? "in_chat";
+  const role = draft?.authorsNoteRole ?? "system";
   return (
     <div className={cn("rounded-md border border-border bg-surface", !enabled && "opacity-55")}>
       <div className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 px-3 py-2 sm:flex-nowrap sm:gap-2.5" onClick={() => setExpanded((v) => !v)}>
@@ -421,6 +423,7 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
         )}
         <span className="min-w-[120px] flex-1 truncate font-ui text-[12px] text-t1 sm:overflow-visible sm:whitespace-normal sm:text-clip">{t("authors_note_label")}</span>
         <TokenCounter text={draft?.authorsNote ?? ""} />
+        <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{role}</span>
         <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{position}</span>
         {position === "in_chat" && <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3 tabular-nums">←{draft?.authorsNoteDepth ?? 4}</span>}
         <span className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] text-accent">editable</span>
@@ -428,7 +431,14 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
       </div>
       {expanded && (
         <div className="border-t border-border2 px-3 pb-3 pt-2">
-          <div className="mb-2 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <SegmentedControl
+              value={role}
+              options={roleOptions.map(r => ({ value: r, label: r }))}
+              onChange={(v) => onUpdateField?.("authorsNoteRole", v)}
+              disabled={disabled}
+              compact
+            />
             <SegmentedControl
               value={position}
               options={[
@@ -439,21 +449,23 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
               onChange={(v) => onUpdateField?.("authorsNotePosition", v)}
               disabled={disabled}
               compact
-              mobileFill
             />
             {position === "in_chat" && (
-              <label className="flex items-center justify-between gap-2 font-ui text-[11px] text-t4 sm:justify-start">
-                {t("insert_depth_label")}
-                <input
-                  type="number"
-                  className="h-8 w-[64px] rounded border border-border bg-s2 px-1.5 py-0.5 text-center font-mono text-[12px] text-t1 outline-none focus:border-accent disabled:opacity-60 sm:h-auto sm:w-[52px] sm:text-[11px] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                  value={draft?.authorsNoteDepth ?? 4}
-                  min={0}
-                  max={99}
-                  disabled={disabled}
-                  onChange={(e) => onUpdateField?.("authorsNoteDepth", Math.max(0, Number(e.target.value) || 0))}
-                />
-              </label>
+              <CustomTooltip content={`${t("insert_depth_label")}: ${t("insert_depth_hint")}`}>
+                <label className="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md border border-border bg-s2 px-2 font-ui text-[11px] text-t4 transition-colors focus-within:border-accent">
+                  <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
+                  <span className="sr-only">{t("insert_depth_label")}</span>
+                  <input
+                    type="number"
+                    className="w-10 bg-transparent text-center font-mono text-[12px] text-t1 outline-none disabled:opacity-60 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    value={draft?.authorsNoteDepth ?? 4}
+                    min={0}
+                    max={99}
+                    disabled={disabled}
+                    onChange={(e) => onUpdateField?.("authorsNoteDepth", Math.max(0, Number(e.target.value) || 0))}
+                  />
+                </label>
+              </CustomTooltip>
             )}
           </div>
           <AutoTextarea
@@ -565,22 +577,25 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
       {/* Expanded content */}
       {expanded && (
         <div className="border-t border-border2 px-3 pb-3 pt-2">
-          <div className="mb-2 flex items-center gap-3">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
             {/* Depth editor */}
-            <label className="flex items-center gap-1.5 font-ui text-[11px] text-t4">
-              Depth
-              <input
-                type="number"
-                className="w-[44px] rounded border border-border bg-s2 px-1.5 py-0.5 text-center font-mono text-[11px] text-t1 outline-none focus:border-accent [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                value={injection.depth}
-                min={0} max={99}
-                onChange={(e) => onUpdate(index, { depth: Math.max(0, Number(e.target.value) || 0) })}
-              />
-            </label>
+            <CustomTooltip content={t("insert_depth_label")}>
+              <label className="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md border border-border bg-s2 px-2 font-ui text-[11px] text-t4 transition-colors focus-within:border-accent">
+                <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
+                <span className="sr-only">{t("insert_depth_label")}</span>
+                <input
+                  type="number"
+                  className="w-10 bg-transparent text-center font-mono text-[12px] text-t1 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  value={injection.depth}
+                  min={0} max={99}
+                  onChange={(e) => onUpdate(index, { depth: Math.max(0, Number(e.target.value) || 0) })}
+                />
+              </label>
+            </CustomTooltip>
 
             {/* Role select */}
-            <label className="flex items-center gap-1.5 font-ui text-[11px] text-t4">
-              Role
+            <label className="flex min-w-0 flex-wrap items-center gap-1.5 font-ui text-[11px] text-t4">
+              <span>{t("role")}</span>
               <SegmentedControl
                 value={injection.role}
                 options={roleOptions.map(r => ({ value: r, label: r }))}
