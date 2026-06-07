@@ -6,9 +6,7 @@ import { Ic } from '../shared/icons';
 import { cn } from '../../lib/cn';
 import { Modal } from "../shared/Modal.js";
 import { useIsMobile } from '../../hooks/use-mobile.js';
-import { AvatarCropModal } from '../shared/AvatarCropModal.js';
 import { CustomTooltip } from '../shared/Tooltip.js';
-import type { AvatarCropResult } from '../shared/AvatarCropModal.js';
 import { useT } from '../../i18n/context.js';
 import { SegmentedControl } from '../shared/SegmentedControl.js';
 import { AutoTextarea } from '../shared/auto-textarea.js';
@@ -91,8 +89,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   const [tagInput, setTagInput] = useState('');
   const avaInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Avatar crop modal state ──
-  const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
+
 
   const name = watch('name');
   const description = watch('description');
@@ -123,22 +120,11 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   function handleAvatarPick(files: FileList | null) {
     if (!files || files.length === 0) return;
     const file = files[0];
-    setPendingAvatar({ file, url: URL.createObjectURL(file) });
-  }
-
-  function handleAvatarCropConfirm(result: AvatarCropResult) {
-    if (pendingAvatar?.url) URL.revokeObjectURL(pendingAvatar.url);
-    setPendingAvatar(null);
     patchForm({
-      avatarFile: result.croppedFile,
-      avatarOriginalFile: pendingAvatar!.file,
-      avatarPreview: result.croppedUrl,
+      avatarFile: file,
+      avatarOriginalFile: null,
+      avatarPreview: URL.createObjectURL(file),
     });
-  }
-
-  function handleAvatarCropCancel() {
-    if (pendingAvatar?.url) URL.revokeObjectURL(pendingAvatar.url);
-    setPendingAvatar(null);
   }
 
   function removeTag(tag: string) {
@@ -181,15 +167,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
 
   return (
     <Modal open={true} onClose={onClose}>
-      {/* Avatar crop modal */}
-      {pendingAvatar && (
-        <AvatarCropModal
-          imageUrl={pendingAvatar.url}
-          originalFile={pendingAvatar.file}
-          onConfirm={handleAvatarCropConfirm}
-          onCancel={handleAvatarCropCancel}
-        />
-      )}
+
       <div className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[90vh] w-[600px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
         {/* Header */}
         <div className={cn("shrink-0 border-b border-border", isMobile ? "px-4 pt-4 pb-3" : "px-5 pt-[18px] pb-4")}>
