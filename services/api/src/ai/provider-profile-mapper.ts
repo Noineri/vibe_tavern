@@ -71,7 +71,15 @@ export function mapProfileToSdkModel(
     case PROVIDER_TYPE.openaiCompat: {
       const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
       const apiKey = profile.apiKey ?? "";
-      const provider = createOpenAICompatible({ name: "openai_compat", apiKey: apiKey || "not-needed", baseURL: endpoint || "https://api.openai.com/v1", fetch: createReasoningAwareFetch() });
+      const provider = createOpenAICompatible({
+        name: "openai_compat",
+        apiKey: apiKey || "not-needed",
+        baseURL: endpoint || "https://api.openai.com/v1",
+        fetch: createReasoningAwareFetch(),
+        // Many OpenAI-compatible aggregators/models support response_format: json_schema,
+        // but the generic provider defaults this capability to false unless declared.
+        supportsStructuredOutputs: true,
+      });
       return {
         model: provider.chatModel(model),
         
