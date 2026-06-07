@@ -146,26 +146,26 @@ describe("prepareSdkMessages", () => {
     { role: "user", content: "Hello" },
   ];
 
-  // ─── System message extraction ─────────────────────────────────────────
+  // ─── Prompt trace order preservation ───────────────────────────────────
 
-  it("extracts system messages into systemPrompt", () => {
+  it("keeps system messages inside messages instead of extracting them", () => {
     const result = prepareSdkMessages(baseMessages, { providerType: "openai_compat" });
-    expect(result.systemPrompt).toBe("You are helpful.");
-    expect(result.conversationMessages).toEqual([{ role: "user", content: "Hello" }]);
+    expect(result.systemPrompt).toBeUndefined();
+    expect(result.conversationMessages).toEqual(baseMessages);
   });
 
-  it("joins multiple system messages with double newline", () => {
+  it("preserves multiple system messages in their original positions", () => {
     const messages: SdkMessage[] = [
       { role: "system", content: "Rule 1." },
-      { role: "system", content: "Rule 2." },
       { role: "user", content: "Hi" },
+      { role: "system", content: "Rule 2." },
     ];
     const result = prepareSdkMessages(messages, { providerType: "openai_compat" });
-    expect(result.systemPrompt).toBe("Rule 1.\n\nRule 2.");
-    expect(result.conversationMessages).toEqual([{ role: "user", content: "Hi" }]);
+    expect(result.systemPrompt).toBeUndefined();
+    expect(result.conversationMessages).toEqual(messages);
   });
 
-  it("returns undefined systemPrompt when no system messages", () => {
+  it("returns unchanged messages when no system messages", () => {
     const messages: SdkMessage[] = [
       { role: "user", content: "Hello" },
     ];
@@ -176,12 +176,13 @@ describe("prepareSdkMessages", () => {
 
   // ─── Prefill injection ─────────────────────────────────────────────────
 
-  it("appends assistant prefill for openai_compat", () => {
+  it("appends assistant prefill for openai_compat after trace messages", () => {
     const result = prepareSdkMessages(baseMessages, {
       providerType: "openai_compat",
       prefill: "Sure, here is:",
     });
     expect(result.conversationMessages).toEqual([
+      { role: "system", content: "You are helpful." },
       { role: "user", content: "Hello" },
       { role: "assistant", content: "Sure, here is:" },
     ]);
@@ -192,8 +193,8 @@ describe("prepareSdkMessages", () => {
       providerType: "ollama",
       prefill: "Ollama prefill",
     });
-    expect(result.conversationMessages).toHaveLength(2);
-    expect(result.conversationMessages[1]).toEqual({ role: "assistant", content: "Ollama prefill" });
+    expect(result.conversationMessages).toHaveLength(3);
+    expect(result.conversationMessages[2]).toEqual({ role: "assistant", content: "Ollama prefill" });
   });
 
   it("appends assistant prefill for llamacpp", () => {
@@ -201,8 +202,8 @@ describe("prepareSdkMessages", () => {
       providerType: "llamacpp",
       prefill: "Llama prefill",
     });
-    expect(result.conversationMessages).toHaveLength(2);
-    expect(result.conversationMessages[1]).toEqual({ role: "assistant", content: "Llama prefill" });
+    expect(result.conversationMessages).toHaveLength(3);
+    expect(result.conversationMessages[2]).toEqual({ role: "assistant", content: "Llama prefill" });
   });
 
   it("does NOT append prefill for anthropic", () => {
@@ -210,7 +211,7 @@ describe("prepareSdkMessages", () => {
       providerType: "anthropic",
       prefill: "Ignored",
     });
-    expect(result.conversationMessages).toEqual([{ role: "user", content: "Hello" }]);
+    expect(result.conversationMessages).toEqual(baseMessages);
   });
 
   it("does NOT append prefill for google", () => {
@@ -218,7 +219,7 @@ describe("prepareSdkMessages", () => {
       providerType: "google",
       prefill: "Ignored",
     });
-    expect(result.conversationMessages).toEqual([{ role: "user", content: "Hello" }]);
+    expect(result.conversationMessages).toEqual(baseMessages);
   });
 
   it("does NOT append prefill when undefined", () => {
@@ -226,7 +227,7 @@ describe("prepareSdkMessages", () => {
       providerType: "openai_compat",
       prefill: undefined,
     });
-    expect(result.conversationMessages).toEqual([{ role: "user", content: "Hello" }]);
+    expect(result.conversationMessages).toEqual(baseMessages);
   });
 
   it("does NOT append prefill when empty string", () => {
@@ -234,23 +235,26 @@ describe("prepareSdkMessages", () => {
       providerType: "openai_compat",
       prefill: "",
     });
-    expect(result.conversationMessages).toEqual([{ role: "user", content: "Hello" }]);
+    expect(result.conversationMessages).toEqual(baseMessages);
   });
 
-  // ─── Combined: system + prefill ────────────────────────────────────────
+  // ─── Combined: trace order + prefill ───────────────────────────────────
 
-  it("handles system extraction + prefill together", () => {
+  it("preserves system position and appends prefill after the trace messages", () => {
     const messages: SdkMessage[] = [
       { role: "system", content: "Be concise." },
       { role: "user", content: "Explain X" },
+      { role: "system", content: "Answer in English." },
     ];
     const result = prepareSdkMessages(messages, {
       providerType: "openai_compat",
       prefill: "Sure:",
     });
-    expect(result.systemPrompt).toBe("Be concise.");
+    expect(result.systemPrompt).toBeUndefined();
     expect(result.conversationMessages).toEqual([
+      { role: "system", content: "Be concise." },
       { role: "user", content: "Explain X" },
+      { role: "system", content: "Answer in English." },
       { role: "assistant", content: "Sure:" },
     ]);
   });

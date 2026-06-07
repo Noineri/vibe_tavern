@@ -5,7 +5,7 @@
  * the full response (this brief) or forward as SSE (FW-AI5).
  */
 
-import { streamText, APICallError } from "ai";
+import { streamText } from "ai";
 import type { ProviderExecutor, ProviderStreamResult, ProviderStreamChunk, ProviderStreamFinish, SentConfigSnapshot } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
@@ -14,6 +14,7 @@ import { log } from "@vibe-tavern/domain";
 import { cancelled, providerError } from "../errors.js";
 import { REASONING_START_MARKER, REASONING_END_MARKER } from "./openai-reasoning-fetch.js";
 import { logSendDebug } from "../send-debug-log.js";
+import { extractProviderErrorMessage } from "./provider-error-message.js";
 
 /**
  * Map the Vercel AI SDK fullStream into our ProviderStreamChunk iterable.
@@ -47,9 +48,9 @@ function createMappedStream(
       // ── Provider error in stream ──
       if (p.type === "error") {
         const pErr = part as { type: string; errorText?: string; error?: unknown };
-        const errMsg = pErr.errorText ?? (pErr.error instanceof Error ? pErr.error.message : typeof pErr.error === "string" ? pErr.error : JSON.stringify(pErr.error));
+        const errMsg = pErr.errorText ?? extractProviderErrorMessage(pErr.error);
         logSendDebug("reasoning.stream-error", { chunkCount, error: errMsg, partTypes: [...partTypes].sort() });
-        throw providerError(`Provider stream error: ${errMsg}`);
+        throw providerError(errMsg);
       }
 
       // ── Tool calls (informational — AI SDK handles execution) ──
@@ -120,7 +121,7 @@ function createMappedStream(
 /**
  * Map the Vercel AI SDK result into our ProviderStreamFinish promise.
  */
-function mapFinish(result: { finishReason: Promise<unknown>; usage: Promise<unknown> }): Promise<ProviderStreamFinish> {
+function mapFinish(result: { finishReason: Promise<unknown>; usage: Promise<unknown> }, signal?: AbortSignal): Promise<ProviderStreamFinish> {
   return Promise.all([result.finishReason, result.usage]).then(([reason, usage]) => {
     const usageRecord = usage as { inputTokens?: number; outputTokens?: number; totalTokens?: number } | undefined;
     let finishReason: ProviderStreamFinish["finishReason"] = "stop";
@@ -137,6 +138,31 @@ function mapFinish(result: { finishReason: Promise<unknown>; usage: Promise<unkn
         totalTokens: usageRecord.totalTokens,
       } : undefined,
     };
+  }).catch((error) => {
+    if (signal?.aborted || isNoOutputGeneratedError(error)) return { finishReason: "cancelled" };
+    logSendDebug("stream.finish-promise-error", { message: error instanceof Error ? error.message : String(error) });
+    return { finishReason: "error" };
+  });
+}
+
+function isNoOutputGeneratedError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === "AI_NoOutputGeneratedError" || error.name === "NoOutputGeneratedError" || error.message.includes("No output generated");
+}
+
+function safeStreamTextPromise(promise: Promise<string>, signal?: AbortSignal): Promise<string> {
+  return promise.catch((error) => {
+    if (signal?.aborted || isNoOutputGeneratedError(error)) return "";
+    logSendDebug("stream.text-promise-error", { message: error instanceof Error ? error.message : String(error) });
+    return "";
+  });
+}
+
+function safeReasoningPromise(promise: Promise<string | undefined>, signal?: AbortSignal): Promise<string | undefined> {
+  return promise.catch((error) => {
+    if (signal?.aborted || isNoOutputGeneratedError(error)) return undefined;
+    logSendDebug("stream.reasoning-promise-error", { message: error instanceof Error ? error.message : String(error) });
+    return undefined;
   });
 }
 
@@ -150,23 +176,23 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
   try {
     const model = resolveModel(input.profile, input.model);
     const messages = toSdkMessages(input.prompt);
-    const { systemPrompt, conversationMessages } = prepareSdkMessages(messages, {
+    const { conversationMessages } = prepareSdkMessages(messages, {
       prefill: input.prefill,
       providerType: normalizeProviderType(input.profile.providerPreset),
     });
 
     // DEBUG: log what actually goes to the provider
-    const systemLen = systemPrompt?.length ?? 0;
-    const convLen = conversationMessages.reduce((s, m) => s + m.content.length, 0);
+    const messageLen = conversationMessages.reduce((s, m) => s + m.content.length, 0);
+    const hasSystemMessages = conversationMessages.some((m) => m.role === "system");
     const logger = log.tag("stream");
-    logger.debug("%d msgs → system=%d chars + %d conv msgs (%d chars) = %d chars total", messages.length, systemLen, conversationMessages.length, convLen, systemLen + convLen);
-    for (const m of messages) {
+    logger.debug("%d msgs sent in trace order (%d chars total)", conversationMessages.length, messageLen);
+    for (const m of conversationMessages) {
       logger.debug("  [msg] role=%s len=%d", m.role, m.content.length);
     }
 
     const samplerConfig = buildSamplerConfig(input.profile);
     const sentConfig: SentConfigSnapshot = {
-      systemRole: systemPrompt ? "system" : undefined,
+      systemRole: hasSystemMessages ? "system" : undefined,
       samplerConfig: samplerConfig as Record<string, unknown>,
       messageCount: conversationMessages.length,
     };
@@ -175,7 +201,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
     const result = streamText({
       model,
       messages: conversationMessages,
-      ...(systemPrompt ? { system: systemPrompt } : {}),
+      allowSystemInMessages: true,
       abortSignal: input.signal,
       ...samplerConfig,
       ...(input.tools ? { tools: input.tools } : {}),
@@ -184,13 +210,18 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
 
     const { stream, hasRedacted } = createMappedStream(result.fullStream);
 
-    const finished = mapFinish(result);
+    // Attach catch handlers immediately. On manual cancellation AI SDK v5 can
+    // reject these promises later with NoOutputGeneratedError even after our
+    // route already returned an abort event; if left unhandled, Bun terminates.
+    const finished = mapFinish(result, input.signal);
+    const text = safeStreamTextPromise(result.text, input.signal);
+    const reasoning = safeReasoningPromise(result.reasoningText as Promise<string | undefined>, input.signal);
 
     return {
       stream,
       finished,
-      text: result.text,
-      reasoning: result.reasoningText as Promise<string | undefined>,
+      text,
+      reasoning,
       hasRedactedReasoning: hasRedacted,
       sentConfig,
     };

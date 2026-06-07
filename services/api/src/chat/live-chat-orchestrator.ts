@@ -11,6 +11,7 @@ import { streamProviderExecutor } from "../ai/stream-provider-executor.js";
 import { logSendDebug } from "../send-debug-log.js";
 import { extractThinkingTags } from "../ai/extract-thinking-tags.js";
 import { ensurePrefillInResponse } from "../ai/ensure-prefill-in-response.js";
+import { extractProviderErrorMessage } from "../ai/provider-error-message.js";
 
 /**
  * Coordinates the prepare → execute → append cycle for all AI generation paths:
@@ -461,8 +462,8 @@ export class LiveChatOrchestrator {
           return;
         }
         if (chunk.type === "text-delta" && chunk.delta) {
-          if (!reasoningStartMs && reasoningAccumulator) {
-            reasoningDurationMs = Date.now() - reasoningStartMs!;
+          if (reasoningStartMs && reasoningAccumulator) {
+            reasoningDurationMs = Date.now() - reasoningStartMs;
           }
           textAccumulator += chunk.delta;
           yield { event: "text-delta", data: JSON.stringify({ delta: chunk.delta }) };
@@ -492,7 +493,25 @@ export class LiveChatOrchestrator {
         yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
         return;
       }
-      throw err;
+
+      const message = extractProviderErrorMessage(err);
+      logSendDebug(`${debugLabel}.provider-error`, { chatId: input.chatId, message });
+      this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
+      yield { event: "error", data: JSON.stringify({ message }) };
+      return;
+    }
+
+    if (signal?.aborted) {
+      const latencyMs = Date.now() - startedAt;
+      const { mainContent: abortText, reasoning: abortReasoning } = extractThinkingTags(textAccumulator, reasoningAccumulator);
+      await onAbort(
+        abortText,
+        abortReasoning ?? "",
+        reasoningStartMs ? Date.now() - reasoningStartMs : undefined,
+        latencyMs,
+      );
+      yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
+      return;
     }
 
     // ── Finalize ──
