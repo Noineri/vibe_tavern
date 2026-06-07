@@ -220,7 +220,7 @@ export async function* streamAiAssistant(
     const { config, profile, modelName, messages } = await prepareAiAssistantRequest(request, deps);
     const aiModel = deps.resolveModel(profile, modelName);
 
-    // md_import: use streamObject for structured JSON output
+    // md_import: try streamObject, fallback to streamText + JSON parse
     if (request.mode === "md_import") {
       deps.logDebug?.("api.ai-assistant.md-import.start", {
         model: modelName,
@@ -231,35 +231,76 @@ export async function* streamAiAssistant(
       // Emit early text so the client knows the connection is alive
       yield { type: "reasoning", text: "Parsing character data...\n" };
 
+      const temp = request.temperature ?? 0;
+      const maxTokens = request.maxOutputTokens ?? 10000;
+
+      // Try streamObject (structured output), fallback to streamText + manual parse
+      let usedStreamObject = false;
       try {
-        const { fullStream } = await streamObject({
+        const result = await streamObject({
           model: aiModel,
           schema: mdImportSchema,
           messages,
           allowSystemInMessages: true,
-          temperature: request.temperature ?? 0,
-          maxOutputTokens: request.maxOutputTokens ?? 10000,
+          temperature: temp,
+          maxOutputTokens: maxTokens,
         });
 
+        usedStreamObject = true;
         let eventCount = 0;
-        for await (const event of fullStream) {
+        for await (const event of result.fullStream) {
           eventCount++;
           if (event.type === "text-delta") {
             yield { type: "reasoning", text: event.textDelta };
           } else if (event.type === "object") {
             yield { type: "partial_json", json: event.object as Record<string, unknown> };
           } else if (event.type === "error") {
-            deps.logDebug?.("api.ai-assistant.md-import.error", { error: String(event.error), eventCount });
+            deps.logDebug?.("api.ai-assistant.md-import.stream-object-error", { error: String(event.error), eventCount });
             yield { type: "error", error: String(event.error) };
           }
         }
 
-        deps.logDebug?.("api.ai-assistant.md-import.done", { eventCount });
-      } catch (streamErr) {
-        const msg = streamErr instanceof Error ? streamErr.message : String(streamErr);
-        deps.logDebug?.("api.ai-assistant.md-import.stream-error", { error: msg });
-        yield { type: "error", error: `streamObject failed: ${msg}` };
+        deps.logDebug?.("api.ai-assistant.md-import.stream-object-done", { eventCount });
+      } catch {
+        // streamObject not supported by this provider — fallback to streamText
+        deps.logDebug?.("api.ai-assistant.md-import.fallback-to-streamText", { model: modelName });
       }
+
+      if (!usedStreamObject) {
+        // Fallback: streamText + manual JSON parse
+        try {
+          const result = await streamText({
+            model: aiModel,
+            messages,
+            allowSystemInMessages: true,
+            temperature: temp,
+            maxOutputTokens: maxTokens,
+          });
+
+          let fullText = "";
+          for await (const chunk of result.textStream) {
+            fullText += chunk;
+            yield { type: "reasoning", text: chunk };
+          }
+
+          // Try to extract JSON from the response
+          const parsed = extractJsonFromText(fullText);
+          if (parsed) {
+            yield { type: "partial_json", json: parsed as Record<string, unknown> };
+          } else {
+            deps.logDebug?.("api.ai-assistant.md-import.json-parse-failed", {
+              responseLength: fullText.length,
+              responsePreview: fullText.slice(0, 200),
+            });
+            yield { type: "error", error: "Failed to parse JSON from model response" };
+          }
+        } catch (fallbackErr) {
+          const msg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+          deps.logDebug?.("api.ai-assistant.md-import.fallback-error", { error: msg });
+          yield { type: "error", error: msg };
+        }
+      }
+
       yield { type: "done" };
       return;
     }
@@ -317,6 +358,51 @@ export async function* streamAiAssistant(
     const message = err instanceof Error ? err.message : String(err);
     yield { type: "error", error: message };
   }
+}
+
+/**
+ * Extract a JSON object from raw model text.
+ * Handles markdown fences, leading/trailing prose, and nested braces.
+ */
+function extractJsonFromText(text: string): Record<string, unknown> | null {
+  // Try to find JSON inside markdown code fences first
+  const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  if (fenceMatch) {
+    const parsed = tryParseJson(fenceMatch[1]);
+    if (parsed) return parsed;
+  }
+
+  // Find the outermost { ... } block
+  const firstBrace = text.indexOf('{');
+  if (firstBrace === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = firstBrace; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{' || ch === '[') depth++;
+    if (ch === '}' || ch === ']') {
+      depth--;
+      if (depth === 0) {
+        return tryParseJson(text.slice(firstBrace, i + 1));
+      }
+    }
+  }
+
+  // Last resort: try to parse the whole text
+  return tryParseJson(text);
+}
+
+function tryParseJson(text: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(text.trim());
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+  } catch { /* not valid JSON */ }
+  return null;
 }
 
 // ─── User message builder ────────────────────────────────────────────────────
