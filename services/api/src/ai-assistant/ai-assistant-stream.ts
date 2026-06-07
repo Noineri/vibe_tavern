@@ -276,7 +276,10 @@ export async function* streamAiAssistant(
           yield { type: "text", text: chunk };
         }
 
-        const parsed = extractMdImportObjectFromText(fullText);
+        const parsed = mergeMdImportWithSourceSections(
+          extractMdImportObjectFromText(fullText),
+          request.existingContent ?? "",
+        );
         if (parsed && hasUsefulMdImportJson(parsed)) {
           yield { type: "partial_json", json: parsed };
         } else {
@@ -396,6 +399,162 @@ function extractMdImportObjectFromText(text: string): Record<string, unknown> | 
   if (labels && hasUsefulMdImportJson(labels)) return labels;
 
   return null;
+}
+
+function mergeMdImportWithSourceSections(
+  aiFields: Record<string, unknown> | null,
+  sourceMarkdown: string,
+): Record<string, unknown> | null {
+  const sourceFields = extractMdImportSectionsFromSource(sourceMarkdown);
+  if (!sourceFields) return aiFields;
+
+  const merged: Record<string, unknown> = { ...(aiFields ?? {}) };
+  for (const key of ["tagline", "description", "personality", "scenario", "firstMessage", "exampleMessages", "creatorNotes", "additionalCharacters"]) {
+    if (sourceFields[key] != null) merged[key] = sourceFields[key];
+  }
+  return Object.keys(merged).length ? normalizeMdImportObject(merged) : null;
+}
+
+function extractMdImportSectionsFromSource(markdown: string): Record<string, unknown> | null {
+  const sections = splitMarkdownSections(markdown);
+  if (sections.length === 0) return null;
+
+  const out: Record<string, unknown> = {};
+  for (const section of sections) {
+    const key = mapMarkdownHeadingToMdImportField(section.title);
+    if (!key) continue;
+    const content = section.content.trim();
+    if (!content) continue;
+
+    if (key === "exampleMessages") out.exampleMessages = splitExampleMessages(content);
+    else out[key] = content;
+  }
+
+  if (typeof out.personality === "string") {
+    const chars = extractAdditionalCharactersFromPersonality(out.personality);
+    if (chars.length > 0) out.additionalCharacters = chars;
+  }
+
+  return Object.keys(out).length ? out : null;
+}
+
+function splitMarkdownSections(markdown: string): Array<{ title: string; content: string }> {
+  const sections: Array<{ title: string; content: string[] }> = [];
+  let current: { title: string; content: string[] } | null = null;
+
+  for (const line of markdown.replace(/\r\n/g, "\n").split("\n")) {
+    const heading = line.match(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/);
+    if (heading) {
+      if (current) sections.push(current);
+      current = { title: heading[1].trim(), content: [] };
+      continue;
+    }
+    if (current) current.content.push(line);
+  }
+  if (current) sections.push(current);
+
+  return sections.map((section) => ({ title: section.title, content: section.content.join("\n").trim() }));
+}
+
+function mapMarkdownHeadingToMdImportField(title: string): string | null {
+  const normalized = title
+    .trim()
+    .replace(/[`'\"]/g, "")
+    .replace(/[\s-]+/g, "_")
+    .replace(/[^a-zA-Z0-9_]/g, "")
+    .toLowerCase();
+
+  switch (normalized) {
+    case "tagline":
+    case "subtitle":
+    case "hook":
+      return "tagline";
+    case "public_bio":
+    case "bio":
+    case "description":
+    case "public_description":
+      return "description";
+    case "personality":
+    case "personalities":
+    case "character_personality":
+      return "personality";
+    case "scenario":
+    case "scenario_prompt":
+    case "setting":
+      return "scenario";
+    case "first_message":
+    case "firstmessage":
+    case "greeting":
+    case "initial_message":
+      return "firstMessage";
+    case "mes_example":
+    case "example_messages":
+    case "example_dialogue":
+    case "examples":
+      return "exampleMessages";
+    case "creator_notes":
+    case "creatornotes":
+    case "author_notes":
+    case "notes":
+      return "creatorNotes";
+    default:
+      return null;
+  }
+}
+
+function extractAdditionalCharactersFromPersonality(personality: string): Array<{ name: string; description?: string; personality?: string }> {
+  const marker = /^\[Character:\s*([^\]]+)\]\s*$/gim;
+  const matches = [...personality.matchAll(marker)];
+  if (matches.length === 0) return [];
+
+  return matches.map((match, index) => {
+    const start = (match.index ?? 0) + match[0].length;
+    const end = index + 1 < matches.length ? matches[index + 1].index ?? personality.length : personality.length;
+    const name = match[1].trim();
+    const body = personality.slice(start, end).trim();
+    const parts = splitBracketSubsections(body);
+    const descriptionParts: string[] = [];
+    const personalityParts: string[] = [];
+
+    for (const part of parts) {
+      const key = part.title.toLowerCase().replace(/\s+/g, "_");
+      const rendered = `[${part.title}]\n${part.content}`.trim();
+      if (["base", "appearance", "physiology", "anatomy", "backstory", "setting", "relationships"].includes(key)) {
+        descriptionParts.push(rendered);
+      } else {
+        personalityParts.push(rendered);
+      }
+    }
+
+    return {
+      name,
+      description: descriptionParts.join("\n\n") || body || undefined,
+      personality: personalityParts.join("\n\n") || undefined,
+    };
+  }).filter((item) => item.name);
+}
+
+function splitBracketSubsections(text: string): Array<{ title: string; content: string }> {
+  const sections: Array<{ title: string; content: string[] }> = [];
+  let current: { title: string; content: string[] } | null = null;
+
+  for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
+    const heading = line.match(/^\[([^\]]+)\]\s*$/);
+    if (heading) {
+      if (current) sections.push(current);
+      current = { title: heading[1].trim(), content: [] };
+      continue;
+    }
+    if (current) current.content.push(line);
+    else if (line.trim()) {
+      current = { title: "Description", content: [line] };
+    }
+  }
+  if (current) sections.push(current);
+
+  return sections
+    .map((section) => ({ title: section.title, content: section.content.join("\n").trim() }))
+    .filter((section) => section.content);
 }
 
 function normalizeMdImportObject(obj: Record<string, unknown> | null): Record<string, unknown> | null {
