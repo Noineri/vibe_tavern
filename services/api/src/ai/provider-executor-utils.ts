@@ -85,19 +85,45 @@ export function toSdkMessages(
 // ---------------------------------------------------------------------------
 
 /**
- * Preserve prompt message role/order exactly as assembled in the prompt trace,
- * and optionally inject a provider-supported assistant prefill at the end.
+ * Prepare prompt messages for provider execution.
  *
- * Do not extract system messages into the top-level `system` option: that
- * changes recency/ordering semantics (e.g. an authors note after the latest
- * user message stops being the final instruction seen by the model).
+ * For most providers, preserve the exact role/order assembled in the prompt
+ * trace — system messages stay in their original positions so that e.g. an
+ * author's note after the latest user message remains the final instruction
+ * seen by the model.
+ *
+ * For Google Generative AI, system messages must all be at the start of the
+ * conversation. We merge all system messages into a single leading system
+ * message, preserving their relative order, followed by the non-system
+ * messages in their original order.
  */
 export function prepareSdkMessages(
   messages: SdkMessage[],
   options: { prefill?: string; providerType: ProviderType },
 ): PreparedMessages {
   const capabilities = getProviderCapabilities(options.providerType);
-  const conversationMessages = [...messages];
+  let conversationMessages: SdkMessage[];
+
+  if (options.providerType === "google") {
+    // Google requires system messages only at the beginning.
+    // Merge all system messages into one, keep non-system in original order.
+    const systemParts: string[] = [];
+    const nonSystem: SdkMessage[] = [];
+
+    for (const msg of messages) {
+      if (msg.role === "system") {
+        systemParts.push(msg.content);
+      } else {
+        nonSystem.push(msg);
+      }
+    }
+
+    conversationMessages = systemParts.length > 0
+      ? [{ role: "system", content: systemParts.join("\n\n") }, ...nonSystem]
+      : nonSystem;
+  } else {
+    conversationMessages = [...messages];
+  }
 
   if (options.prefill && capabilities.prefill) {
     conversationMessages.push({ role: "assistant", content: options.prefill });
