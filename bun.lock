@@ -116,6 +116,7 @@
         "@ai-sdk/google": "^3",
         "@ai-sdk/openai": "^3",
         "@ai-sdk/openai-compatible": "^2",
+        "@ai-sdk/provider": "^3",
         "@hono/zod-validator": "^0.4.3",
         "@vibe-tavern/api-contracts": "0.3.4",
         "@vibe-tavern/db": "0.3.4",

@@ -70,9 +70,9 @@ export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
     logitBias: true,
   },
   koboldcpp: {
-    nonStreamGeneration: false,
-    abortSignal: false,
-    streaming: false,
+    nonStreamGeneration: true,
+    abortSignal: true,
+    streaming: true,
     prefill: false,
     logitBias: false,
   },

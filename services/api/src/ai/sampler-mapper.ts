@@ -140,8 +140,24 @@ export function buildSamplerConfig(
       break;
     }
 
+    // -- KoboldCpp -----------------------------------------------------------
+    case PROVIDER_TYPE.koboldCpp: {
+      // KoboldCPP uses its own native API — sampler params go through providerOptions.koboldcpp
+      // and are spread into the request body by the adapter.
+      const providerOpts: Record<string, number | string | boolean | number[] | null> = {};
+      if (profile.topK != null) providerOpts.top_k = profile.topK;
+      if (profile.topP != null) providerOpts.top_p = profile.topP;
+      if (profile.minP != null) providerOpts.min_p = profile.minP;
+      if (profile.repetitionPenalty != null) providerOpts.rep_pen = profile.repetitionPenalty;
+      if (profile.frequencyPenalty != null) providerOpts.rep_pen_range = Math.round(profile.frequencyPenalty * 100);
+
+      if (Object.keys(providerOpts).length > 0) {
+        config.providerOptions = { koboldcpp: providerOpts };
+      }
+      break;
+    }
+
     // -- KoboldCpp (unsupported) and unknown ----------------------------------
-    case PROVIDER_TYPE.koboldCpp:
     default: {
       // Native params only (temperature, topP, maxOutputTokens, stopSequences)
       break;
