@@ -917,8 +917,8 @@ async function listKoboldCppModels(
 async function listOllamaModels(
 	input: Omit<ProviderConnectionInput, "model">,
 ): Promise<ProviderModelOption[]> {
-	const baseUrl = (input.baseUrl || "").replace(/\/+$/, "");
-	const url = `${baseUrl.replace(/\/v1$/, "")}/api/tags`;
+	const baseUrl = (input.baseUrl || "").replace(/\/+$/, "").replace(/\/v1$/, "");
+	const url = `${baseUrl}/api/tags`;
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), MODEL_LIST_TIMEOUT_MS);
 
@@ -942,14 +942,92 @@ async function listOllamaModels(
 	interface OllamaModel { name: string; model?: string; capabilities?: string[]; }
 	const payload = (await response.json()) as { models?: OllamaModel[] };
 	const records = Array.isArray(payload.models) ? payload.models : [];
-	return records
+	const baseOptions = records
 		.filter((r) => !r.capabilities?.includes("embedding") || r.capabilities?.includes("completion"))
 		.map((r) => {
 			const id = (r.name ?? r.model ?? "").trim();
 			return id ? { id, label: id } : null;
 		})
-		.filter((r): r is ProviderModelOption => r !== null)
-		.sort((a, b) => a.id.localeCompare(b.id));
+		.filter((r): r is ProviderModelOption => r !== null);
+
+	const enriched = await Promise.all(
+		baseOptions.map(async (option) => ({
+			...option,
+			...(await fetchOllamaModelMetadata(baseUrl, option.id)),
+		})),
+	);
+
+	return enriched.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+async function fetchOllamaModelMetadata(
+	baseUrl: string,
+	model: string,
+): Promise<Partial<ProviderModelOption>> {
+	try {
+		const response = await fetch(`${baseUrl}/api/show`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Accept: "application/json" },
+			body: JSON.stringify({ model }),
+			signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+		});
+		if (!response.ok) return {};
+
+		const payload = (await response.json()) as {
+			capabilities?: string[];
+			details?: {
+				family?: string;
+				families?: string[];
+				format?: string;
+				parameter_size?: string;
+				quantization_level?: string;
+			};
+			model_info?: Record<string, unknown>;
+			parameters?: string;
+		};
+
+		const metadata: Partial<ProviderModelOption> = {};
+		const contextLength = extractOllamaContextLength(payload);
+		if (contextLength) metadata.contextLength = contextLength;
+
+		const details = payload.details;
+		const detailParts = [
+			details?.parameter_size,
+			details?.quantization_level,
+			details?.family,
+			details?.format,
+		].filter(Boolean);
+		if (detailParts.length > 0) metadata.description = detailParts.join(" · ");
+		if (payload.capabilities) {
+			metadata.capabilities = {
+				vision: payload.capabilities.includes("vision"),
+			};
+		}
+
+		return metadata;
+	} catch {
+		return {};
+	}
+}
+
+function extractOllamaContextLength(payload: {
+	model_info?: Record<string, unknown>;
+	parameters?: string;
+}): number | undefined {
+	const info = payload.model_info ?? {};
+	for (const [key, value] of Object.entries(info)) {
+		if (!/(^|\.)context_length$/.test(key)) continue;
+		const parsed = typeof value === "number" ? value : Number(value);
+		if (Number.isFinite(parsed) && parsed > 0) return parsed;
+	}
+
+	const numCtxMatch = payload.parameters?.match(/(?:^|\n)\s*num_ctx\s+(\d+)/i);
+	if (numCtxMatch?.[1]) {
+		const parsed = Number(numCtxMatch[1]);
+		if (Number.isFinite(parsed) && parsed > 0) return parsed;
+	}
+
+	return undefined;
 }
 
 function buildHeaders(apiKey: string, withBody = false): HeadersInit {
