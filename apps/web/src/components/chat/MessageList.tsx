@@ -53,8 +53,8 @@ export function MessageList() {
   const settledRef = useRef(false);
 
   useEffect(() => {
-    if (isSending) {
-      virtuosoRef.current?.autoscrollToBottom();
+    if (isSending && !userScrolledUpRef.current) {
+      scrollToBottom(scrollerElRef.current);
     }
   }, [streamingRevealedText, isSending]);
 
@@ -66,15 +66,21 @@ export function MessageList() {
       }
     } else if (wasSendingRef.current) {
       wasSendingRef.current = false;
+      const didUserScrollUp = userScrolledUpRef.current;
       userScrolledUpRef.current = false;
       
-      virtuosoRef.current?.autoscrollToBottom();
-      const timers = [
-        setTimeout(() => virtuosoRef.current?.autoscrollToBottom(), 150),
-        setTimeout(() => virtuosoRef.current?.autoscrollToBottom(), 400),
-        setTimeout(() => virtuosoRef.current?.autoscrollToBottom(), 800),
-      ];
-      return () => timers.forEach(clearTimeout);
+      if (!didUserScrollUp) {
+        const el = scrollerElRef.current;
+        if (el) {
+          scrollToBottom(el);
+          const timers = [
+            setTimeout(() => scrollToBottom(el), 150),
+            setTimeout(() => scrollToBottom(el), 400),
+            setTimeout(() => scrollToBottom(el), 800),
+          ];
+          return () => timers.forEach(clearTimeout);
+        }
+      }
     }
   }, [isSending]);
 
