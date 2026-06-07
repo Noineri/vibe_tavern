@@ -1,16 +1,10 @@
 import { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
-import { Markdown } from "../../lib/markdown.js";
-import { avatarUrl } from "../../lib/avatar.js";
-import { replaceUiMacros } from "../../lib/macros.js";
 import { useActiveGeneration, useIsSending } from "../../stores/chat-store.js";
-import { useMessageOrder, useMacroContext, useChatMeta } from "../../stores/index.js";
+import { useMessageOrder, useMacroContext } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { MessageBlock } from "./MessageBlock.js";
-import { MessageReasoning } from "./MessageReasoning.js";
-import { StreamingMarkdown } from "./StreamingMarkdown.js";
 import { TranslateErrorBoundary } from "../layout/TranslateErrorBoundary.js";
-import { initials } from "../layout/app-shell-helpers.js";
 import { useT } from "../../i18n/context.js";
 import { Icons } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
@@ -26,13 +20,24 @@ function scrollToBottom(el: HTMLElement | null) {
   if (el) el.scrollTop = el.scrollHeight;
 }
 
+function pinToBottomForMs(el: HTMLElement | null, ms: number): () => void {
+  if (!el) return () => {};
+  const until = performance.now() + ms;
+  let raf: number | undefined;
+  const pin = () => {
+    el.scrollTop = el.scrollHeight;
+    if (performance.now() < until) {
+      raf = requestAnimationFrame(pin);
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
+  };
+  pin();
+  return () => { if (raf !== undefined) cancelAnimationFrame(raf); };
+}
+
 export function MessageList() {
   const { t } = useT();
-  const chatMeta = useChatMeta();
-  const snapshot = chatMeta ? {
-    character: chatMeta.character,
-    persona: chatMeta.persona,
-  } : null;
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scrollerElRef = useRef<HTMLElement | null>(null);
 
@@ -42,8 +47,6 @@ export function MessageList() {
 
   const [atBottom, setAtBottom] = useState(true);
   const isMobile = useIsMobile();
-
-  const autoScrollRafRef = useRef<number | undefined>(undefined);
   const userScrolledUpRef = useRef(false);
   const wasSendingRef = useRef(false);
   const settledRef = useRef(false);  useLayoutEffect(() => {
@@ -106,78 +109,54 @@ export function MessageList() {
   });
 
   const displayMessageIds = useMemo(() => {
-    if (!pendingUserMessageContent || messageOrder.length === 0) return messageOrder;
+    const ids = [...messageOrder];
 
-    if (
-      lastPersistedMessage?.role === "user" &&
-      lastPersistedMessage.content.trim() === pendingUserMessageContent.trim()
-    ) {
-      return messageOrder.slice(0, -1);
+    if (pendingUserMessageContent) {
+      const lastMsg = lastPersistedMessage;
+      const alreadyPersisted =
+        lastMsg?.role === "user" &&
+        lastMsg.content.trim() === pendingUserMessageContent.trim();
+
+      if (!alreadyPersisted) {
+        ids.push("__pending-user");
+      }
+      ids.push("__pending-assistant");
+    } else if (isSending && lastPersistedMessage?.role === "user") {
+      ids.push("__pending-assistant");
     }
 
-    return messageOrder;
-  }, [lastPersistedMessage, messageOrder, pendingUserMessageContent]);
+    return ids;
+  }, [messageOrder, pendingUserMessageContent, lastPersistedMessage, isSending]);
+
+  const bottomPinCleanupRef = useRef<(() => void) | null>(null);
+
+  useLayoutEffect(() => {
+    if (isSending) {
+      wasSendingRef.current = true;
+      // Cancel any previous transition pin — new generation started
+      bottomPinCleanupRef.current?.();
+      bottomPinCleanupRef.current = null;
+      const el = scrollerElRef.current;
+      if (el && !userScrolledUpRef.current) {
+        scrollToBottom(el);
+      }
+    } else if (wasSendingRef.current) {
+      wasSendingRef.current = false;
+      userScrolledUpRef.current = false;
+      // Pin for 900ms to cover framer-motion settling + buttons appearing
+      bottomPinCleanupRef.current = pinToBottomForMs(scrollerElRef.current, 900);
+    }
+    return () => {
+      // Cleanup on unmount only; the pin self-terminates
+    };
+  }, [isSending]);
 
   useEffect(() => {
-    if (displayMessageIds.length === 0) return;
-    const el = scrollerElRef.current;
-    if (!el) return;
-
-    let cancelled = false;
-    const timers = [
-      setTimeout(() => { if (!cancelled) scrollToBottom(el); }, 150),
-      setTimeout(() => { if (!cancelled) scrollToBottom(el); }, 400),
-      setTimeout(() => { if (!cancelled && !userScrolledUpRef.current) scrollToBottom(el); settledRef.current = true; }, 850),
-    ];
-    return () => {
-      cancelled = true;
-      timers.forEach(clearTimeout);
-    };
+    settledRef.current = false;
+    const timer = setTimeout(() => { settledRef.current = true; }, 850);
+    return () => clearTimeout(timer);
   }, [displayMessageIds.length]);
 
-  useEffect(() => {
-    if (!isSending) {
-      if (autoScrollRafRef.current !== undefined) {
-        cancelAnimationFrame(autoScrollRafRef.current);
-        autoScrollRafRef.current = undefined;
-      }
-
-      if (wasSendingRef.current) {
-        const el = scrollerElRef.current;
-        if (el && !userScrolledUpRef.current) {
-          setTimeout(() => { scrollToBottom(el); }, 150);
-          setTimeout(() => { scrollToBottom(el); }, 400);
-        }
-      }
-      return;
-    }
-
-    const pin = () => {
-      if (!userScrolledUpRef.current) scrollToBottom(scrollerElRef.current);
-      autoScrollRafRef.current = requestAnimationFrame(pin);
-    };
-
-    autoScrollRafRef.current = requestAnimationFrame(pin);
-
-    return () => {
-      if (autoScrollRafRef.current !== undefined) {
-        cancelAnimationFrame(autoScrollRafRef.current);
-        autoScrollRafRef.current = undefined;
-      }
-    };
-  }, [isSending, displayMessageIds.length]);
-
-  const displayPendingUserMessageContent = useMemo(
-    () => pendingUserMessageContent && macroContext
-      ? replaceUiMacros(pendingUserMessageContent, macroContext)
-      : pendingUserMessageContent,
-    [macroContext, pendingUserMessageContent],
-  );
-
-  const characterName = snapshot?.character.name ?? "";
-  const characterAvatarAssetId = snapshot?.character.avatarAssetId ?? null;
-  const personaAvatarAssetId = snapshot?.persona?.avatarAssetId ?? null;
-  const personaName = snapshot?.persona?.name ?? "";
 
   const itemContent = useCallback((index: number) => {
     const messageId = displayMessageIds[index];
@@ -193,85 +172,7 @@ export function MessageList() {
 
   const Header = useCallback(() => <div style={{ height: 28 }} />, []);
 
-  const Footer = useCallback(() => (
-    <>
-      {displayPendingUserMessageContent && (
-        <>
-          {displayMessageIds.length > 0 && (
-            <div className={isMobile ? sepWrapM : sepWrap}>
-              <div className="h-px bg-border opacity-40"/>
-            </div>
-          )}
-          <div className={isMobile ? msgWrapM : msgWrap}>
-            <div className="relative group py-2.5">
-              <div className="mb-[12px] flex items-center gap-[10px] text-[calc(var(--ui-fs)-2px)] font-semibold tracking-[0.04em] text-t3 flex-row-reverse">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
-                  {personaAvatarAssetId
-                    ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
-                    : (personaName ? initials(personaName) : "Y")}
-                </span>
-                <span>{t("message_user_label")}</span>
-              </div>
-              <div className="my-0.5 rounded-md bg-user-bg px-4 py-[13px]">
-                <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 opacity-88 [&_em]:italic [&_em]:text-t2">
-                  <Markdown text={displayPendingUserMessageContent} />
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className={isMobile ? sepWrapM : sepWrap}>
-            <div className="h-px bg-border opacity-40"/>
-          </div>
-          <div className={isMobile ? msgWrapM : msgWrap} aria-label={t("generating_response")}>
-            <div className="relative group py-2.5">
-              <div className="mb-[12px] flex items-center gap-[10px] text-[calc(var(--ui-fs)-2px)] font-semibold tracking-[0.04em] text-t3 text-accent-t opacity-85">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
-                  {characterAvatarAssetId
-                    ? <img src={avatarUrl(characterAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
-                    : (characterName ? initials(characterName) : "")}
-                </span>
-                <span>{characterName}</span>
-              </div>
-              <StreamingContent characterName={characterName} />
-            </div>
-          </div>
-        </>
-      )}
-
-      {!displayPendingUserMessageContent && isSending && displayMessageIds.length > 0 && (
-        (() => {
-          const state = useSnapshotStore.getState();
-          const lastMsgId = displayMessageIds[displayMessageIds.length - 1];
-          const lastMsg = state.messagesById[lastMsgId];
-          if (lastMsg?.role !== "user") return null;
-
-          return (
-            <>
-              <div className={isMobile ? sepWrapM : sepWrap}>
-                <div className="h-px bg-border opacity-40"/>
-              </div>
-              <div className={isMobile ? msgWrapM : msgWrap} aria-label={t("generating_response")}>
-                <div className="relative group py-2.5">
-                  <div className="mb-[12px] flex items-center gap-[10px] text-[calc(var(--ui-fs)-2px)] font-semibold tracking-[0.04em] text-t3 text-accent-t opacity-85">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top">
-                      {characterAvatarAssetId
-                        ? <img src={avatarUrl(characterAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
-                        : (characterName ? initials(characterName) : "")}
-                    </span>
-                    <span>{characterName}</span>
-                  </div>
-                  <StreamingContent characterName={characterName} />
-                </div>
-              </div>
-            </>
-          );
-        })()
-      )}
-
-      <div style={{ height: 12 }} />
-    </>
-  ), [displayPendingUserMessageContent, displayMessageIds, isSending,
-      personaAvatarAssetId, personaName, characterAvatarAssetId, characterName, t, isMobile]);
+  const Footer = useCallback(() => <div style={{ height: 12 }} />, []);
 
   return (
     <TranslateErrorBoundary>
@@ -314,33 +215,3 @@ export function MessageList() {
   );
 }
 
-const _dots = (
-  <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle" aria-hidden="true">
-    <span className="h-1 w-1 rounded-full bg-accent animate-genp"/>
-    <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/>
-    <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/>
-  </span>
-);
-
-function StreamingContent(_props: { characterName: string }) {
-  const gen = useActiveGeneration();
-  const streamingText = gen?.streamingText ?? "";
-  const streamingCommittedText = gen?.streamingCommittedText ?? "";
-  const streamingTailText = gen?.streamingTailText ?? streamingText;
-  const streamingReasoning = gen?.streamingReasoningText ?? "";
-  if (streamingText) {
-    return (
-      <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
-        {streamingReasoning && <MessageReasoning reasoning={streamingReasoning} />}
-        <StreamingMarkdown committedText={streamingCommittedText} tailText={streamingTailText} />
-        {_dots}
-      </div>
-    );
-  }
-  return (
-    <div className="font-body text-[length:var(--mfs)] leading-[1.82] text-t1 [&_em]:italic [&_em]:text-t2">
-      {streamingReasoning && <MessageReasoning reasoning={streamingReasoning} />}
-      {_dots}
-    </div>
-  );
-}

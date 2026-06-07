@@ -2,10 +2,7 @@
  * Streaming reveal — gradually reveals streaming text with adaptive modes.
  *
  * It splits visible text into:
- * - committedText: stable prefix rendered through Markdown (updated at sentence,
- *   paragraph, line, or fallback word boundaries)
- * - tailText: live suffix rendered as plain text, avoiding markdown reparse on
- *   every animation tick.
+ * - gradually revealed text, throttling it to avoid jank.
  */
 
 import { useChatStore } from "../stores/chat-store.js";
@@ -14,14 +11,11 @@ const TICK_MS = 16;
 const SMALL_BACKLOG = 80;
 const MEDIUM_BACKLOG = 400;
 const LARGE_BACKLOG = 1200;
-const MAX_LIVE_TAIL = 360;
-const PREFERRED_LIVE_TAIL = 180;
 
 export class StreamingReveal {
   private chatId: string;
   private target = "";
   private shownLength = 0;
-  private committedLength = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private flushResolve: (() => void) | null = null;
 
@@ -52,11 +46,10 @@ export class StreamingReveal {
     if (this.timer) clearTimeout(this.timer);
     this.target = "";
     this.shownLength = 0;
-    this.committedLength = 0;
     this.timer = null;
     this.flushResolve?.();
     this.flushResolve = null;
-    useChatStore.getState().setStreamingParts(this.chatId, "", "");
+    useChatStore.getState().setStreamingRevealed(this.chatId, "");
   }
 
   /** Current fully-revealed text so far. */
@@ -80,7 +73,6 @@ export class StreamingReveal {
       }
 
       this.shownLength = Math.min(this.target.length, this.shownLength + this.nextStep(remaining));
-      this.updateCommittedBoundary();
       this.publish();
       this.timer = setTimeout(tick, TICK_MS);
     };
@@ -117,61 +109,14 @@ export class StreamingReveal {
     return hardEnd - start;
   }
 
-  private updateCommittedBoundary(): void {
-    const boundary = findStableCommitBoundary(this.target, this.committedLength, this.shownLength);
-    if (boundary > this.committedLength) {
-      this.committedLength = boundary;
-    }
-
-    const liveTailLength = this.shownLength - this.committedLength;
-    if (liveTailLength > MAX_LIVE_TAIL) {
-      const desired = Math.max(this.committedLength, this.shownLength - PREFERRED_LIVE_TAIL);
-      const fallback = findLastWhitespaceBoundary(this.target, this.committedLength, desired);
-      this.committedLength = fallback > this.committedLength ? fallback : desired;
-    }
-  }
-
   private publish(): void {
-    const committedText = this.target.slice(0, this.committedLength);
-    const tailText = this.target.slice(this.committedLength, this.shownLength);
-    useChatStore.getState().setStreamingParts(this.chatId, committedText, tailText);
+    const revealedText = this.target.slice(0, this.shownLength);
+    useChatStore.getState().setStreamingRevealed(this.chatId, revealedText);
   }
 
   private commitAll(): void {
     this.shownLength = this.target.length;
-    this.committedLength = this.target.length;
-    useChatStore.getState().setStreamingParts(this.chatId, this.target, "");
+    useChatStore.getState().setStreamingRevealed(this.chatId, this.target);
   }
 }
 
-function findStableCommitBoundary(text: string, from: number, to: number): number {
-  let best = -1;
-  const limit = Math.min(text.length, to);
-
-  for (let i = Math.max(0, from); i < limit; i++) {
-    const ch = text[i];
-    const next = text[i + 1] ?? "";
-
-    // Paragraph boundary: best for markdown stability.
-    if (ch === "\n" && next === "\n") best = i + 2;
-
-    // Single line boundary: useful for lists/code-ish output once there is some tail.
-    if (ch === "\n" && i + 1 - from > 80) best = i + 1;
-
-    // Sentence boundary followed by whitespace/end.
-    if ((ch === "." || ch === "!" || ch === "?" || ch === "…") && (next === "" || /\s/.test(next))) {
-      best = i + 1;
-    }
-  }
-
-  return best > from ? best : from;
-}
-
-function findLastWhitespaceBoundary(text: string, from: number, to: number): number {
-  const limit = Math.min(text.length, to);
-  for (let i = limit; i > from; i--) {
-    const ch = text[i - 1];
-    if (ch === " " || ch === "\n" || ch === "\t") return i;
-  }
-  return from;
-}

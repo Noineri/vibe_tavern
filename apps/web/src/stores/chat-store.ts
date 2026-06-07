@@ -7,8 +7,7 @@ import type { ChatGenerationStatus } from "../app-client.js";
 export interface ChatGenerationState {
   isSending: boolean;
   streamingText: string;
-  streamingCommittedText: string;
-  streamingTailText: string;
+  streamingRevealedText: string;
   streamingReasoningText: string;
   generationStatus: ChatGenerationStatus;
   pendingUserMessageContent: string | null;
@@ -19,8 +18,7 @@ function defaultGenState(): ChatGenerationState {
   return {
     isSending: false,
     streamingText: "",
-    streamingCommittedText: "",
-    streamingTailText: "",
+    streamingRevealedText: "",
     streamingReasoningText: "",
     generationStatus: "idle" as ChatGenerationStatus,
     pendingUserMessageContent: null,
@@ -60,14 +58,8 @@ export interface ChatActions {
   /** Start generation: creates AbortController, sets isSending. Returns the controller. */
   startGeneration: (chatId: string, pendingUserContent?: string | null) => AbortController;
 
-  /** Append a text delta to the streaming buffer. */
-  appendStreamingText: (chatId: string, delta: string) => void;
-
-  /** Set the streaming text to an absolute value (used by streaming reveal animation). */
-  setStreamingText: (chatId: string, text: string) => void;
-
-  /** Set streaming markdown parts: stable markdown prefix + plain live tail. */
-  setStreamingParts: (chatId: string, committedText: string, tailText: string) => void;
+  /** Set the revealed streaming text (throttled by StreamingReveal). Also updates streamingText. */
+  setStreamingRevealed: (chatId: string, revealedText: string) => void;
 
   /** Append a reasoning delta. */
   appendReasoningText: (chatId: string, delta: string) => void;
@@ -139,44 +131,14 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
     return controller;
   },
 
-  appendStreamingText: (chatId, delta) => {
+  setStreamingRevealed: (chatId, revealedText) => {
     set((s) => {
       const gen = s.generations[chatId];
+      if (!gen) return s;
       return {
         generations: {
           ...s.generations,
-          [chatId]: gen
-            ? { ...gen, streamingText: gen.streamingText + delta, streamingTailText: gen.streamingTailText + delta }
-            : { ...defaultGenState(), streamingText: delta, streamingTailText: delta },
-        },
-      };
-    });
-  },
-
-  setStreamingText: (chatId, text) => {
-    set((s) => {
-      const gen = s.generations[chatId];
-      return {
-        generations: {
-          ...s.generations,
-          [chatId]: gen
-            ? { ...gen, streamingText: text, streamingCommittedText: text, streamingTailText: "" }
-            : { ...defaultGenState(), streamingText: text, streamingCommittedText: text, streamingTailText: "" },
-        },
-      };
-    });
-  },
-
-  setStreamingParts: (chatId, committedText, tailText) => {
-    set((s) => {
-      const gen = s.generations[chatId];
-      const streamingText = committedText + tailText;
-      return {
-        generations: {
-          ...s.generations,
-          [chatId]: gen
-            ? { ...gen, streamingText, streamingCommittedText: committedText, streamingTailText: tailText }
-            : { ...defaultGenState(), streamingText, streamingCommittedText: committedText, streamingTailText: tailText },
+          [chatId]: { ...gen, streamingRevealedText: revealedText, streamingText: revealedText },
         },
       };
     });
@@ -227,8 +189,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
             ...gen,
             isSending: false,
             streamingText: "",
-            streamingCommittedText: "",
-            streamingTailText: "",
+            streamingRevealedText: "",
             streamingReasoningText: "",
             pendingUserMessageContent: null,
             abortController: null,
@@ -253,8 +214,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
             ...g,
             isSending: false,
             streamingText: "",
-            streamingCommittedText: "",
-            streamingTailText: "",
+            streamingRevealedText: "",
             streamingReasoningText: "",
             pendingUserMessageContent: null,
             abortController: null,
