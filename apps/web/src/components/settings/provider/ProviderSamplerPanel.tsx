@@ -7,6 +7,7 @@ import { Icons } from '../../shared/icons.js';
 import { cn } from '../../../lib/cn.js';
 import { CustomTooltip } from '../../shared/Tooltip.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
+import type { SamplerCapabilityFlags, SamplerFieldId } from '@vibe-tavern/domain';
 
 /* ── SamplerField sub-component ────────────────────────────────────── */
 
@@ -175,13 +176,15 @@ const CUSTOM_SAMPLER_DEFAULTS = {
 interface ProviderSamplerPanelProps {
   form: FormState;
   updateForm: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
-  capabilities?: { logitBias?: boolean; [k: string]: unknown } | null;
+  capabilities?: { logitBias?: boolean; samplers?: SamplerCapabilityFlags; [k: string]: unknown } | null;
 }
 
 export function ProviderSamplerPanel({ form, updateForm, capabilities }: ProviderSamplerPanelProps) {
   const { t } = useT();
   const [advOpen, setAdvOpen] = useState(false);
   const disabled = !form.customSamplers;
+  const samplerCaps = capabilities?.samplers;
+  const supports = (field: SamplerFieldId) => samplerCaps?.[field] ?? true;
 
   const handleToggleCustomSamplers = (enabled: boolean) => {
     if (enabled) {
@@ -255,30 +258,34 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
         </div>
 
         {/* Temperature */}
-        <SamplerField
-          label={`${t("sampler_temperature")} (${form.temperature})`}
-          min={0}
-          max={2}
-          step={0.05}
-          value={form.temperature}
-          onChange={(v) => updateForm('temperature', v)}
-        />
+        {supports('temperature') && (
+          <SamplerField
+            label={`${t("sampler_temperature")} (${form.temperature})`}
+            min={0}
+            max={2}
+            step={0.05}
+            value={form.temperature}
+            onChange={(v) => updateForm('temperature', v)}
+          />
+        )}
 
         {/* Reasoning effort */}
-        <div>
-          <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
-            {t("reasoning_effort")}
-          </label>
-          <SegmentedControl
-            value={form.reasoningEffort}
-            options={[
-              { value: "low", label: t("effort_low") },
-              { value: "medium", label: t("effort_medium") },
-              { value: "high", label: t("effort_high") },
-            ]}
-            onChange={(v) => updateForm('reasoningEffort', v)}
-          />
-        </div>
+        {supports('reasoningEffort') && (
+          <div>
+            <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
+              {t("reasoning_effort")}
+            </label>
+            <SegmentedControl
+              value={form.reasoningEffort}
+              options={[
+                { value: "low", label: t("effort_low") },
+                { value: "medium", label: t("effort_medium") },
+                { value: "high", label: t("effort_high") },
+              ]}
+              onChange={(v) => updateForm('reasoningEffort', v)}
+            />
+          </div>
+        )}
       </div>
 
       {/* Toggles: Streaming, Reasoning */}
@@ -325,91 +332,104 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
           <div className="border-t border-border2 bg-surface p-4">
             {/* Two-column sampler grid */}
             <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4", disabled && "opacity-40 pointer-events-none")}>
-              {/* Left column: topP, topK, topA, minP */}
-              <SamplerField
-                label={t("sampler_top_p")}
-                min={0}
-                max={1}
-                step={0.01}
-                value={form.topP}
-                onChange={(v) => updateForm('topP', v)}
-                disabled={disabled}
-              />
-              <SamplerField
-                label={t("sampler_freq_penalty")}
-                min={-2}
-                max={2}
-                step={0.1}
-                value={form.frequencyPenalty}
-                onChange={(v) => updateForm('frequencyPenalty', v)}
-                disabled={disabled}
-              />
-              <SamplerField
-                label={t("sampler_top_k")}
-                min={0}
-                max={100}
-                step={1}
-                isInteger={true}
-                value={form.topK}
-                onChange={(v) => updateForm('topK', v)}
-                disabled={disabled}
-              />
-              <SamplerField
-                label={t("sampler_pres_penalty")}
-                min={-2}
-                max={2}
-                step={0.1}
-                value={form.presencePenalty}
-                onChange={(v) => updateForm('presencePenalty', v)}
-                disabled={disabled}
-              />
-              <SamplerField
-                label={t("sampler_top_a")}
-                min={0}
-                max={1}
-                step={0.01}
-                value={form.topA ?? 0}
-                onChange={(v) => updateForm('topA', v)}
-                disabled={disabled}
-              />
-              <SamplerField
-                label={t("sampler_rep_penalty")}
-                min={0}
-                max={2}
-                step={0.05}
-                value={form.repetitionPenalty}
-                onChange={(v) => updateForm('repetitionPenalty', v)}
-                disabled={disabled}
-              />
-              <SamplerField
-                label={t("sampler_min_p")}
-                min={0}
-                max={1}
-                step={0.01}
-                value={form.minP}
-                onChange={(v) => updateForm('minP', v)}
-                disabled={disabled}
-              />
-              {/* Right column bottom spacer */}
-              <div />
+              {supports('topP') && (
+                <SamplerField
+                  label={t("sampler_top_p")}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={form.topP}
+                  onChange={(v) => updateForm('topP', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('frequencyPenalty') && (
+                <SamplerField
+                  label={t("sampler_freq_penalty")}
+                  min={-2}
+                  max={2}
+                  step={0.1}
+                  value={form.frequencyPenalty}
+                  onChange={(v) => updateForm('frequencyPenalty', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('topK') && (
+                <SamplerField
+                  label={t("sampler_top_k")}
+                  min={0}
+                  max={100}
+                  step={1}
+                  isInteger={true}
+                  value={form.topK}
+                  onChange={(v) => updateForm('topK', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('presencePenalty') && (
+                <SamplerField
+                  label={t("sampler_pres_penalty")}
+                  min={-2}
+                  max={2}
+                  step={0.1}
+                  value={form.presencePenalty}
+                  onChange={(v) => updateForm('presencePenalty', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('topA') && (
+                <SamplerField
+                  label={t("sampler_top_a")}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={form.topA ?? 0}
+                  onChange={(v) => updateForm('topA', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('repetitionPenalty') && (
+                <SamplerField
+                  label={t("sampler_rep_penalty")}
+                  min={0}
+                  max={2}
+                  step={0.05}
+                  value={form.repetitionPenalty}
+                  onChange={(v) => updateForm('repetitionPenalty', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('minP') && (
+                <SamplerField
+                  label={t("sampler_min_p")}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={form.minP}
+                  onChange={(v) => updateForm('minP', v)}
+                  disabled={disabled}
+                />
+              )}
             </div>
 
             {/* Stop Sequences — full width */}
-            <div className={cn("mt-4", disabled && "opacity-40 pointer-events-none")}>
-              <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
-                {t("stop_seqs_label")}
-              </label>
-              <ChipInput
-                values={form.stopSequences}
-                onChange={(v) => updateForm('stopSequences', v)}
-                placeholder={t("stop_seqs_placeholder")}
-                disabled={disabled}
-                showPresets
-                tooltip={t("stop_seqs_hint")}
-              />
-            </div>
+            {supports('stopSequences') && (
+              <div className={cn("mt-4", disabled && "opacity-40 pointer-events-none")}>
+                <label className="mb-[7px] block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
+                  {t("stop_seqs_label")}
+                </label>
+                <ChipInput
+                  values={form.stopSequences}
+                  onChange={(v) => updateForm('stopSequences', v)}
+                  placeholder={t("stop_seqs_placeholder")}
+                  disabled={disabled}
+                  showPresets
+                  tooltip={t("stop_seqs_hint")}
+                />
+              </div>
+            )}
 
-            {capabilities?.logitBias && (
+            {capabilities?.logitBias && supports('logitBias') && (
               <LogitBiasPanel
                 entries={form.logitBias}
                 onChange={(v) => updateForm('logitBias', v)}

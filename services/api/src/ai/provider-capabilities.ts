@@ -6,8 +6,8 @@
  * and are flipped to true only when verified or explicitly implemented.
  */
 
-import type { ProviderType } from "@vibe-tavern/domain";
-
+import { SAMPLER_SETS } from "@vibe-tavern/domain";
+import type { ProviderType, SamplerCapabilityFlags } from "@vibe-tavern/domain";
 
 export interface ProviderCapabilityFlags {
   /** Provider can produce a complete non-streamed reply. */
@@ -20,6 +20,8 @@ export interface ProviderCapabilityFlags {
   prefill: boolean;
   /** Provider supports logit bias (token-level output control). */
   logitBias: boolean;
+  /** Granular sampler controls supported by this provider type. */
+  samplers: SamplerCapabilityFlags;
 }
 
 /** Capability map keyed by provider type. */
@@ -28,10 +30,10 @@ export type ProviderCapabilityMap = Record<ProviderType, ProviderCapabilityFlags
 /**
  * Conservative capability declarations for all current provider kinds.
  *
- * - nonStreamGeneration: all current providers already support this.
- * - abortSignal: all providers use fetch-based HTTP which supports AbortSignal.
- * - streaming: true — streaming executor (FW-AI2) uses streamText(); route collects in this brief, SSE forwarding in FW-AI5.
- * - prefill: deterministic per type — true for openai_compat/ollama/llamacpp, false for anthropic/google/koboldcpp.
+ * Local OpenAI-compatible backends may expose more sampler fields than cloud
+ * OpenAI-compatible providers; preset-level UI uses resolveSamplerCapabilities()
+ * for those finer distinctions. This provider-type map is the backend-safe
+ * default.
  */
 export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
   openai_compat: {
@@ -40,6 +42,7 @@ export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
     streaming: true,
     prefill: true,
     logitBias: true,
+    samplers: SAMPLER_SETS.openai_chat,
   },
   anthropic: {
     nonStreamGeneration: true,
@@ -47,6 +50,7 @@ export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
     streaming: true,
     prefill: false,
     logitBias: false,
+    samplers: SAMPLER_SETS.anthropic,
   },
   google: {
     nonStreamGeneration: true,
@@ -54,6 +58,7 @@ export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
     streaming: true,
     prefill: false,
     logitBias: false,
+    samplers: SAMPLER_SETS.google,
   },
   ollama: {
     nonStreamGeneration: true,
@@ -61,6 +66,7 @@ export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
     streaming: true,
     prefill: true,
     logitBias: true,
+    samplers: SAMPLER_SETS.ollama_native,
   },
   llamacpp: {
     nonStreamGeneration: true,
@@ -68,6 +74,7 @@ export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
     streaming: true,
     prefill: true,
     logitBias: true,
+    samplers: SAMPLER_SETS.llamacpp_openai,
   },
   koboldcpp: {
     nonStreamGeneration: true,
@@ -75,6 +82,7 @@ export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
     streaming: true,
     prefill: false,
     logitBias: false,
+    samplers: SAMPLER_SETS.koboldcpp_native,
   },
 };
 
