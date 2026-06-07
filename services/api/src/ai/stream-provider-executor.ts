@@ -121,7 +121,7 @@ function createMappedStream(
 /**
  * Map the Vercel AI SDK result into our ProviderStreamFinish promise.
  */
-function mapFinish(result: { finishReason: Promise<unknown>; usage: Promise<unknown> }, signal?: AbortSignal): Promise<ProviderStreamFinish> {
+function mapFinish(result: { finishReason: PromiseLike<unknown>; usage: PromiseLike<unknown> }, signal?: AbortSignal): Promise<ProviderStreamFinish> {
   return Promise.all([result.finishReason, result.usage]).then(([reason, usage]) => {
     const usageRecord = usage as { inputTokens?: number; outputTokens?: number; totalTokens?: number } | undefined;
     let finishReason: ProviderStreamFinish["finishReason"] = "stop";
@@ -150,16 +150,16 @@ function isNoOutputGeneratedError(error: unknown): boolean {
   return error.name === "AI_NoOutputGeneratedError" || error.name === "NoOutputGeneratedError" || error.message.includes("No output generated");
 }
 
-function safeStreamTextPromise(promise: Promise<string>, signal?: AbortSignal): Promise<string> {
-  return promise.catch((error) => {
+function safeStreamTextPromise(promise: PromiseLike<string>, signal?: AbortSignal): Promise<string> {
+  return Promise.resolve(promise).catch((error: unknown) => {
     if (signal?.aborted || isNoOutputGeneratedError(error)) return "";
     logSendDebug("stream.text-promise-error", { message: error instanceof Error ? error.message : String(error) });
     return "";
   });
 }
 
-function safeReasoningPromise(promise: Promise<string | undefined>, signal?: AbortSignal): Promise<string | undefined> {
-  return promise.catch((error) => {
+function safeReasoningPromise(promise: PromiseLike<string | undefined>, signal?: AbortSignal): Promise<string | undefined> {
+  return Promise.resolve(promise).catch((error: unknown) => {
     if (signal?.aborted || isNoOutputGeneratedError(error)) return undefined;
     logSendDebug("stream.reasoning-promise-error", { message: error instanceof Error ? error.message : String(error) });
     return undefined;
