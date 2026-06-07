@@ -2,7 +2,7 @@ import { useRef, useEffect } from "react";
 import { Toaster } from "sonner";
 import { useT } from "../../i18n/context.js";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
-import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useActiveGeneration, useIsSending } from "../../stores/index.js";
+import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useIsSending } from "../../stores/index.js";
 import { useActiveTrace } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
@@ -54,8 +54,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const isSending = useIsSending();
   const editingDraft = useChatStore((s) => s.editingDraft);
   const selectedTraceId = useChatStore((s) => s.selectedTraceId);
-  const activeGen = useActiveGeneration();
-  const pendingUserMessageContent = activeGen?.pendingUserMessageContent ?? null;
   const confirmDestroy = useCharacterStore((s) => s.confirmDestroy);
   const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
   const renamingChatId = useCharacterStore((s) => s.renamingChatId);

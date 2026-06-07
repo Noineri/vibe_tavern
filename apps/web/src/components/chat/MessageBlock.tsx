@@ -102,8 +102,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   // Streaming text for regeneration
   const globalStreamingText = activeGen?.streamingText ?? "";
-  const globalStreamingCommittedText = activeGen?.streamingCommittedText ?? "";
-  const globalStreamingTailText = activeGen?.streamingTailText ?? globalStreamingText;
+  const globalStreamingRevealedText = activeGen?.streamingRevealedText ?? "";
   const globalStreamingReasoning = activeGen?.streamingReasoningText ?? "";
 
   // Separator logic
@@ -118,6 +117,14 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   // ── EARLY RETURN — after all hooks ──
   const isMobile = useIsMobile();
+
+  if (input.messageId === "__pending-user") {
+    return <PendingUserMessage />;
+  }
+  if (input.messageId === "__pending-assistant") {
+    return <PendingAssistantMessage />;
+  }
+
   if (!msg || !chatMeta) return null;
 
   // ── Derived values (non-hook, safe to be after return) ──
@@ -158,8 +165,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   const isStreamingHere = !isUser && messageActionId === input.messageId && (globalStreamingText || globalStreamingReasoning);
   const activeStreamingText = isStreamingHere ? globalStreamingText : null;
-  const activeStreamingCommittedText = isStreamingHere ? globalStreamingCommittedText : "";
-  const activeStreamingTailText = isStreamingHere ? globalStreamingTailText : "";
+  const activeStreamingRevealedText = isStreamingHere ? globalStreamingRevealedText : "";
   const activeStreamingReasoning = isStreamingHere ? globalStreamingReasoning : null;
 
   // Reasoning from persisted variant data only (not streaming)
@@ -295,7 +301,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   ) : isStreamingHere ? (
     <div className={isMobile ? "my-0.5 w-full" : ""}>
       <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-        {activeStreamingText ? <StreamingMarkdown committedText={activeStreamingCommittedText} tailText={activeStreamingTailText} /> : null}
+        {activeStreamingText ? <StreamingMarkdown text={activeStreamingRevealedText} /> : null}
         <GenerationDots label={t("generating_response")} />
       </div>
     </div>
@@ -653,4 +659,121 @@ function VariantControls(props: VariantControlsProps) {
 
 function isBreakoutRole(role: string): boolean {
   return role === "tool";
+}
+
+function PendingUserMessage() {
+  const chatMeta = useChatMeta();
+  const activeGen = useActiveGeneration();
+  const isMobile = useIsMobile();
+  const macroContext = useMacroContext();
+  const variantControlsRef = useRef<HTMLSpanElement>(null);
+  if (!chatMeta || !activeGen) return null;
+
+  const content = activeGen.pendingUserMessageContent ?? "";
+  const displayContent = macroContext ? replaceUiMacros(content, macroContext) : content;
+  const author = { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null };
+
+  return (
+    <MessageShell
+      messageId="__pending-user"
+      chatId={chatMeta.activeChat?.id ?? ""}
+      role="user"
+      showSeparator={true}
+      author={author}
+      isUser={true}
+      isGreeting={false}
+      isEditing={false}
+      isGenerating={false}
+      isBusy={true}
+      canBranch={false}
+      canRegenerate={false}
+      canResend={false}
+      selectedVariantIndex={0}
+      variantCount={1}
+      canSwitchVariant={false}
+      tokenCount={0}
+      modelId=""
+      createdAt={Date.now().toString()}
+      copied={false}
+      slotExtras={{}}
+      variantControlsOverlay={null}
+      variantControlsRef={variantControlsRef}
+      actions={{
+        onCopy: () => {},
+        onEdit: () => {},
+        onDelete: () => {},
+        onBranch: () => {},
+        onRegenerate: () => {},
+        onResend: () => {},
+      }}
+    >
+      <div className={isMobile ? "my-0.5 rounded-md bg-user-bg" : "my-0.5 rounded-md bg-user-bg px-4 py-[13px]"} style={isMobile ? { padding: '10px 12px' } : undefined}>
+        <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 opacity-88 [&_em]:italic [&_em]:text-msg-t2">
+          <Markdown text={displayContent} />
+        </div>
+      </div>
+    </MessageShell>
+  );
+}
+
+function PendingAssistantMessage() {
+  const { t } = useT();
+  const chatMeta = useChatMeta();
+  const activeGen = useActiveGeneration();
+  const isMobile = useIsMobile();
+  const variantControlsRef = useRef<HTMLSpanElement>(null);
+  if (!chatMeta || !activeGen) return null;
+
+  const author = { name: chatMeta.character.name, avatarAssetId: chatMeta.character.avatarAssetId };
+  const streamingText = activeGen.streamingText;
+  const streamingRevealedText = activeGen.streamingRevealedText;
+  const streamingReasoning = activeGen.streamingReasoningText;
+
+  const reasoningForSlot = streamingReasoning ? {
+    reasoning: streamingReasoning,
+    reasoningDurationMs: null,
+  } : null;
+
+  return (
+    <MessageShell
+      messageId="__pending-assistant"
+      chatId={chatMeta.activeChat?.id ?? ""}
+      role="assistant"
+      showSeparator={true}
+      author={author}
+      isUser={false}
+      isGreeting={false}
+      isEditing={false}
+      isGenerating={true}
+      isBusy={true}
+      canBranch={false}
+      canRegenerate={false}
+      canResend={false}
+      selectedVariantIndex={0}
+      variantCount={1}
+      canSwitchVariant={false}
+      tokenCount={0}
+      modelId=""
+      createdAt={Date.now().toString()}
+      copied={false}
+      slotExtras={{ reasoning: reasoningForSlot }}
+      variantControlsOverlay={null}
+      variantControlsRef={variantControlsRef}
+      actions={{
+        onCopy: () => {},
+        onEdit: () => {},
+        onDelete: () => {},
+        onBranch: () => {},
+        onRegenerate: () => {},
+        onResend: () => {},
+      }}
+    >
+      <div className={isMobile ? "my-0.5 w-full" : ""}>
+        <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
+          {streamingText ? <StreamingMarkdown text={streamingRevealedText} /> : null}
+          <GenerationDots label={t("generating_response")} />
+        </div>
+      </div>
+    </MessageShell>
+  );
 }
