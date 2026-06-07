@@ -268,18 +268,26 @@ describe("buildSamplerConfig", () => {
     it("sets only common native params", () => {
       const config = buildSamplerConfig(profile("koboldcpp"));
       expect(config.temperature).toBe(0.9);
-      expect(config.topP).toBe(0.95);
       expect(config.maxOutputTokens).toBe(4096);
       expect(config.stopSequences).toEqual(["\\n\\n", "STOP"]);
     });
 
-    it("does NOT set any provider-specific fields", () => {
+    it("sets providerOptions.koboldcpp with top_k, top_p, min_p, rep_pen", () => {
+      const config = buildSamplerConfig(profile("koboldcpp"));
+      expect(config.providerOptions!.koboldcpp).toEqual({
+        top_k: 80,
+        top_p: 0.95,
+        min_p: 0.05,
+        rep_pen: 1.15,
+        rep_pen_range: 50,
+      });
+    });
+
+    it("does NOT set native frequencyPenalty, presencePenalty, seed", () => {
       const config = buildSamplerConfig(profile("koboldcpp"));
       expect(config.frequencyPenalty).toBeUndefined();
       expect(config.presencePenalty).toBeUndefined();
       expect(config.seed).toBeUndefined();
-      expect(config.topK).toBeUndefined();
-      expect(config.providerOptions).toBeUndefined();
     });
   });
 

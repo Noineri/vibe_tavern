@@ -27,6 +27,7 @@ import {
   type ProviderCapabilityFlags,
 } from "./provider-capabilities.js";
 import { createReasoningAwareFetch } from "./openai-reasoning-fetch.js";
+import { createKoboldCppModel } from "./koboldcpp-adapter.js";
 
 // ---------------------------------------------------------------------------
 // SDK support classification
@@ -145,12 +146,20 @@ export function mapProfileToSdkModel(
 
     // -- Explicitly unsupported ----------------------------------------------
     case PROVIDER_TYPE.koboldCpp: {
-      throw providerError(
-        `Provider type '${PROVIDER_TYPE.koboldCpp}' is not supported by the Vercel AI SDK. ` +
-        `KoboldCPP's /api/v1/generate endpoint is not OpenAI-compatible. ` +
-        `Please switch to a supported provider (OpenAI-compatible, Anthropic, Google, Ollama, or llama.cpp).`,
-        { providerType: profile.providerPreset },
-      );
+      const endpoint = (profile.endpoint || "").replace(/\/+$/, "") || "http://localhost:5001";
+      const koboldModel = createKoboldCppModel({
+        baseURL: endpoint,
+        modelId: model ?? "koboldcpp",
+      });
+      return {
+        model: koboldModel,
+        capabilities,
+        limitations: [
+          "Uses KoboldCPP native /api/v1/generate endpoint (not OpenAI-compat).",
+          "Chat messages are serialized into a flat text prompt.",
+          "Tool calling is not supported.",
+        ],
+      };
     }
 
     default: {
