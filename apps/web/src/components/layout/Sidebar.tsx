@@ -290,8 +290,10 @@ export function Sidebar() {
               <CustomTooltip key={item.id} content={t(item.labelKey)} side="right">
                 <div
                   className={cn(
-                    'flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-150 hover:rounded-xl hover:bg-s2',
-                    buildTab === item.id && 'rounded-xl bg-accent-dim text-accent-t'
+                    'flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center transition-all duration-150',
+                    buildTab === item.id 
+                      ? 'rounded-xl bg-accent-dim text-accent-t'
+                      : 'rounded-full hover:rounded-xl hover:bg-s2'
                   )}
                   onClick={() => setBuildTab(item.id)}
                 >
@@ -784,8 +786,10 @@ export function Sidebar() {
                 <div
                   key={item.id}
                   className={cn(
-                    'mx-1 flex cursor-pointer items-center gap-2.5 rounded px-3.5 py-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t2 transition-all hover:bg-s2 hover:text-t1',
-                    buildTab === item.id && 'bg-accent-dim text-accent-t'
+                    'mx-1 flex cursor-pointer items-center gap-2.5 rounded px-3.5 py-2 font-ui text-[calc(var(--ui-fs)-1px)] transition-all',
+                    buildTab === item.id 
+                      ? 'bg-accent-dim text-accent-t'
+                      : 'text-t2 hover:bg-s2 hover:text-t1'
                   )}
                   onClick={() => setBuildTab(item.id)}
                 >
