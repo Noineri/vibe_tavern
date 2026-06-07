@@ -43,6 +43,10 @@ export function Sidebar() {
   const allChats = snapshot?.chats ?? [];
   const activeChatCharacterId = snapshot?.activeChat?.characterId;
   const currentCharacterId = selectedCharacterId ?? activeChatCharacterId;
+  const isCharacterTabActive = (tab: { id: string; chatId?: string | null }): boolean => {
+    if (selectedCharacterId) return tab.id === selectedCharacterId;
+    return tab.id === activeChatCharacterId || tab.chatId === activeChatId;
+  };
 
   // Filter chats to show only those belonging to the current character
   const chats = useMemo(
@@ -144,8 +148,7 @@ export function Sidebar() {
           <div className="flex min-h-0 flex-1 flex-col items-center">
             <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto py-2 px-[7px]">
               {characterTabs.map((tab) => {
-                const isActive = tab.chatId === activeChatId
-                  || (!tab.chatId && tab.id === selectedCharacterId);
+                const isActive = isCharacterTabActive(tab);
                 const isFlyout = flyoutCharId === tab.id;
                 return (
                   <CustomTooltip key={tab.id} content={tab.name} side="right">
@@ -338,8 +341,7 @@ export function Sidebar() {
                 </div>
               ) : (
                 characterTabs.map((tab) => {
-                  const isActive = tab.chatId === activeChatId
-                    || (!tab.chatId && tab.id === selectedCharacterId);
+                  const isActive = isCharacterTabActive(tab);
                   const menuOpen = charMenuId === tab.id;
                   return (
                     <div
@@ -447,8 +449,7 @@ export function Sidebar() {
                 </CustomTooltip>
                 <CustomTooltip content={t("sidebar_new_chat_active_char")}>
                   <button type="button" className="iBtn size-5" onClick={() => {
-                    const activeTab = characterTabs.find((tab) => tab.chatId === activeChatId);
-                    const charId = activeTab?.id ?? selectedCharacterId;
+                    const charId = currentCharacterId;
                     void character.handleCreateChat(charId ?? undefined);
                   }}>
                     <Icons.Plus />
