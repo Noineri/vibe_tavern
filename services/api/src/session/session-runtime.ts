@@ -76,6 +76,7 @@ export interface BootstrapState {
 	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null }>;
 	promptPresets: PromptPresetDto[];
 	uiSettings: UiSettings;
+	isArmServer: boolean;
 }
 
 export interface ImportResult {
@@ -180,6 +181,7 @@ export interface ImportResult {
 			this.stores.presets.listAll(),
 			this.stores.uiSettings.get(),
 		]);
+		const isArmServer = process.arch.startsWith('arm') && process.platform !== 'darwin';
 		return {
 			initialChatId,
 			snapshot: initialChatId ? await this.getSnapshot(initialChatId) : null,
@@ -193,6 +195,7 @@ export interface ImportResult {
 			})),
 			promptPresets: promptPresets.map((p) => this.mapPresetToDto(p)),
 			uiSettings,
+			isArmServer,
 		};
 	}
 
