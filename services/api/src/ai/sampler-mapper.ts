@@ -109,7 +109,7 @@ export function buildSamplerConfig(
           for (const entry of usableEntries) {
             biasMap[String(entry.tokenId)] = entry.bias;
           }
-          (providerOpts as Record<string, unknown>).logitBias = biasMap;
+          (providerOpts as Record<string, unknown>).logit_bias = biasMap;
         }
       }
 
