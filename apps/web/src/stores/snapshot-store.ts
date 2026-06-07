@@ -236,8 +236,14 @@ export const useSnapshotStore = create<SnapshotStore>()(
       set((draft) => {
         const existing = draft.messagesById[messageId];
         if (existing) {
-          existing.selectedVariantIndex = variantIndex;
-          const variant = existing.variants[variantIndex];
+          const variant =
+            existing.variants.find((item) => item.variantIndex === variantIndex) ??
+            existing.variants[variantIndex];
+          const resolvedVariantIndex = variant?.variantIndex ?? variantIndex;
+          existing.selectedVariantIndex = resolvedVariantIndex;
+          for (const item of existing.variants) {
+            item.isSelected = item.variantIndex === resolvedVariantIndex;
+          }
           if (variant) {
             existing.content = variant.content;
             existing.modelId = variant.modelId ?? null;

@@ -67,7 +67,16 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     }));
   }, [msg?.variants, macroContext]);
 
-  const selectedVariantIndex = msg?.selectedVariantIndex ?? 0;
+  const selectedVariantDbIndex = msg?.selectedVariantIndex ?? null;
+  const selectedVariantIndex = useMemo(() => {
+    if (variants.length === 0) return 0;
+    if (selectedVariantDbIndex !== null) {
+      const position = variants.findIndex((variant) => variant.variantIndex === selectedVariantDbIndex);
+      if (position >= 0) return position;
+    }
+    const selectedFlagPosition = variants.findIndex((variant) => variant.isSelected);
+    return selectedFlagPosition >= 0 ? selectedFlagPosition : 0;
+  }, [variants, selectedVariantDbIndex]);
   const variantCount = variants.length;
 
   // Greeting logic
@@ -141,6 +150,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // but client-side switching only changes selectedVariantIndex.
   // Read the actual variant text directly.
   const selectedVariant = variants[selectedVariantIndex] ?? variants[0];
+  const selectedVariantBackendIndex = selectedVariant?.variantIndex ?? selectedVariantIndex;
   const activeContent = selectedVariant ? selectedVariant.content : msg.displayContent;
 
   const renderContent = activeContent;
@@ -193,8 +203,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     }
 
     if (!isMobile) pinVirtuosoToBottomDuringVariantSwitch();
-    useSnapshotStore.getState().selectVariant(msg.id, targetIndex, swipeDirection);
-    chat.handleSelectMessageVariant(msg.id, targetIndex);
+    const targetVariant = variants[targetIndex];
+    if (!targetVariant) return;
+    useSnapshotStore.getState().selectVariant(msg.id, targetVariant.variantIndex, swipeDirection);
+    chat.handleSelectMessageVariant(msg.id, targetVariant.variantIndex);
   };
 
   // ── Greeting counter controls ──
@@ -322,7 +334,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   const confirmDeleteVariant = async () => {
     setDeleteConfirmOpen(false);
-    await chat.handleDeleteVariant(msg.id, selectedVariantIndex);
+    await chat.handleDeleteVariant(msg.id, selectedVariantBackendIndex);
   };
 
   return (

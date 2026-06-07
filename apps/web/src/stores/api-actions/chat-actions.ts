@@ -37,11 +37,20 @@ function syncSnapshot(snapshot: AppSnapshot) {
   useSnapshotStore.getState().ingestSnapshot(snapshot);
 }
 
+const pendingVariantSelectionsByChat = new Map<string, Set<Promise<void>>>();
+
+export async function waitForPendingVariantSelections(chatId: ChatId): Promise<void> {
+  const pending = pendingVariantSelectionsByChat.get(chatId);
+  if (!pending || pending.size === 0) return;
+  await Promise.allSettled([...pending]);
+}
+
 // ---------------------------------------------------------------------------
 // Chat Actions
 // ---------------------------------------------------------------------------
 
 export async function fetchChatAction(chatId: ChatId): Promise<void> {
+  await waitForPendingVariantSelections(chatId);
   const snapshot = await fetchChat(chatId);
   syncSnapshot(snapshot);
 }
@@ -109,6 +118,7 @@ export async function deleteVariantAction(chatId: ChatId, messageId: string, var
 }
 
 export async function switchChatAction(chatId: ChatId): Promise<void> {
+  await waitForPendingVariantSelections(chatId);
   const snapshot = await fetchChat(chatId);
   syncSnapshot(snapshot);
 }
@@ -117,7 +127,19 @@ export async function selectVariantAction(chatId: ChatId, messageId: string, var
   // No syncSnapshot — handleSelectMessageVariant already did the optimistic update.
   // syncSnapshot would replace the entire messagesById with fresh JSON objects,
   // breaking reselect memoization and causing all MessageBlocks to re-render.
-  await selectMessageVariant(chatId, messageId, variantIndex);
+  const promise = selectMessageVariant(chatId, messageId, variantIndex).then(() => undefined);
+  let pending = pendingVariantSelectionsByChat.get(chatId);
+  if (!pending) {
+    pending = new Set();
+    pendingVariantSelectionsByChat.set(chatId, pending);
+  }
+  pending.add(promise);
+  try {
+    await promise;
+  } finally {
+    pending.delete(promise);
+    if (pending.size === 0) pendingVariantSelectionsByChat.delete(chatId);
+  }
 }
 
 export async function forkBranchAction(chatId: ChatId, fromMessageId?: string): Promise<void> {

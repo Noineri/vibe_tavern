@@ -789,51 +789,64 @@ export class ChatStore {
   }
 
   async deleteVariant(messageId: string, variantIndex: number): Promise<void> {
-    // Get all variants for this message
     const allVariants = await this.db
       .select()
       .from(messageVariants)
       .where(eq(messageVariants.messageId, messageId))
+      .orderBy(asc(messageVariants.variantIndex))
       .all();
 
-    // Cannot delete the only variant
+    // Cannot delete the only variant.
     if (allVariants.length <= 1) return;
 
-    // Find the variant to delete
-    const target = allVariants.find((v) => v.variantIndex === variantIndex);
+    const targetPosition = allVariants.findIndex((v) => v.variantIndex === variantIndex);
+    const target = targetPosition >= 0 ? allVariants[targetPosition] : null;
     if (!target) return;
 
-    const wasSelected = target.isSelected === 1;
+    const remaining = allVariants.filter((variant) => variant.id !== target.id);
+    const selectedBeforeDelete = allVariants.find((variant) => variant.isSelected === 1) ?? null;
+    const selectedAfterDelete =
+      target.isSelected === 1
+        ? remaining[Math.max(0, targetPosition - 1)] ?? remaining[0] ?? null
+        : selectedBeforeDelete && selectedBeforeDelete.id !== target.id
+          ? selectedBeforeDelete
+          : remaining[0] ?? null;
+    const now = this.clock.now();
 
-    await this.db
-      .delete(messageVariants)
-      .where(
-        and(
-          eq(messageVariants.messageId, messageId),
-          eq(messageVariants.variantIndex, variantIndex),
-        ),
-      )
-      .run();
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(messageVariants)
+        .where(
+          and(
+            eq(messageVariants.messageId, messageId),
+            eq(messageVariants.variantIndex, variantIndex),
+          ),
+        )
+        .run();
 
-    // If the deleted variant was selected, select another one
-    if (wasSelected) {
-      const previousIndex = variantIndex > 0 ? variantIndex - 1 : 0;
-      // Try to select the previous variant, or the first available
-      const remaining = await this.db
-        .select()
-        .from(messageVariants)
-        .where(eq(messageVariants.messageId, messageId))
-        .orderBy(asc(messageVariants.variantIndex))
-        .all();
-
-      // Find the best candidate: previous index if it exists, otherwise first
-      const candidate =
-        remaining.find((v) => v.variantIndex === previousIndex) ?? remaining[0];
-
-      if (candidate) {
-        await this.selectVariant(messageId, candidate.variantIndex);
+      // Keep variant_index contiguous after deletion. The UI intentionally uses
+      // variantIndex as the API selector; sparse indexes caused counters like
+      // "6/5" and wrong swipes after a snapshot refresh.
+      for (let nextIndex = 0; nextIndex < remaining.length; nextIndex++) {
+        const variant = remaining[nextIndex];
+        await tx
+          .update(messageVariants)
+          .set({
+            variantIndex: nextIndex,
+            isSelected: selectedAfterDelete?.id === variant.id ? 1 : 0,
+          })
+          .where(eq(messageVariants.id, variant.id))
+          .run();
       }
-    }
+
+      if (selectedAfterDelete) {
+        await tx
+          .update(messages)
+          .set({ content: selectedAfterDelete.content, updatedAt: now })
+          .where(eq(messages.id, messageId))
+          .run();
+      }
+    });
   }
 
   /**
