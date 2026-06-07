@@ -841,6 +841,7 @@ export async function saveProviderProfile(input: {
   repetitionPenalty?: number;
   maxTokens?: number;
   stopSequences?: string[];
+  logitBias?: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed?: string | null;
   reasoningEffort?: string;
   showReasoning?: boolean;
@@ -949,10 +950,12 @@ export async function updateProviderProfile(
     repetitionPenalty?: number;
     maxTokens?: number;
     stopSequences?: string[];
+    logitBias?: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
     seed?: string | null;
     reasoningEffort?: string;
     showReasoning?: boolean;
     streamResponse?: boolean;
+    customSamplers?: boolean;
   },
 ): Promise<ProviderProfileRecord> {
   const response = await client.api.providers[":providerId"].$patch({ param: { providerId: providerProfileId }, json: patch });
