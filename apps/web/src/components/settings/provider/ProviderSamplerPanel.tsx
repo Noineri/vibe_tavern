@@ -18,6 +18,7 @@ interface SamplerFieldProps {
   max: number;
   step: number;
   onChange: (v: number) => void;
+  tooltip?: string;
   isInteger?: boolean;
   disabled?: boolean;
 }
@@ -29,6 +30,7 @@ function SamplerField({
   max,
   step,
   onChange,
+  tooltip,
   isInteger = false,
   disabled = false,
 }: SamplerFieldProps) {
@@ -66,8 +68,13 @@ function SamplerField({
 
   return (
     <div className="mb-0 flex flex-col justify-end">
-      <label className="mb-[7px] font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
-        {label}
+      <label className="mb-[7px] flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
+        <span>{label}</span>
+        {tooltip && (
+          <CustomTooltip content={tooltip} side="top" align="start">
+            <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[10px] font-semibold normal-case tracking-normal text-t3">?</span>
+          </CustomTooltip>
+        )}
       </label>
       <div className="flex items-center gap-2">
         <input
@@ -168,6 +175,18 @@ const CUSTOM_SAMPLER_DEFAULTS = {
   topK: 75,
   topA: 1.0,
   minP: 0,
+  typicalP: 1.0,
+  tfsZ: 1.0,
+  repeatLastN: 0,
+  mirostat: 0,
+  mirostatTau: 5.0,
+  mirostatEta: 0.1,
+  dryMultiplier: 0,
+  dryBase: 1.75,
+  dryAllowedLength: 2,
+  drySequenceBreakers: [] as string[],
+  xtcThreshold: 0.1,
+  xtcProbability: 0,
   frequencyPenalty: 0,
   presencePenalty: 0,
   repetitionPenalty: 0,
@@ -194,6 +213,18 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
       updateForm('topK', CUSTOM_SAMPLER_DEFAULTS.topK);
       updateForm('topA', CUSTOM_SAMPLER_DEFAULTS.topA);
       updateForm('minP', CUSTOM_SAMPLER_DEFAULTS.minP);
+      updateForm('typicalP', CUSTOM_SAMPLER_DEFAULTS.typicalP);
+      updateForm('tfsZ', CUSTOM_SAMPLER_DEFAULTS.tfsZ);
+      updateForm('repeatLastN', CUSTOM_SAMPLER_DEFAULTS.repeatLastN);
+      updateForm('mirostat', CUSTOM_SAMPLER_DEFAULTS.mirostat);
+      updateForm('mirostatTau', CUSTOM_SAMPLER_DEFAULTS.mirostatTau);
+      updateForm('mirostatEta', CUSTOM_SAMPLER_DEFAULTS.mirostatEta);
+      updateForm('dryMultiplier', CUSTOM_SAMPLER_DEFAULTS.dryMultiplier);
+      updateForm('dryBase', CUSTOM_SAMPLER_DEFAULTS.dryBase);
+      updateForm('dryAllowedLength', CUSTOM_SAMPLER_DEFAULTS.dryAllowedLength);
+      updateForm('drySequenceBreakers', CUSTOM_SAMPLER_DEFAULTS.drySequenceBreakers);
+      updateForm('xtcThreshold', CUSTOM_SAMPLER_DEFAULTS.xtcThreshold);
+      updateForm('xtcProbability', CUSTOM_SAMPLER_DEFAULTS.xtcProbability);
       updateForm('frequencyPenalty', CUSTOM_SAMPLER_DEFAULTS.frequencyPenalty);
       updateForm('presencePenalty', CUSTOM_SAMPLER_DEFAULTS.presencePenalty);
       updateForm('repetitionPenalty', CUSTOM_SAMPLER_DEFAULTS.repetitionPenalty);
@@ -261,6 +292,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
         {supports('temperature') && (
           <SamplerField
             label={`${t("sampler_temperature")} (${form.temperature})`}
+            tooltip={t("sampler_temperature_hint")}
             min={0}
             max={2}
             step={0.05}
@@ -335,6 +367,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
               {supports('topP') && (
                 <SamplerField
                   label={t("sampler_top_p")}
+                  tooltip={t("sampler_top_p_hint")}
                   min={0}
                   max={1}
                   step={0.01}
@@ -346,6 +379,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
               {supports('frequencyPenalty') && (
                 <SamplerField
                   label={t("sampler_freq_penalty")}
+                  tooltip={t("sampler_freq_penalty_hint")}
                   min={-2}
                   max={2}
                   step={0.1}
@@ -357,6 +391,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
               {supports('topK') && (
                 <SamplerField
                   label={t("sampler_top_k")}
+                  tooltip={t("sampler_top_k_hint")}
                   min={0}
                   max={100}
                   step={1}
@@ -369,6 +404,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
               {supports('presencePenalty') && (
                 <SamplerField
                   label={t("sampler_pres_penalty")}
+                  tooltip={t("sampler_pres_penalty_hint")}
                   min={-2}
                   max={2}
                   step={0.1}
@@ -380,6 +416,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
               {supports('topA') && (
                 <SamplerField
                   label={t("sampler_top_a")}
+                  tooltip={t("sampler_top_a_hint")}
                   min={0}
                   max={1}
                   step={0.01}
@@ -391,6 +428,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
               {supports('repetitionPenalty') && (
                 <SamplerField
                   label={t("sampler_rep_penalty")}
+                  tooltip={t("sampler_rep_penalty_hint")}
                   min={0}
                   max={2}
                   step={0.05}
@@ -402,6 +440,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
               {supports('minP') && (
                 <SamplerField
                   label={t("sampler_min_p")}
+                  tooltip={t("sampler_min_p_hint")}
                   min={0}
                   max={1}
                   step={0.01}
@@ -410,7 +449,161 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   disabled={disabled}
                 />
               )}
+              {supports('typicalP') && (
+                <SamplerField
+                  label={t("sampler_typical_p")}
+                  tooltip={t("sampler_typical_p_hint")}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={form.typicalP}
+                  onChange={(v) => updateForm('typicalP', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('tfsZ') && (
+                <SamplerField
+                  label={t("sampler_tfs_z")}
+                  tooltip={t("sampler_tfs_z_hint")}
+                  min={0}
+                  max={2}
+                  step={0.01}
+                  value={form.tfsZ}
+                  onChange={(v) => updateForm('tfsZ', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('repeatLastN') && (
+                <SamplerField
+                  label={t("sampler_repeat_last_n")}
+                  tooltip={t("sampler_repeat_last_n_hint")}
+                  min={0}
+                  max={4096}
+                  step={1}
+                  isInteger={true}
+                  value={form.repeatLastN}
+                  onChange={(v) => updateForm('repeatLastN', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('mirostat') && (
+                <SamplerField
+                  label={t("sampler_mirostat")}
+                  tooltip={t("sampler_mirostat_hint")}
+                  min={0}
+                  max={2}
+                  step={1}
+                  isInteger={true}
+                  value={form.mirostat}
+                  onChange={(v) => updateForm('mirostat', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('mirostatTau') && (
+                <SamplerField
+                  label={t("sampler_mirostat_tau")}
+                  tooltip={t("sampler_mirostat_tau_hint")}
+                  min={0}
+                  max={10}
+                  step={0.1}
+                  value={form.mirostatTau}
+                  onChange={(v) => updateForm('mirostatTau', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('mirostatEta') && (
+                <SamplerField
+                  label={t("sampler_mirostat_eta")}
+                  tooltip={t("sampler_mirostat_eta_hint")}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={form.mirostatEta}
+                  onChange={(v) => updateForm('mirostatEta', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('dryMultiplier') && (
+                <SamplerField
+                  label={t("sampler_dry_multiplier")}
+                  tooltip={t("sampler_dry_multiplier_hint")}
+                  min={0}
+                  max={5}
+                  step={0.05}
+                  value={form.dryMultiplier}
+                  onChange={(v) => updateForm('dryMultiplier', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('dryBase') && (
+                <SamplerField
+                  label={t("sampler_dry_base")}
+                  tooltip={t("sampler_dry_base_hint")}
+                  min={0}
+                  max={4}
+                  step={0.05}
+                  value={form.dryBase}
+                  onChange={(v) => updateForm('dryBase', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('dryAllowedLength') && (
+                <SamplerField
+                  label={t("sampler_dry_allowed_length")}
+                  tooltip={t("sampler_dry_allowed_length_hint")}
+                  min={0}
+                  max={32}
+                  step={1}
+                  isInteger={true}
+                  value={form.dryAllowedLength}
+                  onChange={(v) => updateForm('dryAllowedLength', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('xtcThreshold') && (
+                <SamplerField
+                  label={t("sampler_xtc_threshold")}
+                  tooltip={t("sampler_xtc_threshold_hint")}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={form.xtcThreshold}
+                  onChange={(v) => updateForm('xtcThreshold', v)}
+                  disabled={disabled}
+                />
+              )}
+              {supports('xtcProbability') && (
+                <SamplerField
+                  label={t("sampler_xtc_probability")}
+                  tooltip={t("sampler_xtc_probability_hint")}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={form.xtcProbability}
+                  onChange={(v) => updateForm('xtcProbability', v)}
+                  disabled={disabled}
+                />
+              )}
             </div>
+
+            {supports('drySequenceBreakers') && (
+              <div className={cn("mt-4", disabled && "opacity-40 pointer-events-none")}>
+                <label className="mb-[7px] flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
+                  <span>{t("sampler_dry_sequence_breakers")}</span>
+                  <CustomTooltip content={t("sampler_dry_sequence_breakers_hint")} side="top" align="start">
+                    <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[10px] font-semibold normal-case tracking-normal text-t3">?</span>
+                  </CustomTooltip>
+                </label>
+                <ChipInput
+                  values={form.drySequenceBreakers}
+                  onChange={(v) => updateForm('drySequenceBreakers', v)}
+                  placeholder={t("sampler_dry_sequence_breakers_placeholder")}
+                  disabled={disabled}
+                  showPresets={false}
+                  tooltip={t("sampler_dry_sequence_breakers_hint")}
+                />
+              </div>
+            )}
 
             {/* Stop Sequences — full width */}
             {supports('stopSequences') && (
