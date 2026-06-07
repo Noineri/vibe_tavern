@@ -257,8 +257,6 @@ export async function* streamAiAssistant(
         contentLength: request.existingContent?.length ?? 0,
       });
 
-      yield { type: "reasoning", text: "Parsing character data...\n" };
-
       try {
         const result = await streamText({
           model: aiModel,
@@ -268,12 +266,34 @@ export async function* streamAiAssistant(
           maxOutputTokens: request.maxOutputTokens ?? 6000,
         });
 
+        const mdReasoningState: ReasoningSplitState = {
+          buffer: "",
+          insideMarkerReasoning: false,
+          insideThinkTag: false,
+        };
+
         let fullText = "";
         for await (const chunk of result.textStream) {
-          fullText += chunk;
-          // Raw model output for debugging. The md_import UI shows this separately
-          // from parsed fields, so users can see provider/model failures directly.
-          yield { type: "text", text: chunk };
+          for (const parsedChunk of splitReasoningFromText(mdReasoningState, chunk)) {
+            if (parsedChunk.type === "reasoning" && parsedChunk.text) {
+              yield { type: "reasoning", text: parsedChunk.text };
+            }
+            if (parsedChunk.type === "text" && parsedChunk.text) {
+              fullText += parsedChunk.text;
+              // Raw model output for debugging. The md_import UI shows this separately
+              // from parsed fields, so users can see provider/model failures directly.
+              yield { type: "text", text: parsedChunk.text };
+            }
+          }
+        }
+        for (const parsedChunk of splitReasoningFromText(mdReasoningState, "", { flush: true })) {
+          if (parsedChunk.type === "reasoning" && parsedChunk.text) {
+            yield { type: "reasoning", text: parsedChunk.text };
+          }
+          if (parsedChunk.type === "text" && parsedChunk.text) {
+            fullText += parsedChunk.text;
+            yield { type: "text", text: parsedChunk.text };
+          }
         }
 
         const parsed = mergeMdImportWithSourceSections(
