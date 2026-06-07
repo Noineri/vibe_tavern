@@ -93,29 +93,11 @@ Do not mass-replace native `title` until mobile behavior is fixed.
 
 #### Review note — `vibe_tavern_front_polish` modal refactor (2026-06-07)
 
-A sibling worktree introduced `components/shared/MasterDetailLayout.tsx` and migrated `ProviderModal`, `PromptManagerModal`, and `ContextMemoryModal` to it.
-
-**Assessment:** good first step, but it is currently a shared layout shell rather than the intended full responsive modal framework.
-
-**What is good:**
-- Centralizes the repeated master/detail body structure.
-- Keeps a sane scroll model: outer panel `overflow-hidden`, body `min-h-0 flex-1`, detail pane `overflow-y-auto`, footer outside the scroll region.
-- Web typecheck passes in the sibling worktree.
-
-**Gaps before adopting as the standard:**
-- `MasterDetailLayout` still receives `isMobile` from every caller instead of owning `useIsMobile()` internally.
-- Mobile drill-down state (`mobileDetailOpen`) is still owned and duplicated by each modal.
-- Each modal still hand-builds its own mobile detail header, back button, close button, and footer wrapper.
-- The result does not yet satisfy the goal that the shared component “itself determines whether to show mobile or desktop view.”
-
-**Recommended API direction:**
-- Promote this into a true `MasterDetailModal` or `ResponsiveMasterDetailLayout` that calls `useIsMobile()` internally.
-- Either own the mobile detail state internally or expose it via render props:
-  - `openDetail()`
-  - `closeDetail()`
-  - `isDetailOpen`
-- Provide a standard mobile detail header API: `title`, `onBack`, `onClose`, optional actions.
-- Let list rows call `openDetail()` on mobile without each modal reimplementing the same branching.
+**Update:** The `MasterDetailModal` implementation has been completed in the `front-polish` branch.
+- It correctly calls `useIsMobile()` internally.
+- It encapsulates the `isDetailOpen` state and mobile drill-down header logic.
+- It exposes `openDetail()` and `closeDetail()` via render props.
+- `ProviderModal`, `PromptManagerModal`, and `ContextMemoryModal` have been successfully migrated to use it.
 
 **Merge caution:** the sibling worktree predates the advanced local-provider sampler work. Its `ProviderModal` does not include the newer fields and UI behavior (`typicalP`, `tfsZ`, Mirostat, DRY/XTC, sampler capabilities, hidden API key for local providers, local connection status, ARM local-preset filtering). Rebase/merge carefully to avoid losing those changes.
 
@@ -133,7 +115,7 @@ A sibling worktree introduced `components/shared/MasterDetailLayout.tsx` and mig
 
 1. ~~**Mass-replace `<textarea>` with `<AutoTextarea>`**.~~ (DONE)
 2. ~~**Build `<NumberInput>` shared component** and replace the 20+ instances across forms and samplers.~~ (DONE)
-3. **Build `<MasterDetailModal>` framework** to unify Provider, Persona, and Prompt Manager modals.
+3. ~~**Build `<MasterDetailModal>` framework** to unify Provider, Persona, and Prompt Manager modals.~~ (DONE in `front-polish` branch)
 4. **Build `<AiAssistantModal>`** to deduplicate the complex AI generation UI across all editors.
 5. **Investigate `<CustomTooltip>` mobile bug**, fix it, then replace all `title=` attributes.
 6. **Build a generic single `<Slider>` component** for samplers and settings.
