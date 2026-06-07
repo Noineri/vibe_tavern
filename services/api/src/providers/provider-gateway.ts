@@ -110,6 +110,14 @@ function normalizeLocalOpenAiCompatibleBaseUrl(baseUrl: string): string {
 	return `${normalized}/v1`;
 }
 
+function normalizeKoboldCppBaseUrl(baseUrl: string): string {
+	let normalized = baseUrl.trim().replace(/\/+$/, "");
+	if (!normalized) return "";
+	if (normalized.endsWith("/api/v1")) normalized = normalized.slice(0, -"/api/v1".length);
+	else if (normalized.endsWith("/api")) normalized = normalized.slice(0, -"/api".length);
+	return normalized;
+}
+
 export async function probeProviderConnection(input: {
 	baseUrl: string;
 	apiKey: string;
@@ -123,6 +131,8 @@ export async function probeProviderConnection(input: {
 			return probeAnthropicConnection(input);
 		case "ollama":
 			return probeOllamaConnection(input);
+		case "koboldcpp":
+			return probeKoboldCppConnection(input);
 		case "llamacpp":
 			return probeOpenAiCompatibleConnection({ ...input, baseUrl: normalizeLocalOpenAiCompatibleBaseUrl(input.baseUrl) });
 		default:
@@ -136,6 +146,21 @@ async function probeOllamaConnection(input: {
 }): Promise<ProviderProbeResult> {
 	try {
 		const models = await listOllamaModels(input);
+		return { success: true, modelCount: models.length };
+	} catch (error) {
+		return {
+			success: false,
+			error: error instanceof Error ? error.message : String(error),
+		};
+	}
+}
+
+async function probeKoboldCppConnection(input: {
+	baseUrl: string;
+	apiKey: string;
+}): Promise<ProviderProbeResult> {
+	try {
+		const models = await listKoboldCppModels(input);
 		return { success: true, modelCount: models.length };
 	} catch (error) {
 		return {
@@ -343,6 +368,8 @@ export async function testProviderChat(
 			return testAnthropicChat(input);
 		case "ollama":
 			return testOllamaChat(input);
+		case "koboldcpp":
+			return testKoboldCppChat(input);
 		case "llamacpp":
 			return testOpenAiCompatChat({ ...input, baseUrl: normalizeLocalOpenAiCompatibleBaseUrl(input.baseUrl) });
 		default:
@@ -384,6 +411,56 @@ async function testOllamaChat(
 
 		const payload = (await response.json()) as { message?: { content?: string } };
 		const content = payload.message?.content?.trim() ?? "";
+		return { success: true, reply: content || "(empty response)" };
+	} catch (error) {
+		clearTimeout(timer);
+		const msg = error instanceof Error ? error.message : "Unknown error";
+		if (
+			error instanceof Error &&
+			(error.name === "TimeoutError" || /aborted/i.test(error.message))
+		) {
+			return {
+				success: false,
+				error: `Timed out after ${Math.floor(TEST_CHAT_TIMEOUT_MS / 1000)}s.`,
+			};
+		}
+		return { success: false, error: msg };
+	}
+}
+
+async function testKoboldCppChat(
+	input: ProviderConnectionInput,
+): Promise<TestChatResult> {
+	const baseUrl = normalizeKoboldCppBaseUrl(input.baseUrl);
+	if (!baseUrl) return { success: false, error: "Provider endpoint is required." };
+
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), TEST_CHAT_TIMEOUT_MS);
+
+	try {
+		const response = await fetch(`${baseUrl}/api/v1/generate`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Accept: "application/json" },
+			body: JSON.stringify({
+				prompt: "User: Hi\nAssistant:",
+				max_length: 64,
+				temperature: 0.7,
+				stream: false,
+			}),
+			signal: controller.signal,
+		});
+		clearTimeout(timer);
+
+		if (!response.ok) {
+			const errorText = await response.text().catch(() => "");
+			return {
+				success: false,
+				error: `${response.status} ${response.statusText}${errorText ? `: ${errorText.slice(0, 200)}` : ""}`,
+			};
+		}
+
+		const payload = (await response.json()) as { results?: Array<{ text?: string }> };
+		const content = payload.results?.[0]?.text?.trim() ?? "";
 		return { success: true, reply: content || "(empty response)" };
 	} catch (error) {
 		clearTimeout(timer);
@@ -593,6 +670,8 @@ export async function listProviderModels(
 			return listGoogleModels(input);
 		case "ollama":
 			return listOllamaModels(input);
+		case "koboldcpp":
+			return listKoboldCppModels(input);
 		case "llamacpp":
 			return listOpenAiCompatModels({ ...input, baseUrl: normalizeLocalOpenAiCompatibleBaseUrl(input.baseUrl) });
 		default:
@@ -800,6 +879,39 @@ async function listGoogleModels(
 		})
 		.filter((r): r is ProviderModelOption => r !== null)
 		.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+async function listKoboldCppModels(
+	input: Omit<ProviderConnectionInput, "model">,
+): Promise<ProviderModelOption[]> {
+	const baseUrl = normalizeKoboldCppBaseUrl(input.baseUrl);
+	if (!baseUrl || !tryParseUrl(baseUrl)) {
+		throw new Error(`Invalid provider endpoint: ${input.baseUrl}`);
+	}
+
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), MODEL_LIST_TIMEOUT_MS);
+
+	let response: Response;
+	try {
+		response = await fetch(`${baseUrl}/api/v1/model`, {
+			method: "GET",
+			headers: { Accept: "application/json" },
+			signal: controller.signal,
+		});
+		clearTimeout(timer);
+	} catch (error) {
+		clearTimeout(timer);
+		throw wrapProviderNetworkError(error, { operation: "KoboldCPP model list", timeoutMs: MODEL_LIST_TIMEOUT_MS });
+	}
+
+	if (!response.ok) {
+		throw new Error(`KoboldCPP model list failed: ${response.status} ${response.statusText}`);
+	}
+
+	const payload = (await response.json()) as { result?: string; model?: string; name?: string };
+	const id = (payload.result ?? payload.model ?? payload.name ?? "koboldcpp-loaded-model").trim();
+	return [{ id: id || "koboldcpp-loaded-model", label: id || "KoboldCPP loaded model" }];
 }
 
 async function listOllamaModels(
