@@ -19,6 +19,18 @@ export interface ClientProviderProfileRecord {
   topK: number;
   minP: number;
   topA: number;
+  typicalP: number;
+  tfsZ: number;
+  repeatLastN: number;
+  mirostat: number;
+  mirostatTau: number;
+  mirostatEta: number;
+  dryMultiplier: number;
+  dryBase: number;
+  dryAllowedLength: number;
+  drySequenceBreakers: string[];
+  xtcThreshold: number;
+  xtcProbability: number;
   frequencyPenalty: number;
   presencePenalty: number;
   repetitionPenalty: number;
@@ -152,6 +164,18 @@ export function toClientProviderProfile(profile: import("@vibe-tavern/domain").S
     topK: profile.topK,
     minP: profile.minP,
     topA: profile.topA,
+    typicalP: profile.typicalP,
+    tfsZ: profile.tfsZ,
+    repeatLastN: profile.repeatLastN,
+    mirostat: profile.mirostat,
+    mirostatTau: profile.mirostatTau,
+    mirostatEta: profile.mirostatEta,
+    dryMultiplier: profile.dryMultiplier,
+    dryBase: profile.dryBase,
+    dryAllowedLength: profile.dryAllowedLength,
+    drySequenceBreakers: profile.drySequenceBreakers,
+    xtcThreshold: profile.xtcThreshold,
+    xtcProbability: profile.xtcProbability,
     frequencyPenalty: profile.frequencyPenalty,
     presencePenalty: profile.presencePenalty,
     repetitionPenalty: profile.repetitionPenalty,

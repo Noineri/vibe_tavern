@@ -53,6 +53,18 @@ export interface CreateProviderData {
   topK?: number;
   minP?: number;
   topA?: number;
+  typicalP?: number;
+  tfsZ?: number;
+  repeatLastN?: number;
+  mirostat?: number;
+  mirostatTau?: number;
+  mirostatEta?: number;
+  dryMultiplier?: number;
+  dryBase?: number;
+  dryAllowedLength?: number;
+  drySequenceBreakers?: string[];
+  xtcThreshold?: number;
+  xtcProbability?: number;
   frequencyPenalty?: number;
   presencePenalty?: number;
   repetitionPenalty?: number;
@@ -134,6 +146,18 @@ export class ProviderStore {
         topK: data.topK ?? 0,
         minP: data.minP ?? 0,
         topA: data.topA ?? 0,
+        typicalP: data.typicalP ?? 1.0,
+        tfsZ: data.tfsZ ?? 1.0,
+        repeatLastN: data.repeatLastN ?? 0,
+        mirostat: data.mirostat ?? 0,
+        mirostatTau: data.mirostatTau ?? 5.0,
+        mirostatEta: data.mirostatEta ?? 0.1,
+        dryMultiplier: data.dryMultiplier ?? 0,
+        dryBase: data.dryBase ?? 1.75,
+        dryAllowedLength: data.dryAllowedLength ?? 2,
+        drySequenceBreakersJson: data.drySequenceBreakers?.length ? JSON.stringify(data.drySequenceBreakers) : null,
+        xtcThreshold: data.xtcThreshold ?? 0.1,
+        xtcProbability: data.xtcProbability ?? 0,
         frequencyPenalty: data.frequencyPenalty ?? 0,
         presencePenalty: data.presencePenalty ?? 0,
         repetitionPenalty: data.repetitionPenalty ?? 1.0,
@@ -171,6 +195,18 @@ export class ProviderStore {
     if (data.topK !== undefined) values.topK = data.topK;
     if (data.minP !== undefined) values.minP = data.minP;
     if (data.topA !== undefined) values.topA = data.topA;
+    if (data.typicalP !== undefined) values.typicalP = data.typicalP;
+    if (data.tfsZ !== undefined) values.tfsZ = data.tfsZ;
+    if (data.repeatLastN !== undefined) values.repeatLastN = data.repeatLastN;
+    if (data.mirostat !== undefined) values.mirostat = data.mirostat;
+    if (data.mirostatTau !== undefined) values.mirostatTau = data.mirostatTau;
+    if (data.mirostatEta !== undefined) values.mirostatEta = data.mirostatEta;
+    if (data.dryMultiplier !== undefined) values.dryMultiplier = data.dryMultiplier;
+    if (data.dryBase !== undefined) values.dryBase = data.dryBase;
+    if (data.dryAllowedLength !== undefined) values.dryAllowedLength = data.dryAllowedLength;
+    if (data.drySequenceBreakers !== undefined) values.drySequenceBreakersJson = data.drySequenceBreakers.length ? JSON.stringify(data.drySequenceBreakers) : null;
+    if (data.xtcThreshold !== undefined) values.xtcThreshold = data.xtcThreshold;
+    if (data.xtcProbability !== undefined) values.xtcProbability = data.xtcProbability;
     if (data.frequencyPenalty !== undefined) values.frequencyPenalty = data.frequencyPenalty;
     if (data.presencePenalty !== undefined) values.presencePenalty = data.presencePenalty;
     if (data.repetitionPenalty !== undefined) values.repetitionPenalty = data.repetitionPenalty;
@@ -231,6 +267,18 @@ export class ProviderStore {
         topK: original.topK,
         minP: original.minP,
         topA: original.topA,
+        typicalP: original.typicalP,
+        tfsZ: original.tfsZ,
+        repeatLastN: original.repeatLastN,
+        mirostat: original.mirostat,
+        mirostatTau: original.mirostatTau,
+        mirostatEta: original.mirostatEta,
+        dryMultiplier: original.dryMultiplier,
+        dryBase: original.dryBase,
+        dryAllowedLength: original.dryAllowedLength,
+        drySequenceBreakersJson: original.drySequenceBreakersJson,
+        xtcThreshold: original.xtcThreshold,
+        xtcProbability: original.xtcProbability,
         frequencyPenalty: original.frequencyPenalty,
         presencePenalty: original.presencePenalty,
         repetitionPenalty: original.repetitionPenalty,
@@ -356,6 +404,18 @@ export class ProviderStore {
       topK: row.topK,
       minP: row.minP,
       topA: row.topA,
+      typicalP: row.typicalP,
+      tfsZ: row.tfsZ,
+      repeatLastN: row.repeatLastN,
+      mirostat: row.mirostat,
+      mirostatTau: row.mirostatTau,
+      mirostatEta: row.mirostatEta,
+      dryMultiplier: row.dryMultiplier,
+      dryBase: row.dryBase,
+      dryAllowedLength: row.dryAllowedLength,
+      drySequenceBreakers: safeParseJson<string[]>(row.drySequenceBreakersJson),
+      xtcThreshold: row.xtcThreshold,
+      xtcProbability: row.xtcProbability,
       frequencyPenalty: row.frequencyPenalty,
       presencePenalty: row.presencePenalty,
       repetitionPenalty: row.repetitionPenalty,
