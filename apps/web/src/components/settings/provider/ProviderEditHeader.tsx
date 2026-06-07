@@ -1,6 +1,6 @@
 import type { ProviderProfileRecord } from '../../../app-client.js';
 import { useT } from '../../../i18n/context.js';
-import { PROVIDER_PRESETS, getPresetGroup, PRESET_GROUPS } from '../../../provider-presets.js';
+import { PROVIDER_PRESETS, getPresetGroup, getVisiblePresetGroups, getVisibleProviderPresets } from '../../../provider-presets.js';
 import type { FormState } from '../../modals/ProviderModal.js';
 import { Icons } from '../../shared/icons.js';
 import { cn } from '../../../lib/cn.js';
@@ -23,20 +23,26 @@ interface ProviderEditHeaderProps {
   onSave: () => void;
   onCancel?: () => void;
   isNew: boolean;
+  isArmServer: boolean;
 }
 
 export function ProviderEditHeader({
   form, editingId, providerProfiles, updateForm, applyPreset,
-  testOk, testing, onTest, onSave, onCancel, isNew,
+  testOk, testing, onTest, onSave, onCancel, isNew, isArmServer,
 }: ProviderEditHeaderProps) {
   const { t } = useT();
   const presetGroup = getPresetGroup(form.providerPreset);
-  const filteredPresets = presetGroup
-    ? PROVIDER_PRESETS.filter((f) => f.group === presetGroup)
-    : PROVIDER_PRESETS;
-  const presetEndpoint = form.providerPreset
-    ? PROVIDER_PRESETS.find((f) => f.id === form.providerPreset)?.baseUrl ?? ''
-    : '';
+  const visiblePresetGroups = getVisiblePresetGroups(isArmServer);
+  const visiblePresets = getVisibleProviderPresets(isArmServer);
+  const visiblePresetGroup = presetGroup && visiblePresetGroups.some((g) => g.id === presetGroup) ? presetGroup : null;
+  const filteredPresets = visiblePresetGroup
+    ? visiblePresets.filter((f) => f.group === visiblePresetGroup)
+    : visiblePresets;
+  const selectedPreset = form.providerPreset
+    ? PROVIDER_PRESETS.find((f) => f.id === form.providerPreset)
+    : undefined;
+  const presetEndpoint = selectedPreset?.baseUrl ?? '';
+  const hidesApiKey = selectedPreset?.noApiKey === true;
 
   const duplicateNameWarning =
     form.name &&
@@ -68,12 +74,12 @@ export function ProviderEditHeader({
         <div className="mb-4">
           <label className={labelCls + " mb-[7px]"}>{t("provider_preset_label")}</label>
           <SegmentedControl
-            value={presetGroup ?? ''}
+            value={visiblePresetGroup ?? ''}
             options={[
-              ...PRESET_GROUPS.map((g) => ({ value: g.id, label: g.label })),
+              ...visiblePresetGroups.map((g) => ({ value: g.id, label: g.label })),
               { value: '', label: t("custom") },
             ]}
-            onChange={(g) => { if (!g) { updateForm('providerPreset', ''); } else { const first = PROVIDER_PRESETS.find((f) => f.group === g); if (first) applyPreset(first.id); } }}
+            onChange={(g) => { if (!g) { updateForm('providerPreset', ''); } else { const first = visiblePresets.find((f) => f.group === g); if (first) applyPreset(first.id); } }}
             mobileFill
           />
         </div>
@@ -85,9 +91,9 @@ export function ProviderEditHeader({
           <label className={labelCls + " mb-[7px]"}>{t("api_format_label")}</label>
           <DropdownSelect
             value={form.providerPreset || ''}
-            options={presetGroup ? filteredPresets.map((f) => ({ id: f.id, label: f.label })) : []}
+            options={visiblePresetGroup ? filteredPresets.map((f) => ({ id: f.id, label: f.label })) : []}
             placeholder={t("custom")}
-            disabled={!presetGroup}
+            disabled={!visiblePresetGroup}
             onChange={(val) => { if (val) applyPreset(val); }}
           />
         </div>
@@ -104,10 +110,16 @@ export function ProviderEditHeader({
       </div>
 
       {/* API key */}
-      <div className="mb-4">
-        <label className={labelCls + " mb-[7px]"}>{t("api_key_label")}</label>
-        <input type="password" value={form.apiKey} onChange={(e) => updateForm('apiKey', e.target.value)} placeholder={form.hasStoredApiKey ? t("api_key_stored") : t("api_key_placeholder")} className={cn(inputCls, 'font-mono tracking-[0.05em]')} />
-      </div>
+      {hidesApiKey ? (
+        <div className="mb-4 rounded-md border border-border2 bg-s2 px-3 py-2 font-ui text-[12px] text-t3">
+          {t("api_key_not_required")}
+        </div>
+      ) : (
+        <div className="mb-4">
+          <label className={labelCls + " mb-[7px]"}>{t("api_key_label")}</label>
+          <input type="password" value={form.apiKey} onChange={(e) => updateForm('apiKey', e.target.value)} placeholder={form.hasStoredApiKey ? t("api_key_stored") : t("api_key_placeholder")} className={cn(inputCls, 'font-mono tracking-[0.05em]')} />
+        </div>
+      )}
 
       {/* Test connection + Save */}
       <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
