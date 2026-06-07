@@ -471,6 +471,7 @@ function mapMarkdownHeadingToMdImportField(title: string): string | null {
       return "tagline";
     case "public_bio":
     case "bio":
+      return "creatorNotes";
     case "description":
     case "public_description":
       return "description";
