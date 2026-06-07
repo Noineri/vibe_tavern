@@ -22,6 +22,8 @@ export interface AiQuickPillProps {
   loading?: boolean;
   /** Star click — triggers generation immediately. */
   onGenerate: () => void;
+  /** Called when user clicks the pill during loading to cancel. */
+  onCancel?: () => void;
   /** Called when provider/model or mode-specific settings change. */
   onSettingsChange?: (settings: AiQuickSettings) => void;
   /** Current settings (controlled by parent). */
@@ -53,6 +55,7 @@ export function AiQuickPill({
   disabled = false,
   loading = false,
   onGenerate,
+  onCancel,
   onSettingsChange,
   settings,
   showAppendToggle,
@@ -77,20 +80,23 @@ export function AiQuickPill({
           disabled && "opacity-40 pointer-events-none",
         )}
       >
-        <CustomTooltip content={starTooltip}>
+        <CustomTooltip content={loading ? undefined : starTooltip}>
           <button
             type="button"
             className={cn(
-              "flex h-full items-center justify-center transition-all",
+              "group/star flex h-full items-center justify-center transition-all",
               pxClass,
               size === "lg" ? "text-t3 active:bg-s2" : "text-accent-t hover:bg-accent/20",
-              loading && "pointer-events-none",
+              loading && "hover:bg-danger/15 hover:text-danger-text",
             )}
-            onClick={onGenerate}
-            disabled={disabled || loading}
+            onClick={loading ? onCancel : onGenerate}
+            disabled={disabled}
           >
             {loading ? (
-              <span className={cn("block h-[13px] w-[13px] animate-spin rounded-full border-2 border-t-transparent", size === "lg" ? "border-t3" : "border-accent-t")} />
+              <>
+                <span className={cn("block h-[13px] w-[13px] animate-spin rounded-full border-2 border-t-transparent group-hover/star:hidden", size === "lg" ? "border-t3" : "border-accent-t")} />
+                <span className={cn("hidden group-hover/star:block")}><Ic.close /></span>
+              </>
             ) : (
               <Ic.sparkles />
             )}

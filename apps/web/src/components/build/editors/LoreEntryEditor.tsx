@@ -843,6 +843,7 @@ function LoreKeysAiPill({
     modelName: "",
   });
   const [loading, setLoading] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
   const bootstrapUiSettings = useBootstrapStore((s) => s.data?.uiSettings ?? null);
 
   // Bootstrap persisted provider/model
@@ -864,6 +865,7 @@ function LoreKeysAiPill({
       return;
     }
     setLoading(true);
+    abortRef.current = new AbortController();
     try {
       const request: AiAssistantRequestBody = {
         mode: "lore_keys",
@@ -877,7 +879,7 @@ function LoreKeysAiPill({
         logic: entry.logic,
       };
       let raw = "";
-      for await (const chunk of streamAiAssistant(request)) {
+      for await (const chunk of streamAiAssistant(request, { signal: abortRef.current.signal })) {
         if (chunk.type === "text" && chunk.text) raw += chunk.text;
         if (chunk.type === "error" && chunk.error) throw new Error(chunk.error);
         if (chunk.type === "done") break;
@@ -895,9 +897,11 @@ function LoreKeysAiPill({
         if (parsed.secondaryKeys?.length) updateAct("secondaryKeys", parsed.secondaryKeys);
       }
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       toast.error(err instanceof Error ? err.message : "Key generation failed");
     } finally {
       setLoading(false);
+      abortRef.current = null;
     }
   };
 
@@ -912,6 +916,7 @@ function LoreKeysAiPill({
   return (
     <AiQuickPill
       onGenerate={() => void handleGenerate()}
+      onCancel={() => { abortRef.current?.abort(); }}
       onSettingsChange={handleSettingsChange}
       settings={settings}
       loading={loading}

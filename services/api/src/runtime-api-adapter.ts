@@ -3,7 +3,7 @@ import type { CreateLoreEntryData, UpdateLoreEntryData } from "@vibe-tavern/db";
 import { brandId, type CharacterId, type ChatId, type ChatBranchId, type MessageId, type LoreScopeType } from "@vibe-tavern/domain";
 import { validation, notFound } from "./errors.js";
 import { logSendDebug } from "./send-debug-log.js";
-import type { SessionRuntime } from "./session/session-runtime.js";
+import type { SessionRuntime, SessionSnapshot } from "./session/session-runtime.js";
 import type { ProviderProfileService } from "./providers/provider-profile-service.js";
 import type { ProviderOrchestrator } from "./providers/provider-orchestrator.js";
 import type { LiveChatOrchestrator } from "./chat/live-chat-orchestrator.js";
@@ -222,6 +222,9 @@ export class RuntimeApiAdapter {
 
 	deleteChat = (chatId: string) =>
 		this.sessionRuntime.chatRuntime.deleteChat(chatId);
+
+	clearChat = (chatId: string): Promise<SessionSnapshot> =>
+		this.sessionRuntime.chatLifecycle.clearChat(brandId<ChatId>(chatId));
 
 	renameChat = (chatId: string, title: string) =>
 		this.sessionRuntime.chatRuntime.renameChat(chatId, title);

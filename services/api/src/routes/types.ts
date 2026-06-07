@@ -88,6 +88,7 @@ export interface RuntimeApi {
   unarchiveCharacter: (characterId: string) => Promise<unknown>;
   deleteCharacter: (characterId: string) => Promise<void>;
   deleteChat: (chatId: string) => void;
+  clearChat: (chatId: string) => Promise<unknown>;
   renameChat: (chatId: string, title: string) => unknown;
   setGreetingIndex: (chatId: string, greetingIndex: number) => unknown;
   listPromptPresets: () => unknown;

@@ -1231,6 +1231,11 @@ export async function deleteChat(chatId: ChatId): Promise<void> {
   }
 }
 
+export async function clearChat(chatId: ChatId): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].clear.$post({ param: { chatId } });
+  return unwrapRpc<AppSnapshot>(response);
+}
+
 export async function renameChat(chatId: ChatId, title: string): Promise<{ chatId: string; title: string }> {
   const response = await client.api.chats[":chatId"].title.$patch({ param: { chatId }, json: { title } });
   return unwrapRpc<{ chatId: string; title: string }>(response);
