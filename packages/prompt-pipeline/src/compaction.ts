@@ -58,7 +58,7 @@ export function estimateTokens(text: string): number {
 /**
  * Calculates the total token footprint of an array of messages.
  */
-export function estimateMessageArrayTokens(messages: Message[]): number {
+export function estimateMessageArrayTokens(messages: Array<{ content: string }>): number {
   return messages.reduce((total, msg) => total + estimateTokens(msg.content), 0);
 }
 
