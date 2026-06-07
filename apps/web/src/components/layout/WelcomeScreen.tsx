@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react';
 import { Ic } from '../shared/icons';
+import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
+import { AutoTextarea } from "../shared/auto-textarea.js";
 import { cn } from '../../lib/cn';
 import { useT } from '../../i18n/context.js';
 import { useCharacterController } from '../../hooks/use-character-controller.js';
@@ -98,21 +100,29 @@ export function WelcomeScreen() {
             </label>
             <label className="flex flex-col gap-1">
               <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_desc_label")}</span>
-              <textarea
-                className={cn("w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-                rows={3}
-              />
+              <MobileExpandTextarea value={desc} onChange={setDesc} label={t("ws_desc_label")}>
+                <AutoTextarea
+                  className={cn("w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
+                  style={{}}
+                  maxHeight={300}
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                  rows={3}
+                />
+              </MobileExpandTextarea>
             </label>
             <label className="flex flex-col gap-1">
               <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_first_msg_label")}</span>
-              <textarea
-                className={cn("w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
-                value={firstMsg}
-                onChange={(e) => setFirstMsg(e.target.value)}
-                rows={3}
-              />
+              <MobileExpandTextarea value={firstMsg} onChange={setFirstMsg} label={t("ws_first_msg_label")}>
+                <AutoTextarea
+                  className={cn("w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
+                  style={{}}
+                  maxHeight={400}
+                  value={firstMsg}
+                  onChange={(e) => setFirstMsg(e.target.value)}
+                  rows={3}
+                />
+              </MobileExpandTextarea>
             </label>
             <div className="mt-1 flex items-center justify-between">
               <button type="button" className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1" onClick={() => setCreating(false)} disabled={busy}>{t("back")}</button>

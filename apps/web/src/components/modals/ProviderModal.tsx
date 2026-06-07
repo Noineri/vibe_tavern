@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n/context.js";
-import { Modal } from "../shared/Modal.js";
 import { cn } from "../../lib/cn.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../../app-client.js";
 import { PROVIDER_PRESET_GROUP, resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
@@ -21,6 +20,7 @@ import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js"
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
+import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 
 export interface FormState {
   id: string;
@@ -223,7 +223,6 @@ export function ProviderModal({
   const [dirty, setDirty] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
-  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
   // ── Header mode: edit vs view ──
   const [isNew, setIsNew] = useState(false);
@@ -376,7 +375,7 @@ export function ProviderModal({
     await onDeleteProfile(editingId);
     const next = providerProfiles.find((p) => p.id !== editingId);
     if (next) { setEditingId(next.id); setForm(profileToForm(next)); }
-    setConfirmDelete(false); setHeaderMode("view"); setIsNew(false); setDirty(false); setMobileDetailOpen(false);
+    setConfirmDelete(false); setHeaderMode("view"); setIsNew(false); setDirty(false);
   };
 
   // ── Save header (connection settings) ──
@@ -472,7 +471,7 @@ export function ProviderModal({
     : models;
 
   return (
-    <Modal open={true} onClose={handleClose}>
+    <>
       {confirmClose && <ConfirmCloseModal onCancel={() => setConfirmClose(false)} onConfirm={() => { setConfirmClose(false); setDirty(false); onClose(); }} />}
       {confirmDelete && (
         <DestructiveConfirmModal
@@ -484,142 +483,116 @@ export function ProviderModal({
         />
       )}
 
-      <div className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[680px] w-[860px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
-
-        {/* ═══ HEADER ═══ */}
-        <div className={cn("shrink-0 border-b border-border", isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4")}>
-          {isMobile && mobileDetailOpen ? (
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 hover:bg-s2 hover:text-t1" onClick={() => setMobileDetailOpen(false)}>
-                <span className="text-lg leading-none">←</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-body text-[calc(var(--ui-fs)+2px)] font-medium text-t1">{form?.name ?? t("provider_settings_title")}</div>
-              </div>
-              <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 hover:bg-s2 hover:text-t1" onClick={handleClose}><Icons.Close /></div>
-            </div>
-          ) : (
-          <div className="flex items-start justify-between">
-            <div>
-              <div className={cn("font-body font-semibold text-t1", isMobile ? "text-base" : "text-[18px] mb-1")}>
-                {t("provider_settings_title")}
-              </div>
-              {!isMobile && <div className="font-ui text-[13px] text-t3">{t("provider_settings_desc")}</div>}
-            </div>
-            <div className={cn("shrink-0 cursor-pointer items-center justify-center text-t3 transition-colors hover:bg-s2 hover:text-t1", isMobile ? "flex h-8 w-8 rounded-[5px]" : "flex h-8 w-8 rounded-md")} onClick={handleClose}><Icons.Close /></div>
-          </div>
-          )}
-        </div>
-
-        {/* ═══ BODY ═══ */}
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          {/* On mobile: show list when no detail, hide when detail open */}
-          {(!isMobile || !mobileDetailOpen) && (
+      <MasterDetailModal
+        isOpen={true}
+        onClose={handleClose}
+        title={t("provider_settings_title")}
+        subtitle={t("provider_settings_desc")}
+        detailTitle={form?.name ?? t("provider_settings_title")}
+        dirty={dirty}
+        containerClassName="max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[680px] w-[860px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
+        masterClassName="flex w-[220px] shrink-0 flex-col border-r border-border bg-s1"
+        detailClassName={isMobile ? "p-4" : "p-6"}
+        headerClassName={isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4"}
+        masterContent={() => (
           <ProviderProfileList
             filteredProfiles={filteredProfiles} editingId={editingId}
             activeProviderProfileId={activeProviderProfileId} profileSearch={profileSearch}
             onProfileSearchChange={setProfileSearch}
-            onSelectProfile={(id) => { handleSelect(id); if (isMobile) setMobileDetailOpen(true); }}
-            onAddProfile={() => { void handleAdd(); if (isMobile) setMobileDetailOpen(true); }}
+            onSelectProfile={(id) => { handleSelect(id); }}
+            onAddProfile={() => { void handleAdd(); }}
           />
-          )}
-
-          {/* On mobile: show detail when open; on desktop: always show */}
-          {(!isMobile || mobileDetailOpen) && (
-          <div className={cn("flex-1 overflow-y-auto", isMobile ? "p-4" : "p-6")}>
-            {!form ? (
-              <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
-                {t("provider_select_profile")}
-              </div>
-            ) : (
-              <>
-                {/* ── EDIT HEADER MODE ── */}
-                {headerMode === "edit" && (
-                  <ProviderEditHeader
-                    form={form} editingId={editingId} providerProfiles={providerProfiles}
-                    updateForm={updateForm} applyPreset={applyPreset}
-                    testOk={testOk} testing={testing} onTest={handleTestConnection}
-                    onSave={() => void handleSaveHeader()}
-                    onCancel={!isNew ? handleCancelEdit : undefined}
-                    isNew={isNew}
-                    isArmServer={isArmServer}
-                  />
-                )}
-
-                {/* ── VIEW HEADER MODE ── */}
-                {headerMode === "view" && !isNew && (
-                  <ProviderViewHeader
-                    form={form} isActive={isActive}
-                    onEdit={() => setHeaderMode("edit")}
-                    onActivate={() => void handleActivate()}
-                  />
-                )}
-
-                {/* ── CONFIG SECTION (only after header saved) ── */}
-                {showConfig && (
-                  <>
-                    <ProviderModelSelector form={form} models={models} filteredModels={filteredModels}
-                      fetching={fetching} fetchError={fetchError} modelSearch={modelSearch} modelListOpen={modelListOpen}
-                      favoriteModels={favoriteModelsByProfile[form.id] ?? []}
-                      updateForm={autoSaveField} onFetchModels={handleFetchModels} setModelSearch={setModelSearch}
-                      setModelListOpen={setModelListOpen} dropdownRef={dropdownRef}
-                      onToggleFavoriteModel={(model) => onToggleFavoriteModel(form.id, model)}
-                      requiresAuthForModels={selectedPreset?.requiresAuthForModels ?? false}
-                      isLocalProvider={isLocalProvider}
-                      localEndpoint={form.baseUrl}
-                      localConnectionStatus={fetching || testing ? "checking" : fetchError || testOk === false ? "offline" : testOk === true ? "online" : "unknown"}
-                    />
-
-                    {/* Test Hi */}
-                    {form.model && (
-                      <div className="mb-4">
-                        <button type="button" onClick={() => void handleTestChat()} disabled={testingChat}
-                          className="rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50"
-                        >
-                          {testingChat ? t("sending") : t("test_hi_btn")}
-                        </button>
-                        {chatResult?.reply && (
-                          <div className="mt-2">
-                            <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] text-success italic">&ldquo;{chatResult.reply.length > 200 ? chatResult.reply.slice(0, 200) + "..." : chatResult.reply}&rdquo;</span>
-                          </div>
-                        )}
-                        {chatResult?.error && (
-                          <div className="mt-2">
-                            <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"><Icons.Close /> {chatResult.error}</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <ProviderCapabilityPanel capabilities={capabilities} />
-                    <ProviderSamplerPanel form={form} updateForm={lazyAutoSaveField} capabilities={capabilities} />
-                  </>
-                )}
-              </>
-            )}
-          </div>
-          )}
-        </div>
-
-        {/* ═══ FOOTER ═══ */}
-        {(!isMobile || mobileDetailOpen) && (
-        <div className={cn("shrink-0 items-center justify-between border-t border-border", isMobile ? "flex flex-wrap gap-2 px-4 py-3" : "flex px-6 py-4")}>
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
-            <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>
-              <Icons.Copy /> {t("duplicate")}
-            </span>
-            {providerProfiles.length > 1 && (
-              <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-danger/80 transition-colors hover:text-danger" onClick={handleDelete}>
-                <Icons.Trash /> {t("delete")}
-              </span>
-            )}
-          </div>
-          <div className="flex min-w-0 items-center gap-2 font-ui text-[12px] text-t3 transition-opacity duration-300" style={{ opacity: autoSaveFlash ? 1 : 0 }}>
-            <Icons.Floppy /> {t("autosaving")}
-          </div>
-        </div>
         )}
-      </div>
-    </Modal>
+        detailContent={
+          !form ? (
+            <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
+              {t("provider_select_profile")}
+            </div>
+          ) : (
+            <>
+              {/* ── EDIT HEADER MODE ── */}
+              {headerMode === "edit" && (
+                <ProviderEditHeader
+                  form={form} editingId={editingId} providerProfiles={providerProfiles}
+                  updateForm={updateForm} applyPreset={applyPreset}
+                  testOk={testOk} testing={testing} onTest={handleTestConnection}
+                  onSave={() => void handleSaveHeader()}
+                  onCancel={!isNew ? handleCancelEdit : undefined}
+                  isNew={isNew}
+                  isArmServer={isArmServer}
+                />
+              )}
+
+              {/* ── VIEW HEADER MODE ── */}
+              {headerMode === "view" && !isNew && (
+                <ProviderViewHeader
+                  form={form} isActive={isActive}
+                  onEdit={() => setHeaderMode("edit")}
+                  onActivate={() => void handleActivate()}
+                />
+              )}
+
+              {/* ── CONFIG SECTION (only after header saved) ── */}
+              {showConfig && (
+                <>
+                  <ProviderModelSelector form={form} models={models} filteredModels={filteredModels}
+                    fetching={fetching} fetchError={fetchError} modelSearch={modelSearch} modelListOpen={modelListOpen}
+                    favoriteModels={favoriteModelsByProfile[form.id] ?? []}
+                    updateForm={autoSaveField} onFetchModels={handleFetchModels} setModelSearch={setModelSearch}
+                    setModelListOpen={setModelListOpen} dropdownRef={dropdownRef}
+                    onToggleFavoriteModel={(model) => onToggleFavoriteModel(form.id, model)}
+                    requiresAuthForModels={selectedPreset?.requiresAuthForModels ?? false}
+                    isLocalProvider={isLocalProvider}
+                    localEndpoint={form.baseUrl}
+                    localConnectionStatus={fetching || testing ? "checking" : fetchError || testOk === false ? "offline" : testOk === true ? "online" : "unknown"}
+                  />
+
+                  {/* Test Hi */}
+                  {form.model && (
+                    <div className="mb-4">
+                      <button type="button" onClick={() => void handleTestChat()} disabled={testingChat}
+                        className="rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50"
+                      >
+                        {testingChat ? t("sending") : t("test_hi_btn")}
+                      </button>
+                      {chatResult?.reply && (
+                        <div className="mt-2">
+                          <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] text-success italic">&ldquo;{chatResult.reply.length > 200 ? chatResult.reply.slice(0, 200) + "..." : chatResult.reply}&rdquo;</span>
+                        </div>
+                      )}
+                      {chatResult?.error && (
+                        <div className="mt-2">
+                          <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"><Icons.Close /> {chatResult.error}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <ProviderCapabilityPanel capabilities={capabilities} />
+                  <ProviderSamplerPanel form={form} updateForm={lazyAutoSaveField} capabilities={capabilities} />
+                </>
+              )}
+            </>
+          )
+        }
+        footer={
+          <div className={cn("shrink-0 items-center justify-between border-t border-border", isMobile ? "flex flex-wrap gap-2 px-4 py-3" : "flex px-6 py-4")}>
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>
+                <Icons.Copy /> {t("duplicate")}
+              </span>
+              {providerProfiles.length > 1 && (
+                <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-danger/80 transition-colors hover:text-danger" onClick={handleDelete}>
+                  <Icons.Trash /> {t("delete")}
+                </span>
+              )}
+            </div>
+            <div className="flex min-w-0 items-center gap-2 font-ui text-[12px] text-t3 transition-opacity duration-300" style={{ opacity: autoSaveFlash ? 1 : 0 }}>
+              <Icons.Floppy /> {t("autosaving")}
+            </div>
+          </div>
+        }
+      />
+    </>
   );
 }

@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { NumberInput } from "../../shared/NumberInput.js";
 import type { PromptOrderEntry } from "@vibe-tavern/domain";
 import {
   closestCenter,
@@ -136,7 +137,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
 
   const fixedItems: CanvasItem[] = [
     { key: "field:main", identifier: "main", kind: "field", defaultOrder: 0, render: () => <EditablePromptCard identifier="main" enabled={slotEnabled("main")} onToggle={togglePromptSlot} label={t("system_prompt")} role="system" value={draft?.system ?? ""} placeholder={t("system_prompt_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("system", value)} /> },
-    { key: "slot:worldInfoBefore", identifier: "worldInfoBefore", kind: "slot", defaultOrder: 10, render: () => <PromptOrderMarker identifier="worldInfoBefore" label={t("prompt_slot_world_info_before")} kind="marker" enabled={slotEnabled("worldInfoBefore")} onToggle={togglePromptSlot} /> },
+    { key: "slot:worldInfoBefore", identifier: "worldInfoBefore", kind: "slot", defaultOrder: 10, render: () => <PromptOrderMarker identifier="worldInfoBefore" label={t("prompt_slot_world_info_before")} tooltip={t("prompt_slot_world_info_before_hint")} kind="marker" enabled={slotEnabled("worldInfoBefore")} onToggle={togglePromptSlot} /> },
     { key: "slot:personaDescription", identifier: "personaDescription", kind: "slot", defaultOrder: 20, render: () => <PromptOrderMarker identifier="personaDescription" label={t("prompt_slot_persona")} kind="builtIn" enabled={slotEnabled("personaDescription")} onToggle={togglePromptSlot} /> },
     { key: "slot:charDescription", identifier: "charDescription", kind: "slot", defaultOrder: 30, render: () => <PromptOrderMarker identifier="charDescription" label={t("prompt_slot_character_description")} kind="builtIn" enabled={slotEnabled("charDescription")} onToggle={togglePromptSlot} /> },
     { key: "slot:charPersonality", identifier: "charPersonality", kind: "slot", defaultOrder: 40, render: () => <PromptOrderMarker identifier="charPersonality" label={t("prompt_slot_character_personality")} kind="builtIn" enabled={slotEnabled("charPersonality")} onToggle={togglePromptSlot} /> },
@@ -144,7 +145,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     { key: "field:authorsNote", identifier: "authorsNote", kind: "field", defaultOrder: 60, render: () => <EditableAuthorNoteCard identifier="authorsNote" enabled={slotEnabled("authorsNote")} onToggle={togglePromptSlot} draft={draft} onUpdateField={onUpdateField} /> },
     { key: "field:enhanceDefinitions", identifier: "enhanceDefinitions", kind: "field", defaultOrder: 70, render: () => <EditablePromptCard identifier="enhanceDefinitions" enabled={slotEnabled("enhanceDefinitions")} onToggle={togglePromptSlot} label={t("enhance_definitions")} role="system" value={draft?.enhanceDefinitions ?? ""} placeholder={t("enhance_definitions_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("enhanceDefinitions", value)} /> },
     { key: "field:nsfw", identifier: "nsfw", kind: "field", defaultOrder: 75, render: () => <EditablePromptCard identifier="nsfw" enabled={slotEnabled("nsfw")} onToggle={togglePromptSlot} label={t("nsfw_prompt")} role="system" value={draft?.nsfw ?? ""} placeholder={t("nsfw_prompt_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("nsfw", value)} /> },
-    { key: "slot:worldInfoAfter", identifier: "worldInfoAfter", kind: "slot", defaultOrder: 80, render: () => <PromptOrderMarker identifier="worldInfoAfter" label={t("prompt_slot_world_info_after")} kind="marker" enabled={slotEnabled("worldInfoAfter")} onToggle={togglePromptSlot} /> },
+    { key: "slot:worldInfoAfter", identifier: "worldInfoAfter", kind: "slot", defaultOrder: 80, render: () => <PromptOrderMarker identifier="worldInfoAfter" label={t("prompt_slot_world_info_after")} tooltip={t("prompt_slot_world_info_after_hint")} kind="marker" enabled={slotEnabled("worldInfoAfter")} onToggle={togglePromptSlot} /> },
     { key: "slot:dialogueExamples", identifier: "dialogueExamples", kind: "slot", defaultOrder: 90, render: () => <PromptOrderMarker identifier="dialogueExamples" label={t("prompt_slot_dialogue_examples")} kind="marker" enabled={slotEnabled("dialogueExamples")} onToggle={togglePromptSlot} /> },
     { key: "slot:chatHistory", identifier: "chatHistory", kind: "slot", defaultOrder: 100, render: () => <PromptOrderMarker identifier="chatHistory" label={t("prompt_slot_chat_history")} kind="chat" enabled={slotEnabled("chatHistory")} onToggle={togglePromptSlot} /> },
     { key: "field:jailbreak", identifier: "jailbreak", kind: "field", defaultOrder: 110, render: () => <EditablePromptCard identifier="jailbreak" enabled={slotEnabled("jailbreak")} onToggle={togglePromptSlot} label={t("post_history_instructions")} role="system" value={draft?.jailbreak ?? ""} placeholder={t("jailbreak_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("jailbreak", value)} /> },
@@ -301,12 +302,13 @@ function SortableCanvasItem({ id, overlayActive, children }: { id: string; overl
   );
 }
 
-function PromptOrderMarker({ identifier, label, kind, enabled = true, onToggle }: {
+function PromptOrderMarker({ identifier, label, kind, enabled = true, onToggle, tooltip }: {
   identifier: string;
   label: string;
   kind: "builtIn" | "marker" | "chat";
   enabled?: boolean;
   onToggle?: (identifier: string) => void;
+  tooltip?: string;
 }) {
   return (
     <div className={cn(
@@ -328,7 +330,15 @@ function PromptOrderMarker({ identifier, label, kind, enabled = true, onToggle }
           {enabled ? "●" : "○"}
         </button>
       </CustomTooltip>
-      <span className="min-w-0 flex-1 truncate sm:overflow-visible sm:whitespace-normal sm:text-clip">{label}</span>
+      <span className="min-w-0 flex-1 truncate sm:overflow-visible sm:whitespace-normal sm:text-clip">
+        {tooltip ? (
+          <CustomTooltip content={tooltip}>
+            <span className="cursor-help border-b border-dotted border-current pb-0.5">{label}</span>
+          </CustomTooltip>
+        ) : (
+          label
+        )}
+      </span>
       <span className="shrink-0 rounded bg-black/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] opacity-70">
         {kind === "chat" ? "marker" : kind === "marker" ? "slot" : "read-only"}
       </span>
@@ -452,19 +462,18 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
             />
             {position === "in_chat" && (
               <CustomTooltip content={`${t("insert_depth_label")}: ${t("insert_depth_hint")}`}>
-                <label className="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md border border-border bg-s2 px-2 font-ui text-[11px] text-t4 transition-colors focus-within:border-accent">
+                <div className="flex shrink-0 items-center gap-1.5 font-ui text-[11px] text-t4">
                   <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
                   <span className="sr-only">{t("insert_depth_label")}</span>
-                  <input
-                    type="number"
-                    className="w-10 bg-transparent text-center font-mono text-[12px] text-t1 outline-none disabled:opacity-60 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                    value={draft?.authorsNoteDepth ?? 4}
+                  <NumberInput
+                    className="h-[30px] w-[90px]"
                     min={0}
                     max={99}
+                    value={draft?.authorsNoteDepth ?? 4}
+                    onChange={(v) => onUpdateField?.("authorsNoteDepth", v)}
                     disabled={disabled}
-                    onChange={(e) => onUpdateField?.("authorsNoteDepth", Math.max(0, Number(e.target.value) || 0))}
                   />
-                </label>
+                </div>
               </CustomTooltip>
             )}
           </div>
@@ -580,17 +589,16 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
           <div className="mb-2 flex flex-wrap items-center gap-2">
             {/* Depth editor */}
             <CustomTooltip content={t("insert_depth_label")}>
-              <label className="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-md border border-border bg-s2 px-2 font-ui text-[11px] text-t4 transition-colors focus-within:border-accent">
+              <div className="flex shrink-0 items-center gap-1.5 font-ui text-[11px] text-t4">
                 <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
                 <span className="sr-only">{t("insert_depth_label")}</span>
-                <input
-                  type="number"
-                  className="w-10 bg-transparent text-center font-mono text-[12px] text-t1 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                  value={injection.depth}
+                <NumberInput
+                  className="h-[30px] w-[90px]"
                   min={0} max={99}
-                  onChange={(e) => onUpdate(index, { depth: Math.max(0, Number(e.target.value) || 0) })}
+                  value={injection.depth}
+                  onChange={(v) => onUpdate(index, { depth: v })}
                 />
-              </label>
+              </div>
             </CustomTooltip>
 
             {/* Role select */}

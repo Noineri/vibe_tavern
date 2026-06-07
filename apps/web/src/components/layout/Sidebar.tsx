@@ -151,8 +151,8 @@ export function Sidebar() {
                   <CustomTooltip key={tab.id} content={tab.name} side="right">
                     <div
                       className={cn(
-                        'relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-all duration-150',
-                        (isActive || isFlyout) ? 'rounded-xl bg-accent-dim hover:bg-accent-dim' : 'hover:rounded-xl hover:bg-s2',
+                        'relative flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-150',
+                        (isActive || isFlyout) ? '' : 'hover:bg-s2',
                       )}
                       onClick={() => {
                         useChatStore.getState().setSelectedCharacterId(tab.id);
@@ -160,10 +160,10 @@ export function Sidebar() {
                       }}
                     >
                       {/* Pill-индикатор для активного персонажа */}
-                      {isActive && (
+                      {(isActive || isFlyout) && (
                         <div className="absolute -left-[7px] top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-accent transition-all" />
                       )}
-                      <span className={cn('flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm', isActive ? 'bg-accent text-on-accent' : 'bg-s3 text-t2')}>
+                      <span className={cn('flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm', (isActive || isFlyout) ? 'bg-accent text-on-accent ring-1 ring-accent/50 ring-offset-2 ring-offset-surface' : 'bg-s3 text-t2')}>
                         {tab.avatarAssetId ? <img src={avatarUrl(tab.avatarAssetId)} alt={tab.name} className="h-full w-full object-cover object-top" /> : initials(tab.name)}
                       </span>
                     </div>
@@ -251,10 +251,10 @@ export function Sidebar() {
           <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto px-0 py-2">
             <CustomTooltip content={snapshot?.character?.name ?? t('switch_character')} side="right">
               <div
-                className={cn('flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all duration-150 hover:rounded-xl hover:bg-s2', charSwitcherOpen && 'rounded-xl bg-accent-dim ring-2 ring-accent')}
+                className={cn('flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-150', charSwitcherOpen ? '' : 'hover:bg-s2')}
                 onClick={() => setCharSwitcherOpen(v => !v)}
               >
-                <span className="flex h-full w-full items-center justify-center rounded-full bg-accent font-ui text-sm text-on-accent">
+                <span className={cn("flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-accent font-ui text-sm text-on-accent", charSwitcherOpen && "ring-1 ring-accent/50 ring-offset-2 ring-offset-surface")}>
                   {snapshot?.character?.avatarAssetId
                     ? <img src={avatarUrl(snapshot.character.avatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
                     : initials(snapshot?.character?.name ?? '?')}
@@ -267,7 +267,7 @@ export function Sidebar() {
                 {characterTabs.map(tab => (
                   <CustomTooltip key={tab.id} content={tab.name} side="right">
                     <div
-                      className={cn('flex h-10 w-10 mx-auto cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all hover:bg-s2', tab.id === snapshot?.character?.id && 'ring-2 ring-accent')}
+                      className={cn('flex h-10 w-10 shrink-0 mx-auto cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all hover:bg-s2', tab.id === snapshot?.character?.id && 'ring-1 ring-accent/50 ring-offset-2 ring-offset-surface')}
                       onClick={() => {
                         if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); }
                         else { void character.handleCreateChat(tab.id); }
@@ -614,10 +614,10 @@ export function Sidebar() {
                               return (
                                 <div
                                   key={branch.id}
-                                  className={cn(
-                                    'group/branch relative cursor-pointer rounded py-[5px] pl-1.5 pr-2 transition-colors duration-100',
-                                    isActiveBranch ? 'bg-accent-dim hover:bg-accent-dim' : 'hover:bg-s2/70'
-                                  )}
+                                    className={cn(
+                                      'group/branch relative cursor-pointer rounded py-[5px] pl-1.5 pr-2 transition-colors duration-100',
+                                      isActiveBranch ? 'bg-accent-dim hover:bg-accent-dim' : 'hover:bg-s2/70'
+                                    )}
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     void chat.handleActivateBranch(branch.id);

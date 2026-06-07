@@ -2,9 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
+import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
+import { AutoTextarea } from "../shared/auto-textarea.js";
 import { useT } from "../../i18n/context.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
+import { NumberInput } from "../shared/NumberInput.js";
 
 const textareaCls = "w-full rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent resize-none";
 const labelCls = "block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3 mb-[7px]";
@@ -158,13 +161,17 @@ export function SummaryTab({
       <div className="flex min-h-0 flex-1 flex-col p-5">
         <div className="flex min-h-0 flex-1 flex-col">
           <label className={labelCls}>{t('summary_text_label')}</label>
-          <textarea
-            className={cn(textareaCls, "flex-1 min-h-0 px-[13px] py-[9px]")}
-            placeholder={t('summary_placeholder')}
-            value={summaryText}
-            disabled={disabled}
-            onChange={e => onSummaryTextChange(e.target.value)}
-          />
+          <MobileExpandTextarea value={summaryText} onChange={v => onSummaryTextChange(v)} label={t('summary_text_label')}>
+            <AutoTextarea
+              className={cn(textareaCls, "flex-1 min-h-[100px] px-[13px] py-[9px]")}
+              style={{}}
+              maxHeight={400}
+              placeholder={t('summary_placeholder')}
+              value={summaryText}
+              disabled={disabled}
+              onChange={e => onSummaryTextChange(e.target.value)}
+            />
+          </MobileExpandTextarea>
           <TokenCounter text={summaryText} />
         </div>
 
@@ -183,14 +190,15 @@ export function SummaryTab({
               className="accent-accent h-2 flex-1 cursor-pointer appearance-none rounded-full bg-s3"
               style={{ background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${sliderPct}%, var(--s3) ${sliderPct}%, var(--s3) 100%)` }}
             />
-            <input
-              type="number"
+            <NumberInput
+              className="w-[80px] h-[34px] shrink-0"
+              inputClassName="text-center"
+              hideControls
               min={1}
               max={maxMsgCount}
               value={msgCount}
               disabled={disabled || isSummarizing}
-              onChange={e => onMsgCountChange(Math.max(1, Math.min(maxMsgCount, Number(e.target.value) || 1)))}
-              className="h-[34px] w-[70px] rounded-md border border-border bg-s2 px-2 text-center font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none focus:border-accent"
+              onChange={v => onMsgCountChange(v)}
             />
           </div>
         </div>
