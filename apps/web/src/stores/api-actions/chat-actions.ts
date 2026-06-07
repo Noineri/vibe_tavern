@@ -86,6 +86,7 @@ export async function deleteChatAction(chatId: ChatId): Promise<void> {
 export async function clearChatAction(chatId: ChatId): Promise<AppSnapshot> {
   const snapshot = await clearChat(chatId);
   syncSnapshot(snapshot);
+  void fetchBootstrapAction({ silent: true });
   return snapshot;
 }
 

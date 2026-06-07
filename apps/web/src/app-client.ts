@@ -1233,7 +1233,7 @@ export async function deleteChat(chatId: ChatId): Promise<void> {
 
 export async function clearChat(chatId: ChatId): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].clear.$post({ param: { chatId } });
-  return unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
 }
 
 export async function renameChat(chatId: ChatId, title: string): Promise<{ chatId: string; title: string }> {
