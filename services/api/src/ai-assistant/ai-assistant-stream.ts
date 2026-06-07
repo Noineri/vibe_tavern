@@ -251,6 +251,7 @@ export async function* streamAiAssistant(
 
       // Try streamObject (structured output), fallback to streamText + manual parse
       let usedStreamObject = false;
+      let streamObjectHadUsefulJson = false;
       try {
         const result = await streamObject({
           model: aiModel,
@@ -268,20 +269,24 @@ export async function* streamAiAssistant(
           if (event.type === "text-delta") {
             yield { type: "reasoning", text: event.textDelta };
           } else if (event.type === "object") {
-            yield { type: "partial_json", json: event.object as Record<string, unknown> };
+            const obj = event.object as Record<string, unknown>;
+            if (hasUsefulMdImportJson(obj)) {
+              streamObjectHadUsefulJson = true;
+              yield { type: "partial_json", json: obj };
+            }
           } else if (event.type === "error") {
             deps.logDebug?.("api.ai-assistant.md-import.stream-object-error", { error: String(event.error), eventCount });
             yield { type: "error", error: String(event.error) };
           }
         }
 
-        deps.logDebug?.("api.ai-assistant.md-import.stream-object-done", { eventCount });
+        deps.logDebug?.("api.ai-assistant.md-import.stream-object-done", { eventCount, streamObjectHadUsefulJson });
       } catch {
         // streamObject not supported by this provider — fallback to streamText
         deps.logDebug?.("api.ai-assistant.md-import.fallback-to-streamText", { model: modelName });
       }
 
-      if (!usedStreamObject) {
+      if (!usedStreamObject || !streamObjectHadUsefulJson) {
         // Fallback: streamText + manual JSON parse
         try {
           const result = await streamText({
@@ -300,7 +305,7 @@ export async function* streamAiAssistant(
 
           // Try to extract JSON from the response
           const parsed = extractJsonFromText(fullText);
-          if (parsed) {
+          if (parsed && hasUsefulMdImportJson(parsed)) {
             yield { type: "partial_json", json: parsed as Record<string, unknown> };
           } else {
             deps.logDebug?.("api.ai-assistant.md-import.json-parse-failed", {
@@ -373,6 +378,14 @@ export async function* streamAiAssistant(
     const message = err instanceof Error ? err.message : String(err);
     yield { type: "error", error: message };
   }
+}
+
+function hasUsefulMdImportJson(obj: Record<string, unknown>): boolean {
+  const usefulStringFields = ["name", "tagline", "description", "personality", "scenario", "firstMessage", "creatorNotes"];
+  if (usefulStringFields.some((key) => typeof obj[key] === "string" && obj[key].trim().length > 0)) return true;
+  if (Array.isArray(obj.exampleMessages) && obj.exampleMessages.length > 0) return true;
+  if (Array.isArray(obj.additionalCharacters) && obj.additionalCharacters.length > 0) return true;
+  return false;
 }
 
 /**
