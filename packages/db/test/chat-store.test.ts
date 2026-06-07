@@ -251,7 +251,7 @@ function bootstrap(db: Awaited<ReturnType<typeof createTestDb>>) {
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-describe.skip("ChatStore — variant (swipe) semantics", () => {
+describe("ChatStore — variant (swipe) semantics", () => {
   let db: Awaited<ReturnType<typeof createTestDb>>;
   let store: ChatStore;
 
@@ -443,6 +443,36 @@ describe.skip("ChatStore — variant (swipe) semantics", () => {
       eq(schema.messages.id, msg.id),
     ).get();
     expect(freshMsg!.content).toBe("Regen 5: new content here");
+  });
+
+  test("deleteVariant compacts indexes before the next swipe is added", async () => {
+    const msg = await store.addMessage({
+      chatId: "chat_1",
+      branchId: "brnch_1",
+      role: "assistant",
+      authorType: "assistant",
+      content: "V0",
+    });
+
+    for (let i = 1; i <= 5; i++) {
+      await store.addVariant(msg.id, `V${i}`);
+    }
+
+    await store.deleteVariant(msg.id, 2);
+
+    let variants = await store.getVariants(msg.id);
+    expect(variants.map((variant) => variant.variantIndex)).toEqual([0, 1, 2, 3, 4]);
+    expect(variants).toHaveLength(5);
+    expect(variants.find((variant) => variant.isSelected)?.content).toBe("V5");
+    expect(variants.find((variant) => variant.isSelected)?.variantIndex).toBe(4);
+
+    await store.addVariant(msg.id, "V6");
+
+    variants = await store.getVariants(msg.id);
+    expect(variants.map((variant) => variant.variantIndex)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(variants).toHaveLength(6);
+    expect(variants.find((variant) => variant.isSelected)?.content).toBe("V6");
+    expect(variants.find((variant) => variant.isSelected)?.variantIndex).toBe(5);
   });
 
   test("full scenario: regen → switch to old → re-read is consistent", async () => {

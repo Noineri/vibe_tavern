@@ -7,6 +7,7 @@ import {
 } from "../../app-client.js";
 import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
 import { useBootstrapStore } from "./bootstrap-actions.js";
+import { waitForPendingVariantSelections } from "./chat-actions.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 
 async function refreshPresetsInBootstrap(): Promise<void> {
@@ -48,6 +49,7 @@ export async function deletePromptPresetAction(presetId: string): Promise<void> 
 }
 
 export async function setChatPromptPresetAction(chatId: ChatId, presetId: string): Promise<void> {
+  await waitForPendingVariantSelections(chatId);
   const snapshot = await setChatPromptPreset(chatId, presetId);
   useSnapshotStore.getState().ingestSnapshot(snapshot);
 }
