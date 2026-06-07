@@ -341,6 +341,48 @@ describe("provider gateway", () => {
 			expect(callArgs[0]).toBe("http://localhost:11434/api/tags");
 		});
 
+		it("enriches models from /api/show metadata when available", async () => {
+			globalThis.fetch = mock((url: string | URL | Request, init?: RequestInit) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.endsWith("/api/tags")) {
+					return new Response(JSON.stringify({ models: [{ name: "gemma3:4b" }] }), {
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					});
+				}
+				if (urlStr.endsWith("/api/show")) {
+					return new Response(JSON.stringify({
+						capabilities: ["completion", "vision"],
+						details: { parameter_size: "4.3B", quantization_level: "Q4_K_M", family: "gemma3", format: "gguf" },
+						model_info: { "gemma3.context_length": 131072 },
+					}), {
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					});
+				}
+				return new Response("Not Found", { status: 404 });
+			});
+
+			const models = await listProviderModels({
+				baseUrl: "http://localhost:11434",
+				apiKey: "",
+				providerType: "ollama",
+			});
+
+			expect(models).toEqual([
+				{
+					id: "gemma3:4b",
+					label: "gemma3:4b",
+					contextLength: 131072,
+					description: "4.3B · Q4_K_M · gemma3 · gguf",
+					capabilities: { vision: true },
+				},
+			]);
+			const showCall = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[1];
+			expect(showCall[0]).toBe("http://localhost:11434/api/show");
+			expect(JSON.parse(showCall[1]?.body as string)).toEqual({ model: "gemma3:4b" });
+		});
+
 		it("throws on non-OK response", async () => {
 			globalThis.fetch = mock(() => new Response("Not Found", { status: 404 }));
 			expect(
