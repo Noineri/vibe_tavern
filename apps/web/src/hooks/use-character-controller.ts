@@ -38,6 +38,7 @@ import {
   setChatPersonaAction,
   createChatAction,
   deleteChatAction,
+  clearChatAction,
   renameChatAction,
   switchChatAction,
 } from "../stores/api-actions/chat-actions.js";
@@ -61,6 +62,7 @@ export interface CharacterControllerActions {
   handleDeleteCharacter: (characterId: string) => Promise<void>;
   handleDuplicateCharacter: (characterId: string) => Promise<void>;
   handleDeleteChat: (chatId: ChatId) => Promise<void>;
+  handleClearChat: (chatId: ChatId) => Promise<void>;
   handleRenameChat: (chatId: ChatId, title: string) => Promise<void>;
   handleCreateChat: (characterId?: string) => Promise<void>;
   handleCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string; mesExample?: string; alternateGreetings?: string[]; postHistoryInstructions?: string; creatorNotes?: string; systemPrompt?: string; depthPrompt?: string; depthPromptDepth?: number; depthPromptRole?: string; tags?: string[] }, avatarFile?: File | null, avatarOriginalFile?: File | null) => Promise<{ characterId: string; chatId: string } | null>;
@@ -356,6 +358,14 @@ export function useCharacterController(): CharacterControllerActions {
     }
   }
 
+  async function handleClearChat(chatId: ChatId): Promise<void> {
+    const snapshot = await clearChatAction(chatId);
+    useSnapshotStore.getState().ingestSnapshot(snapshot);
+    if (snapshot.activeChat?.id) {
+      useChatStore.getState().setActiveChatId(snapshot.activeChat.id as ChatId);
+    }
+  }
+
   async function handleRenameChat(chatId: ChatId, title: string): Promise<void> {
     const nextTitle = title.trim();
     if (!nextTitle) return;
@@ -508,6 +518,7 @@ export function useCharacterController(): CharacterControllerActions {
     handleDeleteCharacter,
     handleDuplicateCharacter,
     handleDeleteChat,
+    handleClearChat,
     handleRenameChat,
     handleCreateChat,
     handleCreateCharacter,

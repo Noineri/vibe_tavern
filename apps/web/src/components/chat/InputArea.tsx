@@ -399,6 +399,7 @@ function ChatImpersonateAiPill({
     recentMessageCount: 20,
   });
   const [loading, setLoading] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (settings.providerId || !bootstrapUiSettings) return;
@@ -418,6 +419,7 @@ function ChatImpersonateAiPill({
       return;
     }
     setLoading(true);
+    abortRef.current = new AbortController();
     try {
       const request: AiAssistantRequestBody = {
         mode: "chat_impersonate",
@@ -434,7 +436,7 @@ function ChatImpersonateAiPill({
         recentMessageCount: settings.recentMessageCount ?? 20,
       };
       let text = "";
-      for await (const chunk of streamAiAssistant(request)) {
+      for await (const chunk of streamAiAssistant(request, { signal: abortRef.current.signal })) {
         if (chunk.type === "text" && chunk.text) {
           text += chunk.text;
           setDraft(text.trimStart());
@@ -444,9 +446,11 @@ function ChatImpersonateAiPill({
       }
       if (text.trim()) setDraft(text.trim());
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       toast.error(err instanceof Error ? err.message : "AI impersonation failed");
     } finally {
       setLoading(false);
+      abortRef.current = null;
     }
   };
 
@@ -461,6 +465,7 @@ function ChatImpersonateAiPill({
   return (
     <AiQuickPill
       onGenerate={() => void handleGenerate()}
+      onCancel={() => { abortRef.current?.abort(); }}
       onSettingsChange={handleSettingsChange}
       settings={settings}
       loading={loading}

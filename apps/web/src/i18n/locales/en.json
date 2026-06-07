@@ -20,6 +20,8 @@
   "sidebar_are_you_sure": "Are you sure? This cannot be undone.",
   "sidebar_delete_chat": "Delete chat?",
   "sidebar_delete_chat_body": "Delete {name}? All messages on every branch will be removed.",
+  "sidebar_clear_chat": "Clear chat",
+  "sidebar_clear_chat_confirm": "This is the last chat. Clear it to start fresh? All messages and memory will be removed.",
   "sidebar_clone_chat": "Clone chat",
   "sidebar_export_jsonl": "Export (JSONL)",
   "sidebar_rename": "Rename",

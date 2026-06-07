@@ -20,6 +20,8 @@
   "sidebar_are_you_sure": "Вы уверены? Это нельзя отменить.",
   "sidebar_delete_chat": "Удалить чат?",
   "sidebar_delete_chat_body": "Удалить {name}? Все сообщения на всех ветках будут удалены.",
+  "sidebar_clear_chat": "Очистить чат",
+  "sidebar_clear_chat_confirm": "Это последний чат. Очистить и начать заново? Все сообщения и память будут удалены.",
   "sidebar_clone_chat": "Клонировать чат",
   "sidebar_export_jsonl": "Экспорт (JSONL)",
   "sidebar_rename": "Переименовать",

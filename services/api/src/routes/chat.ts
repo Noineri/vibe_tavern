@@ -245,6 +245,10 @@ export function createChatRoutes(runtime: RuntimeApi) {
       runtime.deleteChat(c.req.param("chatId"));
       return c.body(null, 204);
     })
+    .post("/api/chats/:chatId/clear", async (c) => {
+      const snapshot = await runtime.clearChat(c.req.param("chatId"));
+      return c.json(snapshot);
+    })
     .patch("/api/chats/:chatId/title", zValidator("json", schemas.renameChatSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(await runtime.renameChat(c.req.param("chatId"), body.title));

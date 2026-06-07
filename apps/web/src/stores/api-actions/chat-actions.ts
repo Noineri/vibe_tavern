@@ -5,6 +5,7 @@ import {
   deleteBranch,
   renameBranch,
   deleteChat,
+  clearChat,
   deleteChatMessage,
   deleteMessageVariant,
   editChatMessage,
@@ -80,6 +81,12 @@ export async function deleteChatAction(chatId: ChatId): Promise<void> {
     useChatStore.getState().setActiveChatId(null);
   }
   void fetchBootstrapAction({ silent: true });
+}
+
+export async function clearChatAction(chatId: ChatId): Promise<AppSnapshot> {
+  const snapshot = await clearChat(chatId);
+  syncSnapshot(snapshot);
+  return snapshot;
 }
 
 export async function renameChatAction(chatId: ChatId, title: string): Promise<void> {

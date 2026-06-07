@@ -108,6 +108,51 @@ export class ChatLifecycleRuntime {
 		return this.deps.getSnapshot(freeChatId);
 	}
 
+	/**
+	 * Clear a chat: delete it and create a fresh one for the same character
+	 * with the first greeting message. Returns the new session snapshot.
+	 */
+	async clearChat(chatId: ChatId): Promise<SessionSnapshot> {
+		const oldChat = await this.deps.stores.chats.getById(chatId);
+		if (!oldChat) throw notFound("Chat", `Chat '${chatId}' not found.`);
+
+		const characterId = oldChat.characterId as CharacterId;
+		const character = await this.deps.stores.characters.getById(characterId);
+		if (!character) throw notFound("Character", `Character '${characterId}' not found.`);
+
+		// Create fresh chat
+		const created = await this.deps.chatApp.createChat({
+			characterId,
+			personaId: oldChat.personaId as PersonaId ?? await this.deps.persona.resolveDefaultId(),
+			title: oldChat.title ?? `${character.name} chat`,
+			promptPresetId: (oldChat.promptPresetId ?? await this.deps.resolveDefaultPromptPresetId()) as PromptPresetId,
+		});
+
+		this.deps.chatOrder.add(created.id);
+
+		// Add greeting message
+		const greetingVariants = buildGreetingVariants(character.firstMessage, character.alternateGreetings);
+		if (greetingVariants.length > 0) {
+			const chat = await this.deps.stores.chats.getById(created.id);
+			if (chat) {
+				await this.deps.stores.chats.addMessage({
+					chatId: created.id,
+					branchId: chat.activeBranchId,
+					role: "assistant",
+					authorType: "assistant",
+					content: greetingVariants[0],
+					variants: greetingVariants,
+				});
+			}
+		}
+
+		// Switch to new chat, then delete old (cascade deletes messages/summaries/memory)
+		this.deps.chatOrder.remove(chatId);
+		await this.deps.stores.chats.delete(chatId);
+
+		return this.deps.getSnapshot(created.id);
+	}
+
 	async assembleSummaryPrompt(input: {
 		chatId: ChatId;
 		model: string;
