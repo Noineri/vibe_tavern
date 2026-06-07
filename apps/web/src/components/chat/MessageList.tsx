@@ -46,10 +46,7 @@ export function MessageList() {
   const autoScrollRafRef = useRef<number | undefined>(undefined);
   const userScrolledUpRef = useRef(false);
   const wasSendingRef = useRef(false);
-  const msgCountAtGenEndRef = useRef<number | undefined>(undefined);
-  const settledRef = useRef(false);
-
-  useLayoutEffect(() => {
+  const settledRef = useRef(false);  useLayoutEffect(() => {
     if (isSending) {
       wasSendingRef.current = true;
       scrollToBottom(scrollerElRef.current);
@@ -145,16 +142,15 @@ export function MessageList() {
         autoScrollRafRef.current = undefined;
       }
 
-      if (msgCountAtGenEndRef.current !== undefined && displayMessageIds.length > msgCountAtGenEndRef.current) {
-        msgCountAtGenEndRef.current = undefined;
-        setTimeout(() => {
-          scrollToBottom(scrollerElRef.current);
-        }, 200);
+      if (wasSendingRef.current) {
+        const el = scrollerElRef.current;
+        if (el && !userScrolledUpRef.current) {
+          setTimeout(() => { scrollToBottom(el); }, 150);
+          setTimeout(() => { scrollToBottom(el); }, 400);
+        }
       }
       return;
     }
-
-    msgCountAtGenEndRef.current = displayMessageIds.length;
 
     const pin = () => {
       if (!userScrolledUpRef.current) scrollToBottom(scrollerElRef.current);
