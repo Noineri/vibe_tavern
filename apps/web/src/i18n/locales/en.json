@@ -924,5 +924,8 @@
   "delete_message_body": "Choose whether to delete only the current swipe variant or remove the entire message.",
   "delete_swipe_btn": "Delete this swipe",
   "delete_message_btn": "Delete entire message",
-  "rename_branch_prompt": "Branch name:"
+  "rename_branch_prompt": "Branch name:",
+  "ai_quickpill_settings": "AI Settings",
+  "ai_quickpill_recent_messages": "Recent messages",
+  "ai_quickpill_append": "Append"
 }

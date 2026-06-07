@@ -924,5 +924,8 @@
   "delete_message_body": "Выбери: удалить только текущий свайп-вариант или всё сообщение целиком.",
   "delete_swipe_btn": "Удалить этот свайп",
   "delete_message_btn": "Удалить сообщение",
-  "rename_branch_prompt": "Имя ветки:"
+  "rename_branch_prompt": "Имя ветки:",
+  "ai_quickpill_settings": "Настройки ИИ",
+  "ai_quickpill_recent_messages": "Последние сообщения",
+  "ai_quickpill_append": "Дополнить"
 }
