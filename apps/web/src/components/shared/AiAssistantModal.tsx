@@ -343,6 +343,7 @@ export function AiAssistantModal({
       setParsedFields({});
       setCheckedFields(new Set());
       setStreamedReasoning("");
+      setStreamedOutput("");
 
       const request: AiAssistantRequestBody = {
         mode: "md_import",
@@ -362,6 +363,9 @@ export function AiAssistantModal({
         for await (const chunk of streamAiAssistant(request, { signal: ac.signal })) {
           if (chunk.type === "reasoning" && chunk.text) {
             setStreamedReasoning(prev => prev + chunk.text);
+          }
+          if (chunk.type === "text" && chunk.text) {
+            setStreamedOutput(prev => prev + chunk.text);
           }
           if (chunk.type === "partial_json" && chunk.json) {
             setParsedFields(chunk.json as Partial<MdImportResult>);
@@ -538,7 +542,7 @@ export function AiAssistantModal({
                   </div>
                   <div>
                     <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_param_max_tokens")}</label>
-                    <NumberInput min={256} max={64000} value={aiMaxTokens ?? (isMdImport ? 10000 : 4096)} onChange={(v) => setAiMaxTokens(v)} className="w-full" />
+                    <NumberInput min={256} max={64000} value={aiMaxTokens ?? (isMdImport ? 6000 : 4096)} onChange={(v) => setAiMaxTokens(v)} className="w-full" />
                   </div>
                 </div>
               )}
@@ -598,6 +602,14 @@ export function AiAssistantModal({
                       <span className="animate-spin text-accent">⟳</span>
                       <span className="font-ui text-[12px] text-t3">{t("import_md_parsing")}</span>
                     </div>
+                  )}
+
+                  {/* Raw model output debug */}
+                  {streamedOutput && (
+                    <details className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 16 }} open={Object.keys(parsedFields).length === 0}>
+                      <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">Raw model output</summary>
+                      <pre className="mt-2 max-h-[240px] overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-[1.45] text-t2">{streamedOutput}{streaming && <span className="animate-pulse text-accent">▌</span>}</pre>
+                    </details>
                   )}
 
                   {/* Parsed fields preview */}

@@ -9,7 +9,7 @@
  * parsed JSON result is emitted to the client.
  */
 
-import { streamText, streamObject } from "ai";
+import { streamText } from "ai";
 import type { LanguageModel } from "ai";
 import {
   assemblePrompt,
@@ -22,7 +22,6 @@ import {
 import type { ResolvedContext, ContextResolverDeps } from "./context-resolver.js";
 import { resolveContext, toPipelineCharacters, toPipelinePersonas, toPipelineLore } from "./context-resolver.js";
 import { getModeConfig } from "./ai-assistant-modes.js";
-import { mdImportSchema, type MdImportResult } from "./md-import-schema.js";
 import {
   resolveSystemPrompt,
 } from "./ai-assistant-prompts.js";
@@ -247,7 +246,10 @@ export async function* streamAiAssistant(
     const { config, profile, modelName, messages } = await prepareAiAssistantRequest(request, deps);
     const aiModel = deps.resolveModel(profile, modelName);
 
-    // md_import: try streamObject, fallback to streamText + JSON parse
+    // md_import intentionally uses plain streamText instead of streamObject.
+    // Some providers/models (notably Gemini Flash Lite and OpenAI-compatible
+    // aggregators) can loop or emit malformed never-closed JSON when forced into
+    // structured streaming. This mirrors lore_keys: collect text, then parse.
     if (request.mode === "md_import") {
       deps.logDebug?.("api.ai-assistant.md-import.start", {
         model: modelName,
@@ -255,82 +257,39 @@ export async function* streamAiAssistant(
         contentLength: request.existingContent?.length ?? 0,
       });
 
-      // Emit early text so the client knows the connection is alive
       yield { type: "reasoning", text: "Parsing character data...\n" };
 
-      const temp = request.temperature ?? 0;
-      const maxTokens = request.maxOutputTokens ?? 10000;
-
-      // Try streamObject (structured output), fallback to streamText + manual parse
-      let usedStreamObject = false;
-      let streamObjectHadUsefulJson = false;
       try {
-        const result = await streamObject({
+        const result = await streamText({
           model: aiModel,
-          schema: mdImportSchema,
           messages,
           allowSystemInMessages: true,
-          temperature: temp,
-          maxOutputTokens: maxTokens,
+          temperature: request.temperature ?? 0,
+          maxOutputTokens: request.maxOutputTokens ?? 6000,
         });
 
-        usedStreamObject = true;
-        let eventCount = 0;
-        for await (const event of result.fullStream) {
-          eventCount++;
-          if (event.type === "text-delta") {
-            yield { type: "reasoning", text: event.textDelta };
-          } else if (event.type === "object") {
-            const obj = event.object as Record<string, unknown>;
-            if (hasUsefulMdImportJson(obj)) {
-              streamObjectHadUsefulJson = true;
-              yield { type: "partial_json", json: obj };
-            }
-          } else if (event.type === "error") {
-            deps.logDebug?.("api.ai-assistant.md-import.stream-object-error", { error: String(event.error), eventCount });
-            yield { type: "error", error: String(event.error) };
-          }
+        let fullText = "";
+        for await (const chunk of result.textStream) {
+          fullText += chunk;
+          // Raw model output for debugging. The md_import UI shows this separately
+          // from parsed fields, so users can see provider/model failures directly.
+          yield { type: "text", text: chunk };
         }
 
-        deps.logDebug?.("api.ai-assistant.md-import.stream-object-done", { eventCount, streamObjectHadUsefulJson });
-      } catch {
-        // streamObject not supported by this provider — fallback to streamText
-        deps.logDebug?.("api.ai-assistant.md-import.fallback-to-streamText", { model: modelName });
-      }
-
-      if (!usedStreamObject || !streamObjectHadUsefulJson) {
-        // Fallback: streamText + manual JSON parse
-        try {
-          const result = await streamText({
-            model: aiModel,
-            messages,
-            allowSystemInMessages: true,
-            temperature: temp,
-            maxOutputTokens: maxTokens,
+        const parsed = extractMdImportObjectFromText(fullText);
+        if (parsed && hasUsefulMdImportJson(parsed)) {
+          yield { type: "partial_json", json: parsed };
+        } else {
+          deps.logDebug?.("api.ai-assistant.md-import.parse-failed", {
+            responseLength: fullText.length,
+            responsePreview: fullText.slice(0, 300),
           });
-
-          let fullText = "";
-          for await (const chunk of result.textStream) {
-            fullText += chunk;
-            yield { type: "reasoning", text: chunk };
-          }
-
-          // Try to extract JSON from the response
-          const parsed = extractJsonFromText(fullText);
-          if (parsed && hasUsefulMdImportJson(parsed)) {
-            yield { type: "partial_json", json: parsed as Record<string, unknown> };
-          } else {
-            deps.logDebug?.("api.ai-assistant.md-import.json-parse-failed", {
-              responseLength: fullText.length,
-              responsePreview: fullText.slice(0, 200),
-            });
-            yield { type: "error", error: "Failed to parse JSON from model response" };
-          }
-        } catch (fallbackErr) {
-          const msg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
-          deps.logDebug?.("api.ai-assistant.md-import.fallback-error", { error: msg });
-          yield { type: "error", error: msg };
+          yield { type: "error", error: "Model returned output, but no importable fields could be parsed. See raw output above." };
         }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        deps.logDebug?.("api.ai-assistant.md-import.error", { error: msg });
+        yield { type: "error", error: msg };
       }
 
       yield { type: "done" };
@@ -392,12 +351,101 @@ export async function* streamAiAssistant(
   }
 }
 
+const MD_IMPORT_STRING_FIELDS = ["name", "tagline", "description", "personality", "scenario", "firstMessage", "creatorNotes"] as const;
+
+const MD_IMPORT_FIELD_ALIASES: Record<string, string> = {
+  name: "name",
+  title: "name",
+  character_name: "name",
+  card_name: "name",
+  tagline: "tagline",
+  subtitle: "tagline",
+  hook: "tagline",
+  description: "description",
+  personality: "personality",
+  scenario: "scenario",
+  firstmessage: "firstMessage",
+  first_message: "firstMessage",
+  first_message_greeting: "firstMessage",
+  greeting: "firstMessage",
+  intro: "firstMessage",
+  examplemessages: "exampleMessages",
+  example_messages: "exampleMessages",
+  examples: "exampleMessages",
+  mes_example: "exampleMessages",
+  creatornotes: "creatorNotes",
+  creator_notes: "creatorNotes",
+  notes: "creatorNotes",
+  author_notes: "creatorNotes",
+  additionalcharacters: "additionalCharacters",
+  additional_characters: "additionalCharacters",
+};
+
 function hasUsefulMdImportJson(obj: Record<string, unknown>): boolean {
-  const usefulStringFields = ["name", "tagline", "description", "personality", "scenario", "firstMessage", "creatorNotes"];
-  if (usefulStringFields.some((key) => typeof obj[key] === "string" && obj[key].trim().length > 0)) return true;
+  if (MD_IMPORT_STRING_FIELDS.some((key) => typeof obj[key] === "string" && obj[key].trim().length > 0)) return true;
   if (Array.isArray(obj.exampleMessages) && obj.exampleMessages.length > 0) return true;
   if (Array.isArray(obj.additionalCharacters) && obj.additionalCharacters.length > 0) return true;
   return false;
+}
+
+function extractMdImportObjectFromText(text: string): Record<string, unknown> | null {
+  const json = normalizeMdImportObject(extractJsonFromText(text) ?? extractPartialJsonObject(text));
+  if (json && hasUsefulMdImportJson(json)) return json;
+
+  const labels = normalizeMdImportObject(extractLabelFieldsFromText(text));
+  if (labels && hasUsefulMdImportJson(labels)) return labels;
+
+  return null;
+}
+
+function normalizeMdImportObject(obj: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!obj) return null;
+  const out: Record<string, unknown> = {};
+  for (const [rawKey, rawValue] of Object.entries(obj)) {
+    const key = normalizeMdImportFieldKey(rawKey);
+    if (!key) continue;
+
+    if (MD_IMPORT_STRING_FIELDS.includes(key as (typeof MD_IMPORT_STRING_FIELDS)[number])) {
+      if (typeof rawValue === "string" && rawValue.trim()) out[key] = rawValue.trim();
+      continue;
+    }
+
+    if (key === "exampleMessages") {
+      if (Array.isArray(rawValue)) {
+        const examples = rawValue.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
+        if (examples.length) out.exampleMessages = examples;
+      } else if (typeof rawValue === "string" && rawValue.trim()) {
+        out.exampleMessages = splitExampleMessages(rawValue);
+      }
+      continue;
+    }
+
+    if (key === "additionalCharacters" && Array.isArray(rawValue)) {
+      const chars = rawValue
+        .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+        .map((item) => ({
+          name: typeof item.name === "string" ? item.name.trim() : "",
+          description: typeof item.description === "string" ? item.description.trim() : undefined,
+          personality: typeof item.personality === "string" ? item.personality.trim() : undefined,
+        }))
+        .filter((item) => item.name);
+      if (chars.length) out.additionalCharacters = chars;
+    }
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+function normalizeMdImportFieldKey(key: string): string | null {
+  const normalized = key
+    .trim()
+    .replace(/^#+\s*/, "")
+    .replace(/^[-*•]\s*/, "")
+    .replace(/^\*\*|\*\*$/g, "")
+    .replace(/[`'\"]/g, "")
+    .replace(/[\s-]+/g, "_")
+    .replace(/[^a-zA-Z0-9_]/g, "")
+    .toLowerCase();
+  return MD_IMPORT_FIELD_ALIASES[normalized] ?? null;
 }
 
 /**
@@ -435,6 +483,100 @@ function extractJsonFromText(text: string): Record<string, unknown> | null {
 
   // Last resort: try to parse the whole text
   return tryParseJson(text);
+}
+
+function extractPartialJsonObject(text: string): Record<string, unknown> | null {
+  const firstBrace = text.indexOf("{");
+  const source = firstBrace >= 0 ? text.slice(firstBrace) : text;
+  const out: Record<string, unknown> = {};
+
+  const completeStringField = /"([A-Za-z_][A-Za-z0-9_]*)"\s*:\s*"((?:\\.|[^"\\])*)"/g;
+  for (const match of source.matchAll(completeStringField)) {
+    const key = normalizeMdImportFieldKey(match[1]);
+    if (key && MD_IMPORT_STRING_FIELDS.includes(key as (typeof MD_IMPORT_STRING_FIELDS)[number])) {
+      out[key] = decodeJsonStringFragment(match[2]);
+    }
+  }
+
+  const incompleteStringField = /"([A-Za-z_][A-Za-z0-9_]*)"\s*:\s*"([\s\S]*)$/;
+  const incomplete = source.match(incompleteStringField);
+  if (incomplete) {
+    const key = normalizeMdImportFieldKey(incomplete[1]);
+    if (key && MD_IMPORT_STRING_FIELDS.includes(key as (typeof MD_IMPORT_STRING_FIELDS)[number]) && out[key] == null) {
+      out[key] = decodeJsonStringFragment(incomplete[2].replace(/[,\s]*$/, ""));
+    }
+  }
+
+  const exampleArray = source.match(/"(?:exampleMessages|example_messages|examples|mes_example)"\s*:\s*\[([\s\S]*?)\]/i);
+  if (exampleArray) {
+    const examples = [...exampleArray[1].matchAll(/"((?:\\.|[^"\\])*)"/g)]
+      .map((match) => decodeJsonStringFragment(match[1]).trim())
+      .filter(Boolean);
+    if (examples.length) out.exampleMessages = examples;
+  }
+
+  return Object.keys(out).length ? out : null;
+}
+
+function extractLabelFieldsFromText(text: string): Record<string, unknown> | null {
+  const out: Record<string, unknown> = {};
+  let currentKey: string | null = null;
+  let buffer: string[] = [];
+
+  function flush(): void {
+    if (!currentKey) return;
+    const value = buffer.join("\n").trim();
+    if (!value) return;
+    if (currentKey === "exampleMessages") out.exampleMessages = splitExampleMessages(value);
+    else out[currentKey] = value;
+  }
+
+  for (const rawLine of text.replace(/\r\n/g, "\n").split("\n")) {
+    const line = rawLine.trim();
+    const colonMatch = line.match(/^#{0,6}\s*[-*•]?\s*\*?\*?([A-Za-z][A-Za-z0-9_\s-]{0,40})\*?\*?\s*:\s*(.*)$/);
+    const standaloneKey = line.length <= 48 ? normalizeMdImportFieldKey(line) : null;
+    const colonKey = colonMatch ? normalizeMdImportFieldKey(colonMatch[1]) : null;
+
+    if (colonKey) {
+      flush();
+      currentKey = colonKey;
+      buffer = colonMatch?.[2] ? [colonMatch[2]] : [];
+      continue;
+    }
+
+    if (standaloneKey) {
+      flush();
+      currentKey = standaloneKey;
+      buffer = [];
+      continue;
+    }
+
+    if (currentKey) buffer.push(rawLine);
+  }
+  flush();
+
+  return Object.keys(out).length ? out : null;
+}
+
+function splitExampleMessages(value: string): string[] {
+  const parts = value
+    .split(/\n\s*(?:<START>|---|={3,}|#{1,6}\s*Example\b|Example\s*\d+\s*:?)\s*\n/gi)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length ? parts : [value.trim()].filter(Boolean);
+}
+
+function decodeJsonStringFragment(value: string): string {
+  try {
+    return JSON.parse(`"${value}"`) as string;
+  } catch {
+    return value
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "\r")
+      .replace(/\\t/g, "\t")
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, "\\");
+  }
 }
 
 function tryParseJson(text: string): Record<string, unknown> | null {
