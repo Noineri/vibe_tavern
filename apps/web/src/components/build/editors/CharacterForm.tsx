@@ -59,6 +59,20 @@ function parseCardToDraft(raw: unknown): Partial<BuildCharacterDraft> {
   return result;
 }
 
+function formatAdditionalCharactersForNotes(characters: NonNullable<MdImportResult["additionalCharacters"]>): string {
+  return characters
+    .map((character) => {
+      const lines = [
+        character.name ? `## ${character.name}` : "## Additional character",
+        character.description?.trim() ? `Description:\n${character.description.trim()}` : "",
+        character.personality?.trim() ? `Personality:\n${character.personality.trim()}` : "",
+      ].filter(Boolean);
+      return lines.join("\n\n");
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 /* ── shared style constants for padding (Tailwind v4 numeric spacing bugs) ── */
 const inputPad = { padding: "6px 10px" } as React.CSSProperties;
 
@@ -168,6 +182,12 @@ export function CharacterForm({
     if (fields.firstMessage) merged.firstMessage = fields.firstMessage;
     if (fields.exampleMessages?.length) merged.mesExample = fields.exampleMessages.join("\n<START>\n");
     if (fields.creatorNotes) merged.creatorNotes = fields.creatorNotes;
+    if (fields.additionalCharacters?.length) {
+      const additionalCharacters = formatAdditionalCharactersForNotes(fields.additionalCharacters);
+      if (additionalCharacters) {
+        merged.creatorNotes = [merged.creatorNotes, `# Additional Characters\n\n${additionalCharacters}`].filter(Boolean).join("\n\n");
+      }
+    }
     if (Object.keys(merged).length > 0) {
       form.reset({ ...form.getValues(), ...merged } as BuildCharacterDraft);
       onAfterImport?.();

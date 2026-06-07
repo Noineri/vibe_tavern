@@ -65,6 +65,22 @@ function getMdImportFieldLabel(field: keyof MdImportResult): string {
   return MD_IMPORT_FIELD_OPTIONS.find((option) => option.id === field)?.label ?? field;
 }
 
+function formatMdImportAdditionalCharacters(
+  characters: Array<{ name?: string; description?: string; personality?: string }>,
+): string {
+  return characters
+    .map((character) => {
+      const lines = [
+        character.name ? `## ${character.name}` : "## Additional character",
+        character.description?.trim() ? `Description:\n${character.description.trim()}` : "",
+        character.personality?.trim() ? `Personality:\n${character.personality.trim()}` : "",
+      ].filter(Boolean);
+      return lines.join("\n\n");
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function describeMdImportValue(value: unknown): string {
   if (Array.isArray(value)) {
     if (value.length === 0) return "";
@@ -72,7 +88,7 @@ function describeMdImportValue(value: unknown): string {
       return (value as string[]).join("\n---\n");
     }
     if (value.every((item) => item && typeof item === "object" && "name" in item)) {
-      return (value as Array<{ name?: string }>).map((item) => item.name ?? "").filter(Boolean).join(", ");
+      return formatMdImportAdditionalCharacters(value as Array<{ name?: string; description?: string; personality?: string }>);
     }
     return JSON.stringify(value, null, 2);
   }
@@ -101,6 +117,16 @@ function mergeMdImportFields(
     return { ...target, [key]: `${target[key]}
 
 ${value}` };
+  }
+  if (Array.isArray(value)) {
+    const text = describeMdImportValue(value).trim();
+    if (!text) return target;
+    if (typeof target[key] === "string" && target[key]) {
+      return { ...target, [key]: `${target[key]}
+
+${text}` };
+    }
+    return { ...target, [key]: text as never };
   }
   return { ...target, [key]: value as never };
 }
@@ -706,7 +732,9 @@ export function AiAssistantModal({
                                 />
                                 <div className="min-w-0 flex-1">
                                   <div className="text-[11px] uppercase text-t3">{getMdImportFieldLabel(sourceKey)}</div>
-                                  <div className="whitespace-pre-wrap font-mono text-[12px] leading-[1.4] text-t1">{preview.length > 220 ? preview.slice(0, 220) + "..." : preview}</div>
+                                  <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-border2 bg-s1 px-2 py-1.5 font-mono text-[12px] leading-[1.4] text-t1">
+                                    {preview}
+                                  </div>
                                 </div>
                                 <div className="w-[168px] shrink-0">
                                   <DropdownSelect
