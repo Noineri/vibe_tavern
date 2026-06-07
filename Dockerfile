@@ -26,11 +26,7 @@ FROM oven/bun:1.3.14-alpine AS release
 WORKDIR /app
 
 # Copy only runtime artifacts from builder
-COPY --from=builder /app/out/services/api/prod-server.js ./out/services/api/
-COPY --from=builder /app/out/services/api/prod-server.js.map ./out/services/api/
-COPY --from=builder /app/out/services/api/*.md ./out/services/api/
-COPY --from=builder /app/out/services/api/tokenizers ./out/services/api/tokenizers/
-COPY --from=builder /app/out/services/api/drizzle ./out/services/api/drizzle/
+COPY --from=builder /app/out/services ./out/services
 COPY --from=builder /app/out/apps/web ./out/apps/web
 
 RUN mkdir -p /app/data && chown -R bun:bun /app
