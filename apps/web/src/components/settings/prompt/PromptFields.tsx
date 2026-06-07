@@ -6,7 +6,7 @@ import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { PrefillField } from "./PrefillField.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useT } from "../../../i18n/context.js";
-import { SegmentedControl } from "../../shared/SegmentedControl.js";
+import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 
 function SectionHeader({ title }: { title: string }) {
@@ -126,46 +126,57 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
           />
 
           <div>
-            <div className="mb-[7px] flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div className="mb-[7px] flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <label className={labelCls + " mb-0"}>{t("authors_note_label")}</label>
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <SegmentedControl
-                  value={draft?.authorsNoteRole ?? "system"}
-                  options={[
-                    { value: "system", label: "system" },
-                    { value: "user", label: "user" },
-                    { value: "assistant", label: "assistant" },
-                  ]}
-                  onChange={(v) => onUpdateField("authorsNoteRole", v)}
-                  disabled={disabled}
-                  compact
-                />
-                <SegmentedControl
-                  value={draft?.authorsNotePosition ?? "in_chat"}
-                  options={[
-                    { value: "in_prompt", label: t("an_position_in_prompt") },
-                    { value: "in_chat", label: t("an_position_in_chat") },
-                    { value: "after_chat", label: t("an_position_after_chat") },
-                  ]}
-                  onChange={(v) => onUpdateField("authorsNotePosition", v)}
-                  disabled={disabled}
-                  compact
-                />
-                {(draft?.authorsNotePosition ?? "in_chat") === "in_chat" && (
-                  <CustomTooltip content={`${t("insert_depth_label")}: ${t("insert_depth_hint")}`}>
-                    <div className="flex shrink-0 items-center gap-1.5 font-ui text-[11px] text-t4">
-                      <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
-                      <span className="sr-only">{t("insert_depth_label")}</span>
-                      <NumberInput
-                        className="h-[30px] w-[90px]"
-                        min={0}
-                        value={draft?.authorsNoteDepth ?? 4}
-                        onChange={(v) => onUpdateField("authorsNoteDepth", v)}
-                        disabled={disabled}
-                      />
-                    </div>
-                  </CustomTooltip>
-                )}
+              
+              <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-4">
+                <div className="flex items-center gap-2">
+                  <span className="font-ui text-[11px] font-medium uppercase tracking-wider text-t3">{t("role")}</span>
+                  <DropdownSelect
+                    className="w-[120px]"
+                    searchable={false}
+                    value={draft?.authorsNoteRole ?? "system"}
+                    options={[
+                      { id: "system", label: "system" },
+                      { id: "user", label: "user" },
+                      { id: "assistant", label: "assistant" },
+                    ]}
+                    onChange={(v) => onUpdateField("authorsNoteRole", v)}
+                    disabled={disabled}
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="font-ui text-[11px] font-medium uppercase tracking-wider text-t3">{t("position_label")}</span>
+                  <DropdownSelect
+                    className="w-[180px]"
+                    searchable={false}
+                    value={draft?.authorsNotePosition ?? "in_chat"}
+                    options={[
+                      { id: "in_prompt", label: t("an_position_in_prompt") },
+                      { id: "in_chat", label: t("an_position_in_chat") },
+                      { id: "after_chat", label: t("an_position_after_chat") },
+                    ]}
+                    onChange={(v) => onUpdateField("authorsNotePosition", v)}
+                    disabled={disabled}
+                  />
+                  {(draft?.authorsNotePosition ?? "in_chat") === "in_chat" && (
+                    <CustomTooltip content={`${t("insert_depth_label")}: ${t("insert_depth_hint")}`}>
+                      <div className="flex items-center gap-2">
+                        <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
+                        <span className="sr-only">{t("insert_depth_label")}</span>
+                        <input
+                          type="number"
+                          className="h-[33px] w-[46px] rounded-[6px] border border-border bg-s2 px-1 text-center font-ui text-[13px] text-t1 outline-none transition-[border-color] hover:border-accent focus:border-accent disabled:opacity-50"
+                          min={0}
+                          value={draft?.authorsNoteDepth ?? 4}
+                          onChange={(e) => onUpdateField("authorsNoteDepth", parseInt(e.target.value) || 0)}
+                          disabled={disabled}
+                        />
+                      </div>
+                    </CustomTooltip>
+                  )}
+                </div>
               </div>
             </div>
             {ta("authorsNote", t("authors_note_placeholder"), 100)}
