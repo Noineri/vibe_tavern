@@ -79,12 +79,34 @@ export interface PromptPresetDto {
   updatedAt: string;
 }
 
+// ─── Prompt Slot (unified visual position) ─────────────────────────────────
+
+/** Which of the three canvas zones a prompt block lives in. */
+export type PromptZone = "before_chat" | "in_chat" | "after_chat";
+
+/** Absolute visual position on the prompt canvas. */
+export interface PromptSlot {
+  /** Canvas zone. */
+  zone: PromptZone;
+  /**
+   * Messages from end (1–N) for in_chat zone.
+   * null for before_chat and after_chat zones.
+   */
+  depth: number | null;
+  /** Sort order within the same zone+depth bucket. Lower = earlier. */
+  order: number;
+}
+
 // ─── Advanced Prompt Order (attached to PromptPreset) ───────────────────────
 
 export interface PromptOrderEntry {
   identifier: string;
   enabled: boolean;
   order?: number;
+  /** Visual canvas zone. */
+  zone?: PromptZone;
+  /** For items placed at a specific chat depth. */
+  depth?: number | null;
   kind?: "built_in" | "custom";
 }
 
@@ -97,6 +119,8 @@ export interface CustomInjection {
   depth: number;
   role: 'system' | 'user' | 'assistant';
   enabled: boolean;
+  /** Unified visual position on the canvas. Authoritative when present. */
+  slot?: PromptSlot;
   /** ST compatibility: 0/relative = prompt-order block, 1/absolute = depth injection. */
   injectionPosition?: 0 | 1 | 'relative' | 'absolute';
   /** ST compatibility: order bucket for absolute/depth injections. */

@@ -5,6 +5,7 @@ export * from "./extract-thinking-tags.js";
 export * from "./ids.js";
 export * from "./logger.js";
 export * from "./platform-constants.js";
+export * from "./prompt-slot.js";
 export * from "./provider-profile.js";
 export * from "./provider-support.js";
 export * from "./sampler-params.js";
