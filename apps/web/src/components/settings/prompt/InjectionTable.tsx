@@ -1,7 +1,8 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useState, useMemo, useEffect, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { NumberInput } from "../../shared/NumberInput.js";
-import type { PromptOrderEntry } from "@vibe-tavern/domain";
+import type { PromptOrderEntry, PromptSlot, PromptZone } from "@vibe-tavern/domain";
+import { migrateInjection } from "@vibe-tavern/domain";
 import {
   closestCenter,
   DndContext,
@@ -11,9 +12,11 @@ import {
   TouchSensor,
   useSensor,
   useSensors,
+  useDroppable,
   type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
+  type DragOverEvent
 } from "@dnd-kit/core";
 import {
   arrayMove,
@@ -38,6 +41,7 @@ export interface InjectionRow {
   depth: number;
   role: "system" | "user" | "assistant";
   enabled: boolean;
+  slot?: PromptSlot;
   injectionPosition?: 0 | 1 | "relative" | "absolute";
   injectionOrder?: number;
   promptOrderIndex?: number;
@@ -67,19 +71,64 @@ interface InjectionTableProps {
 
 const roleOptions = ["system", "user", "assistant"] as const;
 
-const stablePromptCanvasCollision: CollisionDetection = (args) => {
-  const pointerMatches = pointerWithin(args);
-  return pointerMatches.length > 0 ? pointerMatches : closestCenter(args);
-};
-
 export function InjectionTable(props: InjectionTableProps) {
   return <PromptOrderCanvas {...props} />;
 }
 
+function DroppableDepthContainer({ id, depth, children, label, className }: { id: string; depth: number | string; children: ReactNode; label?: string; className?: string }) {
+  const { setNodeRef } = useDroppable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "rounded-md border border-transparent p-1 transition-colors min-h-[40px] flex flex-col gap-1.5",
+        className
+      )}
+    >
+      {label && <div className="mb-0.5 px-1 font-mono text-[10px] text-t4 uppercase tracking-wider">{label}</div>}
+      {children}
+    </div>
+  );
+}
+
+type CanvasItem =
+  | { key: string; identifier: string; kind: "slot"; defaultOrder: number; render: () => ReactNode }
+  | { key: string; identifier: string; kind: "field"; defaultOrder: number; render: () => ReactNode }
+  | { key: string; identifier: string; kind: "custom"; defaultOrder: number; injectionIndex: number; render: () => ReactNode };
+
+type ZonesState = {
+  before_chat: CanvasItem[];
+  after_chat: CanvasItem[];
+  depth4: CanvasItem[];
+  depth3: CanvasItem[];
+  depth2: CanvasItem[];
+  depth1: CanvasItem[];
+};
+
+/**
+ * PromptOrderCanvas
+ * 
+ * WARNING TO FUTURE AGENTS / DEVELOPERS:
+ * This component uses @dnd-kit/core with MULTIPLE SortableContexts (cross-container drag and drop).
+ * 
+ * To ensure smooth visual transitions (items spreading apart immediately when dragged into a new container)
+ * and prevent "twitching", we MUST handle `onDragOver` by mutating a local state (`activeZones`).
+ * 
+ * 1. `zonesToRender` dynamically switches between `defaultZones` (computed from props) when NOT dragging, 
+ *    and `activeZones` when dragging.
+ * 2. We deliberately initialize `activeZones` to `null` and only populate it on `onDragStart`.
+ *    Do NOT use `useEffect` to sync `activeZones` with `defaultZones`! Doing so will trigger infinite 
+ *    React re-render loops (Error #185) because `defaultZones` changes reference on every render.
+ * 3. In `onDragOver`, we manually move items between arrays within `activeZones` so `dnd-kit` can accurately
+ *    compute placeholder spaces on the fly.
+ * 4. Finally, `onDragEnd` applies the sorted `activeZones` back into the parent `promptOrder` and `injections` props.
+ */
 export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, promptOrder = [], onPromptOrderChange }: InjectionTableProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const [activeDragKey, setActiveDragKey] = useState<string | null>(null);
+  const [accordionOpen, setAccordionOpen] = useState(false);
+  
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 2 } }),
     useSensor(TouchSensor, { activationConstraint: { distance: 1 } }),
@@ -88,8 +137,6 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
   function update(index: number, patch: Partial<InjectionRow>) {
     const next = injections.map((inj, i) => i === index ? { ...inj, ...patch } : inj);
     onChange(next);
-    // Keep promptOrder.enabled in sync with customInjections[i].enabled —
-    // assemble.ts checks both, so toggling the row must flip both to stay consistent.
     if (Object.prototype.hasOwnProperty.call(patch, "enabled")) {
       const identifier = customIdentifier(next[index]!, index);
       syncPromptOrderEnabled(identifier, patch.enabled!);
@@ -98,13 +145,14 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
   function remove(index: number) { onChange(injections.filter((_, i) => i !== index)); }
   function add() {
     const suffix = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
-    onChange([...injections, { identifier: `custom_${suffix}`, name: "", content: "", depth: 4, role: "system", enabled: true, injectionPosition: 0, promptOrderPlacement: "before_chat" }]);
+    const newInj: InjectionRow = { identifier: `custom_${suffix}`, name: "", content: "", depth: 4, role: "system", enabled: true, slot: { zone: "before_chat", depth: null, order: 999 } };
+    onChange([...injections, newInj]);
   }
   function syncPromptOrderEnabled(identifier: string, enabled: boolean) {
     const existing = promptOrder.find((entry) => entry.identifier === identifier);
     const next = existing
       ? promptOrder.map((entry) => entry.identifier === identifier ? { ...entry, enabled } : entry)
-      : [...promptOrder, { identifier, enabled, kind: "custom" as const }];
+      : [...promptOrder, { identifier, enabled, kind: "custom" as const, zone: "before_chat" as const, depth: null, order: 999 }];
     onPromptOrderChange?.(next);
   }
   function togglePromptSlot(identifier: string) {
@@ -112,7 +160,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     const enabled = existing?.enabled ?? true;
     const next = existing
       ? promptOrder.map((entry) => entry.identifier === identifier ? { ...entry, enabled: !enabled } : entry)
-      : [...promptOrder, { identifier, enabled: false, kind: "built_in" as const }];
+      : [...promptOrder, { identifier, enabled: false, kind: "built_in" as const, zone: "before_chat" as const, depth: null, order: 999 }];
     onPromptOrderChange?.(next);
   }
   function slotEnabled(identifier: string) {
@@ -122,18 +170,22 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     return injection.identifier || `custom_${index}`;
   }
 
-  type CanvasItem =
-    | { key: string; identifier: string; kind: "slot"; defaultOrder: number; render: () => ReactNode }
-    | { key: string; identifier: string; kind: "field"; defaultOrder: number; render: () => ReactNode }
-    | { key: string; identifier: string; kind: "custom"; defaultOrder: number; injectionIndex: number; render: () => ReactNode };
-
-  const hasStoredOrdering = promptOrder.some((entry) => entry.order != null);
-  const promptOrderIndex = (identifier: string) => promptOrder.findIndex((entry) => entry.identifier === identifier);
-  const promptOrderValue = (identifier: string, fallback: number) => {
-    const index = promptOrderIndex(identifier);
-    if (!hasStoredOrdering || index < 0) return fallback;
-    return promptOrder[index]!.order ?? index;
-  };
+  function getCanvasItemSlot(item: CanvasItem): PromptSlot {
+    if (item.kind === "custom") {
+      const inj = injections[item.injectionIndex];
+      return inj.slot ?? migrateInjection(inj).slot;
+    }
+    const existingOrder = promptOrder.find(e => e.identifier === item.identifier);
+    if (existingOrder?.zone) {
+      return { zone: existingOrder.zone, depth: existingOrder.depth ?? null, order: existingOrder.order ?? item.defaultOrder };
+    }
+    const isAfterChat = item.identifier === "jailbreak" || item.identifier === "assistantPrefill" || item.defaultOrder > 100;
+    return {
+      zone: isAfterChat ? "after_chat" : "before_chat",
+      depth: null,
+      order: existingOrder?.order ?? item.defaultOrder
+    };
+  }
 
   const fixedItems: CanvasItem[] = [
     { key: "field:main", identifier: "main", kind: "field", defaultOrder: 0, render: () => <EditablePromptCard identifier="main" enabled={slotEnabled("main")} onToggle={togglePromptSlot} label={t("system_prompt")} role="system" value={draft?.system ?? ""} placeholder={t("system_prompt_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("system", value)} /> },
@@ -147,7 +199,6 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     { key: "field:nsfw", identifier: "nsfw", kind: "field", defaultOrder: 75, render: () => <EditablePromptCard identifier="nsfw" enabled={slotEnabled("nsfw")} onToggle={togglePromptSlot} label={t("nsfw_prompt")} role="system" value={draft?.nsfw ?? ""} placeholder={t("nsfw_prompt_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("nsfw", value)} /> },
     { key: "slot:worldInfoAfter", identifier: "worldInfoAfter", kind: "slot", defaultOrder: 80, render: () => <PromptOrderMarker identifier="worldInfoAfter" label={t("prompt_slot_world_info_after")} tooltip={t("prompt_slot_world_info_after_hint")} kind="marker" enabled={slotEnabled("worldInfoAfter")} onToggle={togglePromptSlot} /> },
     { key: "slot:dialogueExamples", identifier: "dialogueExamples", kind: "slot", defaultOrder: 90, render: () => <PromptOrderMarker identifier="dialogueExamples" label={t("prompt_slot_dialogue_examples")} kind="marker" enabled={slotEnabled("dialogueExamples")} onToggle={togglePromptSlot} /> },
-    { key: "slot:chatHistory", identifier: "chatHistory", kind: "slot", defaultOrder: 100, render: () => <PromptOrderMarker identifier="chatHistory" label={t("prompt_slot_chat_history")} kind="chat" enabled={slotEnabled("chatHistory")} onToggle={togglePromptSlot} /> },
     { key: "field:jailbreak", identifier: "jailbreak", kind: "field", defaultOrder: 110, render: () => <EditablePromptCard identifier="jailbreak" enabled={slotEnabled("jailbreak")} onToggle={togglePromptSlot} label={t("post_history_instructions")} role="system" value={draft?.jailbreak ?? ""} placeholder={t("jailbreak_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("jailbreak", value)} /> },
     { key: "field:assistantPrefill", identifier: "assistantPrefill", kind: "field", defaultOrder: 120, render: () => <EditablePromptCard identifier="assistantPrefill" enabled={slotEnabled("assistantPrefill")} onToggle={togglePromptSlot} label={t("prefill_assistant")} role="assistant" value={draft?.prefill ?? ""} placeholder={t("prefill_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("prefill", value)} /> },
   ];
@@ -165,53 +216,141 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     };
   });
 
-  const canvasItems = [...fixedItems, ...customItems]
-    .sort((a, b) => promptOrderValue(a.identifier, a.defaultOrder) - promptOrderValue(b.identifier, b.defaultOrder));
+  const canvasItems = useMemo(() => [...fixedItems, ...customItems], [fixedItems, customItems]);
 
-  function commitCanvasOrder(items: CanvasItem[]) {
-    const chatOrder = items.findIndex((item) => item.identifier === "chatHistory");
-    const entries: PromptOrderEntry[] = items.map((item, index) => {
-      const existing = promptOrder.find((entry) => entry.identifier === item.identifier);
-      return {
-        identifier: item.identifier,
-        enabled: existing?.enabled ?? true,
-        order: index,
-        kind: item.kind === "custom" ? "custom" : "built_in",
-      };
+  const defaultZones: ZonesState = useMemo(() => {
+    const zones: ZonesState = {
+      before_chat: [], after_chat: [], depth4: [], depth3: [], depth2: [], depth1: []
+    };
+    canvasItems.forEach(item => {
+      const slot = getCanvasItemSlot(item);
+      if (slot.zone === "before_chat") zones.before_chat.push(item);
+      else if (slot.zone === "after_chat") zones.after_chat.push(item);
+      else if (slot.zone === "in_chat") {
+        if (slot.depth === null || slot.depth >= 4) zones.depth4.push(item);
+        else if (slot.depth === 3) zones.depth3.push(item);
+        else if (slot.depth === 2) zones.depth2.push(item);
+        else zones.depth1.push(item);
+      }
     });
-    onPromptOrderChange?.(entries);
 
-    const orderByIdentifier = new Map(items.map((item, index) => [item.identifier, index]));
-    onChange(injections.map((inj, index) => {
-      const identifier = customIdentifier(inj, index);
-      const order = orderByIdentifier.get(identifier);
-      if (order == null) return inj;
-      const placement = chatOrder >= 0 && order > chatOrder ? "after_chat" : "before_chat";
-      const isRelative = inj.injectionPosition === 0 || inj.injectionPosition === "relative" || inj.injectionPosition == null;
-      return {
-        ...inj,
-        identifier,
-        promptOrderIndex: order,
-        ...(isRelative ? { injectionPosition: 0 as const, promptOrderPlacement: placement as "before_chat" | "after_chat" } : {}),
-      };
-    }));
+    for (const key of Object.keys(zones) as Array<keyof ZonesState>) {
+      zones[key].sort((a, b) => getCanvasItemSlot(a).order - getCanvasItemSlot(b).order);
+    }
+    return zones;
+  }, [canvasItems]);
+
+  const [activeZones, setActiveZones] = useState<ZonesState | null>(null);
+
+  const zonesToRender = activeZones || defaultZones;
+
+  function findZoneAndIndex(id: string, zones: ZonesState): { zoneKey: keyof ZonesState | null; index: number } {
+    if (id === "zone-before_chat") return { zoneKey: "before_chat", index: -1 };
+    if (id === "zone-after_chat") return { zoneKey: "after_chat", index: -1 };
+    if (id === "depth-4") return { zoneKey: "depth4", index: -1 };
+    if (id === "depth-3") return { zoneKey: "depth3", index: -1 };
+    if (id === "depth-2") return { zoneKey: "depth2", index: -1 };
+    if (id === "depth-1") return { zoneKey: "depth1", index: -1 };
+
+    for (const [key, items] of Object.entries(zones)) {
+      const idx = items.findIndex(i => i.key === id);
+      if (idx !== -1) return { zoneKey: key as keyof ZonesState, index: idx };
+    }
+    return { zoneKey: null, index: -1 };
   }
-
-  const activeDragItem = activeDragKey ? canvasItems.find((item) => item.key === activeDragKey) : null;
 
   function handleDragStart(event: DragStartEvent) {
     setActiveDragKey(String(event.active.id));
+    setActiveZones(defaultZones);
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    setActiveZones((prev) => {
+      if (!prev) return null;
+      const activeInfo = findZoneAndIndex(String(active.id), prev);
+      const overInfo = findZoneAndIndex(String(over.id), prev);
+
+      if (!activeInfo.zoneKey || !overInfo.zoneKey) return prev;
+      if (activeInfo.zoneKey === overInfo.zoneKey) {
+        if (activeInfo.index !== overInfo.index && overInfo.index !== -1) {
+          return {
+            ...prev,
+            [activeInfo.zoneKey]: arrayMove(prev[activeInfo.zoneKey], activeInfo.index, overInfo.index)
+          };
+        }
+        return prev;
+      }
+
+      const next = { ...prev };
+      const activeItem = prev[activeInfo.zoneKey][activeInfo.index];
+      
+      next[activeInfo.zoneKey] = prev[activeInfo.zoneKey].filter(i => i.key !== active.id);
+      
+      const newContainerList = [...next[overInfo.zoneKey]];
+      const newIndex = overInfo.index !== -1 ? overInfo.index : newContainerList.length;
+      newContainerList.splice(newIndex, 0, activeItem);
+      next[overInfo.zoneKey] = newContainerList;
+
+      return next;
+    });
   }
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveDragKey(null);
     const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const from = canvasItems.findIndex((item) => item.key === active.id);
-    const to = canvasItems.findIndex((item) => item.key === over.id);
-    if (from < 0 || to < 0) return;
-    commitCanvasOrder(arrayMove(canvasItems, from, to));
+    
+    setActiveZones((prev) => {
+      if (!prev) return null;
+      let finalZones: ZonesState = { ...prev };
+      
+      if (over && active.id !== over.id) {
+         const activeInfo = findZoneAndIndex(String(active.id), prev);
+         const overInfo = findZoneAndIndex(String(over.id), prev);
+
+         if (activeInfo.zoneKey && overInfo.zoneKey && activeInfo.zoneKey === overInfo.zoneKey && overInfo.index !== -1) {
+            finalZones[activeInfo.zoneKey] = arrayMove(prev[activeInfo.zoneKey], activeInfo.index, overInfo.index);
+         }
+      }
+
+      let nextPromptOrder = [...promptOrder];
+      let nextInjections = [...injections];
+
+      const commitList = (list: CanvasItem[], targetZone: PromptZone, targetDepth: number | null) => {
+        list.forEach((item, index) => {
+          if (item.kind === "custom") {
+             const idx = item.injectionIndex;
+             const inj = nextInjections[idx];
+             const slot = inj.slot ?? migrateInjection(inj).slot;
+             nextInjections[idx] = { ...inj, slot: { ...slot, zone: targetZone, depth: targetDepth, order: index } };
+          } else {
+             const idx = nextPromptOrder.findIndex(e => e.identifier === item.identifier);
+             if (idx >= 0) {
+               nextPromptOrder[idx] = { ...nextPromptOrder[idx], zone: targetZone, depth: targetDepth, order: index };
+             } else {
+               nextPromptOrder.push({ identifier: item.identifier, enabled: true, zone: targetZone, depth: targetDepth, order: index, kind: "built_in" });
+             }
+          }
+        });
+      };
+
+      commitList(finalZones.before_chat, "before_chat", null);
+      commitList(finalZones.after_chat, "after_chat", null);
+      commitList(finalZones.depth4, "in_chat", 4);
+      commitList(finalZones.depth3, "in_chat", 3);
+      commitList(finalZones.depth2, "in_chat", 2);
+      commitList(finalZones.depth1, "in_chat", 1);
+
+      onPromptOrderChange?.(nextPromptOrder);
+      onChange(nextInjections);
+
+      return null;
+    });
   }
+
+  const activeDragItem = activeDragKey ? canvasItems.find((item) => item.key === activeDragKey) : null;
 
   const dragOverlay = (
     <DragOverlay dropAnimation={null} zIndex={700}>
@@ -241,20 +380,110 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
 
       <DndContext
         sensors={sensors}
-        collisionDetection={stablePromptCanvasCollision}
+        collisionDetection={closestCenter}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
         onDragCancel={() => setActiveDragKey(null)}
       >
-        <SortableContext items={canvasItems.map((item) => item.key)} strategy={verticalListSortingStrategy}>
-          <div className="flex flex-col gap-1.5">
-            {canvasItems.map((item) => (
-              <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
-                {item.render()}
-              </SortableCanvasItem>
-            ))}
+        <div className="flex flex-col gap-4">
+          
+          {/* ZONE 1: BEFORE CHAT */}
+          <DroppableDepthContainer id="zone-before_chat" depth="before" label="Before Chat">
+            <SortableContext items={zonesToRender.before_chat.map(i => i.key)} strategy={verticalListSortingStrategy}>
+              {zonesToRender.before_chat.map((item) => (
+                <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
+                  {item.render()}
+                </SortableCanvasItem>
+              ))}
+            </SortableContext>
+          </DroppableDepthContainer>
+
+          {/* ZONE 2: CHAT HISTORY ACCORDION */}
+          <div className="rounded-md border border-accent/35 bg-accent/10">
+            <button
+              type="button"
+              className="relative flex w-full items-center justify-center px-3 py-2 font-ui text-[12px] font-medium text-accent-t hover:bg-accent/20 transition-colors rounded-t-md"
+              onClick={() => setAccordionOpen(!accordionOpen)}
+            >
+              <span>{t("prompt_slot_chat_history")}</span>
+              
+              <div className="absolute right-3 flex items-center gap-3">
+                <span className="hidden rounded bg-black/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] opacity-70 sm:block">
+                  marker
+                </span>
+                <span className="rounded bg-background/40 px-1.5 py-0.5 font-mono text-[10px] text-accent-t">
+                  {zonesToRender.depth4.length + zonesToRender.depth3.length + zonesToRender.depth2.length + zonesToRender.depth1.length} items
+                </span>
+                <span className={cn("shrink-0 text-[11px] text-accent-t/70 transition-transform", accordionOpen && "rotate-90")}>
+                  ▶
+                </span>
+              </div>
+            </button>
+            
+            {accordionOpen && (
+              <div className="flex flex-col gap-1 p-2 border-t border-accent/20 bg-surface rounded-b-md">
+                <DroppableDepthContainer id="depth-4" depth={4} label="Depth 4+">
+                  <SortableContext items={zonesToRender.depth4.map(i => i.key)} strategy={verticalListSortingStrategy}>
+                    {zonesToRender.depth4.map((item) => (
+                      <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
+                        {item.render()}
+                      </SortableCanvasItem>
+                    ))}
+                  </SortableContext>
+                </DroppableDepthContainer>
+
+                <div className="mx-2 h-px bg-border/60" />
+
+                <DroppableDepthContainer id="depth-3" depth={3} label="Depth 3">
+                  <SortableContext items={zonesToRender.depth3.map(i => i.key)} strategy={verticalListSortingStrategy}>
+                    {zonesToRender.depth3.map((item) => (
+                      <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
+                        {item.render()}
+                      </SortableCanvasItem>
+                    ))}
+                  </SortableContext>
+                </DroppableDepthContainer>
+
+                <div className="mx-2 h-px bg-border/60" />
+
+                <DroppableDepthContainer id="depth-2" depth={2} label="Depth 2">
+                  <SortableContext items={zonesToRender.depth2.map(i => i.key)} strategy={verticalListSortingStrategy}>
+                    {zonesToRender.depth2.map((item) => (
+                      <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
+                        {item.render()}
+                      </SortableCanvasItem>
+                    ))}
+                  </SortableContext>
+                </DroppableDepthContainer>
+
+                <div className="mx-2 h-px bg-border/60" />
+
+                <DroppableDepthContainer id="depth-1" depth={1} label="Depth 1">
+                  <SortableContext items={zonesToRender.depth1.map(i => i.key)} strategy={verticalListSortingStrategy}>
+                    {zonesToRender.depth1.map((item) => (
+                      <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
+                        {item.render()}
+                      </SortableCanvasItem>
+                    ))}
+                  </SortableContext>
+                </DroppableDepthContainer>
+              </div>
+            )}
           </div>
-        </SortableContext>
+
+          {/* ZONE 3: AFTER CHAT */}
+          <DroppableDepthContainer id="zone-after_chat" depth="after" label="After Chat (Depth 0)">
+            <SortableContext items={zonesToRender.after_chat.map(i => i.key)} strategy={verticalListSortingStrategy}>
+              {zonesToRender.after_chat.map((item) => (
+                <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
+                  {item.render()}
+                </SortableCanvasItem>
+              ))}
+            </SortableContext>
+          </DroppableDepthContainer>
+
+        </div>
         {typeof document === "undefined" ? dragOverlay : createPortal(dragOverlay, document.body)}
       </DndContext>
     </div>
@@ -273,7 +502,7 @@ function SortableCanvasItem({ id, overlayActive, children }: { id: string; overl
   } = useSortable({ id });
 
   const style: CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Translate.toString(transform),
     transition,
     zIndex: isDragging ? 40 : undefined,
   };
@@ -505,12 +734,10 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
 
   return (
     <div className={cn("rounded-md border transition-colors", enabled ? "border-border bg-surface" : "border-border2 bg-s1 opacity-60")}>
-      {/* Header row */}
       <div
         className="group flex items-center gap-2.5 px-3 py-2 cursor-pointer select-none"
         onClick={() => setExpanded(!expanded)}
       >
-        {/* Enable toggle */}
         <CustomTooltip content={enabled ? t("preset_injection_enabled") : t("preset_injection_disabled")}>
         <button type="button"
           className={cn(
@@ -523,7 +750,6 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
         </button>
         </CustomTooltip>
 
-        {/* Name */}
         <div className="flex min-w-[80px] flex-1 items-center gap-1.5 overflow-hidden">
           {editingName ? (
             <input
@@ -557,25 +783,21 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
           )}
         </div>
 
-        {/* Depth badge */}
         <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3 tabular-nums">
           ←{injection.depth}
         </span>
 
-        {/* Role badge */}
         <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">
           {injection.role}
         </span>
 
-        {/* Expand chevron */}
         <span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>
           ▶
         </span>
 
-        {/* Delete */}
         <CustomTooltip content={t("preset_injection_delete")}>
         <button type="button"
-          className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-t4 transition-all hover:bg-danger-dim hover:text-danger"
+          className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-t4 transition-all hover:danger-dim hover:text-danger"
           onClick={(e) => { e.stopPropagation(); onRemove(index); }}
         >
           {Ic.del()}
@@ -583,11 +805,9 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
         </CustomTooltip>
       </div>
 
-      {/* Expanded content */}
       {expanded && (
         <div className="border-t border-border2 px-3 pb-3 pt-2">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            {/* Depth editor */}
             <CustomTooltip content={t("insert_depth_label")}>
               <div className="flex shrink-0 items-center gap-1.5 font-ui text-[11px] text-t4">
                 <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
@@ -601,7 +821,6 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
               </div>
             </CustomTooltip>
 
-            {/* Role select */}
             <label className="flex min-w-0 flex-wrap items-center gap-1.5 font-ui text-[11px] text-t4">
               <span>{t("role")}</span>
               <SegmentedControl
