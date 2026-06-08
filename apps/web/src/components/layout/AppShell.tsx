@@ -263,9 +263,18 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         } : null}
         onCharacterFieldUpdate={(key, value) => {
           if (!activeCharacter) return;
+          const apiFieldMap: Record<string, string> = {
+            charSystemPrompt: "systemPrompt",
+            charPostHistory: "postHistoryInstructions",
+            charDepthPrompt: "depthPrompt",
+            charDepthPromptDepth: "depthPromptDepth",
+            charDepthPromptRole: "depthPromptRole",
+          };
+          const apiField = apiFieldMap[key];
+          if (!apiField) return;
           void saveCharacterAction({
             characterId: activeCharacter.id,
-            patch: { chatId: useChatStore.getState().activeChatId ?? undefined, [key]: value },
+            patch: { chatId: useChatStore.getState().activeChatId ?? undefined, [apiField]: value },
           });
         }}
       />
