@@ -2,7 +2,6 @@ import { type ReactNode, useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../../lib/cn.js";
 import { avatarUrl } from "../../lib/avatar.js";
-import { avatarCropStyle } from "../../lib/avatar-crop-style.js";
 import { resolveModelLabel } from "../../lib/model-resolve.js";
 import { initials } from "../layout/app-shell-helpers.js";
 import { Icons } from "../shared/icons.js";
@@ -217,7 +216,7 @@ export function MessageShell(props: MessageShellProps) {
               "flex h-11 w-11 items-center justify-center text-[calc(var(--ui-fs)+1px)]",
             )}>
               {author.avatarAssetId
-                ? <img src={avatarUrl(author.avatarAssetId)} alt={author.name} className="h-full w-full object-cover" style={avatarCropStyle(author.avatarCropJson)} />
+                ? <img src={avatarUrl(author.avatarAssetId)} alt={author.name} className="h-full w-full object-cover" />
                 : initials(author.name)}
             </div>
             <span>{author.name}</span>

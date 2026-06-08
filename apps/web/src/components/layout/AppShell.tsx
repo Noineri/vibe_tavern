@@ -267,7 +267,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       {isCreateCharacterModalOpen && (
         <CreateCharacterModal
           onClose={() => setCreateCharacterModalOpen(false)}
-          onSave={async (data, avatarFile, _avatarOriginalFile, avatarCropJson) => { const result = await character.handleCreateCharacter(data, avatarFile, avatarCropJson); setCreateCharacterModalOpen(false); return result; }}
+          onSave={async (data, avatarFile, avatarOriginalFile) => { const result = await character.handleCreateCharacter(data, avatarFile, avatarOriginalFile); setCreateCharacterModalOpen(false); return result; }}
         />
       )}
 

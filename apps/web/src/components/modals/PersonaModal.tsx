@@ -10,7 +10,7 @@ import { CustomTooltip } from "../shared/Tooltip.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { Modal } from "../shared/Modal.js";
 import { avatarUrl } from "../../lib/avatar.js";
-import { avatarCropStyle } from "../../lib/avatar-crop-style.js";
+
 import { uploadAsset } from "../../app-client.js";
 import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useT } from "../../i18n/context.js";
@@ -29,7 +29,7 @@ interface PersonaModalProps {
   personas: PersonaListItem[];
   activePersonaId: string | null;
   isSaving: boolean;
-  onSaveEdit: (personaId: string, draft: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null; avatarFullAssetId?: string | null; avatarCropJson?: string | null }) => void;
+  onSaveEdit: (personaId: string, draft: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null; avatarFullAssetId?: string | null }) => void;
   onSetActive: (personaId: string) => void;
   onCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
   onDuplicatePersona: (personaId: string) => Promise<void>;
@@ -46,6 +46,7 @@ type PersonaFormData = {
   avatarCropJson: string | null;
   avatarPreview: string | null;
 };
+
 
 function PersonaTokenBadge({ text }: { text: string }) {
   const count = useTokenCount(text);
@@ -127,7 +128,7 @@ export function PersonaModal(input: PersonaModalProps) {
     const resolved = pronouns === "custom"
       ? (pronounsCustom.trim() || null)
       : (pronouns || null);
-    input.onSaveEdit(editingId, { name: name.trim(), description, pronouns: resolved, avatarAssetId, avatarFullAssetId, avatarCropJson });
+    input.onSaveEdit(editingId, { name: name.trim(), description, pronouns: resolved, avatarAssetId, avatarFullAssetId });
     if (createdDraftPersonaId === editingId) setCreatedDraftPersonaId(null);
     setEditingId(null);
   }
@@ -149,15 +150,18 @@ export function PersonaModal(input: PersonaModalProps) {
   function handleAvatarCropConfirm(result: AvatarCropResult): void {
     form.setValue("avatarPreview", pendingAvatar!.url);
     setAvatarUploading(true);
-    uploadAsset(pendingAvatar!.file)
-      .then((originalRes) => {
-        form.setValue("avatarAssetId", originalRes.assetId, { shouldDirty: true });
-        form.setValue("avatarCropJson", JSON.stringify(result.crop), { shouldDirty: true });
+    Promise.all([
+      uploadAsset(result.croppedFile),
+      uploadAsset(pendingAvatar!.file),
+    ])
+      .then(([croppedRes, originalRes]) => {
+        form.setValue("avatarAssetId", croppedRes.assetId, { shouldDirty: true });
+        form.setValue("avatarFullAssetId", originalRes.assetId, { shouldDirty: true });
       })
       .catch(() => {
         form.setValue("avatarPreview", null);
         form.setValue("avatarAssetId", null);
-        form.setValue("avatarCropJson", null);
+        form.setValue("avatarFullAssetId", null);
       })
       .finally(() => {
         setAvatarUploading(false);
@@ -240,7 +244,7 @@ export function PersonaModal(input: PersonaModalProps) {
                     }}
                   />
                   {editDisplayAvatar ? (
-                    <img src={editDisplayAvatar} alt="" className="h-full w-full object-cover" style={avatarCropStyle(editAvatarCropJson)} />
+                    <img src={editDisplayAvatar} alt="" className="h-full w-full object-cover" />
                   ) : (
                     <div className="text-t3 transition-colors group-hover/ava:text-accent-t">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -338,7 +342,7 @@ export function PersonaModal(input: PersonaModalProps) {
               )}
             >
               {avatar
-                ? <img src={avatar} alt="" className="h-full w-full object-cover" style={avatarCropStyle(persona.avatarCropJson)} />
+                ? <img src={avatar} alt="" className="h-full w-full object-cover" />
                 : persona.name.slice(0, 1).toUpperCase()
               }
             </div>
