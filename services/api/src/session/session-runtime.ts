@@ -52,7 +52,7 @@ export interface ChatListItem {
 
 export interface SessionSnapshot {
 	chats: ChatListItem[];
-	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null }>;
+	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null }>;
 	activeChat: import("@vibe-tavern/db").Chat;
 	activeBranch: import("@vibe-tavern/db").ChatBranch;
 	branches: import("@vibe-tavern/db").ChatBranch[];
@@ -73,7 +73,7 @@ export interface BootstrapState {
 	initialChatId: ChatId | null;
 	snapshot: SessionSnapshot | null;
 	isFirstRun: boolean;
-	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null }>;
+	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null }>;
 	promptPresets: PromptPresetDto[];
 	uiSettings: UiSettings;
 	isArmServer: boolean;
@@ -192,6 +192,7 @@ export interface ImportResult {
 				subtitle: c.tags.length > 0 ? c.tags[0] : '',
 				avatarAssetId: c.avatarAssetId,
 				avatarFullAssetId: c.avatarFullAssetId,
+				avatarCropJson: c.avatarCropJson,
 			})),
 			promptPresets: promptPresets.map((p) => this.mapPresetToDto(p)),
 			uiSettings,
@@ -465,7 +466,7 @@ export interface ImportResult {
 		};
 	}
 
-	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null }>> {
+	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null }>> {
 		const characters = await this.stores.characters.listIncludingSystem();
 		const hasUserChars = characters.some((c) => c.id !== 'char_system');
 		if (!hasUserChars) {
@@ -475,6 +476,7 @@ export interface ImportResult {
 				subtitle: c.tags.length > 0 ? c.tags[0] : '',
 				avatarAssetId: c.avatarAssetId,
 				avatarFullAssetId: c.avatarFullAssetId,
+				avatarCropJson: c.avatarCropJson,
 			}));
 		}
 		const allChats = await this.stores.chats.listAll();
@@ -487,6 +489,7 @@ export interface ImportResult {
 				subtitle: c.tags.length > 0 ? c.tags[0] : '',
 				avatarAssetId: c.avatarAssetId,
 				avatarFullAssetId: c.avatarFullAssetId,
+				avatarCropJson: c.avatarCropJson,
 			}));
 	}
 

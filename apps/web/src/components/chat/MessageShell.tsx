@@ -2,6 +2,7 @@ import { type ReactNode, useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../../lib/cn.js";
 import { avatarUrl } from "../../lib/avatar.js";
+import { avatarCropStyle } from "../../lib/avatar-crop-style.js";
 import { resolveModelLabel } from "../../lib/model-resolve.js";
 import { initials } from "../layout/app-shell-helpers.js";
 import { Icons } from "../shared/icons.js";
@@ -38,6 +39,7 @@ import {
 export interface MessageShellAuthorInfo {
   name: string;
   avatarAssetId: string | null;
+  avatarCropJson: string | null;
 }
 
 export interface MessageShellActions {
@@ -211,11 +213,11 @@ export function MessageShell(props: MessageShellProps) {
             isMobile && "gap-[7px] text-[calc(var(--ui-fs)-3px)] mb-[3px]",
           )}>
             <div className={cn(
-              "shrink-0 overflow-hidden rounded-full bg-s3 font-body italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top",
+              "shrink-0 overflow-hidden rounded-full bg-s3 font-body italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover ",
               "flex h-11 w-11 items-center justify-center text-[calc(var(--ui-fs)+1px)]",
             )}>
               {author.avatarAssetId
-                ? <img src={avatarUrl(author.avatarAssetId)} alt={author.name} className="h-full w-full object-cover object-top" />
+                ? <img src={avatarUrl(author.avatarAssetId)} alt={author.name} className="h-full w-full object-cover" style={avatarCropStyle(author.avatarCropJson)} />
                 : initials(author.name)}
             </div>
             <span>{author.name}</span>

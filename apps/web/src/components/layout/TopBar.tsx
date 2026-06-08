@@ -8,6 +8,7 @@ import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { usePresetController } from "../../hooks/use-preset-controller.js";
 import { useNavigationStore, useProviderStore, useChatStore, useModalStore } from "../../stores/index.js";
 import { useActiveTrace, useChatMeta } from "../../stores/chat-selectors.js";
+import { avatarCropStyle } from "../../lib/avatar-crop-style.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
@@ -37,6 +38,7 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
   const characterAvatar = chatMeta?.character.avatarAssetId
     ? `${getGatewayBaseUrl()}/api/assets/${chatMeta.character.avatarAssetId}`
     : undefined;
+  const characterCropJson = chatMeta?.character.avatarCropJson ?? null;
   const providerConnected = connection.status === "connected";
   const providerLabel = provider.activeProviderProfile?.name || t("no_provider");
   const providerModelId = provider.activeProviderProfile?.defaultModel || connection.model || null;
@@ -74,10 +76,10 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
             <Icons.Menu />
           </div>
         )}
-        <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border-[1.5px] border-transparent bg-s3 font-body text-[calc(var(--ui-fs)-2px)] italic text-t2 transition-opacity duration-150 hover:border-accent hover:opacity-85 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top"
+        <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border-[1.5px] border-transparent bg-s3 font-body text-[calc(var(--ui-fs)-2px)] italic text-t2 transition-opacity duration-150 hover:border-accent hover:opacity-85 [&_img]:h-full [&_img]:w-full [&_img]:object-cover "
           onClick={() => useModalStore.getState().setAvatarOpen(true)}>
           {characterAvatar
-            ? <img src={characterAvatar} alt={characterName}/>
+            ? <img src={characterAvatar} alt={characterName} className="h-full w-full object-cover" style={avatarCropStyle(characterCropJson)}/>
             : <>{initials(characterName)}</>}
         </div>
         <div className="min-w-0 flex-1 overflow-hidden">
@@ -95,10 +97,10 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
   return (
     <div className="sticky top-0 z-50 flex h-[60px] shrink-0 items-center gap-3.5 border-b border-border bg-surface px-[22px]">
       <div className="flex min-w-[90px] max-w-[220px] flex-none items-center gap-2.5">
-        <div className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border-[1.5px] border-transparent bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t2 transition-opacity duration-150 hover:border-accent hover:opacity-85 [&_img]:h-full [&_img]:w-full [&_img]:object-cover [&_img]:object-top"
+        <div className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border-[1.5px] border-transparent bg-s3 font-body text-[calc(var(--ui-fs)+1px)] italic text-t2 transition-opacity duration-150 hover:border-accent hover:opacity-85 [&_img]:h-full [&_img]:w-full [&_img]:object-cover "
           onClick={() => useModalStore.getState().setAvatarOpen(true)}>
           {characterAvatar
-            ? <img src={characterAvatar} alt={characterName}/>
+            ? <img src={characterAvatar} alt={characterName} className="h-full w-full object-cover" style={avatarCropStyle(characterCropJson)}/>
             : <>{initials(characterName)}</>}
         </div>
         <div className="min-w-0 overflow-hidden">

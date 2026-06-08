@@ -27,6 +27,7 @@ export async function updatePersonaAction(input: {
     pronouns?: string | null;
     avatarAssetId?: string | null;
     avatarFullAssetId?: string | null;
+    avatarCropJson?: string | null;
   };
 }): Promise<AppSnapshot> {
   const snapshot = await updatePersona(input.personaId, input.patch);

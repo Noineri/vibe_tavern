@@ -11,6 +11,8 @@ import { extractPngMetadata, parseCharacterMetadata } from "../../../lib/png-rea
 import { useTokenCount } from "../../../hooks/use-token-count.js";
 import { useT } from "../../../i18n/context.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
+import { AvatarCropModal } from "../../shared/AvatarCropModal.js";
+import type { AvatarCropResult } from "../../shared/AvatarCropModal.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
@@ -27,7 +29,7 @@ export interface CharacterFormProps {
   onReset: () => void;
   /** Вызывается после успешного импорта карточки (данные уже в форме, форма dirty) */
   onAfterImport?: () => void;
-  onAvatarUpload: (file: File, originalFile?: File | null) => Promise<void> | void;
+  onAvatarUpload: (file: File, originalFile?: File | null, avatarCropJson?: string | null) => Promise<void> | void;
   onExportJson: () => void;
   onExportPng: () => void;
   onDuplicate: () => void;
@@ -105,6 +107,7 @@ export function CharacterForm({
   const [mdImportOpen, setMdImportOpen] = useState(false);
   const avaInputRef = useRef<HTMLInputElement>(null);
   const [avatarOrientation, setAvatarOrientation] = useState<"portrait" | "landscape" | null>(null);
+  const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
 
 
 
@@ -132,15 +135,24 @@ export function CharacterForm({
   function handleAvatarPick(files: FileList | null) {
     if (!files || files.length === 0) return;
     const file = files[0];
-    const url = URL.createObjectURL(file);
+    setPendingAvatar({ file, url: URL.createObjectURL(file) });
+  }
+
+  function handleAvatarCropConfirm(result: AvatarCropResult) {
+    const url = pendingAvatar!.url;
     setAvatarPreview(url);
-    // Detect orientation
     const img = new Image();
     img.onload = () => {
       setAvatarOrientation(img.naturalWidth > img.naturalHeight ? "landscape" : "portrait");
     };
     img.src = url;
-    onAvatarUpload(file);
+    onAvatarUpload(pendingAvatar!.file, undefined, JSON.stringify(result.crop));
+    setPendingAvatar(null);
+  }
+
+  function handleAvatarCropCancel() {
+    if (pendingAvatar?.url) URL.revokeObjectURL(pendingAvatar.url);
+    setPendingAvatar(null);
   }
 
   function handleImportFiles(files: File[]): void {
@@ -680,6 +692,13 @@ export function CharacterForm({
         apiMode="md_import"
         onMdImportApply={handleMdImportApply}
       />
+      {pendingAvatar && (
+        <AvatarCropModal
+          imageUrl={pendingAvatar.url}
+          onConfirm={handleAvatarCropConfirm}
+          onCancel={handleAvatarCropCancel}
+        />
+      )}
     </div>
   );
 }

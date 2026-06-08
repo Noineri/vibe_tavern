@@ -32,6 +32,7 @@ export interface PersonaRecord {
   description: string;
   pronouns: string | null;
   avatarAssetId: string | null;
+  avatarCropJson: string | null;
 }
 
 export interface UiSettingsRecord {
@@ -75,7 +76,7 @@ export interface AutoSummaryConfig {
 
 export interface AppSnapshot {
   chats: ChatListItem[];
-  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null }>;
+  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null }>;
   activeChat: Chat & { summary?: string; messageHistoryLimit?: number; autoSummaryConfig?: AutoSummaryConfig };
   activeBranch: ChatBranch;
   branches: ChatBranch[];
@@ -108,6 +109,7 @@ export interface AppSnapshot {
     tags: string[];
     avatarAssetId: string | null;
     avatarFullAssetId: string | null;
+    avatarCropJson: string | null;
     personalitySummary: string | null;
   };
   persona: {
@@ -117,6 +119,7 @@ export interface AppSnapshot {
     pronouns: string | null;
     avatarAssetId: string | null;
     avatarFullAssetId: string | null;
+    avatarCropJson: string | null;
   } | null;
 }
 
@@ -286,7 +289,7 @@ export async function bootstrapApp(): Promise<{
   initialChatId: ChatId | null;
   snapshot: AppSnapshot | null;
   isFirstRun: boolean;
-  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
+  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarCropJson: string | null }>;
   promptPresets: PromptPresetDto[];
   uiSettings: UiSettingsRecord;
   isArmServer: boolean;
@@ -300,7 +303,7 @@ export async function bootstrapApp(): Promise<{
     initialChatId: ChatId | null;
     snapshot: AppSnapshot | null;
     isFirstRun?: boolean;
-    allCharacters?: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null }>;
+    allCharacters?: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarCropJson?: string | null }>;
     promptPresets?: PromptPresetDto[];
     uiSettings?: UiSettingsRecord;
     isArmServer?: boolean;
@@ -310,7 +313,7 @@ export async function bootstrapApp(): Promise<{
     initialChatId: data.initialChatId,
     snapshot: data.snapshot ? normalizeSnapshot(data.snapshot) : null,
     isFirstRun: data.isFirstRun ?? false,
-    allCharacters: data.allCharacters ?? [],
+    allCharacters: (data.allCharacters ?? []).map(c => ({ ...c, avatarCropJson: c.avatarCropJson ?? null })),
     promptPresets: data.promptPresets ?? [],
     uiSettings: data.uiSettings ?? {
       id: "default",
@@ -380,6 +383,7 @@ export async function updatePersona(
     pronouns?: string | null;
     avatarAssetId?: string | null;
     avatarFullAssetId?: string | null;
+    avatarCropJson?: string | null;
   },
 ): Promise<AppSnapshot> {
   const response = await client.api.personas[":personaId"].$patch({ param: { personaId }, json: input });
@@ -1298,9 +1302,10 @@ export async function exportPromptTrace(traceId: string): Promise<Record<string,
   return unwrapRpc<Record<string, unknown>>(response);
 }
 
-export async function updateCharacterAvatar(characterId: string, chatId: string, avatarAssetId: string, avatarFullAssetId?: string): Promise<AppSnapshot> {
+export async function updateCharacterAvatar(characterId: string, chatId: string, avatarAssetId: string, avatarFullAssetId?: string, avatarCropJson?: string | null): Promise<AppSnapshot> {
   const payload: Record<string, unknown> = { chatId, avatarAssetId };
   if (avatarFullAssetId !== undefined) payload.avatarFullAssetId = avatarFullAssetId;
+  if (avatarCropJson !== undefined) payload.avatarCropJson = avatarCropJson;
   const response = await client.api.characters[":characterId"].$patch({ param: { characterId }, json: payload });
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);

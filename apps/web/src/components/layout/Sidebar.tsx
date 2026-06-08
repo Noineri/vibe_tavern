@@ -13,6 +13,7 @@ import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js
 import { useChatMeta } from "../../stores/chat-selectors.js";
 import { useNavigationStore, useChatStore, useCharacterStore, useModalStore } from "../../stores/index.js";
 import { buildCharacterTabs } from "../../lib/character-tabs.js";
+import { avatarCropStyle } from "../../lib/avatar-crop-style.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { useBuildPanels } from "../../hooks/use-build-panels.js";
 
@@ -59,6 +60,7 @@ export function Sidebar() {
   const activeBranchId = snapshot?.activeBranch?.id ?? null;
   const personaName = snapshot?.persona?.name ?? t("no_persona");
   const personaAvatarAssetId = snapshot?.persona?.avatarAssetId ?? null;
+  const personaAvatarCropJson = snapshot?.persona?.avatarCropJson ?? null;
 
   const characterTabs = useMemo(
     () => buildCharacterTabs(allCharacters, allChats),
@@ -167,7 +169,7 @@ export function Sidebar() {
                         <div className="absolute -left-[7px] top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-accent transition-all" />
                       )}
                       <span className={cn('flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm', (isActive || isFlyout) ? 'bg-accent text-on-accent ring-1 ring-accent/50 ring-offset-2 ring-offset-surface' : 'bg-s3 text-t2')}>
-                        {tab.avatarAssetId ? <img src={avatarUrl(tab.avatarAssetId)} alt={tab.name} className="h-full w-full object-cover object-top" /> : initials(tab.name)}
+                        {tab.avatarAssetId ? <img src={avatarUrl(tab.avatarAssetId)} alt={tab.name} className="h-full w-full object-cover" style={avatarCropStyle(tab.avatarCropJson)} /> : initials(tab.name)}
                       </span>
                     </div>
                   </CustomTooltip>
@@ -183,7 +185,7 @@ export function Sidebar() {
               </CustomTooltip>
               <CustomTooltip content={personaName} side="right">
                 <div className="flex h-9 w-9 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}>
-                  {personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(personaName)}
+                  {personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover" style={avatarCropStyle(personaAvatarCropJson)} /> : initials(personaName)}
                 </div>
               </CustomTooltip>
             </div>
@@ -202,7 +204,7 @@ export function Sidebar() {
               {/* Заголовок с именем персонажа */}
               <div className="flex h-[52px] shrink-0 items-center gap-2.5 border-b border-border px-3">
                 <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full font-ui text-sm bg-s3 text-t2')}>
-                  {(() => { const tab = characterTabs.find(t => t.id === flyoutCharId); return tab?.avatarAssetId ? <img src={avatarUrl(tab.avatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(tab?.name ?? '?'); })()}
+                  {(() => { const tab = characterTabs.find(t => t.id === flyoutCharId); return tab?.avatarAssetId ? <img src={avatarUrl(tab.avatarAssetId)} alt="" className="h-full w-full object-cover" style={avatarCropStyle(tab.avatarCropJson)} /> : initials(tab?.name ?? '?'); })()}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[calc(var(--ui-fs)+0px)] font-medium text-t1">
                   {characterTabs.find(t => t.id === flyoutCharId)?.name}
@@ -259,7 +261,7 @@ export function Sidebar() {
               >
                 <span className={cn("flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-accent font-ui text-sm text-on-accent", charSwitcherOpen && "ring-1 ring-accent/50 ring-offset-2 ring-offset-surface")}>
                   {snapshot?.character?.avatarAssetId
-                    ? <img src={avatarUrl(snapshot.character.avatarAssetId)} alt="" className="h-full w-full object-cover object-top" />
+                    ? <img src={avatarUrl(snapshot.character.avatarAssetId)} alt="" className="h-full w-full object-cover" style={avatarCropStyle(snapshot.character.avatarCropJson)} />
                     : initials(snapshot?.character?.name ?? '?')}
                 </span>
               </div>
@@ -278,7 +280,7 @@ export function Sidebar() {
                       }}
                     >
                       {tab.avatarAssetId
-                        ? <img className="h-full w-full object-cover object-top" src={avatarUrl(tab.avatarAssetId)} alt={tab.name} />
+                        ? <img className="h-full w-full object-cover" style={avatarCropStyle(tab.avatarCropJson)} src={avatarUrl(tab.avatarAssetId)} alt={tab.name} />
                         : <span className="flex h-full w-full items-center justify-center rounded-full bg-s3 font-ui text-xs text-t2">{initials(tab.name)}</span>}
                     </div>
                   </CustomTooltip>
@@ -311,7 +313,7 @@ export function Sidebar() {
               </CustomTooltip>
               <CustomTooltip content={personaName} side="right">
                 <div className="flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}>
-                  {personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(personaName)}
+                  {personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover" style={avatarCropStyle(personaAvatarCropJson)} /> : initials(personaName)}
                 </div>
               </CustomTooltip>
             </div>
@@ -361,7 +363,7 @@ export function Sidebar() {
                       <span className={cn(
                         'flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full font-ui text-[calc(var(--ui-fs)-2px)] not-italic avatar-fallback initials crop-framing',
                         isActive ? 'bg-accent text-on-accent' : 'bg-s3 text-t2'
-                      )}>{tab.avatarAssetId ? <img src={avatarUrl(tab.avatarAssetId)} alt={tab.name} className="h-full w-full object-cover object-top" /> : initials(tab.name)}</span>
+                      )}>{tab.avatarAssetId ? <img src={avatarUrl(tab.avatarAssetId)} alt={tab.name} className="h-full w-full object-cover" style={avatarCropStyle(tab.avatarCropJson)} /> : initials(tab.name)}</span>
                       <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                         {tab.name}
                       </span>
@@ -722,7 +724,7 @@ export function Sidebar() {
                   }
                 }}
               >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">{personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(personaName)}</span>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">{personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover" style={avatarCropStyle(personaAvatarCropJson)} /> : initials(personaName)}</span>
                 <span>{personaName}</span>
                 <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">
                   {t("sidebar_your_persona")}
@@ -744,7 +746,7 @@ export function Sidebar() {
                 >
                   <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full', snapshot?.character?.avatarAssetId ? '' : 'bg-accent text-on-accent')}>
                     {snapshot?.character?.avatarAssetId ? (
-                      <img className="h-full w-full object-cover object-top" src={avatarUrl(snapshot.character.avatarAssetId)} alt="" />
+                      <img className="h-full w-full object-cover" style={avatarCropStyle(snapshot.character.avatarCropJson)} src={avatarUrl(snapshot.character.avatarAssetId)} alt="" />
                     ) : (
                       <span className="font-ui text-sm">{initials(snapshot?.character?.name ?? '?')}</span>
                     )}
@@ -773,7 +775,7 @@ export function Sidebar() {
                       >
                         <div className={cn('flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full', tab.avatarAssetId ? '' : tab.id === snapshot?.character?.id ? 'bg-accent text-on-accent' : 'bg-s3 text-t2')}>
                           {tab.avatarAssetId
-                            ? <img className="h-full w-full object-cover object-top" src={avatarUrl(tab.avatarAssetId)} alt={tab.name} />
+                            ? <img className="h-full w-full object-cover" style={avatarCropStyle(tab.avatarCropJson)} src={avatarUrl(tab.avatarAssetId)} alt={tab.name} />
                             : <span className="font-ui text-[calc(var(--ui-fs)-4px)]">{initials(tab.name)}</span>}
                         </div>
                         <span className={cn('truncate text-[calc(var(--ui-fs)-1px)]', tab.id === snapshot?.character?.id ? 'text-accent-t font-medium' : 'text-t2')}>{tab.name}</span>
@@ -822,7 +824,7 @@ export function Sidebar() {
                 onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">
-                  {personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover object-top" /> : initials(personaName)}
+                  {personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover" style={avatarCropStyle(personaAvatarCropJson)} /> : initials(personaName)}
                 </span>
                 <span>{personaName}</span>
                 <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">{t('sidebar_your_persona')}</span>

@@ -29,6 +29,7 @@ export interface CreateCharacterData {
   tags?: string[];
   avatarAssetId?: string | null;
   avatarFullAssetId?: string | null;
+  avatarCropJson?: string | null;
 }
 
 export type UpdateCharacterData = Partial<CreateCharacterData>;
@@ -62,6 +63,7 @@ export interface Character {
   tags: string[];
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
+  avatarCropJson: string | null;
   status: 'active' | 'draft' | 'archived';
   createdAt: string;
   updatedAt: string;
@@ -167,6 +169,7 @@ export class CharacterStore {
         tagsJson: JSON.stringify(data.tags ?? []),
         avatarAssetId: data.avatarAssetId ?? null,
         avatarFullAssetId: data.avatarFullAssetId ?? null,
+        avatarCropJson: data.avatarCropJson ?? null,
         status: 'active',
         isSystem: 0,
         createdAt: now,
@@ -216,6 +219,7 @@ export class CharacterStore {
     if (data.tags !== undefined) values.tagsJson = JSON.stringify(data.tags);
     if (data.avatarAssetId !== undefined) values.avatarAssetId = data.avatarAssetId;
     if (data.avatarFullAssetId !== undefined) values.avatarFullAssetId = data.avatarFullAssetId;
+    if (data.avatarCropJson !== undefined) values.avatarCropJson = data.avatarCropJson;
 
     const [row] = await this.db
       .update(characters)
@@ -292,6 +296,7 @@ export class CharacterStore {
         tagsJson: original.tagsJson,
         avatarAssetId: original.avatarAssetId,
         avatarFullAssetId: original.avatarFullAssetId,
+        avatarCropJson: original.avatarCropJson,
         status: 'active',
         createdAt: now,
         updatedAt: now,
@@ -437,6 +442,7 @@ export class CharacterStore {
       tags: JSON.parse(row.tagsJson),
       avatarAssetId: row.avatarAssetId,
       avatarFullAssetId: row.avatarFullAssetId,
+      avatarCropJson: row.avatarCropJson ?? null,
       status: row.status as Character['status'],
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

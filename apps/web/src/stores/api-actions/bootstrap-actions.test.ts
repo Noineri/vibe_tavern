@@ -73,6 +73,7 @@ function snapshot(id: string, personaName = "Persona"): AppSnapshot {
       avatarAssetId: null,
       avatarFullAssetId: null,
       personalitySummary: null,
+      avatarCropJson: null,
     },
     persona: {
       id: "persona-1",
@@ -81,6 +82,7 @@ function snapshot(id: string, personaName = "Persona"): AppSnapshot {
       pronouns: null,
       avatarAssetId: null,
       avatarFullAssetId: null,
+      avatarCropJson: null,
     },
   };
 }
