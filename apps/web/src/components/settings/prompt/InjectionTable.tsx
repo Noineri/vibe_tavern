@@ -797,7 +797,9 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
   const [editingName, setEditingName] = useState(false);
   const enabled = injection.enabled;
   const slotDepth = injection.slot?.depth ?? injection.depth;
-  const showDepthInput = injection.slot?.zone === "in_chat" && slotDepth >= 4;
+  const slotZone = injection.slot?.zone;
+  const showDepthInput = slotZone === "in_chat" && slotDepth >= 4;
+  const showDepthBadge = slotZone === "in_chat";
 
   return (
     <div className={cn("rounded-md border transition-colors", enabled ? "border-border bg-surface" : "border-border2 bg-s1 opacity-60")}>
@@ -851,9 +853,15 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
           )}
         </div>
 
-        <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3 tabular-nums">
-          ←{slotDepth}
-        </span>
+        {showDepthBadge ? (
+          <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3 tabular-nums">
+            ←{slotDepth}
+          </span>
+        ) : slotZone === "after_chat" ? (
+          <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3">
+            after
+          </span>
+        ) : null}
 
         <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">
           {injection.role}
