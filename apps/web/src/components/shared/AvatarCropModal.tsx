@@ -31,7 +31,7 @@ export function AvatarCropModal({
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPercentages, setCroppedAreaPercentages] = useState<Area | null>(null);
 
-  const onCropComplete = useCallback((_croppedArea: Area, croppedPercentages: Area) => {
+  const onCropComplete = useCallback((croppedPercentages: Area, _croppedAreaPixels: Area) => {
     setCroppedAreaPercentages(croppedPercentages);
   }, []);
 
