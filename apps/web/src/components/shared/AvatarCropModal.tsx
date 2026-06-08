@@ -4,49 +4,87 @@ import type { Area, Point } from "react-easy-crop";
 import { Modal } from "./Modal.js";
 import { useT } from "../../i18n/context.js";
 
-export interface AvatarCropData {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
 export interface AvatarCropResult {
-  crop: AvatarCropData;
+  /** Cropped square image as a File (512×512 PNG) */
+  croppedFile: File;
 }
 
 interface AvatarCropModalProps {
   imageUrl: string;
+  /** Name used for the cropped File's filename */
+  fileName?: string;
   onConfirm: (result: AvatarCropResult) => void;
   onCancel: () => void;
 }
 
+const CROP_SIZE = 512;
+
+function cropImageToBlob(imageSrc: string, pixelCrop: Area): Promise<Blob> {
+  const image = new Image();
+  image.crossOrigin = "anonymous";
+  return new Promise((resolve, reject) => {
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = CROP_SIZE;
+      canvas.height = CROP_SIZE;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return reject(new Error("No canvas context"));
+
+      ctx.drawImage(
+        image,
+        pixelCrop.x,
+        pixelCrop.y,
+        pixelCrop.width,
+        pixelCrop.height,
+        0,
+        0,
+        CROP_SIZE,
+        CROP_SIZE,
+      );
+
+      canvas.toBlob(
+        (blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error("Canvas toBlob failed"));
+        },
+        "image/png",
+        1,
+      );
+    };
+    image.onerror = () => reject(new Error("Image load failed"));
+    image.src = imageSrc;
+  });
+}
+
 export function AvatarCropModal({
   imageUrl,
+  fileName = "avatar_cropped.png",
   onConfirm,
   onCancel,
 }: AvatarCropModalProps) {
   const { t } = useT();
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const [croppedAreaPercentages, setCroppedAreaPercentages] = useState<Area | null>(null);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
-  const onCropComplete = useCallback((croppedPercentages: Area, _croppedAreaPixels: Area) => {
-    setCroppedAreaPercentages(croppedPercentages);
+  const onCropComplete = useCallback((_croppedPercentages: Area, croppedPixels: Area) => {
+    setCroppedAreaPixels(croppedPixels);
   }, []);
 
-  const handleConfirm = useCallback(() => {
-    if (!croppedAreaPercentages) return;
-
-    onConfirm({
-      crop: {
-        x: croppedAreaPercentages.x,
-        y: croppedAreaPercentages.y,
-        width: croppedAreaPercentages.width,
-        height: croppedAreaPercentages.height,
-      },
-    });
-  }, [croppedAreaPercentages, onConfirm]);
+  const handleConfirm = useCallback(async () => {
+    if (!croppedAreaPixels) return;
+    setConfirming(true);
+    try {
+      const blob = await cropImageToBlob(imageUrl, croppedAreaPixels);
+      const croppedFile = new File([blob], fileName, { type: "image/png" });
+      onConfirm({ croppedFile });
+    } catch (err) {
+      console.error("Crop failed:", err);
+    } finally {
+      setConfirming(false);
+    }
+  }, [imageUrl, croppedAreaPixels, fileName, onConfirm]);
 
   return (
     <Modal open={true} onClose={onCancel}>
@@ -118,14 +156,16 @@ export function AvatarCropModal({
           <button type="button"
             className="h-[37px] cursor-pointer rounded-md bg-transparent py-0 px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
             onClick={onCancel}
+            disabled={confirming}
           >
             {t("cancel")}
           </button>
           <button type="button"
-            className="h-[37px] cursor-pointer rounded-md bg-accent py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110"
-            onClick={handleConfirm}
+            className="h-[37px] cursor-pointer rounded-md bg-accent py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:opacity-50"
+            onClick={() => void handleConfirm()}
+            disabled={confirming}
           >
-            {t("save")}
+            {confirming ? "..." : t("save")}
           </button>
         </div>
       </div>

@@ -32,7 +32,6 @@ const createCharacterFormSchema = z.object({
   tags: z.array(z.string()),
   avatarFile: z.unknown().nullable().optional(),
   avatarOriginalFile: z.unknown().nullable().optional(),
-  avatarCropJson: z.string().nullable().optional(),
   avatarPreview: z.string().nullable().optional(),
 });
 
@@ -55,7 +54,7 @@ interface CreateCharacterModalProps {
     depthPromptDepth?: number;
     depthPromptRole?: string;
     tags?: string[];
-  }, avatarFile: File | null, avatarOriginalFile: File | null, avatarCropJson?: string | null) => Promise<{ characterId: string; chatId: string } | null>;
+  }, avatarFile: File | null, avatarOriginalFile: File | null) => Promise<{ characterId: string; chatId: string } | null>;
 }
 
 export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalProps) {
@@ -77,7 +76,6 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
       tags: [],
       avatarFile: null,
       avatarOriginalFile: null,
-      avatarCropJson: null,
       avatarPreview: null,
       depthPrompt: '',
       depthPromptDepth: 4,
@@ -113,7 +111,6 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   const avatarPreview = watch('avatarPreview') as string | null;
   const avatarFile = watch('avatarFile') as File | null;
   const avatarOriginalFile = watch('avatarOriginalFile') as File | null;
-  const avatarCropJson = watch('avatarCropJson') as string | null;
 
   const canSave = (name || '').trim().length > 0 && !busy;
 
@@ -131,9 +128,8 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
 
   function handleAvatarCropConfirm(result: AvatarCropResult) {
     patchForm({
-      avatarFile: pendingAvatar!.file,
-      avatarOriginalFile: null,
-      avatarCropJson: JSON.stringify(result.crop),
+      avatarFile: result.croppedFile,
+      avatarOriginalFile: pendingAvatar!.file,
       avatarPreview: pendingAvatar!.url,
     });
     setPendingAvatar(null);
@@ -179,7 +175,6 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
       },
       avatarFile,
       avatarOriginalFile,
-      avatarCropJson,
     );
   }
 

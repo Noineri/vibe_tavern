@@ -110,7 +110,7 @@ interface BuildModeInnerProps {
   setSelectedTraceId: (id: string | null) => void;
   promptTraceHistory: PromptTraceRecordDto[];
   onSave: (draft: BuildCharacterDraft) => Promise<void> | void;
-  onAvatarUpload: (file: File, originalFile?: File | null, avatarCropJson?: string | null) => Promise<void> | void;
+  onAvatarUpload: (file: File, originalFile?: File | null) => Promise<void> | void;
   characterId: string;
   activeChatId: string | null;
   personaId: string | null;
@@ -162,8 +162,8 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
     setAvatarPreview(null);
   }
 
-  function handleAvatarUpload(file: File, originalFile?: File | null, avatarCropJson?: string | null): void {
-    void Promise.resolve(onAvatarUpload(file, originalFile, avatarCropJson)).then(() => setAvatarPreview(null));
+  function handleAvatarUpload(file: File, originalFile?: File | null): void {
+    void Promise.resolve(onAvatarUpload(file, originalFile)).then(() => setAvatarPreview(null));
   }
 
   const avatarUrl = character.avatarFullAssetId

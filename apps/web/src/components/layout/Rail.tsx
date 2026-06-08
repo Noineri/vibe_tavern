@@ -4,7 +4,6 @@ import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
 import { avatarUrl } from "../../lib/avatar.js";
-import { avatarCropStyle } from "../../lib/avatar-crop-style.js";
 import { initials } from "./app-shell-helpers.js";
 import { CharacterImportModal, ChatImportModal } from "../modals/ImportModals.js";
 import { useT } from "../../i18n/context.js";
@@ -320,7 +319,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                   title={c.name}
                 >
                   {c.avatarAssetId ? (
-                    <img className="h-full w-full object-cover" style={avatarCropStyle(c.avatarCropJson)} src={avatarUrl(c.avatarAssetId)} alt={c.name} />
+                    <img className="h-full w-full object-cover" src={avatarUrl(c.avatarAssetId)} alt={c.name} />
                   ) : (
                     <span className={cn("flex h-full w-full items-center justify-center rounded-full font-ui text-sm", selectedCharacterId === c.id ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>{initials(c.name)}</span>
                   )}
@@ -437,7 +436,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                         onClick={() => { useChatStore.getState().setSelectedCharacterId(c.id); }}
                       >
                         <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg", selectedCharacterId === c.id ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>
-                          {c.avatarAssetId ? <img className="h-full w-full object-cover" style={avatarCropStyle(c.avatarCropJson)} src={avatarUrl(c.avatarAssetId)} alt={c.name} /> : initials(c.name)}
+                          {c.avatarAssetId ? <img className="h-full w-full object-cover" src={avatarUrl(c.avatarAssetId)} alt={c.name} /> : initials(c.name)}
                         </div>
                         <span className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)] text-t1">{c.name}</span>
                         {/* Three-dot menu button */}

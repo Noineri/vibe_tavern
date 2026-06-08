@@ -29,7 +29,7 @@ export interface CharacterFormProps {
   onReset: () => void;
   /** Вызывается после успешного импорта карточки (данные уже в форме, форма dirty) */
   onAfterImport?: () => void;
-  onAvatarUpload: (file: File, originalFile?: File | null, avatarCropJson?: string | null) => Promise<void> | void;
+  onAvatarUpload: (file: File, originalFile?: File | null) => Promise<void> | void;
   onExportJson: () => void;
   onExportPng: () => void;
   onDuplicate: () => void;
@@ -146,7 +146,7 @@ export function CharacterForm({
       setAvatarOrientation(img.naturalWidth > img.naturalHeight ? "landscape" : "portrait");
     };
     img.src = url;
-    onAvatarUpload(pendingAvatar!.file, undefined, JSON.stringify(result.crop));
+    onAvatarUpload(result.croppedFile, pendingAvatar!.file);
     setPendingAvatar(null);
   }
 
