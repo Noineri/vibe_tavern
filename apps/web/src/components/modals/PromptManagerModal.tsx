@@ -67,6 +67,14 @@ interface PromptManagerModalProps {
   onDelete: (presetId: string) => Promise<boolean>;
   providerProfiles?: Array<{ id: string; name: string }>;
   prefillSupported?: boolean;
+  characterFields?: {
+    systemPrompt: string | null;
+    postHistoryInstructions: string | null;
+    depthPrompt: string | null;
+    depthPromptDepth: number | null;
+    depthPromptRole: string | null;
+  } | null;
+  onCharacterFieldUpdate?: (key: string, value: string | number) => void;
 }
 
 const emptyDraft: DraftData = {
@@ -109,6 +117,15 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+
+  // Character V3 fields → canvas draft
+  const characterDraft = input.characterFields ? {
+    charSystemPrompt: input.characterFields.systemPrompt ?? "",
+    charPostHistory: input.characterFields.postHistoryInstructions ?? "",
+    charDepthPrompt: input.characterFields.depthPrompt ?? "",
+    charDepthPromptDepth: input.characterFields.depthPromptDepth ?? 4,
+    charDepthPromptRole: input.characterFields.depthPromptRole ?? "system",
+  } : null;
   const [importModalOpen, setImportModalOpen] = useState(false);
   const isMobile = useIsMobile();
   const activePreset = input.presets.find((p) => p.id === input.activePresetId) ?? null;
@@ -373,6 +390,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   onPromptOrderChange={(promptOrder) => { setDraft((d) => ({ ...d, promptOrder })); setDirty(true); setSaveState("idle"); }}
                   draft={activePreset ? draft : null}
                   onUpdateField={(key, value) => updateDraft(key, value as never)}
+                  characterDraft={characterDraft}
+                  onCharacterFieldUpdate={(key, value) => input.onCharacterFieldUpdate?.(key, value)}
                 />
               </div>
             )}
