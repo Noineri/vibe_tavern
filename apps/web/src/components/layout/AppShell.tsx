@@ -3,6 +3,7 @@ import { Toaster } from "sonner";
 import { useT } from "../../i18n/context.js";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useIsSending } from "../../stores/index.js";
+import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
 import { useActiveTrace } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
@@ -253,6 +254,20 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         onDelete={preset.handleDeletePromptPreset}
         providerProfiles={provider.providerProfiles.map(p => ({ id: p.id, name: p.name }))}
         prefillSupported={!['anthropic', 'google', 'koboldcpp'].includes(provider.activeProviderProfile?.providerPreset ?? '')}
+        characterFields={activeCharacter ? {
+          systemPrompt: activeCharacter.systemPrompt ?? null,
+          postHistoryInstructions: activeCharacter.postHistoryInstructions ?? null,
+          depthPrompt: activeCharacter.depthPrompt ?? null,
+          depthPromptDepth: activeCharacter.depthPromptDepth ?? null,
+          depthPromptRole: activeCharacter.depthPromptRole ?? null,
+        } : null}
+        onCharacterFieldUpdate={(key, value) => {
+          if (!activeCharacter) return;
+          void saveCharacterAction({
+            characterId: activeCharacter.id,
+            patch: { chatId: useChatStore.getState().activeChatId ?? undefined, [key]: value },
+          });
+        }}
       />
 
       <PersonaModal

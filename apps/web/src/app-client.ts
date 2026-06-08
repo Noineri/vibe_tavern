@@ -349,7 +349,7 @@ export async function fetchChat(chatId: ChatId): Promise<AppSnapshot> {
 
 export async function updateCharacter(
   characterId: string,
-  input: {
+  input: Partial<{
     chatId?: ChatId;
     name: string;
     description: string;
@@ -367,7 +367,7 @@ export async function updateCharacter(
     depthPromptDepth: number | null;
     depthPromptRole: string | null;
     tags: string[];
-  },
+  }>,
 ): Promise<AppSnapshot> {
   const response = await client.api.characters[":characterId"].$patch({ param: { characterId }, json: input });
   const data = await unwrapRpc<AppSnapshot>(response);
