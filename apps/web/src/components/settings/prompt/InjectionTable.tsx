@@ -206,6 +206,19 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     return `←${depth}`;
   }
 
+  function slotDepthFor(identifier: string): number | null {
+    const entry = promptOrder.find(e => e.identifier === identifier);
+    if (entry?.zone === "in_chat") return entry.depth ?? 4;
+    return null;
+  }
+
+  function updateSlotDepth(identifier: string, depth: number) {
+    const next = promptOrder.map(e =>
+      e.identifier === identifier ? { ...e, depth } : e
+    );
+    onPromptOrderChange?.(next);
+  }
+
   function getCanvasItemSlot(item: CanvasItem): PromptSlot {
     if (item.kind === "custom") {
       const inj = injections[item.injectionIndex];
@@ -230,7 +243,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     { key: "slot:charDescription", identifier: "charDescription", kind: "slot", defaultOrder: 30, render: () => <PromptOrderMarker identifier="charDescription" label={t("prompt_slot_character_description")} kind="builtIn" enabled={slotEnabled("charDescription")} onToggle={togglePromptSlot} /> },
     { key: "slot:charPersonality", identifier: "charPersonality", kind: "slot", defaultOrder: 40, render: () => <PromptOrderMarker identifier="charPersonality" label={t("prompt_slot_character_personality")} kind="builtIn" enabled={slotEnabled("charPersonality")} onToggle={togglePromptSlot} /> },
     { key: "slot:scenario", identifier: "scenario", kind: "slot", defaultOrder: 50, render: () => <PromptOrderMarker identifier="scenario" label={t("scenario")} kind="builtIn" enabled={slotEnabled("scenario")} onToggle={togglePromptSlot} /> },
-    { key: "field:authorsNote", identifier: "authorsNote", kind: "field", defaultOrder: 60, render: () => <EditableAuthorNoteCard identifier="authorsNote" enabled={slotEnabled("authorsNote")} onToggle={togglePromptSlot} draft={draft} onUpdateField={onUpdateField} slotLabel={slotLabelFor("authorsNote")} /> },
+    { key: "field:authorsNote", identifier: "authorsNote", kind: "field", defaultOrder: 60, render: () => <EditableAuthorNoteCard identifier="authorsNote" enabled={slotEnabled("authorsNote")} onToggle={togglePromptSlot} draft={draft} onUpdateField={onUpdateField} slotLabel={slotLabelFor("authorsNote")} slotDepth={slotDepthFor("authorsNote")} onSlotDepthChange={(d) => updateSlotDepth("authorsNote", d)} /> },
     { key: "field:enhanceDefinitions", identifier: "enhanceDefinitions", kind: "field", defaultOrder: 70, render: () => <EditablePromptCard identifier="enhanceDefinitions" enabled={slotEnabled("enhanceDefinitions")} onToggle={togglePromptSlot} label={t("enhance_definitions")} role="system" value={draft?.enhanceDefinitions ?? ""} placeholder={t("enhance_definitions_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("enhanceDefinitions", value)} /> },
     { key: "field:nsfw", identifier: "nsfw", kind: "field", defaultOrder: 75, render: () => <EditablePromptCard identifier="nsfw" enabled={slotEnabled("nsfw")} onToggle={togglePromptSlot} label={t("nsfw_prompt")} role="system" value={draft?.nsfw ?? ""} placeholder={t("nsfw_prompt_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("nsfw", value)} /> },
     { key: "slot:worldInfoAfter", identifier: "worldInfoAfter", kind: "slot", defaultOrder: 80, render: () => <PromptOrderMarker identifier="worldInfoAfter" label={t("prompt_slot_world_info_after")} tooltip={t("prompt_slot_world_info_after_hint")} kind="marker" enabled={slotEnabled("worldInfoAfter")} onToggle={togglePromptSlot} /> },
@@ -660,13 +673,15 @@ function EditablePromptCard({ identifier, enabled = true, onToggle, label, role,
   );
 }
 
-function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, onUpdateField, slotLabel }: {
+function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, onUpdateField, slotLabel, slotDepth, onSlotDepthChange }: {
   identifier?: string;
   enabled?: boolean;
   onToggle?: (identifier: string) => void;
   draft?: PromptCanvasDraft | null;
   onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number) => void;
   slotLabel?: string | null;
+  slotDepth?: number | null;
+  onSlotDepthChange?: (depth: number) => void;
 }) {
   const { t } = useT();
   const [expanded, setExpanded] = useState(false);
@@ -710,6 +725,21 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
               disabled={disabled}
               compact
             />
+            {slotDepth != null && slotDepth >= 4 && (
+              <CustomTooltip content={t("insert_depth_label")}>
+                <div className="flex shrink-0 items-center gap-1.5 font-ui text-[11px] text-t4">
+                  <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
+                  <span className="sr-only">{t("insert_depth_label")}</span>
+                  <NumberInput
+                    className="h-[30px] w-[90px]"
+                    min={4} max={99}
+                    value={slotDepth}
+                    onChange={(v) => onSlotDepthChange?.(v)}
+                    disabled={disabled}
+                  />
+                </div>
+              </CustomTooltip>
+            )}
           </div>
           <AutoTextarea
             className="min-h-[100px] w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
