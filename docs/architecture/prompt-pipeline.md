@@ -486,9 +486,10 @@ A preset can switch to **Advanced Mode** (SilkyTavern-compatible) via `advancedM
 When advanced mode is active:
 
 - The Prompt Manager UI shows an editable canvas (`PromptOrderCanvas`) instead of the basic fields.
-- The preset stores an explicit `promptOrder: PromptOrderEntry[]` (identifier, enabled, order, kind).
-- **Custom injections** become the primary authoring surface — each injection has its own `identifier`, `name`, `content`, `role`, `depth`, `injectionPosition`, `injectionOrder`, `enabled`.
+- The preset stores an explicit `promptOrder: PromptOrderEntry[]` (identifier, enabled, order, kind, **zone**, **depth**).
+- **Custom injections** become the primary authoring surface — each injection has its own `identifier`, `name`, `content`, `role`, `depth`, `injectionPosition`, `injectionOrder`, `enabled`, and an optional `slot: PromptSlot`.
 - Built-in slots (`main`, `jailbreak`, `authorsNote`, `chatHistory`, `worldInfoBefore/After`, `charDescription`, `charPersonality`, `scenario`, `personaDescription`, `dialogueExamples`) participate in the same order list and can be reordered/toggled.
+- **Character V3 fields** (System Prompt, Post-History Instructions, Depth Prompt) appear as editable cards with a `CHAR` badge and dashed border, syncing directly with the active character card.
 
 ### `enabled` flag — authoritative source
 
@@ -503,9 +504,90 @@ For **built-in slots** (`main`, `jailbreak`, `authorsNote`, etc.), the authorita
 
 The UI (`InjectionTable.tsx`) keeps both flags in sync for custom injections when the row toggle is clicked — but the assembly layer only consults the authoritative source, so a desynced `promptOrder` entry cannot disable a custom injection.
 
+### PromptSlot — visual canvas position
+
+`PromptSlot` is the unified position model that replaces ST's legacy `injectionPosition`/`injectionOrder`/`depth` triple:
+
+```ts
+interface PromptSlot {
+  zone: "before_chat" | "in_chat" | "after_chat";
+  depth: number | null;   // messages from end, for in_chat zone
+  order: number;          // sort order within zone+depth
+}
+```
+
+Three places store position data, all converging on `PromptSlot`:
+
+| Source | Location | How it's read |
+|--------|----------|---------------|
+| `PromptOrderEntry.zone` / `.depth` | `promptOrder[]` on preset | `applyPromptOrderPosition()` in `assemble.ts` |
+| `CustomInjection.slot` | `customInjections[]` on preset | Direct read in `assemble.ts` |
+| Legacy ST fields | `injectionPosition`, `injectionOrder`, `depth` | `migrateInjection()` fallback |
+
+Migration: `migrateInjection()` converts legacy fields into `PromptSlot` on first access. `slotToStFields()` reverse-maps for export. The canvas always writes `slot` on custom injections and `zone`/`depth` on `promptOrder` entries — legacy fields are never the source of truth.
+
+### Canvas layout (PromptOrderCanvas)
+
+The canvas is a multi-zone drag-and-drop surface built on `@dnd-kit`. **Visual position is the absolute source of truth** — no separate position/depth inputs on cards.
+
+```
+┌─ Before Chat ─────────────────────────────────────────────┐
+│  [System Prompt] [WI Before] [Persona] [Char Desc] ...    │
+└───────────────────────────────────────────────────────────┘
+┌─ In Chat (Accordion) ─────────────────────────────────────┐
+│  ▸ Depth 4+   (DroppableDepthContainer, depth ≥ 4)        │
+│  ▸ Depth 3    (DroppableDepthContainer, depth=3)          │
+│  ▸ Depth 2    (DroppableDepthContainer, depth=2)          │
+│  ▸ Depth 1    (DroppableDepthContainer, depth=1)          │
+└───────────────────────────────────────────────────────────┘
+┌─ After Chat ──────────────────────────────────────────────┐
+│  [Post-History] [Jailbreak] ...                           │
+└───────────────────────────────────────────────────────────┘
+┌─ Assistant Prefill (pinned, non-draggable) ───────────────┐
+│  [Prefill card]                                           │
+└───────────────────────────────────────────────────────────┘
+```
+
+**Depth accordion:** Depth containers ≥4 are collapsed into a single expandable bucket. Each depth bucket is a separate `DroppableDepthContainer` in `@dnd-kit`. Items dragged between zones are spread across containers via `onDragOver` cross-zone logic.
+
+**Assistant Prefill** is pinned to the bottom, non-draggable, with no position badges. It is a message-start override, not a pipeline injection.
+
+**Drag-and-drop flow:**
+1. `onDragOver` — updates `activeZones` state, spreading items across containers in real time.
+2. `onDragEnd` — `commitList()` writes the final visual order back into `nextPromptOrder` (for built-in/marker items) and `nextInjections` (for custom injections), setting `zone`, `depth`, and `order` on each.
+3. `onPromptOrderChange` + `onChange` propagate to the parent draft.
+4. `handleSave` in `PromptManagerModal` sends the full draft (including `promptOrder` with `zone`/`depth`) to the API.
+
+**Badges:** Cards show zone-aware position indicators: `←4` for `in_chat` at depth 4, `"after"` for `after_chat`, nothing for `before_chat`. Custom injections in depth ≥4 show a `NumberInput` for adjusting depth inline.
+
+### Character V3 field cards
+
+Three character fields are always visible on the canvas (empty or filled):
+
+| Card | Default Zone/Order | API Field |
+|------|-------------------|-----------|
+| Character System Prompt | `before_chat`, order 1 | `character.systemPrompt` |
+| Character Depth Prompt | `in_chat`, order 65 | `character.depthPrompt` + `depthPromptDepth` |
+| Character Post-History | `after_chat`, order 115 | `character.postHistoryInstructions` |
+
+These are rendered as `CharacterFieldCard` components with:
+- Dashed border + `CHAR` badge
+- Editable `textarea` that syncs via `saveCharacterAction` (partial patch)
+- Not draggable (position is fixed per zone, not reorderable)
+- Depth Prompt card includes `NumberInput` for depth adjustment
+
+The data flow: `AppShell` reads `activeCharacter` from snapshot store → passes to `PromptManagerModal` as `characterFields` → builds `CharacterCanvasDraft` → passes to `PromptOrderCanvas` → renders cards. Edits call `onCharacterFieldUpdate` → maps draft keys to API field names → `saveCharacterAction` patches the character directly.
+
+### Zod schema — zone/depth persistence
+
+The `promptPresetCoreSchema` in `prompt-preset-schema.ts` includes `zone` and `depth` fields in the `promptOrder` array. Without these, Zod strips them during validation, and canvas positions are lost on every save.
+
 ### Importing ST presets
 
-ST preset JSON imports fill both `customInjections` and `promptOrder` from the original `prompts` and `prompt_order` arrays. The import preserves each entry's `enabled` flag as-is; toggling re-enables an injection through the same UI flow.
+ST preset JSON imports fill both `customInjections` and `promptOrder` from the original `prompts` and `prompt_order` arrays. The import:
+- Maps ST fields to `PromptSlot` via `migrateInjection`
+- Preserves each entry's `enabled` flag as-is
+- Sets `advancedMode: true` automatically when injections or prompt order are present
 
 ---
 

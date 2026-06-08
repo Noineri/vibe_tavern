@@ -266,6 +266,43 @@ Multi-language support (en, ru) via `i18n/context.tsx` — `useT()` hook returns
 
 ---
 
+## Prompt Manager Modal (`PromptManagerModal.tsx`)
+
+The advanced prompt editing surface. Opened from the top-bar preset dropdown. Renders `PromptOrderCanvas` when `advancedMode` is true.
+
+### Data flow
+
+```
+AppShell
+  ├── bootstrapData.promptPresets → promptPresets prop
+  ├── activeChat.promptPresetId  → activePresetId prop
+  ├── snapshotStore.activeCharacter → characterFields prop
+  │
+  └── PromptManagerModal
+        ├── activePreset → draft state (useEffect on preset ID change)
+        ├── draft.promptOrder → PromptOrderCanvas
+        ├── draft.customInjections → PromptOrderCanvas
+        ├── characterFields → CharacterCanvasDraft → PromptOrderCanvas
+        │
+        ├── handleSave → updatePromptPresetAction → refreshPresetsInBootstrap
+        └── onCharacterFieldUpdate → key mapping → saveCharacterAction (partial patch)
+```
+
+### Draft management
+
+The modal maintains a local `DraftData` state initialized from `activePreset`. On save, the full draft is serialized (`aiAssistantPrompts` → JSON string) and sent via `updatePromptPresetAction`. The action refreshes the bootstrap store so the preset list stays current.
+
+### Character field updates
+
+Character edits bypass the preset entirely. The `onCharacterFieldUpdate` callback:
+1. Maps canvas keys (`charSystemPrompt`, `charPostHistory`, `charDepthPrompt`, `charDepthPromptDepth`, `charDepthPromptRole`) to API field names (`systemPrompt`, `postHistoryInstructions`, `depthPrompt`, `depthPromptDepth`, `depthPromptRole`).
+2. Calls `saveCharacterAction` with a partial patch.
+3. The snapshot ingestion updates `activeCharacter` in the store, which flows back to the canvas reactively.
+
+---
+
+---
+
 ## Mobile Detection
 
 `useIsMobile()` hook — returns `true` for viewports below the mobile breakpoint. Used throughout `MessageBlock` to branch between desktop and mobile UI:

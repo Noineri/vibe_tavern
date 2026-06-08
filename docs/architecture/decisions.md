@@ -211,7 +211,31 @@
 
 ---
 
-## AD-013: Junction Table for Lorebook Links
+## AD-013: Visual Position as Source of Truth for Prompt Canvas
+
+**Context:** The Advanced Prompt Manager canvas shows prompt blocks in a sortable layout. Users need to rearrange prompts across zones (before chat, in-chat at various depths, after chat) and have those positions persist reliably.
+
+**Options considered:**
+
+| Approach | Description | Problem |
+|----------|-------------|----------|
+| **Separate inputs** | Position/depth number inputs on each card | Disconnects visual order from stored data. Users see one thing but the numbers say another. |
+| **Flat order array** | Single `order` number per entry, derive zone from thresholds | Ambiguous boundaries. Changing a threshold shifts all entries. No explicit zone. |
+| **PromptSlot on entries** | Each entry stores `{ zone, depth, order }` directly | Explicit, unambiguous, maps 1:1 to canvas position. |
+
+**Decision:** `PromptSlot` (`zone` + `depth` + `order`) stored on both `PromptOrderEntry` (for built-in slots) and `CustomInjection.slot` (for custom injections). Visual position on the canvas is the absolute authority — no separate position inputs.
+
+**Rationale:**
+- **WYSIWYG** — what you see on the canvas is exactly what the pipeline assembles. No hidden state.
+- **Zone-explicit** — `before_chat`, `in_chat`, `after_chat` are stored as data, not derived from order thresholds.
+- **Backward-compatible** — `migrateInjection()` converts legacy ST fields on first access. `slotToStFields()` reverse-maps for export.
+- **Zod-safe** — `zone` and `depth` are included in the Zod validation schema so they survive the server round-trip.
+
+**Trade-off:** More fields per entry (`zone`, `depth`, `order` instead of just `order`). Acceptable because it eliminates an entire class of position desync bugs.
+
+---
+
+## AD-014: Junction Table for Lorebook Links
 
 **Context:** A lorebook can be shared across multiple characters and personas. SillyTavern models this as `charLore: [{ name, extraBooks }] }` in user settings — a flat array mapping character files to world info names.
 
