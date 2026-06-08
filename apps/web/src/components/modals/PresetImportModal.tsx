@@ -7,6 +7,7 @@ import { Icons } from "../shared/icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { Checkbox } from "../shared/Checkbox.js";
 import { parseStPreset, type ParsedStPreset, type StPresetBlock, type StPromptOrderBlock } from "../../lib/st-preset-parser.js";
+import { migrateInjection } from "@vibe-tavern/domain";
 import type { InjectionRow } from "../settings/prompt/InjectionTable.js";
 
 type TargetMapping = "system" | "post" | "authors" | "nsfw" | "enhanceDefinitions" | "injection" | "skip";
@@ -78,7 +79,7 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
         setMappings(
           preset.blocks.map((b) => ({
             block: b,
-            target: b.enabled ? smartDefault(b.identifier) : "skip",
+            target: smartDefault(b.identifier),
             enabled: b.enabled,
           }))
         );
@@ -93,7 +94,7 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
   function toggleBlock(index: number) {
     setMappings((prev) =>
       prev.map((m, i) =>
-        i === index ? { ...m, enabled: !m.enabled, target: m.enabled ? "skip" : smartDefault(m.block.identifier) } : m
+        i === index ? { ...m, enabled: !m.enabled } : m
       )
     );
   }
@@ -103,7 +104,7 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
   }
 
   function selectAll() {
-    setMappings((prev) => prev.map((m) => ({ ...m, enabled: true, target: m.target === "skip" ? smartDefault(m.block.identifier) : m.target })));
+    setMappings((prev) => prev.map((m) => ({ ...m, enabled: true })));
   }
 
   function deselectAll() {
@@ -152,20 +153,23 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
           break;
         case "nsfw": result.nsfw.push(m.block.content); break;
         case "enhanceDefinitions": result.enhanceDefinitions.push(m.block.content); break;
-        case "injection":
-          result.injections.push({
+        case "injection": {
+          const raw: InjectionRow = {
             identifier: m.block.identifier,
             name: m.block.name,
             content: m.block.content,
             depth: m.block.injectionDepth,
             role: m.block.role,
-            enabled: true,
+            enabled: m.enabled,
             injectionPosition: m.block.injectionPosition,
             injectionOrder: m.block.injectionOrder,
             promptOrderIndex: m.block.promptOrderIndex,
             promptOrderPlacement: m.block.promptOrderPlacement,
-          });
+          };
+          const migrated = migrateInjection(raw);
+          result.injections.push({ ...raw, slot: migrated.slot });
           break;
+        }
       }
     }
     onImport(result);
