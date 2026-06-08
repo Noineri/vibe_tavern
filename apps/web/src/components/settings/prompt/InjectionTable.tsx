@@ -535,7 +535,11 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
           </DroppableDepthContainer>
 
           {/* Prefill: pinned, not draggable */}
-          {prefillItem && prefillItem.render()}
+          {prefillItem && (
+            <div className="rounded-md border border-transparent p-1">
+              {prefillItem.render()}
+            </div>
+          )}
 
         </div>
         {typeof document === "undefined" ? dragOverlay : createPortal(dragOverlay, document.body)}
