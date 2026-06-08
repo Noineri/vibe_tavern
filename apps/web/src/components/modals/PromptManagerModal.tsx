@@ -8,7 +8,7 @@ import { Icons } from "../shared/icons.js";
 import { SaveButton } from "../shared/SaveBar.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { PresetList, PromptFields } from "../settings/prompt/index.js";
-import { PromptOrderCanvas, type InjectionRow } from "../settings/prompt/InjectionTable.js";
+import { PromptOrderCanvas, type InjectionRow, type CharacterCanvasDraft } from "../settings/prompt/InjectionTable.js";
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
@@ -118,14 +118,36 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [dirty, setDirty] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
-  // Character V3 fields → canvas draft
-  const characterDraft = input.characterFields ? {
-    charSystemPrompt: input.characterFields.systemPrompt ?? "",
-    charPostHistory: input.characterFields.postHistoryInstructions ?? "",
-    charDepthPrompt: input.characterFields.depthPrompt ?? "",
-    charDepthPromptDepth: input.characterFields.depthPromptDepth ?? 4,
-    charDepthPromptRole: input.characterFields.depthPromptRole ?? "system",
-  } : null;
+  // Character V3 fields → canvas draft (mutable state)
+  const [characterDraft, setCharacterDraft] = useState<CharacterCanvasDraft | null>(() =>
+    input.characterFields ? {
+      charSystemPrompt: input.characterFields.systemPrompt ?? "",
+      charPostHistory: input.characterFields.postHistoryInstructions ?? "",
+      charDepthPrompt: input.characterFields.depthPrompt ?? "",
+      charDepthPromptDepth: input.characterFields.depthPromptDepth ?? 4,
+      charDepthPromptRole: input.characterFields.depthPromptRole ?? "system",
+    } : null
+  );
+
+  // Sync character draft when characterFields prop changes (different character selected)
+  useEffect(() => {
+    setCharacterDraft(input.characterFields ? {
+      charSystemPrompt: input.characterFields.systemPrompt ?? "",
+      charPostHistory: input.characterFields.postHistoryInstructions ?? "",
+      charDepthPrompt: input.characterFields.depthPrompt ?? "",
+      charDepthPromptDepth: input.characterFields.depthPromptDepth ?? 4,
+      charDepthPromptRole: input.characterFields.depthPromptRole ?? "system",
+    } : null);
+  }, [input.characterFields?.systemPrompt, input.characterFields?.postHistoryInstructions, input.characterFields?.depthPrompt, input.characterFields?.depthPromptDepth, input.characterFields?.depthPromptRole]);
+
+  function updateCharacterDraft(key: string, value: string | number) {
+    setCharacterDraft((prev) => {
+      if (!prev) return prev;
+      return { ...prev, [key]: value };
+    });
+    setDirty(true);
+    setSaveState("idle");
+  }
   const [importModalOpen, setImportModalOpen] = useState(false);
   const isMobile = useIsMobile();
   const activePreset = input.presets.find((p) => p.id === input.activePresetId) ?? null;
@@ -186,6 +208,17 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       if (!ok) {
         setSaveState("error");
         return;
+      }
+      // Persist character field changes via API
+      if (characterDraft && input.onCharacterFieldUpdate) {
+        const orig = input.characterFields;
+        if (orig) {
+          if (characterDraft.charSystemPrompt !== (orig.systemPrompt ?? "")) input.onCharacterFieldUpdate("charSystemPrompt", characterDraft.charSystemPrompt);
+          if (characterDraft.charPostHistory !== (orig.postHistoryInstructions ?? "")) input.onCharacterFieldUpdate("charPostHistory", characterDraft.charPostHistory);
+          if (characterDraft.charDepthPrompt !== (orig.depthPrompt ?? "")) input.onCharacterFieldUpdate("charDepthPrompt", characterDraft.charDepthPrompt);
+          if (characterDraft.charDepthPromptDepth !== (orig.depthPromptDepth ?? 4)) input.onCharacterFieldUpdate("charDepthPromptDepth", characterDraft.charDepthPromptDepth);
+          if (characterDraft.charDepthPromptRole !== (orig.depthPromptRole ?? "system")) input.onCharacterFieldUpdate("charDepthPromptRole", characterDraft.charDepthPromptRole);
+        }
       }
       setDirty(false);
       setSaveState("saved");
@@ -391,7 +424,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   draft={activePreset ? draft : null}
                   onUpdateField={(key, value) => updateDraft(key, value as never)}
                   characterDraft={characterDraft}
-                  onCharacterFieldUpdate={(key, value) => input.onCharacterFieldUpdate?.(key, value)}
+                  onCharacterFieldUpdate={(key, value) => updateCharacterDraft(key, value)}
                 />
               </div>
             )}
