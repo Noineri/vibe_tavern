@@ -74,6 +74,14 @@ export interface InjectionRow {
   promptOrderPlacement?: "before_chat" | "after_chat";
 }
 
+type CharacterCanvasDraft = {
+  charSystemPrompt: string;
+  charPostHistory: string;
+  charDepthPrompt: string;
+  charDepthPromptDepth: number;
+  charDepthPromptRole: string;
+};
+
 type PromptCanvasDraft = {
   system: string;
   jailbreak: string;
@@ -91,6 +99,8 @@ interface InjectionTableProps {
   onChange: (injections: InjectionRow[]) => void;
   draft?: PromptCanvasDraft | null;
   onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number) => void;
+  characterDraft?: CharacterCanvasDraft | null;
+  onCharacterFieldUpdate?: (key: keyof CharacterCanvasDraft, value: string | number) => void;
   promptOrder?: PromptOrderEntry[];
   onPromptOrderChange?: (promptOrder: PromptOrderEntry[]) => void;
 }
@@ -149,7 +159,7 @@ type ZonesState = {
  *    compute placeholder spaces on the fly.
  * 4. Finally, `onDragEnd` applies the sorted `activeZones` back into the parent `promptOrder` and `injections` props.
  */
-export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, promptOrder = [], onPromptOrderChange }: InjectionTableProps) {
+export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, characterDraft, onCharacterFieldUpdate, promptOrder = [], onPromptOrderChange }: InjectionTableProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const [activeDragKey, setActiveDragKey] = useState<string | null>(null);
@@ -250,6 +260,11 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     { key: "slot:dialogueExamples", identifier: "dialogueExamples", kind: "slot", defaultOrder: 90, render: () => <PromptOrderMarker identifier="dialogueExamples" label={t("prompt_slot_dialogue_examples")} kind="marker" enabled={slotEnabled("dialogueExamples")} onToggle={togglePromptSlot} /> },
     { key: "field:jailbreak", identifier: "jailbreak", kind: "field", defaultOrder: 110, render: () => <EditablePromptCard identifier="jailbreak" enabled={slotEnabled("jailbreak")} onToggle={togglePromptSlot} label={t("post_history_instructions")} role="system" value={draft?.jailbreak ?? ""} placeholder={t("jailbreak_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("jailbreak", value)} slotLabel={slotLabelFor("jailbreak")} slotDepth={slotDepthFor("jailbreak")} onSlotDepthChange={(d) => updateSlotDepth("jailbreak", d)} /> },
     { key: "field:assistantPrefill", identifier: "assistantPrefill", kind: "field", defaultOrder: 999, render: () => <EditablePromptCard identifier="assistantPrefill" enabled={slotEnabled("assistantPrefill")} onToggle={togglePromptSlot} label={t("prefill_assistant")} role="assistant" value={draft?.prefill ?? ""} placeholder={t("prefill_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("prefill", value)} draggable={false} /> },
+
+    // Character V3 overrides — only shown when character has these fields
+    ...(characterDraft?.charSystemPrompt ? [{ key: "char:systemPrompt", identifier: "charSystemPrompt", kind: "field" as const, defaultOrder: 1, render: () => <CharacterFieldCard label={t("character_system_prompt")} role="system" value={characterDraft.charSystemPrompt} onChange={(v) => onCharacterFieldUpdate?.("charSystemPrompt", v)} /> }] : []),
+    ...(characterDraft?.charPostHistory ? [{ key: "char:postHistory", identifier: "charPostHistory", kind: "field" as const, defaultOrder: 115, render: () => <CharacterFieldCard label={t("character_post_history")} role="system" value={characterDraft.charPostHistory} onChange={(v) => onCharacterFieldUpdate?.("charPostHistory", v)} /> }] : []),
+    ...(characterDraft?.charDepthPrompt ? [{ key: "char:depthPrompt", identifier: "charDepthPrompt", kind: "field" as const, defaultOrder: 65, render: () => <CharacterFieldCard label={t("character_depth_prompt")} role={characterDraft.charDepthPromptRole || "system"} value={characterDraft.charDepthPrompt} onChange={(v) => onCharacterFieldUpdate?.("charDepthPrompt", v)} depth={characterDraft.charDepthPromptDepth} onDepthChange={(d) => onCharacterFieldUpdate?.("charDepthPromptDepth", d)} /> }] : []),
   ];
 
   // Prefill is special: always last, not draggable
@@ -779,6 +794,59 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
             disabled={disabled}
             maxHeight={420}
             onChange={(e) => onUpdateField?.("authorsNote", e.target.value)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CharacterFieldCard({ label, role, value, onChange, depth, onDepthChange }: {
+  label: string;
+  role: string;
+  value: string;
+  onChange: (value: string) => void;
+  depth?: number;
+  onDepthChange?: (depth: number) => void;
+}) {
+  const { t } = useT();
+  const [expanded, setExpanded] = useState(false);
+  const showDepthInput = depth != null && depth >= 4;
+
+  return (
+    <div className="rounded-md border border-dashed border-accent/30 bg-surface">
+      <div className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 px-3 py-2 sm:flex-nowrap sm:gap-2.5" onClick={() => setExpanded((v) => !v)}>
+        <DragHandle disabled={expanded} />
+        <span className="min-w-[120px] flex-1 truncate font-ui text-[12px] text-t1 sm:overflow-visible sm:whitespace-normal sm:text-clip">{label}</span>
+        <TokenCounter text={value} />
+        <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{role}</span>
+        {depth != null && <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3 tabular-nums">←{depth}</span>}
+        <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] text-amber-400">char</span>
+        <span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
+      </div>
+      {expanded && (
+        <div className="border-t border-border2 px-3 pb-3 pt-2">
+          {showDepthInput && (
+            <CustomTooltip content={t("insert_depth_label")}>
+              <div className="mb-2 flex shrink-0 items-center gap-1.5 font-ui text-[11px] text-t4">
+                <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
+                <span className="sr-only">{t("insert_depth_label")}</span>
+                <NumberInput
+                  className="h-[30px] w-[90px]"
+                  min={4} max={99}
+                  value={depth}
+                  onChange={(v) => onDepthChange?.(v)}
+                />
+              </div>
+            </CustomTooltip>
+          )}
+          <AutoTextarea
+            className="min-h-[80px] w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent"
+            style={{}}
+            value={value}
+            placeholder=""
+            maxHeight={420}
+            onChange={(e) => onChange(e.target.value)}
           />
         </div>
       )}
