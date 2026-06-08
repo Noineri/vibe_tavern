@@ -35,6 +35,7 @@ export class PersonaRuntime {
 		pronouns: string | null;
 		avatarAssetId: string | null;
 		avatarFullAssetId: string | null;
+		avatarCropJson: string | null;
 	}>> {
 		const personas = await this.deps.stores.personas.listAll();
 		return personas.map((p) => ({
@@ -44,6 +45,7 @@ export class PersonaRuntime {
 			pronouns: p.pronouns,
 			avatarAssetId: p.avatarAssetId,
 			avatarFullAssetId: p.avatarFullAssetId,
+			avatarCropJson: p.avatarCropJson,
 		}));
 	}
 
@@ -59,6 +61,7 @@ export class PersonaRuntime {
 		pronouns: string | null;
 		avatarAssetId: string | null;
 		avatarFullAssetId: string | null;
+		avatarCropJson: string | null;
 	}> {
 		const trimmedName = (input.name ?? "").trim();
 		const trimmedDescription = (input.description ?? "").trim();
@@ -78,6 +81,7 @@ export class PersonaRuntime {
 			pronouns: persona.pronouns,
 			avatarAssetId: persona.avatarAssetId,
 			avatarFullAssetId: persona.avatarFullAssetId,
+			avatarCropJson: persona.avatarCropJson,
 		};
 	}
 
@@ -106,6 +110,7 @@ export class PersonaRuntime {
 			pronouns?: string | null;
 			avatarAssetId?: string | null;
 			avatarFullAssetId?: string | null;
+			avatarCropJson?: string | null;
 		},
 	): Promise<SessionSnapshot> {
 		const currentPersona = await this.deps.stores.personas.getById(brandId<PersonaId>(personaId));
@@ -122,6 +127,7 @@ export class PersonaRuntime {
 		const nextPronouns = input.pronouns !== undefined ? input.pronouns : currentPersona.pronouns;
 		const nextAvatarAssetId = input.avatarAssetId !== undefined ? input.avatarAssetId : currentPersona.avatarAssetId;
 		const nextAvatarFullAssetId = input.avatarFullAssetId !== undefined ? input.avatarFullAssetId : currentPersona.avatarFullAssetId;
+		const nextAvatarCropJson = input.avatarCropJson !== undefined ? input.avatarCropJson : currentPersona.avatarCropJson;
 
 		await this.deps.stores.personas.update(personaId, {
 			name: nextName,
@@ -129,6 +135,7 @@ export class PersonaRuntime {
 			pronouns: nextPronouns,
 			avatarAssetId: nextAvatarAssetId,
 			avatarFullAssetId: nextAvatarFullAssetId,
+			avatarCropJson: nextAvatarCropJson,
 		});
 
 		const preferredChat = input.chatId

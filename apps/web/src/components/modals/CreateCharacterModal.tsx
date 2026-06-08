@@ -12,6 +12,8 @@ import { SegmentedControl } from '../shared/SegmentedControl.js';
 import { AutoTextarea } from '../shared/auto-textarea.js';
 import { MobileExpandTextarea } from '../shared/MobileExpandTextarea.js';
 import { NumberInput } from '../shared/NumberInput.js';
+import { AvatarCropModal } from '../shared/AvatarCropModal.js';
+import type { AvatarCropResult } from '../shared/AvatarCropModal.js';
 
 const createCharacterFormSchema = z.object({
   name: z.string().min(1),
@@ -30,6 +32,7 @@ const createCharacterFormSchema = z.object({
   tags: z.array(z.string()),
   avatarFile: z.unknown().nullable().optional(),
   avatarOriginalFile: z.unknown().nullable().optional(),
+  avatarCropJson: z.string().nullable().optional(),
   avatarPreview: z.string().nullable().optional(),
 });
 
@@ -52,7 +55,7 @@ interface CreateCharacterModalProps {
     depthPromptDepth?: number;
     depthPromptRole?: string;
     tags?: string[];
-  }, avatarFile: File | null, avatarOriginalFile: File | null) => Promise<{ characterId: string; chatId: string } | null>;
+  }, avatarFile: File | null, avatarOriginalFile: File | null, avatarCropJson?: string | null) => Promise<{ characterId: string; chatId: string } | null>;
 }
 
 export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalProps) {
@@ -74,6 +77,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
       tags: [],
       avatarFile: null,
       avatarOriginalFile: null,
+      avatarCropJson: null,
       avatarPreview: null,
       depthPrompt: '',
       depthPromptDepth: 4,
@@ -88,6 +92,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   const [altGreetIdx, setAltGreetIdx] = useState(0);
   const [tagInput, setTagInput] = useState('');
   const avaInputRef = useRef<HTMLInputElement>(null);
+  const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
 
 
 
@@ -108,6 +113,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   const avatarPreview = watch('avatarPreview') as string | null;
   const avatarFile = watch('avatarFile') as File | null;
   const avatarOriginalFile = watch('avatarOriginalFile') as File | null;
+  const avatarCropJson = watch('avatarCropJson') as string | null;
 
   const canSave = (name || '').trim().length > 0 && !busy;
 
@@ -120,11 +126,22 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   function handleAvatarPick(files: FileList | null) {
     if (!files || files.length === 0) return;
     const file = files[0];
+    setPendingAvatar({ file, url: URL.createObjectURL(file) });
+  }
+
+  function handleAvatarCropConfirm(result: AvatarCropResult) {
     patchForm({
-      avatarFile: file,
+      avatarFile: pendingAvatar!.file,
       avatarOriginalFile: null,
-      avatarPreview: URL.createObjectURL(file),
+      avatarCropJson: JSON.stringify(result.crop),
+      avatarPreview: pendingAvatar!.url,
     });
+    setPendingAvatar(null);
+  }
+
+  function handleAvatarCropCancel() {
+    if (pendingAvatar?.url) URL.revokeObjectURL(pendingAvatar.url);
+    setPendingAvatar(null);
   }
 
   function removeTag(tag: string) {
@@ -162,6 +179,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
       },
       avatarFile,
       avatarOriginalFile,
+      avatarCropJson,
     );
   }
 
@@ -210,6 +228,13 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               )}
             </div>
             </CustomTooltip>
+            {pendingAvatar && (
+              <AvatarCropModal
+                imageUrl={pendingAvatar.url}
+                onConfirm={handleAvatarCropConfirm}
+                onCancel={handleAvatarCropCancel}
+              />
+            )}
             <div className="flex-1">
               <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ws_name_label")}</label>
               <input

@@ -59,18 +59,17 @@ export async function deleteCharacterAction(characterId: string): Promise<void> 
 export async function avatarUploadAction(input: {
   file: File;
   originalFile?: File | null;
+  avatarCropJson?: string | null;
   characterId: string;
   chatId: ChatId;
 }): Promise<void> {
-  const [croppedAsset, originalAsset] = await Promise.all([
-    uploadAsset(input.file),
-    input.originalFile ? uploadAsset(input.originalFile) : Promise.resolve(null),
-  ]);
+  const originalAsset = await uploadAsset(input.originalFile ?? input.file);
   const snapshot = await updateCharacterAvatar(
     input.characterId,
     input.chatId,
-    croppedAsset.assetId,
-    originalAsset?.assetId,
+    originalAsset.assetId,
+    undefined,
+    input.avatarCropJson,
   );
   useSnapshotStore.getState().ingestSnapshot(snapshot);
   void fetchBootstrapAction({ silent: true });

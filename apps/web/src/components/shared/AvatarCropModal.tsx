@@ -4,74 +4,49 @@ import type { Area, Point } from "react-easy-crop";
 import { Modal } from "./Modal.js";
 import { useT } from "../../i18n/context.js";
 
+export interface AvatarCropData {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface AvatarCropResult {
-  croppedUrl: string;
-  originalUrl: string;
-  croppedFile: File;
+  crop: AvatarCropData;
 }
 
 interface AvatarCropModalProps {
   imageUrl: string;
-  originalFile: File;
   onConfirm: (result: AvatarCropResult) => void;
   onCancel: () => void;
 }
 
-const CROP_OUTPUT_SIZE = 480;
-
 export function AvatarCropModal({
   imageUrl,
-  originalFile,
   onConfirm,
   onCancel,
 }: AvatarCropModalProps) {
   const { t } = useT();
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [croppedAreaPercentages, setCroppedAreaPercentages] = useState<Area | null>(null);
 
-  const onCropComplete = useCallback((_croppedArea: Area, croppedPixels: Area) => {
-    setCroppedAreaPixels(croppedPixels);
+  const onCropComplete = useCallback((_croppedArea: Area, croppedPercentages: Area) => {
+    setCroppedAreaPercentages(croppedPercentages);
   }, []);
 
-  const handleConfirm = useCallback(async () => {
-    if (!croppedAreaPixels) return;
+  const handleConfirm = useCallback(() => {
+    if (!croppedAreaPercentages) return;
 
-    const img = new Image();
-    img.src = imageUrl;
-    await new Promise((resolve) => { img.onload = resolve; });
-
-    const canvas = document.createElement("canvas");
-    canvas.width = CROP_OUTPUT_SIZE;
-    canvas.height = CROP_OUTPUT_SIZE;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    ctx.drawImage(
-      img,
-      croppedAreaPixels.x,
-      croppedAreaPixels.y,
-      croppedAreaPixels.width,
-      croppedAreaPixels.height,
-      0,
-      0,
-      CROP_OUTPUT_SIZE,
-      CROP_OUTPUT_SIZE,
-    );
-
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) return;
-        const croppedUrl = URL.createObjectURL(blob);
-        const croppedFile = new File([blob], `cropped_${originalFile.name}`, {
-          type: blob.type || "image/png",
-        });
-        onConfirm({ croppedUrl, originalUrl: imageUrl, croppedFile });
+    onConfirm({
+      crop: {
+        x: croppedAreaPercentages.x,
+        y: croppedAreaPercentages.y,
+        width: croppedAreaPercentages.width,
+        height: croppedAreaPercentages.height,
       },
-      "image/png",
-      0.92,
-    );
-  }, [croppedAreaPixels, imageUrl, originalFile, onConfirm]);
+    });
+  }, [croppedAreaPercentages, onConfirm]);
 
   return (
     <Modal open={true} onClose={onCancel}>
@@ -148,7 +123,7 @@ export function AvatarCropModal({
           </button>
           <button type="button"
             className="h-[37px] cursor-pointer rounded-md bg-accent py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110"
-            onClick={() => void handleConfirm()}
+            onClick={handleConfirm}
           >
             {t("save")}
           </button>

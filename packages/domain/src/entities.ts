@@ -84,6 +84,7 @@ export interface Character {
   tags: string[];
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
+  avatarCropJson: string | null;
   status: "active" | "draft" | "archived";
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -112,6 +113,7 @@ export interface Persona {
   pronouns: string | null;
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
+  avatarCropJson: string | null;
   defaultForNewChats: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;

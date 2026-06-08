@@ -131,8 +131,8 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   // Author info
   const author: MessageShellAuthorInfo = isUser
-    ? { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null }
-    : { name: chatMeta.character.name, avatarAssetId: chatMeta.character.avatarAssetId };
+    ? { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null, avatarCropJson: chatMeta.persona?.avatarCropJson ?? null }
+    : { name: chatMeta.character.name, avatarAssetId: chatMeta.character.avatarAssetId, avatarCropJson: chatMeta.character.avatarCropJson };
 
   // UI State
   const isEditing = editingMessageId === input.messageId;
@@ -671,7 +671,7 @@ function PendingUserMessage() {
 
   const content = activeGen.pendingUserMessageContent ?? "";
   const displayContent = macroContext ? replaceUiMacros(content, macroContext) : content;
-  const author = { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null };
+  const author = { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null, avatarCropJson: chatMeta.persona?.avatarCropJson ?? null };
 
   return (
     <MessageShell
@@ -724,7 +724,7 @@ function PendingAssistantMessage() {
   const variantControlsRef = useRef<HTMLSpanElement>(null);
   if (!chatMeta || !activeGen) return null;
 
-  const author = { name: chatMeta.character.name, avatarAssetId: chatMeta.character.avatarAssetId };
+  const author = { name: chatMeta.character.name, avatarAssetId: chatMeta.character.avatarAssetId, avatarCropJson: chatMeta.character.avatarCropJson };
   const streamingText = activeGen.streamingText;
   const streamingRevealedText = activeGen.streamingRevealedText;
   const streamingReasoning = activeGen.streamingReasoningText;

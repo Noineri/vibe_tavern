@@ -169,6 +169,7 @@ export function importCharacterCardV3Json(
     tags: cleaned.tags,
     avatarAssetId: null,
     avatarFullAssetId: null,
+    avatarCropJson: null,
     status: options.characterStatus ?? "active",
     createdAt: importedAt,
     updatedAt: importedAt,

@@ -115,6 +115,7 @@ export class RuntimeApiAdapter {
 			tags?: string[];
 			avatarAssetId?: string | null;
 			avatarFullAssetId?: string | null;
+			avatarCropJson?: string | null;
 		},
 	) => {
 		if (body.avatarAssetId !== undefined) {
@@ -164,6 +165,7 @@ export class RuntimeApiAdapter {
 			pronouns?: string | null;
 			avatarAssetId?: string | null;
 			avatarFullAssetId?: string | null;
+			avatarCropJson?: string | null;
 		},
 	) => {
 		if (body.avatarAssetId !== undefined) {

@@ -30,6 +30,7 @@ export type CharacterRecord = {
   subtitle: string;
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
+  avatarCropJson: string | null;
 };
 
 export type PersonaRecord = {
@@ -39,6 +40,7 @@ export type PersonaRecord = {
   pronouns: string | null;
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
+  avatarCropJson: string | null;
 };
 
 export function toCharacterRecord(
@@ -83,6 +85,7 @@ export function toCharacterRecord(
     subtitle: subtitleCandidate,
     avatarAssetId: character.avatarAssetId,
     avatarFullAssetId: character.avatarFullAssetId,
+    avatarCropJson: character.avatarCropJson,
   };
 }
 
@@ -298,6 +301,7 @@ export class CharacterRuntime {
       tags?: string[];
       avatarAssetId?: string | null;
       avatarFullAssetId?: string | null;
+      avatarCropJson?: string | null;
     },
     options?: {
       rebuildChatOrder: () => Promise<void>;
@@ -360,6 +364,9 @@ export class CharacterRuntime {
       avatarFullAssetId: input.avatarFullAssetId !== undefined
         ? input.avatarFullAssetId
         : currentCharacter.avatarFullAssetId,
+      avatarCropJson: input.avatarCropJson !== undefined
+        ? input.avatarCropJson
+        : currentCharacter.avatarCropJson,
     });
 
     // Promote system character to user character on first edit
@@ -411,6 +418,7 @@ export class CharacterRuntime {
       tags: source.tags,
       avatarAssetId: source.avatarAssetId,
       avatarFullAssetId: source.avatarFullAssetId,
+      avatarCropJson: source.avatarCropJson,
     });
 
     const newCharacterId = character.id as CharacterId;

@@ -39,6 +39,7 @@ export const updateCharacterSchema = z.object({
   tags: z.array(z.string()).optional(),
   avatarAssetId: z.string().nullable().optional(),
   avatarFullAssetId: z.string().nullable().optional(),
+  avatarCropJson: z.string().nullable().optional(),
 });
 
 export const buildCharacterDraftSchema = z.object({
