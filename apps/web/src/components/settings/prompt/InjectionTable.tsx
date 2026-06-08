@@ -249,8 +249,12 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     { key: "slot:worldInfoAfter", identifier: "worldInfoAfter", kind: "slot", defaultOrder: 80, render: () => <PromptOrderMarker identifier="worldInfoAfter" label={t("prompt_slot_world_info_after")} tooltip={t("prompt_slot_world_info_after_hint")} kind="marker" enabled={slotEnabled("worldInfoAfter")} onToggle={togglePromptSlot} /> },
     { key: "slot:dialogueExamples", identifier: "dialogueExamples", kind: "slot", defaultOrder: 90, render: () => <PromptOrderMarker identifier="dialogueExamples" label={t("prompt_slot_dialogue_examples")} kind="marker" enabled={slotEnabled("dialogueExamples")} onToggle={togglePromptSlot} /> },
     { key: "field:jailbreak", identifier: "jailbreak", kind: "field", defaultOrder: 110, render: () => <EditablePromptCard identifier="jailbreak" enabled={slotEnabled("jailbreak")} onToggle={togglePromptSlot} label={t("post_history_instructions")} role="system" value={draft?.jailbreak ?? ""} placeholder={t("jailbreak_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("jailbreak", value)} slotLabel={slotLabelFor("jailbreak")} slotDepth={slotDepthFor("jailbreak")} onSlotDepthChange={(d) => updateSlotDepth("jailbreak", d)} /> },
-    { key: "field:assistantPrefill", identifier: "assistantPrefill", kind: "field", defaultOrder: 120, render: () => <EditablePromptCard identifier="assistantPrefill" enabled={slotEnabled("assistantPrefill")} onToggle={togglePromptSlot} label={t("prefill_assistant")} role="assistant" value={draft?.prefill ?? ""} placeholder={t("prefill_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("prefill", value)} slotLabel={slotLabelFor("assistantPrefill")} slotDepth={slotDepthFor("assistantPrefill")} onSlotDepthChange={(d) => updateSlotDepth("assistantPrefill", d)} /> },
+    { key: "field:assistantPrefill", identifier: "assistantPrefill", kind: "field", defaultOrder: 999, render: () => <EditablePromptCard identifier="assistantPrefill" enabled={slotEnabled("assistantPrefill")} onToggle={togglePromptSlot} label={t("prefill_assistant")} role="assistant" value={draft?.prefill ?? ""} placeholder={t("prefill_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("prefill", value)} draggable={false} /> },
   ];
+
+  // Prefill is special: always last, not draggable
+  const prefillItem = fixedItems.find(i => i.identifier === "assistantPrefill");
+  const canvasFixedItems = fixedItems.filter(i => i.identifier !== "assistantPrefill");
 
   const customItems: CanvasItem[] = injections.map((inj, i) => {
     const identifier = customIdentifier(inj, i);
@@ -265,7 +269,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     };
   });
 
-  const canvasItems = useMemo(() => [...fixedItems, ...customItems], [fixedItems, customItems]);
+  const canvasItems = useMemo(() => [...canvasFixedItems, ...customItems], [canvasFixedItems, customItems]);
 
   const defaultZones: ZonesState = useMemo(() => {
     const zones: ZonesState = {
@@ -531,6 +535,11 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
           </DroppableDepthContainer>
 
         </div>
+        {prefillItem && (
+          <div className="mt-1">
+            {prefillItem.render()}
+          </div>
+        )}
         {typeof document === "undefined" ? dragOverlay : createPortal(dragOverlay, document.body)}
       </DndContext>
     </div>
@@ -615,7 +624,7 @@ function PromptOrderMarker({ identifier, label, kind, enabled = true, onToggle, 
   );
 }
 
-function EditablePromptCard({ identifier, enabled = true, onToggle, label, role, value, placeholder, disabled, onChange, slotLabel, slotDepth, onSlotDepthChange }: {
+function EditablePromptCard({ identifier, enabled = true, onToggle, label, role, value, placeholder, disabled, onChange, slotLabel, slotDepth, onSlotDepthChange, draggable = true }: {
   identifier?: string;
   enabled?: boolean;
   onToggle?: (identifier: string) => void;
@@ -628,6 +637,7 @@ function EditablePromptCard({ identifier, enabled = true, onToggle, label, role,
   slotLabel?: string | null;
   slotDepth?: number | null;
   onSlotDepthChange?: (depth: number) => void;
+  draggable?: boolean;
 }) {
   const { t } = useT();
   const [expanded, setExpanded] = useState(false);
@@ -635,7 +645,7 @@ function EditablePromptCard({ identifier, enabled = true, onToggle, label, role,
   return (
     <div className={cn("rounded-md border border-border bg-surface", !enabled && "opacity-55")}>
       <div className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 px-3 py-2 sm:flex-nowrap sm:gap-2.5" onClick={() => setExpanded((v) => !v)}>
-        <DragHandle disabled={expanded} />
+        {draggable && <DragHandle disabled={expanded} />}
         {identifier ? (
           <CustomTooltip content={enabled ? "Enabled" : "Disabled"}>
             <button
