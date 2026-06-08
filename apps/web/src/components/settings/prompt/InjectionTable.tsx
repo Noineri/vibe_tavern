@@ -1,5 +1,33 @@
-import { useState, useMemo, useEffect, type CSSProperties, type ReactNode } from "react";
+import { useState, useMemo, type CSSProperties, type ReactNode, createContext, useContext } from "react";
 import { createPortal } from "react-dom";
+
+const DragHandleContext = createContext<{
+  attributes: any;
+  listeners: any;
+  setActivatorNodeRef: (node: any) => void;
+} | null>(null);
+
+function DragHandle({ disabled }: { disabled?: boolean }) {
+  const ctx = useContext(DragHandleContext);
+  if (!ctx) return null;
+  return (
+    <button
+      ref={disabled ? undefined : ctx.setActivatorNodeRef}
+      type="button"
+      className={cn(
+        "flex h-5 w-5 shrink-0 select-none items-center justify-center rounded font-mono text-[13px] transition-colors sm:h-auto sm:w-5",
+        disabled 
+          ? "opacity-30 cursor-not-allowed text-t4" 
+          : "cursor-grab touch-none text-t4 hover:bg-s2 hover:text-t2 active:cursor-grabbing"
+      )}
+      aria-label="Drag prompt item"
+      {...(disabled ? {} : ctx.attributes)}
+      {...(disabled ? {} : ctx.listeners)}
+    >
+      ⋮⋮
+    </button>
+  );
+}
 import { NumberInput } from "../../shared/NumberInput.js";
 import type { PromptOrderEntry, PromptSlot, PromptZone } from "@vibe-tavern/domain";
 import { migrateInjection } from "@vibe-tavern/domain";
@@ -8,12 +36,10 @@ import {
   DndContext,
   DragOverlay,
   MouseSensor,
-  pointerWithin,
   TouchSensor,
   useSensor,
   useSensors,
   useDroppable,
-  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
   type DragOverEvent
@@ -324,7 +350,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
              const idx = item.injectionIndex;
              const inj = nextInjections[idx];
              const slot = inj.slot ?? migrateInjection(inj).slot;
-             nextInjections[idx] = { ...inj, slot: { ...slot, zone: targetZone, depth: targetDepth, order: index } };
+             nextInjections[idx] = { ...inj, slot: { ...slot, zone: targetZone, depth: targetDepth, order: index }, depth: targetDepth ?? inj.depth };
           } else {
              const idx = nextPromptOrder.findIndex(e => e.identifier === item.identifier);
              if (idx >= 0) {
@@ -514,17 +540,9 @@ function SortableCanvasItem({ id, overlayActive, children }: { id: string; overl
         (isDragging || overlayActive) && "opacity-0"
       )}
     >
-      <button
-        ref={setActivatorNodeRef}
-        type="button"
-        className="flex h-9 w-9 shrink-0 touch-none cursor-grab select-none items-center justify-center rounded border border-transparent font-mono text-[13px] text-t4 transition-colors hover:border-border hover:bg-s2 hover:text-t2 active:cursor-grabbing sm:h-auto sm:w-6"
-        aria-label="Drag prompt item"
-        {...attributes}
-        {...listeners}
-      >
-        ⋮⋮
-      </button>
-      <div className="min-w-0 flex-1">{children}</div>
+      <DragHandleContext.Provider value={{ attributes, listeners, setActivatorNodeRef }}>
+        <div className="min-w-0 flex-1">{children}</div>
+      </DragHandleContext.Provider>
     </div>
   );
 }
@@ -545,6 +563,7 @@ function PromptOrderMarker({ identifier, label, kind, enabled = true, onToggle, 
       kind === "marker" ? "border-border2 bg-s1 text-t4" :
       "border-border bg-s2/70 text-t2",
     )}>
+      <DragHandle />
       <CustomTooltip content={enabled ? "Enabled" : "Disabled"}>
         <button
           type="button"
@@ -585,9 +604,11 @@ function EditablePromptCard({ identifier, enabled = true, onToggle, label, role,
   onChange: (value: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+
   return (
     <div className={cn("rounded-md border border-border bg-surface", !enabled && "opacity-55")}>
       <div className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 px-3 py-2 sm:flex-nowrap sm:gap-2.5" onClick={() => setExpanded((v) => !v)}>
+        <DragHandle disabled={expanded} />
         {identifier ? (
           <CustomTooltip content={enabled ? "Enabled" : "Disabled"}>
             <button
@@ -636,12 +657,13 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
 }) {
   const { t } = useT();
   const [expanded, setExpanded] = useState(false);
+
   const disabled = !draft || !onUpdateField;
-  const position = draft?.authorsNotePosition ?? "in_chat";
   const role = draft?.authorsNoteRole ?? "system";
   return (
     <div className={cn("rounded-md border border-border bg-surface", !enabled && "opacity-55")}>
       <div className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 px-3 py-2 sm:flex-nowrap sm:gap-2.5" onClick={() => setExpanded((v) => !v)}>
+        <DragHandle disabled={expanded} />
         {identifier ? (
           <CustomTooltip content={enabled ? "Enabled" : "Disabled"}>
             <button
@@ -661,8 +683,6 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
         <span className="min-w-[120px] flex-1 truncate font-ui text-[12px] text-t1 sm:overflow-visible sm:whitespace-normal sm:text-clip">{t("authors_note_label")}</span>
         <TokenCounter text={draft?.authorsNote ?? ""} />
         <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{role}</span>
-        <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{position}</span>
-        {position === "in_chat" && <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3 tabular-nums">←{draft?.authorsNoteDepth ?? 4}</span>}
         <span className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] text-accent">editable</span>
         <span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
       </div>
@@ -676,33 +696,6 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
               disabled={disabled}
               compact
             />
-            <SegmentedControl
-              value={position}
-              options={[
-                { value: "in_prompt", label: t("an_position_in_prompt") },
-                { value: "in_chat", label: t("an_position_in_chat") },
-                { value: "after_chat", label: t("an_position_after_chat") },
-              ]}
-              onChange={(v) => onUpdateField?.("authorsNotePosition", v)}
-              disabled={disabled}
-              compact
-            />
-            {position === "in_chat" && (
-              <CustomTooltip content={`${t("insert_depth_label")}: ${t("insert_depth_hint")}`}>
-                <div className="flex shrink-0 items-center gap-1.5 font-ui text-[11px] text-t4">
-                  <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
-                  <span className="sr-only">{t("insert_depth_label")}</span>
-                  <NumberInput
-                    className="h-[30px] w-[90px]"
-                    min={0}
-                    max={99}
-                    value={draft?.authorsNoteDepth ?? 4}
-                    onChange={(v) => onUpdateField?.("authorsNoteDepth", v)}
-                    disabled={disabled}
-                  />
-                </div>
-              </CustomTooltip>
-            )}
           </div>
           <AutoTextarea
             className="min-h-[100px] w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
@@ -729,6 +722,8 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
   const [expanded, setExpanded] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const enabled = injection.enabled;
+  const slotDepth = injection.slot?.depth ?? injection.depth;
+  const showDepthInput = injection.slot?.zone === "in_chat" && slotDepth >= 4;
 
   return (
     <div className={cn("rounded-md border transition-colors", enabled ? "border-border bg-surface" : "border-border2 bg-s1 opacity-60")}>
@@ -736,6 +731,7 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
         className="group flex items-center gap-2.5 px-3 py-2 cursor-pointer select-none"
         onClick={() => setExpanded(!expanded)}
       >
+        <DragHandle disabled={expanded} />
         <CustomTooltip content={enabled ? t("preset_injection_enabled") : t("preset_injection_disabled")}>
         <button type="button"
           className={cn(
@@ -782,7 +778,7 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
         </div>
 
         <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3 tabular-nums">
-          ←{injection.depth}
+          ←{slotDepth}
         </span>
 
         <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">
@@ -806,18 +802,20 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
       {expanded && (
         <div className="border-t border-border2 px-3 pb-3 pt-2">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <CustomTooltip content={t("insert_depth_label")}>
-              <div className="flex shrink-0 items-center gap-1.5 font-ui text-[11px] text-t4">
-                <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
-                <span className="sr-only">{t("insert_depth_label")}</span>
-                <NumberInput
-                  className="h-[30px] w-[90px]"
-                  min={0} max={99}
-                  value={injection.depth}
-                  onChange={(v) => onUpdate(index, { depth: v })}
-                />
-              </div>
-            </CustomTooltip>
+            {showDepthInput && (
+              <CustomTooltip content={t("insert_depth_label")}>
+                <div className="flex shrink-0 items-center gap-1.5 font-ui text-[11px] text-t4">
+                  <span aria-hidden="true" className="font-mono text-[12px] text-t3">←</span>
+                  <span className="sr-only">{t("insert_depth_label")}</span>
+                  <NumberInput
+                    className="h-[30px] w-[90px]"
+                    min={4} max={99}
+                    value={slotDepth}
+                    onChange={(v) => onUpdate(index, { depth: v, slot: { ...(injection.slot ?? { zone: "in_chat", depth: 4, order: 0 }), depth: v } })}
+                  />
+                </div>
+              </CustomTooltip>
+            )}
 
             <label className="flex min-w-0 flex-wrap items-center gap-1.5 font-ui text-[11px] text-t4">
               <span>{t("role")}</span>
