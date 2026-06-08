@@ -127,12 +127,13 @@ export interface PromptAssemblyContext {
       depth: number;
       role: string;
       enabled: boolean;
+      slot?: { zone: "before_chat" | "in_chat" | "after_chat"; depth: number | null; order: number };
       injectionPosition?: 0 | 1 | "relative" | "absolute";
       injectionOrder?: number;
       promptOrderIndex?: number;
       promptOrderPlacement?: "before_chat" | "after_chat";
     }>;
-    promptOrder?: Array<{ identifier: string; enabled: boolean; order?: number; kind?: "built_in" | "custom" }>;
+    promptOrder?: Array<{ identifier: string; enabled: boolean; order?: number; kind?: "built_in" | "custom"; zone?: "before_chat" | "in_chat" | "after_chat"; depth?: number | null }>;
   } | null;
   /** Assembly mode. Defaults to `"chat"` when not specified. */
   mode?: AssemblyMode;

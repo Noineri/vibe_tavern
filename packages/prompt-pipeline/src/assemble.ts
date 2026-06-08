@@ -165,6 +165,28 @@ function lorePromptSubPosition(
 }
 
 function applyPromptOrderPosition(context: PromptAssemblyContext, layer: PromptLayer, identifier: string): PromptLayer {
+  const entries = context.preset?.promptOrder ?? [];
+  const entry = entries.find((e) => e.identifier === identifier);
+
+  // New path: read slot from PromptOrderEntry when present
+  if (entry?.zone) {
+    const slotZone = entry.zone;
+    layer.subPosition = entry.order ?? promptOrderRank(context, identifier);
+    if (slotZone === "after_chat") {
+      layer.position = "in_chat";
+      layer.injectionDepth = 0;
+    } else if (slotZone === "in_chat") {
+      layer.position = "in_chat";
+      layer.injectionDepth = entry.depth ?? 0;
+    } else {
+      // before_chat
+      layer.position = "in_prompt";
+      delete layer.injectionDepth;
+    }
+    return layer;
+  }
+
+  // Legacy path: derive from flat order + chatHistory marker
   const placement = promptOrderPlacement(context, identifier);
   layer.subPosition = promptOrderRank(context, identifier);
   if (placement === "after_chat") {
@@ -455,9 +477,35 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     if (!injection.enabled || !injection.content?.trim()) continue;
     if (BUILTIN_FIELD_IDENTIFIERS.has(injection.identifier ?? injection.name)) continue;
 
-    const isAbsolute = injection.injectionPosition === 1 || injection.injectionPosition === "absolute" || injection.injectionPosition == null;
     const role = injection.role === "user" || injection.role === "assistant" ? injection.role : "system";
     const identifier = injection.identifier ?? injection.name;
+
+    // New path: use slot when present
+    if (injection.slot) {
+      const s = injection.slot;
+      const layer = makeLayer({
+        id: `preset_injection_${identifier}`,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+        sourceId: context.preset?.id ?? "",
+        sourceName: injection.name,
+        position: s.zone === "before_chat" ? "in_prompt" : "in_chat",
+        priority: s.zone === "before_chat" ? Math.max(1, 800 - promptOrderRank(context, identifier, s.order) / 1000) : (s.order),
+        subPosition: promptOrderRank(context, identifier, s.order),
+        role,
+        reason: `included (slot zone=${s.zone}, depth=${s.depth ?? "-"}, order=${s.order})`,
+        text: injection.content,
+      });
+      if (s.zone === "in_chat") {
+        layer.injectionDepth = s.depth ?? 0;
+      } else if (s.zone === "after_chat") {
+        layer.injectionDepth = 0;
+      }
+      layers.push(layer);
+      continue;
+    }
+
+    // Legacy path
+    const isAbsolute = injection.injectionPosition === 1 || injection.injectionPosition === "absolute" || injection.injectionPosition == null;
     const orderIndex = promptOrderRank(context, identifier, injection.promptOrderIndex ?? 10_000);
     const placement = promptOrderPlacement(context, identifier) ?? injection.promptOrderPlacement ?? "before_chat";
 
