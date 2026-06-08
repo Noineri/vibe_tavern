@@ -196,6 +196,16 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     return injection.identifier || `custom_${index}`;
   }
 
+  function slotLabelFor(identifier: string): string | null {
+    const entry = promptOrder.find(e => e.identifier === identifier);
+    const zone = entry?.zone;
+    if (!zone) return null;
+    if (zone === "before_chat") return null;
+    if (zone === "after_chat") return "after";
+    const depth = entry?.depth ?? 0;
+    return `←${depth}`;
+  }
+
   function getCanvasItemSlot(item: CanvasItem): PromptSlot {
     if (item.kind === "custom") {
       const inj = injections[item.injectionIndex];
@@ -220,13 +230,13 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     { key: "slot:charDescription", identifier: "charDescription", kind: "slot", defaultOrder: 30, render: () => <PromptOrderMarker identifier="charDescription" label={t("prompt_slot_character_description")} kind="builtIn" enabled={slotEnabled("charDescription")} onToggle={togglePromptSlot} /> },
     { key: "slot:charPersonality", identifier: "charPersonality", kind: "slot", defaultOrder: 40, render: () => <PromptOrderMarker identifier="charPersonality" label={t("prompt_slot_character_personality")} kind="builtIn" enabled={slotEnabled("charPersonality")} onToggle={togglePromptSlot} /> },
     { key: "slot:scenario", identifier: "scenario", kind: "slot", defaultOrder: 50, render: () => <PromptOrderMarker identifier="scenario" label={t("scenario")} kind="builtIn" enabled={slotEnabled("scenario")} onToggle={togglePromptSlot} /> },
-    { key: "field:authorsNote", identifier: "authorsNote", kind: "field", defaultOrder: 60, render: () => <EditableAuthorNoteCard identifier="authorsNote" enabled={slotEnabled("authorsNote")} onToggle={togglePromptSlot} draft={draft} onUpdateField={onUpdateField} /> },
+    { key: "field:authorsNote", identifier: "authorsNote", kind: "field", defaultOrder: 60, render: () => <EditableAuthorNoteCard identifier="authorsNote" enabled={slotEnabled("authorsNote")} onToggle={togglePromptSlot} draft={draft} onUpdateField={onUpdateField} slotLabel={slotLabelFor("authorsNote")} /> },
     { key: "field:enhanceDefinitions", identifier: "enhanceDefinitions", kind: "field", defaultOrder: 70, render: () => <EditablePromptCard identifier="enhanceDefinitions" enabled={slotEnabled("enhanceDefinitions")} onToggle={togglePromptSlot} label={t("enhance_definitions")} role="system" value={draft?.enhanceDefinitions ?? ""} placeholder={t("enhance_definitions_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("enhanceDefinitions", value)} /> },
     { key: "field:nsfw", identifier: "nsfw", kind: "field", defaultOrder: 75, render: () => <EditablePromptCard identifier="nsfw" enabled={slotEnabled("nsfw")} onToggle={togglePromptSlot} label={t("nsfw_prompt")} role="system" value={draft?.nsfw ?? ""} placeholder={t("nsfw_prompt_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("nsfw", value)} /> },
     { key: "slot:worldInfoAfter", identifier: "worldInfoAfter", kind: "slot", defaultOrder: 80, render: () => <PromptOrderMarker identifier="worldInfoAfter" label={t("prompt_slot_world_info_after")} tooltip={t("prompt_slot_world_info_after_hint")} kind="marker" enabled={slotEnabled("worldInfoAfter")} onToggle={togglePromptSlot} /> },
     { key: "slot:dialogueExamples", identifier: "dialogueExamples", kind: "slot", defaultOrder: 90, render: () => <PromptOrderMarker identifier="dialogueExamples" label={t("prompt_slot_dialogue_examples")} kind="marker" enabled={slotEnabled("dialogueExamples")} onToggle={togglePromptSlot} /> },
-    { key: "field:jailbreak", identifier: "jailbreak", kind: "field", defaultOrder: 110, render: () => <EditablePromptCard identifier="jailbreak" enabled={slotEnabled("jailbreak")} onToggle={togglePromptSlot} label={t("post_history_instructions")} role="system" value={draft?.jailbreak ?? ""} placeholder={t("jailbreak_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("jailbreak", value)} /> },
-    { key: "field:assistantPrefill", identifier: "assistantPrefill", kind: "field", defaultOrder: 120, render: () => <EditablePromptCard identifier="assistantPrefill" enabled={slotEnabled("assistantPrefill")} onToggle={togglePromptSlot} label={t("prefill_assistant")} role="assistant" value={draft?.prefill ?? ""} placeholder={t("prefill_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("prefill", value)} /> },
+    { key: "field:jailbreak", identifier: "jailbreak", kind: "field", defaultOrder: 110, render: () => <EditablePromptCard identifier="jailbreak" enabled={slotEnabled("jailbreak")} onToggle={togglePromptSlot} label={t("post_history_instructions")} role="system" value={draft?.jailbreak ?? ""} placeholder={t("jailbreak_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("jailbreak", value)} slotLabel={slotLabelFor("jailbreak")} /> },
+    { key: "field:assistantPrefill", identifier: "assistantPrefill", kind: "field", defaultOrder: 120, render: () => <EditablePromptCard identifier="assistantPrefill" enabled={slotEnabled("assistantPrefill")} onToggle={togglePromptSlot} label={t("prefill_assistant")} role="assistant" value={draft?.prefill ?? ""} placeholder={t("prefill_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("prefill", value)} slotLabel={slotLabelFor("assistantPrefill")} /> },
   ];
 
   const customItems: CanvasItem[] = injections.map((inj, i) => {
@@ -592,7 +602,7 @@ function PromptOrderMarker({ identifier, label, kind, enabled = true, onToggle, 
   );
 }
 
-function EditablePromptCard({ identifier, enabled = true, onToggle, label, role, value, placeholder, disabled, onChange }: {
+function EditablePromptCard({ identifier, enabled = true, onToggle, label, role, value, placeholder, disabled, onChange, slotLabel }: {
   identifier?: string;
   enabled?: boolean;
   onToggle?: (identifier: string) => void;
@@ -602,6 +612,7 @@ function EditablePromptCard({ identifier, enabled = true, onToggle, label, role,
   placeholder: string;
   disabled: boolean;
   onChange: (value: string) => void;
+  slotLabel?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -628,6 +639,7 @@ function EditablePromptCard({ identifier, enabled = true, onToggle, label, role,
         <span className="min-w-[120px] flex-1 truncate font-ui text-[12px] text-t1 sm:overflow-visible sm:whitespace-normal sm:text-clip">{label}</span>
         <TokenCounter text={value} />
         <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{role}</span>
+        {slotLabel && <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3 tabular-nums">{slotLabel}</span>}
         <span className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] text-accent">editable</span>
         <span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
       </div>
@@ -648,12 +660,13 @@ function EditablePromptCard({ identifier, enabled = true, onToggle, label, role,
   );
 }
 
-function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, onUpdateField }: {
+function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, onUpdateField, slotLabel }: {
   identifier?: string;
   enabled?: boolean;
   onToggle?: (identifier: string) => void;
   draft?: PromptCanvasDraft | null;
   onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number) => void;
+  slotLabel?: string | null;
 }) {
   const { t } = useT();
   const [expanded, setExpanded] = useState(false);
@@ -683,6 +696,7 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
         <span className="min-w-[120px] flex-1 truncate font-ui text-[12px] text-t1 sm:overflow-visible sm:whitespace-normal sm:text-clip">{t("authors_note_label")}</span>
         <TokenCounter text={draft?.authorsNote ?? ""} />
         <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{role}</span>
+        {slotLabel && <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3 tabular-nums">{slotLabel}</span>}
         <span className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] text-accent">editable</span>
         <span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
       </div>
