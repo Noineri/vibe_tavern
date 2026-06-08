@@ -389,7 +389,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
         <div className="flex flex-col gap-4">
           
           {/* ZONE 1: BEFORE CHAT */}
-          <DroppableDepthContainer id="zone-before_chat" depth="before" label="Before Chat">
+          <DroppableDepthContainer id="zone-before_chat" depth="before" label={t("prompt_zone_before_chat")}>
             <SortableContext items={zonesToRender.before_chat.map(i => i.key)} strategy={verticalListSortingStrategy}>
               {zonesToRender.before_chat.map((item) => (
                 <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
@@ -409,9 +409,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
               <span>{t("prompt_slot_chat_history")}</span>
               
               <div className="absolute right-3 flex items-center gap-3">
-                <span className="hidden rounded bg-black/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] opacity-70 sm:block">
-                  marker
-                </span>
+
                 <span className="rounded bg-background/40 px-1.5 py-0.5 font-mono text-[10px] text-accent-t">
                   {zonesToRender.depth4.length + zonesToRender.depth3.length + zonesToRender.depth2.length + zonesToRender.depth1.length} items
                 </span>
@@ -473,7 +471,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
           </div>
 
           {/* ZONE 3: AFTER CHAT */}
-          <DroppableDepthContainer id="zone-after_chat" depth="after" label="After Chat (Depth 0)">
+          <DroppableDepthContainer id="zone-after_chat" depth="after" label={t("prompt_zone_after_chat")}>
             <SortableContext items={zonesToRender.after_chat.map(i => i.key)} strategy={verticalListSortingStrategy}>
               {zonesToRender.after_chat.map((item) => (
                 <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
