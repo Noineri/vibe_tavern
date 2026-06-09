@@ -317,8 +317,7 @@ interface ImportError {
       setImportProgress({ current, total });
       try {
         const text = await entry.file.text();
-        const parsed = JSON.parse(text);
-        const stPreset = parseStPreset(parsed);
+        const stPreset = parseStPreset(text);
         if (!stPreset) continue;
 
         const presetName = entry.file.name.replace(/\.json$/i, "");
