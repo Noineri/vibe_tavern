@@ -79,6 +79,7 @@ export function PersonaModal(input: PersonaModalProps) {
 
   // ── ST persona import state ──
   const [stImportPreview, setStImportPreview] = useState<StPersonaEntry[] | null>(null);
+  const [stImportSelected, setStImportSelected] = useState<Set<string>>(new Set());
   const [stImporting, setStImporting] = useState(false);
   const [stImportProgress, setStImportProgress] = useState<{ current: number; total: number } | null>(null);
   const stFolderRef = useRef<HTMLInputElement>(null);
@@ -143,6 +144,7 @@ export function PersonaModal(input: PersonaModalProps) {
       }
       stAvatarFiles.current = avatarMap;
       setStImportPreview(entries);
+      setStImportSelected(new Set(entries.map(e => e.key)));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("st_parse_failed"));
     }
@@ -150,15 +152,17 @@ export function PersonaModal(input: PersonaModalProps) {
 
   async function handleStImport(): Promise<void> {
     if (!stImportPreview || stImportPreview.length === 0) return;
+    const toImport = stImportPreview.filter(e => stImportSelected.has(e.key));
+    if (toImport.length === 0) return;
     setStImporting(true);
-    setStImportProgress({ current: 0, total: stImportPreview.length });
+    setStImportProgress({ current: 0, total: toImport.length });
 
     let imported = 0;
     let didSetDefault = false;
     const errors: string[] = [];
-    for (let i = 0; i < stImportPreview.length; i++) {
-      const entry = stImportPreview[i];
-      setStImportProgress({ current: i + 1, total: stImportPreview.length });
+    for (let i = 0; i < toImport.length; i++) {
+      const entry = toImport[i];
+      setStImportProgress({ current: i + 1, total: toImport.length });
       try {
         const shouldSetDefault = entry.isDefault && !didSetDefault;
         const persona = await createPersona({
@@ -638,10 +642,21 @@ export function PersonaModal(input: PersonaModalProps) {
       {/* ST persona import preview */}
       {stImportPreview && (
         <div className={cn("shrink-0 rounded-lg border border-border2 bg-s2 mx-5 mb-2 p-4")}>
-          <div className="font-ui text-sm font-medium text-t1 mb-2">{t("st_persona_preview_title").replace("{count}", String(stImportPreview.length))}</div>
+          <div className="font-ui text-sm font-medium text-t1 mb-2">{t("st_persona_preview_title").replace("{count}", String(stImportSelected.size))}</div>
           <div className="max-h-[200px] overflow-y-auto space-y-1.5">
             {stImportPreview.map((entry, idx) => (
               <div key={entry.key} className="flex items-start gap-2 rounded-md bg-surface px-3 py-2">
+                <Checkbox
+                  checked={stImportSelected.has(entry.key)}
+                  onChange={() => {
+                    setStImportSelected(prev => {
+                      const next = new Set(prev);
+                      if (next.has(entry.key)) next.delete(entry.key);
+                      else next.add(entry.key);
+                      return next;
+                    });
+                  }}
+                />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-ui text-[13px] font-medium text-t1">{entry.name}</span>
@@ -665,7 +680,7 @@ export function PersonaModal(input: PersonaModalProps) {
           <div className="flex gap-2 mt-3">
             <button type="button"
               className="h-[34px] cursor-pointer rounded-md bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:opacity-45"
-              disabled={stImporting}
+              disabled={stImporting || stImportSelected.size === 0}
               onClick={() => void handleStImport()}
             >
               {stImporting ? t("importing") : t("st_persona_confirm_import")}

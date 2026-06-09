@@ -381,7 +381,7 @@
   "st_no_settings_json": "settings.json not found in the selected folder.",
   "st_no_personas_found": "No personas found in settings.json.",
   "st_parse_failed": "Failed to parse settings.json.",
-  "st_persona_preview_title": "{count} personas found",
+  "st_persona_preview_title": "{count} selected",
   "st_persona_import_result": "{count} personas imported.",
   "st_persona_importing": "Importing {current}/{total}...",
   "st_persona_confirm_import": "Import personas",
