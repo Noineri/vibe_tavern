@@ -3,13 +3,17 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader.js";
-import { importJson, uploadAsset, updateCharacterAvatar } from "../../app-client.js";
+import { importJson, uploadAsset, updateCharacterAvatar, createPersona, createPromptPreset } from "../../app-client.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { getT } from "../../i18n/locale-helpers.js";
+import { parseStPersonas } from "../../lib/st-persona-parser.js";
+import { parseStPreset } from "../../lib/st-preset-parser.js";
+import { fetchBootstrapAction, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
+import { loadPromptPresetsAction } from "../../stores/api-actions/preset-actions.js";
 
 interface ImportModalCommonProps {
   isImporting: boolean;
@@ -43,7 +47,7 @@ interface StFolderImportProps {
 interface StFileEntry {
   file: File;
   relativePath: string;
-  kind: "character" | "chat" | "lorebook";
+  kind: "character" | "chat" | "lorebook" | "preset" | "persona";
 }
 
 function StFolderImport({ onImported }: StFolderImportProps) {
@@ -55,6 +59,8 @@ function StFolderImport({ onImported }: StFolderImportProps) {
     characters: StFileEntry[];
     chats: StFileEntry[];
     lorebooks: StFileEntry[];
+    presets: StFileEntry[];
+    personas: StFileEntry[];
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importErrors, setImportErrors] = useState<ImportError[]>([]);
@@ -70,6 +76,8 @@ function StFolderImport({ onImported }: StFolderImportProps) {
       const characters: StFileEntry[] = [];
       const chats: StFileEntry[] = [];
       const lorebooks: StFileEntry[] = [];
+      const presets: StFileEntry[] = [];
+      const personas: StFileEntry[] = [];
 
       for (const file of Array.from(files)) {
         const rp = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
@@ -106,12 +114,22 @@ function StFolderImport({ onImported }: StFolderImportProps) {
             lorebooks.push({ file, relativePath: rp, kind: "lorebook" });
           }
         }
+        // Match: .../OpenAI Settings/filename.json (prompt presets)
+        if (parts.includes("OpenAI Settings")) {
+          if (file.name.toLowerCase().endsWith(".json")) {
+            presets.push({ file, relativePath: rp, kind: "preset" });
+          }
+        }
+        // Match: .../settings.json (personas)
+        if (rp.endsWith("/settings.json")) {
+          personas.push({ file, relativePath: rp, kind: "persona" });
+        }
       }
 
-      if (characters.length + chats.length + lorebooks.length === 0) {
+      if (characters.length + chats.length + lorebooks.length + presets.length + personas.length === 0) {
         setError(t("st_no_files"));
       } else {
-        setScanResult({ characters, chats, lorebooks });
+        setScanResult({ characters, chats, lorebooks, presets, personas });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("st_scan_failed"));
@@ -131,11 +149,34 @@ interface ImportError {
     setImporting(true);
     setImportErrors([]);
 
-    const total = scanResult.characters.length + scanResult.chats.length;
+    const total = scanResult.personas.length + scanResult.characters.length + scanResult.chats.length + scanResult.presets.length;
     let current = 0;
     let importedChars = 0;
     let importedChats = 0;
+    let importedPresets = 0;
+    let importedPersonas = 0;
     const failedItems: ImportError[] = [];
+
+    // Phase 0: Import personas
+    for (const entry of scanResult.personas) {
+      current++;
+      setImportProgress({ current, total });
+      try {
+        const text = await entry.file.text();
+        const parsed = JSON.parse(text);
+        const personaEntries = parseStPersonas(parsed);
+        for (const pe of personaEntries) {
+          try {
+            await createPersona({ name: pe.name, description: pe.description, defaultForNewChats: pe.isDefault ? true : undefined });
+            importedPersonas++;
+          } catch (err) {
+            failedItems.push({ fileName: `persona: ${pe.name}`, reason: err instanceof Error ? err.message : String(err) });
+          }
+        }
+      } catch (err) {
+        failedItems.push({ fileName: entry.file.name, reason: err instanceof Error ? err.message : String(err) });
+      }
+    }
 
     // Phase 1: Import characters
     // Build a map: character name → chatId for chat matching
@@ -212,14 +253,65 @@ interface ImportError {
       }
     }
 
+    // Phase 3: Import presets
+    for (const entry of scanResult.presets) {
+      current++;
+      setImportProgress({ current, total });
+      try {
+        const text = await entry.file.text();
+        const parsed = JSON.parse(text);
+        const stPreset = parseStPreset(parsed);
+        if (!stPreset) continue;
+
+        const presetName = entry.file.name.replace(/\.json$/i, "");
+        const { blocks, promptOrder } = stPreset;
+
+        // Build custom injections from non-system blocks
+        const { migrateInjection } = await import("@vibe-tavern/domain");
+        const mainBlock = blocks.find(b => b.identifier === "main");
+        const jailbreakBlock = blocks.find(b => b.identifier === "jailbreak");
+
+        const customInjections = blocks
+          .filter(b => b.identifier !== "main" && b.identifier !== "jailbreak" && b.identifier !== "nsfw" && b.identifier !== "enhanceDefinitions" && b.identifier !== "worldInfoBefore" && b.identifier !== "worldInfoAfter")
+          .filter(b => b.content.trim())
+          .map(b => {
+            const raw = { identifier: b.identifier, name: b.name, content: b.content, depth: b.injectionDepth, role: b.role, enabled: b.enabled, injectionPosition: b.injectionPosition, injectionOrder: b.injectionOrder, promptOrderIndex: b.promptOrderIndex, promptOrderPlacement: b.promptOrderPlacement };
+            const migrated = migrateInjection(raw);
+            return { name: b.name || b.identifier, content: b.content, role: b.role, enabled: b.enabled, depth: b.injectionDepth, injectionPosition: b.injectionPosition, slot: migrated.slot };
+          });
+
+        const promptOrderResult = blocks
+          .filter(b => b.promptOrderIndex !== undefined && b.enabled)
+          .sort((a, b) => (a.promptOrderIndex ?? 0) - (b.promptOrderIndex ?? 0))
+          .map(b => ({ identifier: b.identifier, enabled: true }));
+
+        await createPromptPreset({
+          name: presetName,
+          system: mainBlock?.content || "",
+          jailbreak: jailbreakBlock?.content || "",
+          prefill: "",
+          customInjections: customInjections.length > 0 ? customInjections : undefined,
+          promptOrder: promptOrderResult,
+        });
+        importedPresets++;
+      } catch (err) {
+        failedItems.push({ fileName: entry.file.name, reason: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
     setImporting(false);
     setImportProgress(null);
     setImportErrors(failedItems);
 
+    // Refresh stores
+    await Promise.all([fetchBootstrapAction({ silent: true }), fetchPersonasAction(), loadPromptPresetsAction()]);
+
     const msg = t("st_import_results")
       .replace("{characters}", String(importedChars))
       .replace("{chats}", String(importedChats))
-      .replace("{lorebooks}", "0");
+      .replace("{lorebooks}", String(0))
+      .replace("{presets}", String(importedPresets))
+      .replace("{personas}", String(importedPersonas));
     toast.success(msg);
     if (failedItems.length > 0) {
       toast.warning(t("st_import_errors").replace("{count}", String(failedItems.length)));
@@ -273,13 +365,15 @@ interface ImportError {
         <div>
           <div className="mb-2.5 font-ui text-xs text-t2">
             {t("st_scan_results")
+              .replace("{personas}", String(scanResult.personas.length))
               .replace("{characters}", String(scanResult.characters.length))
               .replace("{chats}", String(scanResult.chats.length))
+              .replace("{presets}", String(scanResult.presets.length))
               .replace("{lorebooks}", String(scanResult.lorebooks.length))}
           </div>
           <button type="button"
             className="h-[34px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45"
-            disabled={scanResult.characters.length + scanResult.chats.length === 0}
+            disabled={scanResult.characters.length + scanResult.chats.length + scanResult.presets.length + scanResult.personas.length === 0}
             onClick={handleImport}
           >
             {t("confirm_import")}
