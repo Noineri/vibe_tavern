@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader.js";
-import { importJson, uploadAsset, updateCharacterAvatar, createPersona, createPromptPreset } from "../../app-client.js";
+import { importJson, uploadAsset, updateCharacterAvatar, createPersona, updatePersona, createPromptPreset } from "../../app-client.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
@@ -62,6 +62,7 @@ function StFolderImport({ onImported }: StFolderImportProps) {
     presets: StFileEntry[];
     personaFile: File | null;
     personaCount: number;
+    personaAvatars: Map<string, File>;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importErrors, setImportErrors] = useState<ImportError[]>([]);
@@ -80,6 +81,7 @@ function StFolderImport({ onImported }: StFolderImportProps) {
       const presets: StFileEntry[] = [];
       let personaCount = 0;
       const personas: StFileEntry[] = [];
+      const personaAvatars = new Map<string, File>();
 
       for (const file of Array.from(files)) {
         const rp = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
@@ -122,6 +124,12 @@ function StFolderImport({ onImported }: StFolderImportProps) {
             presets.push({ file, relativePath: rp, kind: "preset" });
           }
         }
+        // Match: .../User Avatars/filename.png (persona avatars)
+        if (parts.includes("User Avatars")) {
+          if (file.name.toLowerCase().endsWith(".png")) {
+            personaAvatars.set(file.name, file);
+          }
+        }
         // Match: .../settings.json (personas)
         if (rp.endsWith("/settings.json")) {
           try {
@@ -144,7 +152,7 @@ function StFolderImport({ onImported }: StFolderImportProps) {
       if (characters.length + chats.length + lorebooks.length + presets.length + personaCount === 0) {
         setError(t("st_no_files"));
       } else {
-        setScanResult({ characters, chats, lorebooks, presets, personaFile, personaCount });
+        setScanResult({ characters, chats, lorebooks, presets, personaFile, personaCount, personaAvatars });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("st_scan_failed"));
@@ -183,8 +191,22 @@ interface ImportError {
           current++;
           setImportProgress({ current, total });
           try {
-            await createPersona({ name: pe.name, description: pe.description, defaultForNewChats: pe.isDefault ? true : undefined });
+            const created = await createPersona({ name: pe.name, description: pe.description, defaultForNewChats: pe.isDefault ? true : undefined });
             importedPersonas++;
+            // Upload avatar if found in User Avatars/
+            const avatarFileName = pe.avatarRelativePath.split("/").pop()!;
+            const avatarFile = scanResult.personaAvatars.get(avatarFileName);
+            if (avatarFile && created.id) {
+              try {
+                const asset = await uploadAsset(avatarFile);
+                await updatePersona(created.id, {
+                  name: pe.name, description: pe.description,
+                  avatarAssetId: asset.assetId,
+                });
+              } catch {
+                // Avatar upload failure is non-critical
+              }
+            }
           } catch (err) {
             console.error(`[ST import] Failed to create persona "${pe.name}":`, err);
             failedItems.push({ fileName: `persona: ${pe.name}`, reason: err instanceof Error ? err.message : String(err) });
@@ -320,8 +342,10 @@ interface ImportError {
     setImportProgress(null);
     setImportErrors(failedItems);
 
-    // Refresh stores
-    await Promise.all([fetchBootstrapAction({ silent: true }), fetchPersonasAction(), loadPromptPresetsAction()]);
+    // Refresh stores (sequential to avoid race on bootstrapStore)
+    await fetchBootstrapAction({ silent: true });
+    await fetchPersonasAction();
+    await loadPromptPresetsAction();
 
     const msg = t("st_import_results")
       .replace("{characters}", String(importedChars))
