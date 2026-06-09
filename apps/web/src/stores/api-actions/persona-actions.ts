@@ -2,6 +2,7 @@ import {
   createPersona,
   deletePersona,
   duplicatePersona,
+  setDefaultPersona,
   updatePersona,
   type AppSnapshot,
 } from "../../app-client.js";
@@ -45,4 +46,9 @@ export async function duplicatePersonaAction(personaId: string): Promise<Persona
   const result = await duplicatePersona(personaId);
   void fetchPersonasAction();
   return result;
+}
+
+export async function setDefaultPersonaAction(personaId: string): Promise<void> {
+  await setDefaultPersona(personaId);
+  void fetchPersonasAction();
 }

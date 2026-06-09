@@ -33,6 +33,7 @@ import {
   updatePersonaAction,
   deletePersonaAction,
   duplicatePersonaAction,
+  setDefaultPersonaAction,
 } from "../stores/api-actions/persona-actions.js";
 import {
   setChatPersonaAction,
@@ -53,6 +54,7 @@ export interface CharacterControllerActions {
   handleCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
   handleDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
   handleDuplicatePersona: (personaId: string) => Promise<void>;
+  handleSetDefaultPersona: (personaId: string) => Promise<void>;
   handleSetPersonalLorebook: (personaId: string, enabled: boolean) => Promise<{ enabled: boolean; lorebookId: string | null } | null>;
   handleImportFiles: (files: FileList | File[]) => Promise<void>;
   handleImportDragOver: (event: DragEvent<HTMLLabelElement>) => void;
@@ -260,6 +262,14 @@ export function useCharacterController(): CharacterControllerActions {
       await duplicatePersonaAction(personaId);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : getT()("failed_to_duplicate"));
+    }
+  }
+
+  async function handleSetDefaultPersona(personaId: string): Promise<void> {
+    try {
+      await setDefaultPersonaAction(personaId);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : getT()("failed_to_set_default_persona"));
     }
   }
 
@@ -536,6 +546,7 @@ export function useCharacterController(): CharacterControllerActions {
     handleCreatePersona,
     handleDeletePersona,
     handleDuplicatePersona,
+    handleSetDefaultPersona,
     handleSetPersonalLorebook,
     handleImportFiles,
     handleImportDragOver,

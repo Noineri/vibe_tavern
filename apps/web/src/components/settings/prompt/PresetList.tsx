@@ -48,7 +48,7 @@ const PresetRow = React.memo(({ p, isActive, onSelect, isMobile, startEditing }:
       </div>
     </div>
   );
-}, (prev, next) => prev.isActive === next.isActive && prev.p.id === next.p.id);
+}, (prev, next) => prev.isActive === next.isActive && prev.p.id === next.p.id && prev.p.name === next.p.name);
 
 export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename, onImportPreset }: PresetListProps) {
   const { t } = useT();

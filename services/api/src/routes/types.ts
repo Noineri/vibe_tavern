@@ -8,6 +8,7 @@ export interface RuntimeApi {
   cloneChat: (chatId: string) => Promise<unknown>;
   duplicateCharacter: (characterId: string) => Promise<unknown>;
   duplicatePersona: (personaId: string) => Promise<unknown>;
+  setDefaultPersona: (personaId: string) => Promise<void>;
   exportCharacter: (characterId: string) => Promise<unknown>;
   exportChatJsonl: (chatId: string) => Promise<string>;
   exportPromptTrace: (traceId: string) => Promise<unknown>;
