@@ -355,7 +355,10 @@ interface ImportError {
             /** @ts-expect-error webkitdirectory is not in React types */
             webkitdirectory=""
             directory=""
-            onChange={(e) => handleFolderPick(e.target.files)}
+            onChange={(e) => {
+              handleFolderPick(e.target.files);
+              e.target.value = "";
+            }}
           />
         </>
       )}
