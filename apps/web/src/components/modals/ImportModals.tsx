@@ -170,6 +170,7 @@ interface ImportError {
             await createPersona({ name: pe.name, description: pe.description, defaultForNewChats: pe.isDefault ? true : undefined });
             importedPersonas++;
           } catch (err) {
+            console.error(`[ST import] Failed to create persona "${pe.name}":`, err);
             failedItems.push({ fileName: `persona: ${pe.name}`, reason: err instanceof Error ? err.message : String(err) });
           }
         }
