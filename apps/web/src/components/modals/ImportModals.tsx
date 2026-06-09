@@ -304,7 +304,7 @@ interface ImportError {
         const data = JSON.parse(text);
         const lorebookName = entry.file.name.replace(/\.json$/i, "");
         // mode:"new" auto-creates a lorebook; no need to call createLorebook separately
-        await importLorebookEntries("", { format: "st", data, mode: "new", scopeType: "global", fallbackName: lorebookName });
+        await importLorebookEntries("new", { format: "st", data, mode: "new", scopeType: "global", fallbackName: lorebookName });
         importedLorebooks++;
       } catch (err) {
         failedItems.push({ fileName: entry.file.name, reason: err instanceof Error ? err.message : String(err) });
@@ -337,10 +337,8 @@ interface ImportError {
             return { name: b.name || b.identifier, content: b.content, role: b.role, enabled: b.enabled, depth: b.injectionDepth, injectionPosition: b.injectionPosition, slot: migrated.slot };
           });
 
-        const promptOrderResult = blocks
-          .filter(b => b.promptOrderIndex !== undefined && b.enabled)
-          .sort((a, b) => (a.promptOrderIndex ?? 0) - (b.promptOrderIndex ?? 0))
-          .map(b => ({ identifier: b.identifier, enabled: true }));
+        const promptOrderResult = stPreset.promptOrder
+          .map(b => ({ identifier: b.identifier, enabled: b.enabled }));
 
         await createPromptPreset({
           name: presetName,
@@ -348,7 +346,7 @@ interface ImportError {
           jailbreak: jailbreakBlock?.content || "",
           prefill: "",
           customInjections: customInjections.length > 0 ? customInjections : undefined,
-          promptOrder: promptOrderResult,
+          promptOrder: promptOrderResult.length > 0 ? promptOrderResult : undefined,
         });
         importedPresets++;
       } catch (err) {
