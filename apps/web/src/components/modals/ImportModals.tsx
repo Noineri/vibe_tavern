@@ -60,7 +60,8 @@ function StFolderImport({ onImported }: StFolderImportProps) {
     chats: StFileEntry[];
     lorebooks: StFileEntry[];
     presets: StFileEntry[];
-    personas: StFileEntry[];
+    personaFile: File | null;
+    personaCount: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importErrors, setImportErrors] = useState<ImportError[]>([]);
@@ -77,6 +78,7 @@ function StFolderImport({ onImported }: StFolderImportProps) {
       const chats: StFileEntry[] = [];
       const lorebooks: StFileEntry[] = [];
       const presets: StFileEntry[] = [];
+      let personaCount = 0;
       const personas: StFileEntry[] = [];
 
       for (const file of Array.from(files)) {
@@ -122,14 +124,27 @@ function StFolderImport({ onImported }: StFolderImportProps) {
         }
         // Match: .../settings.json (personas)
         if (rp.endsWith("/settings.json")) {
-          personas.push({ file, relativePath: rp, kind: "persona" });
+          try {
+            const text = await file.text();
+            const parsed = JSON.parse(text);
+            const entries = parseStPersonas(parsed);
+            if (entries.length > 0) {
+              // Store the file + count; actual import parses again
+              personas.push({ file, relativePath: rp, kind: "persona" });
+              personaCount = entries.length;
+            }
+          } catch {
+            // Not a valid settings.json — skip
+          }
         }
       }
 
-      if (characters.length + chats.length + lorebooks.length + presets.length + personas.length === 0) {
+      const personaFile = personas.length > 0 ? personas[0].file : null;
+
+      if (characters.length + chats.length + lorebooks.length + presets.length + personaCount === 0) {
         setError(t("st_no_files"));
       } else {
-        setScanResult({ characters, chats, lorebooks, presets, personas });
+        setScanResult({ characters, chats, lorebooks, presets, personaFile, personaCount });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("st_scan_failed"));
@@ -149,7 +164,7 @@ interface ImportError {
     setImporting(true);
     setImportErrors([]);
 
-    const total = scanResult.personas.length + scanResult.characters.length + scanResult.chats.length + scanResult.presets.length;
+    const total = scanResult.personaCount + scanResult.characters.length + scanResult.chats.length + scanResult.presets.length;
     let current = 0;
     let importedChars = 0;
     let importedChats = 0;
@@ -158,14 +173,15 @@ interface ImportError {
     const failedItems: ImportError[] = [];
 
     // Phase 0: Import personas
-    for (const entry of scanResult.personas) {
-      current++;
-      setImportProgress({ current, total });
+    if (scanResult.personaFile) {
+      setImportProgress({ current: 0, total });
       try {
-        const text = await entry.file.text();
+        const text = await scanResult.personaFile.text();
         const parsed = JSON.parse(text);
         const personaEntries = parseStPersonas(parsed);
         for (const pe of personaEntries) {
+          current++;
+          setImportProgress({ current, total });
           try {
             await createPersona({ name: pe.name, description: pe.description, defaultForNewChats: pe.isDefault ? true : undefined });
             importedPersonas++;
@@ -175,7 +191,7 @@ interface ImportError {
           }
         }
       } catch (err) {
-        failedItems.push({ fileName: entry.file.name, reason: err instanceof Error ? err.message : String(err) });
+        failedItems.push({ fileName: "settings.json", reason: err instanceof Error ? err.message : String(err) });
       }
     }
 
@@ -369,7 +385,7 @@ interface ImportError {
         <div>
           <div className="mb-2.5 font-ui text-xs text-t2">
             {t("st_scan_results")
-              .replace("{personas}", String(scanResult.personas.length))
+              .replace("{personas}", String(scanResult.personaCount))
               .replace("{characters}", String(scanResult.characters.length))
               .replace("{chats}", String(scanResult.chats.length))
               .replace("{presets}", String(scanResult.presets.length))
@@ -377,7 +393,7 @@ interface ImportError {
           </div>
           <button type="button"
             className="h-[34px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45"
-            disabled={scanResult.characters.length + scanResult.chats.length + scanResult.presets.length + scanResult.personas.length === 0}
+            disabled={scanResult.characters.length + scanResult.chats.length + scanResult.presets.length + scanResult.personaCount === 0}
             onClick={handleImport}
           >
             {t("confirm_import")}
