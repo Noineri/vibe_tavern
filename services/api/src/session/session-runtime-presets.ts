@@ -37,6 +37,7 @@ function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: str
 
 export interface PresetModuleDeps {
   presets: PresetStore;
+  chats: { listByPreset(promptPresetId: string): Promise<{ id: string }[]>; setPromptPreset(chatId: string, promptPresetId: string): Promise<unknown> };
 }
 
 export async function listPromptPresets(deps: PresetModuleDeps): Promise<PromptPresetDto[]> {
@@ -149,14 +150,31 @@ function normalizeBindModel(value: string | undefined): string | null {
 }
 
 export async function deletePromptPreset(deps: PresetModuleDeps, presetId: string): Promise<void> {
+  // Only block if this is the sole global preset (no bindProviderPresetId)
+  // and there's no other global preset to fall back to
+  const presets = await deps.presets.listAll();
+  const globalPresets = presets.filter(p => !p.bindProviderPresetId);
+  const isLastGlobal = globalPresets.length === 1 && globalPresets[0].id === presetId;
+  if (isLastGlobal) {
+    throw conflict("Cannot delete the last default preset.");
+  }
+
+  // Reassign chats that reference this preset to the default preset
+  const chats = await deps.chats.listByPreset?.(presetId);
+  if (chats && chats.length > 0) {
+    const fallback = presets.find((p) => p.id !== presetId && !p.bindProviderPresetId) ?? presets.find((p) => p.id !== presetId);
+    if (fallback) {
+      for (const chat of chats) {
+        await deps.chats.setPromptPreset(chat.id, fallback.id);
+      }
+    }
+  }
+
   try {
     await deps.presets.delete(presetId as PromptPresetId);
   } catch (error) {
     if (isDomainError(error)) throw error;
     const message = error instanceof Error ? error.message : String(error);
-    if (/used by a chat/i.test(message)) {
-      throw conflict(message);
-    }
     if (/not found/i.test(message)) {
       throw notFound("PromptPreset", message);
     }

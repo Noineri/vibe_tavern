@@ -57,7 +57,7 @@ export const chats = sqliteTable('chats', {
   characterId: text('character_id').notNull().references(() => characters.id, { onDelete: 'cascade' }),
   personaId: text('persona_id').references(() => personas.id, { onDelete: 'set null' }),
   activeBranchId: text('active_branch_id').notNull(),
-  promptPresetId: text('prompt_preset_id').notNull().references(() => promptPresets.id),
+  promptPresetId: text('prompt_preset_id').references(() => promptPresets.id, { onDelete: 'set null' }),
   title: text('title').notNull(),
   summary: text('summary').notNull().default(''),
   messageHistoryLimit: integer('message_history_limit').notNull().default(0),
