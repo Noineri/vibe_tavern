@@ -257,12 +257,6 @@ export function PersonaModal(input: PersonaModalProps) {
     setEditingId(null);
   }
 
-  function setActiveAndClose(): void {
-    const persona = input.personas.find((p) => p.id === selectedId) || input.personas[0];
-    if (persona) input.onSetActive(persona.id);
-    onClose();
-  }
-
   function handleAvatarCropConfirm(result: AvatarCropResult): void {
     form.setValue("avatarPreview", pendingAvatar!.url);
     setAvatarUploading(true);
@@ -320,7 +314,7 @@ export function PersonaModal(input: PersonaModalProps) {
 
   // ── Card rendering ──
   const renderCard = (persona: PersonaListItem) => {
-    const isSelected = selectedId === persona.id;
+    const isActive = input.activePersonaId === persona.id;
     const editingThis = editingId === persona.id;
     const avatar = persona.avatarAssetId ? avatarUrl(persona.avatarAssetId) : null;
 
@@ -330,9 +324,9 @@ export function PersonaModal(input: PersonaModalProps) {
         className={cn(
           "group flex cursor-pointer items-start gap-4 rounded-xl border p-4 transition-all duration-200",
           isMobile ? "active:bg-s2" : "hover:bg-s2",
-          isSelected && !isEditing ? "border-accent bg-accent-dim" : "border-transparent",
+          isActive && !isEditing ? "border-accent bg-accent-dim" : "border-transparent",
         )}
-        onClick={() => { if (!isEditing) setSelectedId(persona.id); }}
+        onClick={() => { if (!isEditing) input.onSetActive(persona.id); }}
       >
         {editingThis ? (
           /* ── EDITING ── */
@@ -454,7 +448,7 @@ export function PersonaModal(input: PersonaModalProps) {
               className={cn(
                 "flex shrink-0 items-center justify-center overflow-hidden rounded-full text-base shadow-inner ring-1 ring-white/5",
                 isMobile ? "h-[68px] w-[68px]" : "h-[88px] w-[88px] text-lg",
-                isSelected ? "bg-accent text-white" : "bg-s3 text-t2",
+                isActive ? "bg-accent text-white" : "bg-s3 text-t2",
               )}
             >
               {avatar
@@ -593,10 +587,10 @@ export function PersonaModal(input: PersonaModalProps) {
           {input.personas.map(renderCard)}
         </div>
       </div>
-      {/* Add persona + ST import */}
-      <div className={cn("flex shrink-0 gap-2", isMobile ? "mx-4 mb-2" : "mx-5 mb-2")}>
+      {/* Footer: Create + ST Import */}
+      <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "px-4 py-3" : "px-5 py-3.5")}>
         <div
-          className={cn("flex flex-1 items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[48px] text-[14px]" : "py-3 text-sm")}
+          className={cn("flex flex-1 items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] text-[14px]" : "py-2.5 text-sm")}
           style={{ color: "var(--t2)" }}
           onClick={async () => {
             discardCreatedDraft();
@@ -621,23 +615,14 @@ export function PersonaModal(input: PersonaModalProps) {
           <Icons.Plus /> {t("create_new_persona")}
         </div>
         <CustomTooltip content={t("st_persona_import_hint")}>
-        <button type="button"
-          className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[48px] px-4 text-[14px]" : "h-[48px] px-4 text-sm")}
-          style={{ color: "var(--t2)" }}
-          onClick={() => stFolderRef.current?.click()}
-        >
-          <Icons.Import /> {t("st_import_personas_btn")}
-        </button>
+          <button type="button"
+            className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] px-4 text-[14px]" : "h-[44px] px-4 text-sm")}
+            style={{ color: "var(--t2)" }}
+            onClick={() => stFolderRef.current?.click()}
+          >
+            <Icons.Import /> {t("st_import_personas_btn")}
+          </button>
         </CustomTooltip>
-        <input
-          ref={stFolderRef}
-          className="hidden"
-          type="file"
-          /** @ts-expect-error webkitdirectory is not in React types */
-          webkitdirectory=""
-          directory=""
-          onChange={(e) => void handleStFolderPick(e.target.files)}
-        />
       </div>
       {/* ST persona import preview */}
       {stImportPreview && (
@@ -708,22 +693,16 @@ export function PersonaModal(input: PersonaModalProps) {
           )}
         </div>
       )}
-      {/* Footer */}
-      <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "px-4 py-3" : "px-5 py-3.5")}>
-        <button type="button"
-          className={cn("cursor-pointer rounded-md font-ui font-medium text-t2 transition-all hover:text-t1", isMobile ? "min-h-[44px] flex-1 text-[14px]" : "h-[37px] px-[21px] text-[calc(var(--ui-fs)-2px)]")}
-          onClick={onClose}
-        >
-          {t("cancel_btn")}
-        </button>
-        <button type="button"
-          className={cn("cursor-pointer rounded-md bg-accent font-ui font-medium text-white shadow-lg shadow-accent/20 transition-all hover:brightness-110 active:scale-[0.98]", isMobile ? "min-h-[44px] flex-1 text-[14px]" : "h-[37px] px-[21px] text-[calc(var(--ui-fs)-2px)]")}
-          disabled={!selectedId || isEditing}
-          onClick={setActiveAndClose}
-        >
-          {t("select_as_active")}
-        </button>
-      </div>
+      {/* Hidden folder input for ST import */}
+      <input
+        ref={stFolderRef}
+        className="hidden"
+        type="file"
+        /** @ts-expect-error webkitdirectory is not in React types */
+        webkitdirectory=""
+        directory=""
+        onChange={(e) => void handleStFolderPick(e.target.files)}
+      />
     </>
   );
 
