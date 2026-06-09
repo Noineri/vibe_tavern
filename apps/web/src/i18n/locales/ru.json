@@ -381,7 +381,7 @@
   "st_no_settings_json": "settings.json не найден в выбранной папке.",
   "st_no_personas_found": "Персоны не найдены в settings.json.",
   "st_parse_failed": "Не удалось прочитать settings.json.",
-  "st_persona_preview_title": "Найдено персон: {count}",
+  "st_persona_preview_title": "Выбрано: {count}",
   "st_persona_import_result": "Импортировано персон: {count}.",
   "st_persona_importing": "Импорт {current}/{total}...",
   "st_persona_confirm_import": "Импортировать персоны",
