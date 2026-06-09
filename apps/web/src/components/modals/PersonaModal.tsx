@@ -17,7 +17,7 @@ import { useT } from "../../i18n/context.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { parseStPersonas, type StPersonaEntry } from "../../lib/st-persona-parser.js";
 import { toast } from "sonner";
-import { fetchBootstrapAction } from "../../stores/api-actions/bootstrap-actions.js";
+import { fetchBootstrapAction, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { createPersona, updatePersona } from "../../app-client.js";
 
 interface PersonaListItem {
@@ -81,6 +81,7 @@ export function PersonaModal(input: PersonaModalProps) {
   const [stImporting, setStImporting] = useState(false);
   const [stImportProgress, setStImportProgress] = useState<{ current: number; total: number } | null>(null);
   const stFolderRef = useRef<HTMLInputElement>(null);
+  const stAvatarFiles = useRef<Map<string, File>>(new Map());
 
   // ── Avatar crop modal state ──
   const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
@@ -107,15 +108,25 @@ export function PersonaModal(input: PersonaModalProps) {
   async function handleStFolderPick(files?: FileList | null): Promise<void> {
     if (!files || files.length === 0) return;
 
-    // Find settings.json in the picked folder
+    // Find settings.json and avatar PNGs in the picked folder
     let settingsFile: File | null = null;
+    const avatarMap = new Map<string, File>();
+
     for (const file of Array.from(files)) {
       const rp = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
-      if (rp && rp.endsWith("/settings.json")) {
+      if (!rp) continue;
+
+      if (rp.endsWith("/settings.json")) {
         settingsFile = file;
-        break;
+      }
+      // Match .../User Avatars/<key>.png
+      const parts = rp.split("/");
+      const avIdx = parts.lastIndexOf("User Avatars");
+      if (avIdx >= 0 && file.name.toLowerCase().endsWith(".png")) {
+        avatarMap.set(file.name, file);
       }
     }
+
     if (!settingsFile) {
       toast.error(t("st_no_settings_json"));
       return;
@@ -129,6 +140,7 @@ export function PersonaModal(input: PersonaModalProps) {
         toast.error(t("st_no_personas_found"));
         return;
       }
+      stAvatarFiles.current = avatarMap;
       setStImportPreview(entries);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("st_parse_failed"));
@@ -142,29 +154,52 @@ export function PersonaModal(input: PersonaModalProps) {
 
     let imported = 0;
     let didSetDefault = false;
+    const errors: string[] = [];
     for (let i = 0; i < stImportPreview.length; i++) {
       const entry = stImportPreview[i];
       setStImportProgress({ current: i + 1, total: stImportPreview.length });
       try {
         const shouldSetDefault = entry.isDefault && !didSetDefault;
-        await createPersona({
+        const persona = await createPersona({
           name: entry.name,
           description: entry.description,
           defaultForNewChats: shouldSetDefault ? true : undefined,
         });
         if (shouldSetDefault) didSetDefault = true;
+
+        // Upload avatar if found
+        const avatarFile = stAvatarFiles.current.get(entry.key);
+        if (avatarFile) {
+          try {
+            const asset = await uploadAsset(avatarFile);
+            await updatePersona(persona.id, {
+              name: persona.name,
+              description: persona.description,
+              avatarAssetId: asset.assetId,
+            });
+          } catch {
+            // Avatar upload failure is non-critical
+          }
+        }
+
         imported++;
       } catch (err) {
-        console.warn(`Failed to import persona "${entry.name}":`, err);
+        const reason = err instanceof Error ? err.message : String(err);
+        errors.push(`${entry.name}: ${reason}`);
       }
     }
 
+    stAvatarFiles.current = new Map();
     setStImporting(false);
     setStImportProgress(null);
     setStImportPreview(null);
 
     await fetchBootstrapAction({ silent: true });
+    await fetchPersonasAction();
     toast.success(t("st_persona_import_result").replace("{count}", String(imported)));
+    if (errors.length > 0) {
+      toast.warning(t("st_import_errors").replace("{count}", String(errors.length)));
+    }
   }
 
   function startEdit(persona: PersonaListItem): void {
@@ -580,12 +615,15 @@ export function PersonaModal(input: PersonaModalProps) {
         >
           <Icons.Plus /> {t("create_new_persona")}
         </div>
+        <CustomTooltip content={t("st_persona_import_hint")}>
         <button type="button"
-          className={cn("flex items-center justify-center gap-2 rounded-lg border border-border2 bg-surface font-ui transition-all hover:border-accent hover:text-accent-t", isMobile ? "min-h-[48px] px-4 text-[13px]" : "h-[48px] px-4 text-[calc(var(--ui-fs)-2px)]")}
+          className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[48px] px-4 text-[14px]" : "h-[48px] px-4 text-sm")}
+          style={{ color: "var(--t2)" }}
           onClick={() => stFolderRef.current?.click()}
         >
           <Icons.Import /> {t("st_import_personas_btn")}
         </button>
+        </CustomTooltip>
         <input
           ref={stFolderRef}
           className="hidden"
@@ -623,7 +661,7 @@ export function PersonaModal(input: PersonaModalProps) {
               disabled={stImporting}
               onClick={() => void handleStImport()}
             >
-              {stImporting ? t("importing") : t("confirm_import")}
+              {stImporting ? t("importing") : t("st_persona_confirm_import")}
             </button>
             <button type="button"
               className="h-[34px] cursor-pointer rounded-md px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
