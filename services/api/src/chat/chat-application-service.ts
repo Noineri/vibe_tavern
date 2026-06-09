@@ -52,6 +52,18 @@ export class ChatApplicationService {
       resolvedBranchId = branch.id;
       await this.chatStore.activateBranch(chat.id, branch.id as ChatBranchId);
     }
+    // Defensive: chat with zero branches — auto-create a root branch
+    if (!branch && branches.length === 0) {
+      const { chatBranches } = await import("@vibe-tavern/db");
+      const branchId = this.chatStore["idGen"].next("brnch");
+      const now = new Date().toISOString();
+      await this.chatStore["db"].insert(chatBranches).values({
+        id: branchId, chatId: chat.id, parentBranchId: null, forkedFromMessageId: null, label: "Root", createdAt: now,
+      }).run();
+      await this.chatStore.activateBranch(chat.id, branchId as ChatBranchId);
+      branch = { id: branchId, chatId: chat.id, parentBranchId: null, forkedFromMessageId: null, label: "Root", createdAt: now };
+      resolvedBranchId = branchId;
+    }
     if (!branch) {
       throw notFound("Branch", `Branch '${resolvedBranchId}' was not found for chat '${chat.id}'.`);
     }
