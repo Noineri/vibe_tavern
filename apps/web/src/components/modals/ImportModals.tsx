@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader.js";
-import { importJson, uploadAsset, updateCharacterAvatar, createPersona, updatePersona, createPromptPreset } from "../../app-client.js";
+import { importJson, uploadAsset, updateCharacterAvatar, createPersona, updatePersona, createPromptPreset, createLorebook, importLorebookEntries } from "../../app-client.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
@@ -172,12 +172,13 @@ interface ImportError {
     setImporting(true);
     setImportErrors([]);
 
-    const total = scanResult.personaCount + scanResult.characters.length + scanResult.chats.length + scanResult.presets.length;
+    const total = scanResult.personaCount + scanResult.characters.length + scanResult.chats.length + scanResult.lorebooks.length + scanResult.presets.length;
     let current = 0;
     let importedChars = 0;
     let importedChats = 0;
     let importedPresets = 0;
     let importedPersonas = 0;
+    let importedLorebooks = 0;
     const failedItems: ImportError[] = [];
 
     // Phase 0: Import personas
@@ -292,6 +293,22 @@ interface ImportError {
       }
     }
 
+    // Phase 2.5: Import lorebooks
+    for (const entry of scanResult.lorebooks) {
+      current++;
+      setImportProgress({ current, total });
+      try {
+        const text = await entry.file.text();
+        const data = JSON.parse(text);
+        const lorebookName = entry.file.name.replace(/\.json$/i, "");
+        const lb = await createLorebook({ name: lorebookName, scopeType: "global" });
+        await importLorebookEntries(lb.id, { format: "st", data, mode: "new", scopeType: "global", fallbackName: lorebookName });
+        importedLorebooks++;
+      } catch (err) {
+        failedItems.push({ fileName: entry.file.name, reason: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
     // Phase 3: Import presets
     for (const entry of scanResult.presets) {
       current++;
@@ -350,7 +367,7 @@ interface ImportError {
     const msg = t("st_import_results")
       .replace("{characters}", String(importedChars))
       .replace("{chats}", String(importedChats))
-      .replace("{lorebooks}", String(0))
+      .replace("{lorebooks}", String(importedLorebooks))
       .replace("{presets}", String(importedPresets))
       .replace("{personas}", String(importedPersonas));
     toast.success(msg);
