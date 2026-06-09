@@ -303,8 +303,8 @@ interface ImportError {
         const text = await entry.file.text();
         const data = JSON.parse(text);
         const lorebookName = entry.file.name.replace(/\.json$/i, "");
-        const lb = await createLorebook({ name: lorebookName, scopeType: "global" });
-        await importLorebookEntries(lb.id, { format: "st", data, mode: "new", scopeType: "global", fallbackName: lorebookName });
+        // mode:"new" auto-creates a lorebook; no need to call createLorebook separately
+        await importLorebookEntries("", { format: "st", data, mode: "new", scopeType: "global", fallbackName: lorebookName });
         importedLorebooks++;
       } catch (err) {
         failedItems.push({ fileName: entry.file.name, reason: err instanceof Error ? err.message : String(err) });
