@@ -495,7 +495,7 @@ export function PersonaModal(input: PersonaModalProps) {
                     {!persona.defaultForNewChats && (
                       <>
                         <div
-                          className="flex min-h-[44px] cursor-pointer items-center gap-2 px-4 font-ui text-[14px] text-t2 transition-colors hover:bg-s2 active:bg-s3"
+                          className="flex min-h-[44px] cursor-pointer items-center gap-2.5 px-4 py-1.5 font-ui text-[14px] text-t2 transition-colors hover:bg-s2 active:bg-s3"
                           onClick={(e) => { e.stopPropagation(); input.onSetDefaultPersona(persona.id); setMenuOpenId(null); }}
                         >
                           <Icons.Star /> {t("set_default_persona")}
