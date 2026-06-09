@@ -272,7 +272,7 @@ interface ImportError {
       }
     }
 
-    // Phase 2: Import chats
+    // Phase 2: Import chats (skip if no matching character)
     for (const entry of scanResult.chats) {
       current++;
       setImportProgress({ current, total });
@@ -281,6 +281,8 @@ interface ImportError {
         const chatIdx = parts.indexOf("chats");
         const characterFolder = chatIdx >= 0 && chatIdx + 1 < parts.length ? parts[chatIdx + 1] : "";
         const chatId = nameToChatId.get(characterFolder.toLowerCase());
+
+        if (!chatId) continue; // No matching character — skip silently
 
         const jsonText = await entry.file.text();
         await importJson({ fileName: entry.file.name, jsonText, chatId });
