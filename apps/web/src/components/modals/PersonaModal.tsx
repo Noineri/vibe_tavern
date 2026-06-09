@@ -8,6 +8,7 @@ import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
+import { Checkbox } from "../shared/Checkbox.js";
 import { Modal } from "../shared/Modal.js";
 import { avatarUrl } from "../../lib/avatar.js";
 
@@ -639,19 +640,25 @@ export function PersonaModal(input: PersonaModalProps) {
         <div className={cn("shrink-0 rounded-lg border border-border2 bg-s2 mx-5 mb-2 p-4")}>
           <div className="font-ui text-sm font-medium text-t1 mb-2">{t("st_persona_preview_title").replace("{count}", String(stImportPreview.length))}</div>
           <div className="max-h-[200px] overflow-y-auto space-y-1.5">
-            {stImportPreview.map((entry) => (
+            {stImportPreview.map((entry, idx) => (
               <div key={entry.key} className="flex items-start gap-2 rounded-md bg-surface px-3 py-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-ui text-[13px] font-medium text-t1">{entry.name}</span>
-                    {entry.isDefault && (
-                      <span className="rounded-sm bg-accent/15 px-1.5 py-0.5 font-ui text-[10px] font-medium tracking-wide text-accent-t uppercase">{t("default_persona_badge")}</span>
-                    )}
                   </div>
                   {entry.description && (
                     <div className="font-ui text-[12px] text-t3 line-clamp-2 mt-0.5">{entry.description.slice(0, 120)}{entry.description.length > 120 ? "..." : ""}</div>
                   )}
                 </div>
+                <Checkbox
+                  checked={entry.isDefault}
+                  label={t("default_persona_badge")}
+                  onChange={() => {
+                    if (!stImportPreview) return;
+                    const updated = stImportPreview.map((e, i) => ({ ...e, isDefault: i === idx ? !e.isDefault : false }));
+                    setStImportPreview(updated);
+                  }}
+                />
               </div>
             ))}
           </div>
