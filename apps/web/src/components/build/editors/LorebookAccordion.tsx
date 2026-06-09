@@ -463,6 +463,19 @@ export function LorebookAccordion({
             onEntryClick={onEntryClick}
             onReorder={handleReorderEntries}
           />
+
+          {/* Add entry button */}
+          <button
+            type="button"
+            className="flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent"
+            onClick={onAddEntry}
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8}>
+              <line x1="8" y1="2" x2="8" y2="14" />
+              <line x1="2" y1="8" x2="14" y2="8" />
+            </svg>
+            {t("lore_add_entry")}
+          </button>
         </div>
       )}
     </div>
