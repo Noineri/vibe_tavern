@@ -31,7 +31,7 @@ const WEB_SOURCE = join(ROOT, "out", "apps", "web");
 const WEB_TARGET = join(STANDALONE_OUT, "web");
 
 function exists(path: string): Promise<boolean> {
-	return Bun.file(path).exists();
+	try { const { statSync } = require('node:fs'); return Promise.resolve(!!statSync(path)); } catch { return Promise.resolve(false); }
 }
 
 async function step(label: string, fn: () => Promise<void>) {
