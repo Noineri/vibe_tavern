@@ -996,5 +996,7 @@
   "import_md_reparse": "Re-import",
   "import_md_parsing": "Parsing character data...",
   "ai_param_temperature": "Temperature",
-  "ai_param_max_tokens": "Max Tokens"
+  "ai_param_max_tokens": "Max Tokens",
+  "placeholder_create_character": "Create Character",
+  "placeholder_setup_provider": "Connect Provider"
 }

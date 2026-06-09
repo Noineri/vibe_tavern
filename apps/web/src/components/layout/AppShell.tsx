@@ -138,11 +138,35 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   let shellSurface: React.ReactNode;
 
   if (!hasActiveSnapshot) {
-    shellSurface = (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="scene-note">{isFirstRun ? "" : t("select_character_start_chat")}</div>
-      </div>
-    );
+    if (isFirstRun) {
+      shellSurface = (
+        <div className="flex flex-1 items-center justify-center">
+          <div className="scene-note">{''}</div>
+        </div>
+      );
+    } else {
+      shellSurface = (
+        <div className="flex flex-1 flex-col items-center justify-center gap-4">
+          <div className="font-ui text-[1.1rem] text-t2">{t('select_character_start_chat')}</div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="cursor-pointer rounded-lg border border-border2 bg-s2 px-4 py-2 font-ui text-[0.88rem] font-semibold text-t1 transition-all hover:border-accent hover:bg-surface"
+              onClick={() => setCreateCharacterModalOpen(true)}
+            >
+              {t('placeholder_create_character')}
+            </button>
+            <button
+              type="button"
+              className="cursor-pointer rounded-lg border border-border2 bg-s2 px-4 py-2 font-ui text-[0.88rem] font-semibold text-t1 transition-all hover:border-accent hover:bg-surface"
+              onClick={() => setIsProviderModalOpen(true)}
+            >
+              {t('placeholder_setup_provider')}
+            </button>
+          </div>
+        </div>
+      );
+    }
   } else if (isPlayMode) {
     shellSurface = <PlayMode />;
   } else {
