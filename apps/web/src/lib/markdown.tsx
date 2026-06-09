@@ -63,7 +63,7 @@ function isRoot(node: HastNode): node is HastRoot {
 // ─── Flatten + match + exact wrapping ───
 
 const INLINE_TAGS = new Set(["a", "del", "em", "span", "strong", "sub", "sup"]);
-const QUOTE_RE = /"[^"]*"|“[^”]*”/g;
+const QUOTE_RE = /"[^"]*"|\u201C[^\u201D]*\u201D|\u00AB[^\u00BB]*\u00BB/g;
 
 interface TextRange {
   start: number;

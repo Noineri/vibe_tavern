@@ -23,6 +23,7 @@ interface PersonaListItem {
   pronouns: string | null;
   avatarAssetId: string | null;
   avatarCropJson: string | null;
+  defaultForNewChats: boolean;
 }
 
 interface PersonaModalProps {
@@ -34,6 +35,7 @@ interface PersonaModalProps {
   onCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
   onDuplicatePersona: (personaId: string) => Promise<void>;
   onDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
+  onSetDefaultPersona: (personaId: string) => Promise<void>;
 }
 
 type PersonaFormData = {
@@ -348,7 +350,12 @@ export function PersonaModal(input: PersonaModalProps) {
             </div>
             {/* Info */}
             <div className="min-w-0 flex-1 overflow-hidden py-0.5">
-              <div className="font-ui text-[15px] font-semibold tracking-tight text-t1">{persona.name}</div>
+              <div className="flex items-center gap-2">
+                <div className="font-ui text-[15px] font-semibold tracking-tight text-t1">{persona.name}</div>
+                {persona.defaultForNewChats && (
+                  <span className="rounded-sm bg-accent/15 px-1.5 py-0.5 font-ui text-[10px] font-medium tracking-wide text-accent-t uppercase">{t("default_persona_badge")}</span>
+                )}
+              </div>
               {persona.pronouns && (
                 <div className="font-ui text-[13px] text-t3">{persona.pronouns}</div>
               )}
@@ -375,6 +382,17 @@ export function PersonaModal(input: PersonaModalProps) {
                 <>
                   <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setMenuOpenId(null); }} />
                   <div className="absolute right-0 top-full z-20 mt-1 min-w-[160px] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg" onClick={(e) => e.stopPropagation()}>
+                    {!persona.defaultForNewChats && (
+                      <>
+                        <div
+                          className="flex min-h-[44px] cursor-pointer items-center gap-2 px-4 font-ui text-[14px] text-t2 transition-colors hover:bg-s2 active:bg-s3"
+                          onClick={(e) => { e.stopPropagation(); input.onSetDefaultPersona(persona.id); setMenuOpenId(null); }}
+                        >
+                          <Icons.Star /> {t("set_default_persona")}
+                        </div>
+                        <div className="mx-3 my-1 border-t border-border" />
+                      </>
+                    )}
                     <div
                       className="flex min-h-[44px] cursor-pointer items-center gap-2 px-4 font-ui text-[14px] text-t2 transition-colors hover:bg-s2 active:bg-s3"
                       onClick={(e) => { e.stopPropagation(); input.onDuplicatePersona(persona.id); setMenuOpenId(null); }}

@@ -36,6 +36,7 @@ export class PersonaRuntime {
 		avatarAssetId: string | null;
 		avatarFullAssetId: string | null;
 		avatarCropJson: string | null;
+		defaultForNewChats: boolean;
 	}>> {
 		const personas = await this.deps.stores.personas.listAll();
 		return personas.map((p) => ({
@@ -46,6 +47,7 @@ export class PersonaRuntime {
 			avatarAssetId: p.avatarAssetId,
 			avatarFullAssetId: p.avatarFullAssetId,
 			avatarCropJson: p.avatarCropJson,
+			defaultForNewChats: p.defaultForNewChats,
 		}));
 	}
 
@@ -62,6 +64,7 @@ export class PersonaRuntime {
 		avatarAssetId: string | null;
 		avatarFullAssetId: string | null;
 		avatarCropJson: string | null;
+		defaultForNewChats: boolean;
 	}> {
 		const trimmedName = (input.name ?? "").trim();
 		const trimmedDescription = (input.description ?? "").trim();
@@ -82,7 +85,16 @@ export class PersonaRuntime {
 			avatarAssetId: persona.avatarAssetId,
 			avatarFullAssetId: persona.avatarFullAssetId,
 			avatarCropJson: persona.avatarCropJson,
+			defaultForNewChats: persona.defaultForNewChats,
 		};
+	}
+
+	async setDefault(personaId: string): Promise<void> {
+		const persona = await this.deps.stores.personas.getById(brandId<PersonaId>(personaId));
+		if (!persona) {
+			throw notFound("Persona", `Persona '${personaId}' was not found.`);
+		}
+		await this.deps.stores.personas.setDefault(personaId);
 	}
 
 	async delete(personaId: string): Promise<void> {
@@ -200,6 +212,7 @@ export class PersonaRuntime {
 		pronouns: string | null;
 		avatarAssetId: string | null;
 		avatarFullAssetId: string | null;
+		defaultForNewChats: boolean;
 	}> {
 		const source = await this.deps.stores.personas.getById(brandId<PersonaId>(personaId));
 		if (!source) {
@@ -275,6 +288,7 @@ export class PersonaRuntime {
 			pronouns: persona.pronouns,
 			avatarAssetId: persona.avatarAssetId,
 			avatarFullAssetId: persona.avatarFullAssetId,
+			defaultForNewChats: persona.defaultForNewChats,
 		};
 	}
 }

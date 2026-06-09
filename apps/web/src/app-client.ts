@@ -33,6 +33,7 @@ export interface PersonaRecord {
   pronouns: string | null;
   avatarAssetId: string | null;
   avatarCropJson: string | null;
+  defaultForNewChats: boolean;
 }
 
 export interface UiSettingsRecord {
@@ -419,6 +420,10 @@ export async function deletePersona(personaId: string): Promise<void> {
 export async function duplicatePersona(personaId: string): Promise<PersonaRecord> {
   const response = await client.api.personas[":personaId"].duplicate.$post({ param: { personaId } });
   return unwrapRpc<PersonaRecord>(response);
+}
+
+export async function setDefaultPersona(personaId: string): Promise<void> {
+  await client.api.personas[":personaId"]["set-default"].$post({ param: { personaId } });
 }
 
 export async function duplicateCharacter(characterId: string): Promise<ImportJsonResponse> {

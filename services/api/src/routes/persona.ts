@@ -33,5 +33,9 @@ export function createPersonaRoutes(runtime: RuntimeApi) {
     .post("/api/personas/:personaId/duplicate", async (c) => {
       return c.json(await runtime.duplicatePersona(c.req.param("personaId")), 201);
     })
+    .post("/api/personas/:personaId/set-default", async (c) => {
+      await runtime.setDefaultPersona(c.req.param("personaId"));
+      return c.body(null, 204);
+    })
   ;
 }

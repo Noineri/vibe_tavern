@@ -189,6 +189,9 @@ export class RuntimeApiAdapter {
 	duplicatePersona = (personaId: string) =>
 		this.sessionRuntime.persona.duplicate(personaId);
 
+	setDefaultPersona = (personaId: string) =>
+		this.sessionRuntime.persona.setDefault(personaId);
+
 	setChatPersona = (chatId: string, personaId: string) =>
 		this.sessionRuntime.persona.setChatPersona(brandId<ChatId>(chatId), personaId);
 

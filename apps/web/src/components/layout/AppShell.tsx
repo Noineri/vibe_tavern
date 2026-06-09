@@ -286,6 +286,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         onSetActive={(personaId) => void character.handleSetChatPersona(personaId)}
         onCreatePersona={character.handleCreatePersona} onDeletePersona={character.handleDeletePersona}
         onDuplicatePersona={character.handleDuplicatePersona}
+        onSetDefaultPersona={character.handleSetDefaultPersona}
       />
 
       {isCreateCharacterModalOpen && (
