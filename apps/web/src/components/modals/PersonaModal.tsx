@@ -15,6 +15,10 @@ import { uploadAsset } from "../../app-client.js";
 import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useT } from "../../i18n/context.js";
 import { useModalStore } from "../../stores/modal-store.js";
+import { parseStPersonas, type StPersonaEntry } from "../../lib/st-persona-parser.js";
+import { toast } from "sonner";
+import { fetchBootstrapAction } from "../../stores/api-actions/bootstrap-actions.js";
+import { createPersona, updatePersona } from "../../app-client.js";
 
 interface PersonaListItem {
   id: string;
@@ -72,6 +76,12 @@ export function PersonaModal(input: PersonaModalProps) {
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; error: string } | null>(null);
   const isMobile = useIsMobile();
 
+  // ── ST persona import state ──
+  const [stImportPreview, setStImportPreview] = useState<StPersonaEntry[] | null>(null);
+  const [stImporting, setStImporting] = useState(false);
+  const [stImportProgress, setStImportProgress] = useState<{ current: number; total: number } | null>(null);
+  const stFolderRef = useRef<HTMLInputElement>(null);
+
   // ── Avatar crop modal state ──
   const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
 
@@ -92,6 +102,70 @@ export function PersonaModal(input: PersonaModalProps) {
 
   const isEditing = editingId !== null;
   const isLastPersona = input.personas.length <= 1;
+
+  // ── ST persona import functions ──
+  async function handleStFolderPick(files?: FileList | null): Promise<void> {
+    if (!files || files.length === 0) return;
+
+    // Find settings.json in the picked folder
+    let settingsFile: File | null = null;
+    for (const file of Array.from(files)) {
+      const rp = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
+      if (rp && rp.endsWith("/settings.json")) {
+        settingsFile = file;
+        break;
+      }
+    }
+    if (!settingsFile) {
+      toast.error(t("st_no_settings_json"));
+      return;
+    }
+
+    try {
+      const text = await settingsFile.text();
+      const parsed = JSON.parse(text);
+      const entries = parseStPersonas(parsed);
+      if (entries.length === 0) {
+        toast.error(t("st_no_personas_found"));
+        return;
+      }
+      setStImportPreview(entries);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("st_parse_failed"));
+    }
+  }
+
+  async function handleStImport(): Promise<void> {
+    if (!stImportPreview || stImportPreview.length === 0) return;
+    setStImporting(true);
+    setStImportProgress({ current: 0, total: stImportPreview.length });
+
+    let imported = 0;
+    let didSetDefault = false;
+    for (let i = 0; i < stImportPreview.length; i++) {
+      const entry = stImportPreview[i];
+      setStImportProgress({ current: i + 1, total: stImportPreview.length });
+      try {
+        const shouldSetDefault = entry.isDefault && !didSetDefault;
+        await createPersona({
+          name: entry.name,
+          description: entry.description,
+          defaultForNewChats: shouldSetDefault ? true : undefined,
+        });
+        if (shouldSetDefault) didSetDefault = true;
+        imported++;
+      } catch (err) {
+        console.warn(`Failed to import persona "${entry.name}":`, err);
+      }
+    }
+
+    setStImporting(false);
+    setStImportProgress(null);
+    setStImportPreview(null);
+
+    await fetchBootstrapAction({ silent: true });
+    toast.success(t("st_persona_import_result").replace("{count}", String(imported)));
+  }
 
   function startEdit(persona: PersonaListItem): void {
     setEditingId(persona.id);
@@ -479,32 +553,101 @@ export function PersonaModal(input: PersonaModalProps) {
           {input.personas.map(renderCard)}
         </div>
       </div>
-      {/* Add persona */}
-      <div
-        className={cn("flex shrink-0 items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "mx-4 mb-2 min-h-[48px] text-[14px]" : "mx-5 mb-2 py-3 text-sm")}
-        style={{ color: "var(--t2)" }}
-        onClick={async () => {
-          discardCreatedDraft();
-          const created = await input.onCreatePersona({ name: t("new_persona_default"), description: "" });
-          if (created) {
-            setCreatedDraftPersonaId(created.id);
-            setSelectedId(created.id);
-            setEditingId(created.id);
-            form.reset({
-              name: t("new_persona_default"),
-              description: "",
-              pronouns: "",
-              pronounsCustom: "",
-              avatarAssetId: null,
-              avatarFullAssetId: null,
-              avatarCropJson: null,
-              avatarPreview: null,
-            });
-          }
-        }}
-      >
-        <Icons.Plus /> {t("create_new_persona")}
+      {/* Add persona + ST import */}
+      <div className={cn("flex shrink-0 gap-2", isMobile ? "mx-4 mb-2" : "mx-5 mb-2")}>
+        <div
+          className={cn("flex flex-1 items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[48px] text-[14px]" : "py-3 text-sm")}
+          style={{ color: "var(--t2)" }}
+          onClick={async () => {
+            discardCreatedDraft();
+            const created = await input.onCreatePersona({ name: t("new_persona_default"), description: "" });
+            if (created) {
+              setCreatedDraftPersonaId(created.id);
+              setSelectedId(created.id);
+              setEditingId(created.id);
+              form.reset({
+                name: t("new_persona_default"),
+                description: "",
+                pronouns: "",
+                pronounsCustom: "",
+                avatarAssetId: null,
+                avatarFullAssetId: null,
+                avatarCropJson: null,
+                avatarPreview: null,
+              });
+            }
+          }}
+        >
+          <Icons.Plus /> {t("create_new_persona")}
+        </div>
+        <button type="button"
+          className={cn("flex items-center justify-center gap-2 rounded-lg border border-border2 bg-surface font-ui transition-all hover:border-accent hover:text-accent-t", isMobile ? "min-h-[48px] px-4 text-[13px]" : "h-[48px] px-4 text-[calc(var(--ui-fs)-2px)]")}
+          onClick={() => stFolderRef.current?.click()}
+        >
+          <Icons.Import /> {t("st_import_personas_btn")}
+        </button>
+        <input
+          ref={stFolderRef}
+          className="hidden"
+          type="file"
+          /** @ts-expect-error webkitdirectory is not in React types */
+          webkitdirectory=""
+          directory=""
+          onChange={(e) => void handleStFolderPick(e.target.files)}
+        />
       </div>
+      {/* ST persona import preview */}
+      {stImportPreview && (
+        <div className={cn("shrink-0 rounded-lg border border-border2 bg-s2 mx-5 mb-2 p-4")}>
+          <div className="font-ui text-sm font-medium text-t1 mb-2">{t("st_persona_preview_title").replace("{count}", String(stImportPreview.length))}</div>
+          <div className="max-h-[200px] overflow-y-auto space-y-1.5">
+            {stImportPreview.map((entry) => (
+              <div key={entry.key} className="flex items-start gap-2 rounded-md bg-surface px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-ui text-[13px] font-medium text-t1">{entry.name}</span>
+                    {entry.isDefault && (
+                      <span className="rounded-sm bg-accent/15 px-1.5 py-0.5 font-ui text-[10px] font-medium tracking-wide text-accent-t uppercase">{t("default_persona_badge")}</span>
+                    )}
+                  </div>
+                  {entry.description && (
+                    <div className="font-ui text-[12px] text-t3 line-clamp-2 mt-0.5">{entry.description.slice(0, 120)}{entry.description.length > 120 ? "..." : ""}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button type="button"
+              className="h-[34px] cursor-pointer rounded-md bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:opacity-45"
+              disabled={stImporting}
+              onClick={() => void handleStImport()}
+            >
+              {stImporting ? t("importing") : t("confirm_import")}
+            </button>
+            <button type="button"
+              className="h-[34px] cursor-pointer rounded-md px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
+              onClick={() => setStImportPreview(null)}
+              disabled={stImporting}
+            >
+              {t("cancel_btn")}
+            </button>
+          </div>
+          {stImporting && stImportProgress && (
+            <div className="mt-2">
+              <div className="h-1.5 overflow-hidden rounded-full bg-s3">
+                <div
+                  className="h-full rounded-full bg-accent transition-all"
+                  style={{ width: `${(stImportProgress.current / stImportProgress.total) * 100}%` }}
+                />
+              </div>
+              <div className="mt-1 font-ui text-[11px] text-t3">
+                {t("st_persona_importing").replace("{current}", String(stImportProgress.current)).replace("{total}", String(stImportProgress.total))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {/* Footer */}
       <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "px-4 py-3" : "px-5 py-3.5")}>
         <button type="button"
