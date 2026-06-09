@@ -13,10 +13,11 @@
 import { resolveStandalonePaths } from "./standalone-paths.js";
 import { startServerRuntime } from "./server-runtime.js";
 
-const paths = await resolveStandalonePaths();
-const host = process.env.RP_PLATFORM_HOST ?? "0.0.0.0";
+async function main() {
+  const paths = await resolveStandalonePaths();
+  const host = process.env.RP_PLATFORM_HOST ?? "0.0.0.0";
 
-startServerRuntime({
+  startServerRuntime({
 	mode: "standalone",
 	dataDir: paths.dataDir,
 	assetsDir: paths.assetsDir,
@@ -32,3 +33,6 @@ startServerRuntime({
 	console.error("[standalone] Fatal error:", err);
 	process.exit(1);
 });
+}
+
+main();
