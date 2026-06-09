@@ -22,7 +22,7 @@ export interface Chat {
   status: 'active' | 'archived';
   selectedGreetingIndex: number;
   activeBranchId: string;
-  promptPresetId: string;
+  promptPresetId: string | null;
   lastAccessedAt: string;
   loreActivationState: Record<string, unknown>;
   scriptState: Record<string, Record<string, unknown>>;
@@ -147,7 +147,7 @@ export class ChatStore {
     characterId: string;
     personaId?: string;
     title: string;
-    promptPresetId: string;
+    promptPresetId: string | null;
   }): Promise<Chat> {
     const chatId = this.idGen.next('chat');
     const branchId = this.idGen.next('brnch');
@@ -199,6 +199,15 @@ export class ChatStore {
       .select()
       .from(chats)
       .where(eq(chats.characterId, characterId))
+      .all();
+    return rows.map((row) => this.mapRow(row));
+  }
+
+  async listByPreset(promptPresetId: string): Promise<Chat[]> {
+    const rows = await this.db
+      .select()
+      .from(chats)
+      .where(eq(chats.promptPresetId, promptPresetId))
       .all();
     return rows.map((row) => this.mapRow(row));
   }

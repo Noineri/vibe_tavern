@@ -146,7 +146,9 @@ export class PromptAssemblyService {
     const allPersonas = await this.stores.personas.listAll();
     const effectivePersonaId = chat.personaId ?? allPersonas.find(p => p.defaultForNewChats)?.id ?? allPersonas[0]?.id ?? "";
     const persona = await this.resolver.getPersona(effectivePersonaId);
-    const promptPreset = await this.resolver.getPromptPreset(chat.promptPresetId);
+    const promptPresetId = chat.promptPresetId
+      ?? (await this.stores.presets.listAll()).find(p => !p.bindProviderPresetId)?.id;
+    const promptPreset = promptPresetId ? await this.resolver.getPromptPreset(promptPresetId) : null;
 
     logSendDebug("prompt.assemble.context", {
       chatId: chat.id as ChatId,
@@ -329,7 +331,7 @@ export class PromptAssemblyService {
         chatId: chat.id as ChatId,
         branchId: branchId as ChatBranchId,
         model: input.model,
-        presetName: promptPreset?.name ?? chat.promptPresetId,
+        presetName: promptPreset?.name ?? chat.promptPresetId ?? "(none)",
         assembledLayers: result.layers.map((layer) => mapPromptLayerDto(layer)),
         tokenAccounting: {
           total: result.totalTokenEstimate,

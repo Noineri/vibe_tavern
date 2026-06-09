@@ -277,7 +277,7 @@ export async function createTestServer(): Promise<TestServer> {
   setTokenCountFn(countTokens);
 
   const providerProfileService = createProviderProfileService(stores.providers);
-  const promptPresetService = new PromptPresetService(stores.presets);
+  const promptPresetService = new PromptPresetService(stores.presets, stores.chats);
   const sessionRuntime = new SessionRuntime(stores, {
     getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
   });

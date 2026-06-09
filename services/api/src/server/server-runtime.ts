@@ -84,7 +84,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 
 	// Services
 	const providerProfileService = createProviderProfileService(stores.providers);
-	const promptPresetService = new PromptPresetService(stores.presets);
+	const promptPresetService = new PromptPresetService(stores.presets, stores.chats);
 	const sessionRuntime = new SessionRuntime(stores, {
 		getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
 		dataDir: config.dataDir,

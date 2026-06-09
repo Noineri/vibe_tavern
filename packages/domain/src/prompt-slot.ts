@@ -37,7 +37,13 @@ export function migrateInjection(inj: CustomInjection): CustomInjection & { slot
     slot: {
       zone,
       depth,
-      order: inj.injectionOrder ?? inj.promptOrderIndex ?? 0,
+      // Relative blocks (pos=0): promptOrderIndex is the real ordering from the
+      // ST prompt_order array. Absolute blocks (pos=1): injectionOrder matters.
+      // ST presets often set injectionOrder=100 for all relative blocks, so we
+      // must prefer promptOrderIndex when available for relative-position blocks.
+      order: isAbsolute
+        ? (inj.injectionOrder ?? inj.promptOrderIndex ?? 0)
+        : (inj.promptOrderIndex ?? inj.injectionOrder ?? 0),
     },
   };
 }

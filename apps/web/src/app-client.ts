@@ -278,11 +278,16 @@ type RpcResponse = { ok: boolean; status: number; json(): Promise<unknown>; text
 
 async function unwrapRpc<T>(response: RpcResponse): Promise<T> {
   if (!response.ok) {
-    const errorBody = await response.json().catch(() => null) as { error?: string | { message?: string } } | null;
-    const error = errorBody?.error;
-    throw new Error(typeof error === "string" ? error : error?.message || `Request failed: ${response.status}`);
+    throw await unwrapError(response);
   }
   return response.json() as Promise<T>;
+}
+
+async function unwrapError(response: RpcResponse): Promise<Error> {
+  const errorBody = await response.json().catch(() => null) as { error?: string | { message?: string } } | null;
+  const error = errorBody?.error;
+  const message = typeof error === "string" ? error : error?.message || `Request failed: ${response.status}`;
+  return new Error(message);
 }
 
 export async function bootstrapApp(): Promise<{
@@ -408,10 +413,7 @@ export async function createPersona(input: {
 
 export async function deletePersona(personaId: string): Promise<void> {
   const response = await client.api.personas[":personaId"].$delete({ param: { personaId } });
-  if (!response.ok) {
-    const errorBody = await response.json() as { error?: string };
-    throw new Error(errorBody?.error || `Request failed: ${response.status}`);
-  }
+  if (!response.ok) throw await unwrapError(response);
 }
 
 export async function duplicatePersona(personaId: string): Promise<PersonaRecord> {
@@ -464,10 +466,7 @@ export async function updatePromptPreset(
 
 export async function deletePromptPreset(presetId: string): Promise<void> {
   const response = await client.api["prompt-presets"][":presetId"].$delete({ param: { presetId } });
-  if (!response.ok) {
-    const errorBody = await response.json() as { error?: string };
-    throw new Error(errorBody?.error || `Request failed: ${response.status}`);
-  }
+  if (!response.ok) throw await unwrapError(response);
 }
 
 export async function getPersonalLorebookStatus(personaId: string): Promise<{ enabled: boolean; lorebookId: string | null }> {
@@ -1006,10 +1005,7 @@ export async function updateLoreEntry(lorebookId: string, entryId: string, entry
 
 export async function deleteLoreEntry(lorebookId: string, entryId: string): Promise<void> {
   const response = await client.api.lorebooks[":lorebookId"].entries[":entryId"].$delete({ param: { lorebookId, entryId } });
-  if (!response.ok) {
-    const errorBody = await response.json() as { error?: string };
-    throw new Error(errorBody?.error || `Request failed: ${response.status}`);
-  }
+  if (!response.ok) throw await unwrapError(response);
 }
 
 export async function reorderLoreEntries(lorebookId: string, updates: Array<{ id: string; sortOrder: number; position?: string }>): Promise<LoreEntryRecord[]> {
@@ -1047,10 +1043,7 @@ export async function updateLorebookMeta(lorebookId: string, body: { name?: stri
 
 export async function deleteLorebook(lorebookId: string): Promise<void> {
   const response = await client.api.lorebooks[":lorebookId"].$delete({ param: { lorebookId } });
-  if (!response.ok) {
-    const errorBody = await response.json() as { error?: string };
-    throw new Error(errorBody?.error || `Request failed: ${response.status}`);
-  }
+  if (!response.ok) throw await unwrapError(response);
 }
 
 export async function getLorebookLinks(lorebookId: string): Promise<LorebookLinkRecord[]> {
@@ -1110,10 +1103,7 @@ export async function updateScript(scriptId: string, body: { name?: string; desc
 
 export async function deleteScript(scriptId: string): Promise<void> {
   const response = await client.api.scripts[":scriptId"].$delete({ param: { scriptId } });
-  if (!response.ok) {
-    const errorBody = await response.json() as { error?: string };
-    throw new Error(errorBody?.error || `Request failed: ${response.status}`);
-  }
+  if (!response.ok) throw await unwrapError(response);
 }
 
 export async function testScript(scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }): Promise<{ personality: string; scenario: string; state: Record<string, unknown>; errors: string[] }> {
@@ -1224,18 +1214,12 @@ export async function unarchiveCharacter(characterId: string): Promise<{ charact
 
 export async function deleteCharacter(characterId: string): Promise<void> {
   const response = await client.api.characters[":characterId"].$delete({ param: { characterId } });
-  if (!response.ok) {
-    const errorBody = await response.json() as { error?: string };
-    throw new Error(errorBody?.error || `Request failed: ${response.status}`);
-  }
+  if (!response.ok) throw await unwrapError(response);
 }
 
 export async function deleteChat(chatId: ChatId): Promise<void> {
   const response = await client.api.chats[":chatId"].$delete({ param: { chatId } });
-  if (!response.ok) {
-    const errorBody = await response.json() as { error?: string };
-    throw new Error(errorBody?.error || `Request failed: ${response.status}`);
-  }
+  if (!response.ok) throw await unwrapError(response);
 }
 
 export async function clearChat(chatId: ChatId): Promise<AppSnapshot> {

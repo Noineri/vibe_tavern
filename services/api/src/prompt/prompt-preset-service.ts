@@ -9,10 +9,13 @@ import {
 } from "../session/session-runtime-presets.js";
 
 export class PromptPresetService {
-  constructor(private readonly presets: PresetStore) {}
+  constructor(
+    private readonly presets: PresetStore,
+    private readonly chats: { listByPreset(promptPresetId: string): Promise<{ id: string }[]>; setPromptPreset(chatId: string, promptPresetId: string): Promise<unknown> },
+  ) {}
 
   private get deps(): PresetModuleDeps {
-    return { presets: this.presets };
+    return { presets: this.presets, chats: this.chats };
   }
 
   async listPromptPresets(): Promise<PromptPresetDto[]> {
