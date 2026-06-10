@@ -1004,6 +1004,7 @@
   "wizard_path_a_sub": "Подключить AI-провайдера, создать персону, добавить персонажа",
   "wizard_path_b_title": "Переезд из SillyTavern",
   "wizard_path_b_sub": "Импорт персонажей, чатов, лорбуков, пресетов и персон",
+  "wizard_skip_all": "Продолжить без настройки",
   "wizard_step_provider": "Подключите AI",
   "wizard_step_persona": "Кто вы?",
   "wizard_step_character": "С кем хотите поговорить?",

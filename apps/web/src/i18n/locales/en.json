@@ -1004,6 +1004,7 @@
   "wizard_path_a_sub": "Connect AI provider, create persona, add character",
   "wizard_path_b_title": "Migrate from SillyTavern",
   "wizard_path_b_sub": "Import characters, chats, lorebooks, presets and personas",
+  "wizard_skip_all": "Continue without setup",
   "wizard_step_provider": "Connect AI",
   "wizard_step_persona": "Who are you?",
   "wizard_step_character": "Who do you want to talk to?",
