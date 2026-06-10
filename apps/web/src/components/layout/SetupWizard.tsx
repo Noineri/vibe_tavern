@@ -3,7 +3,7 @@
  *   Path A: "Начать настройку" (provider → persona → character)
  *   Path B: "Переезд из SillyTavern" (ST bulk import → provider)
  */
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
@@ -422,13 +422,15 @@ function StMigrationStep({ onImported }: { onImported: () => void }) {
 }
 
 // ── Main wizard ──
-export function SetupWizard() {
+export function SetupWizard({ onVisibilityChange }: { onVisibilityChange?: (v: boolean) => void }) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const bootstrapData = useBootstrapStore((s) => s.data);
   const bootstrapFirstRun = (bootstrapData?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === "true";
   const [dismissed, setDismissed] = useState(false);
   const isFirstRun = bootstrapFirstRun && !dismissed;
+
+  useEffect(() => { onVisibilityChange?.(isFirstRun); }, [isFirstRun, onVisibilityChange]);
 
   const [path, setPath] = useState<WizardPath>("choose");
   const [stepA, setStepA] = useState<PathAStep>(1);
