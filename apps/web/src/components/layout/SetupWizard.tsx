@@ -19,6 +19,7 @@ import { Icons, Ic } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
 import { updatePersona, createPersona } from "../../app-client.js";
 import { toast } from "sonner";
+import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader.js";
 
 type WizardPath = "choose" | "a" | "b" | "skip";
 type PathAStep = 1 | 2 | 3;
@@ -455,6 +456,39 @@ function PersonaStep({
   );
 }
 
+interface WizardCharacterPreview {
+  file: File;
+  name: string;
+  description: string;
+  tags: string[];
+  avatarUrl: string | null;
+}
+
+function normalizeWizardCharacterPreview(raw: unknown, file: File): Omit<WizardCharacterPreview, "file" | "avatarUrl"> {
+  const obj = wizardAsRecord(raw);
+  const data = wizardAsRecord(obj.data) ?? obj;
+  const name = wizardString(data.name) || wizardString(obj.name) || wizardString(data.char_name) || wizardString(obj.char_name) || file.name.replace(/\.[^/.]+$/, "");
+  const description = wizardString(data.description) || wizardString(data.personality) || wizardString(data.char_persona) || wizardString(obj.description) || "";
+  const tags = wizardArrayOfStrings(data.tags) ?? wizardArrayOfStrings(obj.tags) ?? [];
+  return { name, description, tags };
+}
+
+function wizardAsRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+function wizardString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function wizardArrayOfStrings(value: unknown): string[] | null {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : null;
+}
+
+function wizardInitial(value: string): string {
+  return value.trim().charAt(0).toUpperCase() || "?";
+}
+
 // ── Path A, Step 3: Character ──
 function CharacterStep({
   onComplete,
@@ -470,7 +504,45 @@ function CharacterStep({
   const [desc, setDesc] = useState("");
   const [firstMsg, setFirstMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [parsingCard, setParsingCard] = useState(false);
+  const [cardPreview, setCardPreview] = useState<WizardCharacterPreview | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => () => {
+    if (cardPreview?.avatarUrl) URL.revokeObjectURL(cardPreview.avatarUrl);
+  }, [cardPreview?.avatarUrl]);
+
+  async function processCharacterCard(file?: File | null): Promise<void> {
+    if (!file) return;
+    setParsingCard(true);
+    setCardPreview((current) => {
+      if (current?.avatarUrl) URL.revokeObjectURL(current.avatarUrl);
+      return null;
+    });
+    try {
+      const lowerName = file.name.toLowerCase();
+      const raw = lowerName.endsWith(".png") || file.type === "image/png"
+        ? parseCharacterMetadata(await extractPngMetadata(file))
+        : JSON.parse(await file.text());
+      const data = normalizeWizardCharacterPreview(raw, file);
+      setCardPreview({ ...data, file, avatarUrl: lowerName.endsWith(".png") || file.type === "image/png" ? URL.createObjectURL(file) : null });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("import_error_read_card"));
+    } finally {
+      setParsingCard(false);
+    }
+  }
+
+  async function handleImportPreview() {
+    if (!cardPreview) return;
+    setBusy(true);
+    try {
+      await character.handleImportFiles([cardPreview.file]);
+      onComplete();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleCreate() {
     if (!name.trim()) return;
@@ -526,23 +598,49 @@ function CharacterStep({
       {/* Import card */}
       <button
         type="button"
-        className="flex items-center gap-2 rounded-lg border border-dashed border-border2 bg-transparent px-4 py-3 font-ui text-[0.85rem] text-t3 transition-all hover:border-accent hover:text-accent"
+        className="flex items-center gap-2 rounded-lg border border-dashed border-border2 bg-transparent px-4 py-3 font-ui text-[0.85rem] text-t3 transition-all hover:border-accent hover:text-accent disabled:opacity-50"
+        disabled={parsingCard || busy}
         onClick={() => fileRef.current?.click()}
       >
-        <Icons.Import /> {t("ws_import")}
+        <Icons.Import /> {cardPreview ? t("ws_import") : t("ws_import")}
       </button>
       <input
         ref={fileRef}
         type="file"
-        accept=".png,.json"
+        accept=".png,.json,image/png,application/json"
         className="hidden"
         onChange={(e) => {
-          if (e.target.files && e.target.files.length > 0) {
-            character.handleImportFiles(e.target.files);
-            onComplete();
-          }
+          const file = e.target.files?.[0];
+          e.currentTarget.value = "";
+          void processCharacterCard(file);
         }}
       />
+
+      {parsingCard && (
+        <div className="rounded-lg border border-border bg-s2 px-4 py-3 font-ui text-[0.85rem] text-t2">
+          {t("analyzing_metadata")}
+        </div>
+      )}
+
+      {cardPreview && !parsingCard && (
+        <div>
+          <div className="flex gap-4 rounded-lg border border-border bg-s2 p-4">
+            {cardPreview.avatarUrl ? (
+              <img src={cardPreview.avatarUrl} className="h-16 w-16 shrink-0 rounded-lg bg-s3 object-cover object-top" alt="" />
+            ) : (
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-s3 font-body text-2xl italic text-t3">{wizardInitial(cardPreview.name)}</div>
+            )}
+            <div className="min-w-0 flex-1 font-ui">
+              <div className="mb-1 text-base font-medium text-t1">{cardPreview.name}</div>
+              <div className="line-clamp-3 mb-2.5 text-xs leading-relaxed text-t3">{cardPreview.description || t("no_description")}</div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {cardPreview.tags.slice(0, 6).map((tag) => <span key={tag} className="rounded bg-s3 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t2">{tag}</span>)}
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 font-ui text-xs text-t3">{t("ready_to_import").replace("{name}", cardPreview.file.name)}</div>
+        </div>
+      )}
 
       <div className="flex items-center justify-between pt-2">
         <button
@@ -555,10 +653,10 @@ function CharacterStep({
         <button
           type="button"
           className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
-          disabled={!name.trim() || busy}
-          onClick={() => void handleCreate()}
+          disabled={cardPreview ? busy : (!name.trim() || busy)}
+          onClick={() => cardPreview ? void handleImportPreview() : void handleCreate()}
         >
-          {busy ? t("ws_creating") : t("ws_create_btn")}
+          {busy ? (cardPreview ? t("importing") : t("ws_creating")) : (cardPreview ? t("add_to_library") : t("ws_create_btn"))}
         </button>
       </div>
     </div>
