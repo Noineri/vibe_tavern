@@ -172,6 +172,20 @@ function ProviderStep({
     }
   }
 
+  async function handleTestChat() {
+    setTestingChat(true);
+    setChatResult(null);
+    try {
+      const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
+      const result = await provider.handleTestChat(null, form.baseUrl.trim(), form.apiKey.trim(), form.model.trim(), preset?.type);
+      setChatResult(result);
+    } catch (e) {
+      setChatResult({ error: e instanceof Error ? e.message : "Failed" });
+    } finally {
+      setTestingChat(false);
+    }
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -204,10 +218,10 @@ function ProviderStep({
         applyPreset={applyPreset}
         testOk={testOk}
         testing={testing}
-        testingChat={false}
-        chatResult={null}
+        testingChat={testingChat}
+        chatResult={chatResult}
         onTest={handleTest}
-        onTestChat={() => {}}
+        onTestChat={handleTestChat}
       />
       {/* Show test button when ProviderForm hides it (no model selected yet) */}
       {!testOk && form.apiKey && form.baseUrl && (
@@ -565,7 +579,7 @@ export function SetupWizard({ onVisibilityChange }: { onVisibilityChange?: (v: b
 
   return (
     <Modal open={true} onClose={handleComplete}>
-      <div className={cn("flex max-h-[calc(100vh-40px)] max-w-[calc(100vw-32px)] flex-col rounded-xl border border-border2 bg-surface shadow-theme-lg", path === "choose" ? "min-w-[360px] w-auto" : "w-[600px]")}>
+      <div className={cn("flex max-h-[calc(100vh-40px)] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-theme-lg", path === "choose" ? "min-w-[360px] w-auto" : "w-[600px]")}>
         {header}
         {content}
       </div>
