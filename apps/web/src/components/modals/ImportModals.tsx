@@ -436,7 +436,7 @@ interface ImportError {
             disabled={scanResult.characters.length + scanResult.chats.length + scanResult.presets.length + scanResult.personaCount === 0}
             onClick={handleImport}
           >
-            {t("confirm_import")}
+            {t("st_folder_import")}
           </button>
         </div>
       )}
