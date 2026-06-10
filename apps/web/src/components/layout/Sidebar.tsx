@@ -57,8 +57,10 @@ export function Sidebar() {
   );
   const branches = snapshot?.branches ?? [];
   const activeBranchId = snapshot?.activeBranch?.id ?? null;
-  const personaName = snapshot?.persona?.name ?? t("no_persona");
-  const personaAvatarAssetId = snapshot?.persona?.avatarAssetId ?? null;
+  const bootstrapPersonas = useBootstrapStore((s) => s.personas);
+  const activePersona = bootstrapPersonas?.find((p) => p.defaultForNewChats) ?? bootstrapPersonas?.[0];
+  const personaName = snapshot?.persona?.name ?? activePersona?.name ?? t("no_persona");
+  const personaAvatarAssetId = snapshot?.persona?.avatarAssetId ?? activePersona?.avatarAssetId ?? null;
 
   const characterTabs = useMemo(
     () => buildCharacterTabs(allCharacters, allChats),
