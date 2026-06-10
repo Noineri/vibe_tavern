@@ -16,6 +16,7 @@ import {
 } from "../../app-client.js";
 import type { ChatId } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "../snapshot-store.js";
+import { useChatStore } from "../chat-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
 
 // ---------------------------------------------------------------------------
@@ -53,6 +54,9 @@ export async function unarchiveCharacterAction(characterId: string): Promise<voi
 
 export async function deleteCharacterAction(characterId: string): Promise<void> {
   await deleteCharacter(characterId);
+  // Clear active chat/snapshot so AppShell shows placeholder instead of ghost chat
+  useChatStore.getState().setActiveChatId(null);
+  useSnapshotStore.getState().clear();
   void fetchBootstrapAction({ silent: true });
 }
 
