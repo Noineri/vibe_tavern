@@ -3,7 +3,7 @@
  *   Path A: "Начать настройку" (provider → persona → character)
  *   Path B: "Переезд из SillyTavern" (ST bulk import → provider)
  */
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
@@ -11,6 +11,7 @@ import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { ProviderForm } from "../settings/provider/ProviderForm.js";
+import { ProviderModelSelector } from "../settings/provider/ProviderModelSelector.js";
 import type { FormState } from "../modals/ProviderModal.js";
 import { PROVIDER_PRESETS } from "../../provider-presets.js";
 import { StFolderImport } from "../modals/ImportModals.js";
@@ -123,6 +124,11 @@ function ProviderStep({
   const [testingChat, setTestingChat] = useState(false);
   const [chatResult, setChatResult] = useState<{ reply?: string; error?: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [models, setModels] = useState<Array<{ id: string; label: string }>>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [modelSearch, setModelSearch] = useState("");
+  const [modelListOpen, setModelListOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const updateForm = useCallback(<K extends keyof FormState>(k: K, v: FormState[K]) => {
     setForm((prev) => ({ ...prev, [k]: v }));
@@ -148,23 +154,20 @@ function ProviderStep({
       const probe = await provider.handleTestDraftConnection(endpoint, apiKey);
       setTestOk(probe.success);
       if (probe.success) {
-        // Models need separate fetch — for now just mark as connected
+        // Fetch models automatically
+        setFetchingModels(true);
+        try {
+          const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
+          const fetched = await provider.handleFetchModelsByEndpoint(endpoint, apiKey.trim() || undefined, false, preset?.type);
+          setModels(fetched);
+          if (fetched.length && !form.model) updateForm("model", fetched[0].id);
+        } catch { /* ignore */ }
+        finally { setFetchingModels(false); }
       }
     } catch {
       setTestOk(false);
     } finally {
       setTesting(false);
-    }
-  }
-
-  async function handleTestChat() {
-    setTestingChat(true);
-    setChatResult(null);
-    try {
-      // Need a saved profile for chat test — skip for now in wizard
-      setChatResult({ reply: undefined, error: "Save profile first" });
-    } finally {
-      setTestingChat(false);
     }
   }
 
@@ -184,6 +187,10 @@ function ProviderStep({
     }
   }
 
+  const filteredModels = modelSearch.trim()
+    ? models.filter((m) => m.label.toLowerCase().includes(modelSearch.toLowerCase()) || m.id.toLowerCase().includes(modelSearch.toLowerCase()))
+    : models;
+
   const canContinue = testOk === true && form.model;
 
   return (
@@ -196,11 +203,30 @@ function ProviderStep({
         applyPreset={applyPreset}
         testOk={testOk}
         testing={testing}
-        testingChat={testingChat}
-        chatResult={chatResult}
+        testingChat={false}
+        chatResult={null}
         onTest={handleTest}
-        onTestChat={handleTestChat}
+        onTestChat={() => {}}
       />
+      {testOk && (
+        <ProviderModelSelector
+          form={form}
+          models={models}
+          filteredModels={filteredModels}
+          fetching={fetchingModels}
+          fetchError={null}
+          modelSearch={modelSearch}
+          modelListOpen={modelListOpen}
+          favoriteModels={[]}
+          updateForm={updateForm}
+          onFetchModels={handleTest}
+          setModelSearch={setModelSearch}
+          setModelListOpen={setModelListOpen}
+          dropdownRef={dropdownRef}
+          onToggleFavoriteModel={async () => {}}
+          requiresAuthForModels={true}
+        />
+      )}
       <div className="flex items-center justify-between pt-2">
         <button
           type="button"
