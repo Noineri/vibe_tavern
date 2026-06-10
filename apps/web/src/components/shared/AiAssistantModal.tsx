@@ -44,9 +44,9 @@ export interface MdImportResult {
   personality?: string;
   scenario?: string;
   firstMessage?: string;
+  alternateGreetings?: string[];
   exampleMessages?: string[];
   creatorNotes?: string;
-  additionalCharacters?: Array<{ name: string; description?: string; personality?: string }>;
 }
 
 const MD_IMPORT_FIELD_OPTIONS: Array<{ id: keyof MdImportResult; label: string }> = [
@@ -56,29 +56,13 @@ const MD_IMPORT_FIELD_OPTIONS: Array<{ id: keyof MdImportResult; label: string }
   { id: "personality", label: "Personality" },
   { id: "scenario", label: "Scenario" },
   { id: "firstMessage", label: "First Message" },
+  { id: "alternateGreetings", label: "Alternate Greetings" },
   { id: "exampleMessages", label: "Example Messages" },
   { id: "creatorNotes", label: "Creator Notes" },
-  { id: "additionalCharacters", label: "Additional Characters" },
 ];
 
 function getMdImportFieldLabel(field: keyof MdImportResult): string {
   return MD_IMPORT_FIELD_OPTIONS.find((option) => option.id === field)?.label ?? field;
-}
-
-function formatMdImportAdditionalCharacters(
-  characters: Array<{ name?: string; description?: string; personality?: string }>,
-): string {
-  return characters
-    .map((character) => {
-      const lines = [
-        character.name ? `## ${character.name}` : "## Additional character",
-        character.description?.trim() ? `Description:\n${character.description.trim()}` : "",
-        character.personality?.trim() ? `Personality:\n${character.personality.trim()}` : "",
-      ].filter(Boolean);
-      return lines.join("\n\n");
-    })
-    .filter(Boolean)
-    .join("\n\n");
 }
 
 function describeMdImportValue(value: unknown): string {
@@ -86,9 +70,6 @@ function describeMdImportValue(value: unknown): string {
     if (value.length === 0) return "";
     if (value.every((item) => typeof item === "string")) {
       return (value as string[]).join("\n---\n");
-    }
-    if (value.every((item) => item && typeof item === "object" && "name" in item)) {
-      return formatMdImportAdditionalCharacters(value as Array<{ name?: string; description?: string; personality?: string }>);
     }
     return JSON.stringify(value, null, 2);
   }
@@ -107,11 +88,11 @@ function mergeMdImportFields(
     const existing = Array.isArray(target.exampleMessages) ? target.exampleMessages : [];
     return { ...target, exampleMessages: [...existing, ...incoming] };
   }
-  if (key === "additionalCharacters" && Array.isArray(value)) {
-    const incoming = value.filter((item): item is { name: string; description?: string; personality?: string } => Boolean(item) && typeof item === "object" && !Array.isArray(item));
+  if (key === "alternateGreetings" && Array.isArray(value)) {
+    const incoming = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
     if (incoming.length === 0) return target;
-    const existing = Array.isArray(target.additionalCharacters) ? target.additionalCharacters : [];
-    return { ...target, additionalCharacters: [...existing, ...incoming] };
+    const existing = Array.isArray(target.alternateGreetings) ? target.alternateGreetings : [];
+    return { ...target, alternateGreetings: [...existing, ...incoming] };
   }
   if (typeof value === "string" && typeof target[key] === "string" && target[key]) {
     return { ...target, [key]: `${target[key]}
