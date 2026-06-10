@@ -17,7 +17,7 @@ import { PROVIDER_PRESETS } from "../../provider-presets.js";
 import { StFolderImport } from "../modals/ImportModals.js";
 import { Icons, Ic } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
-import { updatePersona, createPersona } from "../../app-client.js";
+import { updatePersona, createPersona, uploadAsset } from "../../app-client.js";
 import { toast } from "sonner";
 import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader.js";
 
@@ -398,6 +398,9 @@ function PersonaStep({
     return ["he/him", "she/her", "they/them", "it/its"].includes(existingPersona.pronouns) ? "" : (existingPersona.pronouns ?? "");
   });
   const [saving, setSaving] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [pendingAvatar, setPendingAvatar] = useState<File | null>(null);
+  const personaAvatarRef = useRef<HTMLInputElement | null>(null);
 
   const PRONOUN_OPTIONS: { v: string; l: string }[] = [
     { v: "", l: t("pronouns_none") },
@@ -415,10 +418,15 @@ function PersonaStep({
       const existing = existingPersona;
       const resolvedPronouns = pronouns === "custom" ? (pronounsCustom.trim() || null) : (pronouns || null);
       if (existing) {
-        await updatePersona(existing.id, { name: name.trim(), description, pronouns: resolvedPronouns });
+        const avatarAssetId = pendingAvatar ? (await uploadAsset(pendingAvatar)).assetId : undefined;
+        await updatePersona(existing.id, { name: name.trim(), description, pronouns: resolvedPronouns, avatarAssetId });
         await fetchPersonasAction();
       } else {
-        await createPersona({ name: name.trim(), description, pronouns: resolvedPronouns });
+        const persona = await createPersona({ name: name.trim(), description, pronouns: resolvedPronouns });
+        if (pendingAvatar && persona.id) {
+          const asset = await uploadAsset(pendingAvatar);
+          await updatePersona(persona.id, { name: name.trim(), description, pronouns: resolvedPronouns, avatarAssetId: asset.assetId });
+        }
         await fetchPersonasAction();
       }
       onComplete();
@@ -432,6 +440,31 @@ function PersonaStep({
   return (
     <div className={cn("flex flex-1 flex-col gap-3.5 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
       <div className="font-ui text-[0.88rem] text-t2">{t("wizard_persona_hint")}</div>
+
+      {/* Avatar */}
+      <div className="flex items-center gap-4">
+        <div
+          className="group/ava relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-dashed border-border2 bg-s2 transition-all hover:border-accent"
+          onClick={() => personaAvatarRef.current?.click()}
+        >
+          <input
+            type="file" ref={personaAvatarRef} accept="image/*" className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              e.target.value = "";
+              setPendingAvatar(file);
+              setAvatarPreview(URL.createObjectURL(file));
+            }}
+          />
+          {avatarPreview ? (
+            <img src={avatarPreview} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <span className="text-t3 transition-colors group-hover/ava:text-accent-t"><Icons.Plus /></span>
+          )}
+        </div>
+        <div className="font-ui text-[0.8rem] text-t3">{t("wizard_avatar_hint")}</div>
+      </div>
 
       <label className="flex flex-col gap-1">
         <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_name_label")}</span>
@@ -554,7 +587,10 @@ function CharacterStep({
   const [busy, setBusy] = useState(false);
   const [parsingCard, setParsingCard] = useState(false);
   const [cardPreview, setCardPreview] = useState<WizardCharacterPreview | null>(null);
+  const [charAvatarPreview, setCharAvatarPreview] = useState<string | null>(null);
+  const [charAvatarFile, setCharAvatarFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const charAvatarRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => () => {
     if (cardPreview?.avatarUrl) URL.revokeObjectURL(cardPreview.avatarUrl);
@@ -600,7 +636,7 @@ function CharacterStep({
         name: name.trim(),
         description: desc.trim() || undefined,
         firstMessage: firstMsg.trim() || undefined,
-      });
+      }, charAvatarFile);
       onComplete();
     } finally {
       setBusy(false);
@@ -611,6 +647,31 @@ function CharacterStep({
     <div className={cn("flex flex-1 flex-col gap-3.5 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
       <div className="font-ui text-[0.88rem] text-t2">{t("wizard_character_hint")}</div>
       <div className="font-ui text-[0.75rem] text-t3">{t("wizard_character_simplified")}</div>
+
+      {/* Avatar */}
+      <div className="flex items-center gap-4">
+        <div
+          className="group/ava relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-dashed border-border2 bg-s2 transition-all hover:border-accent"
+          onClick={() => charAvatarRef.current?.click()}
+        >
+          <input
+            type="file" ref={charAvatarRef} accept="image/*" className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              e.target.value = "";
+              setCharAvatarFile(file);
+              setCharAvatarPreview(URL.createObjectURL(file));
+            }}
+          />
+          {charAvatarPreview ? (
+            <img src={charAvatarPreview} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <span className="text-t3 transition-colors group-hover/ava:text-accent-t"><Icons.Plus /></span>
+          )}
+        </div>
+        <div className="font-ui text-[0.8rem] text-t3">{t("wizard_avatar_hint")}</div>
+      </div>
 
       <label className="flex flex-col gap-1">
         <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_name_label")}</span>
