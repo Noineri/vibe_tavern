@@ -311,3 +311,79 @@ Character edits bypass the preset entirely. The `onCharacterFieldUpdate` callbac
 - Mobile: three-dot menu, MobileVariantCarousel, full-bleed layout
 
 The component calls `useIsMobile()` after all other hooks but before the early return, so it doesn't violate React's rules of hooks.
+
+---
+
+## Setup Wizard & First-Run Flow
+
+### Overview
+
+The **Setup Wizard** (`SetupWizard.tsx`) is a modal overlay that guides new users through initial configuration. It appears automatically on fresh database installs (when `bootstrapData.isFirstRun === true`) and can be dismissed or re-invoked from the placeholder page.
+
+### Two Paths
+
+| Path | Steps | Purpose |
+|------|-------|----------|
+| **A — Manual** | Provider → Persona → Character | Step-by-step setup for new users |
+| **B — Migration** | ST Import → Provider | Bulk-import from SillyTavern folder |
+
+A top-level **PathSelector** screen lets the user choose. A "Skip all" link dismisses the wizard entirely.
+
+### Step Architecture
+
+Each step is a self-contained function component with `onComplete` and `onSkip` callbacks. The wizard shell (`SetupWizard`) manages path/step state and renders the appropriate component:
+
+```
+SetupWizard
+├── header (title + StepIndicator for Path A)
+├── PathSelector (choose path)
+├── ProviderStep (form + test + model select)
+├── PersonaStep (name, description, pronouns, avatar crop)
+├── CharacterStep (create or import card)
+└── StMigrationStep (bulk ST folder import)
+```
+
+### Provider Step
+
+Uses the shared `ProviderForm` component (same as settings modal). Key behaviors:
+
+- **Existing profile detection:** On mount, checks `providerProfiles[0]`. If found, starts in **collapsed view** (profile card + test hi + model selector).
+- **Collapsed view:** Shows a compact card with preset label, "✓ Provider active" badge, "Edit" link, and a "Test Hi" button. "Next" transitions immediately.
+- **Edit mode:** Full `ProviderForm` with test connection + model fetching. "Save" collapses and calls `onComplete`.
+- **Back from next step:** Returns to collapsed view, not the full form.
+- Model dropdown uses `ProviderModelSelector` which portals into `#modal-portal` to stay inside the Radix focus trap.
+
+### Persona Step
+
+- Pre-fills from existing persona (`defaultForNewChats` or first persona in bootstrap store)
+- **Pronoun selector:** Pill buttons for none/he/she/they/it/custom
+- **Avatar upload:** File picker → `AvatarCropModal` (circular crop) → cropped file uploaded via `uploadAsset` on save
+- Saves via `createPersona` or `updatePersona` (supports `avatarAssetId`)
+
+### Character Step
+
+Two modes:
+1. **Manual creation:** Name + description + first message + avatar crop. Uses `handleCreateCharacter(..., avatarFile)` which accepts the cropped avatar.
+2. **Card import:** "Upload Card" button parses `.png`/`.json` via `extractPngMetadata` → `parseCharacterMetadata`, shows preview (avatar, name, description, tags) before importing.
+
+### Placeholder Page
+
+When `hasActiveSnapshot === false` and wizard is not visible, `AppShell` renders a centered placeholder with:
+- "Welcome" heading
+- "Create Character" button
+- "Import Character" button (file picker)
+- "Setup Wizard" / "Setup Provider" utility links
+
+### Ghost Chat Prevention
+
+When the last character is deleted, `deleteCharacterAction` clears both `activeChatId` and the snapshot store to prevent showing a stale "ghost" chat. The sidebar persona fallback reads from `bootstrapPersonas` when snapshot is empty.
+
+### Modal Centering & Portal Anchor
+
+The wizard uses `Modal` (Radix Dialog). The overlay uses `flex items-center justify-center` instead of CSS transforms to avoid coordinate system corruption for `position: fixed` descendants (model dropdown, crop modal). `#modal-portal` inside `Dialog.Content` keeps portaled content within the Radix focus trap.
+
+---
+
+## Sidebar Persona Display
+
+The sidebar reads persona name/avatar from `snapshot?.persona` with fallback to `bootstrapPersonas` (the personas list from the bootstrap store). This ensures the persona is always visible even when no active snapshot exists (e.g., after deleting the last character).
