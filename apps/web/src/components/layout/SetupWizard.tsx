@@ -387,18 +387,30 @@ function PersonaStep({
   const personas = useBootstrapStore((s) => s.personas);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [pronouns, setPronouns] = useState("");
+  const [pronounsCustom, setPronounsCustom] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const PRONOUN_OPTIONS: { v: string; l: string }[] = [
+    { v: "", l: t("pronouns_none") },
+    { v: "he/him", l: "he/him" },
+    { v: "she/her", l: "she/her" },
+    { v: "they/them", l: "they/them" },
+    { v: "it/its", l: "it/its" },
+    { v: "custom", l: t("pronouns_custom") },
+  ];
 
   async function handleSave() {
     if (!name.trim()) return;
     setSaving(true);
     try {
       const existing = personas?.find((p) => p.defaultForNewChats) ?? personas?.[0];
+      const resolvedPronouns = pronouns === "custom" ? (pronounsCustom.trim() || null) : (pronouns || null);
       if (existing) {
-        await updatePersona(existing.id, { name: name.trim(), description });
+        await updatePersona(existing.id, { name: name.trim(), description, pronouns: resolvedPronouns });
         await fetchPersonasAction();
       } else {
-        await createPersona({ name: name.trim(), description });
+        await createPersona({ name: name.trim(), description, pronouns: resolvedPronouns });
         await fetchPersonasAction();
       }
       onComplete();
@@ -434,6 +446,34 @@ function PersonaStep({
           rows={3}
         />
       </label>
+
+      {/* Pronouns */}
+      <div className="flex flex-col gap-1.5">
+        <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("pronouns_custom_placeholder")}</span>
+        <div className="flex flex-wrap gap-1.5">
+          {PRONOUN_OPTIONS.map((opt) => (
+            <button key={opt.v} type="button"
+              className={cn(
+                "rounded-md px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-2px)] transition-all",
+                pronouns === opt.v
+                  ? "bg-accent/20 text-accent-t ring-1 ring-accent/40"
+                  : "bg-s3 text-t3 ring-1 ring-transparent hover:text-t2",
+              )}
+              onClick={() => setPronouns(opt.v)}
+            >
+              {opt.l}
+            </button>
+          ))}
+        </div>
+        {pronouns === "custom" && (
+          <input
+            className="w-full rounded-lg border border-border2 bg-s2 px-3 py-2 font-ui text-t1 outline-none transition-colors focus:border-accent"
+            value={pronounsCustom}
+            onChange={(e) => setPronounsCustom(e.target.value)}
+            placeholder={t("pronouns_custom_placeholder")}
+          />
+        )}
+      </div>
 
       <div className="flex items-center justify-between pt-2">
         <button
@@ -562,6 +602,7 @@ function CharacterStep({
   return (
     <div className={cn("flex flex-1 flex-col gap-3.5 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
       <div className="font-ui text-[0.88rem] text-t2">{t("wizard_character_hint")}</div>
+      <div className="font-ui text-[0.75rem] text-t3">{t("wizard_character_simplified")}</div>
 
       <label className="flex flex-col gap-1">
         <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_name_label")}</span>
