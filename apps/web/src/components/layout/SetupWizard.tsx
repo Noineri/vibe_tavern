@@ -7,7 +7,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
-import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
+import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { ProviderForm } from "../settings/provider/ProviderForm.js";
@@ -17,6 +17,7 @@ import { PROVIDER_PRESETS } from "../../provider-presets.js";
 import { StFolderImport } from "../modals/ImportModals.js";
 import { Icons, Ic } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
+import { updatePersona, createPersona } from "../../app-client.js";
 import { toast } from "sonner";
 
 type WizardPath = "choose" | "a" | "b" | "skip";
@@ -274,7 +275,7 @@ function PersonaStep({
 }) {
   const { t } = useT();
   const isMobile = useIsMobile();
-  const character = useCharacterController();
+  const personas = useBootstrapStore((s) => s.personas);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
@@ -283,7 +284,14 @@ function PersonaStep({
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await character.handleCreatePersona({ name: name.trim(), description });
+      const existing = personas?.find((p) => p.defaultForNewChats) ?? personas?.[0];
+      if (existing) {
+        await updatePersona(existing.id, { name: name.trim(), description });
+        await fetchPersonasAction();
+      } else {
+        await createPersona({ name: name.trim(), description });
+        await fetchPersonasAction();
+      }
       onComplete();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("save_failed"));
@@ -557,7 +565,7 @@ export function SetupWizard({ onVisibilityChange }: { onVisibilityChange?: (v: b
 
   return (
     <Modal open={true} onClose={handleComplete}>
-      <div className={cn("flex max-h-[calc(100vh-40px)] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-theme-lg", path === "choose" ? "min-w-[360px] w-auto" : "w-[600px]")}>
+      <div className={cn("flex max-h-[calc(100vh-40px)] max-w-[calc(100vw-32px)] flex-col rounded-xl border border-border2 bg-surface shadow-theme-lg", path === "choose" ? "min-w-[360px] w-auto" : "w-[600px]")}>
         {header}
         {content}
       </div>

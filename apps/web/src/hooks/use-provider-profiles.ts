@@ -557,6 +557,9 @@ export function useProviderProfiles() {
       const saved = form.id
         ? await updateProviderProfileAction(form.id, patch)
         : await saveProviderProfileAction({ ...patch, providerPreset: patch.providerPreset });
+      if (saved && !form.id) {
+        await activateProviderProfileAction(saved.id);
+      }
       return saved;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : getT()("provider_save_failed"));
