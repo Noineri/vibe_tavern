@@ -140,7 +140,7 @@ export function ProviderModelSelector({
                 const portal = document.getElementById('modal-portal');
                 const content = (
                   <div
-                    className="fixed z-[600] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
+                    className="absolute z-[600] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
                     style={{
                       top: rect ? rect.bottom + 4 : 0,
                       left: rect ? rect.left : 0,

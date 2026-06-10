@@ -125,10 +125,12 @@ function ProviderStep({
   const [testingChat, setTestingChat] = useState(false);
   const [chatResult, setChatResult] = useState<{ reply?: string; error?: string } | null>(null);
   const [saving, setSaving] = useState(false);
-  const [models, setModels] = useState<Array<{ id: string; label: string }>>([]);
+  const [models, setModels] = useState<Array<{ id: string; label: string; contextLength?: number }>>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelSearch, setModelSearch] = useState("");
   const [modelListOpen, setModelListOpen] = useState(false);
+  const [savedProfileId, setSavedProfileId] = useState<string | null>(null);
+  const [showEdit, setShowEdit] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const updateForm = useCallback(<K extends keyof FormState>(k: K, v: FormState[K]) => {
@@ -145,6 +147,16 @@ function ProviderStep({
     }));
   }, []);
 
+  async function fetchModels(endpoint: string, apiKey: string, presetType?: string) {
+    setFetchingModels(true);
+    try {
+      const fetched = await provider.handleFetchModelsByEndpoint(endpoint, apiKey.trim() || undefined, false, presetType);
+      setModels(fetched);
+      if (fetched.length && !form.model) updateForm("model", fetched[0].id);
+    } catch { /* ignore */ }
+    finally { setFetchingModels(false); }
+  }
+
   async function handleTest() {
     setTesting(true);
     setTestOk(null);
@@ -155,15 +167,8 @@ function ProviderStep({
       const probe = await provider.handleTestDraftConnection(endpoint, apiKey);
       setTestOk(probe.success);
       if (probe.success) {
-        // Fetch models automatically
-        setFetchingModels(true);
-        try {
-          const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
-          const fetched = await provider.handleFetchModelsByEndpoint(endpoint, apiKey.trim() || undefined, false, preset?.type);
-          setModels(fetched);
-          if (fetched.length && !form.model) updateForm("model", fetched[0].id);
-        } catch { /* ignore */ }
-        finally { setFetchingModels(false); }
+        const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
+        await fetchModels(endpoint, apiKey, preset?.type);
       }
     } catch {
       setTestOk(false);
@@ -176,9 +181,14 @@ function ProviderStep({
     setTestingChat(true);
     setChatResult(null);
     try {
-      const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
-      const result = await provider.handleTestChat(null, form.baseUrl.trim(), form.apiKey.trim(), form.model.trim(), preset?.type);
-      setChatResult(result);
+      if (savedProfileId) {
+        const result = await provider.handleTestChat(savedProfileId, "", "", form.model.trim());
+        setChatResult(result);
+      } else {
+        const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
+        const result = await provider.handleTestChat(null, form.baseUrl.trim(), form.apiKey.trim(), form.model.trim(), preset?.type);
+        setChatResult(result);
+      }
     } catch (e) {
       setChatResult({ error: e instanceof Error ? e.message : "Failed" });
     } finally {
@@ -189,11 +199,15 @@ function ProviderStep({
   async function handleSave() {
     setSaving(true);
     try {
-      // Create profile via provider hook
       const saved = await provider.handleSaveProviderProfileFromForm(form);
       if (saved) {
+        setSavedProfileId(saved.id);
+        setForm((prev) => ({ ...prev, id: saved.id, hasStoredApiKey: true }));
+        setShowEdit(false);
         toast.success(t("provider_saved"));
-        onComplete();
+        // Fetch models for saved profile
+        const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
+        await fetchModels(form.baseUrl, form.apiKey, preset?.type);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("save_failed"));
@@ -206,13 +220,95 @@ function ProviderStep({
     ? models.filter((m) => m.label.toLowerCase().includes(modelSearch.toLowerCase()) || m.id.toLowerCase().includes(modelSearch.toLowerCase()))
     : models;
 
+  const presetLabel = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset)?.label ?? form.providerPreset;
+  const savedProfile = savedProfileId ? provider.providerProfiles.find((p) => p.id === savedProfileId) : null;
+
+  // ── Saved profile view (compact card + model selector + test) ──
+  if (savedProfileId && !showEdit) {
+    return (
+      <div className={cn("flex flex-1 flex-col gap-4 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
+        {/* Profile card */}
+        <div className="flex flex-col items-stretch gap-3 rounded-lg border border-border2 bg-s2 p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4">
+          <div className="min-w-0">
+            <div className="mb-1 truncate font-ui text-[16px] font-semibold text-t1">{form.name}</div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-ui text-[13px] text-t3 sm:flex-nowrap">
+              {presetLabel && <span>{presetLabel}</span>}
+              {presetLabel && <span className="h-1 w-1 rounded-full bg-t4" />}
+              <span className="flex items-center gap-1.5 text-success">
+                <Icons.Check />
+                {t("api_key_saved")}
+              </span>
+            </div>
+            <button type="button" className="mt-3 flex items-center gap-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:text-accent" onClick={() => setShowEdit(true)}>
+              <span className="text-[11px]"><Icons.Edit /></span>
+              {t("wizard_edit_provider")}
+            </button>
+          </div>
+          <button type="button" className="min-h-11 w-full rounded-md border border-accent bg-accent-dim px-4 font-ui text-[13px] font-medium text-accent-t transition-colors hover:bg-accent hover:text-white disabled:cursor-not-allowed disabled:opacity-50 sm:h-[34px] sm:min-h-0 sm:w-auto" disabled>
+            ✓ {t("provider_active")}
+          </button>
+        </div>
+
+        {/* Test hi */}
+        <div className="my-2 rounded-lg border border-border bg-surface p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
+            <button type="button"
+              className="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
+              onClick={() => void handleTestChat()}
+              disabled={testingChat}
+            >
+              {testingChat ? t("sending") : t("test_hi_btn")}
+            </button>
+          </div>
+          {chatResult && (
+            <div className={cn("mt-3 rounded-md p-3 font-ui text-[12px] leading-relaxed", chatResult.error ? "bg-danger-dim text-danger-text" : "bg-s2 text-t2")}>
+              {chatResult.error ?? chatResult.reply}
+            </div>
+          )}
+        </div>
+
+        {/* Model selector */}
+        {models.length > 0 && (
+          <ProviderModelSelector
+            form={form}
+            models={models}
+            filteredModels={filteredModels}
+            fetching={fetchingModels}
+            fetchError={null}
+            modelSearch={modelSearch}
+            modelListOpen={modelListOpen}
+            favoriteModels={[]}
+            updateForm={updateForm}
+            onFetchModels={handleTest}
+            setModelSearch={setModelSearch}
+            setModelListOpen={setModelListOpen}
+            dropdownRef={dropdownRef}
+            onToggleFavoriteModel={async () => {}}
+            requiresAuthForModels={true}
+          />
+        )}
+
+        <div className="flex items-center justify-end pt-2">
+          <button
+            type="button"
+            className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-white transition-all"
+            onClick={onComplete}
+          >
+            {t("next")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Edit / create mode (full form) ──
   const canContinue = testOk === true && form.model;
 
   return (
     <div className={cn("flex flex-1 flex-col gap-4 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
       <ProviderForm
         form={form}
-        editingId={null}
+        editingId={savedProfileId}
         providerProfiles={provider.providerProfiles}
         updateForm={updateForm}
         applyPreset={applyPreset}
@@ -259,20 +355,30 @@ function ProviderStep({
         />
       )}
       <div className="flex items-center justify-between pt-2">
-        <button
-          type="button"
-          className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1"
-          onClick={onSkip}
-        >
-          {t("skip")}
-        </button>
+        {savedProfileId ? (
+          <button
+            type="button"
+            className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1"
+            onClick={() => setShowEdit(false)}
+          >
+            {t("back")}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1"
+            onClick={onSkip}
+          >
+            {t("skip")}
+          </button>
+        )}
         <button
           type="button"
           className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
           disabled={!canContinue || saving}
           onClick={() => void handleSave()}
         >
-          {saving ? t("saving") : t("next")}
+          {saving ? t("saving") : savedProfileId ? t("save") : t("next")}
         </button>
       </div>
     </div>
