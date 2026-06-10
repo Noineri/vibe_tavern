@@ -307,7 +307,7 @@ function ProviderStep({
   const canContinue = testOk === true && form.model;
 
   return (
-    <div className={cn("flex flex-1 flex-col gap-4 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
+    <div className={cn("flex flex-1 flex-col gap-3 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-6")}>
       <ProviderForm
         form={form}
         editingId={form.id || null}
@@ -851,10 +851,10 @@ export function SetupWizard({ onVisibilityChange }: { onVisibilityChange?: (v: b
   const sub = path === "choose" ? t("ws_sub") : undefined;
 
   const header = (
-    <div className={cn("relative shrink-0 text-center", isMobile ? "px-4 pt-5" : "px-7 pt-7")}>
+    <div className={cn("relative shrink-0 text-center", isMobile ? "px-4 pt-5" : "px-7 pt-6")}>
       <div className="mb-1.5 font-ui text-[1.35rem] font-bold text-t1">{title}</div>
-      {sub && <div className="mb-6 font-ui text-[0.88rem] text-t2">{sub}</div>}
-      {path === "a" && <div className="mb-4"><StepIndicator step={stepA} total={3} /></div>}
+      {sub && <div className="mb-5 font-ui text-[0.88rem] text-t2">{sub}</div>}
+      {path === "a" && <div className="mb-3"><StepIndicator step={stepA} total={3} /></div>}
       {path !== "choose" && (
         <button
           type="button"

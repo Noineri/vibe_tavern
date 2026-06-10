@@ -64,9 +64,9 @@ export function ProviderForm({
   return (
     <>
       {/* Row 1: profile name + provider preset */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="mb-4">
-          <label className={labelCls + " mb-[7px]"}>{t("profile_name")}</label>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="mb-3">
+          <label className={labelCls + " mb-[6px]"}>{t("profile_name")}</label>
           <input
             type="text"
             value={form.name}
@@ -81,8 +81,8 @@ export function ProviderForm({
             </div>
           )}
         </div>
-        <div className="mb-4">
-          <label className={labelCls + " mb-[7px]"}>{t("provider_preset_label")}</label>
+        <div className="mb-3">
+          <label className={labelCls + " mb-[6px]"}>{t("provider_preset_label")}</label>
           <SegmentedControl
             value={presetGroup ?? ''}
             options={[
@@ -103,9 +103,9 @@ export function ProviderForm({
       </div>
 
       {/* Row 2: API format + preset endpoint */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="mb-4">
-          <label className={labelCls + " mb-[7px]"}>{t("api_format_label")}</label>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="mb-3">
+          <label className={labelCls + " mb-[6px]"}>{t("api_format_label")}</label>
           <DropdownSelect
             value={form.providerPreset || ''}
             options={presetGroup ? filteredPresets.map((f) => ({ id: f.id, label: f.label })) : []}
@@ -116,8 +116,8 @@ export function ProviderForm({
             }}
           />
         </div>
-        <div className="mb-4">
-          <label className={labelCls + " mb-[7px]"}>{t("preset_endpoint_label")}</label>
+        <div className="mb-3">
+          <label className={labelCls + " mb-[6px]"}>{t("preset_endpoint_label")}</label>
           <input
             type="text"
             value={presetEndpoint || t("custom")}
@@ -128,8 +128,8 @@ export function ProviderForm({
       </div>
 
       {/* Custom endpoint */}
-      <div className="mb-4">
-        <label className={labelCls + " mb-[7px]"}>{t("custom_endpoint_label")}</label>
+      <div className="mb-3">
+        <label className={labelCls + " mb-[6px]"}>{t("custom_endpoint_label")}</label>
         <input
           type="text"
           value={form.baseUrl}
@@ -140,7 +140,7 @@ export function ProviderForm({
       </div>
 
       {/* Stream toggle card */}
-      <div className="mt-2 mb-4 rounded-lg border border-border2 bg-s2 px-4 py-3">
+      <div className="my-3 rounded-lg border border-border2 bg-s2 px-4 py-2.5">
         <div className="flex items-center gap-3">
           <Toggle checked={form.streamResponse !== false} onChange={(v) => updateForm('streamResponse', v as FormState['streamResponse'])} className="!mb-0 !inline-flex" />
           <div>
@@ -155,8 +155,8 @@ export function ProviderForm({
       </div>
 
       {/* API key */}
-      <div className="mb-4">
-        <label className={labelCls + " mb-[7px]"}>{t("api_key_label")}</label>
+      <div className="mb-3">
+        <label className={labelCls + " mb-[6px]"}>{t("api_key_label")}</label>
         <input
           type="password"
           value={form.apiKey}
@@ -167,7 +167,7 @@ export function ProviderForm({
       </div>
 
       {/* Test connection card */}
-      <div className="my-4 rounded-lg border border-border bg-surface p-4">
+      <div className="my-3 rounded-lg border border-border bg-surface p-3.5">
         {!form.apiKey && !form.hasStoredApiKey ? (
           <div className="flex items-center gap-2 font-ui text-[13px] text-t3">
             <span className="h-2 w-2 rounded-full bg-t4" />

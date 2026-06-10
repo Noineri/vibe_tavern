@@ -94,14 +94,14 @@ export function ProviderModelSelector({
   });
 
   return (
-    <div className="my-6">
+    <div className="my-4">
       <div
-        className="mb-4 border-b border-border2 pb-2 font-ui text-[14px] font-semibold text-t1"
+        className="mb-3 border-b border-border2 pb-2 font-ui text-[14px] font-semibold text-t1"
       >
         {t("model_label")}
       </div>
       {isLocalProvider && (
-        <div className={cn("mb-3 flex flex-col gap-1.5 rounded-md border px-3 py-2 font-ui text-[12px] sm:flex-row sm:items-center sm:justify-between", localStatus.className)}>
+        <div className={cn("mb-2.5 flex flex-col gap-1.5 rounded-md border px-3 py-2 font-ui text-[12px] sm:flex-row sm:items-center sm:justify-between", localStatus.className)}>
           <span className="inline-flex min-w-0 items-center gap-2">
             <span className={cn("h-2 w-2 shrink-0 rounded-full", localStatus.dotClassName)} />
             <span className="shrink-0 font-medium">{localStatus.label}</span>
@@ -118,12 +118,12 @@ export function ProviderModelSelector({
       )}
       <div className="flex items-end gap-3">
         <div className="flex-1" ref={dropdownRef}>
-          <label className={labelCls + " mb-[7px]"}>{t("selected_model_label")}</label>
+          <label className={labelCls + " mb-[6px]"}>{t("selected_model_label")}</label>
           {models.length > 0 ? (
             <div className="relative">
               <button type="button"
                 onClick={() => setModelListOpen((v) => !v)}
-                className="flex w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[7px] font-ui text-[13px] text-t1 transition-colors hover:border-accent"
+                className="flex w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[6px] font-ui text-[13px] text-t1 transition-colors hover:border-accent"
               >
                 <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">
                   {selectedModel?.label || form.model || t("select_model")}
