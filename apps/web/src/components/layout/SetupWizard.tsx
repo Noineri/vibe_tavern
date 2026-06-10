@@ -208,6 +208,22 @@ function ProviderStep({
         onTest={handleTest}
         onTestChat={() => {}}
       />
+      {/* Show test button when ProviderForm hides it (no model selected yet) */}
+      {!testOk && form.apiKey && form.baseUrl && (
+        <button
+          type="button"
+          className={cn(
+            "h-[38px] cursor-pointer rounded-lg border px-5 font-ui text-[0.88rem] font-semibold transition-all",
+            testing
+              ? "cursor-default border-border bg-s2 text-t3"
+              : "border-border bg-s2 text-t2 hover:border-accent hover:text-t1",
+          )}
+          disabled={testing}
+          onClick={() => void handleTest()}
+        >
+          {testing ? t("testing") : t("test_connection")}
+        </button>
+      )}
       {testOk && (
         <ProviderModelSelector
           form={form}
