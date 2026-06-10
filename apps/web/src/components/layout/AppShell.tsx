@@ -23,7 +23,7 @@ import { CreateCharacterModal } from "../modals/CreateCharacterModal.js";
 import { PersonaModal } from "../modals/PersonaModal.js";
 import { PromptManagerModal } from "../modals/PromptManagerModal.js";
 import { ProviderModal } from "../modals/ProviderModal.js";
-import { WelcomeScreen } from "../layout/WelcomeScreen.js";
+import { SetupWizard } from "../layout/SetupWizard.js";
 import { ShellDestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { TweaksPanel } from "../settings/popovers/TweaksPanel.js";
 import { MobileSettings } from "../settings/popovers/MobileSettings.js";
@@ -321,7 +321,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       )}
 
       <ShellDestructiveConfirmModal />
-      <WelcomeScreen />
+      <SetupWizard />
       <Toaster
         position={isMobile ? "top-center" : "bottom-right"}
         toastOptions={{ style: { background: "var(--s2)", color: "var(--t1)", border: "1px solid var(--border)" } }}

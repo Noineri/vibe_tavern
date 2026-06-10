@@ -50,7 +50,7 @@ interface StFileEntry {
   kind: "character" | "chat" | "lorebook" | "preset" | "persona";
 }
 
-function StFolderImport({ onImported }: StFolderImportProps) {
+export function StFolderImport({ onImported }: StFolderImportProps) {
   const { t } = useT();
   const [scanning, setScanning] = useState(false);
   const [importing, setImporting] = useState(false);

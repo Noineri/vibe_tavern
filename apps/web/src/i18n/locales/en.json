@@ -998,5 +998,16 @@
   "ai_param_temperature": "Temperature",
   "ai_param_max_tokens": "Max Tokens",
   "placeholder_create_character": "Create Character",
-  "placeholder_setup_provider": "Connect Provider"
+  "placeholder_setup_provider": "Connect Provider",
+  "wizard_path_a_title": "Start Setup",
+  "wizard_path_a_sub": "Connect AI provider, create persona, add character",
+  "wizard_path_b_title": "Migrate from SillyTavern",
+  "wizard_path_b_sub": "Import characters, chats, lorebooks, presets and personas",
+  "wizard_step_provider": "Connect AI",
+  "wizard_step_persona": "Who are you?",
+  "wizard_step_character": "Who do you want to talk to?",
+  "wizard_persona_hint": "Tell the AI who you are. You can skip this and set it up later.",
+  "wizard_character_hint": "Create a character to chat with, import one, or skip.",
+  "wizard_st_hint": "Select your SillyTavern data folder to import everything.",
+  "skip": "Skip"
 }
