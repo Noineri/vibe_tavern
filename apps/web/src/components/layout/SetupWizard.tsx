@@ -79,48 +79,51 @@ function ProviderStep({
   const isMobile = useIsMobile();
   const provider = useProviderProfiles();
 
-  // Start with a fresh profile form
+  // Detect already-existing profile (e.g. created in a previous wizard run or from settings)
+  const existingProfile = provider.providerProfiles[0] ?? null;
+  const alreadyHasProfile = !!existingProfile;
+
   const [form, setForm] = useState<FormState>(() => ({
-    id: "",
-    name: "Default",
-    providerPreset: "",
-    baseUrl: "",
+    id: existingProfile?.id ?? "",
+    name: existingProfile?.name ?? "Default",
+    providerPreset: existingProfile?.providerPreset ?? "",
+    baseUrl: existingProfile?.endpoint ?? "",
     apiKey: "",
-    hasStoredApiKey: false,
-    model: "",
-    temperature: 0.7,
-    topP: 1,
-    minP: 0,
-    topK: 0,
-    topA: 0,
-    typicalP: 1,
-    tfsZ: 1,
-    repeatLastN: 0,
-    mirostat: 0,
-    mirostatTau: 5,
-    mirostatEta: 0.1,
-    dryMultiplier: 0,
-    dryBase: 1.75,
-    dryAllowedLength: 2,
-    drySequenceBreakers: [],
-    xtcThreshold: 0.1,
-    xtcProbability: 0,
-    frequencyPenalty: 0,
-    presencePenalty: 0,
-    repetitionPenalty: 1,
-    maxTokens: 512,
-    contextBudget: 16000,
-    pinContextBudget: false,
-    stopSequences: [],
-    logitBias: [],
-    seed: null,
-    reasoningEffort: "",
-    showReasoning: false,
-    streamResponse: true,
-    customSamplers: false,
+    hasStoredApiKey: !!existingProfile,
+    model: existingProfile?.defaultModel ?? "",
+    temperature: existingProfile?.temperature ?? 0.7,
+    topP: existingProfile?.topP ?? 1,
+    minP: existingProfile?.minP ?? 0,
+    topK: existingProfile?.topK ?? 0,
+    topA: existingProfile?.topA ?? 0,
+    typicalP: existingProfile?.typicalP ?? 1,
+    tfsZ: existingProfile?.tfsZ ?? 1,
+    repeatLastN: existingProfile?.repeatLastN ?? 0,
+    mirostat: existingProfile?.mirostat ?? 0,
+    mirostatTau: existingProfile?.mirostatTau ?? 5,
+    mirostatEta: existingProfile?.mirostatEta ?? 0.1,
+    dryMultiplier: existingProfile?.dryMultiplier ?? 0,
+    dryBase: existingProfile?.dryBase ?? 1.75,
+    dryAllowedLength: existingProfile?.dryAllowedLength ?? 2,
+    drySequenceBreakers: existingProfile?.drySequenceBreakers ?? [],
+    xtcThreshold: existingProfile?.xtcThreshold ?? 0.1,
+    xtcProbability: existingProfile?.xtcProbability ?? 0,
+    frequencyPenalty: existingProfile?.frequencyPenalty ?? 0,
+    presencePenalty: existingProfile?.presencePenalty ?? 0,
+    repetitionPenalty: existingProfile?.repetitionPenalty ?? 1,
+    maxTokens: existingProfile?.maxTokens ?? 512,
+    contextBudget: existingProfile?.contextBudget ?? 16000,
+    pinContextBudget: existingProfile?.pinContextBudget ?? false,
+    stopSequences: existingProfile?.stopSequences ?? [],
+    logitBias: existingProfile?.logitBias ?? [],
+    seed: existingProfile?.seed ?? null,
+    reasoningEffort: existingProfile?.reasoningEffort ?? "",
+    showReasoning: existingProfile?.showReasoning ?? false,
+    streamResponse: existingProfile?.streamResponse ?? true,
+    customSamplers: existingProfile?.customSamplers ?? false,
   }));
 
-  const [testOk, setTestOk] = useState<boolean | null>(null);
+  const [testOk, setTestOk] = useState<boolean | null>(alreadyHasProfile ? true : null);
   const [testing, setTesting] = useState(false);
   const [testingChat, setTestingChat] = useState(false);
   const [chatResult, setChatResult] = useState<{ reply?: string; error?: string } | null>(null);
@@ -129,9 +132,11 @@ function ProviderStep({
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelSearch, setModelSearch] = useState("");
   const [modelListOpen, setModelListOpen] = useState(false);
-  const [savedProfileId, setSavedProfileId] = useState<string | null>(null);
   const [showEdit, setShowEdit] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // If profile already exists → collapsed view by default
+  const [collapsed, setCollapsed] = useState(alreadyHasProfile);
 
   const updateForm = useCallback(<K extends keyof FormState>(k: K, v: FormState[K]) => {
     setForm((prev) => ({ ...prev, [k]: v }));
@@ -140,49 +145,50 @@ function ProviderStep({
   const applyPreset = useCallback((presetId: string) => {
     const preset = PROVIDER_PRESETS.find((f) => f.id === presetId);
     if (!preset) return;
-    setForm((prev) => ({
-      ...prev,
-      providerPreset: presetId,
-      baseUrl: preset.baseUrl,
-    }));
+    setForm((prev) => ({ ...prev, providerPreset: presetId, baseUrl: preset.baseUrl }));
   }, []);
 
-  async function fetchModels(endpoint: string, apiKey: string, presetType?: string) {
+  async function fetchModelsFor(endpoint: string, apiKey: string, presetType?: string) {
     setFetchingModels(true);
     try {
       const fetched = await provider.handleFetchModelsByEndpoint(endpoint, apiKey.trim() || undefined, false, presetType);
       setModels(fetched);
       if (fetched.length && !form.model) updateForm("model", fetched[0].id);
-    } catch { /* ignore */ }
-    finally { setFetchingModels(false); }
+      return fetched;
+    } catch { return []; } finally { setFetchingModels(false); }
   }
+
+  // Auto-fetch models when we detect an existing profile on mount
+  useEffect(() => {
+    if (alreadyHasProfile && existingProfile) {
+      const preset = PROVIDER_PRESETS.find((f) => f.id === existingProfile.providerPreset);
+      void fetchModelsFor(existingProfile.endpoint, "", preset?.type);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleTest() {
     setTesting(true);
     setTestOk(null);
     try {
-      const endpoint = form.baseUrl;
-      const apiKey = form.apiKey;
-      if (!endpoint) return;
-      const probe = await provider.handleTestDraftConnection(endpoint, apiKey);
+      if (!form.baseUrl) return;
+      const probe = await provider.handleTestDraftConnection(form.baseUrl, form.apiKey);
       setTestOk(probe.success);
       if (probe.success) {
         const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
-        await fetchModels(endpoint, apiKey, preset?.type);
+        await fetchModelsFor(form.baseUrl, form.apiKey, preset?.type);
       }
-    } catch {
-      setTestOk(false);
-    } finally {
-      setTesting(false);
-    }
+    } catch { setTestOk(false); }
+    finally { setTesting(false); }
   }
 
   async function handleTestChat() {
     setTestingChat(true);
     setChatResult(null);
     try {
-      if (savedProfileId) {
-        const result = await provider.handleTestChat(savedProfileId, "", "", form.model.trim());
+      const pid = existingProfile?.id ?? form.id;
+      if (pid) {
+        const result = await provider.handleTestChat(pid, "", "", form.model.trim());
         setChatResult(result);
       } else {
         const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
@@ -191,9 +197,7 @@ function ProviderStep({
       }
     } catch (e) {
       setChatResult({ error: e instanceof Error ? e.message : "Failed" });
-    } finally {
-      setTestingChat(false);
-    }
+    } finally { setTestingChat(false); }
   }
 
   async function handleSave() {
@@ -201,13 +205,11 @@ function ProviderStep({
     try {
       const saved = await provider.handleSaveProviderProfileFromForm(form);
       if (saved) {
-        setSavedProfileId(saved.id);
         setForm((prev) => ({ ...prev, id: saved.id, hasStoredApiKey: true }));
-        setShowEdit(false);
         toast.success(t("provider_saved"));
-        // Fetch models for saved profile
-        const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
-        await fetchModels(form.baseUrl, form.apiKey, preset?.type);
+        // Collapse & go to next step immediately
+        setCollapsed(true);
+        onComplete();
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("save_failed"));
@@ -221,13 +223,11 @@ function ProviderStep({
     : models;
 
   const presetLabel = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset)?.label ?? form.providerPreset;
-  const savedProfile = savedProfileId ? provider.providerProfiles.find((p) => p.id === savedProfileId) : null;
 
-  // ── Saved profile view (compact card + model selector + test) ──
-  if (savedProfileId && !showEdit) {
+  // ── Collapsed view (saved profile card + test + models) ──
+  if (collapsed) {
     return (
       <div className={cn("flex flex-1 flex-col gap-4 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
-        {/* Profile card */}
         <div className="flex flex-col items-stretch gap-3 rounded-lg border border-border2 bg-s2 p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4">
           <div className="min-w-0">
             <div className="mb-1 truncate font-ui text-[16px] font-semibold text-t1">{form.name}</div>
@@ -239,7 +239,7 @@ function ProviderStep({
                 {t("api_key_saved")}
               </span>
             </div>
-            <button type="button" className="mt-3 flex items-center gap-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:text-accent" onClick={() => setShowEdit(true)}>
+            <button type="button" className="mt-3 flex items-center gap-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:text-accent" onClick={() => { setShowEdit(true); setCollapsed(false); }}>
               <span className="text-[11px]"><Icons.Edit /></span>
               {t("wizard_edit_provider")}
             </button>
@@ -267,7 +267,6 @@ function ProviderStep({
           )}
         </div>
 
-        {/* Model selector */}
         {models.length > 0 && (
           <ProviderModelSelector
             form={form}
@@ -308,7 +307,7 @@ function ProviderStep({
     <div className={cn("flex flex-1 flex-col gap-4 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
       <ProviderForm
         form={form}
-        editingId={savedProfileId}
+        editingId={form.id || null}
         providerProfiles={provider.providerProfiles}
         updateForm={updateForm}
         applyPreset={applyPreset}
@@ -319,7 +318,6 @@ function ProviderStep({
         onTest={handleTest}
         onTestChat={handleTestChat}
       />
-      {/* Show test button when ProviderForm hides it (no model selected yet) */}
       {!testOk && form.apiKey && form.baseUrl && (
         <button
           type="button"
@@ -355,30 +353,20 @@ function ProviderStep({
         />
       )}
       <div className="flex items-center justify-between pt-2">
-        {savedProfileId ? (
-          <button
-            type="button"
-            className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1"
-            onClick={() => setShowEdit(false)}
-          >
-            {t("back")}
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1"
-            onClick={onSkip}
-          >
-            {t("skip")}
-          </button>
-        )}
+        <button
+          type="button"
+          className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1"
+          onClick={showEdit ? () => { setCollapsed(true); setShowEdit(false); } : onSkip}
+        >
+          {showEdit ? t("back") : t("skip")}
+        </button>
         <button
           type="button"
           className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
           disabled={!canContinue || saving}
           onClick={() => void handleSave()}
         >
-          {saving ? t("saving") : savedProfileId ? t("save") : t("next")}
+          {saving ? t("saving") : showEdit ? t("save") : t("next")}
         </button>
       </div>
     </div>
