@@ -163,6 +163,13 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
             >
               {t('placeholder_setup_provider')}
             </button>
+            <button
+              type="button"
+              className="cursor-pointer rounded-lg border border-border2 bg-s2 px-4 py-2 font-ui text-[0.88rem] font-semibold text-t1 transition-all hover:border-accent hover:bg-surface"
+              onClick={() => { localStorage.removeItem('wizard_dismissed'); location.reload(); }}
+            >
+              {t('placeholder_setup_wizard')}
+            </button>
           </div>
         </div>
       );

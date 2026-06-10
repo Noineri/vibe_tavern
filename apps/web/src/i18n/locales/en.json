@@ -999,6 +999,7 @@
   "ai_param_max_tokens": "Max Tokens",
   "placeholder_create_character": "Create Character",
   "placeholder_setup_provider": "Connect Provider",
+  "placeholder_setup_wizard": "Setup Wizard",
   "wizard_path_a_title": "Start Setup",
   "wizard_path_a_sub": "Connect AI provider, create persona, add character",
   "wizard_path_b_title": "Migrate from SillyTavern",
@@ -1009,5 +1010,6 @@
   "wizard_persona_hint": "Tell the AI who you are. You can skip this and set it up later.",
   "wizard_character_hint": "Create a character to chat with, import one, or skip.",
   "wizard_st_hint": "Select your SillyTavern data folder to import everything.",
-  "skip": "Skip"
+  "skip": "Skip",
+  "next": "Next"
 }
