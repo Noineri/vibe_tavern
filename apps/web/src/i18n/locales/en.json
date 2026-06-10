@@ -209,6 +209,7 @@
   "ready": "Ready",
   "showing_parsed_messages": "Showing first {n} parsed messages.",
   "confirm_import": "Import chat",
+  "st_folder_import": "Import",
   "import_error_read_card": "Could not read character card.",
   "import_error_read_chat": "Could not read chat history.",
   "import_invalid_format": "Only SillyTavern JSONL chat files are supported here.",
@@ -1000,6 +1001,8 @@
   "placeholder_create_character": "Create Character",
   "placeholder_setup_provider": "Connect Provider",
   "placeholder_setup_wizard": "Setup Wizard",
+  "placeholder_welcome": "Welcome to Vibe Tavern",
+  "placeholder_hint": "The hall is quiet, but the story is ready to begin. Create your first character or import an existing one."
   "wizard_path_a_title": "Start Setup",
   "wizard_path_a_sub": "Connect AI provider, create persona, add character",
   "wizard_path_b_title": "Migrate from SillyTavern",

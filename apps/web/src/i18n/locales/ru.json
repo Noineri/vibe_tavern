@@ -208,6 +208,7 @@
   "ready": "Готово",
   "showing_parsed_messages": "Показаны первые {n} разобранных сообщений.",
   "confirm_import": "Импортировать чат",
+  "st_folder_import": "Импортировать",
   "import_error_read_card": "Не удалось прочитать карточку персонажа.",
   "import_error_read_chat": "Не удалось прочитать историю чата.",
   "import_invalid_format": "Поддерживаются только файлы чатов SillyTavern JSONL.",
@@ -1000,6 +1001,8 @@
   "placeholder_create_character": "Создать персонажа",
   "placeholder_setup_provider": "Подключить провайдер",
   "placeholder_setup_wizard": "Мастер настройки",
+  "placeholder_welcome": "Добро пожаловать в Vibe Tavern",
+  "placeholder_hint": "Зал пуст, но история готова начаться. Создайте первого персонажа или импортируйте готовую карточку."
   "wizard_path_a_title": "Начать настройку",
   "wizard_path_a_sub": "Подключить AI-провайдера, создать персону, добавить персонажа",
   "wizard_path_b_title": "Переезд из SillyTavern",

@@ -20,6 +20,7 @@ import { toast } from "sonner";
 
 type WizardPath = "choose" | "a" | "b" | "skip";
 type PathAStep = 1 | 2 | 3;
+type PathBStep = 0 | 1;
 
 // ── Path selector ──
 function PathSelector({ onSelect }: { onSelect: (path: WizardPath) => void }) {
@@ -426,16 +427,16 @@ export function SetupWizard() {
   const isMobile = useIsMobile();
   const bootstrapData = useBootstrapStore((s) => s.data);
   const bootstrapFirstRun = (bootstrapData?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === "true";
-  const [dismissed, setDismissed] = useState(() => localStorage.getItem("wizard_dismissed") === "1");
+  const [dismissed, setDismissed] = useState(false);
   const isFirstRun = bootstrapFirstRun && !dismissed;
 
   const [path, setPath] = useState<WizardPath>("choose");
   const [stepA, setStepA] = useState<PathAStep>(1);
+  const [stepB, setStepB] = useState<PathBStep>(0);
 
   if (!isFirstRun) return null;
 
   function handleComplete() {
-    localStorage.setItem("wizard_dismissed", "1");
     setDismissed(true);
   }
 
@@ -445,6 +446,7 @@ export function SetupWizard() {
       ? stepA === 1 ? t("wizard_step_provider")
         : stepA === 2 ? t("wizard_step_persona")
         : t("wizard_step_character")
+      : stepB === 0 ? t("wizard_step_provider")
       : t("wizard_path_b_title");
 
   const sub = path === "choose" ? t("ws_sub") : undefined;
@@ -460,6 +462,7 @@ export function SetupWizard() {
           className="absolute left-4 top-5 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-t3 transition-all hover:bg-s2 hover:text-t1"
           onClick={() => {
             if (path === "a" && stepA > 1) setStepA((s) => (s - 1) as PathAStep);
+            else if (path === "b" && stepB > 0) setStepB((s) => (s - 1) as PathBStep);
             else setPath("choose");
           }}
         >
@@ -471,6 +474,13 @@ export function SetupWizard() {
 
   const content = path === "choose" ? (
     <PathSelector onSelect={(p) => { if (p === "skip") handleComplete(); else setPath(p); }} />
+  ) : path === "b" && stepB === 0 ? (
+    <ProviderStep
+      onComplete={() => setStepB(1)}
+      onSkip={() => setStepB(1)}
+    />
+  ) : path === "b" && stepB === 1 ? (
+    <StMigrationStep onImported={handleComplete} />
   ) : path === "a" ? (
     stepA === 1 ? (
       <ProviderStep
@@ -503,7 +513,7 @@ export function SetupWizard() {
 
   return (
     <Modal open={true} onClose={handleComplete}>
-      <div className="flex max-h-[calc(100vh-40px)] max-w-[calc(100vw-32px)] w-[600px] h-[680px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-theme-lg">
+      <div className={cn("flex max-h-[calc(100vh-40px)] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-theme-lg", path === "choose" ? "min-w-[360px] w-auto" : "w-[600px]")}>
         {header}
         {content}
       </div>
