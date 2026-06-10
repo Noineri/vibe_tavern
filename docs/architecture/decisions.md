@@ -262,3 +262,21 @@
 - **Legacy FK retention** — `lorebooks.characterId`/`personaId` are NOT removed. They serve as the "primary owner" used by the scope column UI and by import/duplicate flows that need to know "where does this lorebook live?"
 
 **Trade-off:** Two sources of truth (FK + links table) for character/persona associations. Mitigated by: (1) the migration seeds links from FKs, (2) `createLorebook` populates both, (3) the pipeline (`listAllActiveForChat`) reads exclusively from links.
+
+---
+
+## AD-015: Flex Centering over CSS Transform for Modal Positioning
+
+**Context:** The Setup Wizard uses a Radix `Dialog` as its container. Child components (model dropdown, avatar crop modal) use `position: fixed` and portal into `#modal-portal` inside the Dialog content.
+
+**Problem:** `Dialog.Content` used `transform: translate(-50%, -50%)` for centering, which creates a new containing block for `position: fixed` descendants. This caused fixed-position portaled elements to be offset by thousands of pixels relative to the viewport.
+
+**Decision:** Replace CSS transform centering with `fixed inset-0 flex items-center justify-center` on the overlay.
+
+**Rationale:**
+- `flex` centering does NOT create a new containing block — `position: fixed` children still reference the viewport
+- Portaled elements (dropdown, crop modal) render at correct screen coordinates
+- No change to visual appearance — dialog is still centered
+- Simpler CSS — no negative margins or calc expressions
+
+**Trade-off:** None. Flex centering is strictly superior for this use case.
