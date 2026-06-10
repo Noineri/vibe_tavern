@@ -394,6 +394,8 @@ export async function updatePersona(
 ): Promise<AppSnapshot> {
   const response = await client.api.personas[":personaId"].$patch({ param: { personaId }, json: input });
   const data = await unwrapRpc<AppSnapshot>(response);
+  // When no chats exist (wizard), server returns { id } instead of full snapshot
+  if (!data.character) return data as unknown as AppSnapshot;
   return normalizeSnapshot(data);
 }
 
