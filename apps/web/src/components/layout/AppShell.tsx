@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Toaster } from "sonner";
 import { useT } from "../../i18n/context.js";
 import { Icons } from "../shared/icons.js";
@@ -89,9 +89,16 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const character = useCharacterController();
   const provider = useProviderProfiles();
   const preset = usePresetController();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.length) character.handleImportFiles(e.target.files);
+    e.target.value = '';
+  };
 
   const promptPresets = bootstrapData?.promptPresets ?? [];
+  const [wizardVisible, setWizardVisible] = useState(false);
   const isFirstRun = (bootstrapData?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === 'true';
+
   const hasActiveSnapshot = Boolean(
     activeChatId &&
     activeChat?.id === activeChatId &&
@@ -138,7 +145,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
 
   let shellSurface: React.ReactNode;
 
-  if (!hasActiveSnapshot) {
+  if (!hasActiveSnapshot && !wizardVisible) {
     shellSurface = (
       <div className="flex h-full w-full items-center justify-center p-6">
         <div className="flex max-w-[480px] flex-col items-center text-center">
@@ -165,11 +172,12 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
           <button
             type="button"
             className="mb-6 flex w-full items-center justify-center gap-2 rounded-xl border border-border2 bg-s2 px-6 py-3 font-ui text-[0.95rem] font-semibold text-t1 transition-all hover:border-accent/50 hover:bg-surface"
-            onClick={() => setIsProviderModalOpen(true)}
+            onClick={() => fileInputRef.current?.click()}
           >
             <span className="text-[0.9rem]"><Icons.Import /></span>
-            {t('placeholder_setup_provider')}
+            {t('placeholder_import_character')}
           </button>
+          <input ref={fileInputRef} type="file" accept=".png,.json" className="hidden" onChange={handleImportFile} />
 
           {/* Utility row */}
           <div className="grid w-full grid-cols-2 gap-3 border-t border-border/50 pt-5">
@@ -347,7 +355,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       )}
 
       <ShellDestructiveConfirmModal />
-      <SetupWizard />
+      <SetupWizard onVisibilityChange={setWizardVisible} />
       <Toaster
         position={isMobile ? "top-center" : "bottom-right"}
         toastOptions={{ style: { background: "var(--s2)", color: "var(--t1)", border: "1px solid var(--border)" } }}

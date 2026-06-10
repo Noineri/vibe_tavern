@@ -999,10 +999,11 @@
   "ai_param_temperature": "Температура",
   "ai_param_max_tokens": "Макс. токенов",
   "placeholder_create_character": "Создать персонажа",
+  "placeholder_import_character": "Импортировать персонажа",
   "placeholder_setup_provider": "Подключить провайдер",
   "placeholder_setup_wizard": "Мастер настройки",
   "placeholder_welcome": "Добро пожаловать в Vibe Tavern",
-  "placeholder_hint": "Зал пуст, но история готова начаться. Создайте первого персонажа или импортируйте готовую карточку."
+  "placeholder_hint": "Зал пуст, но история готова начаться. Создайте первого персонажа или импортируйте готовую карточку.",
   "wizard_path_a_title": "Начать настройку",
   "wizard_path_a_sub": "Подключить AI-провайдера, создать персону, добавить персонажа",
   "wizard_path_b_title": "Переезд из SillyTavern",

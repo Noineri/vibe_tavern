@@ -999,10 +999,11 @@
   "ai_param_temperature": "Temperature",
   "ai_param_max_tokens": "Max Tokens",
   "placeholder_create_character": "Create Character",
+  "placeholder_import_character": "Import Character",
   "placeholder_setup_provider": "Connect Provider",
   "placeholder_setup_wizard": "Setup Wizard",
   "placeholder_welcome": "Welcome to Vibe Tavern",
-  "placeholder_hint": "The hall is quiet, but the story is ready to begin. Create your first character or import an existing one."
+  "placeholder_hint": "The hall is quiet, but the story is ready to begin. Create your first character or import an existing one.",
   "wizard_path_a_title": "Start Setup",
   "wizard_path_a_sub": "Connect AI provider, create persona, add character",
   "wizard_path_b_title": "Migrate from SillyTavern",
