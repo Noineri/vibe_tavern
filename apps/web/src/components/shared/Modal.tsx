@@ -48,24 +48,22 @@ export function Modal({
         )}
         <Dialog.Content
           className={cn(
-            "fixed z-[501]",
-            !compact && isMobile
-              ? "inset-0 w-full h-full rounded-none flex items-center justify-center"
-              : "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2",
-            compact && "max-w-sm left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2",
+            "fixed inset-0 z-[501] flex items-center justify-center pointer-events-none",
+            !compact && isMobile && "w-full h-full rounded-none",
+            compact && "p-4",
           )}
           onPointerDownOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
         >
           <Dialog.Title className="sr-only">{title}</Dialog.Title>
           <Dialog.Description className="sr-only">{description}</Dialog.Description>
-          {children}
+          <div className={cn("pointer-events-auto", compact && "max-w-sm")}>{children}</div>
             {/* Portal anchor for nested Radix components (Select, Popover).
-                Positioned as a zero-size fixed element inside Dialog.Content.
-                Select.Portal uses this as container to stay within focus trap. */}
+                It must be inside Dialog.Content for Radix focus trapping, but Dialog.Content
+                must not use CSS transforms or fixed dropdown coordinates become wrong. */}
             <div
               id="modal-portal"
-              style={{ position: "fixed", top: 0, left: 0, width: 0, height: 0, overflow: "visible" }}
+              style={{ position: "fixed", top: 0, left: 0, width: 0, height: 0, overflow: "visible", pointerEvents: "auto" }}
             />
           </Dialog.Content>
       </Dialog.Portal>

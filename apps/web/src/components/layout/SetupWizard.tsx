@@ -470,8 +470,7 @@ function CharacterStep({
   const [desc, setDesc] = useState("");
   const [firstMsg, setFirstMsg] = useState("");
   const [busy, setBusy] = useState(false);
-  const fileRef = useState<HTMLInputElement | null>(null)[0];
-  const setFileRef = useState<HTMLInputElement | null>(null)[1];
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   async function handleCreate() {
     if (!name.trim()) return;
@@ -528,12 +527,12 @@ function CharacterStep({
       <button
         type="button"
         className="flex items-center gap-2 rounded-lg border border-dashed border-border2 bg-transparent px-4 py-3 font-ui text-[0.85rem] text-t3 transition-all hover:border-accent hover:text-accent"
-        onClick={() => fileRef?.click()}
+        onClick={() => fileRef.current?.click()}
       >
         <Icons.Import /> {t("ws_import")}
       </button>
       <input
-        ref={(el) => setFileRef(el)}
+        ref={fileRef}
         type="file"
         accept=".png,.json"
         className="hidden"
