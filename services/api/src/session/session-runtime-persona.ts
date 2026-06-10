@@ -124,7 +124,7 @@ export class PersonaRuntime {
 			avatarFullAssetId?: string | null;
 			avatarCropJson?: string | null;
 		},
-	): Promise<SessionSnapshot> {
+	): Promise<SessionSnapshot | { id: string }> {
 		const currentPersona = await this.deps.stores.personas.getById(brandId<PersonaId>(personaId));
 		if (!currentPersona) {
 			throw notFound("Persona", `Persona '${personaId}' was not found.`);
@@ -159,7 +159,7 @@ export class PersonaRuntime {
 			this.deps.chatOrder.items[0]) as ChatId | undefined;
 
 		if (!targetChatId) {
-			throw notFound("Chat", "No chat is available for the updated persona.");
+			return { id: personaId };
 		}
 
 		return this.deps.getSnapshot(targetChatId);
