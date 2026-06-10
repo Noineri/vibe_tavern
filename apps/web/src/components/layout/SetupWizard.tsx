@@ -151,10 +151,17 @@ function ProviderStep({
     setForm((prev) => ({ ...prev, providerPreset: presetId, baseUrl: preset.baseUrl }));
   }, []);
 
-  async function fetchModelsFor(endpoint: string, apiKey: string, presetType?: string) {
+  async function fetchModelsFor() {
     setFetchingModels(true);
     try {
-      const fetched = await provider.handleFetchModelsByEndpoint(endpoint, apiKey.trim() || undefined, false, presetType);
+      const pid = existingProfile?.id ?? form.id;
+      let fetched: Array<{ id: string; label: string; contextLength?: number }>;
+      if (pid) {
+        fetched = await provider.handleFetchModelsForProfile(pid);
+      } else {
+        const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
+        fetched = await provider.handleFetchModelsByEndpoint(form.baseUrl, form.apiKey.trim() || undefined, false, preset?.type);
+      }
       setModels(fetched);
       if (fetched.length && !form.model) updateForm("model", fetched[0].id);
       return fetched;
@@ -164,8 +171,7 @@ function ProviderStep({
   // Auto-fetch models when we detect an existing profile on mount
   useEffect(() => {
     if (alreadyHasProfile && existingProfile) {
-      const preset = PROVIDER_PRESETS.find((f) => f.id === existingProfile.providerPreset);
-      void fetchModelsFor(existingProfile.endpoint, "", preset?.type);
+      void fetchModelsFor();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -174,13 +180,16 @@ function ProviderStep({
     setTesting(true);
     setTestOk(null);
     try {
-      if (!form.baseUrl) return;
-      const probe = await provider.handleTestDraftConnection(form.baseUrl, form.apiKey);
-      setTestOk(probe.success);
-      if (probe.success) {
-        const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
-        await fetchModelsFor(form.baseUrl, form.apiKey, preset?.type);
+      const pid = existingProfile?.id ?? form.id;
+      let probe: { success: boolean };
+      if (pid) {
+        probe = await provider.handleTestProfileConnection(pid);
+      } else {
+        if (!form.baseUrl) return;
+        probe = await provider.handleTestDraftConnection(form.baseUrl, form.apiKey);
       }
+      setTestOk(probe.success);
+      if (probe.success) await fetchModelsFor();
     } catch { setTestOk(false); }
     finally { setTesting(false); }
   }
