@@ -1000,6 +1000,10 @@
   "ai_param_max_tokens": "Max Tokens",
   "placeholder_create_character": "Create Character",
   "placeholder_import_character": "Import Character",
+  "api_key_saved": "API key saved",
+  "wizard_edit_provider": "Edit settings",
+  "provider_active": "Active",
+  "save": "Save"
   "placeholder_setup_provider": "Connect Provider",
   "placeholder_setup_wizard": "Setup Wizard",
   "placeholder_welcome": "Welcome to Vibe Tavern",
