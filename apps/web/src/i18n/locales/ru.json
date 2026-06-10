@@ -999,6 +999,7 @@
   "ai_param_max_tokens": "Макс. токенов",
   "placeholder_create_character": "Создать персонажа",
   "placeholder_setup_provider": "Подключить провайдер",
+  "placeholder_setup_wizard": "Мастер настройки",
   "wizard_path_a_title": "Начать настройку",
   "wizard_path_a_sub": "Подключить AI-провайдера, создать персону, добавить персонажа",
   "wizard_path_b_title": "Переезд из SillyTavern",
@@ -1009,5 +1010,6 @@
   "wizard_persona_hint": "Расскажите AI кто вы. Можно пропустить и настроить позже.",
   "wizard_character_hint": "Создайте персонажа, импортируйте или пропустите.",
   "wizard_st_hint": "Выберите папку с данными SillyTavern для импорта.",
-  "skip": "Пропустить"
+  "skip": "Пропустить",
+  "next": "Далее"
 }

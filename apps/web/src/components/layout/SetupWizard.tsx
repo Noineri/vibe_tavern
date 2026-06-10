@@ -422,7 +422,9 @@ export function SetupWizard() {
   const { t } = useT();
   const isMobile = useIsMobile();
   const bootstrapData = useBootstrapStore((s) => s.data);
-  const isFirstRun = (bootstrapData?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === "true";
+  const bootstrapFirstRun = (bootstrapData?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === "true";
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem("wizard_dismissed") === "1");
+  const isFirstRun = bootstrapFirstRun && !dismissed;
 
   const [path, setPath] = useState<WizardPath>("choose");
   const [stepA, setStepA] = useState<PathAStep>(1);
@@ -430,9 +432,8 @@ export function SetupWizard() {
   if (!isFirstRun) return null;
 
   function handleComplete() {
-    // isFirstRun is managed by bootstrap; opening any chat or importing sets it false
-    // For now, just hide the wizard
-    // TODO: call API to set isFirstRun=false
+    localStorage.setItem("wizard_dismissed", "1");
+    setDismissed(true);
   }
 
   const title = path === "choose"
@@ -444,6 +445,26 @@ export function SetupWizard() {
       : t("wizard_path_b_title");
 
   const sub = path === "choose" ? t("ws_sub") : undefined;
+
+  const header = (
+    <div className={cn("relative shrink-0 text-center", isMobile ? "px-4 pt-5" : "px-7 pt-7")}>
+      <div className="mb-1.5 font-ui text-[1.35rem] font-bold text-t1">{title}</div>
+      {sub && <div className="mb-6 font-ui text-[0.88rem] text-t2">{sub}</div>}
+      {path === "a" && <div className="mb-4"><StepIndicator step={stepA} total={3} /></div>}
+      {path !== "choose" && (
+        <button
+          type="button"
+          className="absolute left-4 top-5 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-t3 transition-all hover:bg-s2 hover:text-t1"
+          onClick={() => {
+            if (path === "a" && stepA > 1) setStepA((s) => (s - 1) as PathAStep);
+            else setPath("choose");
+          }}
+        >
+          <span className="text-[13px]">{Ic.caret('l')}</span>
+        </button>
+      )}
+    </div>
+  );
 
   const content = path === "choose" ? (
     <PathSelector onSelect={setPath} />
@@ -468,36 +489,21 @@ export function SetupWizard() {
     <StMigrationStep onImported={() => { setPath("a"); setStepA(1); }} />
   );
 
-  return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/55 backdrop-blur-[2px]">
-      <div className={cn(
-        "flex flex-col overflow-hidden bg-surface",
-        isMobile ? "w-full h-full" : "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] w-[600px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]",
-      )}>
-        {/* Header */}
-        <div className={cn("shrink-0 text-center", isMobile ? "px-4 pt-5" : "px-7 pt-7")}>
-          <div className="mb-1.5 font-ui text-[1.35rem] font-bold text-t1">{title}</div>
-          {sub && <div className="mb-6 font-ui text-[0.88rem] text-t2">{sub}</div>}
-          {/* Step indicator for Path A */}
-          {path === "a" && <div className="mb-4"><StepIndicator step={stepA} total={3} /></div>}
-          {/* Back button for sub-steps */}
-          {path !== "choose" && (
-            <button
-              type="button"
-              className="absolute left-4 top-5 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-t3 transition-all hover:bg-s2 hover:text-t1"
-              onClick={() => {
-                if (path === "a" && stepA > 1) setStepA((s) => (s - 1) as PathAStep);
-                else setPath("choose");
-              }}
-            >
-              <span className="text-[13px]">{Ic.caret('l')}</span>
-            </button>
-          )}
-        </div>
-
-        {/* Content */}
+  if (isMobile) {
+    return (
+      <div className="fixed inset-0 z-[500] flex flex-col bg-surface">
+        {header}
         {content}
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <Modal open={true} onClose={handleComplete}>
+      <div className="flex max-h-[calc(100vh-40px)] max-w-[calc(100vw-32px)] w-[600px] h-[680px] flex-col overflow-hidden rounded-xl border border-border2 bg-surface shadow-theme-lg">
+        {header}
+        {content}
+      </div>
+    </Modal>
   );
 }
