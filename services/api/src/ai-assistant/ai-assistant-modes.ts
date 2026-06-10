@@ -71,7 +71,7 @@ const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
     defaultPromptFile: "md-import-prompt.md",
     stripReasoning: true,
     outputFormat: "json",
-    jsonSchemaHint: '{ "name": "...", "tagline": "...", "description": "...", "personality": "...", "scenario": "...", "firstMessage": "...", "exampleMessages": ["..."], "creatorNotes": "...", "additionalCharacters": [{ "name": "...", "description": "..." }] }',
+    jsonSchemaHint: '{ "name": "...", "tagline": "...", "description": "...", "personality": "...", "scenario": "...", "firstMessage": "...", "alternateGreetings": ["..."], "exampleMessages": ["..."], "creatorNotes": "..." }',
   },
 };
 
