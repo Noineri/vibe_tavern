@@ -472,7 +472,7 @@ function PersonaStep({
           imageUrl={pendingAvatar.url}
           fileName="persona_avatar.png"
           onConfirm={(result: AvatarCropResult) => {
-            setAvatarPreview(pendingAvatar.url);
+            setAvatarPreview(URL.createObjectURL(result.croppedFile));
             setCroppedAvatarFile(result.croppedFile);
             setPendingAvatar(null);
           }}
@@ -694,7 +694,7 @@ function CharacterStep({
           imageUrl={charAvatarPending.url}
           fileName="character_avatar.png"
           onConfirm={(result: AvatarCropResult) => {
-            setCharAvatarPreview(charAvatarPending.url);
+            setCharAvatarPreview(URL.createObjectURL(result.croppedFile));
             setCharAvatarFile(result.croppedFile);
             setCharAvatarPending(null);
           }}
