@@ -385,10 +385,18 @@ function PersonaStep({
   const { t } = useT();
   const isMobile = useIsMobile();
   const personas = useBootstrapStore((s) => s.personas);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [pronouns, setPronouns] = useState("");
-  const [pronounsCustom, setPronounsCustom] = useState("");
+  const existingPersona = personas?.find((p) => p.defaultForNewChats) ?? personas?.[0];
+
+  const [name, setName] = useState(existingPersona?.name ?? "");
+  const [description, setDescription] = useState(existingPersona?.description ?? "");
+  const [pronouns, setPronouns] = useState(() => {
+    if (!existingPersona?.pronouns) return "";
+    return ["he/him", "she/her", "they/them", "it/its"].includes(existingPersona.pronouns) ? existingPersona.pronouns : "custom";
+  });
+  const [pronounsCustom, setPronounsCustom] = useState(() => {
+    if (!existingPersona?.pronouns) return "";
+    return ["he/him", "she/her", "they/them", "it/its"].includes(existingPersona.pronouns) ? "" : (existingPersona.pronouns ?? "");
+  });
   const [saving, setSaving] = useState(false);
 
   const PRONOUN_OPTIONS: { v: string; l: string }[] = [
@@ -404,7 +412,7 @@ function PersonaStep({
     if (!name.trim()) return;
     setSaving(true);
     try {
-      const existing = personas?.find((p) => p.defaultForNewChats) ?? personas?.[0];
+      const existing = existingPersona;
       const resolvedPronouns = pronouns === "custom" ? (pronounsCustom.trim() || null) : (pronouns || null);
       if (existing) {
         await updatePersona(existing.id, { name: name.trim(), description, pronouns: resolvedPronouns });
