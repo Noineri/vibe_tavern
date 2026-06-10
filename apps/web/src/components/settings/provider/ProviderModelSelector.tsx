@@ -1,4 +1,4 @@
-import React from 'react';
+import { createPortal } from 'react-dom';
 import { useT } from '../../../i18n/context.js';
 import { useIsMobile } from '../../../hooks/use-mobile.js';
 import type { FormState } from '../../modals/ProviderModal.js';
@@ -134,8 +134,12 @@ export function ProviderModelSelector({
                   <Icons.Caret direction="d" />
                 </span>
               </button>
-              {modelListOpen && (
-                <div className="absolute left-0 right-0 top-full z-[100] mt-1 overflow-hidden rounded-md border border-border shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
+              {modelListOpen && dropdownRef.current && createPortal(
+                <div className="fixed z-[600] overflow-hidden rounded-md border border-border shadow-[0_8px_30px_rgba(0,0,0,0.6)]" style={{
+                  top: (() => { const r = dropdownRef.current?.getBoundingClientRect(); return r ? r.bottom + 4 : 0; })(),
+                  left: (() => { const r = dropdownRef.current?.getBoundingClientRect(); return r ? r.left : 0; })(),
+                  width: (() => { const r = dropdownRef.current?.getBoundingClientRect(); return r ? r.width : 300; })(),
+                }}>
                   <div
                     className="border-b border-border2 bg-s2 p-2"
                   >
@@ -238,7 +242,8 @@ export function ProviderModelSelector({
                       </div>
                     )}
                   </div>
-                </div>
+                </div>,
+                document.body,
               )}
               {!models.find((m) => m.id === form.model) && form.model && (
                 <div className="mt-2 font-ui text-[12px] font-medium text-accent">
