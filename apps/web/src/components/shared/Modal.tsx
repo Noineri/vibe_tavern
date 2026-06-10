@@ -65,7 +65,7 @@ export function Modal({
                 Select.Portal uses this as container to stay within focus trap. */}
             <div
               id="modal-portal"
-              style={{ position: "fixed", top: 0, left: 0, width: 0, height: 0 }}
+              style={{ position: "fixed", top: 0, left: 0, width: 0, height: 0, overflow: "visible" }}
             />
           </Dialog.Content>
       </Dialog.Portal>
