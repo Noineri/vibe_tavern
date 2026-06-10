@@ -17,6 +17,8 @@ import { PROVIDER_PRESETS } from "../../provider-presets.js";
 import { StFolderImport } from "../modals/ImportModals.js";
 import { Icons, Ic } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
+import { AvatarCropModal } from "../shared/AvatarCropModal.js";
+import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
 import { updatePersona, createPersona, uploadAsset } from "../../app-client.js";
 import { toast } from "sonner";
 import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader.js";
@@ -399,7 +401,8 @@ function PersonaStep({
   });
   const [saving, setSaving] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [pendingAvatar, setPendingAvatar] = useState<File | null>(null);
+  const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
+  const [croppedAvatarFile, setCroppedAvatarFile] = useState<File | null>(null);
   const personaAvatarRef = useRef<HTMLInputElement | null>(null);
 
   const PRONOUN_OPTIONS: { v: string; l: string }[] = [
@@ -418,13 +421,13 @@ function PersonaStep({
       const existing = existingPersona;
       const resolvedPronouns = pronouns === "custom" ? (pronounsCustom.trim() || null) : (pronouns || null);
       if (existing) {
-        const avatarAssetId = pendingAvatar ? (await uploadAsset(pendingAvatar)).assetId : undefined;
+        const avatarAssetId = croppedAvatarFile ? (await uploadAsset(croppedAvatarFile)).assetId : undefined;
         await updatePersona(existing.id, { name: name.trim(), description, pronouns: resolvedPronouns, avatarAssetId });
         await fetchPersonasAction();
       } else {
         const persona = await createPersona({ name: name.trim(), description, pronouns: resolvedPronouns });
-        if (pendingAvatar && persona.id) {
-          const asset = await uploadAsset(pendingAvatar);
+        if (croppedAvatarFile && persona.id) {
+          const asset = await uploadAsset(croppedAvatarFile);
           await updatePersona(persona.id, { name: name.trim(), description, pronouns: resolvedPronouns, avatarAssetId: asset.assetId });
         }
         await fetchPersonasAction();
@@ -453,8 +456,7 @@ function PersonaStep({
               const file = e.target.files?.[0];
               if (!file) return;
               e.target.value = "";
-              setPendingAvatar(file);
-              setAvatarPreview(URL.createObjectURL(file));
+              setPendingAvatar({ file, url: URL.createObjectURL(file) });
             }}
           />
           {avatarPreview ? (
@@ -465,6 +467,21 @@ function PersonaStep({
         </div>
         <div className="font-ui text-[0.8rem] text-t3">{t("wizard_avatar_hint")}</div>
       </div>
+      {pendingAvatar && (
+        <AvatarCropModal
+          imageUrl={pendingAvatar.url}
+          fileName="persona_avatar.png"
+          onConfirm={(result: AvatarCropResult) => {
+            setAvatarPreview(pendingAvatar.url);
+            setCroppedAvatarFile(result.croppedFile);
+            setPendingAvatar(null);
+          }}
+          onCancel={() => {
+            if (pendingAvatar.url) URL.revokeObjectURL(pendingAvatar.url);
+            setPendingAvatar(null);
+          }}
+        />
+      )}
 
       <label className="flex flex-col gap-1">
         <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_name_label")}</span>
@@ -588,6 +605,7 @@ function CharacterStep({
   const [parsingCard, setParsingCard] = useState(false);
   const [cardPreview, setCardPreview] = useState<WizardCharacterPreview | null>(null);
   const [charAvatarPreview, setCharAvatarPreview] = useState<string | null>(null);
+  const [charAvatarPending, setCharAvatarPending] = useState<{ file: File; url: string } | null>(null);
   const [charAvatarFile, setCharAvatarFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const charAvatarRef = useRef<HTMLInputElement | null>(null);
@@ -660,8 +678,7 @@ function CharacterStep({
               const file = e.target.files?.[0];
               if (!file) return;
               e.target.value = "";
-              setCharAvatarFile(file);
-              setCharAvatarPreview(URL.createObjectURL(file));
+              setCharAvatarPending({ file, url: URL.createObjectURL(file) });
             }}
           />
           {charAvatarPreview ? (
@@ -672,6 +689,21 @@ function CharacterStep({
         </div>
         <div className="font-ui text-[0.8rem] text-t3">{t("wizard_avatar_hint")}</div>
       </div>
+      {charAvatarPending && (
+        <AvatarCropModal
+          imageUrl={charAvatarPending.url}
+          fileName="character_avatar.png"
+          onConfirm={(result: AvatarCropResult) => {
+            setCharAvatarPreview(charAvatarPending.url);
+            setCharAvatarFile(result.croppedFile);
+            setCharAvatarPending(null);
+          }}
+          onCancel={() => {
+            if (charAvatarPending.url) URL.revokeObjectURL(charAvatarPending.url);
+            setCharAvatarPending(null);
+          }}
+        />
+      )}
 
       <label className="flex flex-col gap-1">
         <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_name_label")}</span>
