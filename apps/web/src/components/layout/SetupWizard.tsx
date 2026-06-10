@@ -320,7 +320,19 @@ function ProviderStep({
         chatResult={chatResult}
         onTest={handleTest}
         onTestChat={handleTestChat}
+        hideConnectionFields={testOk === true}
       />
+      {testOk === true && (
+        <div className="flex items-center gap-3 rounded-lg border border-success/20 bg-success/5 px-3 py-2">
+          <span className="inline-flex items-center gap-1.5 font-ui text-[12px] text-success">
+            <Icons.Check />
+            {t("connection_successful")}
+          </span>
+          <button type="button" className="ml-auto font-ui text-[11px] font-medium text-t3 transition-colors hover:text-accent" onClick={() => { setTestOk(null); }}>
+            {t("wizard_edit_provider")}
+          </button>
+        </div>
+      )}
       {!testOk && form.apiKey && form.baseUrl && (
         <button
           type="button"
@@ -380,9 +392,17 @@ function ProviderStep({
 function PersonaStep({
   onComplete,
   onSkip,
+  avatarPreview: avatarPreviewProp,
+  avatarFile: avatarFileProp,
+  onAvatarPreviewChange,
+  onAvatarFileChange,
 }: {
   onComplete: () => void;
   onSkip: () => void;
+  avatarPreview: string | null;
+  avatarFile: File | null;
+  onAvatarPreviewChange: (v: string | null) => void;
+  onAvatarFileChange: (v: File | null) => void;
 }) {
   const { t } = useT();
   const isMobile = useIsMobile();
@@ -400,9 +420,9 @@ function PersonaStep({
     return ["he/him", "she/her", "they/them", "it/its"].includes(existingPersona.pronouns) ? "" : (existingPersona.pronouns ?? "");
   });
   const [saving, setSaving] = useState(false);
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const avatarPreview = avatarPreviewProp;
+  const croppedAvatarFile = avatarFileProp;
   const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
-  const [croppedAvatarFile, setCroppedAvatarFile] = useState<File | null>(null);
   const personaAvatarRef = useRef<HTMLInputElement | null>(null);
 
   const PRONOUN_OPTIONS: { v: string; l: string }[] = [
@@ -421,13 +441,13 @@ function PersonaStep({
       const existing = existingPersona;
       const resolvedPronouns = pronouns === "custom" ? (pronounsCustom.trim() || null) : (pronouns || null);
       if (existing) {
-        const avatarAssetId = croppedAvatarFile ? (await uploadAsset(croppedAvatarFile)).assetId : undefined;
+        const avatarAssetId = avatarFileProp ? (await uploadAsset(avatarFileProp)).assetId : undefined;
         await updatePersona(existing.id, { name: name.trim(), description, pronouns: resolvedPronouns, avatarAssetId });
         await fetchPersonasAction();
       } else {
         const persona = await createPersona({ name: name.trim(), description, pronouns: resolvedPronouns });
-        if (croppedAvatarFile && persona.id) {
-          const asset = await uploadAsset(croppedAvatarFile);
+        if (avatarFileProp && persona.id) {
+          const asset = await uploadAsset(avatarFileProp);
           await updatePersona(persona.id, { name: name.trim(), description, pronouns: resolvedPronouns, avatarAssetId: asset.assetId });
         }
         await fetchPersonasAction();
@@ -472,8 +492,8 @@ function PersonaStep({
           imageUrl={pendingAvatar.url}
           fileName="persona_avatar.png"
           onConfirm={(result: AvatarCropResult) => {
-            setAvatarPreview(URL.createObjectURL(result.croppedFile));
-            setCroppedAvatarFile(result.croppedFile);
+            onAvatarPreviewChange(URL.createObjectURL(result.croppedFile));
+            onAvatarFileChange(result.croppedFile);
             setPendingAvatar(null);
           }}
           onCancel={() => {
@@ -833,6 +853,10 @@ export function SetupWizard({ onVisibilityChange }: { onVisibilityChange?: (v: b
   const [stepA, setStepA] = useState<PathAStep>(1);
   const [stepB, setStepB] = useState<PathBStep>(0);
 
+  // Persisted avatar state for PersonaStep (survives back navigation)
+  const [personaAvatarPreview, setPersonaAvatarPreview] = useState<string | null>(null);
+  const [personaAvatarFile, setPersonaAvatarFile] = useState<File | null>(null);
+
   if (!isFirstRun) return null;
 
   function handleComplete() {
@@ -890,6 +914,10 @@ export function SetupWizard({ onVisibilityChange }: { onVisibilityChange?: (v: b
       <PersonaStep
         onComplete={() => setStepA(3)}
         onSkip={() => setStepA(3)}
+        avatarPreview={personaAvatarPreview}
+        avatarFile={personaAvatarFile}
+        onAvatarPreviewChange={setPersonaAvatarPreview}
+        onAvatarFileChange={setPersonaAvatarFile}
       />
     ) : (
       <CharacterStep

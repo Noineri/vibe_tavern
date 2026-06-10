@@ -29,6 +29,8 @@ interface ProviderFormProps {
   chatResult: { reply?: string; error?: string } | null;
   onTest: () => void;
   onTestChat: () => void;
+  /** Hide endpoint, API key, stream toggle, and test card (wizard compact mode after successful connection) */
+  hideConnectionFields?: boolean;
 }
 
 export function ProviderForm({
@@ -43,6 +45,7 @@ export function ProviderForm({
   chatResult,
   onTest,
   onTestChat,
+  hideConnectionFields,
 }: ProviderFormProps) {
   const { t } = useT();
   const presetGroup = getPresetGroup(form.providerPreset);
@@ -127,6 +130,7 @@ export function ProviderForm({
         </div>
       </div>
 
+      {!hideConnectionFields && (<>
       {/* Custom endpoint */}
       <div className="mb-3">
         <label className={labelCls + " mb-[6px]"}>{t("custom_endpoint_label")}</label>
@@ -241,6 +245,7 @@ export function ProviderForm({
           </div>
         )}
       </div>
+      </>)}
     </>
   );
 }
