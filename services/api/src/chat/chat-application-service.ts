@@ -93,6 +93,7 @@ export class ChatApplicationService {
       role: "user",
       authorType: "user",
       content: input.content,
+      attachmentsJson: input.attachments?.length ? JSON.stringify(input.attachments) : null,
     });
 
     return message as unknown as Message;

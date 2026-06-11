@@ -10,6 +10,8 @@ import type { LanguageModel } from "ai";
 import { mapProfileToSdkModel } from "./provider-profile-mapper.js";
 import { getProviderCapabilities } from "./provider-capabilities.js";
 import type { ProviderType } from "@vibe-tavern/domain";
+import type { VisionGateConfig } from "./vision-gate.js";
+import { resolveMultimodalContent } from "./vision-gate.js";
 import { log } from "@vibe-tavern/domain";
 
 // ---------------------------------------------------------------------------
@@ -20,6 +22,8 @@ import { log } from "@vibe-tavern/domain";
 export interface SdkMessage {
   role: "system" | "user" | "assistant";
   content: string;
+  /** File attachments on this message, passed through for vision gate resolution. */
+  attachments?: import("@vibe-tavern/domain").Attachment[];
 }
 
 /** Result of preparing messages for provider execution. */
@@ -31,7 +35,7 @@ export interface PreparedMessages {
    */
   systemPrompt?: undefined;
   /** Prompt messages in trace order, with optional prefill appended. */
-  conversationMessages: SdkMessage[];
+  conversationMessages: Array<SdkMessage | { role: SdkMessage["role"]; content: Array<{ type: "text"; text: string } | { type: "image"; image: Buffer; mediaType?: string }> }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +79,10 @@ export function toSdkMessages(
         log.tag("sdk-msgs").warn("FILTERED out role=%s, content.length=%d", r.role, (r.content as string)?.length ?? 0);
         return null;
       }
-      return { role: r.role as SdkMessage["role"], content: r.content };
+      const attachments = Array.isArray((r as { attachments?: unknown }).attachments)
+        ? (r as { attachments?: import("@vibe-tavern/domain").Attachment[] }).attachments
+        : undefined;
+      return { role: r.role as SdkMessage["role"], content: r.content, ...(attachments?.length ? { attachments } : {}) };
     })
     .filter((m): m is SdkMessage => m !== null);
 }
@@ -97,10 +104,15 @@ export function toSdkMessages(
  * message, preserving their relative order, followed by the non-system
  * messages in their original order.
  */
-export function prepareSdkMessages(
+export async function prepareSdkMessages(
   messages: SdkMessage[],
-  options: { prefill?: string; providerType: ProviderType },
-): PreparedMessages {
+  options: {
+    prefill?: string;
+    providerType: ProviderType;
+    visionGate?: VisionGateConfig;
+    assetLoader?: (assetId: string) => Promise<Buffer | null>;
+  },
+): Promise<PreparedMessages> {
   const capabilities = getProviderCapabilities(options.providerType);
   let conversationMessages: SdkMessage[];
 
@@ -127,6 +139,19 @@ export function prepareSdkMessages(
 
   if (options.prefill && capabilities.prefill) {
     conversationMessages.push({ role: "assistant", content: options.prefill });
+  }
+
+  // Resolve multimodal content (image attachments → ImageParts)
+  if (options.visionGate && options.assetLoader) {
+    conversationMessages = await Promise.all(
+      conversationMessages.map(async (msg) => {
+        if ("attachments" in msg && msg.attachments?.length) {
+          const content = await resolveMultimodalContent(msg, options.visionGate!, options.assetLoader!);
+          return { role: msg.role, content };
+        }
+        return msg;
+      }),
+    ) as typeof conversationMessages;
   }
 
   return { systemPrompt: undefined, conversationMessages };

@@ -17,6 +17,9 @@ const EXT_TO_MIME: Record<string, string> = {
 
 const ALLOWED_MIMES = new Set(Object.keys(MIME_TO_EXT));
 
+/** Maximum upload size for images (20 MB — most providers cap at this). */
+const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
+
 export class AssetService {
   constructor(private readonly assetsDir: string) {}
 
@@ -30,6 +33,9 @@ export class AssetService {
     const fileName = `${assetId}.${ext}`;
     const filePath = resolve(this.assetsDir, fileName);
     const buffer = new Uint8Array(await file.arrayBuffer());
+    if (buffer.length > MAX_IMAGE_SIZE) {
+      throw new Error(`Image too large: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB. Maximum: 20 MB.`);
+    }
     await Bun.write(filePath, buffer);
     return { assetId, url: `/api/assets/${assetId}` };
   }
@@ -54,6 +60,26 @@ export class AssetService {
               "Cache-Control": "public, max-age=31536000",
             },
           });
+        }
+      } catch {
+        // try next extension
+      }
+    }
+    return null;
+  }
+
+  /** Load an attachment asset as a Buffer (for vision gate image processing). */
+  async loadBuffer(assetId: string): Promise<Buffer | null> {
+    if (assetId.includes("/") || assetId.includes("\\") || assetId.includes("..")) {
+      return null;
+    }
+    for (const ext of Object.keys(EXT_TO_MIME)) {
+      const filePath = resolve(this.assetsDir, `${assetId}.${ext}`);
+      try {
+        const bunFile = Bun.file(filePath);
+        const buffer = await bunFile.arrayBuffer();
+        if (buffer.byteLength > 0) {
+          return Buffer.from(buffer);
         }
       } catch {
         // try next extension

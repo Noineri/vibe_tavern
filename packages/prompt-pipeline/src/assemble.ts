@@ -958,11 +958,13 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     content: string;
     messageId?: string;
     layerId?: string;
+    attachments?: RecentMessage["attachments"];
   }> = promptOrderEnabled(context, "chatHistory")
     ? recentMessagesForHistory.map((message) => ({
         role: message.role as "system" | "user" | "assistant" | "tool",
         content: message.content,
         messageId: message.id,
+        ...(message.attachments?.length ? { attachments: message.attachments } : {}),
       }))
     : [];
 

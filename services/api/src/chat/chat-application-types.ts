@@ -14,6 +14,7 @@ import type {
   SummaryKind,
   ToolProfileId,
 } from "@vibe-tavern/domain";
+import type { Attachment } from "@vibe-tavern/domain";
 
 export interface CreateChatRequest {
   characterId: CharacterId;
@@ -30,6 +31,7 @@ export interface CreateChatResponse {
 export interface SendMessageRequest {
   content: string;
   mode: "reply" | "continue";
+  attachments?: Attachment[];
 }
 
 export interface SendMessageResponse {

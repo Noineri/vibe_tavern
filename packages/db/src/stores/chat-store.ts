@@ -57,6 +57,7 @@ export interface Message {
   state: string;
   createdAt: string;
   updatedAt: string;
+  attachmentsJson?: string | null;
 }
 
 /**
@@ -509,6 +510,7 @@ export class ChatStore {
     modelId?: string | null;
     variants?: string[];
     selectedVariantIndex?: number;
+    attachmentsJson?: string | null;
   }): Promise<Message> {
     const id = this.idGen.next('msg');
     const now = this.clock.now();
@@ -530,6 +532,7 @@ export class ChatStore {
         role: data.role, authorType: data.authorType,
         position: nextPosition, content: selectedContent,
         state: 'complete', createdAt: now, updatedAt: now,
+        attachmentsJson: data.attachmentsJson ?? null,
       }).run();
       await tx.insert(messageVariants).values(variantContents.map((content, variantIndex) => ({
         id: this.idGen.next('mvar'), messageId: id, variantIndex,
@@ -1155,6 +1158,7 @@ export class ChatStore {
       state: row.state,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      attachmentsJson: row.attachmentsJson,
     };
   }
 

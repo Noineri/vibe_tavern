@@ -47,6 +47,7 @@ const providerCoreSchema = z.object({
   showReasoning: z.boolean().optional(),
   streamResponse: z.boolean().optional(),
   customSamplers: z.boolean().optional(),
+  visionModel: z.string().nullable().optional(),
 });
 
 export const saveProviderDraftSchema = providerCoreSchema.extend({

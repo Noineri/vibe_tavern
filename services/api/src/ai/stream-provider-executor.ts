@@ -13,6 +13,8 @@ import { normalizeProviderType } from "@vibe-tavern/domain";
 import { log } from "@vibe-tavern/domain";
 import { cancelled, providerError } from "../errors.js";
 import { createMappedStream, mapFinish, safeStreamTextPromise, safeReasoningPromise } from "./stream-helpers.js";
+import { describeAttachments } from "./vision-gate.js";
+import type { VisionGateConfig } from "./vision-gate.js";
 
 /**
  * Streaming-native provider executor.
@@ -23,19 +25,56 @@ import { createMappedStream, mapFinish, safeStreamTextPromise, safeReasoningProm
 export const streamProviderExecutor: ProviderExecutor = async (input) => {
   try {
     const model = resolveModel(input.profile, input.model);
-    const messages = toSdkMessages(input.prompt);
-    const { conversationMessages } = prepareSdkMessages(messages, {
+    let messages = toSdkMessages(input.prompt);
+
+    // --- Vision attachment handling ---
+    const activeModel = input.cachedModels?.find(m => m.modelSlug === input.model);
+    const hasVision = activeModel?.capabilities?.vision ?? false;
+    const visionModelSlug = input.visionModel ?? null;
+    const hasAttachments = messages.some(m => m.attachments?.length);
+
+    if (hasAttachments && !hasVision && visionModelSlug) {
+      // Collect all image/video attachments from user messages
+      const allAttachments = messages
+        .filter(m => m.role === "user")
+        .flatMap(m => m.attachments ?? [])
+        .filter(a => a.type === "image" || a.type === "video");
+
+      if (allAttachments.length > 0) {
+        const descriptions = await describeAttachments(
+          allAttachments, visionModelSlug, input.profile, input.assetLoader!,
+        );
+
+        // Replace image attachments with their text descriptions
+        messages = messages.map(m => ({
+          ...m,
+          attachments: m.attachments?.map(att => {
+            const desc = descriptions.get(att.id);
+            if (desc) {
+              return { ...att, type: "file" as const, description: desc };
+            }
+            return att;
+          }),
+        }));
+      }
+    }
+
+    const visionGate: VisionGateConfig = { hasVision, visionModel: visionModelSlug };
+
+    const { conversationMessages } = await prepareSdkMessages(messages, {
       prefill: input.prefill,
       providerType: normalizeProviderType(input.profile.providerPreset),
+      ...(hasAttachments ? { visionGate, assetLoader: input.assetLoader } : {}),
     });
 
     // DEBUG: log what actually goes to the provider
-    const messageLen = conversationMessages.reduce((s, m) => s + m.content.length, 0);
+    const contentLen = (m: typeof conversationMessages[number]) => typeof m.content === "string" ? m.content.length : JSON.stringify(m.content).length;
+    const messageLen = conversationMessages.reduce((s, m) => s + contentLen(m), 0);
     const hasSystemMessages = conversationMessages.some((m) => m.role === "system");
     const logger = log.tag("stream");
     logger.debug("%d msgs sent in trace order (%d chars total)", conversationMessages.length, messageLen);
     for (const m of conversationMessages) {
-      logger.debug("  [msg] role=%s len=%d", m.role, m.content.length);
+      logger.debug("  [msg] role=%s len=%d", m.role, contentLen(m));
     }
 
     const samplerConfig = buildSamplerConfig(input.profile);
@@ -48,7 +87,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
 
     const result = streamText({
       model,
-      messages: conversationMessages,
+      messages: conversationMessages as any,
       allowSystemInMessages: true,
       abortSignal: input.signal,
       ...samplerConfig,

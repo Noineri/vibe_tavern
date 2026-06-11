@@ -57,7 +57,7 @@ export class ChatRuntime {
    *
    * If `content` is empty, skips user message insertion (used for continue/regenerate).
    */
-  async prepareLiveTurn(chatId: ChatId, content: string, model: string, responseReserve?: number): Promise<PreparedLiveTurn> {
+  async prepareLiveTurn(chatId: ChatId, content: string, model: string, responseReserve?: number, attachments?: import("@vibe-tavern/domain").Attachment[]): Promise<PreparedLiveTurn> {
     const { chatApp, assemblePrompt, getSnapshot } = this.deps;
     const trimmed = content.trim();
     if (!trimmed) {
@@ -71,6 +71,7 @@ export class ChatRuntime {
     const userMessage = await chatApp.appendUserMessage(chatId, {
       content: trimmed,
       mode: "reply",
+      attachments,
     });
 
     let assembled;

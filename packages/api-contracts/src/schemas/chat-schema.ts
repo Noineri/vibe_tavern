@@ -13,8 +13,17 @@ export const updateChatSettingsSchema = z.object({
   systemPrompt: z.string(),
 });
 
+export const attachmentSchema = z.object({
+  assetId: z.string().min(1),
+  type: z.enum(["image", "file", "video"]),
+  name: z.string().max(255),
+  mimeType: z.string().max(100),
+  sizeBytes: z.number().int().positive().max(50_000_000),
+});
+
 export const sendMessageSchema = z.object({
   content: z.string(),
+  attachments: z.array(attachmentSchema).max(5).optional(),
 });
 
 export const editMessageSchema = z.object({

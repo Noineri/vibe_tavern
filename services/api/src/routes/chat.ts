@@ -169,7 +169,14 @@ export function createChatRoutes(runtime: RuntimeApi) {
       const chatId = c.req.param("chatId");
       const body = c.req.valid("json");
       logSendDebug("api.route.messages.post", { chatId, contentLength: body.content?.length ?? 0 });
-      return c.json(await runtime.sendMessage(chatId, body, c.req.raw.signal));
+      try {
+        return c.json(await runtime.sendMessage(chatId, body, c.req.raw.signal));
+      } catch (err) {
+        if (err instanceof (await import("../ai/vision-gate.js")).VisionNotSupportedError) {
+          return c.json({ type: "vision_not_supported", message: err.message, attachments: err.attachmentNames }, 422);
+        }
+        throw err;
+      }
     })
     .post("/api/chats/:chatId/messages/stream", zValidator("json", schemas.sendMessageSchema), async (c) => {
       const chatId = c.req.param("chatId");

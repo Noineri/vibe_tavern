@@ -69,6 +69,8 @@ export interface RecentMessage {
   id: string;
   role: "system" | "user" | "assistant" | "tool";
   content: string;
+  /** File attachments on this message. Currently only user messages have these. */
+  attachments?: import("@vibe-tavern/domain").Attachment[];
 }
 
 export interface PromptAssemblyContext {

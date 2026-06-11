@@ -34,10 +34,12 @@ export class LiveChatOrchestrator {
   async sendMessage(input: {
     chatId: string;
     content: string;
+    attachments?: any[];
     profile: StoredProviderProfileRecord;
     model: string;
     prefill?: string;
     signal?: AbortSignal;
+    visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null> };
   }): Promise<{
     preparedMessageCount: number;
     promptMessageCount: number;
@@ -46,7 +48,7 @@ export class LiveChatOrchestrator {
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send.prepare.start", { chatId: input.chatId, model: provider.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens);
+    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments);
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     logSendDebug("live.send.prepare.done", {
       chatId: input.chatId,
@@ -66,6 +68,9 @@ export class LiveChatOrchestrator {
         prompt: prepared.prompt,
         signal: input.signal,
         prefill,
+        cachedModels: input.visionAssets?.cachedModels,
+        visionModel: input.visionAssets?.visionModel,
+        assetLoader: input.visionAssets?.assetLoader,
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
@@ -233,14 +238,16 @@ export class LiveChatOrchestrator {
   async *sendMessageStream(input: {
     chatId: string;
     content: string;
+    attachments?: any[];
     profile: StoredProviderProfileRecord;
     model: string;
     prefill?: string;
     signal?: AbortSignal;
+    visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null> };
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: provider.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens);
+    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments);
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     const prefill = prepared.prompt.prefill ?? undefined;
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider }, prepared.prompt);
@@ -404,7 +411,7 @@ export class LiveChatOrchestrator {
   }
 
   private async startStream(
-    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; signal?: AbortSignal; prefill?: string },
+    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; signal?: AbortSignal; prefill?: string; visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null> } },
     prompt: Parameters<typeof streamProviderExecutor>[0]["prompt"],
   ): Promise<{ streamResult: ProviderStreamResult; startedAt: number }> {
     const startedAt = Date.now();
@@ -415,6 +422,9 @@ export class LiveChatOrchestrator {
         prompt,
         signal: input.signal,
         prefill: input.prefill ?? (prompt as { prefill?: string }).prefill ?? undefined,
+        cachedModels: input.visionAssets?.cachedModels,
+        visionModel: input.visionAssets?.visionModel,
+        assetLoader: input.visionAssets?.assetLoader,
       });
       return { streamResult, startedAt };
     } catch (err) {
