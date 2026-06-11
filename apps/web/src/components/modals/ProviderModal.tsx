@@ -343,6 +343,16 @@ export function ProviderModal({
     showAutoSaveFlash();
   };
 
+  useEffect(() => {
+    if (!isOpen || !form || form.visionModel || models.length === 0) return;
+    const fetchedVisionModels = models.filter((m) => m.capabilities?.vision);
+    if (fetchedVisionModels.length > 0 && fetchedVisionModels.length < models.length) {
+      autoSaveField("visionModel", fetchedVisionModels[0].id);
+    }
+    // Intentionally depend on scalar form fields only: autoSaveField updates form.visionModel,
+    // which makes this effect stop after the first selection.
+  }, [isOpen, form?.id, form?.visionModel, models]);
+
   // Lazy auto-save: update UI immediately, persist only after the user pauses.
   // Used for sampler fields and especially logit bias sliders to avoid request storms.
   const lazyAutoSaveField = <K extends keyof FormState>(k: K, v: FormState[K]) => {
