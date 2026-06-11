@@ -148,8 +148,14 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
 
   if (!hasActiveSnapshot && !wizardVisible) {
     if (hasAnyCharacters) {
-      // Has characters/chats but none active — show blank surface (chat was just deleted etc.)
-      shellSurface = <div className="flex h-full w-full" />;
+      // Has characters/chats but none active — chat was just deleted, or user has not selected one yet.
+      shellSurface = (
+        <div className="flex h-full w-full items-center justify-center p-6">
+          <p className="max-w-[420px] text-center font-ui text-[0.95rem] leading-relaxed text-t2">
+            {t('placeholder_select_character_chat')}
+          </p>
+        </div>
+      );
     } else {
     shellSurface = (
       <div className="flex h-full w-full items-center justify-center p-6">
