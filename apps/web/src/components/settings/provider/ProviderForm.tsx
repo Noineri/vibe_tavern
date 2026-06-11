@@ -31,6 +31,8 @@ interface ProviderFormProps {
   onTestChat: () => void;
   /** Hide endpoint, API key, stream toggle, and test card (wizard compact mode after successful connection) */
   hideConnectionFields?: boolean;
+  /** Hide model-dependent test chat button (wizard provider edit mode) */
+  hideTestChat?: boolean;
 }
 
 export function ProviderForm({
@@ -46,6 +48,7 @@ export function ProviderForm({
   onTest,
   onTestChat,
   hideConnectionFields,
+  hideTestChat,
 }: ProviderFormProps) {
   const { t } = useT();
   const presetGroup = getPresetGroup(form.providerPreset);
@@ -199,13 +202,15 @@ export function ProviderForm({
               >
                 {testing ? t("testing") : t("test_connection")}
               </button>
-              <button type="button"
-                className="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
-                onClick={() => void onTestChat()}
-                disabled={testingChat}
-              >
-                {testingChat ? t("sending") : t("test_hi_btn")}
-              </button>
+              {!hideTestChat && (
+                <button type="button"
+                  className="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
+                  onClick={() => void onTestChat()}
+                  disabled={testingChat}
+                >
+                  {testingChat ? t("sending") : t("test_hi_btn")}
+                </button>
+              )}
             </div>
             {testOk === true && (
               <div className="mt-3">
@@ -223,7 +228,7 @@ export function ProviderForm({
                 </span>
               </div>
             )}
-            {chatResult && (
+            {!hideTestChat && chatResult && (
               <div className="mt-3">
                 {chatResult.reply && (
                   <span className="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] italic text-success">

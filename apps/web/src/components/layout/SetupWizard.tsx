@@ -336,6 +336,7 @@ function ProviderStep({
         onTest={handleTest}
         onTestChat={handleTestChat}
         hideConnectionFields={testOk === true && !showEdit}
+        hideTestChat={showEdit}
       />
       {testOk === true && !showEdit && (
         <div className="flex items-center gap-3 rounded-lg border border-success/20 bg-success/5 px-3 py-2">
