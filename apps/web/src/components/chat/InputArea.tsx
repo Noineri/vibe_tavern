@@ -19,7 +19,8 @@ import { useActiveTrace, useChatMeta } from "../../stores/chat-selectors.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import type { PromptLayerDto } from "@vibe-tavern/domain";
-import { streamAiAssistant, updateUiSettings, type AiAssistantRequestBody } from "../../app-client.js";
+import { streamAiAssistant, updateUiSettings, uploadAsset, type AiAssistantRequestBody } from "../../app-client.js";
+import { AttachmentPreview } from "./AttachmentPreview.js";
 
 export function InputArea() {
   const { t } = useT();
@@ -52,8 +53,85 @@ export function InputArea() {
   const maxTokens = provider.activeProviderProfile?.maxTokens ?? 0;
   const favoriteModels = provider.activeProviderProfile ? (provider.favoriteModelsByProfile[provider.activeProviderProfile.id] ?? []) : [];
   const activeModelId = provider.activeProviderProfile?.defaultModel ?? connection.model ?? null;
-  const canSend = Boolean(draft.trim()) && !isSending && canUseLiveApi;
   const setDraft = useChatStore((s) => s.setDraft);
+
+  // --- Attachments ---
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const addDraftAttachment = useChatStore((s) => s.addDraftAttachment);
+  const draftAttachments = useChatStore((s) => s.draftAttachments);
+  const canSend = Boolean(draft.trim() || draftAttachments.length > 0) && !isSending && canUseLiveApi;
+
+  const handleFileSelected = async (file: File) => {
+    const validTypes = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+    if (!validTypes.includes(file.type)) {
+      toast.error(t("unsupported_image_format") || "Unsupported format. Use PNG, JPEG, WEBP, or GIF.");
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error(t("file_too_large") || "File too large. Maximum size is 20 MB.");
+      return;
+    }
+    if (draftAttachments.length >= 5) {
+      toast.error(t("max_attachments") || "Maximum 5 attachments per message.");
+      return;
+    }
+
+    try {
+      const { assetId } = await uploadAsset(file);
+      addDraftAttachment({
+        id: crypto.randomUUID(),
+        assetId,
+        type: "image",
+        name: file.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    }
+  };
+
+  const onFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) void handleFileSelected(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith("image/")) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          void handleFileSelected(file);
+          break;
+        }
+      }
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsDragOver(true);
+    }
+  };
+  
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+  
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      void handleFileSelected(file);
+    }
+  };
 
   // Render helpers
   function renderSendLabel(): string {
@@ -178,7 +256,17 @@ export function InputArea() {
                 size="lg"
               />
             )}
-            <div className="relative ml-auto" ref={modelDropRef}>
+            
+            <button
+              type="button"
+              className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-s3 text-t3 transition-colors active:bg-s2 disabled:opacity-45"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={draftAttachments.length >= 5}
+            >
+              <Icons.paperclip />
+            </button>
+
+            <div className="relative" ref={modelDropRef}>
               <button type="button" onClick={() => setModelDropOpen(o => !o)} className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2">
                 <Icons.StarFilled />
               </button>
@@ -202,14 +290,17 @@ export function InputArea() {
               )}
             </div>
           </div>
+          {draftAttachments.length > 0 && <AttachmentPreview />}
           {/* Input row */}
           <div className="flex items-end gap-2">
+            <input type="file" ref={fileInputRef} className="hidden" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onFileInputChange} />
             <textarea
               ref={mobileTextareaRef}
               className="max-h-[40vh] min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 pr-1 font-body text-[15px] leading-[1.4] text-t1 outline-none placeholder:text-t4 overflow-y-auto"
               placeholder={t("placeholder")}
               value={draft}
               onChange={(event) => { setDraft(event.target.value); adjustTextareaHeight(); }}
+              onPaste={handlePaste}
               rows={1}
             />
             <div className="flex shrink-0 items-center">
@@ -233,8 +324,20 @@ export function InputArea() {
   return (
     <div
         className="relative z-10 shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3.5 transition-opacity duration-200"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
-        <div className="rounded-lg border border-border bg-bg transition-colors duration-150 focus-within:border-border2">
+        <div className="relative rounded-lg border border-border bg-bg transition-colors duration-150 focus-within:border-border2">
+          {isDragOver && (
+            <div className="pointer-events-none absolute inset-0 z-[100] flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-accent/5">
+              <span className="flex items-center gap-2 font-ui text-[15px] font-medium text-accent">
+                <Icons.target /> Drop image here
+              </span>
+            </div>
+          )}
+          <input type="file" ref={fileInputRef} className="hidden" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onFileInputChange} />
+          
           <AutoTextarea
             className="min-h-[55px] w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[15.5px] leading-tight text-t1 outline-none placeholder:text-t4"
             style={{}}
@@ -242,6 +345,7 @@ export function InputArea() {
             placeholder={t("placeholder")}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
+            onPaste={handlePaste}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
@@ -250,6 +354,8 @@ export function InputArea() {
             }}
             rows={1}
           />
+          
+          {draftAttachments.length > 0 && <AttachmentPreview />}
 
           <div className="relative flex items-center gap-[7px] pt-1.5 pb-[9px] pl-3 pr-[135px]">
             <CustomTooltip content={t("multi_persona_tooltip")}>
@@ -267,6 +373,17 @@ export function InputArea() {
               />
             )}
             <div className="mx-0.5 h-3.5 w-px shrink-0 bg-border" />
+            
+            <CustomTooltip content={t("attach_image") || "Attach image"}>
+              <button
+                type="button"
+                className="flex h-[26px] w-[26px] items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1 disabled:opacity-45"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={draftAttachments.length >= 5}
+              >
+                <Icons.paperclip />
+              </button>
+            </CustomTooltip>
 
             <div className="relative" ref={tokenPopRef}>
               <span

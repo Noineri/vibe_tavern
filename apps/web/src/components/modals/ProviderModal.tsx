@@ -30,6 +30,7 @@ export interface FormState {
   apiKey: string;
   hasStoredApiKey: boolean;
   model: string;
+  visionModel: string;
   temperature: number;
   topP: number;
   minP: number;
@@ -97,7 +98,7 @@ function profileToForm(p: ProviderProfileRecord): FormState {
   return {
     id: p.id, name: p.name, providerPreset: preset?.id ?? "",
     baseUrl: p.endpoint, apiKey: "", hasStoredApiKey: p.hasStoredApiKey,
-    model: p.defaultModel ?? "", temperature: p.temperature, topP: p.topP,
+    model: p.defaultModel ?? "", visionModel: p.visionModel ?? "", temperature: p.temperature, topP: p.topP,
     minP: p.minP, topK: p.topK, topA: p.topA,
     typicalP: p.typicalP ?? 1,
     tfsZ: p.tfsZ ?? 1,
@@ -132,6 +133,7 @@ function toProviderDraft(form: FormState) {
     endpoint: form.baseUrl,
     apiKey: form.apiKey || null,
     defaultModel: form.model || null,
+    visionModel: form.visionModel || null,
     contextBudget: form.contextBudget || null,
     pinContextBudget: form.pinContextBudget,
     temperature: form.temperature,
@@ -217,11 +219,14 @@ export function ProviderModal({
   const [chatResult, setChatResult] = useState<{ reply?: string; error?: string } | null>(null);
   const [modelSearch, setModelSearch] = useState("");
   const [modelListOpen, setModelListOpen] = useState(false);
+  const [visionModelSearch, setVisionModelSearch] = useState("");
+  const [visionModelListOpen, setVisionModelListOpen] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [profileSearch, setProfileSearch] = useState("");
   const [dirty, setDirty] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const visionDropdownRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
 
   // ── Header mode: edit vs view ──
@@ -260,11 +265,15 @@ export function ProviderModal({
     if (!isOpen) return;
     const h = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (dropdownRef.current?.contains(target)) return;
-      // Don't close if click is inside the portal dropdown
+      const isOutMain = !dropdownRef.current?.contains(target);
+      const isOutVision = !visionDropdownRef.current?.contains(target);
+      
       const portal = document.getElementById('modal-portal');
-      if (portal?.contains(target)) return;
-      setModelListOpen(false);
+      const inPortal = portal?.contains(target);
+      if (inPortal) return;
+
+      if (isOutMain) setModelListOpen(false);
+      if (isOutVision) setVisionModelListOpen(false);
     };
     document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h);
   }, [isOpen]);
@@ -448,6 +457,10 @@ export function ProviderModal({
       setTestOk(fetched.length > 0);
       setModels(fetched);
       if (fetched.length && (!form.model || !fetched.find((m) => m.id === form.model))) autoSaveField("model", fetched[0].id);
+      const fetchedVisionModels = fetched.filter((m) => m.capabilities?.vision);
+      if (fetchedVisionModels.length > 0 && fetchedVisionModels.length < fetched.length && !form.visionModel) {
+        autoSaveField("visionModel", fetchedVisionModels[0].id);
+      }
     } catch (e) { setModels([]); setTestOk(false); setFetchError(e instanceof Error ? e.message : t("failed_to_fetch_models")); }
     finally { setFetching(false); }
   };
@@ -476,6 +489,14 @@ export function ProviderModal({
   const filteredModels = modelSearch.trim()
     ? models.filter((m) => m.label.toLowerCase().includes(modelSearch.toLowerCase()) || m.id.toLowerCase().includes(modelSearch.toLowerCase()))
     : models;
+  
+  const hasVisionModels = models.some(m => m.capabilities?.vision);
+  const allVisionModels = models.length > 0 && models.every(m => m.capabilities?.vision);
+  const showVisionFallback = hasVisionModels && !allVisionModels;
+  
+  const visionFilteredModels = visionModelSearch.trim()
+    ? models.filter(m => m.capabilities?.vision && (m.label.toLowerCase().includes(visionModelSearch.toLowerCase()) || m.id.toLowerCase().includes(visionModelSearch.toLowerCase())))
+    : models.filter(m => m.capabilities?.vision);
 
   return (
     <>
@@ -553,6 +574,28 @@ export function ProviderModal({
                     localEndpoint={form.baseUrl}
                     localConnectionStatus={fetching || testing ? "checking" : fetchError || testOk === false ? "offline" : testOk === true ? "online" : "unknown"}
                   />
+
+                  {showVisionFallback && (
+                    <div className="mt-4 border-t border-border2 pt-2">
+                      <ProviderModelSelector form={form} models={models.filter(m => m.capabilities?.vision)} filteredModels={visionFilteredModels}
+                        modelKey="visionModel" labelOverride={t("vision_fallback_model")} placeholderOverride={t("select_vision_model")}
+                        fetching={fetching} fetchError={fetchError} modelSearch={visionModelSearch} modelListOpen={visionModelListOpen}
+                        favoriteModels={favoriteModelsByProfile[form.id] ?? []}
+                        updateForm={autoSaveField} onFetchModels={handleFetchModels} setModelSearch={setVisionModelSearch}
+                        setModelListOpen={setVisionModelListOpen} dropdownRef={visionDropdownRef}
+                        onToggleFavoriteModel={(model) => onToggleFavoriteModel(form.id, model)}
+                        requiresAuthForModels={selectedPreset?.requiresAuthForModels ?? false}
+                        isLocalProvider={false} // Local settings only shown for primary model
+                      />
+                    </div>
+                  )}
+
+                  {/* Hint when no models are loaded yet but provider is selected */}
+                  {!fetching && models.length === 0 && selectedPreset && !showVisionFallback && (
+                    <div className="mt-2 text-[12px] text-t3 italic">
+                      Refresh models to see vision-capable options
+                    </div>
+                  )}
 
                   {/* Test Hi */}
                   {form.model && (

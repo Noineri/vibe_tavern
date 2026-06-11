@@ -94,6 +94,7 @@ function ProviderStep({
     apiKey: "",
     hasStoredApiKey: !!existingProfile,
     model: existingProfile?.defaultModel ?? "",
+    visionModel: existingProfile?.visionModel ?? "",
     temperature: existingProfile?.temperature ?? 0.7,
     topP: existingProfile?.topP ?? 1,
     minP: existingProfile?.minP ?? 0,

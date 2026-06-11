@@ -16,6 +16,7 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { MessageShell, type MessageShellAuthorInfo } from "./MessageShell.js";
 import { Modal } from "../shared/Modal.js";
 import { StreamingMarkdown } from "./StreamingMarkdown.js";
+import { AttachmentGrid } from "./AttachmentGrid.js";
 
 type SwipeDirection = -1 | 1;
 
@@ -291,6 +292,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 opacity-88 [&_em]:italic [&_em]:text-msg-t2">
         <Markdown text={renderContent} />
       </div>
+      <AttachmentGrid attachments={msg.attachments} />
     </div>
   ) : isGenerating && !renderContent?.trim() ? (
     <div className={isMobile ? "my-0.5 w-full" : ""}>
@@ -329,6 +331,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
           </AnimatePresence>
         </div>
       )}
+      <AttachmentGrid attachments={msg.attachments} />
       {isGenerating && <GenerationDots label={t("generating_response")} />}
     </div>
   );
@@ -670,6 +673,7 @@ function PendingUserMessage() {
   if (!chatMeta || !activeGen) return null;
 
   const content = activeGen.pendingUserMessageContent ?? "";
+  const pendingAttachments = activeGen.pendingUserMessageAttachments ?? [];
   const displayContent = macroContext ? replaceUiMacros(content, macroContext) : content;
   const author = { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null, avatarCropJson: chatMeta.persona?.avatarCropJson ?? null };
 
@@ -711,6 +715,7 @@ function PendingUserMessage() {
         <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 opacity-88 [&_em]:italic [&_em]:text-msg-t2">
           <Markdown text={displayContent} />
         </div>
+        <AttachmentGrid attachments={pendingAttachments as any} />
       </div>
     </MessageShell>
   );

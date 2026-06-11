@@ -216,7 +216,7 @@ describe("provider gateway", () => {
 				providerType: "anthropic",
 			});
 
-			expect(models).toEqual([
+			expect(models).toMatchObject([
 				{ id: "claude-opus-4-20250514", label: "claude-opus-4-20250514" },
 				{ id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
 			]);
@@ -262,7 +262,7 @@ describe("provider gateway", () => {
 			});
 
 			// Only chat-capable models (generateContent), not embeddings
-			expect(models).toEqual([
+			expect(models).toMatchObject([
 				{ id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
 				{ id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
 			]);

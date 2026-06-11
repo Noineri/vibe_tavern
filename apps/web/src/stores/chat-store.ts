@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ChatId } from "@vibe-tavern/domain";
+import type { ChatId, Attachment } from "@vibe-tavern/domain";
 import type { ChatGenerationStatus } from "../app-client.js";
 
 // ── Per-chat generation state ──────────────────────────────────────────
@@ -11,6 +11,7 @@ export interface ChatGenerationState {
   streamingReasoningText: string;
   generationStatus: ChatGenerationStatus;
   pendingUserMessageContent: string | null;
+  pendingUserMessageAttachments: Attachment[];
   abortController: AbortController | null;
 }
 
@@ -22,6 +23,7 @@ function defaultGenState(): ChatGenerationState {
     streamingReasoningText: "",
     generationStatus: "idle" as ChatGenerationStatus,
     pendingUserMessageContent: null,
+    pendingUserMessageAttachments: [],
     abortController: null,
   };
 }
@@ -39,6 +41,8 @@ export interface ChatState {
 
   /** Per-chat generation state — allows parallel generations across chats. */
   generations: Record<string, ChatGenerationState>;
+
+  draftAttachments: Attachment[];
 }
 
 export interface ChatActions {
@@ -50,13 +54,17 @@ export interface ChatActions {
   setEditingDraft: (draft: string) => void;
   setMessageActionId: (id: string | null) => void;
 
+  addDraftAttachment: (att: Attachment) => void;
+  removeDraftAttachment: (id: string) => void;
+  clearDraftAttachments: () => void;
+
   // ── Per-chat generation actions ──
 
   /** Initialize (or get) generation state for a chat. */
   getOrCreateGen: (chatId: string) => ChatGenerationState;
 
   /** Start generation: creates AbortController, sets isSending. Returns the controller. */
-  startGeneration: (chatId: string, pendingUserContent?: string | null) => AbortController;
+  startGeneration: (chatId: string, pendingUserContent?: string | null, pendingAttachments?: Attachment[]) => AbortController;
 
   /** Set the revealed streaming text (throttled by StreamingReveal). Also updates streamingText. */
   setStreamingRevealed: (chatId: string, revealedText: string) => void;
@@ -93,6 +101,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
   messageActionId: null,
   selectedTraceId: null,
   generations: {},
+  draftAttachments: [],
 
   setActiveChatId: (id) => set({ activeChatId: id }),
   setSelectedCharacterId: (id) => set({ selectedCharacterId: id }),
@@ -101,6 +110,10 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
   setEditingMessageId: (id) => set({ editingMessageId: id }),
   setEditingDraft: (draft) => set({ editingDraft: draft }),
   setMessageActionId: (id) => set({ messageActionId: id }),
+
+  addDraftAttachment: (att) => set((s) => ({ draftAttachments: [...s.draftAttachments, att] })),
+  removeDraftAttachment: (id) => set((s) => ({ draftAttachments: s.draftAttachments.filter((a) => a.id !== id) })),
+  clearDraftAttachments: () => set({ draftAttachments: [] }),
 
   // ── Per-chat generation ──
 
@@ -115,7 +128,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
     return newGen;
   },
 
-  startGeneration: (chatId, pendingContent) => {
+  startGeneration: (chatId, pendingContent, pendingAttachments) => {
     const controller = new AbortController();
     set((s) => ({
       generations: {
@@ -124,6 +137,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
           ...defaultGenState(),
           isSending: true,
           pendingUserMessageContent: pendingContent ?? null,
+          pendingUserMessageAttachments: pendingAttachments ?? [],
           abortController: controller,
         },
       },
@@ -192,6 +206,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
             streamingRevealedText: "",
             streamingReasoningText: "",
             pendingUserMessageContent: null,
+            pendingUserMessageAttachments: [],
             abortController: null,
           },
         },
