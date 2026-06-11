@@ -22,4 +22,4 @@ image being present.
 
 ## Language
 
-Match the language of the chat. If uncertain, default to English.
+Always respond in English.

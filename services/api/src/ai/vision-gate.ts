@@ -229,7 +229,7 @@ export async function describeAttachments(
           { type: "image", image: buffer, mediaType: att.mimeType },
         ],
       }],
-      maxOutputTokens: 500,
+      maxOutputTokens: 1500,
     });
 
     results.set(att.id, response.text);
