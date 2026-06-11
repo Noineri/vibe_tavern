@@ -258,7 +258,14 @@ export function ProviderModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    const h = (e: MouseEvent) => { if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setModelListOpen(false); };
+    const h = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (dropdownRef.current?.contains(target)) return;
+      // Don't close if click is inside the portal dropdown
+      const portal = document.getElementById('modal-portal');
+      if (portal?.contains(target)) return;
+      setModelListOpen(false);
+    };
     document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h);
   }, [isOpen]);
 
