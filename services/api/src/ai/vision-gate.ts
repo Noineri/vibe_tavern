@@ -14,6 +14,57 @@
 import type { Attachment } from "@vibe-tavern/domain";
 import type { SdkMessage } from "./provider-executor-utils.js";
 import { compressForVision, isCompressibleImage } from "../image-compress.js";
+import { resolve, join } from "node:path";
+
+// ---------------------------------------------------------------------------
+// Vision describe prompt resolution
+// ---------------------------------------------------------------------------
+
+const VISION_DESCRIBE_PROMPT_FILE = "vision-describe-ai-prompt.md";
+let _cachedDefaultPrompt: string | null = null;
+
+async function loadDefaultVisionDescribePrompt(): Promise<string> {
+  if (_cachedDefaultPrompt !== null) return _cachedDefaultPrompt;
+
+  const candidates = [
+    process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR
+      ? join(process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR, VISION_DESCRIBE_PROMPT_FILE)
+      : null,
+    resolve(import.meta.dir, "..", "..", "assets", VISION_DESCRIBE_PROMPT_FILE),
+    join(process.cwd(), "services", "api", "assets", VISION_DESCRIBE_PROMPT_FILE),
+    resolve(import.meta.dir, "..", VISION_DESCRIBE_PROMPT_FILE),
+    resolve(import.meta.dir, "..", "..", "..", "..", "out", "services", "api", VISION_DESCRIBE_PROMPT_FILE),
+    join(process.cwd(), "out", "services", "api", VISION_DESCRIBE_PROMPT_FILE),
+  ].filter(Boolean) as string[];
+
+  for (const path of candidates) {
+    if (await Bun.file(path).exists()) {
+      _cachedDefaultPrompt = await Bun.file(path).text();
+      return _cachedDefaultPrompt;
+    }
+  }
+
+  _cachedDefaultPrompt = "Describe this image in detail.";
+  return _cachedDefaultPrompt;
+}
+
+/**
+ * Resolve the vision describe system prompt.
+ *
+ * Priority:
+ * 1. `vision_describe` key in the preset's `aiAssistantPrompts` JSON
+ * 2. Default `vision-describe-ai-prompt.md` file
+ * 3. Hardcoded fallback
+ */
+export async function resolveVisionDescribePrompt(
+  aiAssistantPrompts: Record<string, string> | null,
+): Promise<string> {
+  if (aiAssistantPrompts) {
+    const override = aiAssistantPrompts["vision_describe"]?.trim();
+    if (override) return override;
+  }
+  return loadDefaultVisionDescribePrompt();
+}
 
 // ---------------------------------------------------------------------------
 // Vision gate config
@@ -144,14 +195,15 @@ export async function resolveMultimodalContent(
  * Describe image/video attachments using a vision fallback model.
  * Returns a map of attachmentId → description text.
  *
- * Called by the executor when the primary model lacks vision but a
- * visionModel is configured in the provider profile.
+ * Called by the executor when attachments are present and a visionModel
+ * is configured — regardless of whether the primary model has vision.
  */
 export async function describeAttachments(
   attachments: Attachment[],
   visionModel: string,
   profile: { providerPreset: string; endpoint: string; apiKey: string | null },
   assetLoader: (assetId: string) => Promise<Buffer | null>,
+  systemPrompt?: string,
 ): Promise<Map<string, string>> {
   const results = new Map<string, string>();
 
@@ -160,6 +212,7 @@ export async function describeAttachments(
   const { generateText } = await import("ai");
 
   const { model } = mapProfileToSdkModel(profile, visionModel);
+  const resolvedPrompt = systemPrompt?.trim() || "Describe this image in detail.";
 
   for (const att of attachments) {
     if (att.type !== "image" && att.type !== "video") continue;
@@ -168,10 +221,11 @@ export async function describeAttachments(
 
     const response = await generateText({
       model,
+      system: resolvedPrompt,
       messages: [{
         role: "user",
         content: [
-          { type: "text", text: "Describe this image in detail." },
+          { type: "text", text: "Describe this image." },
           { type: "image", image: buffer, mediaType: att.mimeType },
         ],
       }],

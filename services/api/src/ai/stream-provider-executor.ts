@@ -45,7 +45,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
 
       if (allAttachments.length > 0) {
         const descriptions = await describeAttachments(
-          allAttachments, visionModelSlug, input.profile, input.assetLoader!,
+          allAttachments, visionModelSlug, input.profile, input.assetLoader!, input.visionDescribePrompt,
         );
 
         visionDescriptions = allAttachments

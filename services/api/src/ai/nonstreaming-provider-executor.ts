@@ -41,6 +41,7 @@ export async function nonstreamingProviderExecute(
           visionModelSlug,
           input.profile,
           input.assetLoader,
+          input.visionDescribePrompt,
         );
         visionDescriptions = allAttachments
           .map((att) => {
