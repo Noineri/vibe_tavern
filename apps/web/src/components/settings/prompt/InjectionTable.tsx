@@ -238,7 +238,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     if (existingOrder?.zone) {
       return { zone: existingOrder.zone, depth: existingOrder.depth ?? null, order: existingOrder.order ?? item.defaultOrder };
     }
-    const isAfterChat = item.identifier === "jailbreak" || item.identifier === "assistantPrefill" || item.defaultOrder > 100;
+    const isAfterChat = item.defaultOrder > 100;
     return {
       zone: isAfterChat ? "after_chat" : "before_chat",
       depth: null,
