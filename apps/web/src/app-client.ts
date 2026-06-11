@@ -875,6 +875,7 @@ export async function saveProviderProfile(input: {
   endpoint: string;
   apiKey?: string | null;
   defaultModel?: string | null;
+  visionModel?: string | null;
   contextBudget?: number | null;
   pinContextBudget?: boolean;
   temperature?: number;
@@ -984,6 +985,7 @@ export async function updateProviderProfile(
     endpoint?: string;
     apiKey?: string | null;
     defaultModel?: string | null;
+    visionModel?: string | null;
     contextBudget?: number | null;
     pinContextBudget?: boolean;
     temperature?: number;

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
-import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
+import type { Attachment, ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { getT } from "../i18n/locale-helpers.js";
 import {
   generateReplyStream,
@@ -31,6 +31,19 @@ import {
   deleteBranchAction,
   renameBranchAction,
 } from "../stores/api-actions/chat-actions.js";
+
+function restoreDraftAfterSendError(content?: string | null, attachments?: Attachment[]): void {
+  const store = useChatStore.getState();
+  if (content != null && store.draft.length === 0) {
+    store.setDraft(content);
+  }
+  if (attachments?.length) {
+    const existingIds = new Set(useChatStore.getState().draftAttachments.map((att) => att.id));
+    attachments.forEach((att) => {
+      if (!existingIds.has(att.id)) store.addDraftAttachment(att);
+    });
+  }
+}
 
 export interface ChatControllerActions {
   handleSend: () => Promise<void>;
@@ -166,11 +179,9 @@ export function useChatController(): ChatControllerActions {
             onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
           },
         });
-        if (pendingAttachments) {
-          const store = useChatStore.getState();
-          pendingAttachments.forEach(att => store.addDraftAttachment(att));
-        }
+        restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
       } else {
+        restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
         toast.error(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
       }
       useChatStore.getState().setGenerationStatus(chatId, "failed");
@@ -231,14 +242,14 @@ export function useChatController(): ChatControllerActions {
       await executeStreamAction(
         activeChatId,
         (opts) => sendChatMessageStream(activeChatId, { content: trimmed, attachments: attachments.length > 0 ? attachments : undefined }, opts),
-        trimmed,
+        draft,
         currentAttachments,
       );
     } else {
       void logClientSendDebug("web.hook.handleSend.request", { activeChatId });
       const currentAttachments = [...csStore.draftAttachments];
       csStore.clearDraftAttachments();
-      const controller = csStore.startGeneration(activeChatId, trimmed, currentAttachments);
+      const controller = csStore.startGeneration(activeChatId, draft, currentAttachments);
       csStore.setDraft("");
       try {
         await sendChatMessageAction(activeChatId, trimmed, attachments.length > 0 ? attachments : undefined, controller.signal);
@@ -263,8 +274,9 @@ export function useChatController(): ChatControllerActions {
               onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
             },
           });
-          currentAttachments.forEach(att => csStore.addDraftAttachment(att));
+          restoreDraftAfterSendError(draft, currentAttachments);
         } else {
+          restoreDraftAfterSendError(draft, currentAttachments);
           toast.error(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
         }
       } finally {
