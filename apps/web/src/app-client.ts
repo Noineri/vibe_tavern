@@ -128,6 +128,7 @@ export interface AppMessage extends Message {
   variants: MessageVariant[];
   selectedVariantIndex: number | null;
   modelId: string | null;
+  attachments?: { id: string; assetId: string; type: string; name?: string; mimeType?: string; sizeBytes?: number; }[];
 }
 
 export interface ImportJsonResponse {
@@ -180,6 +181,7 @@ export interface ProviderProfileRecord {
   streamResponse: boolean;
   customSamplers: boolean;
   isActive: boolean;
+  visionModel: string | null;
   createdAt: string;
   updatedAt: string;
   hasStoredApiKey: boolean;
@@ -286,6 +288,9 @@ async function unwrapRpc<T>(response: RpcResponse): Promise<T> {
 
 async function unwrapError(response: RpcResponse): Promise<Error> {
   const errorBody = await response.json().catch(() => null) as { error?: string | { message?: string } } | null;
+  if (errorBody?.error && typeof errorBody.error === "object" && (errorBody.error as any).code === "VISION_NOT_SUPPORTED") {
+    return new Error("VISION_NOT_SUPPORTED");
+  }
   const error = errorBody?.error;
   const message = typeof error === "string" ? error : error?.message || `Request failed: ${response.status}`;
   return new Error(message);
@@ -502,6 +507,7 @@ export async function sendChatMessage(
   chatId: ChatId,
   input: {
     content: string;
+    attachments?: { name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number; }[];
   },
   options?: { signal?: AbortSignal },
 ): Promise<AppSnapshot> {
@@ -608,7 +614,7 @@ export async function updateMemorySettings(
 
 export async function sendChatMessageStream(
   chatId: ChatId,
-  input: { content: string },
+  input: { content: string; attachments?: { name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number; }[] },
   opts: {
     signal?: AbortSignal;
     onStatus: (status: ChatGenerationStatus) => void;
@@ -628,7 +634,12 @@ export async function sendChatMessageStream(
 
   if (!response.ok) {
     opts.onStatus("failed");
-    throw new Error(`Stream request failed: ${response.status}`);
+    const errBody = await response.json().catch(() => null) as any;
+    if (errBody?.error?.code === "VISION_NOT_SUPPORTED") {
+      throw new Error("VISION_NOT_SUPPORTED");
+    }
+    const message = errBody?.error?.message || errBody?.error || `Stream request failed: ${response.status}`;
+    throw new Error(typeof message === "string" ? message : `Stream request failed: ${response.status}`);
   }
 
   opts.onStatus("streaming");
@@ -663,7 +674,12 @@ export async function regenerateChatMessageStream(
 
   if (!response.ok) {
     opts.onStatus("failed");
-    throw new Error(`Stream request failed: ${response.status}`);
+    const errBody = await response.json().catch(() => null) as any;
+    if (errBody?.error?.code === "VISION_NOT_SUPPORTED") {
+      throw new Error("VISION_NOT_SUPPORTED");
+    }
+    const message = errBody?.error?.message || errBody?.error || `Stream request failed: ${response.status}`;
+    throw new Error(typeof message === "string" ? message : `Stream request failed: ${response.status}`);
   }
 
   opts.onStatus("streaming");
@@ -709,7 +725,12 @@ export async function generateReplyStream(
 
   if (!response.ok) {
     opts.onStatus("failed");
-    throw new Error(`Stream request failed: ${response.status}`);
+    const errBody = await response.json().catch(() => null) as any;
+    if (errBody?.error?.code === "VISION_NOT_SUPPORTED") {
+      throw new Error("VISION_NOT_SUPPORTED");
+    }
+    const message = errBody?.error?.message || errBody?.error || `Stream request failed: ${response.status}`;
+    throw new Error(typeof message === "string" ? message : `Stream request failed: ${response.status}`);
   }
 
   opts.onStatus("streaming");

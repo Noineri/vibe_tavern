@@ -45,6 +45,24 @@ export function BuildMode() {
   const promptTraceCount = promptTraceHistory.length;
   const currentTraceIndex = activeTrace && 'id' in activeTrace ? promptTraceHistory.findIndex((t) => t.id === (activeTrace as PromptTraceRecordDto).id) : -1;
 
+  let imageAttachmentsCount = 0;
+  if (activeTrace?.finalPayload && typeof activeTrace.finalPayload === 'object') {
+    const messages = (activeTrace.finalPayload as any).messages;
+    if (Array.isArray(messages)) {
+      messages.forEach(msg => {
+        if (Array.isArray(msg.content)) {
+          msg.content.forEach((part: any) => {
+            if (part && (part.type === "image_url" || part.type === "image")) {
+              imageAttachmentsCount++;
+            }
+          });
+        }
+      });
+    } else {
+      imageAttachmentsCount = (promptPayloadText.match(/"type":\s*"(image_url|image)"/g) || []).length;
+    }
+  }
+
   if (!chatMeta || !charData) return null;
 
   return <BuildModeInner
@@ -55,6 +73,7 @@ export function BuildMode() {
     promptPayloadText={promptPayloadText}
     promptTraceCount={promptTraceCount}
     currentTraceIndex={currentTraceIndex}
+    imageAttachmentsCount={imageAttachmentsCount}
     setSelectedTraceId={setSelectedTraceId}
     promptTraceHistory={promptTraceHistory}
     onSave={character.handleSaveCharacter}
@@ -107,6 +126,7 @@ interface BuildModeInnerProps {
   promptPayloadText: string;
   promptTraceCount: number;
   currentTraceIndex: number;
+  imageAttachmentsCount: number;
   setSelectedTraceId: (id: string | null) => void;
   promptTraceHistory: PromptTraceRecordDto[];
   onSave: (draft: BuildCharacterDraft) => Promise<void> | void;
@@ -122,7 +142,7 @@ interface BuildModeInnerProps {
   hasAvatar: boolean;
 }
 
-function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, currentTraceIndex, setSelectedTraceId, promptTraceHistory, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete, onCreateChat, hasAvatar }: BuildModeInnerProps) {
+function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, currentTraceIndex, imageAttachmentsCount, setSelectedTraceId, promptTraceHistory, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete, onCreateChat, hasAvatar }: BuildModeInnerProps) {
   const { t, locale } = useT();
   const isMobile = useIsMobile();
   const panels = useBuildPanels();
@@ -359,6 +379,12 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
               )}
 
               <div className="mt-4 flex flex-col gap-3">
+                {imageAttachmentsCount > 0 && (
+                  <div className="flex items-center gap-2 rounded-md border border-info/30 bg-info/10 px-3 py-2.5 font-ui text-[12px] text-info">
+                    <span className="text-[14px]">🖼️</span>
+                    {t("trace_sent_with_attachments").replace("{n}", String(imageAttachmentsCount))}
+                  </div>
+                )}
                 <button type="button" className="h-9 rounded-md bg-s2 px-4 font-ui text-[12px] font-medium text-t2 active:bg-s3" onClick={downloadPayload}>
                   {t("trace_json_payload")}
                 </button>
@@ -420,6 +446,15 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
               <div className="text-t3">
                 {formatTraceTimestamp(trace.createdAt)} · {trace.model} · {trace.latencyMs}ms
                 {" · "}{t("trace_recorded_count").replace("{n}", String(promptTraceCount))}
+                {imageAttachmentsCount > 0 && (
+                  <>
+                    {" · "}
+                    <span className="inline-flex items-center gap-1 rounded bg-info/10 px-1.5 py-0.5 text-xs text-info">
+                      <span className="text-[12px]">🖼️</span>
+                      {t("trace_sent_with_attachments").replace("{n}", String(imageAttachmentsCount))}
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           ) : (

@@ -148,36 +148,36 @@ describe("prepareSdkMessages", () => {
 
   // ─── Prompt trace order preservation ───────────────────────────────────
 
-  it("keeps system messages inside messages instead of extracting them", () => {
-    const result = prepareSdkMessages(baseMessages, { providerType: "openai_compat" });
+  it("keeps system messages inside messages instead of extracting them", async () => {
+    const result = await prepareSdkMessages(baseMessages, { providerType: "openai_compat" });
     expect(result.systemPrompt).toBeUndefined();
     expect(result.conversationMessages).toEqual(baseMessages);
   });
 
-  it("preserves multiple system messages in their original positions", () => {
+  it("preserves multiple system messages in their original positions", async () => {
     const messages: SdkMessage[] = [
       { role: "system", content: "Rule 1." },
       { role: "user", content: "Hi" },
       { role: "system", content: "Rule 2." },
     ];
-    const result = prepareSdkMessages(messages, { providerType: "openai_compat" });
+    const result = await prepareSdkMessages(messages, { providerType: "openai_compat" });
     expect(result.systemPrompt).toBeUndefined();
     expect(result.conversationMessages).toEqual(messages);
   });
 
-  it("returns unchanged messages when no system messages", () => {
+  it("returns unchanged messages when no system messages", async () => {
     const messages: SdkMessage[] = [
       { role: "user", content: "Hello" },
     ];
-    const result = prepareSdkMessages(messages, { providerType: "openai_compat" });
+    const result = await prepareSdkMessages(messages, { providerType: "openai_compat" });
     expect(result.systemPrompt).toBeUndefined();
     expect(result.conversationMessages).toEqual([{ role: "user", content: "Hello" }]);
   });
 
   // ─── Prefill injection ─────────────────────────────────────────────────
 
-  it("appends assistant prefill for openai_compat after trace messages", () => {
-    const result = prepareSdkMessages(baseMessages, {
+  it("appends assistant prefill for openai_compat after trace messages", async () => {
+    const result = await prepareSdkMessages(baseMessages, {
       providerType: "openai_compat",
       prefill: "Sure, here is:",
     });
@@ -188,8 +188,8 @@ describe("prepareSdkMessages", () => {
     ]);
   });
 
-  it("appends assistant prefill for ollama", () => {
-    const result = prepareSdkMessages(baseMessages, {
+  it("appends assistant prefill for ollama", async () => {
+    const result = await prepareSdkMessages(baseMessages, {
       providerType: "ollama",
       prefill: "Ollama prefill",
     });
@@ -197,8 +197,8 @@ describe("prepareSdkMessages", () => {
     expect(result.conversationMessages[2]).toEqual({ role: "assistant", content: "Ollama prefill" });
   });
 
-  it("appends assistant prefill for llamacpp", () => {
-    const result = prepareSdkMessages(baseMessages, {
+  it("appends assistant prefill for llamacpp", async () => {
+    const result = await prepareSdkMessages(baseMessages, {
       providerType: "llamacpp",
       prefill: "Llama prefill",
     });
@@ -206,32 +206,32 @@ describe("prepareSdkMessages", () => {
     expect(result.conversationMessages[2]).toEqual({ role: "assistant", content: "Llama prefill" });
   });
 
-  it("does NOT append prefill for anthropic", () => {
-    const result = prepareSdkMessages(baseMessages, {
+  it("does NOT append prefill for anthropic", async () => {
+    const result = await prepareSdkMessages(baseMessages, {
       providerType: "anthropic",
       prefill: "Ignored",
     });
     expect(result.conversationMessages).toEqual(baseMessages);
   });
 
-  it("does NOT append prefill for google", () => {
-    const result = prepareSdkMessages(baseMessages, {
+  it("does NOT append prefill for google", async () => {
+    const result = await prepareSdkMessages(baseMessages, {
       providerType: "google",
       prefill: "Ignored",
     });
     expect(result.conversationMessages).toEqual(baseMessages);
   });
 
-  it("does NOT append prefill when undefined", () => {
-    const result = prepareSdkMessages(baseMessages, {
+  it("does NOT append prefill when undefined", async () => {
+    const result = await prepareSdkMessages(baseMessages, {
       providerType: "openai_compat",
       prefill: undefined,
     });
     expect(result.conversationMessages).toEqual(baseMessages);
   });
 
-  it("does NOT append prefill when empty string", () => {
-    const result = prepareSdkMessages(baseMessages, {
+  it("does NOT append prefill when empty string", async () => {
+    const result = await prepareSdkMessages(baseMessages, {
       providerType: "openai_compat",
       prefill: "",
     });
@@ -240,13 +240,13 @@ describe("prepareSdkMessages", () => {
 
   // ─── Combined: trace order + prefill ───────────────────────────────────
 
-  it("preserves system position and appends prefill after the trace messages", () => {
+  it("preserves system position and appends prefill after the trace messages", async () => {
     const messages: SdkMessage[] = [
       { role: "system", content: "Be concise." },
       { role: "user", content: "Explain X" },
       { role: "system", content: "Answer in English." },
     ];
-    const result = prepareSdkMessages(messages, {
+    const result = await prepareSdkMessages(messages, {
       providerType: "openai_compat",
       prefill: "Sure:",
     });

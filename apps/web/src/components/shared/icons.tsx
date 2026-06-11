@@ -44,6 +44,7 @@ export const Ic = {
   widthMedium:()=><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><line x1="2" y1="3" x2="12.5" y2="3"/><line x1="2" y1="6.5" x2="11" y2="6.5"/><line x1="2" y1="10" x2="12.5" y2="10"/><line x1="2" y1="13.5" x2="9.5" y2="13.5"/></svg>,
   widthWide:()=><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><line x1="1" y1="3" x2="14.5" y2="3"/><line x1="1" y1="6.5" x2="13" y2="6.5"/><line x1="1" y1="10" x2="14.5" y2="10"/><line x1="1" y1="13.5" x2="11.5" y2="13.5"/></svg>,
   target:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="3.5"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/><line x1="8" y1="1" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="15"/><line x1="1" y1="8" x2="3" y2="8"/><line x1="13" y1="8" x2="15" y2="8"/></svg>,
+  paperclip:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 7.5l-6 6a3.5 3.5 0 1 1-5-5l6-6a2 2 0 1 1 3 3l-6 6a.75.75 0 1 1-1-1l6-6"/></svg>,
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

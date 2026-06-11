@@ -11,6 +11,7 @@ import {
   type ChatGenerationStatus,
 } from "../app-client.js";
 import { useChatStore } from "../stores/chat-store.js";
+import { useModalStore } from "../stores/modal-store.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { StreamingReveal } from "../lib/streaming-reveal.js";
@@ -115,8 +116,9 @@ export function useChatController(): ChatControllerActions {
       onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
     }) => Promise<{ finishReason: string; usage?: Record<string, number> }>,
     pendingUserContent?: string | null,
+    pendingAttachments?: import("@vibe-tavern/domain").Attachment[]
   ): Promise<void> {
-    const controller = useChatStore.getState().startGeneration(chatId, pendingUserContent);
+    const controller = useChatStore.getState().startGeneration(chatId, pendingUserContent, pendingAttachments);
     const store = useChatStore.getState();
     store.setDraft("");
 
@@ -156,8 +158,22 @@ export function useChatController(): ChatControllerActions {
         chatId,
         message: error instanceof Error ? error.message : String(error),
       });
-      await refreshChatSnapshotCache(chatId);
-      toast.error(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
+      if (error instanceof Error && error.message === "VISION_NOT_SUPPORTED") {
+        toast.error(getT()("vision_not_supported"), {
+          description: getT()("vision_not_supported_desc"),
+          action: {
+            label: getT()("open_provider_settings"),
+            onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
+          },
+        });
+        if (pendingAttachments) {
+          const store = useChatStore.getState();
+          pendingAttachments.forEach(att => store.addDraftAttachment(att));
+        }
+      } else {
+        toast.error(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
+      }
+      useChatStore.getState().setGenerationStatus(chatId, "failed");
     } finally {
       useChatStore.getState().finishGeneration(chatId);
       reveal.clear();
@@ -169,21 +185,31 @@ export function useChatController(): ChatControllerActions {
 
   const handleSend = useCallback(async (): Promise<void> => {
     const activeChatId = getActiveChatId();
-    const draft = getDraft();
+    const csStore = useChatStore.getState();
+    const draft = csStore.draft;
     const trimmed = draft.trim();
+    const attachments = csStore.draftAttachments.map((a) => ({
+      name: a.name,
+      type: a.type as "image" | "file" | "video",
+      assetId: a.assetId,
+      mimeType: a.mimeType,
+      sizeBytes: a.sizeBytes,
+    }));
 
     void logClientSendDebug("web.hook.handleSend.enter", {
       activeChatId,
       draftLength: draft.length,
       trimmedLength: trimmed.length,
+      attachmentsCount: attachments.length,
       isSending: activeChatId ? getIsSending(activeChatId) : false,
       canSendViaActiveProfile: canSendRef.current,
     });
 
-    if (!trimmed || !activeChatId || getIsSending(activeChatId)) {
+    if ((!trimmed && attachments.length === 0) || !activeChatId || getIsSending(activeChatId)) {
       void logClientSendDebug("web.hook.handleSend.blocked.basic", {
         activeChatId,
         trimmedLength: trimmed.length,
+        attachmentsCount: attachments.length,
         isSending: activeChatId ? getIsSending(activeChatId) : false,
       });
       return;
@@ -200,20 +226,24 @@ export function useChatController(): ChatControllerActions {
         activeChatId,
         generationStatus: getGenerationStatus(activeChatId),
       });
+      const currentAttachments = [...csStore.draftAttachments];
+      csStore.clearDraftAttachments();
       await executeStreamAction(
         activeChatId,
-        (opts) => sendChatMessageStream(activeChatId, { content: trimmed }, opts),
+        (opts) => sendChatMessageStream(activeChatId, { content: trimmed, attachments: attachments.length > 0 ? attachments : undefined }, opts),
         trimmed,
+        currentAttachments,
       );
     } else {
       void logClientSendDebug("web.hook.handleSend.request", { activeChatId });
-      const controller = useChatStore.getState().startGeneration(activeChatId, trimmed);
-      const cs = useChatStore.getState();
-      cs.setDraft("");
+      const currentAttachments = [...csStore.draftAttachments];
+      csStore.clearDraftAttachments();
+      const controller = csStore.startGeneration(activeChatId, trimmed, currentAttachments);
+      csStore.setDraft("");
       try {
-        await sendChatMessageAction(activeChatId, trimmed, controller.signal);
+        await sendChatMessageAction(activeChatId, trimmed, attachments.length > 0 ? attachments : undefined, controller.signal);
         const snapshot = useSnapshotStore.getState();
-        cs.setSelectedTraceId(
+        csStore.setSelectedTraceId(
           snapshot.promptTrace?.id ?? snapshot.promptTraceHistory[0]?.id ?? null,
         );
         void logClientSendDebug("web.hook.handleSend.success", { activeChatId });
@@ -224,12 +254,19 @@ export function useChatController(): ChatControllerActions {
           toast.info(getT()("generation_cancelled"));
           return;
         }
-        void logClientSendDebug("web.hook.handleSend.error", {
-          activeChatId,
-          message: error instanceof Error ? error.message : String(error),
-        });
-        await refreshChatSnapshotCache(activeChatId);
-        toast.error(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
+        logClientSendDebug("web.hook.handleSend.error", { chatId: activeChatId, error: String(error) });
+        if (error instanceof Error && error.message === "VISION_NOT_SUPPORTED") {
+          toast.error(getT()("vision_not_supported"), {
+            description: getT()("vision_not_supported_desc"),
+            action: {
+              label: getT()("open_provider_settings"),
+              onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
+            },
+          });
+          currentAttachments.forEach(att => csStore.addDraftAttachment(att));
+        } else {
+          toast.error(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
+        }
       } finally {
         useChatStore.getState().finishGeneration(activeChatId);
       }

@@ -43,6 +43,9 @@ interface ProviderModelSelectorProps {
   isLocalProvider?: boolean;
   localEndpoint?: string;
   localConnectionStatus?: LocalConnectionStatus;
+  modelKey?: keyof FormState;
+  labelOverride?: string;
+  placeholderOverride?: string;
 }
 
 export function ProviderModelSelector({
@@ -64,11 +67,15 @@ export function ProviderModelSelector({
   isLocalProvider = false,
   localEndpoint = "",
   localConnectionStatus = "unknown",
+  modelKey = "model" as keyof FormState,
+  labelOverride,
+  placeholderOverride,
 }: ProviderModelSelectorProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const favoriteIds = new Set(favoriteModels.map((model) => model.modelId));
-  const selectedModel = models.find((model) => model.id === form.model);
+  const currentVal = (form[modelKey] as string) || "";
+  const selectedModel = models.find((model) => model.id === currentVal);
   const formatContext = (contextLength?: number) => {
     if (contextLength == null || !Number.isFinite(contextLength)) return null;
     if (contextLength >= 1000) return `${(contextLength / 1000).toFixed(contextLength % 1000 === 0 ? 0 : 1)}k ctx`;
@@ -98,7 +105,7 @@ export function ProviderModelSelector({
       <div
         className="mb-3 border-b border-border2 pb-2 font-ui text-[14px] font-semibold text-t1"
       >
-        {t("model_label")}
+        {labelOverride || t("model_label")}
       </div>
       {isLocalProvider && (
         <div className={cn("mb-2.5 flex flex-col gap-1.5 rounded-md border px-3 py-2 font-ui text-[12px] sm:flex-row sm:items-center sm:justify-between", localStatus.className)}>
@@ -126,7 +133,7 @@ export function ProviderModelSelector({
                 className="flex w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[6px] font-ui text-[13px] text-t1 transition-colors hover:border-accent"
               >
                 <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">
-                  {selectedModel?.label || form.model || t("select_model")}
+                  {selectedModel?.label || currentVal || placeholderOverride || t("select_model")}
                   {formatContext(selectedModel?.contextLength) && (
                     <span className="ml-2 text-[11px] font-medium text-t2">{formatContext(selectedModel?.contextLength)}</span>
                   )}
@@ -169,8 +176,8 @@ export function ProviderModelSelector({
                           key={m.id}
                           onClick={() => {
                             console.log('[MODEL-SELECT]', { modelId: m.id, contextLength: m.contextLength, pinContextBudget: form.pinContextBudget, willSet: m.contextLength ?? 16000 });
-                            updateForm('model', m.id);
-                            if (!form.pinContextBudget) {
+                            updateForm(modelKey, m.id);
+                            if (modelKey === 'model' && !form.pinContextBudget) {
                               if (m.contextLength != null && m.contextLength > 0) {
                                 updateForm('contextBudget', m.contextLength);
                               } else {
@@ -182,7 +189,7 @@ export function ProviderModelSelector({
                           }}
                           className={cn(
                             'flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 font-ui text-[12px] transition-colors',
-                            m.id === form.model
+                            m.id === currentVal
                               ? 'bg-accent-dim font-medium text-accent-t'
                               : 'text-t2 hover:bg-s2 hover:text-t1'
                           )}
@@ -268,17 +275,17 @@ export function ProviderModelSelector({
                 if (portal && rect) return createPortal(content, portal);
                 return content;
               })()}
-              {!models.find((m) => m.id === form.model) && form.model && (
+              {!models.find((m) => m.id === currentVal) && currentVal && (
                 <div className="mt-2 font-ui text-[12px] font-medium text-accent">
-                  {t("custom_model").replace("{name}", form.model)}
+                  {t("custom_model").replace("{name}", currentVal)}
                 </div>
               )}
             </div>
           ) : (
             <input
               type="text"
-              value={form.model}
-              onChange={(e) => updateForm('model', e.target.value)}
+              value={currentVal}
+              onChange={(e) => updateForm(modelKey, e.target.value)}
               placeholder={t("custom_model_id_placeholder")}
               className={inputCls}
             />
