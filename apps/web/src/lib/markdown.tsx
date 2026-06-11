@@ -7,7 +7,7 @@ interface MarkdownProps {
   className?: string;
 }
 
-const SCENE_META_RE = /^\[.+:.+\]$/;
+const SCENE_META_BLOCK_RE = /\[[^\]\n]*?:[^\]\n]*?\]/g;
 
 // ─── Rehype plugin: wrap "quoted text" in <span class="quoted-text"> ───
 //
@@ -240,11 +240,12 @@ const rehypeQuotedText = () => (tree: HastNode) => processNode(tree);
 const components: Record<string, React.ComponentType<{ children?: React.ReactNode; className?: string; node?: unknown } & Record<string, unknown>>> = {
   p({ children, ...props }) {
     const text = extractText(children);
-    const lines = (typeof text === "string" ? text : "").split("\n").filter((l: string) => l.trim());
-    const allMeta = lines.length > 0 && lines.every((l: string) => SCENE_META_RE.test(l.trim()));
+    const content = (typeof text === "string" ? text : "").trim();
+    const blocks = content.match(SCENE_META_BLOCK_RE);
+    const allMeta = Boolean(blocks?.length) && content.replace(SCENE_META_BLOCK_RE, "").trim().length === 0;
 
-    if (allMeta) {
-      return <div className="scene-meta">{children}</div>;
+    if (allMeta && blocks) {
+      return <div className="scene-meta">{blocks.join("\n")}</div>;
     }
 
     return <p {...props}>{children}</p>;
@@ -313,8 +314,11 @@ const components: Record<string, React.ComponentType<{ children?: React.ReactNod
 function extractText(children: React.ReactNode): string {
   if (typeof children === "string") return children;
   if (Array.isArray(children)) return children.map(extractText).join("");
-  if (React.isValidElement(children) && (children.props as Record<string, unknown>).children) {
-    return extractText((children.props as Record<string, unknown>).children as React.ReactNode);
+  if (React.isValidElement(children)) {
+    if (children.type === "br") return "\n";
+    if ((children.props as Record<string, unknown>).children) {
+      return extractText((children.props as Record<string, unknown>).children as React.ReactNode);
+    }
   }
   return "";
 }
