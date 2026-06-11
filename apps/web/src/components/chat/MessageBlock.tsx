@@ -208,7 +208,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       }, 450);
     }
 
-    if (!isMobile) pinVirtuosoToBottomDuringVariantSwitch();
+    if (!isMobile && !isGreeting) pinVirtuosoToBottomDuringVariantSwitch();
     const targetVariant = variants[targetIndex];
     if (!targetVariant) return;
     useSnapshotStore.getState().selectVariant(msg.id, targetVariant.variantIndex, swipeDirection);
