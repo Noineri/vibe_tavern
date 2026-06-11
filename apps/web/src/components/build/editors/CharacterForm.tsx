@@ -513,12 +513,12 @@ export function CharacterForm({
           >+</span>
         </div>
         {alternateGreetings.length > 0 && (
-          <div className="relative">
+          <div>
             <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
               const next = [...alternateGreetings]; next[altGreetIdx] = e.target.value;
               setValue("alternateGreetings", next, { shouldDirty: true });
             }} placeholder={t("alternate_greeting_placeholder")} />
-            <div className="absolute right-0 top-0"><TokenBadge text={alternateGreetings[altGreetIdx] || ""} /></div>
+            <TokenBadge text={alternateGreetings[altGreetIdx] || ""} />
           </div>
         )}
       </div>
