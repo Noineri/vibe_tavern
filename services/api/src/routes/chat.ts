@@ -162,6 +162,15 @@ export function createChatRoutes(runtime: RuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.editMessage(c.req.param("chatId"), c.req.param("messageId"), body.content ?? ""));
     })
+    .patch("/api/chats/:chatId/messages/:messageId/attachments/:attachmentId/description", async (c) => {
+      const body = await c.req.json<{ description: string }>().catch(() => ({ description: "" }));
+      return c.json(await runtime.updateAttachmentDescription(
+        c.req.param("chatId"),
+        c.req.param("messageId"),
+        c.req.param("attachmentId"),
+        body.description ?? "",
+      ));
+    })
     .delete("/api/chats/:chatId/messages/:messageId", async (c) => {
       return c.json(await runtime.deleteMessage(c.req.param("chatId"), c.req.param("messageId")));
     })

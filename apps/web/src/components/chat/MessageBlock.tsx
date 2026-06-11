@@ -292,7 +292,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 opacity-88 [&_em]:italic [&_em]:text-msg-t2">
         <Markdown text={renderContent} />
       </div>
-      <AttachmentGrid attachments={msg.attachments} />
+      <AttachmentGrid attachments={msg.attachments} messageId={msg.id} />
     </div>
   ) : isGenerating && !renderContent?.trim() ? (
     <div className={isMobile ? "my-0.5 w-full" : ""}>
@@ -331,7 +331,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
           </AnimatePresence>
         </div>
       )}
-      <AttachmentGrid attachments={msg.attachments} />
+      <AttachmentGrid attachments={msg.attachments} messageId={msg.id} />
       {isGenerating && <GenerationDots label={t("generating_response")} />}
     </div>
   );
@@ -715,7 +715,7 @@ function PendingUserMessage() {
         <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 opacity-88 [&_em]:italic [&_em]:text-msg-t2">
           <Markdown text={displayContent} />
         </div>
-        <AttachmentGrid attachments={pendingAttachments as any} />
+        <AttachmentGrid attachments={pendingAttachments as any} messageId={undefined} />
       </div>
     </MessageShell>
   );

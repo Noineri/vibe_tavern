@@ -781,6 +781,25 @@ export async function editChatMessage(
   return normalizeSnapshot(data);
 }
 
+export async function updateAttachmentDescription(
+  chatId: string,
+  messageId: string,
+  attachmentId: string,
+  description: string,
+): Promise<{ ok: boolean }> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/chats/${chatId}/messages/${messageId}/attachments/${attachmentId}/description`),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description }),
+    },
+  );
+  if (!response.ok) throw new Error(`Failed to update description: ${response.status}`);
+  return response.json();
+}
+
 export async function deleteChatMessage(
   chatId: ChatId,
   messageId: string,

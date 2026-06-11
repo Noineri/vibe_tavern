@@ -4,7 +4,7 @@ import type { ChatRuntime } from "../session/session-runtime-chat.js";
 import type { SessionSnapshot } from "../session/session-runtime.js";
 import type { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
-import type { ProviderStreamResult } from "../ai/provider-execution-types.js";
+import type { ProviderExecutionInput, ProviderStreamResult } from "../ai/provider-execution-types.js";
 import type { ChatModeStrategy } from "./chat-mode-strategy.js";
 import { nonstreamingProviderExecute } from "../ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../ai/stream-provider-executor.js";
@@ -23,6 +23,7 @@ import { extractProviderErrorMessage } from "../ai/provider-error-message.js";
 export class LiveChatOrchestrator {
   constructor(
     private readonly chatRuntime: ChatRuntime,
+    private readonly chatApp: import("./chat-application-service.js").ChatApplicationService,
     private readonly providers: ProviderOrchestrator,
     private readonly events: EventBus,
     private readonly strategy: ChatModeStrategy,
@@ -71,6 +72,11 @@ export class LiveChatOrchestrator {
         cachedModels: input.visionAssets?.cachedModels,
         visionModel: input.visionAssets?.visionModel,
         assetLoader: input.visionAssets?.assetLoader,
+        onAttachmentDescriptions: (prepared.userMessage && input.attachments?.length)
+          ? async (descriptions) => {
+              await this.chatApp.updateAttachmentDescriptions(prepared.userMessage!.id, input.attachments!, descriptions);
+            }
+          : undefined,
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
@@ -250,7 +256,12 @@ export class LiveChatOrchestrator {
     const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments);
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     const prefill = prepared.prompt.prefill ?? undefined;
-    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider }, prepared.prompt);
+    const onAttachmentDescriptions = (prepared.userMessage && input.attachments?.length)
+      ? async (descriptions: Array<{ attachmentId: string; description: string }>) => {
+          await this.chatApp.updateAttachmentDescriptions(prepared.userMessage!.id, input.attachments!, descriptions);
+        }
+      : undefined;
+    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, onAttachmentDescriptions }, prepared.prompt);
     if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
 
     yield* this.drainStream({
@@ -411,7 +422,7 @@ export class LiveChatOrchestrator {
   }
 
   private async startStream(
-    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; signal?: AbortSignal; prefill?: string; visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null> } },
+    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; signal?: AbortSignal; prefill?: string; visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null> }; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
     prompt: Parameters<typeof streamProviderExecutor>[0]["prompt"],
   ): Promise<{ streamResult: ProviderStreamResult; startedAt: number }> {
     const startedAt = Date.now();
@@ -425,6 +436,7 @@ export class LiveChatOrchestrator {
         cachedModels: input.visionAssets?.cachedModels,
         visionModel: input.visionAssets?.visionModel,
         assetLoader: input.visionAssets?.assetLoader,
+        onAttachmentDescriptions: input.onAttachmentDescriptions,
       });
       return { streamResult, startedAt };
     } catch (err) {

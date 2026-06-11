@@ -402,6 +402,11 @@ export class RuntimeApiAdapter {
 	editMessage = (chatId: string, messageId: string, content: string) =>
 		this.sessionRuntime.chatRuntime.editMessage(brandId<ChatId>(chatId), messageId, content);
 
+	updateAttachmentDescription = async (chatId: string, messageId: string, attachmentId: string, description: string) => {
+		await this.sessionRuntime.chatApp.updateSingleAttachmentDescription(messageId, attachmentId, description);
+		return { ok: true };
+	};
+
 	deleteMessage = (chatId: string, messageId: string) =>
 		this.sessionRuntime.chatRuntime.deleteMessage(brandId<ChatId>(chatId), messageId);
 

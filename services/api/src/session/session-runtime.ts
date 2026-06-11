@@ -106,7 +106,7 @@ export interface ImportResult {
 	export class SessionRuntime {
 	private readonly stores: StoreContainer;
 	private readonly resolver: StaticPromptResolver;
-	private readonly chatApp: ChatApplicationService;
+	readonly chatApp: ChatApplicationService;
 	private readonly promptService: PromptAssemblyService;
 	private readonly chatOrder: ChatOrderService;
 	private defaultsEnsured = false;

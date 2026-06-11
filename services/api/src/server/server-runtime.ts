@@ -94,6 +94,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
 	const liveChatOrchestrator = new LiveChatOrchestrator(
 		sessionRuntime.chatRuntime,
+		sessionRuntime.chatApp,
 		providerOrchestrator,
 		events,
 		getChatModeStrategy("rp"),

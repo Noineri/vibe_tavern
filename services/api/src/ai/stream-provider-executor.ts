@@ -34,7 +34,9 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
     const hasAttachments = messages.some(m => m.attachments?.length);
 
     let visionDescriptions: Array<{ attachmentId: string; name: string; type: "image" | "video"; description: string }> | undefined;
-    if (hasAttachments && !hasVision && visionModelSlug) {
+    const shouldDescribe = hasAttachments && visionModelSlug;
+
+    if (shouldDescribe) {
       // Collect all image/video attachments from user messages
       const allAttachments = messages
         .filter(m => m.role === "user")
@@ -55,17 +57,24 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
           })
           .filter((item): item is { attachmentId: string; name: string; type: "image" | "video"; description: string } => item !== null);
 
-        // Replace image attachments with their text descriptions
-        messages = messages.map(m => ({
-          ...m,
-          attachments: m.attachments?.map(att => {
-            const desc = descriptions.get(att.id);
-            if (desc) {
-              return { ...att, type: "file" as const, description: desc };
-            }
-            return att;
-          }),
-        }));
+        // Always persist descriptions back to the message
+        if (input.onAttachmentDescriptions && visionDescriptions.length > 0) {
+          await input.onAttachmentDescriptions(visionDescriptions.map(d => ({ attachmentId: d.attachmentId, description: d.description })));
+        }
+
+        // Only replace image attachments with text when the model lacks native vision
+        if (!hasVision) {
+          messages = messages.map(m => ({
+            ...m,
+            attachments: m.attachments?.map(att => {
+              const desc = descriptions.get(att.id);
+              if (desc) {
+                return { ...att, type: "file" as const, description: desc };
+              }
+              return att;
+            }),
+          }));
+        }
       }
     }
 
