@@ -219,9 +219,15 @@ function ProviderStep({
       if (saved) {
         setForm((prev) => ({ ...prev, id: saved.id, hasStoredApiKey: true }));
         toast.success(t("provider_saved"));
-        // Collapse & go to next step immediately
-        setCollapsed(true);
-        onComplete();
+        if (showEdit) {
+          // In edit mode, return to the collapsed provider card instead of advancing the wizard.
+          setShowEdit(false);
+          setCollapsed(true);
+        } else {
+          // Initial setup: save and advance to the next wizard step.
+          setCollapsed(true);
+          onComplete();
+        }
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("save_failed"));
@@ -251,7 +257,7 @@ function ProviderStep({
                 {t("api_key_saved")}
               </span>
             </div>
-            <button type="button" className="mt-3 flex items-center gap-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:text-accent" onClick={() => { setShowEdit(true); setCollapsed(false); }}>
+            <button type="button" className="mt-3 flex items-center gap-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:text-accent" onClick={() => { setShowEdit(true); setTestOk(null); setCollapsed(false); }}>
               <span className="text-[11px]"><Icons.Edit /></span>
               {t("wizard_edit_provider")}
             </button>
@@ -329,9 +335,9 @@ function ProviderStep({
         chatResult={chatResult}
         onTest={handleTest}
         onTestChat={handleTestChat}
-        hideConnectionFields={testOk === true}
+        hideConnectionFields={testOk === true && !showEdit}
       />
-      {testOk === true && (
+      {testOk === true && !showEdit && (
         <div className="flex items-center gap-3 rounded-lg border border-success/20 bg-success/5 px-3 py-2">
           <span className="inline-flex items-center gap-1.5 font-ui text-[12px] text-success">
             <Icons.Check />
@@ -342,7 +348,7 @@ function ProviderStep({
           </button>
         </div>
       )}
-      {!testOk && form.apiKey && form.baseUrl && (
+      {!showEdit && !testOk && form.apiKey && form.baseUrl && (
         <button
           type="button"
           className={cn(
@@ -357,7 +363,7 @@ function ProviderStep({
           {testing ? t("testing") : t("test_connection")}
         </button>
       )}
-      {testOk && (
+      {testOk && !showEdit && (
         <ProviderModelSelector
           form={form}
           models={models}
