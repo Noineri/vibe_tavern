@@ -98,6 +98,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const promptPresets = bootstrapData?.promptPresets ?? [];
   const [wizardVisible, setWizardVisible] = useState(false);
   const isFirstRun = (bootstrapData?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === 'true';
+  const hasAnyCharacters = (bootstrapData?.allCharacters?.length ?? 0) > 0;
 
   const hasActiveSnapshot = Boolean(
     activeChatId &&
@@ -146,6 +147,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   let shellSurface: React.ReactNode;
 
   if (!hasActiveSnapshot && !wizardVisible) {
+    if (hasAnyCharacters) {
+      // Has characters/chats but none active — show blank surface (chat was just deleted etc.)
+      shellSurface = <div className="flex h-full w-full" />;
+    } else {
     shellSurface = (
       <div className="flex h-full w-full items-center justify-center p-6">
         <div className="flex max-w-[480px] flex-col items-center text-center">
@@ -201,6 +206,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         </div>
       </div>
     );
+    }
   } else if (isPlayMode) {
     shellSurface = <PlayMode />;
   } else {
