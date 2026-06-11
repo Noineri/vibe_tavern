@@ -1008,6 +1008,7 @@
   "placeholder_setup_wizard": "Мастер настройки",
   "placeholder_welcome": "Добро пожаловать в Vibe Tavern",
   "placeholder_hint": "Зал пуст, но история готова начаться. Создайте первого персонажа или импортируйте готовую карточку.",
+  "placeholder_select_character_chat": "Выберите персонажа и чат, чтобы начать общаться.",
   "wizard_path_a_title": "Начать настройку",
   "wizard_path_a_sub": "Подключить AI-провайдера, создать персону, добавить персонажа",
   "wizard_path_b_title": "Переезд из SillyTavern",
