@@ -10,7 +10,6 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
-import { ProviderForm } from "../settings/provider/ProviderForm.js";
 import { ProviderModelSelector } from "../settings/provider/ProviderModelSelector.js";
 import type { FormState } from "../modals/ProviderModal.js";
 import { PROVIDER_PRESETS } from "../../provider-presets.js";
@@ -82,7 +81,6 @@ function ProviderStep({
   const isMobile = useIsMobile();
   const provider = useProviderProfiles();
 
-  // Detect already-existing profile (e.g. created in a previous wizard run or from settings)
   const existingProfile = provider.providerProfiles[0] ?? null;
   const alreadyHasProfile = !!existingProfile;
 
@@ -138,17 +136,11 @@ function ProviderStep({
   const [showEdit, setShowEdit] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // If profile already exists → collapsed view by default
-  const [collapsed, setCollapsed] = useState(alreadyHasProfile);
+  // If profile already exists → skip to connected view
+  const [connected, setConnected] = useState(alreadyHasProfile);
 
   const updateForm = useCallback(<K extends keyof FormState>(k: K, v: FormState[K]) => {
     setForm((prev) => ({ ...prev, [k]: v }));
-  }, []);
-
-  const applyPreset = useCallback((presetId: string) => {
-    const preset = PROVIDER_PRESETS.find((f) => f.id === presetId);
-    if (!preset) return;
-    setForm((prev) => ({ ...prev, providerPreset: presetId, baseUrl: preset.baseUrl }));
   }, []);
 
   async function fetchModelsFor() {
@@ -168,11 +160,8 @@ function ProviderStep({
     } catch { return []; } finally { setFetchingModels(false); }
   }
 
-  // Auto-fetch models when we detect an existing profile on mount
   useEffect(() => {
-    if (alreadyHasProfile && existingProfile) {
-      void fetchModelsFor();
-    }
+    if (alreadyHasProfile && existingProfile) void fetchModelsFor();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -189,7 +178,10 @@ function ProviderStep({
         probe = await provider.handleTestDraftConnection(form.baseUrl, form.apiKey);
       }
       setTestOk(probe.success);
-      if (probe.success) await fetchModelsFor();
+      if (probe.success) {
+        await fetchModelsFor();
+        setConnected(true);
+      }
     } catch { setTestOk(false); }
     finally { setTesting(false); }
   }
@@ -219,9 +211,9 @@ function ProviderStep({
       if (saved) {
         setForm((prev) => ({ ...prev, id: saved.id, hasStoredApiKey: true }));
         toast.success(t("provider_saved"));
-        // Collapse & go to next step immediately
-        setCollapsed(true);
-        onComplete();
+        setConnected(true);
+        if (showEdit) { setShowEdit(false); }
+        else onComplete();
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("save_failed"));
@@ -236,10 +228,11 @@ function ProviderStep({
 
   const presetLabel = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset)?.label ?? form.providerPreset;
 
-  // ── Collapsed view (saved profile card + test + models) ──
-  if (collapsed) {
+  // ── Connected view (profile card + model selector + test hi + next) ──
+  if (connected) {
     return (
-      <div className={cn("flex flex-1 flex-col gap-4 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-7")}>
+      <div className={cn("flex flex-1 flex-col gap-3 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-6")}>
+        {/* Profile card */}
         <div className="flex flex-col items-stretch gap-3 rounded-lg border border-border2 bg-s2 p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4">
           <div className="min-w-0">
             <div className="mb-1 truncate font-ui text-[16px] font-semibold text-t1">{form.name}</div>
@@ -251,113 +244,17 @@ function ProviderStep({
                 {t("api_key_saved")}
               </span>
             </div>
-            <button type="button" className="mt-3 flex items-center gap-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:text-accent" onClick={() => { setShowEdit(true); setCollapsed(false); }}>
+            <button type="button" className="mt-2 flex items-center gap-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:text-accent" onClick={() => { setConnected(false); setTestOk(null); setShowEdit(true); }}>
               <span className="text-[11px]"><Icons.Edit /></span>
               {t("wizard_edit_provider")}
             </button>
           </div>
-          <button type="button" className="min-h-11 w-full rounded-md border border-accent bg-accent-dim px-4 font-ui text-[13px] font-medium text-accent-t transition-colors hover:bg-accent hover:text-white disabled:cursor-not-allowed disabled:opacity-50 sm:h-[34px] sm:min-h-0 sm:w-auto" disabled>
+          <button type="button" className="min-h-11 w-full rounded-md border border-accent bg-accent-dim px-4 font-ui text-[13px] font-medium text-accent-t disabled:cursor-not-allowed disabled:opacity-50 sm:h-[34px] sm:min-h-0 sm:w-auto" disabled>
             ✓ {t("provider_active")}
           </button>
         </div>
 
-        {/* Test hi */}
-        <div className="my-2 rounded-lg border border-border bg-surface p-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
-            <button type="button"
-              className="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
-              onClick={() => void handleTestChat()}
-              disabled={testingChat}
-            >
-              {testingChat ? t("sending") : t("test_hi_btn")}
-            </button>
-          </div>
-          {chatResult && (
-            <div className={cn("mt-3 rounded-md p-3 font-ui text-[12px] leading-relaxed", chatResult.error ? "bg-danger-dim text-danger-text" : "bg-s2 text-t2")}>
-              {chatResult.error ?? chatResult.reply}
-            </div>
-          )}
-        </div>
-
-        {models.length > 0 && (
-          <ProviderModelSelector
-            form={form}
-            models={models}
-            filteredModels={filteredModels}
-            fetching={fetchingModels}
-            fetchError={null}
-            modelSearch={modelSearch}
-            modelListOpen={modelListOpen}
-            favoriteModels={[]}
-            updateForm={updateForm}
-            onFetchModels={handleTest}
-            setModelSearch={setModelSearch}
-            setModelListOpen={setModelListOpen}
-            dropdownRef={dropdownRef}
-            onToggleFavoriteModel={async () => {}}
-            requiresAuthForModels={true}
-          />
-        )}
-
-        <div className="flex items-center justify-end pt-2">
-          <button
-            type="button"
-            className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-white transition-all"
-            onClick={onComplete}
-          >
-            {t("next")}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Edit / create mode (full form) ──
-  const canContinue = testOk === true && form.model;
-
-  return (
-    <div className={cn("flex flex-1 flex-col gap-3 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-6")}>
-      <ProviderForm
-        form={form}
-        editingId={form.id || null}
-        providerProfiles={provider.providerProfiles}
-        updateForm={updateForm}
-        applyPreset={applyPreset}
-        testOk={testOk}
-        testing={testing}
-        testingChat={testingChat}
-        chatResult={chatResult}
-        onTest={handleTest}
-        onTestChat={handleTestChat}
-        hideConnectionFields={testOk === true}
-      />
-      {testOk === true && (
-        <div className="flex items-center gap-3 rounded-lg border border-success/20 bg-success/5 px-3 py-2">
-          <span className="inline-flex items-center gap-1.5 font-ui text-[12px] text-success">
-            <Icons.Check />
-            {t("connection_successful")}
-          </span>
-          <button type="button" className="ml-auto font-ui text-[11px] font-medium text-t3 transition-colors hover:text-accent" onClick={() => { setTestOk(null); }}>
-            {t("wizard_edit_provider")}
-          </button>
-        </div>
-      )}
-      {!testOk && form.apiKey && form.baseUrl && (
-        <button
-          type="button"
-          className={cn(
-            "h-[38px] cursor-pointer rounded-lg border px-5 font-ui text-[0.88rem] font-semibold transition-all",
-            testing
-              ? "cursor-default border-border bg-s2 text-t3"
-              : "border-border bg-s2 text-t2 hover:border-accent hover:text-t1",
-          )}
-          disabled={testing}
-          onClick={() => void handleTest()}
-        >
-          {testing ? t("testing") : t("test_connection")}
-        </button>
-      )}
-      {testOk && (
+        {/* Model selector */}
         <ProviderModelSelector
           form={form}
           models={models}
@@ -375,23 +272,93 @@ function ProviderStep({
           onToggleFavoriteModel={async () => {}}
           requiresAuthForModels={true}
         />
+
+        {/* Test hi */}
+        <div className="rounded-lg border border-border bg-surface p-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
+            <button type="button"
+              className="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
+              onClick={() => void handleTestChat()}
+              disabled={testingChat}
+            >
+              {testingChat ? t("sending") : t("test_hi_btn")}
+            </button>
+          </div>
+          {chatResult && (
+            <div className={cn("mt-3 rounded-md p-3 font-ui text-[12px] leading-relaxed", chatResult.error ? "bg-danger-dim text-danger-text" : "bg-s2 text-t2")}>
+              {chatResult.error ?? chatResult.reply}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end pt-2">
+          <button type="button" className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-white transition-all" onClick={onComplete}>
+            {t("next")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Connection mode (endpoint + API key + test) ──
+  return (
+    <div className={cn("flex flex-1 flex-col gap-3 overflow-y-auto", isMobile ? "px-4 pb-4" : "px-7 pb-6")}>
+      {/* Endpoint */}
+      <div className="mb-1">
+        <label className="block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3 mb-[6px]">{t("custom_endpoint_label")}</label>
+        <input
+          type="text"
+          value={form.baseUrl}
+          onChange={(e) => updateForm('baseUrl', e.target.value)}
+          placeholder="https://api.openai.com/v1"
+          className="w-full h-11 sm:h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent px-[13px]"
+        />
+      </div>
+
+      {/* API key */}
+      <div className="mb-1">
+        <label className="block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3 mb-[6px]">{t("api_key_label")}</label>
+        <input
+          type="password"
+          value={form.apiKey}
+          onChange={(e) => updateForm('apiKey', e.target.value)}
+          placeholder={form.hasStoredApiKey ? t("api_key_stored") : t("api_key_placeholder")}
+          className="w-full h-11 sm:h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent px-[13px] font-mono tracking-[0.05em]"
+        />
+      </div>
+
+      {/* Test result */}
+      {testOk === false && (
+        <div className="flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger">
+          <Icons.Close />
+          {t("connection_failed")}
+        </div>
       )}
+
+      {/* Test connection */}
+      <button
+        type="button"
+        className={cn(
+          "h-[38px] cursor-pointer rounded-lg border px-5 font-ui text-[0.88rem] font-semibold transition-all",
+          testing
+            ? "cursor-default border-border bg-s2 text-t3"
+            : "border-border bg-s2 text-t2 hover:border-accent hover:text-t1",
+        )}
+        disabled={testing || !form.baseUrl || !(form.apiKey || form.hasStoredApiKey)}
+        onClick={() => void handleTest()}
+      >
+        {testing ? t("testing") : t("test_connection")}
+      </button>
+
       <div className="flex items-center justify-between pt-2">
-        <button
-          type="button"
-          className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1"
-          onClick={showEdit ? () => { setCollapsed(true); setShowEdit(false); } : onSkip}
-        >
+        <button type="button" className="cursor-pointer rounded-lg border-0 bg-transparent px-3 py-2.5 font-ui text-[0.9rem] font-semibold text-t2 transition-all hover:text-t1" onClick={showEdit ? () => { setShowEdit(false); setConnected(true); } : onSkip}>
           {showEdit ? t("back") : t("skip")}
         </button>
-        <button
-          type="button"
-          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
-          disabled={!canContinue || saving}
-          onClick={() => void handleSave()}
-        >
-          {saving ? t("saving") : showEdit ? t("save") : t("next")}
-        </button>
+        {showEdit && (
+          <button type="button" className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40" disabled={saving} onClick={() => void handleSave()}>
+            {saving ? t("saving") : t("save")}
+          </button>
+        )}
       </div>
     </div>
   );
