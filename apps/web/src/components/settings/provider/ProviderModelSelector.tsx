@@ -217,6 +217,20 @@ export function ProviderModelSelector({
                                 </span>
                                 </CustomTooltip>
                               )}
+                              {m.capabilities?.reasoning && (
+                                <CustomTooltip content={t('cap_reasoning')}>
+                                <span className="shrink-0 text-t3">
+                                  <Icons.Brain />
+                                </span>
+                                </CustomTooltip>
+                              )}
+                              {m.capabilities?.tools && (
+                                <CustomTooltip content={t('cap_tools')}>
+                                <span className="shrink-0 text-t3">
+                                  <Icons.Wrench />
+                                </span>
+                                </CustomTooltip>
+                              )}
                               {formatContext(m.contextLength) && (
                                 <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 text-[10px] font-medium text-t2">
                                   {formatContext(m.contextLength)}

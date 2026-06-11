@@ -25,7 +25,7 @@ export interface CachedModel {
   modelSlug: string;
   modelName: string;
   contextLength: number | null;
-  capabilities: { thinking?: boolean; tools?: boolean; vision?: boolean };
+  capabilities: { thinking?: boolean; tools?: boolean; vision?: boolean; reasoning?: boolean };
   fetchedAt: string;
 }
 
@@ -84,7 +84,7 @@ export interface CachedModelData {
   modelSlug: string;
   modelName: string;
   contextLength?: number | null;
-  capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean };
+  capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean; reasoning?: boolean };
 }
 
 export interface FavoriteModelData {

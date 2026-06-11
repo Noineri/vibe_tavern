@@ -50,6 +50,97 @@ export interface ProviderProbeResult {
 	modelCount?: number;
 }
 
+type ProviderKind =
+	| "electronhub" | "openrouter" | "nanogpt" | "together"
+	| "deepinfra" | "fireworks" | "chutes" | "xai"
+	| "groq" | "novita" | "generic";
+
+function detectProviderKind(baseUrl: string): ProviderKind {
+	if (/electronhub\.ai/.test(baseUrl)) return "electronhub";
+	if (/openrouter\.ai/.test(baseUrl)) return "openrouter";
+	if (/nano-gpt\.com/.test(baseUrl)) return "nanogpt";
+	if (/together\.xyz/.test(baseUrl)) return "together";
+	if (/deepinfra\.com/.test(baseUrl)) return "deepinfra";
+	if (/fireworks\.ai/.test(baseUrl)) return "fireworks";
+	if (/chutes\.ai/.test(baseUrl)) return "chutes";
+	if (/api\.x\.ai/.test(baseUrl) || /\.x\.ai/.test(baseUrl)) return "xai";
+	if (/groq\.com/.test(baseUrl)) return "groq";
+	if (/novita\.ai/.test(baseUrl)) return "novita";
+	return "generic";
+}
+
+function extractCapabilities(kind: ProviderKind, record: OpenAiModelRecord): ProviderModelCapabilities | undefined {
+	switch (kind) {
+		case "electronhub":
+			if (!record.metadata && record.premium_model === undefined) return undefined;
+			return {
+				vision: record.metadata?.vision,
+				reasoning: record.metadata?.reasoning,
+				tools: record.metadata?.function_call,
+				webSearch: record.metadata?.web_search,
+				premium: record.premium_model,
+			};
+
+		case "openrouter":
+			return {
+				vision: record.architecture?.modality?.includes("image") || undefined,
+				reasoning: record.supported_parameters?.includes("reasoning") || undefined,
+				tools: record.supported_parameters?.includes("tools") || undefined,
+			};
+
+		case "nanogpt":
+			if (!record.capabilities) return undefined;
+			return {
+				vision: record.capabilities.vision,
+				reasoning: record.capabilities.reasoning,
+				tools: record.capabilities.tool_calling,
+			};
+
+		case "together":
+			if (!record.capabilities) return undefined;
+			return {
+				vision: record.capabilities.vision,
+				reasoning: record.capabilities.reasoning,
+				tools: record.capabilities.tool_use ?? record.capabilities.function_calling,
+				webSearch: record.capabilities.web_search,
+			};
+
+		case "deepinfra":
+			if (!record.capabilities && !record.modality) return undefined;
+			return {
+				vision: record.capabilities?.vision ?? (record.modality?.includes("image") || undefined),
+				reasoning: record.capabilities?.reasoning,
+				tools: record.capabilities?.tool_calling,
+			};
+
+		case "fireworks":
+			if (record.supports_vision === undefined && record.supports_tools === undefined && record.supports_reasoning === undefined) return undefined;
+			return {
+				vision: record.supports_vision || undefined,
+				reasoning: record.supports_reasoning || undefined,
+				tools: record.supports_tools || undefined,
+			};
+
+		case "chutes":
+			if (!record.capabilities && !record.input_modalities) return undefined;
+			return {
+				vision: record.capabilities?.vision ?? (record.input_modalities?.includes("image") || undefined),
+				reasoning: record.capabilities?.reasoning,
+				tools: record.capabilities?.tools,
+			};
+
+		case "xai":
+			if (!record.input_modalities) return undefined;
+			return {
+				vision: record.input_modalities.includes("image") || undefined,
+				tools: true,
+			};
+
+		default:
+			return undefined;
+	}
+}
+
 interface OpenAiModelRecord {
 	id?: string;
 	name?: string;
@@ -68,12 +159,40 @@ interface OpenAiModelRecord {
 		prompt?: number;
 		completion?: number;
 	};
+	// ElectronHub
 	metadata?: {
 		vision?: boolean;
 		reasoning?: boolean;
 		function_call?: boolean;
 		web_search?: boolean;
 	};
+	// OpenRouter
+	architecture?: {
+		modality?: string;
+		tokenizer?: string;
+		instruct_type?: string | null;
+	};
+	supported_parameters?: string[];
+	// NanoGPT, Together, Chutes, DeepInfra
+	capabilities?: {
+		vision?: boolean;
+		reasoning?: boolean;
+		tool_calling?: boolean;
+		tool_use?: boolean;
+		tools?: boolean;
+		function_calling?: boolean;
+		structured_outputs?: boolean;
+		web_search?: boolean;
+	};
+	// DeepInfra
+	modality?: string;
+	// Fireworks
+	supports_vision?: boolean;
+	supports_tools?: boolean;
+	supports_reasoning?: boolean;
+	// xAI, Chutes
+	input_modalities?: string[];
+	output_modalities?: string[];
 }
 
 interface OpenAiModelsResponse {
@@ -688,14 +807,24 @@ async function listOpenAiCompatModels(
 		throw new Error(`Invalid provider endpoint: ${input.baseUrl}`);
 	}
 
-	const isNanoGpt = /nano-gpt\.com/.test(baseUrl);
-	const isElectronHub = /electronhub\.ai/.test(baseUrl);
+	const providerKind = detectProviderKind(baseUrl);
 
-	// NanoGPT: use subscription-only endpoint with detailed info
-	// Other providers: standard /models
-	const url = isNanoGpt
-		? `${baseUrl.replace(/\/v1$/, "")}/subscription/v1/models?detailed=true`
-		: buildModelsUrl(baseUrl);
+	// Provider-specific endpoint URLs
+	let url: string;
+	switch (providerKind) {
+		case "nanogpt":
+			url = `${baseUrl.replace(/\/v1$/, "")}/subscription/v1/models?detailed=true`;
+			break;
+		case "deepinfra":
+			url = `${baseUrl}/models?filter=with_meta`;
+			break;
+		case "xai":
+			url = `${baseUrl.replace(/\/v1$/, "")}/v1/language-models`;
+			break;
+		default:
+			url = buildModelsUrl(baseUrl);
+			break;
+	}
 
 	let response: Response;
 
@@ -723,34 +852,38 @@ async function listOpenAiCompatModels(
 		);
 	}
 
-	const payload = (await response.json()) as OpenAiModelsResponse;
-	const records = Array.isArray(payload.data) ? payload.data : [];
-	const canFilterByEndpoint = records.some((record) => Array.isArray(record.endpoints));
-	const chatRecords = isElectronHub && canFilterByEndpoint
-		? records.filter((record) => record.endpoints?.includes("/v1/chat/completions"))
-		: records;
+	const payload = (await response.json()) as OpenAiModelsResponse & { models?: OpenAiModelRecord[] };
+	// xAI returns { models: [...] } instead of { data: [...] }
+	const rawRecords = providerKind === "xai"
+		? (Array.isArray(payload.models) ? payload.models : [])
+		: (Array.isArray(payload.data) ? payload.data : []);
+
+	// ElectronHub: only keep models that support chat completions
+	const canFilterByEndpoint = rawRecords.some((record) => Array.isArray(record.endpoints));
+	const chatRecords = providerKind === "electronhub" && canFilterByEndpoint
+		? rawRecords.filter((record) => record.endpoints?.includes("/v1/chat/completions"))
+		: rawRecords;
 
 	return chatRecords
 		.map((record) => {
 			const id = (record.id ?? record.name ?? "").trim();
-			if (!id) {
-				return null;
-			}
-
-			// Use display name from detailed response, or just id (skip owned_by for NanoGPT)
-			if (isNanoGpt) {
-				const opt: ProviderModelOption = { id, label: record.name || id };
-				if (record.context_length) opt.contextLength = record.context_length;
-				return opt;
-			}
+			if (!id) return null;
 
 			const opt: ProviderModelOption = {
 				id,
 				label: (record.name ?? "").trim() || id,
 			};
-			const contextLength = record.context_length ?? record.context_length_total ?? record.tokens ?? record.top_provider?.context_length;
+
+			// Context length — try all known field names
+			const contextLength = record.context_length
+				?? record.context_length_total
+				?? record.tokens
+				?? record.top_provider?.context_length;
 			if (contextLength) opt.contextLength = contextLength;
+
 			if (record.description) opt.description = record.description;
+
+			// Pricing
 			if (record.pricing) {
 				const inputPrice = record.pricing.input ?? record.pricing.prompt;
 				const outputPrice = record.pricing.output ?? record.pricing.completion;
@@ -758,15 +891,11 @@ async function listOpenAiCompatModels(
 					opt.pricing = { input: inputPrice, output: outputPrice };
 				}
 			}
-			if (record.metadata || record.premium_model !== undefined) {
-				opt.capabilities = {
-					vision: record.metadata?.vision,
-					reasoning: record.metadata?.reasoning,
-					tools: record.metadata?.function_call,
-					webSearch: record.metadata?.web_search,
-					premium: record.premium_model,
-				};
-			}
+
+			// Capabilities — unified extraction
+			const capabilities = extractCapabilities(providerKind, record);
+			if (capabilities) opt.capabilities = capabilities;
+
 			return opt;
 		})
 		.filter((record): record is ProviderModelOption => Boolean(record))
@@ -805,7 +934,11 @@ async function listAnthropicModels(
 	const payload = (await response.json()) as { data?: AnthropicModel[] };
 	const records = Array.isArray(payload.data) ? payload.data : [];
 	return records
-		.map((r) => ({ id: r.id, label: r.display_name ?? r.id }))
+		.map((r) => ({
+			id: r.id,
+			label: r.display_name ?? r.id,
+			capabilities: { vision: true, tools: true, reasoning: true },
+		}))
 		.sort((a, b) => a.id.localeCompare(b.id));
 }
 
@@ -875,6 +1008,7 @@ async function listGoogleModels(
 			if (!id) return null;
 			const opt: ProviderModelOption = { id, label: r.displayName ?? id };
 			if (r.inputTokenLimit) opt.contextLength = r.inputTokenLimit;
+			opt.capabilities = { vision: true, tools: true };
 			return opt;
 		})
 		.filter((r): r is ProviderModelOption => r !== null)
