@@ -12,8 +12,7 @@ image being present.
    objects), and any visible text or symbols.
 3. Be specific and sensory. "A woman in a dark cloak holding a cracked
    porcelain teacup" is better than "a person with a drink".
-4. Keep the description concise: 2–4 sentences. Prioritize the most
-   important visual information.
+4. Prioritize the most important visual information.
 5. If the image contains text, quote it verbatim.
 6. Do NOT add commentary, meta-notes, or phrases like "The image shows…"
    or "In this picture…". Start directly with the description.
