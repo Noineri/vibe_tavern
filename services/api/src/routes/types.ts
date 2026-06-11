@@ -20,6 +20,7 @@ export interface RuntimeApi {
   selectVariant: (chatId: string, messageId: string, variantIndex: number) => unknown;
   deleteVariant: (chatId: string, messageId: string, variantIndex: number) => unknown;
   editMessage: (chatId: string, messageId: string, content: string) => unknown;
+  updateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string, description: string) => Promise<{ ok: boolean }>;
   deleteMessage: (chatId: string, messageId: string) => unknown;
   sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<unknown>;
   sendMessageStream: (chatId: string, body: { content: string }, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;

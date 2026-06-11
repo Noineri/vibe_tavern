@@ -10,6 +10,7 @@ import type {
 } from "./chat-application-types.js";
 import { brandId } from "@vibe-tavern/domain";
 import type {
+  Attachment,
   ChatBranchId,
   ChatId,
   Message,
@@ -97,6 +98,28 @@ export class ChatApplicationService {
     });
 
     return message as unknown as Message;
+  }
+
+  async updateAttachmentDescriptions(messageId: string, currentAttachments: Attachment[], descriptions: Array<{ attachmentId: string; description: string }>): Promise<void> {
+    const descMap = new Map(descriptions.map(d => [d.attachmentId, d.description]));
+    const updated = currentAttachments.map(att => {
+      const desc = descMap.get(att.id);
+      return desc !== undefined ? { ...att, description: desc } : att;
+    });
+    await this.chatStore.updateMessageAttachments(messageId, JSON.stringify(updated));
+  }
+
+  async updateSingleAttachmentDescription(messageId: string, attachmentIdOrAttachments: string | Attachment[], descriptionOrAttachmentId?: string, description?: string): Promise<void> {
+    // Overload: (messageId, attachmentId, description) — reads from DB
+    if (typeof attachmentIdOrAttachments === 'string') {
+      const message = await this.chatStore.getMessageById(messageId);
+      if (!message) return;
+      const currentAttachments: Attachment[] = message.attachmentsJson ? JSON.parse(message.attachmentsJson) : [];
+      await this.updateAttachmentDescriptions(messageId, currentAttachments, [{ attachmentId: attachmentIdOrAttachments, description: descriptionOrAttachmentId ?? '' }]);
+      return;
+    }
+    // Overload: (messageId, currentAttachments, attachmentId, description)
+    await this.updateAttachmentDescriptions(messageId, attachmentIdOrAttachments, [{ attachmentId: descriptionOrAttachmentId!, description: description! }]);
   }
 
   async editMessage(messageId: string, content: string): Promise<Message> {

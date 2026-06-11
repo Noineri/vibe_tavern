@@ -161,6 +161,8 @@ export interface ProviderExecutionInput {
   visionModel?: string | null;
   /** Asset loader for reading attachment files. */
   assetLoader?: (assetId: string) => Promise<Buffer | null>;
+  /** Callback to persist attachment descriptions back to the user message. */
+  onAttachmentDescriptions?: (descriptions: Array<{ attachmentId: string; description: string }>) => Promise<void>;
 }
 
 /** Streaming executor function signature. */

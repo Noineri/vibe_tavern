@@ -506,6 +506,15 @@ export class ChatStore {
 
   // ─── Messages ──────────────────────────────────────────────────────────────
 
+  async getMessageById(id: string): Promise<Message | null> {
+    const row = await this.db
+      .select()
+      .from(messages)
+      .where(eq(messages.id, id))
+      .get();
+    return row ? this.mapRowMessage(row) : null;
+  }
+
   async getMessages(branchId: string): Promise<Message[]> {
     const rows = await this.db
       .select()
@@ -637,6 +646,15 @@ export class ChatStore {
 
     const row = await this.db.select().from(messages).where(eq(messages.id, id)).get();
     return this.mapRowMessage(row!);
+  }
+
+  async updateMessageAttachments(id: string, attachmentsJson: string | null): Promise<void> {
+    const now = this.clock.now();
+    await this.db
+      .update(messages)
+      .set({ attachmentsJson, updatedAt: now })
+      .where(eq(messages.id, id))
+      .run();
   }
 
   async editMessage(id: string, content: string): Promise<Message> {
