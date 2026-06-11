@@ -33,6 +33,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
     const visionModelSlug = input.visionModel ?? null;
     const hasAttachments = messages.some(m => m.attachments?.length);
 
+    let visionDescriptions: Array<{ attachmentId: string; name: string; type: "image" | "video"; description: string }> | undefined;
     if (hasAttachments && !hasVision && visionModelSlug) {
       // Collect all image/video attachments from user messages
       const allAttachments = messages
@@ -44,6 +45,15 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
         const descriptions = await describeAttachments(
           allAttachments, visionModelSlug, input.profile, input.assetLoader!,
         );
+
+        visionDescriptions = allAttachments
+          .map((att) => {
+            const description = descriptions.get(att.id);
+            return description
+              ? { attachmentId: att.id, name: att.name, type: att.type, description }
+              : null;
+          })
+          .filter((item): item is { attachmentId: string; name: string; type: "image" | "video"; description: string } => item !== null);
 
         // Replace image attachments with their text descriptions
         messages = messages.map(m => ({
@@ -82,6 +92,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       systemRole: hasSystemMessages ? "system" : undefined,
       samplerConfig: samplerConfig as Record<string, unknown>,
       messageCount: conversationMessages.length,
+      ...(visionDescriptions?.length ? { visionDescriptions } : {}),
     };
     logger.debug("sentConfig: %o", sentConfig);
 

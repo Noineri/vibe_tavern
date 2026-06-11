@@ -258,6 +258,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
   function renderTraceContent(): ReactNode {
     const trace = activeTrace;
     const totalTokens = trace ? (trace.tokenAccounting?.total ?? trace.layers.reduce((sum, l) => sum + l.tokenCount, 0)) : 0;
+    const visionDescriptions = trace?.sentConfig?.visionDescriptions ?? [];
     const downloadPayload = () => {
       const blob = new Blob([promptPayloadText], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -477,6 +478,20 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
             >
               <strong className="text-t2">{t("trace_prefill_label")}</strong>{" "}
               <span className="whitespace-pre-wrap text-t3">{trace.prefill}</span>
+            </div>
+          )}
+          {visionDescriptions.length > 0 && (
+            <div className="mt-1.5 rounded-[6px] border border-info/30 bg-info/10 px-2.5 py-1.5 font-body text-xs text-info">
+              <strong>{t("trace_sent_with_attachments").replace("{n}", String(visionDescriptions.length))}</strong>
+              <div className="mt-1 space-y-1 whitespace-pre-wrap text-info-text">
+                {visionDescriptions.map((item) => (
+                  <div key={item.attachmentId}>
+                    <span className="font-medium">{item.name}</span>{" "}
+                    <span className="text-info/80">({item.type})</span>
+                    {": "}{item.description}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

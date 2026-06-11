@@ -1,5 +1,5 @@
 import { brandId, type ChatId, type ChatBranchId, type MessageId, type PromptTraceRecordDto } from "@vibe-tavern/domain";
-import type { LoreEntry, Message, MessageVariant } from "@vibe-tavern/domain";
+import type { LoreEntry, Message, MessageVariant, Attachment } from "@vibe-tavern/domain";
 import type { PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
 
 // Re-export canonical domain type — single source of truth
@@ -11,6 +11,7 @@ export interface ClientProviderProfileRecord {
   providerPreset: string;
   endpoint: string;
   defaultModel: string | null;
+  visionModel: string | null;
   contextBudget: number | null;
   pinContextBudget: boolean;
   maxTokens: number;
@@ -70,6 +71,7 @@ export interface MessageDto extends Message {
   variants: MessageVariant[];
   selectedVariantIndex: number | null;
   modelId: string | null;
+  attachments?: Attachment[];
 }
 
 export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto {
@@ -90,13 +92,25 @@ export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto
     finalPayload: trace.finalPayload,
     prefill: trace.prefill ?? null,
     compactionSummary: trace.compactionSummary ?? null,
+    sentConfig: trace.sentConfig ?? undefined,
   };
+}
+
+function parseAttachmentsJson(raw: string | null | undefined): Attachment[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  } catch {}
+  return undefined;
 }
 
 export function mapMessageDto(message: Message, variants: MessageVariant[]): MessageDto;
 export function mapMessageDto(message: DbMessage, variants: DbMessageVariant[]): MessageDto;
 export function mapMessageDto(message: Message | DbMessage, variants: MessageVariant[] | DbMessageVariant[]): MessageDto {
   const selectedVariant = variants.find((variant) => variant.isSelected) ?? null;
+  const dbMessage = message as unknown as Record<string, unknown>;
+  const attachments = parseAttachmentsJson(dbMessage['attachmentsJson'] as string | null | undefined);
   return {
     id: message.id as MessageId,
     chatId: message.chatId as ChatId,
@@ -111,6 +125,7 @@ export function mapMessageDto(message: Message | DbMessage, variants: MessageVar
     updatedAt: message.updatedAt,
     variants: variants as MessageVariant[],
     selectedVariantIndex: selectedVariant?.variantIndex ?? null,
+    ...(attachments ? { attachments } : {}),
   } satisfies MessageDto;
 }
 
@@ -156,6 +171,7 @@ export function toClientProviderProfile(profile: import("@vibe-tavern/domain").S
     providerPreset: profile.providerPreset,
     endpoint: profile.endpoint,
     defaultModel: profile.defaultModel,
+    visionModel: profile.visionModel,
     contextBudget: profile.contextBudget,
     pinContextBudget: profile.pinContextBudget,
     maxTokens: profile.maxTokens,

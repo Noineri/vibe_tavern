@@ -19,6 +19,7 @@ export const useProviderStore = create<ProviderStore>()((set) => ({
     baseUrl: "",
     apiKey: "",
     model: "",
+    visionModel: "",
     activeProviderProfileId: null,
     hasStoredApiKey: false,
     status: "idle",

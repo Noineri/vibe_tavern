@@ -93,6 +93,7 @@ export function createProviderProfileService(providers: ProviderStore): Provider
         endpoint: profile.endpoint ?? "",
         apiKey,
         defaultModel: profile.defaultModel,
+        visionModel: profile.visionModel,
         contextBudget: profile.contextBudget,
         temperature: profile.temperature,
         topP: profile.topP,

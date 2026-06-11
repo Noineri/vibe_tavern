@@ -158,6 +158,7 @@ export async function exportPromptTrace(
 		retrievedMemories: trace.retrievedMemories as Array<Record<string, unknown>>,
 		finalPayload: trace.finalPayload,
 		compactionSummary: trace.compactionSummary ?? null,
+		sentConfig: trace.sentConfig ?? undefined,
 	};
 }
 

@@ -46,6 +46,9 @@ interface ProviderModelSelectorProps {
   modelKey?: keyof FormState;
   labelOverride?: string;
   placeholderOverride?: string;
+  showRefreshButton?: boolean;
+  showContextLength?: boolean;
+  syncContextBudget?: boolean;
 }
 
 export function ProviderModelSelector({
@@ -70,6 +73,9 @@ export function ProviderModelSelector({
   modelKey = "model" as keyof FormState,
   labelOverride,
   placeholderOverride,
+  showRefreshButton = true,
+  showContextLength = true,
+  syncContextBudget = true,
 }: ProviderModelSelectorProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
@@ -92,6 +98,30 @@ export function ProviderModelSelector({
     offline: { label: t("local_connection_offline"), className: "border-danger/30 bg-danger/10 text-danger", dotClassName: "bg-danger" },
   };
   const localStatus = statusMeta[localConnectionStatus];
+  const portalRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (!modelListOpen) return;
+
+    const closeOnViewportMove = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (portalRef.current && !portalRef.current.contains(target)) {
+        setModelListOpen(false);
+      }
+    };
+
+    document.addEventListener("scroll", closeOnViewportMove, true);
+    document.addEventListener("wheel", closeOnViewportMove, true);
+    document.addEventListener("touchmove", closeOnViewportMove, true);
+    window.addEventListener("resize", closeOnViewportMove);
+    return () => {
+      document.removeEventListener("scroll", closeOnViewportMove, true);
+      document.removeEventListener("wheel", closeOnViewportMove, true);
+      document.removeEventListener("touchmove", closeOnViewportMove, true);
+      window.removeEventListener("resize", closeOnViewportMove);
+    };
+  }, [modelListOpen, setModelListOpen]);
 
   const sortedModels = [...filteredModels].sort((a, b) => {
     const aFav = favoriteIds.has(a.id);
@@ -118,9 +148,11 @@ export function ProviderModelSelector({
               </span>
             )}
           </span>
-          <button type="button" onClick={() => void onFetchModels()} disabled={fetching} className="self-start rounded border border-current/20 px-2 py-0.5 font-ui text-[11px] font-medium opacity-80 transition-opacity hover:opacity-100 disabled:opacity-50 sm:self-auto">
-            {fetching ? t("testing") : t("refresh_models")}
-          </button>
+          {showRefreshButton && (
+            <button type="button" onClick={() => void onFetchModels()} disabled={fetching} className="self-start rounded border border-current/20 px-2 py-0.5 font-ui text-[11px] font-medium opacity-80 transition-opacity hover:opacity-100 disabled:opacity-50 sm:self-auto">
+              {fetching ? t("testing") : t("refresh_models")}
+            </button>
+          )}
         </div>
       )}
       <div className="flex items-end gap-3">
@@ -134,7 +166,7 @@ export function ProviderModelSelector({
               >
                 <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">
                   {selectedModel?.label || currentVal || placeholderOverride || t("select_model")}
-                  {formatContext(selectedModel?.contextLength) && (
+                  {showContextLength && formatContext(selectedModel?.contextLength) && (
                     <span className="ml-2 text-[11px] font-medium text-t2">{formatContext(selectedModel?.contextLength)}</span>
                   )}
                 </span>
@@ -147,6 +179,7 @@ export function ProviderModelSelector({
                 const portal = document.getElementById('modal-portal');
                 const content = (
                   <div
+                    ref={portalRef}
                     className="fixed z-[600] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
                     style={{
                       top: rect ? rect.bottom + 4 : 0,
@@ -175,9 +208,8 @@ export function ProviderModelSelector({
                         <div
                           key={m.id}
                           onClick={() => {
-                            console.log('[MODEL-SELECT]', { modelId: m.id, contextLength: m.contextLength, pinContextBudget: form.pinContextBudget, willSet: m.contextLength ?? 16000 });
                             updateForm(modelKey, m.id);
-                            if (modelKey === 'model' && !form.pinContextBudget) {
+                            if (syncContextBudget && modelKey === 'model' && !form.pinContextBudget) {
                               if (m.contextLength != null && m.contextLength > 0) {
                                 updateForm('contextBudget', m.contextLength);
                               } else {
@@ -238,7 +270,7 @@ export function ProviderModelSelector({
                                 </span>
                                 </CustomTooltip>
                               )}
-                              {formatContext(m.contextLength) && (
+                              {showContextLength && formatContext(m.contextLength) && (
                                 <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 text-[10px] font-medium text-t2">
                                   {formatContext(m.contextLength)}
                                 </span>
@@ -291,26 +323,28 @@ export function ProviderModelSelector({
             />
           )}
         </div>
-        <button type="button"
-          onClick={() => void onFetchModels()}
-          disabled={fetching}
-          className={cn(
-            "shrink-0 items-center gap-2 rounded-md border border-border bg-s2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50",
-            isMobile ? "flex w-[34px] justify-center px-0 py-[6px]" : "flex px-4 py-[6px] font-ui text-[13px] font-medium text-t2"
-          )}
-          title={t("refresh_models")}
-        >
-          {fetching ? (
-            <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle">
-              <span className="h-1 w-1 rounded-full bg-accent animate-genp" />
-              <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]" />
-              <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]" />
-            </span>
-          ) : (
-            <Icons.Regen />
-          )}
-          {!isMobile && <> {t("refresh_models")}</>}
-        </button>
+        {showRefreshButton && (
+          <button type="button"
+            onClick={() => void onFetchModels()}
+            disabled={fetching}
+            className={cn(
+              "shrink-0 items-center gap-2 rounded-md border border-border bg-s2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50",
+              isMobile ? "flex w-[34px] justify-center px-0 py-[6px]" : "flex px-4 py-[6px] font-ui text-[13px] font-medium text-t2"
+            )}
+            title={t("refresh_models")}
+          >
+            {fetching ? (
+              <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle">
+                <span className="h-1 w-1 rounded-full bg-accent animate-genp" />
+                <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]" />
+                <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]" />
+              </span>
+            ) : (
+              <Icons.Regen />
+            )}
+            {!isMobile && <> {t("refresh_models")}</>}
+          </button>
+        )}
       </div>
       {fetchError && (
         <div className="mt-3">

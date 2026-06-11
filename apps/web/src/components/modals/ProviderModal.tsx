@@ -283,6 +283,16 @@ export function ProviderModal({
     if (lazyAutoSaveTimer.current) clearTimeout(lazyAutoSaveTimer.current);
   }, []);
 
+  useEffect(() => {
+    if (!isOpen || !form || form.visionModel || models.length === 0) return;
+    const fetchedVisionModels = models.filter((m) => m.capabilities?.vision);
+    if (fetchedVisionModels.length > 0 && fetchedVisionModels.length < models.length) {
+      autoSaveField("visionModel", fetchedVisionModels[0].id);
+    }
+    // Intentionally depend on scalar form fields only: autoSaveField updates form.visionModel,
+    // which makes this effect stop after the first selection.
+  }, [isOpen, form?.id, form?.visionModel, models]);
+
   if (!isOpen) return null;
 
   // ── Form helpers ──
@@ -342,16 +352,6 @@ export function ProviderModal({
     });
     showAutoSaveFlash();
   };
-
-  useEffect(() => {
-    if (!isOpen || !form || form.visionModel || models.length === 0) return;
-    const fetchedVisionModels = models.filter((m) => m.capabilities?.vision);
-    if (fetchedVisionModels.length > 0 && fetchedVisionModels.length < models.length) {
-      autoSaveField("visionModel", fetchedVisionModels[0].id);
-    }
-    // Intentionally depend on scalar form fields only: autoSaveField updates form.visionModel,
-    // which makes this effect stop after the first selection.
-  }, [isOpen, form?.id, form?.visionModel, models]);
 
   // Lazy auto-save: update UI immediately, persist only after the user pauses.
   // Used for sampler fields and especially logit bias sliders to avoid request storms.
@@ -585,31 +585,8 @@ export function ProviderModal({
                     localConnectionStatus={fetching || testing ? "checking" : fetchError || testOk === false ? "offline" : testOk === true ? "online" : "unknown"}
                   />
 
-                  {showVisionFallback && (
-                    <div className="mt-4 border-t border-border2 pt-2">
-                      <ProviderModelSelector form={form} models={models.filter(m => m.capabilities?.vision)} filteredModels={visionFilteredModels}
-                        modelKey="visionModel" labelOverride={t("vision_fallback_model")} placeholderOverride={t("select_vision_model")}
-                        fetching={fetching} fetchError={fetchError} modelSearch={visionModelSearch} modelListOpen={visionModelListOpen}
-                        favoriteModels={favoriteModelsByProfile[form.id] ?? []}
-                        updateForm={autoSaveField} onFetchModels={handleFetchModels} setModelSearch={setVisionModelSearch}
-                        setModelListOpen={setVisionModelListOpen} dropdownRef={visionDropdownRef}
-                        onToggleFavoriteModel={(model) => onToggleFavoriteModel(form.id, model)}
-                        requiresAuthForModels={selectedPreset?.requiresAuthForModels ?? false}
-                        isLocalProvider={false} // Local settings only shown for primary model
-                      />
-                    </div>
-                  )}
-
-                  {/* Hint when no models are loaded yet but provider is selected */}
-                  {!fetching && models.length === 0 && selectedPreset && !showVisionFallback && (
-                    <div className="mt-2 text-[12px] text-t3 italic">
-                      Refresh models to see vision-capable options
-                    </div>
-                  )}
-
-                  {/* Test Hi */}
                   {form.model && (
-                    <div className="mb-4">
+                    <div className="mt-2 mb-4">
                       <button type="button" onClick={() => void handleTestChat()} disabled={testingChat}
                         className="rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50"
                       >
@@ -625,6 +602,31 @@ export function ProviderModal({
                           <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"><Icons.Close /> {chatResult.error}</span>
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {showVisionFallback && (
+                    <div className="mt-4 border-t border-border2 pt-2">
+                      <ProviderModelSelector form={form} models={models.filter(m => m.capabilities?.vision)} filteredModels={visionFilteredModels}
+                        modelKey="visionModel" labelOverride={t("vision_fallback_model")} placeholderOverride={t("select_vision_model")}
+                        fetching={fetching} fetchError={fetchError} modelSearch={visionModelSearch} modelListOpen={visionModelListOpen}
+                        favoriteModels={favoriteModelsByProfile[form.id] ?? []}
+                        updateForm={autoSaveField} onFetchModels={handleFetchModels} setModelSearch={setVisionModelSearch}
+                        setModelListOpen={setVisionModelListOpen} dropdownRef={visionDropdownRef}
+                        onToggleFavoriteModel={(model) => onToggleFavoriteModel(form.id, model)}
+                        requiresAuthForModels={selectedPreset?.requiresAuthForModels ?? false}
+                        isLocalProvider={false} // Local settings only shown for primary model
+                        showRefreshButton={false}
+                        showContextLength={false}
+                        syncContextBudget={false}
+                      />
+                    </div>
+                  )}
+
+                  {/* Hint when no models are loaded yet but provider is selected */}
+                  {!fetching && models.length === 0 && selectedPreset && !showVisionFallback && (
+                    <div className="mt-2 text-[12px] text-t3 italic">
+                      Refresh models to see vision-capable options
                     </div>
                   )}
 

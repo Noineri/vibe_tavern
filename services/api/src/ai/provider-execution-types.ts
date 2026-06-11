@@ -99,6 +99,13 @@ export interface SentConfigSnapshot {
   samplerConfig: Record<string, unknown>;
   /** Number of messages sent to the provider, preserving prompt trace order. */
   messageCount: number;
+  /** Optional human-readable description snapshot for vision fallback attachments. */
+  visionDescriptions?: Array<{
+    attachmentId: string;
+    name: string;
+    type: "image" | "video";
+    description: string;
+  }>;
 }
 
 // ---------------------------------------------------------------------------

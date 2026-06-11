@@ -10,6 +10,7 @@ export interface ConnectionState {
   baseUrl: string;
   apiKey: string;
   model: string;
+  visionModel: string;
   activeProviderProfileId: string | null;
   hasStoredApiKey: boolean;
   status: ConnectionStatus;

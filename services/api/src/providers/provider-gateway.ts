@@ -69,75 +69,118 @@ function detectProviderKind(baseUrl: string): ProviderKind {
 	return "generic";
 }
 
+function mergeCapabilities(primary: ProviderModelCapabilities | undefined, fallback: ProviderModelCapabilities | undefined): ProviderModelCapabilities | undefined {
+	if (!primary) return fallback;
+	if (!fallback) return primary;
+	return {
+		vision: primary.vision ?? fallback.vision,
+		reasoning: primary.reasoning ?? fallback.reasoning,
+		tools: primary.tools ?? fallback.tools,
+		webSearch: primary.webSearch ?? fallback.webSearch,
+		premium: primary.premium ?? fallback.premium,
+	};
+}
+
+function inferCapabilities(record: OpenAiModelRecord): ProviderModelCapabilities | undefined {
+	const capabilities = {
+		vision: record.metadata?.vision
+			|| record.architecture?.modality?.includes("image")
+			|| record.capabilities?.vision
+			|| record.supports_vision
+			|| record.input_modalities?.includes("image")
+			|| record.modality?.includes("image"),
+		reasoning: record.metadata?.reasoning
+			|| record.capabilities?.reasoning
+			|| record.supports_reasoning
+			|| record.supported_parameters?.includes("reasoning"),
+			tools: record.metadata?.function_call
+			|| record.capabilities?.tools
+			|| record.capabilities?.tool_calling
+			|| record.capabilities?.tool_use
+			|| record.capabilities?.function_calling
+			|| record.supports_tools
+			|| record.supported_parameters?.includes("tools")
+			|| record.supported_parameters?.includes("tool_use")
+			|| record.supported_parameters?.includes("tool_calling")
+			|| record.supported_parameters?.includes("function_calling"),
+		webSearch: record.metadata?.web_search || record.capabilities?.web_search,
+		premium: record.premium_model,
+	};
+	return Object.values(capabilities).some((value) => value !== undefined && value !== false)
+		? {
+			vision: capabilities.vision || undefined,
+			reasoning: capabilities.reasoning || undefined,
+			tools: capabilities.tools || undefined,
+			webSearch: capabilities.webSearch || undefined,
+			premium: capabilities.premium || undefined,
+		}
+		: undefined;
+}
+
 function extractCapabilities(kind: ProviderKind, record: OpenAiModelRecord): ProviderModelCapabilities | undefined {
+	const inferred = inferCapabilities(record);
 	switch (kind) {
 		case "electronhub":
-			if (!record.metadata && record.premium_model === undefined) return undefined;
-			return {
-				vision: record.metadata?.vision,
-				reasoning: record.metadata?.reasoning,
-				tools: record.metadata?.function_call,
-				webSearch: record.metadata?.web_search,
-				premium: record.premium_model,
-			};
+			if (!record.metadata && record.premium_model === undefined) return inferred;
+			return mergeCapabilities({
+				vision: record.metadata?.vision || undefined,
+				reasoning: record.metadata?.reasoning || undefined,
+				tools: record.metadata?.function_call || undefined,
+				webSearch: record.metadata?.web_search || undefined,
+				premium: record.premium_model || undefined,
+			}, inferred);
 
 		case "openrouter":
-			return {
+			return mergeCapabilities({
 				vision: record.architecture?.modality?.includes("image") || undefined,
 				reasoning: record.supported_parameters?.includes("reasoning") || undefined,
 				tools: record.supported_parameters?.includes("tools") || undefined,
-			};
+			}, inferred);
 
 		case "nanogpt":
-			if (!record.capabilities) return undefined;
-			return {
-				vision: record.capabilities.vision,
-				reasoning: record.capabilities.reasoning,
-				tools: record.capabilities.tool_calling,
-			};
+			return mergeCapabilities(record.capabilities ? {
+				vision: record.capabilities.vision || undefined,
+				reasoning: record.capabilities.reasoning || undefined,
+				tools: record.capabilities.tool_calling || undefined,
+			} : undefined, inferred);
 
 		case "together":
-			if (!record.capabilities) return undefined;
-			return {
-				vision: record.capabilities.vision,
-				reasoning: record.capabilities.reasoning,
+			return mergeCapabilities(record.capabilities ? {
+				vision: record.capabilities.vision || undefined,
+				reasoning: record.capabilities.reasoning || undefined,
 				tools: record.capabilities.tool_use ?? record.capabilities.function_calling,
-				webSearch: record.capabilities.web_search,
-			};
+				webSearch: record.capabilities.web_search || undefined,
+			} : undefined, inferred);
 
 		case "deepinfra":
-			if (!record.capabilities && !record.modality) return undefined;
-			return {
+			return mergeCapabilities((record.capabilities || record.modality) ? {
 				vision: record.capabilities?.vision ?? (record.modality?.includes("image") || undefined),
-				reasoning: record.capabilities?.reasoning,
-				tools: record.capabilities?.tool_calling,
-			};
+				reasoning: record.capabilities?.reasoning || undefined,
+				tools: record.capabilities?.tool_calling || undefined,
+			} : undefined, inferred);
 
 		case "fireworks":
-			if (record.supports_vision === undefined && record.supports_tools === undefined && record.supports_reasoning === undefined) return undefined;
-			return {
+			return mergeCapabilities((record.supports_vision !== undefined || record.supports_tools !== undefined || record.supports_reasoning !== undefined) ? {
 				vision: record.supports_vision || undefined,
 				reasoning: record.supports_reasoning || undefined,
 				tools: record.supports_tools || undefined,
-			};
+			} : undefined, inferred);
 
 		case "chutes":
-			if (!record.capabilities && !record.input_modalities) return undefined;
-			return {
+			return mergeCapabilities((record.capabilities || record.input_modalities) ? {
 				vision: record.capabilities?.vision ?? (record.input_modalities?.includes("image") || undefined),
-				reasoning: record.capabilities?.reasoning,
-				tools: record.capabilities?.tools,
-			};
+				reasoning: record.capabilities?.reasoning || undefined,
+				tools: record.capabilities?.tools || undefined,
+			} : undefined, inferred);
 
 		case "xai":
-			if (!record.input_modalities) return undefined;
-			return {
+			return mergeCapabilities(record.input_modalities ? {
 				vision: record.input_modalities.includes("image") || undefined,
 				tools: true,
-			};
+			} : undefined, inferred);
 
 		default:
-			return undefined;
+			return inferred;
 	}
 }
 

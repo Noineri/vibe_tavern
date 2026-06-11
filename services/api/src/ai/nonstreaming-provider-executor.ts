@@ -20,10 +20,53 @@ export async function nonstreamingProviderExecute(
 ): Promise<GenerationResult> {
   try {
     const model = resolveModel(input.profile, input.model);
-    const messages = toSdkMessages(input.prompt);
+    let messages = toSdkMessages(input.prompt);
+    const activeModel = input.cachedModels?.find((m) => m.modelSlug === input.model);
+    const hasVision = activeModel?.capabilities?.vision ?? false;
+    const visionModelSlug = input.visionModel ?? null;
+    const hasAttachments = messages.some((m) => m.attachments?.length);
+
+    let visionDescriptions: Array<{ attachmentId: string; name: string; type: "image" | "video"; description: string }> | undefined;
+    if (hasAttachments && !hasVision && visionModelSlug) {
+      const allAttachments = messages
+        .filter((m) => m.role === "user")
+        .flatMap((m) => m.attachments ?? [])
+        .filter((a) => a.type === "image" || a.type === "video");
+      if (allAttachments.length > 0 && input.assetLoader) {
+        const { describeAttachments } = await import("./vision-gate.js");
+        const descriptions = await describeAttachments(
+          allAttachments,
+          visionModelSlug,
+          input.profile,
+          input.assetLoader,
+        );
+        visionDescriptions = allAttachments
+          .map((att) => {
+            const description = descriptions.get(att.id);
+            return description
+              ? { attachmentId: att.id, name: att.name, type: att.type, description }
+              : null;
+          })
+          .filter((item): item is { attachmentId: string; name: string; type: "image" | "video"; description: string } => item !== null);
+
+        messages = messages.map((m) => ({
+          ...m,
+          attachments: m.attachments?.map((att) => {
+            const desc = descriptions.get(att.id);
+            if (desc) {
+              return { ...att, type: "file" as const, description: desc };
+            }
+            return att;
+          }),
+        }));
+      }
+    }
+
+    const visionGate = { hasVision, visionModel: visionModelSlug };
     const { conversationMessages } = await prepareSdkMessages(messages, {
       prefill: input.prefill,
       providerType: normalizeProviderType(input.profile.providerPreset),
+      ...(hasAttachments ? { visionGate, assetLoader: input.assetLoader } : {}),
     });
 
     const samplerConfig = buildSamplerConfig(input.profile);
@@ -38,6 +81,7 @@ export async function nonstreamingProviderExecute(
       systemRole: conversationMessages.some((m) => m.role === "system") ? "system" as const : undefined,
       samplerConfig: samplerConfig as Record<string, unknown>,
       messageCount: conversationMessages.length,
+      ...(visionDescriptions?.length ? { visionDescriptions } : {}),
     };
     logSendDebug("provider.nonstream.sentConfig", sentConfig);
 

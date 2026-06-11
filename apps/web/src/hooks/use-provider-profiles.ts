@@ -290,6 +290,7 @@ export function useProviderProfiles() {
         endpoint,
         apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
         defaultModel: connection.model.trim() || null,
+        visionModel: connection.visionModel.trim() || null,
         contextBudget: connection.maxTokens || 16000,
         temperature: connection.temperature,
         topP: connection.topP,
