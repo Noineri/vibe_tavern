@@ -168,7 +168,6 @@ function applyPromptOrderPosition(context: PromptAssemblyContext, layer: PromptL
   const entries = context.preset?.promptOrder ?? [];
   const entry = entries.find((e) => e.identifier === identifier);
 
-  // New path: read slot from PromptOrderEntry when present
   if (entry?.zone) {
     const slotZone = entry.zone;
     layer.subPosition = entry.order ?? promptOrderRank(context, identifier);
@@ -186,13 +185,14 @@ function applyPromptOrderPosition(context: PromptAssemblyContext, layer: PromptL
     return layer;
   }
 
-  // Legacy path: derive from flat order + chatHistory marker
-  const placement = promptOrderPlacement(context, identifier);
-  layer.subPosition = promptOrderRank(context, identifier);
-  if (placement === "after_chat") {
+  // No canvas zone data — use DEFAULT_PROMPT_ORDER to infer position.
+  // Items with defaultOrder <= chatHistory (100) are before_chat, rest are after_chat.
+  const defaultOrder = DEFAULT_PROMPT_ORDER[identifier];
+  layer.subPosition = defaultOrder ?? 10_000;
+  if (defaultOrder != null && defaultOrder > DEFAULT_PROMPT_ORDER.chatHistory) {
     layer.position = "in_chat";
     layer.injectionDepth = 0;
-  } else if (placement === "before_chat" && layer.position === "in_chat" && layer.injectionDepth === 0) {
+  } else {
     layer.position = "in_prompt";
     delete layer.injectionDepth;
   }
@@ -504,10 +504,12 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       continue;
     }
 
-    // Legacy path
+    // Legacy path (no slot data — old ST import or manual creation)
     const isAbsolute = injection.injectionPosition === 1 || injection.injectionPosition === "absolute" || injection.injectionPosition == null;
     const orderIndex = promptOrderRank(context, identifier, injection.promptOrderIndex ?? 10_000);
-    const placement = promptOrderPlacement(context, identifier) ?? injection.promptOrderPlacement ?? "before_chat";
+    // Check promptOrder for zone, else infer from promptOrderPlacement, else use injection field
+    const orderEntry = context.preset?.promptOrder?.find(e => e.identifier === identifier);
+    const effectivePlacement: "before_chat" | "after_chat" = orderEntry?.zone === "after_chat" ? "after_chat" : (orderEntry?.zone === "in_chat" ? "after_chat" : (injection.promptOrderPlacement ?? "before_chat"));
 
     const layer = makeLayer({
       id: `preset_injection_${identifier}`,
@@ -516,7 +518,7 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       sourceName: injection.name,
       position: isAbsolute
         ? "in_chat"
-        : placement === "after_chat" ? "in_chat" : "in_prompt",
+        : effectivePlacement === "after_chat" ? "in_chat" : "in_prompt",
       priority: isAbsolute
         ? (injection.injectionOrder ?? 100)
         : Math.max(1, 800 - orderIndex / 1000),
@@ -524,11 +526,11 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       role,
       reason: isAbsolute
         ? `included (ST absolute depth=${injection.depth ?? 0}, order=${injection.injectionOrder ?? 100})`
-        : `included (ST relative ${placement}, orderIndex=${orderIndex})`,
+        : `included (ST relative ${effectivePlacement}, orderIndex=${orderIndex})`,
       text: injection.content,
     });
 
-    if (isAbsolute || placement === "after_chat") {
+    if (isAbsolute || effectivePlacement === "after_chat") {
       layer.injectionDepth = isAbsolute ? (injection.depth ?? 0) : 0;
     }
     layers.push(layer);
