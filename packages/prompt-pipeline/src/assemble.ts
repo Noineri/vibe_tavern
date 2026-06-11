@@ -666,10 +666,26 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       text: joinNonEmpty([loreEntry.title ? PROMPT_FORMAT.loreHeader(loreEntry.title) : null, loreEntry.content]),
     });
 
-    const placement = promptOrderPlacement(context, worldInfoIdentifier);
-    if (placement === "after_chat" && layer.position !== "hidden_system") {
-      layer.position = "in_chat";
-      layer.injectionDepth = 0;
+    // Determine lore placement from the worldInfo slot's canvas zone.
+    // The canvas stores { zone, order, depth } on each promptOrder entry.
+    // Zone is the authoritative source of truth for where lore entries land.
+    const worldInfoOrderEntry = context.preset?.promptOrder?.find(e => e.identifier === worldInfoIdentifier);
+    if (worldInfoOrderEntry?.zone && layer.position !== "hidden_system") {
+      if (worldInfoOrderEntry.zone === "after_chat") {
+        layer.position = "in_chat";
+        layer.injectionDepth = 0;
+      } else if (worldInfoOrderEntry.zone === "in_chat") {
+        layer.position = "in_chat";
+        layer.injectionDepth = worldInfoOrderEntry.depth ?? 0;
+      }
+      // "before_chat" stays in_prompt (default from resolvedPosition)
+    } else {
+      // Legacy fallback: no canvas zone specified
+      const placement = promptOrderPlacement(context, worldInfoIdentifier);
+      if (placement === "after_chat" && layer.position !== "hidden_system") {
+        layer.position = "in_chat";
+        layer.injectionDepth = 0;
+      }
     }
 
     // at_depth injects into chat history at a specific depth
