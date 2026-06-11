@@ -40,6 +40,45 @@ export class RuntimeApiAdapter {
 
 	// ─── Private helpers ──────────────────────────────────────────────────
 
+	/**
+	 * Get cached models for a profile. If the cache is empty or the active
+	 * model has no capability metadata, refresh from the provider API.
+	 */
+	private async resolveCachedModels(profile: { id: string; endpoint: string; apiKey: string | null; providerPreset: string; defaultModel: string | null }) {
+		let cached = await this.stores.providers.getCachedModels(profile.id);
+
+		// If cache has data and the active model has capability info, return as-is
+		if (cached.length > 0 && profile.defaultModel) {
+			const activeModel = cached.find((m) => m.modelSlug === profile.defaultModel);
+			if (activeModel?.capabilities) return cached;
+		}
+
+		// Cache empty or stale — refresh from provider
+		try {
+			const providerType = profile.providerPreset;
+			const models = await listProviderModels({
+				baseUrl: profile.endpoint,
+				apiKey: profile.apiKey ?? "",
+				providerType,
+				requiresAuthForModels: providerType === "anthropic" || providerType === "google",
+			});
+			const normalized = models.map((m) => ({
+				modelSlug: m.id,
+				modelName: m.label ?? m.id,
+				contextLength: m.contextLength ?? null,
+				capabilities: m.capabilities
+					? { thinking: m.capabilities.reasoning, tools: m.capabilities.tools, vision: m.capabilities.vision }
+					: undefined,
+			}));
+			await this.stores.providers.saveCachedModels(profile.id, normalized);
+			cached = await this.stores.providers.getCachedModels(profile.id);
+		} catch {
+			// Refresh failed — use whatever cache we have
+		}
+
+		return cached;
+	}
+
 	/** Resolve the active provider profile or throw a validation error.
 	 *  Returns a profile with defaultModel guaranteed to be a string. */
 	private async resolveActiveProfileOrThrow() {
@@ -266,7 +305,7 @@ export class RuntimeApiAdapter {
 			model: profile.defaultModel,
 			signal,
 			visionAssets: {
-				cachedModels: await this.stores.providers.getCachedModels(profile.id),
+				cachedModels: await this.resolveCachedModels(profile),
 				visionModel: profile.visionModel,
 				assetLoader: (assetId: string) => this.assetService.loadBuffer(assetId),
 			},
@@ -282,7 +321,7 @@ export class RuntimeApiAdapter {
 
 	sendMessageStream = async function* (this: RuntimeApiAdapter, chatId: string, body: { content: string; attachments?: any[] }, signal?: AbortSignal) {
 		const profile = await this.resolveActiveProfileOrThrow();
-		const cachedModels = await this.stores.providers.getCachedModels(profile.id);
+		const cachedModels = await this.resolveCachedModels(profile);
 		const assetLoader = (assetId: string) => this.assetService.loadBuffer(assetId);
 		try {
 			yield* this.liveChatOrchestrator.sendMessageStream({
@@ -769,12 +808,23 @@ export class RuntimeApiAdapter {
 
 	fetchProviderModels = async (providerProfileId: string) => {
 		const profile = await this.getRequiredProviderProfile(providerProfileId);
-		return { models: await listProviderModels({
+		const models = await listProviderModels({
 			baseUrl: profile.endpoint,
 			apiKey: profile.apiKey ?? "",
 			providerType: profile.providerPreset,
 			requiresAuthForModels: profile.providerPreset === "anthropic" || profile.providerPreset === "google",
-		}) };
+		});
+
+		// Persist to DB cache so send path has capability data
+		const normalized = models.map((m) => ({
+			id: m.id,
+			label: m.label ?? m.id,
+			...(m.contextLength != null ? { contextLength: m.contextLength } : {}),
+			...(m.capabilities ? { capabilities: { thinking: m.capabilities.reasoning, tools: m.capabilities.tools, vision: m.capabilities.vision } } : {}),
+		}));
+		await this.providerProfileService.setCachedProviderModels(providerProfileId, normalized);
+
+		return { models };
 	};
 
 	listFavoriteProviderModels = (providerProfileId: string) =>

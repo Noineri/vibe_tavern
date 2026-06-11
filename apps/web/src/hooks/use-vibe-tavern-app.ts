@@ -29,6 +29,7 @@ function createInitialConnectionState(): ConnectionState {
     baseUrl: normalizedBaseUrl,
     apiKey: "",
     model: envDefaults.model,
+    visionModel: "",
     activeProviderProfileId: null,
     hasStoredApiKey: false,
     status: "idle",

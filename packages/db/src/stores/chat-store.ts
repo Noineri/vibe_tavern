@@ -101,6 +101,12 @@ export interface PromptTrace {
     systemRole: string | undefined;
     samplerConfig: Record<string, unknown>;
     messageCount: number;
+    visionDescriptions?: Array<{
+      attachmentId: string;
+      name: string;
+      type: "image" | "video";
+      description: string;
+    }>;
   } | null;
 }
 
@@ -125,6 +131,12 @@ export interface SaveTraceData {
     systemRole: string | undefined;
     samplerConfig: Record<string, unknown>;
     messageCount: number;
+    visionDescriptions?: Array<{
+      attachmentId: string;
+      name: string;
+      type: "image" | "video";
+      description: string;
+    }>;
   } | null;
 }
 

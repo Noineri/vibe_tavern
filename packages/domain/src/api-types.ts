@@ -41,6 +41,12 @@ export interface AssemblePromptResponse {
     systemRole: string | undefined;
     samplerConfig: Record<string, unknown>;
     messageCount: number;
+    visionDescriptions?: Array<{
+      attachmentId: string;
+      name: string;
+      type: "image" | "video";
+      description: string;
+    }>;
   };
 }
 
