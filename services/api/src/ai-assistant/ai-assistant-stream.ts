@@ -400,6 +400,10 @@ const MD_IMPORT_FIELD_ALIASES: Record<string, string> = {
   creator_notes: "creatorNotes",
   notes: "creatorNotes",
   author_notes: "creatorNotes",
+  alternategreetings: "alternateGreetings",
+  alternate_greetings: "alternateGreetings",
+  alt_greetings: "alternateGreetings",
+  alts: "alternateGreetings",
   additionalcharacters: "additionalCharacters",
   additional_characters: "additionalCharacters",
 };
@@ -407,6 +411,7 @@ const MD_IMPORT_FIELD_ALIASES: Record<string, string> = {
 function hasUsefulMdImportJson(obj: Record<string, unknown>): boolean {
   if (MD_IMPORT_STRING_FIELDS.some((key) => typeof obj[key] === "string" && obj[key].trim().length > 0)) return true;
   if (Array.isArray(obj.exampleMessages) && obj.exampleMessages.length > 0) return true;
+  if (Array.isArray(obj.alternateGreetings) && obj.alternateGreetings.length > 0) return true;
   if (Array.isArray(obj.additionalCharacters) && obj.additionalCharacters.length > 0) return true;
   return false;
 }
@@ -596,6 +601,14 @@ function normalizeMdImportObject(obj: Record<string, unknown> | null): Record<st
         if (examples.length) out.exampleMessages = examples;
       } else if (typeof rawValue === "string" && rawValue.trim()) {
         out.exampleMessages = splitExampleMessages(rawValue);
+      }
+      continue;
+    }
+
+    if (key === "alternateGreetings") {
+      if (Array.isArray(rawValue)) {
+        const greetings = rawValue.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
+        if (greetings.length) out.alternateGreetings = greetings;
       }
       continue;
     }

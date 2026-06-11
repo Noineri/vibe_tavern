@@ -65,11 +65,13 @@ function getMdImportFieldLabel(field: keyof MdImportResult): string {
   return MD_IMPORT_FIELD_OPTIONS.find((option) => option.id === field)?.label ?? field;
 }
 
-function describeMdImportValue(value: unknown): string {
+function describeMdImportValue(value: unknown, _key?: string): string {
   if (Array.isArray(value)) {
     if (value.length === 0) return "";
     if (value.every((item) => typeof item === "string")) {
-      return (value as string[]).join("\n---\n");
+      const items = value as string[];
+      if (items.length === 1) return items[0];
+      return items.map((item, i) => `── #${i + 1} ──\n${item}`).join("\n\n");
     }
     return JSON.stringify(value, null, 2);
   }
@@ -442,6 +444,10 @@ export function AiAssistantModal({
               for (const [key, value] of Object.entries(nextParsed)) {
                 if (value != null && value !== "" && !(Array.isArray(value) && value.length === 0)) {
                   next.add(key);
+                  // Auto-check individual array items
+                  if (Array.isArray(value) && value.length > 1 && value.every((item): item is string => typeof item === "string")) {
+                    value.forEach((_, idx) => next.add(`${key}[${idx}]`));
+                  }
                 }
               }
               return next;
@@ -526,13 +532,30 @@ export function AiAssistantModal({
   const handleMdImportApply = () => {
     if (!onMdImportApply) return;
     let result: Partial<MdImportResult> = {};
+    // Collect individual array items that were checked
+    const collectedArrays: Partial<Record<string, string[]>> = {};
     for (const key of checkedFields) {
+      const arrayMatch = key.match(/^(.+?)\[(\d+)\]$/);
+      if (arrayMatch) {
+        const [, parentKey, idxStr] = arrayMatch;
+        const parentValue = parsedFields[parentKey as keyof MdImportResult];
+        if (Array.isArray(parentValue) && typeof parentValue[Number(idxStr)] === "string") {
+          if (!collectedArrays[parentKey]) collectedArrays[parentKey] = [];
+          collectedArrays[parentKey]!.push(parentValue[Number(idxStr)] as string);
+        }
+        continue;
+      }
       const sourceKey = key as keyof MdImportResult;
       const targetKey = fieldTargets[key] ?? sourceKey;
       const value = parsedFields[sourceKey];
       if (value != null) {
         result = mergeMdImportFields(result, targetKey, value);
       }
+    }
+    // Merge collected array items
+    for (const [parentKey, items] of Object.entries(collectedArrays)) {
+      const targetKey = (fieldTargets[`${parentKey}[0]`] ?? parentKey) as keyof MdImportResult;
+      result = mergeMdImportFields(result, targetKey, items);
     }
     onMdImportApply(result);
     resetAndClose();
@@ -697,12 +720,51 @@ export function AiAssistantModal({
                     <div style={{ marginBottom: 16 }}>
                       <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("import_md_parsed")}{streaming && <span className="ml-2 animate-pulse text-accent">●</span>}</div>
                       <div className="flex flex-col gap-2">
-                        {(Object.entries(parsedFields) as [string, unknown][]).map(([key, value]) => {
-                          if (value == null || value === "" || (Array.isArray(value) && value.length === 0)) return null;
+                        {(Object.entries(parsedFields) as [string, unknown][]).flatMap(([key, value]) => {
+                          if (value == null || value === "" || (Array.isArray(value) && value.length === 0)) return [];
                           const sourceKey = key as keyof MdImportResult;
+                          // Split array fields into individual items
+                          if (Array.isArray(value) && value.every((item): item is string => typeof item === "string") && value.length > 1) {
+                            const fieldLabel = getMdImportFieldLabel(sourceKey);
+                            return value.map((item, idx) => {
+                              const itemKey = `${key}[${idx}]`;
+                              const targetKey = fieldTargets[itemKey] ?? sourceKey;
+                              return (
+                                <div key={itemKey} className="flex flex-col gap-2 rounded-md border border-border bg-bg px-3 py-2">
+                                  <div className="flex items-start gap-2">
+                                    <Checkbox
+                                      checked={checkedFields.has(itemKey)}
+                                      onChange={(checked) => {
+                                        setCheckedFields(prev => { const n = new Set(prev); checked ? n.add(itemKey) : n.delete(itemKey); return n; });
+                                      }}
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-[11px] uppercase text-t3">{fieldLabel} #{idx + 1}</div>
+                                      <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-border2 bg-s1 px-2 py-1.5 font-mono text-[12px] leading-[1.4] text-t1">
+                                        {item}
+                                      </div>
+                                    </div>
+                                    <div className="w-[168px] shrink-0">
+                                      <DropdownSelect
+                                        value={String(targetKey)}
+                                        options={MD_IMPORT_FIELD_OPTIONS.map((option) => ({ id: option.id, label: option.label }))}
+                                        onChange={(nextValue) => {
+                                          setFieldTargets(prev => ({ ...prev, [itemKey]: nextValue as keyof MdImportResult }));
+                                        }}
+                                        searchable={false}
+                                        placeholder="Map to…"
+                                        className="h-8 px-3 py-0 text-[12px]"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            });
+                          }
+                          // Single item or non-array field
                           const targetKey = fieldTargets[key] ?? sourceKey;
-                          const preview = describeMdImportValue(value);
-                          return (
+                          const preview = typeof value === "string" ? value : Array.isArray(value) && value.length === 1 && typeof value[0] === "string" ? value[0] : describeMdImportValue(value);
+                          return [(
                             <div key={key} className="flex flex-col gap-2 rounded-md border border-border bg-bg px-3 py-2">
                               <div className="flex items-start gap-2">
                                 <Checkbox
@@ -731,7 +793,7 @@ export function AiAssistantModal({
                                 </div>
                               </div>
                             </div>
-                          );
+                          )];
                         })}
                       </div>
                     </div>
