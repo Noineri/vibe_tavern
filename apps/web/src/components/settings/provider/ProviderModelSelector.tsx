@@ -275,7 +275,7 @@ export function ProviderModelSelector({
           disabled={fetching}
           className={cn(
             "shrink-0 items-center gap-2 rounded-md border border-border bg-s2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50",
-            isMobile ? "flex h-[37px] w-[37px] justify-center px-0" : "flex h-[37px] px-4 font-ui text-[13px] font-medium text-t2"
+            isMobile ? "flex w-[34px] justify-center px-0 py-[6px]" : "flex px-4 py-[6px] font-ui text-[13px] font-medium text-t2"
           )}
           title={t("refresh_models")}
         >
