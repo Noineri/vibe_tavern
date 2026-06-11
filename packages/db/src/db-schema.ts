@@ -225,6 +225,7 @@ export const messages = sqliteTable('messages', {
   position: integer('position').notNull(),
   content: text('content').notNull(),
   state: text('state').notNull(),
+  attachmentsJson: text('attachments_json'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
@@ -336,6 +337,7 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   streamResponse: integer('stream_response').notNull().default(1),
   customSamplers: integer('custom_samplers').notNull().default(0),
   isActive: integer('is_active').notNull().default(0),
+  visionModel: text('vision_model'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

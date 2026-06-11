@@ -247,7 +247,7 @@ export class RuntimeApiAdapter {
 
 	// ─── Chat messages (AI) ───────────────────────────────────────────────
 
-	sendMessage = async (chatId: string, body: { content: string }, signal?: AbortSignal) => {
+	sendMessage = async (chatId: string, body: { content: string; attachments?: any[] }, signal?: AbortSignal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
 		const profile = await this.resolveActiveProfileOrThrow();
 		logSendDebug("api.runtime.send.profile", {
@@ -261,9 +261,15 @@ export class RuntimeApiAdapter {
 		const result = await this.liveChatOrchestrator.sendMessage({
 			chatId,
 			content: body.content,
+			attachments: body.attachments,
 			profile,
 			model: profile.defaultModel,
 			signal,
+			visionAssets: {
+				cachedModels: await this.stores.providers.getCachedModels(profile.id),
+				visionModel: profile.visionModel,
+				assetLoader: (assetId: string) => this.assetService.loadBuffer(assetId),
+			},
 		});
 		logSendDebug("api.runtime.send.success", {
 			chatId,
@@ -274,15 +280,31 @@ export class RuntimeApiAdapter {
 		return result.snapshot;
 	};
 
-	sendMessageStream = async function* (this: RuntimeApiAdapter, chatId: string, body: { content: string }, signal?: AbortSignal) {
+	sendMessageStream = async function* (this: RuntimeApiAdapter, chatId: string, body: { content: string; attachments?: any[] }, signal?: AbortSignal) {
 		const profile = await this.resolveActiveProfileOrThrow();
-		yield* this.liveChatOrchestrator.sendMessageStream({
-			chatId,
-			content: body.content,
-			profile,
-			model: profile.defaultModel,
-			signal,
-		});
+		const cachedModels = await this.stores.providers.getCachedModels(profile.id);
+		const assetLoader = (assetId: string) => this.assetService.loadBuffer(assetId);
+		try {
+			yield* this.liveChatOrchestrator.sendMessageStream({
+				chatId,
+				content: body.content,
+				attachments: body.attachments,
+				profile,
+				model: profile.defaultModel,
+				signal,
+				visionAssets: {
+					cachedModels,
+					visionModel: profile.visionModel,
+					assetLoader,
+				},
+			});
+		} catch (err) {
+			if (err instanceof (await import("./ai/vision-gate.js")).VisionNotSupportedError) {
+				yield { event: "error", data: JSON.stringify({ type: "vision_not_supported", message: err.message, attachments: err.attachmentNames }) };
+				return;
+			}
+			throw err;
+		}
 	};
 
 	regenerateMessage = async (chatId: string, messageId: string, _body: unknown, signal?: AbortSignal) => {

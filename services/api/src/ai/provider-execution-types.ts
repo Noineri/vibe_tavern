@@ -148,6 +148,12 @@ export interface ProviderExecutionInput {
   tools?: ToolSet;
   /** Max multi-step tool-calling rounds per generation. */
   maxSteps?: number;
+  /** Cached models for the active provider, used for vision capability lookup. */
+  cachedModels?: Array<{ modelSlug: string; capabilities?: { vision?: boolean } }>;
+  /** Vision model slug from the provider profile, used for image description fallback. */
+  visionModel?: string | null;
+  /** Asset loader for reading attachment files. */
+  assetLoader?: (assetId: string) => Promise<Buffer | null>;
 }
 
 /** Streaming executor function signature. */

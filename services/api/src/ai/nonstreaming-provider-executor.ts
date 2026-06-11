@@ -21,7 +21,7 @@ export async function nonstreamingProviderExecute(
   try {
     const model = resolveModel(input.profile, input.model);
     const messages = toSdkMessages(input.prompt);
-    const { conversationMessages } = prepareSdkMessages(messages, {
+    const { conversationMessages } = await prepareSdkMessages(messages, {
       prefill: input.prefill,
       providerType: normalizeProviderType(input.profile.providerPreset),
     });
@@ -43,7 +43,7 @@ export async function nonstreamingProviderExecute(
 
     const result = await generateText({
       model,
-      messages: conversationMessages,
+      messages: conversationMessages as any,
       allowSystemInMessages: true,
       abortSignal: input.signal,
       ...samplerConfig,

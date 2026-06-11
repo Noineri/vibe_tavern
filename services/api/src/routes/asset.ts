@@ -9,8 +9,19 @@ export function createAssetRoutes(runtime: RuntimeApi) {
       if (!file || !(file instanceof File)) {
         return c.json({ error: "No file provided. Use 'file' field in multipart form." }, 400);
       }
-      const result = await runtime.uploadAsset(file);
-      return c.json(result, 201);
+      try {
+        const result = await runtime.uploadAsset(file);
+        return c.json(result, 201);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("too large")) {
+          return c.json({ error: message }, 413);
+        }
+        if (message.includes("Unsupported")) {
+          return c.json({ error: message }, 415);
+        }
+        return c.json({ error: message }, 400);
+      }
     })
     .get("/api/assets/:assetId", async (c) => {
       const assetId = c.req.param("assetId");

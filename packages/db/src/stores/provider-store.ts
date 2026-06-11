@@ -76,6 +76,8 @@ export interface CreateProviderData {
   streamResponse?: boolean;
   customSamplers?: boolean;
   pinContextBudget?: boolean;
+  /** Optional vision model for image description fallback. */
+  visionModel?: string | null;
 }
 
 export type UpdateProviderData = Partial<CreateProviderData>;
@@ -169,6 +171,7 @@ export class ProviderStore {
         streamResponse: data.streamResponse !== undefined ? (data.streamResponse ? 1 : 0) : 1,
         customSamplers: data.customSamplers ? 1 : 0,
         pinContextBudget: data.pinContextBudget ?? false,
+        visionModel: data.visionModel ?? null,
         isActive: 0,
         createdAt: now,
         updatedAt: now,
@@ -218,6 +221,7 @@ export class ProviderStore {
     if (data.streamResponse !== undefined) values.streamResponse = data.streamResponse ? 1 : 0;
     if (data.customSamplers !== undefined) values.customSamplers = data.customSamplers ? 1 : 0;
     if (data.pinContextBudget !== undefined) values.pinContextBudget = data.pinContextBudget;
+    if (data.visionModel !== undefined) values.visionModel = data.visionModel ?? null;
 
     const [row] = await this.db
       .update(providerProfiles)
@@ -290,6 +294,7 @@ export class ProviderStore {
         streamResponse: original.streamResponse,
         customSamplers: original.customSamplers,
         pinContextBudget: original.pinContextBudget,
+        visionModel: original.visionModel,
         isActive: 0,
         createdAt: now,
         updatedAt: now,
@@ -427,6 +432,7 @@ export class ProviderStore {
       streamResponse: row.streamResponse === 1,
       customSamplers: row.customSamplers === 1,
       isActive: row.isActive === 1,
+      visionModel: row.visionModel ?? null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

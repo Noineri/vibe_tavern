@@ -46,6 +46,8 @@ export interface StoredProviderProfileRecord {
   streamResponse: boolean;
   customSamplers: boolean;
   isActive: boolean;
+  /** Optional vision model slug from the same provider profile, used for image description fallback. */
+  visionModel: string | null;
   createdAt: string;
   updatedAt: string;
 }
