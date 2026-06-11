@@ -40,7 +40,7 @@ export class LiveChatOrchestrator {
     model: string;
     prefill?: string;
     signal?: AbortSignal;
-    visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null> };
+    visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
   }): Promise<{
     preparedMessageCount: number;
     promptMessageCount: number;
@@ -72,6 +72,7 @@ export class LiveChatOrchestrator {
         cachedModels: input.visionAssets?.cachedModels,
         visionModel: input.visionAssets?.visionModel,
         assetLoader: input.visionAssets?.assetLoader,
+        visionDescribePrompt: input.visionAssets?.visionDescribePrompt,
         onAttachmentDescriptions: (prepared.userMessage && input.attachments?.length)
           ? async (descriptions) => {
               await this.chatApp.updateAttachmentDescriptions(prepared.userMessage!.id, input.attachments!, descriptions);
@@ -249,7 +250,7 @@ export class LiveChatOrchestrator {
     model: string;
     prefill?: string;
     signal?: AbortSignal;
-    visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null> };
+    visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: provider.model });
@@ -422,7 +423,7 @@ export class LiveChatOrchestrator {
   }
 
   private async startStream(
-    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; signal?: AbortSignal; prefill?: string; visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null> }; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
+    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; signal?: AbortSignal; prefill?: string; visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string }; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
     prompt: Parameters<typeof streamProviderExecutor>[0]["prompt"],
   ): Promise<{ streamResult: ProviderStreamResult; startedAt: number }> {
     const startedAt = Date.now();
@@ -436,6 +437,7 @@ export class LiveChatOrchestrator {
         cachedModels: input.visionAssets?.cachedModels,
         visionModel: input.visionAssets?.visionModel,
         assetLoader: input.visionAssets?.assetLoader,
+        visionDescribePrompt: input.visionAssets?.visionDescribePrompt,
         onAttachmentDescriptions: input.onAttachmentDescriptions,
       });
       return { streamResult, startedAt };

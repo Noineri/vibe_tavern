@@ -512,6 +512,7 @@
   "ai_assistant_mode_lore_entry": "Генерация записей лорбука",
   "ai_assistant_mode_lore_keys": "Генерация ключей лорбука",
   "ai_assistant_mode_chat_impersonate": "Имперсонация в чате",
+  "ai_assistant_mode_vision_describe": "Описание изображений",
   "ai_assistant_mode_default_placeholder": "(промпт по умолчанию)",
   "ai_pill_impersonate": "Писать как персона",
   "ai_pill_impersonate_settings": "Настройки имперсонации",

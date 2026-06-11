@@ -163,6 +163,8 @@ export interface ProviderExecutionInput {
   assetLoader?: (assetId: string) => Promise<Buffer | null>;
   /** Callback to persist attachment descriptions back to the user message. */
   onAttachmentDescriptions?: (descriptions: Array<{ attachmentId: string; description: string }>) => Promise<void>;
+  /** System prompt for the vision describe model. Resolved from preset or default MD. */
+  visionDescribePrompt?: string;
 }
 
 /** Streaming executor function signature. */

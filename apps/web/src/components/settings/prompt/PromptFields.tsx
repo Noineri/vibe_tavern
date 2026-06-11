@@ -89,6 +89,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
     { key: "lore_entry", labelKey: "ai_assistant_mode_lore_entry" },
     { key: "lore_keys", labelKey: "ai_assistant_mode_lore_keys" },
     { key: "chat_impersonate", labelKey: "ai_assistant_mode_chat_impersonate" },
+    { key: "vision_describe", labelKey: "ai_assistant_mode_vision_describe" },
   ] as const;
 
   const ta = useCallback((key: TextDraftKey, placeholder: string, minH = 100, labelKey?: string) => (

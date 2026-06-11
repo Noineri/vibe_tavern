@@ -512,6 +512,7 @@
   "ai_assistant_mode_lore_entry": "Lore Entry AI",
   "ai_assistant_mode_lore_keys": "Lore Keys AI",
   "ai_assistant_mode_chat_impersonate": "Chat Impersonate AI",
+  "ai_assistant_mode_vision_describe": "Image Description AI",
   "ai_assistant_mode_default_placeholder": "(default prompt)",
   "ai_pill_impersonate": "Write as persona",
   "ai_pill_impersonate_settings": "Impersonation settings",

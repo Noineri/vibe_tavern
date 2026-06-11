@@ -79,6 +79,29 @@ export class RuntimeApiAdapter {
 		return cached;
 	}
 
+	/**
+	 * Resolve the vision describe prompt from the active preset or default MD.
+	 */
+	private async resolveVisionDescribePrompt(): Promise<string> {
+		const { resolveVisionDescribePrompt } = await import("./ai/vision-gate.js");
+		const settings = await this.stores.uiSettings.get();
+		let aiAssistantPrompts: Record<string, string> | null = null;
+		if (settings?.activePromptPresetId) {
+			const preset = await this.stores.presets.getById(settings.activePromptPresetId);
+			if (preset?.aiAssistantPrompts) {
+				try {
+					const parsed = JSON.parse(preset.aiAssistantPrompts);
+					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+						aiAssistantPrompts = Object.fromEntries(
+							Object.entries(parsed).filter(([, v]) => typeof v === "string"),
+						) as Record<string, string>;
+					}
+				} catch {}
+			}
+		}
+		return resolveVisionDescribePrompt(aiAssistantPrompts);
+	}
+
 	/** Resolve the active provider profile or throw a validation error.
 	 *  Returns a profile with defaultModel guaranteed to be a string. */
 	private async resolveActiveProfileOrThrow() {
@@ -308,6 +331,7 @@ export class RuntimeApiAdapter {
 				cachedModels: await this.resolveCachedModels(profile),
 				visionModel: profile.visionModel,
 				assetLoader: (assetId: string) => this.assetService.loadBuffer(assetId),
+				visionDescribePrompt: await this.resolveVisionDescribePrompt(),
 			},
 		});
 		logSendDebug("api.runtime.send.success", {
@@ -332,10 +356,11 @@ export class RuntimeApiAdapter {
 				model: profile.defaultModel,
 				signal,
 				visionAssets: {
-					cachedModels,
-					visionModel: profile.visionModel,
-					assetLoader,
-				},
+				cachedModels,
+				visionModel: profile.visionModel,
+				assetLoader,
+				visionDescribePrompt: await this.resolveVisionDescribePrompt(),
+			},
 			});
 		} catch (err) {
 			if (err instanceof (await import("./ai/vision-gate.js")).VisionNotSupportedError) {
