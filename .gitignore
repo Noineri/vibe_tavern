@@ -72,3 +72,6 @@ mobile/android/**/build/
 
 # Install hash cache (skip-install optimization)
 .install-hash
+
+# Agentic slop
+AGENTS.md
