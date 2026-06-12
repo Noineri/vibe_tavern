@@ -75,6 +75,7 @@ export function useProviderProfiles() {
       baseUrl: normalizeOpenAiCompatibleBaseUrl(activeProfile.endpoint),
       apiKey: "",
       model: activeProfile.defaultModel ?? "",
+      visionModel: activeProfile.visionModel ?? "",
       activeProviderProfileId: activeProfile.id,
       hasStoredApiKey: activeProfile.hasStoredApiKey,
       models: [],
@@ -99,9 +100,24 @@ export function useProviderProfiles() {
     });
 
     // Load cached models async so TopBar can show human-readable labels
-    void fetchProviderModelsAction(activeProfile.id).then((response) => {
+    // Also auto-detect vision model if not yet set in the profile
+    void fetchProviderModelsAction(activeProfile.id).then(async (response) => {
       if (response.models.length > 0) {
         patchConnection({ models: response.models });
+
+        // Auto-detect vision model from capabilities if not already set
+        if (!activeProfile.visionModel) {
+          const visionModels = response.models.filter((m) => m.capabilities?.vision);
+          const nonAllVision = visionModels.length > 0 && visionModels.length < response.models.length;
+          if (nonAllVision) {
+            const detected = visionModels[0]!.id;
+            // Persist to profile so it survives restarts
+            try {
+              await updateProviderProfileAction(activeProfile.id, { visionModel: detected });
+            } catch { /* ignore */ }
+            patchConnection({ visionModel: detected });
+          }
+        }
       }
     });
 
@@ -210,6 +226,7 @@ export function useProviderProfiles() {
         baseUrl: normalizeOpenAiCompatibleBaseUrl(saved.endpoint),
         apiKey: "",
         model: saved.defaultModel ?? connection.model,
+        visionModel: saved.visionModel ?? connection.visionModel,
         activeProviderProfileId: saved.id,
         hasStoredApiKey: saved.hasStoredApiKey,
         error: "",
@@ -236,6 +253,7 @@ export function useProviderProfiles() {
         baseUrl: normalizeOpenAiCompatibleBaseUrl(profile.endpoint),
         apiKey: "",
         model: profile.defaultModel ?? "",
+        visionModel: profile.visionModel ?? "",
         activeProviderProfileId: profile.id,
         hasStoredApiKey: profile.hasStoredApiKey,
         models: [],
@@ -317,6 +335,7 @@ export function useProviderProfiles() {
         baseUrl: normalizeOpenAiCompatibleBaseUrl(saved.endpoint),
         apiKey: "",
         model: saved.defaultModel ?? connection.model,
+        visionModel: saved.visionModel ?? connection.visionModel,
         activeProviderProfileId: saved.id,
         hasStoredApiKey: saved.hasStoredApiKey,
         error: "",
@@ -341,6 +360,7 @@ export function useProviderProfiles() {
         baseUrl: normalizeOpenAiCompatibleBaseUrl(profile.endpoint),
         apiKey: "",
         model: profile.defaultModel ?? "",
+        visionModel: profile.visionModel ?? "",
         activeProviderProfileId: profile.id,
         hasStoredApiKey: profile.hasStoredApiKey,
         status: "connected",
