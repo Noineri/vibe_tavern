@@ -17,7 +17,8 @@ export interface StPromptOrderBlock {
   enabled: boolean;
   order?: number;
   kind: "built_in" | "custom";
-  zone?: "before_chat" | "after_chat";
+  zone?: "before_chat" | "after_chat" | "in_chat";
+  depth?: number;
 }
 
 export interface ParsedStPreset {
@@ -76,18 +77,39 @@ export function parseStPreset(jsonText: string): ParsedStPreset {
 
   const name = data.name || "Unnamed preset";
 
-  const promptOrder = resolvePromptOrder(data.prompt_order);
-  const orderMap = promptOrder?.map ?? null;
+  const promptOrderResult = resolvePromptOrder(data.prompt_order);
+  const orderMap = promptOrderResult?.map ?? null;
 
   // Collect non-empty blocks
   const rawBlocks: StPromptEntry[] = data.prompts.filter(
     (p) => p.content?.trim() && p.identifier
   );
 
+  // Build a quick lookup: identifier → block metadata for zone correction
+  const blockMeta = new Map<string, { injectionPosition: number; injectionDepth: number }>();
+  for (const b of rawBlocks) {
+    if (b.identifier) blockMeta.set(b.identifier, {
+      injectionPosition: b.injection_position ?? 1,
+      injectionDepth: b.injection_depth ?? 0,
+    });
+  }
+
   // XML wrapper reconstruction: merge -open / -close pairs
   const merged = mergeXmlWrappers(rawBlocks, orderMap);
 
-  return { name, blocks: merged, promptOrder: promptOrder?.entries ?? [] };
+  // Correct promptOrder zones: absolute injections with depth > 0 should be in_chat
+  const entries = promptOrderResult?.entries ?? [];
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i]!;
+    if (e.kind === "custom") {
+      const meta = blockMeta.get(e.identifier) ?? blockMeta.get(e.identifier.replace(/-open$/, ""));
+      if (meta && meta.injectionPosition === 1 && meta.injectionDepth > 0) {
+        entries[i] = { ...e, zone: "in_chat", depth: meta.injectionDepth };
+      }
+    }
+  }
+
+  return { name, blocks: merged, promptOrder: entries };
 }
 
 function mergeXmlWrappers(
