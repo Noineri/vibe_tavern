@@ -70,6 +70,14 @@ export function useProviderProfiles() {
     const activeProfile = profiles.find((profile) => profile.isActive);
     if (!activeProfile) return;
 
+    console.log('[Hydrate] hydrateActiveProviderProfile called:', {
+      id: activeProfile.id,
+      name: activeProfile.name,
+      defaultModel: activeProfile.defaultModel,
+      visionModel: activeProfile.visionModel,
+      cachedModelsCount: activeProfile.cachedModels?.models.length ?? 0,
+    });
+
     patchConnection({
       providerLabel: activeProfile.name,
       baseUrl: normalizeOpenAiCompatibleBaseUrl(activeProfile.endpoint),
@@ -111,10 +119,13 @@ export function useProviderProfiles() {
         const nonAllVision = visionModels.length > 0 && visionModels.length < cached.models.length;
         if (nonAllVision) {
           const detected = visionModels[0]!.id;
+          console.log('[Hydrate] AUTO-WRITING visionModel to DB:', detected, '(profile.visionModel was empty)');
           patchConnection({ visionModel: detected });
           // Persist to profile so it survives restarts (fire-and-forget)
           void updateProviderProfileAction(activeProfile.id, { visionModel: detected }).catch(() => {});
         }
+      } else {
+        console.log('[Hydrate] visionModel already set, skipping auto-detect:', activeProfile.visionModel);
       }
     }
 
@@ -573,10 +584,12 @@ export function useProviderProfiles() {
       streamResponse: form.streamResponse,
       customSamplers: form.customSamplers,
     };
+    console.log('[handleSave] handleSaveProviderProfileFromForm patch:', { id: form.id, defaultModel: patch.defaultModel, visionModel: patch.visionModel });
     try {
       const saved = form.id
         ? await updateProviderProfileAction(form.id, patch)
         : await saveProviderProfileAction({ ...patch, providerPreset: patch.providerPreset });
+      console.log('[handleSave] saved result:', { id: saved?.id, defaultModel: saved?.defaultModel, visionModel: saved?.visionModel });
       if (saved && !form.id) {
         await activateProviderProfileAction(saved.id);
       }

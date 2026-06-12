@@ -95,6 +95,7 @@ interface ProviderModalProps {
 function profileToForm(p: ProviderProfileRecord): FormState {
   const preset = PROVIDER_PRESETS.find((f) => f.id === p.providerPreset)
     ?? PROVIDER_PRESETS.find((f) => f.type === p.providerPreset && f.baseUrl === p.endpoint);
+  console.log('[ProviderModal] profileToForm', { id: p.id, name: p.name, defaultModel: p.defaultModel, visionModel: p.visionModel });
   return {
     id: p.id, name: p.name, providerPreset: preset?.id ?? "",
     baseUrl: p.endpoint, apiKey: "", hasStoredApiKey: p.hasStoredApiKey,
@@ -243,7 +244,20 @@ export function ProviderModal({
   // ── Load cached models for a profile ──
   const loadCached = async (profileId: string | null) => {
     if (!profileId) return;
-    try { const c = await onFetchModelsForProfile(profileId); if (c.length > 0) setModels(c); } catch { /* ignore */ }
+
+    // 1. Try cached models from the profile object first (instant, no network)
+    const profile = providerProfiles.find((p) => p.id === profileId);
+    const cached = (profile as any)?.cachedModels?.models as ModelOption[] | undefined;
+    if (cached && cached.length > 0) {
+      setModels(cached);
+      return;
+    }
+
+    // 2. Fall back to live fetch only when cache is empty
+    try {
+      const c = await onFetchModelsForProfile(profileId);
+      if (c.length > 0) setModels(c);
+    } catch { /* ignore */ }
   };
 
   // ── Init on open ──
@@ -284,9 +298,17 @@ export function ProviderModal({
   }, []);
 
   useEffect(() => {
+    console.log('[ProviderModal] visionModel-auto-select effect:', {
+      isOpen,
+      formId: form?.id,
+      formVisionModel: form?.visionModel,
+      modelsCount: models.length,
+      visionModels: models.filter(m => m.capabilities?.vision).map(m => m.id),
+    });
     if (!isOpen || !form || form.visionModel || models.length === 0) return;
     const fetchedVisionModels = models.filter((m) => m.capabilities?.vision);
     if (fetchedVisionModels.length > 0 && fetchedVisionModels.length < models.length) {
+      console.log('[ProviderModal] AUTO-SELECTING visionModel:', fetchedVisionModels[0].id, '(form.visionModel was empty)');
       autoSaveField("visionModel", fetchedVisionModels[0].id);
     }
     // Intentionally depend on scalar form fields only: autoSaveField updates form.visionModel,
@@ -324,7 +346,12 @@ export function ProviderModal({
 
   const persistForm = (next: FormState) => {
     const parsed = saveProviderDraftSchema.safeParse(toProviderDraft(next));
-    if (parsed.success) void onSaveProfile(next);
+    if (parsed.success) {
+      console.log('[ProviderModal] persistForm saving:', { id: next.id, model: next.model, visionModel: next.visionModel });
+      void onSaveProfile(next);
+    } else {
+      console.warn('[ProviderModal] persistForm SCHEMA FAIL:', parsed.error.issues);
+    }
   };
 
   const flushLazyAutoSave = () => {
