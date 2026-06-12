@@ -45,9 +45,12 @@ async function step(label: string, fn: () => Promise<void>) {
 }
 
 async function main() {
+	const pkgVersion = ((await Bun.file(join(ROOT, "package.json")).json()).version as string) ?? "0.0.0";
+
 	console.log("📦 Vibe Tavern — Standalone Build\n");
 	console.log(`   Root: ${ROOT}`);
 	console.log(`   Output: ${STANDALONE_OUT}`);
+	console.log(`   Version: ${pkgVersion}`);
 
 	// ── Step 1: Clean previous output ────────────────────────────────────
 
@@ -141,6 +144,9 @@ async function main() {
 			target: "bun",
 			minify: true,
 			bytecode: true,
+			define: {
+				VIBE_TAVERN_VERSION: `"${pkgVersion}"`,
+			},
 			compile: {
 				outfile,
 				windows: {
