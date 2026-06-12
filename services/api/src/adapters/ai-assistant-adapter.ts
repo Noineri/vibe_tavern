@@ -1,0 +1,98 @@
+import type { AiAssistantRuntimeApi } from "../routes/types.js";
+import type { StoreContainer } from "@vibe-tavern/db";
+import { logSendDebug } from "../send-debug-log.js";
+import { resolveModel } from "../ai/provider-executor-utils.js";
+import { countAiAssistantTokens, streamAiAssistant, type AiAssistantStreamRequest } from "../ai-assistant/ai-assistant-stream.js";
+
+export class AiAssistantAdapter implements AiAssistantRuntimeApi {
+	constructor(private readonly stores: StoreContainer) {}
+
+	streamAiAssistant = async function* (this: AiAssistantAdapter, body: AiAssistantStreamRequest) {
+		yield* streamAiAssistant(body, this.createDeps());
+	};
+
+	countAiAssistantTokens = (body: AiAssistantStreamRequest) =>
+		countAiAssistantTokens(body, this.createDeps());
+
+	private createDeps() {
+		return {
+			resolveModel,
+			getProviderProfile: (id: string) => this.stores.providers.getById(id),
+			getPresetPromptData: async () => {
+				const settings = await this.stores.uiSettings.get();
+				if (!settings?.activePromptPresetId) {
+					return { aiAssistantPrompts: null, scriptAiSystemPrompt: null };
+				}
+				const preset = await this.stores.presets.getById(settings.activePromptPresetId);
+				if (!preset) {
+					return { aiAssistantPrompts: null, scriptAiSystemPrompt: null };
+				}
+				let aiAssistantPrompts: Record<string, string> | null = null;
+				try {
+					const parsed = JSON.parse(preset.aiAssistantPrompts || "{}");
+					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+						aiAssistantPrompts = Object.fromEntries(
+							Object.entries(parsed).filter(([, value]) => typeof value === "string"),
+						) as Record<string, string>;
+					}
+				} catch (err) {
+					logSendDebug("api.ai-assistant.prompt-map-parse-error", { error: String(err), presetId: preset.id });
+				}
+				return {
+					aiAssistantPrompts,
+					scriptAiSystemPrompt: preset.scriptAiSystemPrompt ?? null,
+				};
+			},
+			getCharacterById: async (id: string) => {
+				const character = await this.stores.characters.getById(id);
+				if (!character) return null;
+				return {
+					id: character.id,
+					name: character.name,
+					description: character.description,
+					personality: character.personalitySummary ?? "",
+					scenario: character.defaultScenario ?? "",
+				};
+			},
+			getPersonaById: async (id: string) => {
+				const persona = await this.stores.personas.getById(id);
+				if (!persona) return null;
+				return {
+					id: persona.id,
+					name: persona.name,
+					description: persona.description,
+					pronouns: persona.pronouns ?? undefined,
+				};
+			},
+			getLoreEntryById: async (id: string) => {
+				const entry = await this.stores.lorebooks.getEntry(id);
+				if (!entry || !entry.enabled) return null;
+				return {
+					id: entry.id,
+					title: entry.title,
+					content: entry.content,
+				};
+			},
+			getLoreEntriesByLorebookId: async (id: string) => {
+				const lorebook = await this.stores.lorebooks.getLorebook(id);
+				if (!lorebook?.enabled) return [];
+				const entries = await this.stores.lorebooks.listEntries(id);
+				return entries
+					.filter((entry) => entry.enabled)
+					.map((entry) => ({
+						id: entry.id,
+						title: entry.title,
+						content: entry.content,
+					}));
+			},
+			logDebug: logSendDebug,
+			getChatMessages: async (chatId: string, count: number) => {
+				const chat = await this.stores.chats.getById(chatId);
+				if (!chat) return [];
+				const allMessages = await this.stores.chats.getMessages(chat.activeBranchId);
+				const sliced = allMessages.slice(-count);
+				return sliced.map((m) => ({ id: m.id, role: m.role, content: m.content }));
+			},
+		};
+	}
+}
