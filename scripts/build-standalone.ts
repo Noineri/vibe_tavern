@@ -98,7 +98,7 @@ async function main() {
 		console.log(`   → ${tokenizerTarget}`);
 	});
 
-	// ── Step 3c: Copy AI assistant prompt files to out/standalone/ ────────
+	// ── Step 3c: Copy AI assistant prompt files to out/standalone/prompts/ ────────
 
 	await step("Copying AI assistant prompt files", async () => {
 		const { readdir } = await import("node:fs/promises");
@@ -107,9 +107,10 @@ async function main() {
 		if (files.length === 0) {
 			throw new Error(`No .md prompt files found in ${promptDir}`);
 		}
+		await mkdir(join(STANDALONE_OUT, "prompts"), { recursive: true });
 		for (const file of files) {
-			await copyFile(join(promptDir, file), join(STANDALONE_OUT, file));
-			console.log(`   → ${join(STANDALONE_OUT, file)}`);
+			await copyFile(join(promptDir, file), join(STANDALONE_OUT, "prompts", file));
+			console.log(`   → ${join(STANDALONE_OUT, "prompts", file)}`);
 		}
 	});
 

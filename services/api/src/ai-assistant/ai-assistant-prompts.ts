@@ -27,8 +27,8 @@ async function resolvePromptPath(filename: string): Promise<string> {
     process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR
       ? join(process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR, filename)
       : null,
-    // Standalone artifact: prompt next to executable.
-    join(resolve(process.execPath, ".."), filename),
+    // Standalone artifact: prompt next to executable, in prompts/ subdir.
+    join(resolve(process.execPath, ".."), "prompts", filename),
     // API source assets.
     resolve(import.meta.dir, "..", "..", "assets", filename),
     join(process.cwd(), "services", "api", "assets", filename),
