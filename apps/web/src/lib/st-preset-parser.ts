@@ -67,7 +67,7 @@ export function parseStPreset(jsonText: string): ParsedStPreset {
   try {
     raw = JSON.parse(jsonText);
   } catch {
-    throw new Error("Could not parse this file as an ST preset.");
+    throw new Error("Could not parse this file as a ST preset.");
   }
 
   const data = raw as StPresetJson;
@@ -77,7 +77,16 @@ export function parseStPreset(jsonText: string): ParsedStPreset {
 
   const name = data.name || "Unnamed preset";
 
-  const promptOrderResult = resolvePromptOrder(data.prompt_order);
+  // Build block metadata lookup before resolving order (needed for zone inference)
+  const blockMeta = new Map<string, { injectionPosition: number; injectionDepth: number }>();
+  for (const b of data.prompts) {
+    if (b.identifier) blockMeta.set(b.identifier, {
+      injectionPosition: b.injection_position ?? 1,
+      injectionDepth: b.injection_depth ?? 0,
+    });
+  }
+
+  const promptOrderResult = resolvePromptOrder(data.prompt_order, blockMeta);
   const orderMap = promptOrderResult?.map ?? null;
 
   // Collect non-empty blocks
@@ -85,31 +94,10 @@ export function parseStPreset(jsonText: string): ParsedStPreset {
     (p) => p.content?.trim() && p.identifier
   );
 
-  // Build a quick lookup: identifier → block metadata for zone correction
-  const blockMeta = new Map<string, { injectionPosition: number; injectionDepth: number }>();
-  for (const b of rawBlocks) {
-    if (b.identifier) blockMeta.set(b.identifier, {
-      injectionPosition: b.injection_position ?? 1,
-      injectionDepth: b.injection_depth ?? 0,
-    });
-  }
-
   // XML wrapper reconstruction: merge -open / -close pairs
   const merged = mergeXmlWrappers(rawBlocks, orderMap);
 
-  // Correct promptOrder zones: absolute injections with depth > 0 should be in_chat
-  const entries = promptOrderResult?.entries ?? [];
-  for (let i = 0; i < entries.length; i++) {
-    const e = entries[i]!;
-    if (e.kind === "custom") {
-      const meta = blockMeta.get(e.identifier) ?? blockMeta.get(e.identifier.replace(/-open$/, ""));
-      if (meta && meta.injectionPosition === 1 && meta.injectionDepth > 0) {
-        entries[i] = { ...e, zone: "in_chat", depth: meta.injectionDepth };
-      }
-    }
-  }
-
-  return { name, blocks: merged, promptOrder: entries };
+  return { name, blocks: merged, promptOrder: promptOrderResult?.entries ?? [] };
 }
 
 function mergeXmlWrappers(
@@ -192,7 +180,10 @@ const BUILT_IN_PROMPT_IDENTIFIERS = new Set([
   "authorsNote",
 ]);
 
-function resolvePromptOrder(promptOrder: StPromptOrderSet[] | undefined): { map: Map<string, StOrderInfo>; entries: StPromptOrderBlock[] } | null {
+function resolvePromptOrder(
+  promptOrder: StPromptOrderSet[] | undefined,
+  blockMeta: Map<string, { injectionPosition: number; injectionDepth: number }>,
+): { map: Map<string, StOrderInfo>; entries: StPromptOrderBlock[] } | null {
   if (!Array.isArray(promptOrder) || promptOrder.length === 0) return null;
 
   const sets = promptOrder
@@ -201,9 +192,6 @@ function resolvePromptOrder(promptOrder: StPromptOrderSet[] | undefined): { map:
 
   if (sets.length === 0) return null;
 
-  // ST commonly stores a generic 100000 order and a character-specific 100001 order.
-  // The character-specific order contains custom prompt blocks, so prefer the largest
-  // non-100000 order when present; otherwise use the largest available order.
   const preferred =
     sets.filter((entry) => String(entry.id) !== "100000").sort((a, b) => b.order.length - a.order.length)[0] ??
     sets.sort((a, b) => b.order.length - a.order.length)[0];
@@ -211,23 +199,43 @@ function resolvePromptOrder(promptOrder: StPromptOrderSet[] | undefined): { map:
   const chatIndex = preferred.order.findIndex((item) => item.identifier === "chatHistory");
   const map = new Map<string, StOrderInfo>();
   const entries: StPromptOrderBlock[] = [];
+
   preferred.order.forEach((item, index) => {
-    const placement = chatIndex >= 0 && item.identifier !== "chatHistory"
-      ? (index < chatIndex ? "before_chat" as const : "after_chat" as const)
-      : undefined;
+    const placement: "before_chat" | "after_chat" | undefined =
+      chatIndex >= 0 && item.identifier !== "chatHistory"
+        ? (index < chatIndex ? "before_chat" : "after_chat")
+        : undefined;
+
     map.set(item.identifier, {
       enabled: item.enabled,
       index,
       ...(placement ? { placement } : {}),
     });
+
+    const isBuiltIn = BUILT_IN_PROMPT_IDENTIFIERS.has(item.identifier);
+
+    // For custom entries, use block metadata to determine the real zone
+    let zone: "before_chat" | "after_chat" | "in_chat" | undefined = placement;
+    let depth: number | undefined;
+
+    if (!isBuiltIn) {
+      const meta = blockMeta.get(item.identifier) ?? blockMeta.get(item.identifier.replace(/-open$/, ""));
+      if (meta && meta.injectionPosition === 1 && meta.injectionDepth > 0) {
+        zone = "in_chat";
+        depth = meta.injectionDepth;
+      }
+    }
+
     entries.push({
       identifier: item.identifier,
       enabled: item.enabled,
       order: item.order ?? index,
-      kind: BUILT_IN_PROMPT_IDENTIFIERS.has(item.identifier) ? "built_in" : "custom",
-      ...(placement ? { zone: placement } : {}),
+      kind: isBuiltIn ? "built_in" : "custom",
+      zone,
+      depth,
     });
   });
+
   return { map, entries };
 }
 

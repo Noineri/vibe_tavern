@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, type CSSProperties, type ReactNode, createContext, useContext } from "react";
+import { useState, useMemo, type CSSProperties, type ReactNode, createContext, useContext } from "react";
 import { createPortal } from "react-dom";
 
 const DragHandleContext = createContext<{
@@ -30,7 +30,7 @@ function DragHandle({ disabled }: { disabled?: boolean }) {
 }
 import { NumberInput } from "../../shared/NumberInput.js";
 import type { PromptOrderEntry, PromptSlot, PromptZone } from "@vibe-tavern/domain";
-import { migrateInjection } from "@vibe-tavern/domain";
+import { inferSlot, migrateInjection, DEFAULT_PROMPT_ORDER } from "@vibe-tavern/domain";
 import {
   closestCenter,
   DndContext,
@@ -238,12 +238,8 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     if (existingOrder?.zone) {
       return { zone: existingOrder.zone, depth: existingOrder.depth ?? null, order: existingOrder.order ?? item.defaultOrder };
     }
-    const isAfterChat = item.defaultOrder > 100;
-    return {
-      zone: isAfterChat ? "after_chat" : "before_chat",
-      depth: null,
-      order: existingOrder?.order ?? item.defaultOrder
-    };
+    // No zone in promptOrder — infer from defaults via inferSlot
+    return inferSlot({ defaultOrder: item.defaultOrder, order: existingOrder?.order ?? item.defaultOrder });
   }
 
   const fixedItems: CanvasItem[] = [
@@ -309,43 +305,6 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
   }, [canvasItems]);
 
   const [activeZones, setActiveZones] = useState<ZonesState | null>(null);
-
-  // On mount, backfill promptOrder with zone/order for ALL canvas items.
-  // The canvas is the source of truth — if a slot was never dragged,
-  // it won't have zone/order in promptOrder yet. We seed them from
-  // the default layout so the backend always gets full positioning data.
-  useEffect(() => {
-    if (!onPromptOrderChange) return;
-    let changed = false;
-    const next = [...promptOrder];
-    const zoneMap: Record<string, { zone: PromptZone; depth: number | null; order: number }> = {};
-
-    const collectZone = (list: CanvasItem[], zone: PromptZone, depth: number | null) => {
-      list.forEach((item, index) => {
-        zoneMap[item.identifier] = { zone, depth, order: index };
-      });
-    };
-    collectZone(defaultZones.before_chat, "before_chat", null);
-    collectZone(defaultZones.after_chat, "after_chat", null);
-    collectZone(defaultZones.depth4, "in_chat", 4);
-    collectZone(defaultZones.depth3, "in_chat", 3);
-    collectZone(defaultZones.depth2, "in_chat", 2);
-    collectZone(defaultZones.depth1, "in_chat", 1);
-
-    for (const [identifier, slot] of Object.entries(zoneMap)) {
-      const idx = next.findIndex(e => e.identifier === identifier);
-      if (idx >= 0 && next[idx]!.zone) continue; // already has zone
-      const entry = { identifier, enabled: true, zone: slot.zone, depth: slot.depth, order: slot.order, kind: ("built_in" as const) };
-      if (idx >= 0) {
-        next[idx] = { ...next[idx]!, zone: slot.zone, depth: slot.depth, order: slot.order };
-      } else {
-        next.push(entry);
-      }
-      changed = true;
-    }
-    if (changed) onPromptOrderChange(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once on mount
 
   const zonesToRender = activeZones || defaultZones;
 
