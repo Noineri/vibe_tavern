@@ -189,6 +189,17 @@ export interface ProviderProfileRecord {
   createdAt: string;
   updatedAt: string;
   hasStoredApiKey: boolean;
+  cachedModels?: CachedModelsRecord;
+}
+
+export interface CachedModelsRecord {
+  models: Array<{
+    id: string;
+    label: string;
+    contextLength?: number;
+    capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean };
+  }>;
+  cachedAt: string;
 }
 
 export interface FavoriteProviderModelRecord {

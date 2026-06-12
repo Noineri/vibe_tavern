@@ -39,11 +39,31 @@ export interface ProviderProfileService {
 
 // ─── Factory ─────────────────────────────────────────────────────────────
 
+async function withCachedModels(providers: ProviderStore, profile: ClientProviderProfileRecord): Promise<ClientProviderProfileRecord> {
+  const cached = await providers.getCachedModels(profile.id);
+  if (cached && cached.length > 0) {
+    return {
+      ...profile,
+      cachedModels: {
+        models: cached.map((m) => ({
+          id: m.modelSlug,
+          label: m.modelName,
+          ...(m.contextLength != null ? { contextLength: m.contextLength } : {}),
+          ...(m.capabilities ? { capabilities: m.capabilities } : {}),
+        })),
+        cachedAt: cached[0]!.fetchedAt,
+      },
+    };
+  }
+  return profile;
+}
+
 export function createProviderProfileService(providers: ProviderStore): ProviderProfileService {
   return {
     listProviderProfiles: async () => {
       const profiles = await providers.listAll();
-      return profiles.map(toClientProviderProfile);
+      const clientProfiles = profiles.map(toClientProviderProfile);
+      return Promise.all(clientProfiles.map((p) => withCachedModels(providers, p)));
     },
 
     saveProviderProfile: async (profile) => {
@@ -211,7 +231,8 @@ export function createProviderProfileService(providers: ProviderStore): Provider
 
     getProviderProfileForClient: async (id) => {
       const profile = await providers.getById(id);
-      return profile ? toClientProviderProfile(profile) : null;
+      if (!profile) return null;
+      return withCachedModels(providers, toClientProviderProfile(profile));
     },
 
     getCachedProviderModels: async (providerProfileId) => {
