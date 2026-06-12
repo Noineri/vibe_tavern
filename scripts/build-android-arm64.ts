@@ -97,9 +97,10 @@ async function main() {
 		if (files.length === 0) {
 			throw new Error(`No .md prompt files found in ${promptDir}`);
 		}
+		await mkdir(join(ANDROID_DIST, "prompts"), { recursive: true });
 		for (const file of files) {
-			await copyFile(join(promptDir, file), join(ANDROID_DIST, file));
-			console.log(`   → ${join(ANDROID_DIST, file)}`);
+			await copyFile(join(promptDir, file), join(ANDROID_DIST, "prompts", file));
+			console.log(`   → ${join(ANDROID_DIST, "prompts", file)}`);
 		}
 	});
 

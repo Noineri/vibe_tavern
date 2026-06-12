@@ -6,7 +6,7 @@
  *   - out/linux-dist/web/              (pre-built frontend SPA)
  *   - out/linux-dist/tokenizers/       (runtime tokenizer JSON files)
  *   - out/linux-dist/drizzle/          (SQLite DB migrations)
- *   - out/linux-dist/*.md              (AI assistant prompt files)
+ *   - out/linux-dist/prompts/         (AI assistant prompt files)
  *   - out/vibe-tavern-linux-x64.tar.gz
  *
  * Usage:
@@ -112,9 +112,11 @@ async function main() {
 		if (files.length === 0) {
 			throw new Error(`No .md prompt files found in ${promptDir}`);
 		}
+		// Create prompts/ subdirectory
+		await mkdir(join(DIST, "prompts"), { recursive: true });
 		for (const file of files) {
-			await copyFile(join(promptDir, file), join(DIST, file));
-			console.log(`   → ${join(DIST, file)}`);
+			await copyFile(join(promptDir, file), join(DIST, "prompts", file));
+			console.log(`   → ${join(DIST, "prompts", file)}`);
 		}
 	});
 
