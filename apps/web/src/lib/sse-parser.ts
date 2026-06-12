@@ -1,4 +1,4 @@
-import type { ChatGenerationStatus } from "../app-client.js";
+import type { ChatGenerationStatus } from "../api/types.js";
 
 export interface ParseSSEStreamOptions {
   response: Response;
