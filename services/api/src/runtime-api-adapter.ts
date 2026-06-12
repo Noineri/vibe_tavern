@@ -58,7 +58,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		);
 		this.character = new CharacterAdapter(sessionRuntime, stores, assetService);
 		this.persona = new PersonaAdapter(sessionRuntime, stores, assetService);
-		this.lorebook = new LorebookAdapter(stores, sessionRuntime);
+		this.lorebook = new LorebookAdapter(stores);
 		this.script = new ScriptAdapter(stores);
 		this.provider = new ProviderAdapter(stores, providerProfileService);
 		this.preset = new PresetAdapter(promptPresetService);
