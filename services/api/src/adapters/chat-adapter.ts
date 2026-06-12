@@ -8,9 +8,8 @@ import type { LiveChatOrchestrator } from "../chat/live-chat-orchestrator.js";
 import type { ChatSummaryService } from "../chat/chat-summary-service.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 import type { AssetService } from "../asset-service.js";
-import {
-	listProviderModels,
-} from "../providers/provider-gateway.js";
+import { resolveCachedModels } from "../providers/model-cache-service.js";
+import { resolveVisionDescribePrompt } from "../ai/vision-gate.js";
 
 export class ChatAdapter implements ChatRuntimeApi {
 	constructor(
@@ -100,10 +99,10 @@ export class ChatAdapter implements ChatRuntimeApi {
 			model: profile.defaultModel,
 			signal,
 			visionAssets: {
-				cachedModels: await this.resolveCachedModels(profile),
+				cachedModels: await resolveCachedModels(this.stores, profile),
 				visionModel: profile.visionModel,
 				assetLoader: (assetId: string) => this.assetService.loadBuffer(assetId),
-				visionDescribePrompt: await this.resolveVisionDescribePrompt(),
+				visionDescribePrompt: await this.resolveVisionDescribePromptFromPreset(),
 			},
 		});
 		logSendDebug("api.runtime.send.success", {
@@ -117,8 +116,6 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: any[] }, signal?: AbortSignal) {
 		const profile = await this.resolveActiveProfileOrThrow();
-		const cachedModels = await this.resolveCachedModels(profile);
-		const assetLoader = (assetId: string) => this.assetService.loadBuffer(assetId);
 		try {
 			yield* this.liveChatOrchestrator.sendMessageStream({
 				chatId,
@@ -128,11 +125,11 @@ export class ChatAdapter implements ChatRuntimeApi {
 				model: profile.defaultModel,
 				signal,
 				visionAssets: {
-				cachedModels,
-				visionModel: profile.visionModel,
-				assetLoader,
-				visionDescribePrompt: await this.resolveVisionDescribePrompt(),
-			},
+					cachedModels: await resolveCachedModels(this.stores, profile),
+					visionModel: profile.visionModel,
+					assetLoader: (assetId: string) => this.assetService.loadBuffer(assetId),
+					visionDescribePrompt: await this.resolveVisionDescribePromptFromPreset(),
+				},
 			});
 		} catch (err) {
 			if (err instanceof (await import("../ai/vision-gate.js")).VisionNotSupportedError) {
@@ -280,41 +277,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	// ─── Private helpers ────────────────────────────────────────────────
 
-	private async resolveCachedModels(profile: { id: string; endpoint: string; apiKey: string | null; providerPreset: string; defaultModel: string | null }) {
-		let cached = await this.stores.providers.getCachedModels(profile.id);
-
-		if (cached.length > 0 && profile.defaultModel) {
-			const activeModel = cached.find((m) => m.modelSlug === profile.defaultModel);
-			if (activeModel?.capabilities) return cached;
-		}
-
-		try {
-			const providerType = profile.providerPreset;
-			const models = await listProviderModels({
-				baseUrl: profile.endpoint,
-				apiKey: profile.apiKey ?? "",
-				providerType,
-				requiresAuthForModels: providerType === "anthropic" || providerType === "google",
-			});
-			const normalized = models.map((m) => ({
-				modelSlug: m.id,
-				modelName: m.label ?? m.id,
-				contextLength: m.contextLength ?? null,
-				capabilities: m.capabilities
-					? { thinking: m.capabilities.reasoning, tools: m.capabilities.tools, vision: m.capabilities.vision }
-					: undefined,
-			}));
-			await this.stores.providers.saveCachedModels(profile.id, normalized);
-			cached = await this.stores.providers.getCachedModels(profile.id);
-		} catch {
-			// Refresh failed — use whatever cache we have
-		}
-
-		return cached;
-	}
-
-	private async resolveVisionDescribePrompt(): Promise<string> {
-		const { resolveVisionDescribePrompt } = await import("../ai/vision-gate.js");
+	private async resolveVisionDescribePromptFromPreset(): Promise<string> {
 		const settings = await this.stores.uiSettings.get();
 		let aiAssistantPrompts: Record<string, string> | null = null;
 		if (settings?.activePromptPresetId) {
