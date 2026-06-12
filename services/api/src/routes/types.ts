@@ -1,5 +1,6 @@
 import type { AiAssistantStreamChunk } from "../ai-assistant/reasoning-split.js";
 import type { AiAssistantStreamRequest } from "../ai-assistant/ai-assistant-stream.js";
+import type { ClientProviderProfileRecord } from "../session/session-runtime-dto.js";
 
 // ─── Bootstrap / Debug ───────────────────────────────────────────────
 
@@ -137,11 +138,11 @@ export interface ScriptRuntimeApi {
 // ─── Provider ────────────────────────────────────────────────────────
 
 export interface ProviderRuntimeApi {
-	listProviderProfiles: () => unknown;
-	fetchProviderProfile: (providerProfileId: string) => unknown;
-	activateProviderProfile: (providerProfileId: string) => unknown;
-	updateProviderProfile: (providerProfileId: string, body: Record<string, unknown>) => unknown;
-	saveProviderDraft: (body: Record<string, unknown>) => unknown;
+	listProviderProfiles: () => Promise<ClientProviderProfileRecord[]>;
+	fetchProviderProfile: (providerProfileId: string) => Promise<ClientProviderProfileRecord>;
+	activateProviderProfile: (providerProfileId: string) => Promise<ClientProviderProfileRecord>;
+	updateProviderProfile: (providerProfileId: string, body: Record<string, unknown>) => Promise<ClientProviderProfileRecord>;
+	saveProviderDraft: (body: Record<string, unknown>) => Promise<ClientProviderProfileRecord>;
 	deleteProviderProfile: (providerProfileId: string) => void;
 	testProviderDraft: (body: { endpoint?: string; apiKey?: string; providerType?: string } | null) => Promise<unknown>;
 	testProviderProfile: (providerProfileId: string) => Promise<unknown>;
