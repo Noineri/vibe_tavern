@@ -1,10 +1,10 @@
 import { Hono } from "hono";
-import type { RuntimeApi } from "./types.js";
+import type { BootstrapRuntimeApi } from "./types.js";
 import { zValidator } from "@hono/zod-validator";
 import { logSendDebug } from "../send-debug-log.js";
 import * as schemas from "@vibe-tavern/api-contracts";
 
-export function createDebugRoutes(runtime: RuntimeApi) {
+export function createDebugRoutes(runtime: BootstrapRuntimeApi) {
   return new Hono()
     .post("/api/debug/send-log", zValidator("json", schemas.debugSendLogSchema), async (c) => {
       const body = c.req.valid("json");

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import type { RuntimeApi } from "./types.js";
+import type { AssetRuntimeApi } from "./types.js";
 
-export function createAssetRoutes(runtime: RuntimeApi) {
+export function createAssetRoutes(runtime: AssetRuntimeApi) {
   return new Hono()
     .post("/api/assets/upload", async (c) => {
       const body = await c.req.parseBody();

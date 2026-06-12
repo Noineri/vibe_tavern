@@ -955,4 +955,148 @@ export class RuntimeApiAdapter {
 		this.mobileAccessService.revokeToken();
 		return { token: null };
 	}
+
+	// ─── Domain sub-objects (RuntimeApi composite) ─────────────────────────
+
+	readonly chat: import("./routes/types.js").ChatRuntimeApi = Object.freeze({
+		getChatSnapshot: this.getChatSnapshot,
+		createChatForCharacter: this.createChatForCharacter,
+		createFreeChat: this.createFreeChat,
+		cloneChat: this.cloneChat,
+		deleteChat: this.deleteChat,
+		clearChat: this.clearChat,
+		renameChat: this.renameChat,
+		setGreetingIndex: this.setGreetingIndex,
+		updateChatSettings: this.updateChatSettings,
+		setChatPersona: this.setChatPersona,
+		setChatPromptPreset: this.setChatPromptPreset,
+		branchChat: this.branchChat,
+		forkBranch: this.forkBranch,
+		activateBranch: this.activateBranch,
+		deleteBranch: this.deleteBranch,
+		renameBranch: this.renameBranch,
+		sendMessage: this.sendMessage,
+		sendMessageStream: this.sendMessageStream,
+		regenerateMessage: this.regenerateMessage,
+		regenerateMessageStream: this.regenerateMessageStream,
+		generateReply: this.generateReply,
+		generateReplyStream: this.generateReplyStream,
+		selectVariant: this.selectVariant,
+		deleteVariant: this.deleteVariant,
+		editMessage: this.editMessage,
+		deleteMessage: this.deleteMessage,
+		updateAttachmentDescription: this.updateAttachmentDescription,
+		exportChatJsonl: this.exportChatJsonl,
+		exportPromptTrace: this.exportPromptTrace,
+		listChatSummaries: this.listChatSummaries,
+		createChatSummary: this.createChatSummary,
+		updateChatSummaryRecord: this.updateChatSummaryRecord,
+		deleteChatSummaryRecord: this.deleteChatSummaryRecord,
+		generateChatSummary: this.generateChatSummary,
+		updateMemorySettings: this.updateMemorySettings,
+		summarizeChat: this.summarizeChat,
+		saveChatSummary: this.saveChatSummary,
+	});
+
+	readonly character: import("./routes/types.js").CharacterRuntimeApi = Object.freeze({
+		createCharacterFromScratch: this.createCharacterFromScratch,
+		updateCharacter: this.updateCharacter,
+		archiveCharacter: this.archiveCharacter,
+		unarchiveCharacter: this.unarchiveCharacter,
+		deleteCharacter: this.deleteCharacter,
+		exportCharacter: this.exportCharacter,
+		duplicateCharacter: this.duplicateCharacter,
+	});
+
+	readonly persona: import("./routes/types.js").PersonaRuntimeApi = Object.freeze({
+		listPersonas: this.listPersonas,
+		createPersona: this.createPersona,
+		updatePersona: this.updatePersona,
+		deletePersona: this.deletePersona,
+		duplicatePersona: this.duplicatePersona,
+		setDefaultPersona: this.setDefaultPersona,
+		getPersonalLorebookStatus: this.getPersonalLorebookStatus,
+		setPersonalLorebookEnabled: this.setPersonalLorebookEnabled,
+	});
+
+	readonly lorebook: import("./routes/types.js").LorebookRuntimeApi = Object.freeze({
+		listAllLorebooks: this.listAllLorebooks,
+		listLorebooks: this.listLorebooks,
+		createLorebook: this.createLorebook,
+		updateLorebookMeta: this.updateLorebookMeta,
+		deleteLorebook: this.deleteLorebook,
+		duplicateLorebook: this.duplicateLorebook,
+		exportLorebook: this.exportLorebook,
+		getLorebookLinks: this.getLorebookLinks,
+		setLorebookLinks: this.setLorebookLinks,
+		importLorebook: this.importLorebook,
+		createLoreEntry: this.createLoreEntry,
+		updateLoreEntry: this.updateLoreEntry,
+		deleteLoreEntry: this.deleteLoreEntry,
+		listLoreEntries: this.listLoreEntries,
+		reorderLoreEntries: this.reorderLoreEntries,
+		testLoreActivation: this.testLoreActivation,
+	});
+
+	readonly script: import("./routes/types.js").ScriptRuntimeApi = Object.freeze({
+		listScripts: this.listScripts,
+		getScript: this.getScript,
+		createScript: this.createScript,
+		updateScript: this.updateScript,
+		deleteScript: this.deleteScript,
+		testScript: this.testScript,
+		importScript: this.importScript,
+	});
+
+	readonly provider: import("./routes/types.js").ProviderRuntimeApi = Object.freeze({
+		listProviderProfiles: this.listProviderProfiles,
+		fetchProviderProfile: this.fetchProviderProfile,
+		activateProviderProfile: this.activateProviderProfile,
+		updateProviderProfile: this.updateProviderProfile,
+		saveProviderDraft: this.saveProviderDraft,
+		deleteProviderProfile: this.deleteProviderProfile,
+		testProviderDraft: this.testProviderDraft,
+		testProviderProfile: this.testProviderProfile,
+		fetchProviderModels: this.fetchProviderModels,
+		listFavoriteProviderModels: this.listFavoriteProviderModels,
+		addFavoriteProviderModel: this.addFavoriteProviderModel,
+		removeFavoriteProviderModel: this.removeFavoriteProviderModel,
+		fetchModelsByEndpoint: this.fetchModelsByEndpoint,
+		testProviderChatByEndpoint: this.testProviderChatByEndpoint,
+		testProviderChatByProfile: this.testProviderChatByProfile,
+	});
+
+	readonly preset: import("./routes/types.js").PresetRuntimeApi = Object.freeze({
+		listPromptPresets: this.listPromptPresets,
+		createPromptPreset: this.createPromptPreset,
+		updatePromptPreset: this.updatePromptPreset,
+		deletePromptPreset: this.deletePromptPreset,
+	});
+
+	readonly importExport: import("./routes/types.js").ImportExportRuntimeApi = Object.freeze({
+		importJson: this.importJson,
+		scanSillyTavernDirectory: this.scanSillyTavernDirectory,
+		importSillyTavernDirectory: this.importSillyTavernDirectory,
+	});
+
+	readonly asset: import("./routes/types.js").AssetRuntimeApi = Object.freeze({
+		uploadAsset: this.uploadAsset,
+		serveAsset: this.serveAsset,
+	});
+
+	readonly aiAssistant: import("./routes/types.js").AiAssistantRuntimeApi = Object.freeze({
+		streamAiAssistant: this.streamAiAssistant,
+		countAiAssistantTokens: this.countAiAssistantTokens,
+	});
+
+	readonly settings: import("./routes/types.js").SettingsRuntimeApi = Object.freeze({
+		getUiSettings: this.getUiSettings,
+		updateUiSettings: this.updateUiSettings,
+	});
+
+	readonly mobileAccess: import("./routes/types.js").MobileAccessRuntimeApi = Object.freeze({
+		getMobileAccessInfo: this.getMobileAccessInfo.bind(this),
+		regenerateMobileAccessToken: this.regenerateMobileAccessToken.bind(this),
+		revokeMobileAccess: this.revokeMobileAccess.bind(this),
+	});
 }

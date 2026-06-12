@@ -1,9 +1,9 @@
 import { Hono } from "hono";
-import type { RuntimeApi } from "./types.js";
+import type { CharacterRuntimeApi } from "./types.js";
 import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";
 
-export function createCharacterRoutes(runtime: RuntimeApi) {
+export function createCharacterRoutes(runtime: CharacterRuntimeApi) {
   return new Hono()
     .post("/api/characters", zValidator("json", schemas.createCharacterSchema), async (c) => {
       const body = c.req.valid("json");

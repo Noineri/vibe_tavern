@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import type { RuntimeApi } from "./types.js";
+import type { SettingsRuntimeApi, MobileAccessRuntimeApi } from "./types.js";
 
-export function createSettingsRoutes(runtime: RuntimeApi) {
+export function createSettingsRoutes(runtime: SettingsRuntimeApi & MobileAccessRuntimeApi) {
   return new Hono()
     .get("/api/settings/ui", async (c) => {
       const settings = await runtime.getUiSettings();

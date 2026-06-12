@@ -119,7 +119,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 		mobileAccessService,
 	);
 
-	features.register(createAiAssistantFeature(runtime));
+	features.register(createAiAssistantFeature(runtime.aiAssistant));
 
 	// Hono app — with static frontend if available
 	const app = await createApp({

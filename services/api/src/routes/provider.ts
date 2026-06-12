@@ -1,11 +1,11 @@
 import { Hono } from "hono";
-import type { RuntimeApi } from "./types.js";
+import type { ProviderRuntimeApi } from "./types.js";
 import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";
 import { isDomainError, providerError } from "../errors.js";
 import { tokenizeText } from "../ai/tokenizer-service.js";
 
-export function createProviderRoutes(runtime: RuntimeApi) {
+export function createProviderRoutes(runtime: ProviderRuntimeApi) {
   return new Hono()
     .get("/api/providers", async (c) => {
       return c.json(await runtime.listProviderProfiles());
