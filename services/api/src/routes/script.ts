@@ -1,9 +1,9 @@
 import { Hono } from "hono";
-import type { RuntimeApi } from "./types.js";
+import type { ScriptRuntimeApi } from "./types.js";
 import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";
 
-export function createScriptRoutes(runtime: RuntimeApi) {
+export function createScriptRoutes(runtime: ScriptRuntimeApi) {
   return new Hono()
     .get("/api/scripts", async (c) => {
       const scopeType = c.req.query("scopeType") ?? "character";

@@ -1,9 +1,9 @@
 import { Hono } from "hono";
-import type { RuntimeApi } from "./types.js";
+import type { PersonaRuntimeApi } from "./types.js";
 import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";
 
-export function createPersonaRoutes(runtime: RuntimeApi) {
+export function createPersonaRoutes(runtime: PersonaRuntimeApi) {
   return new Hono()
     .get("/api/personas", async (c) => {
       return c.json(await runtime.listPersonas());

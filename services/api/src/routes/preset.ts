@@ -1,9 +1,9 @@
 import { Hono } from "hono";
-import type { RuntimeApi } from "./types.js";
+import type { PresetRuntimeApi } from "./types.js";
 import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";
 
-export function createPresetRoutes(runtime: RuntimeApi) {
+export function createPresetRoutes(runtime: PresetRuntimeApi) {
   return new Hono()
     .get("/api/prompt-presets", async (c) => {
       return c.json(await runtime.listPromptPresets());

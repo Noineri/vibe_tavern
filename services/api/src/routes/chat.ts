@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { RuntimeApi } from "./types.js";
+import type { ChatRuntimeApi } from "./types.js";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { streamSSE } from "hono/streaming";
@@ -70,7 +70,7 @@ async function writeChatSseEvents(
   }
 }
 
-export function createChatRoutes(runtime: RuntimeApi) {
+export function createChatRoutes(runtime: ChatRuntimeApi) {
   return new Hono()
     .get("/api/chats/:chatId", async (c) => {
       return c.json(await runtime.getChatSnapshot(c.req.param("chatId")));

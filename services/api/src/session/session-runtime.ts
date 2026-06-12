@@ -4,7 +4,6 @@ import {
 	type CharacterId,
 	type ChatBranchId,
 	type ChatId,
-	type LoreEntry,
 	type MessageId,
 	type PromptPresetId,
 	type StoredProviderProfileRecord,
@@ -36,7 +35,7 @@ import { ChatOrderService } from "./session-runtime-chat-order.js";
 import { PersonaRuntime } from "./session-runtime-persona.js";
 import { ChatLifecycleRuntime } from "./session-runtime-chat-lifecycle.js";
 import * as importExportModule from "./session-runtime-import-export.js";
-import * as lorebookModule from "./session-runtime-lorebook.js";
+// lorebookModule removed — CRUD is wired directly through stores in RuntimeApiAdapter
 import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as importST } from "../st-directory-scanner.js";
 
 export interface ChatListItem {
@@ -329,7 +328,19 @@ export interface ImportResult {
 		return importST(this.importExportDeps, dirPath);
 	}
 
-	// ─── Delegated: lorebook stubs (phase 2) ────────────────────────────
+	// ─── Personal lorebook toggle (wired but unimplemented) ──────────
+	//
+	// Routes exist: GET/PUT /api/personas/:personaId/personal-lorebook
+	// Frontend client functions exist but NO component calls them yet.
+	//
+	// Implementation needed:
+	//   getPersonalLorebookStatus → check lorebook_links for targetType='persona'
+	//   setPersonalLorebookEnabled → create/disable persona-scoped lorebook + link
+	//
+	// The stores.lorebooks layer already fully supports persona-scoped lorebooks
+	// and persona-targeted links. Only the wiring here + a UI component are missing.
+	//
+	// TODO: Implement when "Personal Lorebook" UI is built.
 
 	getPersonalLorebookStatus(_personaId: string): { enabled: boolean; lorebookId: string | null } {
 		return { enabled: false, lorebookId: null };
@@ -337,35 +348,6 @@ export interface ImportResult {
 
 	setPersonalLorebookEnabled(_personaId: string, _enabled: boolean): { enabled: boolean; lorebookId: string | null } {
 		return { enabled: false, lorebookId: null };
-	}
-
-	createLoreEntry(lorebookId: string, input: Omit<LoreEntry, "id" | "lorebookId">): LoreEntry {
-		void lorebookModule; void lorebookId; void input;
-		throw new Error("Not implemented: lorebooks are phase 2");
-	}
-
-	updateLoreEntry(lorebookId: string, entryId: string, input: Partial<Omit<LoreEntry, "id" | "lorebookId">>): LoreEntry {
-		void lorebookModule; void lorebookId; void entryId; void input;
-		throw new Error("Not implemented: lorebooks are phase 2");
-	}
-
-	deleteLoreEntry(lorebookId: string, entryId: string): void {
-		void lorebookModule; void lorebookId; void entryId;
-		throw new Error("Not implemented: lorebooks are phase 2");
-	}
-
-	listLoreEntries(lorebookId: string): LoreEntry[] {
-		void lorebookModule; void lorebookId;
-		throw new Error("Not implemented: lorebooks are phase 2");
-	}
-
-	reorderLoreEntries(_lorebookId: string, _updates: Array<{ id: string; sortOrder: number; position?: string }>): Promise<unknown> {
-		throw new Error("Not implemented: lorebooks are phase 2");
-	}
-
-	testLoreActivation(lorebookId: string, text: string): { activatedIds: string[]; totalEntries: number } {
-		void lorebookModule; void lorebookId; void text;
-		throw new Error("Not implemented: lorebooks are phase 2");
 	}
 
 	// ─── Private: prompt wiring ─────────────────────────────────────────

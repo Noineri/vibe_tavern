@@ -16,17 +16,17 @@ export type { RuntimeApi } from "./types.js";
 
 export function createApiRouter(runtime: RuntimeApi) {
   return new Hono()
-    .route("/", createDebugRoutes(runtime))
-    .route("/", createChatRoutes(runtime))
-    .route("/", createCharacterRoutes(runtime))
-    .route("/", createPersonaRoutes(runtime))
-    .route("/", createLorebookRoutes(runtime))
-    .route("/", createScriptRoutes(runtime))
-    .route("/", createProviderRoutes(runtime))
-    .route("/", createPresetRoutes(runtime))
-    .route("/", createImportRoutes(runtime))
-    .route("/", createAssetRoutes(runtime))
-    .route("/", createSettingsRoutes(runtime))
+    .route("/", createDebugRoutes({ bootstrap: runtime.bootstrap }))
+    .route("/", createChatRoutes(runtime.chat))
+    .route("/", createCharacterRoutes(runtime.character))
+    .route("/", createPersonaRoutes(runtime.persona))
+    .route("/", createLorebookRoutes(runtime.lorebook))
+    .route("/", createScriptRoutes(runtime.script))
+    .route("/", createProviderRoutes(runtime.provider))
+    .route("/", createPresetRoutes(runtime.preset))
+    .route("/", createImportRoutes(runtime.importExport))
+    .route("/", createAssetRoutes(runtime.asset))
+    .route("/", createSettingsRoutes({ ...runtime.settings, ...runtime.mobileAccess }))
   ;
 }
 
