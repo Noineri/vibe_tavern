@@ -17,6 +17,7 @@ export interface StPromptOrderBlock {
   enabled: boolean;
   order?: number;
   kind: "built_in" | "custom";
+  zone?: "before_chat" | "after_chat";
 }
 
 export interface ParsedStPreset {
@@ -189,18 +190,20 @@ function resolvePromptOrder(promptOrder: StPromptOrderSet[] | undefined): { map:
   const map = new Map<string, StOrderInfo>();
   const entries: StPromptOrderBlock[] = [];
   preferred.order.forEach((item, index) => {
+    const placement = chatIndex >= 0 && item.identifier !== "chatHistory"
+      ? (index < chatIndex ? "before_chat" as const : "after_chat" as const)
+      : undefined;
     map.set(item.identifier, {
       enabled: item.enabled,
       index,
-      ...(chatIndex >= 0 && item.identifier !== "chatHistory"
-        ? { placement: index < chatIndex ? "before_chat" : "after_chat" }
-        : {}),
+      ...(placement ? { placement } : {}),
     });
     entries.push({
       identifier: item.identifier,
       enabled: item.enabled,
       order: item.order ?? index,
       kind: BUILT_IN_PROMPT_IDENTIFIERS.has(item.identifier) ? "built_in" : "custom",
+      ...(placement ? { zone: placement } : {}),
     });
   });
   return { map, entries };
