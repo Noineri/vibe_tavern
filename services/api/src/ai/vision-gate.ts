@@ -30,6 +30,7 @@ async function loadDefaultVisionDescribePrompt(): Promise<string> {
     process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR
       ? join(process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR, VISION_DESCRIBE_PROMPT_FILE)
       : null,
+    join(resolve(process.execPath, ".."), "prompts", VISION_DESCRIBE_PROMPT_FILE),
     resolve(import.meta.dir, "..", "..", "assets", VISION_DESCRIBE_PROMPT_FILE),
     join(process.cwd(), "services", "api", "assets", VISION_DESCRIBE_PROMPT_FILE),
     resolve(import.meta.dir, "..", VISION_DESCRIBE_PROMPT_FILE),
