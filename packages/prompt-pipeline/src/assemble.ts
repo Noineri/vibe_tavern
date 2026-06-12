@@ -9,6 +9,8 @@ import type { AssemblyMode } from "./types.js";
 import { estimateTokens, findSafeCompactionBoundary } from "./compaction.js";
 import { createFullMacroEngine } from "./macro-registry.js";
 import { buildPromptVariableContext, type PromptVariableContext } from "./prompt-variable-context.js";
+import { inferSlot, DEFAULT_PROMPT_ORDER } from "@vibe-tavern/domain";
+import type { PromptZone } from "@vibe-tavern/domain";
 import {
   DEFAULT_PROMPT_LAYER_PRIORITY,
   LAYER_MODES,
@@ -106,42 +108,11 @@ function promptOrderEnabled(context: PromptAssemblyContext, identifier: string):
   return entry?.enabled ?? true;
 }
 
-const DEFAULT_PROMPT_ORDER: Record<string, number> = {
-  main: 0,
-  worldInfoBefore: 10,
-  personaDescription: 20,
-  charDescription: 30,
-  charPersonality: 40,
-  scenario: 50,
-  authorsNote: 60,
-  enhanceDefinitions: 70,
-  nsfw: 75,
-  worldInfoAfter: 80,
-  dialogueExamples: 90,
-  chatHistory: 100,
-  jailbreak: 110,
-};
-
-function hasPromptOrderLayout(context: PromptAssemblyContext): boolean {
-  return (context.preset?.promptOrder ?? []).some((entry) => entry.order != null);
-}
-
-function promptOrderRank(context: PromptAssemblyContext, identifier: string, fallback: number | undefined = DEFAULT_PROMPT_ORDER[identifier] ?? 10_000): number {
+function promptOrderRank(context: PromptAssemblyContext, identifier: string, fallback?: number): number {
   const entries = context.preset?.promptOrder ?? [];
-  const index = entries.findIndex((entry) => entry.identifier === identifier);
-  if (!hasPromptOrderLayout(context) || index < 0) return fallback ?? 10_000;
-  return entries[index]!.order ?? index;
-}
-
-function promptOrderPlacement(context: PromptAssemblyContext, identifier: string): "before_chat" | "after_chat" | null {
-  if (!hasPromptOrderLayout(context)) return null;
-  const entries = context.preset?.promptOrder ?? [];
-  const itemIndex = entries.findIndex((entry) => entry.identifier === identifier);
-  const chatIndex = entries.findIndex((entry) => entry.identifier === "chatHistory");
-  if (itemIndex < 0 || chatIndex < 0) return null;
-  const itemOrder = entries[itemIndex]!.order ?? itemIndex;
-  const chatOrder = entries[chatIndex]!.order ?? chatIndex;
-  return itemOrder > chatOrder ? "after_chat" : "before_chat";
+  const entry = entries.find((e) => e.identifier === identifier);
+  if (entry?.order != null) return entry.order;
+  return fallback ?? DEFAULT_PROMPT_ORDER[identifier] ?? 10_000;
 }
 
 function lorePromptSubPosition(
@@ -164,35 +135,30 @@ function lorePromptSubPosition(
   }
 }
 
+/**
+ * Apply canvas zone + order from promptOrder to a prompt layer.
+ * If no zone is recorded, infers one via inferSlot (single source of truth).
+ */
 function applyPromptOrderPosition(context: PromptAssemblyContext, layer: PromptLayer, identifier: string): PromptLayer {
   const entries = context.preset?.promptOrder ?? [];
   const entry = entries.find((e) => e.identifier === identifier);
 
-  if (entry?.zone) {
-    const slotZone = entry.zone;
-    layer.subPosition = entry.order ?? promptOrderRank(context, identifier);
-    if (slotZone === "after_chat") {
-      layer.position = "in_chat";
-      layer.injectionDepth = 0;
-    } else if (slotZone === "in_chat") {
-      layer.position = "in_chat";
-      layer.injectionDepth = entry.depth ?? 0;
-    } else {
-      // before_chat
-      layer.position = "in_prompt";
-      delete layer.injectionDepth;
-    }
-    return layer;
-  }
+  // Determine zone: from promptOrder entry, or infer from defaults
+  const zone: PromptZone | undefined = entry?.zone ?? inferSlot({
+    defaultOrder: DEFAULT_PROMPT_ORDER[identifier],
+  }).zone;
+  const order = entry?.order ?? DEFAULT_PROMPT_ORDER[identifier] ?? 10_000;
+  const depth = entry?.depth ?? undefined;
 
-  // No canvas zone data — use DEFAULT_PROMPT_ORDER to infer position.
-  // Items with defaultOrder <= chatHistory (100) are before_chat, rest are after_chat.
-  const defaultOrder = DEFAULT_PROMPT_ORDER[identifier];
-  layer.subPosition = defaultOrder ?? 10_000;
-  if (defaultOrder != null && defaultOrder > DEFAULT_PROMPT_ORDER.chatHistory) {
+  layer.subPosition = order;
+  if (zone === "after_chat") {
     layer.position = "in_chat";
     layer.injectionDepth = 0;
+  } else if (zone === "in_chat") {
+    layer.position = "in_chat";
+    layer.injectionDepth = depth ?? 0;
   } else {
+    // before_chat
     layer.position = "in_prompt";
     delete layer.injectionDepth;
   }
@@ -682,9 +648,9 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
       }
       // "before_chat" stays in_prompt (default from resolvedPosition)
     } else {
-      // Legacy fallback: no canvas zone specified
-      const placement = promptOrderPlacement(context, worldInfoIdentifier);
-      if (placement === "after_chat" && layer.position !== "hidden_system") {
+      // Legacy fallback: no canvas zone — infer from defaults
+      const inferred = inferSlot({ defaultOrder: DEFAULT_PROMPT_ORDER[worldInfoIdentifier] });
+      if (inferred.zone === "after_chat" && layer.position !== "hidden_system") {
         layer.position = "in_chat";
         layer.injectionDepth = 0;
       }
