@@ -99,27 +99,24 @@ export function useProviderProfiles() {
       streamResponse: activeProfile.streamResponse,
     });
 
-    // Load cached models async so TopBar can show human-readable labels
-    // Also auto-detect vision model if not yet set in the profile
-    void fetchProviderModelsAction(activeProfile.id).then(async (response) => {
-      if (response.models.length > 0) {
-        patchConnection({ models: response.models });
+    // Hydrate models from DB cache (instant) — avoids live provider fetch on every startup.
+    // The "Refresh models" button in ProviderModal still does a live fetch + cache update.
+    const cached = activeProfile.cachedModels;
+    if (cached && cached.models.length > 0) {
+      patchConnection({ models: cached.models });
 
-        // Auto-detect vision model from capabilities if not already set
-        if (!activeProfile.visionModel) {
-          const visionModels = response.models.filter((m) => m.capabilities?.vision);
-          const nonAllVision = visionModels.length > 0 && visionModels.length < response.models.length;
-          if (nonAllVision) {
-            const detected = visionModels[0]!.id;
-            // Persist to profile so it survives restarts
-            try {
-              await updateProviderProfileAction(activeProfile.id, { visionModel: detected });
-            } catch { /* ignore */ }
-            patchConnection({ visionModel: detected });
-          }
+      // Auto-detect vision model from capabilities if not already set
+      if (!activeProfile.visionModel) {
+        const visionModels = cached.models.filter((m) => m.capabilities?.vision);
+        const nonAllVision = visionModels.length > 0 && visionModels.length < cached.models.length;
+        if (nonAllVision) {
+          const detected = visionModels[0]!.id;
+          patchConnection({ visionModel: detected });
+          // Persist to profile so it survives restarts (fire-and-forget)
+          void updateProviderProfileAction(activeProfile.id, { visionModel: detected }).catch(() => {});
         }
       }
-    });
+    }
 
     if (!activeProfile.defaultModel || startupProbeProfileIdsRef.current.has(activeProfile.id)) return;
     startupProbeProfileIdsRef.current.add(activeProfile.id);

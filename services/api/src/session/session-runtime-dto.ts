@@ -46,6 +46,7 @@ export interface ClientProviderProfileRecord {
   createdAt: string;
   updatedAt: string;
   hasStoredApiKey: boolean;
+  cachedModels?: CachedProviderModelsRecord;
 }
 
 export interface CachedProviderModelsRecord {
