@@ -118,7 +118,11 @@ export class ProviderStore {
 
   async listAll(): Promise<ProviderProfile[]> {
     const rows = await this.db.select().from(providerProfiles).all();
-    return rows.map((row) => this.mapRow(row));
+    const result = rows.map((row) => this.mapRow(row));
+    for (const p of result) {
+      console.log(`[DB] provider.listAll id=${p.id} visionModel=${p.visionModel}`);
+    }
+    return result;
   }
 
   async getActive(): Promise<ProviderProfile | null> {
@@ -223,6 +227,7 @@ export class ProviderStore {
     if (data.pinContextBudget !== undefined) values.pinContextBudget = data.pinContextBudget;
     if (data.visionModel !== undefined) values.visionModel = data.visionModel ?? null;
 
+    console.log(`[DB] provider.update id=${id} visionModel_in=${data.visionModel} visionModel_set=${values.visionModel} fields=${Object.keys(values).join(',')}`);
     const [row] = await this.db
       .update(providerProfiles)
       .set(values)
@@ -232,6 +237,7 @@ export class ProviderStore {
     if (!row) {
       throw new Error(`ProviderProfile '${id}' not found after update`);
     }
+    console.log(`[DB] provider.update.returning id=${row.id} visionModel_db=${row.visionModel}`);
     return this.mapRow(row);
   }
 

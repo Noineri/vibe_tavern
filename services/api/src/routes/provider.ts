@@ -8,7 +8,11 @@ import { tokenizeText } from "../ai/tokenizer-service.js";
 export function createProviderRoutes(runtime: ProviderRuntimeApi) {
   return new Hono()
     .get("/api/providers", async (c) => {
-      return c.json(await runtime.listProviderProfiles());
+      const profiles = await runtime.listProviderProfiles();
+      for (const p of profiles) {
+        console.log(`[ROUTE] GET /api/providers -> id=${p.id} visionModel=${p.visionModel}`);
+      }
+      return c.json(profiles);
     })
     .get("/api/providers/:providerId", async (c) => {
       return c.json(await runtime.fetchProviderProfile(c.req.param("providerId")));
@@ -19,7 +23,10 @@ export function createProviderRoutes(runtime: ProviderRuntimeApi) {
     })
     .patch("/api/providers/:providerId", zValidator("json", schemas.updateProviderProfileSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(await runtime.updateProviderProfile(c.req.param("providerId"), body));
+      console.log(`[ROUTE] PATCH /api/providers/${c.req.param("providerId")} visionModel=${(body as Record<string, unknown>).visionModel} fields=${Object.keys(body).join(',')}`);
+      const result = await runtime.updateProviderProfile(c.req.param("providerId"), body);
+      console.log(`[ROUTE] PATCH result id=${result.id} visionModel=${result.visionModel}`);
+      return c.json(result);
     })
     .post("/api/providers/test", zValidator("json", schemas.testProviderDraftSchema), async (c) => {
       const body = c.req.valid("json");

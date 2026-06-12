@@ -204,6 +204,8 @@ export function createProviderProfileService(providers: ProviderStore): Provider
         resolvedApiKeyLength: apiKey?.length ?? 0,
         existingApiKeyLength: existing.apiKey?.length ?? 0,
         patchFields: Object.keys(patch).sort().join(","),
+        existingVisionModel: existing.visionModel,
+        patchVisionModel: patch.visionModel,
       });
 
       const updateData = { ...patch };
@@ -213,6 +215,7 @@ export function createProviderProfileService(providers: ProviderStore): Provider
         profileId: id,
         updateDataApiKeyLength: typeof updateData.apiKey === "string" ? updateData.apiKey.length : `(type: ${typeof updateData.apiKey})`,
         updateDataFields: Object.keys(updateData).filter(k => updateData[k as keyof typeof updateData] !== undefined).sort().join(","),
+        updateDataVisionModel: updateData.visionModel,
       });
 
       await providers.update(id, updateData);
@@ -221,6 +224,7 @@ export function createProviderProfileService(providers: ProviderStore): Provider
       logSendDebug("provider.update.afterDb", {
         profileId: id,
         dbApiKeyLength: updated.apiKey?.length ?? 0,
+        dbVisionModel: updated.visionModel,
       });
       return toClientProviderProfile(updated);
     },

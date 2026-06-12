@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { devLog } from "../../lib/dev-log.js";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../../app-client.js";
@@ -95,7 +96,7 @@ interface ProviderModalProps {
 function profileToForm(p: ProviderProfileRecord): FormState {
   const preset = PROVIDER_PRESETS.find((f) => f.id === p.providerPreset)
     ?? PROVIDER_PRESETS.find((f) => f.type === p.providerPreset && f.baseUrl === p.endpoint);
-  console.log('[ProviderModal] profileToForm', { id: p.id, name: p.name, defaultModel: p.defaultModel, visionModel: p.visionModel });
+  devLog('modal.profileToForm', { id: p.id, name: p.name, defaultModel: p.defaultModel, visionModel: p.visionModel });
   return {
     id: p.id, name: p.name, providerPreset: preset?.id ?? "",
     baseUrl: p.endpoint, apiKey: "", hasStoredApiKey: p.hasStoredApiKey,
@@ -298,17 +299,17 @@ export function ProviderModal({
   }, []);
 
   useEffect(() => {
-    console.log('[ProviderModal] visionModel-auto-select effect:', {
+    devLog('modal.visionAutoSelectEffect', {
       isOpen,
       formId: form?.id,
       formVisionModel: form?.visionModel,
       modelsCount: models.length,
-      visionModels: models.filter(m => m.capabilities?.vision).map(m => m.id),
+      visionModelsCount: models.filter(m => m.capabilities?.vision).length,
     });
     if (!isOpen || !form || form.visionModel || models.length === 0) return;
     const fetchedVisionModels = models.filter((m) => m.capabilities?.vision);
     if (fetchedVisionModels.length > 0 && fetchedVisionModels.length < models.length) {
-      console.log('[ProviderModal] AUTO-SELECTING visionModel:', fetchedVisionModels[0].id, '(form.visionModel was empty)');
+      devLog('modal.autoSelectingVisionModel', { selected: fetchedVisionModels[0].id, reason: 'form.visionModel was empty' });
       autoSaveField("visionModel", fetchedVisionModels[0].id);
     }
     // Intentionally depend on scalar form fields only: autoSaveField updates form.visionModel,
@@ -347,10 +348,10 @@ export function ProviderModal({
   const persistForm = (next: FormState) => {
     const parsed = saveProviderDraftSchema.safeParse(toProviderDraft(next));
     if (parsed.success) {
-      console.log('[ProviderModal] persistForm saving:', { id: next.id, model: next.model, visionModel: next.visionModel });
+      devLog('modal.persistForm', { id: next.id, model: next.model, visionModel: next.visionModel });
       void onSaveProfile(next);
     } else {
-      console.warn('[ProviderModal] persistForm SCHEMA FAIL:', parsed.error.issues);
+      devLog('modal.persistFormSchemaFail', { issues: JSON.stringify(parsed.error.issues) });
     }
   };
 
