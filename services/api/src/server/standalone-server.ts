@@ -13,13 +13,14 @@
 import { resolveStandalonePaths } from "./standalone-paths.js";
 import { startServerRuntime } from "./server-runtime.js";
 
-const VIBE_TAVERN_VERSION: string = typeof VIBE_TAVERN_VERSION !== "undefined" ? VIBE_TAVERN_VERSION : "dev";
+declare const VIBE_TAVERN_VERSION: string | undefined;
+const _version: string = typeof VIBE_TAVERN_VERSION !== "undefined" ? VIBE_TAVERN_VERSION : "dev";
 
 async function main() {
   const paths = await resolveStandalonePaths();
   const host = process.env.RP_PLATFORM_HOST ?? "0.0.0.0";
 
-  console.log(`[standalone] Vibe Tavern v${VIBE_TAVERN_VERSION}`);
+  console.log(`[standalone] Vibe Tavern v${_version}`);
 
   startServerRuntime({
 	mode: "standalone",
