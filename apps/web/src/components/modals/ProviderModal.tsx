@@ -6,6 +6,7 @@ import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../../a
 import { PROVIDER_PRESET_GROUP, resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
 import type { ProviderProbeResponse, SamplerCapabilityFlags } from "@vibe-tavern/domain";
 import { saveProviderDraftSchema } from "@vibe-tavern/api-contracts";
+import { computeSavePatch } from "../../hooks/save-provider-patch.js";
 import { PROVIDER_PRESETS, getVisibleProviderPresets } from "../../provider-presets.js";
 import { Icons } from "../shared/icons.js";
 import {
@@ -124,48 +125,6 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     reasoningEffort: p.reasoningEffort,
     streamResponse: p.streamResponse,
     customSamplers: p.customSamplers ?? false,
-  };
-}
-
-function toProviderDraft(form: FormState) {
-  return {
-    id: form.id,
-    name: form.name,
-    providerPreset: form.providerPreset,
-    endpoint: form.baseUrl,
-    apiKey: form.apiKey || null,
-    defaultModel: form.model || null,
-    visionModel: form.visionModel || null,
-    contextBudget: form.contextBudget || null,
-    pinContextBudget: form.pinContextBudget,
-    temperature: form.temperature,
-    topP: form.topP,
-    minP: form.minP,
-    topK: form.topK,
-    topA: form.topA,
-    typicalP: form.typicalP,
-    tfsZ: form.tfsZ,
-    repeatLastN: form.repeatLastN,
-    mirostat: form.mirostat,
-    mirostatTau: form.mirostatTau,
-    mirostatEta: form.mirostatEta,
-    dryMultiplier: form.dryMultiplier,
-    dryBase: form.dryBase,
-    dryAllowedLength: form.dryAllowedLength,
-    drySequenceBreakers: form.drySequenceBreakers,
-    xtcThreshold: form.xtcThreshold,
-    xtcProbability: form.xtcProbability,
-    frequencyPenalty: form.frequencyPenalty,
-    presencePenalty: form.presencePenalty,
-    repetitionPenalty: form.repetitionPenalty,
-    maxTokens: form.maxTokens,
-    stopSequences: form.stopSequences,
-    logitBias: form.logitBias,
-    seed: form.seed,
-    reasoningEffort: form.reasoningEffort,
-    showReasoning: form.showReasoning,
-    streamResponse: form.streamResponse,
-    customSamplers: form.customSamplers,
   };
 }
 
@@ -346,7 +305,8 @@ export function ProviderModal({
   };
 
   const persistForm = (next: FormState) => {
-    const parsed = saveProviderDraftSchema.safeParse(toProviderDraft(next));
+    const draft = { ...computeSavePatch(next), id: next.id };
+    const parsed = saveProviderDraftSchema.safeParse(draft);
     if (parsed.success) {
       devLog('modal.persistForm', { id: next.id, model: next.model, visionModel: next.visionModel });
       void onSaveProfile(next);
@@ -435,7 +395,8 @@ export function ProviderModal({
   // ── Save header (connection settings) ──
   const handleSaveHeader = async () => {
     if (!form) return;
-    const parsed = saveProviderDraftSchema.safeParse(toProviderDraft(form));
+    const draft = { ...computeSavePatch(form), id: form.id };
+    const parsed = saveProviderDraftSchema.safeParse(draft);
     if (!parsed.success) return;
     const saved = await onSaveProfile(form);
     if (saved) setForm(profileToForm(saved));

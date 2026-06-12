@@ -1,4 +1,5 @@
 import type { ProviderRuntimeApi } from "../routes/types.js";
+import type { ClientProviderProfileRecord } from "../session/session-runtime-dto.js";
 import { notFound } from "../errors.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
@@ -17,8 +18,8 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 
 	listProviderProfiles = () => this.providerProfileService.listProviderProfiles();
 
-	fetchProviderProfile = (providerProfileId: string) => {
-		const profile = this.providerProfileService.getProviderProfileForClient(providerProfileId);
+	fetchProviderProfile = async (providerProfileId: string): Promise<ClientProviderProfileRecord> => {
+		const profile = await this.providerProfileService.getProviderProfileForClient(providerProfileId);
 		if (!profile) {
 			throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
 		}

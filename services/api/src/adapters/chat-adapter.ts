@@ -44,7 +44,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	renameChat = (chatId: string, title: string) =>
 		this.sessionRuntime.chatRuntime.renameChat(chatId, title);
 
-	setGreetingIndex = async (chatId: string, greetingIndex: number): Promise<unknown> => {
+	setGreetingIndex = async (chatId: string, greetingIndex: number): Promise<SessionSnapshot> => {
 		return this.sessionRuntime.setGreetingIndex(brandId<ChatId>(chatId), greetingIndex);
 	};
 

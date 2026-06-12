@@ -37,10 +37,10 @@ export class LorebookAdapter implements LorebookRuntimeApi {
 	// ─── Lore entries ───────────────────────────────────────────────────
 
 	createLoreEntry = (lorebookId: string, body: Record<string, unknown>) =>
-		this.stores.lorebooks.createEntry(lorebookId, body as unknown as CreateLoreEntryData);
+		this.stores.lorebooks.createEntry(lorebookId, body as CreateLoreEntryData);
 
 	updateLoreEntry = (_lorebookId: string, entryId: string, body: Record<string, unknown>) =>
-		this.stores.lorebooks.updateEntry(entryId, body as unknown as UpdateLoreEntryData);
+		this.stores.lorebooks.updateEntry(entryId, body as UpdateLoreEntryData);
 
 	deleteLoreEntry = (_lorebookId: string, entryId: string) =>
 		this.stores.lorebooks.deleteEntry(entryId);
