@@ -1,61 +1,110 @@
 import type { AiAssistantStreamChunk } from "../ai-assistant/reasoning-split.js";
 import type { AiAssistantStreamRequest } from "../ai-assistant/ai-assistant-stream.js";
 import type { ClientProviderProfileRecord } from "../session/session-runtime-dto.js";
+import type {
+	BootstrapState,
+	ImportResult,
+	SessionSnapshot,
+} from "../session/session-runtime.js";
+import type { PromptTraceRecordDto, PromptPresetDto } from "@vibe-tavern/domain";
+import type {
+	ChatSummary,
+	FavoriteModel,
+	LorebookLink,
+	UiSettings,
+} from "@vibe-tavern/db";
+import type { LorebookRow, LoreEntryRow, ScriptRow } from "@vibe-tavern/db";
+import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../providers/provider-gateway.js";
+import type { GenerateChatSummaryResult, SummarizeChatResult } from "../chat/chat-summary-service.js";
+import type { LorebookImportResult } from "../lorebook/lorebook-import-service.js";
+import type { ScriptTestResult } from "../scripts-engine/script-test-service.js";
+import type { StDirectoryScanResult, StDirectoryImportResult } from "../st-directory-scanner.js";
+import type { MobileAccessInfo } from "../mobile-access-service.js";
+
+// ─── Shared type aliases ────────────────────────────────────────────
+
+/** DB row shape returned by the lorebook store. */
+type Lorebook = LorebookRow;
+type LoreEntry = LoreEntryRow;
+type Script = ScriptRow;
+
+/** Persona shape returned by list/create/duplicate in session-runtime-persona. */
+interface PersonaRecord {
+	id: string;
+	name: string;
+	description: string;
+	pronouns: string | null;
+	avatarAssetId: string | null;
+	avatarFullAssetId: string | null;
+	avatarCropJson: string | null;
+	defaultForNewChats: boolean;
+}
+
+/** Persona shape returned by duplicate (missing avatarCropJson — known inconsistency). */
+interface PersonaDuplicateRecord {
+	id: string;
+	name: string;
+	description: string;
+	pronouns: string | null;
+	avatarAssetId: string | null;
+	avatarFullAssetId: string | null;
+	defaultForNewChats: boolean;
+}
 
 // ─── Bootstrap / Debug ───────────────────────────────────────────────
 
 export interface BootstrapRuntimeApi {
-	bootstrap: () => Promise<unknown>;
+	bootstrap: () => Promise<BootstrapState>;
 }
 
 // ─── Chat ────────────────────────────────────────────────────────────
 
 export interface ChatRuntimeApi {
-	getChatSnapshot: (chatId: string) => Promise<unknown>;
-	createChatForCharacter: (characterId: string) => Promise<unknown>;
-	createFreeChat: () => Promise<unknown>;
-	cloneChat: (chatId: string) => Promise<unknown>;
-	deleteChat: (chatId: string) => void;
-	clearChat: (chatId: string) => Promise<unknown>;
-	renameChat: (chatId: string, title: string) => unknown;
-	setGreetingIndex: (chatId: string, greetingIndex: number) => unknown;
-	updateChatSettings: (chatId: string, body: { title: string; subtitle: string; scenario: string; systemPrompt: string }) => unknown;
-	setChatPersona: (chatId: string, personaId: string) => Promise<unknown>;
-	setChatPromptPreset: (chatId: string, promptPresetId: string) => Promise<unknown>;
+	getChatSnapshot: (chatId: string) => Promise<SessionSnapshot>;
+	createChatForCharacter: (characterId: string) => Promise<SessionSnapshot>;
+	createFreeChat: () => Promise<SessionSnapshot>;
+	cloneChat: (chatId: string) => Promise<SessionSnapshot>;
+	deleteChat: (chatId: string) => Promise<void>;
+	clearChat: (chatId: string) => Promise<SessionSnapshot>;
+	renameChat: (chatId: string, title: string) => Promise<{ chatId: string; title: string }>;
+	setGreetingIndex: (chatId: string, greetingIndex: number) => Promise<SessionSnapshot>;
+	updateChatSettings: (chatId: string, body: { title: string; subtitle: string; scenario: string; systemPrompt: string }) => Promise<void>;
+	setChatPersona: (chatId: string, personaId: string) => Promise<SessionSnapshot>;
+	setChatPromptPreset: (chatId: string, promptPresetId: string) => Promise<SessionSnapshot>;
 
 	// Branches
-	branchChat: (chatId: string, messageId: string) => unknown;
-	forkBranch: (chatId: string, fromMessageId?: string) => unknown;
-	activateBranch: (chatId: string, branchId: string) => unknown;
-	deleteBranch: (chatId: string, branchId: string) => unknown;
-	renameBranch: (chatId: string, branchId: string, label: string) => unknown;
+	branchChat: (chatId: string, messageId: string) => Promise<SessionSnapshot>;
+	forkBranch: (chatId: string, fromMessageId?: string) => Promise<SessionSnapshot>;
+	activateBranch: (chatId: string, branchId: string) => Promise<SessionSnapshot>;
+	deleteBranch: (chatId: string, branchId: string) => Promise<SessionSnapshot>;
+	renameBranch: (chatId: string, branchId: string, label: string) => Promise<SessionSnapshot>;
 
 	// Messages
-	sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<unknown>;
+	sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<SessionSnapshot>;
 	sendMessageStream: (chatId: string, body: { content: string }, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
-	regenerateMessage: (chatId: string, messageId: string, body: unknown, signal?: AbortSignal) => Promise<unknown>;
-	regenerateMessageStream: (chatId: string, messageId: string, body: unknown, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
-	generateReply: (chatId: string, signal?: AbortSignal) => Promise<unknown>;
+	regenerateMessage: (chatId: string, messageId: string, body: Record<string, unknown>, signal?: AbortSignal) => Promise<SessionSnapshot>;
+	regenerateMessageStream: (chatId: string, messageId: string, body: Record<string, unknown>, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
+	generateReply: (chatId: string, signal?: AbortSignal) => Promise<SessionSnapshot>;
 	generateReplyStream: (chatId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
-	selectVariant: (chatId: string, messageId: string, variantIndex: number) => unknown;
-	deleteVariant: (chatId: string, messageId: string, variantIndex: number) => unknown;
-	editMessage: (chatId: string, messageId: string, content: string) => unknown;
-	deleteMessage: (chatId: string, messageId: string) => unknown;
+	selectVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<SessionSnapshot>;
+	deleteVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<SessionSnapshot>;
+	editMessage: (chatId: string, messageId: string, content: string) => Promise<SessionSnapshot>;
+	deleteMessage: (chatId: string, messageId: string) => Promise<SessionSnapshot>;
 	updateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string, description: string) => Promise<{ ok: boolean }>;
 
 	// Export
 	exportChatJsonl: (chatId: string) => Promise<string>;
-	exportPromptTrace: (traceId: string) => Promise<unknown>;
+	exportPromptTrace: (traceId: string) => Promise<PromptTraceRecordDto>;
 
 	// Summaries & Memory
-	listChatSummaries: (chatId: string) => Promise<unknown>;
-	createChatSummary: (chatId: string, body: { label?: string; content?: string; summarizedFrom: number; summarizedTo: number; includeInContext?: boolean; excludeSummarized?: boolean; source?: "manual" | "auto"; sortOrder?: number }) => Promise<unknown>;
-	updateChatSummaryRecord: (chatId: string, summaryId: string, body: { label?: string; content?: string; summarizedFrom?: number; summarizedTo?: number; includeInContext?: boolean; excludeSummarized?: boolean; sortOrder?: number }) => Promise<unknown>;
-	deleteChatSummaryRecord: (chatId: string, summaryId: string) => Promise<unknown>;
-	generateChatSummary: (chatId: string, body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean }, signal?: AbortSignal) => Promise<unknown>;
-	updateMemorySettings: (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: { enabled?: boolean; everyN?: number; useChatModel?: boolean; providerProfileId?: string; model?: string } }) => Promise<unknown>;
-	summarizeChat: (chatId: string, body: { providerProfileId: string; model?: string; maxMessages: number }, signal?: AbortSignal) => Promise<unknown>;
-	saveChatSummary: (chatId: string, body: { summary: string }) => Promise<unknown>;
+	listChatSummaries: (chatId: string) => Promise<ChatSummary[]>;
+	createChatSummary: (chatId: string, body: { label?: string; content?: string; summarizedFrom: number; summarizedTo: number; includeInContext?: boolean; excludeSummarized?: boolean; source?: "manual" | "auto"; sortOrder?: number }) => Promise<{ summary: ChatSummary; snapshot: SessionSnapshot }>;
+	updateChatSummaryRecord: (chatId: string, summaryId: string, body: { label?: string; content?: string; summarizedFrom?: number; summarizedTo?: number; includeInContext?: boolean; excludeSummarized?: boolean; sortOrder?: number }) => Promise<{ summary: ChatSummary; snapshot: SessionSnapshot }>;
+	deleteChatSummaryRecord: (chatId: string, summaryId: string) => Promise<{ ok: boolean; snapshot: SessionSnapshot }>;
+	generateChatSummary: (chatId: string, body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean }, signal?: AbortSignal) => Promise<GenerateChatSummaryResult>;
+	updateMemorySettings: (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: { enabled?: boolean; everyN?: number; useChatModel?: boolean; providerProfileId?: string; model?: string } }) => Promise<SessionSnapshot>;
+	summarizeChat: (chatId: string, body: { providerProfileId: string; model?: string; maxMessages: number }, signal?: AbortSignal) => Promise<SummarizeChatResult>;
+	saveChatSummary: (chatId: string, body: { summary: string }) => Promise<SummarizeChatResult>;
 }
 
 // ─── Character ───────────────────────────────────────────────────────
@@ -78,61 +127,61 @@ export interface CharacterRuntimeApi {
 		depthPromptDepth?: number;
 		depthPromptRole?: string;
 		tags?: string[];
-	}) => Promise<unknown>;
-	updateCharacter: (characterId: string, body: Record<string, unknown>) => Promise<unknown>;
-	archiveCharacter: (characterId: string) => Promise<unknown>;
-	unarchiveCharacter: (characterId: string) => Promise<unknown>;
+	}) => Promise<ImportResult>;
+	updateCharacter: (characterId: string, body: Record<string, unknown>) => Promise<SessionSnapshot>;
+	archiveCharacter: (characterId: string) => Promise<{ characterId: string; status: "archived" }>;
+	unarchiveCharacter: (characterId: string) => Promise<{ characterId: string; status: "active" }>;
 	deleteCharacter: (characterId: string) => Promise<void>;
-	exportCharacter: (characterId: string) => Promise<unknown>;
-	duplicateCharacter: (characterId: string) => Promise<unknown>;
+	exportCharacter: (characterId: string) => Promise<Record<string, unknown>>;
+	duplicateCharacter: (characterId: string) => Promise<ImportResult>;
 }
 
 // ─── Persona ─────────────────────────────────────────────────────────
 
 export interface PersonaRuntimeApi {
-	listPersonas: () => Promise<unknown>;
-	createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) => Promise<unknown>;
-	updatePersona: (personaId: string, body: Record<string, unknown>) => unknown;
+	listPersonas: () => Promise<PersonaRecord[]>;
+	createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) => Promise<PersonaRecord>;
+	updatePersona: (personaId: string, body: Record<string, unknown>) => Promise<SessionSnapshot | { id: string }>;
 	deletePersona: (personaId: string) => Promise<void>;
-	duplicatePersona: (personaId: string) => Promise<unknown>;
+	duplicatePersona: (personaId: string) => Promise<PersonaDuplicateRecord>;
 	setDefaultPersona: (personaId: string) => Promise<void>;
-	getPersonalLorebookStatus: (personaId: string) => unknown;
-	setPersonalLorebookEnabled: (personaId: string, enabled: boolean) => unknown;
+	getPersonalLorebookStatus: (personaId: string) => { enabled: boolean; lorebookId: string | null };
+	setPersonalLorebookEnabled: (personaId: string, enabled: boolean) => { enabled: boolean; lorebookId: string | null };
 }
 
 // ─── Lorebook ────────────────────────────────────────────────────────
 
 export interface LorebookRuntimeApi {
-	listAllLorebooks: () => Promise<unknown>;
-	listLorebooks: (scopeType: string, ownerId?: string) => Promise<unknown>;
-	createLorebook: (body: { name: string; description?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean }) => Promise<unknown>;
-	updateLorebookMeta: (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean; enabled?: boolean; scopeType?: string }) => Promise<unknown>;
+	listAllLorebooks: () => Promise<Lorebook[]>;
+	listLorebooks: (scopeType: string, ownerId?: string) => Promise<Lorebook[]>;
+	createLorebook: (body: { name: string; description?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean }) => Promise<Lorebook>;
+	updateLorebookMeta: (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean; enabled?: boolean; scopeType?: string }) => Promise<Lorebook>;
 	deleteLorebook: (lorebookId: string) => Promise<void>;
-	duplicateLorebook: (lorebookId: string, overrides?: { name?: string; scopeType?: string; characterId?: string | null; personaId?: string | null }) => Promise<unknown>;
-	exportLorebook: (lorebookId: string) => Promise<unknown>;
-	getLorebookLinks: (lorebookId: string) => Promise<unknown>;
-	setLorebookLinks: (lorebookId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<unknown>;
-	importLorebook: (lorebookId: string | null, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string }) => Promise<unknown>;
+	duplicateLorebook: (lorebookId: string, overrides?: { name?: string; scopeType?: string; characterId?: string | null; personaId?: string | null }) => Promise<{ lorebook: Lorebook; links: LorebookLink[] }>;
+	exportLorebook: (lorebookId: string) => Promise<Record<string, unknown>>;
+	getLorebookLinks: (lorebookId: string) => Promise<LorebookLink[]>;
+	setLorebookLinks: (lorebookId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<LorebookLink[]>;
+	importLorebook: (lorebookId: string | null, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string }) => Promise<LorebookImportResult>;
 
 	// Entries
-	createLoreEntry: (lorebookId: string, body: Record<string, unknown>) => Promise<unknown>;
-	updateLoreEntry: (lorebookId: string, entryId: string, body: Record<string, unknown>) => Promise<unknown>;
+	createLoreEntry: (lorebookId: string, body: Record<string, unknown>) => Promise<LoreEntry>;
+	updateLoreEntry: (lorebookId: string, entryId: string, body: Record<string, unknown>) => Promise<LoreEntry>;
 	deleteLoreEntry: (lorebookId: string, entryId: string) => Promise<void>;
-	listLoreEntries: (lorebookId: string) => Promise<unknown>;
-	reorderLoreEntries: (lorebookId: string, updates: Array<{ id: string; sortOrder: number; position?: string }>) => Promise<unknown>;
-	testLoreActivation: (lorebookId: string, body: { text: string }) => Promise<unknown>;
+	listLoreEntries: (lorebookId: string) => Promise<LoreEntry[]>;
+	reorderLoreEntries: (lorebookId: string, updates: Array<{ id: string; sortOrder: number; position?: string }>) => Promise<LoreEntry[]>;
+	testLoreActivation: (lorebookId: string, body: { text: string }) => Promise<{ activatedIds: string[]; totalEntries: number }>;
 }
 
 // ─── Script ──────────────────────────────────────────────────────────
 
 export interface ScriptRuntimeApi {
-	listScripts: (scopeType: string, ownerId?: string) => Promise<unknown>;
-	getScript: (scriptId: string) => Promise<unknown>;
-	createScript: (body: { name: string; description?: string; code?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<unknown>;
-	updateScript: (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number }) => Promise<unknown>;
+	listScripts: (scopeType: string, ownerId?: string) => Promise<Script[]>;
+	getScript: (scriptId: string) => Promise<Script | null>;
+	createScript: (body: { name: string; description?: string; code?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
+	updateScript: (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
 	deleteScript: (scriptId: string) => Promise<void>;
-	testScript: (scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<unknown>;
-	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<unknown>;
+	testScript: (scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<ScriptTestResult>;
+	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<Script>;
 }
 
 // ─── Provider ────────────────────────────────────────────────────────
@@ -143,33 +192,33 @@ export interface ProviderRuntimeApi {
 	activateProviderProfile: (providerProfileId: string) => Promise<ClientProviderProfileRecord>;
 	updateProviderProfile: (providerProfileId: string, body: Record<string, unknown>) => Promise<ClientProviderProfileRecord>;
 	saveProviderDraft: (body: Record<string, unknown>) => Promise<ClientProviderProfileRecord>;
-	deleteProviderProfile: (providerProfileId: string) => void;
-	testProviderDraft: (body: { endpoint?: string; apiKey?: string; providerType?: string } | null) => Promise<unknown>;
-	testProviderProfile: (providerProfileId: string) => Promise<unknown>;
-	fetchProviderModels: (providerProfileId: string) => Promise<{ models: unknown }>;
-	listFavoriteProviderModels: (providerProfileId: string) => unknown;
-	addFavoriteProviderModel: (providerProfileId: string, body: { modelId: string; label?: string | null; contextLength?: number | null }) => unknown;
-	removeFavoriteProviderModel: (providerProfileId: string, modelId: string) => unknown;
-	fetchModelsByEndpoint: (baseUrl: string, apiKey?: string, providerType?: string) => Promise<unknown>;
-	testProviderChatByEndpoint: (opts: { baseUrl: string; apiKey: string; model: string; providerType?: string }) => Promise<unknown>;
-	testProviderChatByProfile: (providerProfileId: string, model: string) => Promise<unknown>;
+	deleteProviderProfile: (providerProfileId: string) => Promise<void>;
+	testProviderDraft: (body: { endpoint?: string; apiKey?: string; providerType?: string } | null) => Promise<ProviderProbeResult>;
+	testProviderProfile: (providerProfileId: string) => Promise<ProviderProbeResult>;
+	fetchProviderModels: (providerProfileId: string) => Promise<{ models: ProviderModelOption[] }>;
+	listFavoriteProviderModels: (providerProfileId: string) => Promise<FavoriteModel[]>;
+	addFavoriteProviderModel: (providerProfileId: string, body: { modelId: string; label?: string | null; contextLength?: number | null }) => Promise<FavoriteModel>;
+	removeFavoriteProviderModel: (providerProfileId: string, modelId: string) => Promise<void>;
+	fetchModelsByEndpoint: (baseUrl: string, apiKey?: string, providerType?: string) => Promise<ProviderModelOption[]>;
+	testProviderChatByEndpoint: (opts: { baseUrl: string; apiKey: string; model: string; providerType?: string }) => Promise<TestChatResult>;
+	testProviderChatByProfile: (providerProfileId: string, model: string) => Promise<TestChatResult>;
 }
 
 // ─── Preset ──────────────────────────────────────────────────────────
 
 export interface PresetRuntimeApi {
-	listPromptPresets: () => unknown;
-	createPromptPreset: (body: Record<string, unknown> & { name: string }) => unknown;
-	updatePromptPreset: (presetId: string, body: Record<string, unknown>) => unknown;
-	deletePromptPreset: (presetId: string) => void;
+	listPromptPresets: () => Promise<PromptPresetDto[]>;
+	createPromptPreset: (body: Record<string, unknown> & { name: string }) => Promise<PromptPresetDto>;
+	updatePromptPreset: (presetId: string, body: Record<string, unknown>) => Promise<PromptPresetDto>;
+	deletePromptPreset: (presetId: string) => Promise<void>;
 }
 
 // ─── Import/Export ───────────────────────────────────────────────────
 
 export interface ImportExportRuntimeApi {
-	importJson: (body: { fileName: string; jsonText: string; chatId?: string }) => unknown;
-	scanSillyTavernDirectory: (dirPath: string) => Promise<unknown>;
-	importSillyTavernDirectory: (dirPath: string) => Promise<unknown>;
+	importJson: (body: { fileName: string; jsonText: string; chatId?: string }) => Promise<ImportResult>;
+	scanSillyTavernDirectory: (dirPath: string) => Promise<StDirectoryScanResult>;
+	importSillyTavernDirectory: (dirPath: string) => Promise<StDirectoryImportResult>;
 }
 
 // ─── Asset ───────────────────────────────────────────────────────────
@@ -189,14 +238,14 @@ export interface AiAssistantRuntimeApi {
 // ─── Settings ────────────────────────────────────────────────────────
 
 export interface SettingsRuntimeApi {
-	getUiSettings: () => Promise<unknown>;
-	updateUiSettings: (body: Record<string, unknown>) => Promise<unknown>;
+	getUiSettings: () => Promise<UiSettings>;
+	updateUiSettings: (body: Record<string, unknown>) => Promise<UiSettings>;
 }
 
 // ─── Mobile Access ───────────────────────────────────────────────────
 
 export interface MobileAccessRuntimeApi {
-	getMobileAccessInfo: () => Promise<unknown>;
+	getMobileAccessInfo: () => Promise<MobileAccessInfo>;
 	regenerateMobileAccessToken: () => Promise<{ token: string }>;
 	revokeMobileAccess: () => Promise<{ token: null }>;
 }

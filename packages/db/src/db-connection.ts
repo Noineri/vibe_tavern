@@ -98,9 +98,7 @@ async function baselineLegacyDb(sqlite: Database, migrationsFolder: string): Pro
     // Extract table names created by this migration
     const createdTables = [...sqlContent.matchAll(/CREATE\s+TABLE\s+[`"']?(\w+)/gmi)]
       .map(m => m[1])
-      .filter(t => !t.startsWith('__drizzle'));
-
-    // Only stamp if ALL tables from this migration already exist
+      .filter(t => !t.startsWith('__drizzle') && !t.startsWith('__new'));
     const allExist = createdTables.length > 0 && createdTables.every(t => existingTables.has(t));
 
     if (allExist) {
@@ -155,7 +153,7 @@ async function repairMissingTables(sqlite: Database, migrationsFolder: string): 
     // Extract table names from this migration
     const createdTables = [...sqlContent.matchAll(/CREATE\s+TABLE\s+[`"']?(\w+)/gmi)]
       .map(m => m[1])
-      .filter(t => !t.startsWith('__drizzle'));
+      .filter(t => !t.startsWith('__drizzle') && !t.startsWith('__new'));
 
     // Extract ALTER TABLE ... ADD COLUMN statements
     const alterCols = [...sqlContent.matchAll(/ALTER\s+TABLE\s+[`"']?(\w+)[`"']?\s+ADD\s+(?:COLUMN\s+)?[`"']?(\w+)/gmi)]

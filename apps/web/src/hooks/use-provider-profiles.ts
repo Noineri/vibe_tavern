@@ -3,6 +3,8 @@ import { toast } from "sonner";
 import type { ProviderProbeResponse } from "@vibe-tavern/domain";
 import { PROVIDER_TYPE } from "@vibe-tavern/domain";
 import { getT } from "../i18n/locale-helpers.js";
+import { computeHydration } from "./hydrate-provider.js";
+import { computeSavePatch, connectionToSavePatch, validateSavePatch } from "./save-provider-patch.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import {
@@ -67,71 +69,29 @@ export function useProviderProfiles() {
 
   // --- Hydration: sync active profile into connection state ---
   function hydrateActiveProviderProfile(profiles: ProviderProfileRecord[]): void {
-    const activeProfile = profiles.find((profile) => profile.isActive);
-    if (!activeProfile) return;
+    const plan = computeHydration(profiles, startupProbeProfileIdsRef.current);
+    if (!plan.profileId || !plan.connectionPatch) return;
 
-    console.log('[Hydrate] hydrateActiveProviderProfile called:', {
-      id: activeProfile.id,
-      name: activeProfile.name,
-      defaultModel: activeProfile.defaultModel,
-      visionModel: activeProfile.visionModel,
-      cachedModelsCount: activeProfile.cachedModels?.models.length ?? 0,
-    });
+    // 1. Patch connection state (base fields)
+    patchConnection(plan.connectionPatch);
 
-    patchConnection({
-      providerLabel: activeProfile.name,
-      baseUrl: normalizeOpenAiCompatibleBaseUrl(activeProfile.endpoint),
-      apiKey: "",
-      model: activeProfile.defaultModel ?? "",
-      visionModel: activeProfile.visionModel ?? "",
-      activeProviderProfileId: activeProfile.id,
-      hasStoredApiKey: activeProfile.hasStoredApiKey,
-      models: [],
-      status: activeProfile.defaultModel ? "connected" : "idle",
-      error: "",
-      providerType: activeProfile.providerPreset || PROVIDER_TYPE.openaiCompat,
-      providerPreset: "",
-      temperature: activeProfile.temperature,
-      topP: activeProfile.topP,
-      minP: activeProfile.minP,
-      topK: activeProfile.topK,
-      topA: activeProfile.topA,
-      frequencyPenalty: activeProfile.frequencyPenalty,
-      presencePenalty: activeProfile.presencePenalty,
-      repetitionPenalty: activeProfile.repetitionPenalty,
-      maxTokens: activeProfile.maxTokens,
-      stopSequences: activeProfile.stopSequences,
-      seed: activeProfile.seed ?? null,
-      reasoningEffort: activeProfile.reasoningEffort,
-      showReasoning: activeProfile.showReasoning,
-      streamResponse: activeProfile.streamResponse,
-    });
-
-    // Hydrate models from DB cache (instant) — avoids live provider fetch on every startup.
-    // The "Refresh models" button in ProviderModal still does a live fetch + cache update.
-    const cached = activeProfile.cachedModels;
-    if (cached && cached.models.length > 0) {
-      patchConnection({ models: cached.models });
-
-      // Auto-detect vision model from capabilities if not already set
-      if (!activeProfile.visionModel) {
-        const visionModels = cached.models.filter((m) => m.capabilities?.vision);
-        const nonAllVision = visionModels.length > 0 && visionModels.length < cached.models.length;
-        if (nonAllVision) {
-          const detected = visionModels[0]!.id;
-          console.log('[Hydrate] AUTO-WRITING visionModel to DB:', detected, '(profile.visionModel was empty)');
-          patchConnection({ visionModel: detected });
-          // Persist to profile so it survives restarts (fire-and-forget)
-          void updateProviderProfileAction(activeProfile.id, { visionModel: detected }).catch(() => {});
-        }
-      } else {
-        console.log('[Hydrate] visionModel already set, skipping auto-detect:', activeProfile.visionModel);
-      }
+    // 2. Patch cached models (separate for clarity)
+    if (plan.cachedModels) {
+      patchConnection({ models: plan.cachedModels });
     }
 
-    if (!activeProfile.defaultModel || startupProbeProfileIdsRef.current.has(activeProfile.id)) return;
-    startupProbeProfileIdsRef.current.add(activeProfile.id);
-    void probeHydratedProviderProfile(activeProfile.id);
+    // 3. Auto-write detected vision model
+    if (plan.autoWriteVision) {
+      patchConnection({ visionModel: plan.autoWriteVision.modelId });
+      console.log('[Hydrate] AUTO-WRITING visionModel to DB:', plan.autoWriteVision.modelId, '(profile.visionModel was empty)');
+      void updateProviderProfileAction(plan.autoWriteVision.profileId, { visionModel: plan.autoWriteVision.modelId }).catch(() => {});
+    }
+
+    // 4. Network probe (first hydration only)
+    if (plan.shouldProbe) {
+      startupProbeProfileIdsRef.current.add(plan.profileId);
+      void probeHydratedProviderProfile(plan.profileId);
+    }
   }
 
   async function probeHydratedProviderProfile(providerProfileId: string): Promise<void> {
@@ -191,40 +151,18 @@ export function useProviderProfiles() {
       return;
     }
 
-    const normalizedBaseUrl = normalizeOpenAiCompatibleBaseUrl(connection.baseUrl);
     setConnection((current) => ({
       ...current,
-      baseUrl: normalizedBaseUrl,
+      baseUrl: normalizeOpenAiCompatibleBaseUrl(current.baseUrl),
       status: "connecting",
       error: "",
     }));
 
     try {
       const savedId = selectedProviderProfileId || connection.activeProviderProfileId || undefined;
-      const patch = {
-        name: connection.providerLabel.trim(),
-        providerPreset: connection.providerType || PROVIDER_TYPE.openaiCompat,
-        endpoint: normalizedBaseUrl,
-        apiKey: connection.apiKey.trim() || undefined,
-        defaultModel: connection.model.trim() || null,
-        contextBudget: connection.maxTokens || 16000,
-        temperature: connection.temperature,
-        topP: connection.topP,
-        minP: connection.minP,
-        topK: connection.topK,
-        topA: connection.topA,
-        repetitionPenalty: connection.repetitionPenalty,
-        frequencyPenalty: connection.frequencyPenalty,
-        presencePenalty: connection.presencePenalty,
-        maxTokens: connection.maxTokens,
-        stopSequences: connection.stopSequences,
-        seed: connection.seed,
-        reasoningEffort: connection.reasoningEffort,
-        showReasoning: connection.showReasoning,
-        streamResponse: connection.streamResponse,
-      };
+      const patch = connectionToSavePatch(connection);
 
-      const saved = savedId 
+      const saved = savedId
         ? await updateProviderProfileAction(savedId, patch)
         : await saveProviderProfileAction(patch);
 
@@ -293,10 +231,9 @@ export function useProviderProfiles() {
   }
 
   async function handleSaveProviderProfile(): Promise<void> {
-    const name = connection.providerLabel.trim();
-    const endpoint = normalizeOpenAiCompatibleBaseUrl(connection.baseUrl);
-
-    if (!name || !endpoint) {
+    const patch = connectionToSavePatch(connection);
+    const validationError = validateSavePatch(patch);
+    if (validationError) {
       patchConnection({
         status: "error",
         error: getT()("provider_name_url_required"),
@@ -309,29 +246,7 @@ export function useProviderProfiles() {
       : "";
 
     try {
-      const apiKeyInput = connection.apiKey.trim();
-      const patch = {
-        name,
-        providerPreset: connection.providerType || PROVIDER_TYPE.openaiCompat,
-        endpoint,
-        apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
-        defaultModel: connection.model.trim() || null,
-        visionModel: connection.visionModel.trim() || null,
-        contextBudget: connection.maxTokens || 16000,
-        temperature: connection.temperature,
-        topP: connection.topP,
-        minP: connection.minP,
-        topK: connection.topK,
-        repetitionPenalty: connection.repetitionPenalty,
-        frequencyPenalty: connection.frequencyPenalty,
-        presencePenalty: connection.presencePenalty,
-        maxTokens: connection.maxTokens,
-        stopSequences: connection.stopSequences,
-        seed: connection.seed,
-        reasoningEffort: connection.reasoningEffort,
-        showReasoning: connection.showReasoning,
-        streamResponse: connection.streamResponse,
-      };
+      const patch = connectionToSavePatch(connection);
 
       const saved = existingId
         ? await updateProviderProfileAction(existingId, patch)
@@ -554,41 +469,14 @@ export function useProviderProfiles() {
   async function handleSaveProviderProfileFromForm(
     form: FormState,
   ): Promise<ProviderProfileRecord | null> {
-    const name = form.name.trim();
-    const endpoint = form.baseUrl.trim();
-    if (!name || !endpoint) return null;
-    const apiKeyInput = form.apiKey.trim();
-    const patch = {
-      name,
-      providerPreset: form.providerPreset || PROVIDER_TYPE.openaiCompat,
-      endpoint,
-      apiKey: apiKeyInput.length > 0 ? apiKeyInput : undefined,
-      defaultModel: form.model.trim() || null,
-      visionModel: form.visionModel.trim() || null,
-      contextBudget: form.contextBudget || null,
-      pinContextBudget: form.pinContextBudget,
-      temperature: form.temperature,
-      topP: form.topP,
-      minP: form.minP,
-      topK: form.topK,
-      topA: form.topA,
-      frequencyPenalty: form.frequencyPenalty,
-      presencePenalty: form.presencePenalty,
-      repetitionPenalty: form.repetitionPenalty,
-      maxTokens: form.maxTokens,
-      stopSequences: form.stopSequences,
-      logitBias: form.logitBias,
-      seed: form.seed,
-      reasoningEffort: form.reasoningEffort,
-      showReasoning: form.showReasoning,
-      streamResponse: form.streamResponse,
-      customSamplers: form.customSamplers,
-    };
-    console.log('[handleSave] handleSaveProviderProfileFromForm patch:', { id: form.id, defaultModel: patch.defaultModel, visionModel: patch.visionModel });
+    const patch = computeSavePatch(form);
+    const validationError = validateSavePatch(patch);
+    if (validationError) return null;
+
     try {
       const saved = form.id
         ? await updateProviderProfileAction(form.id, patch)
-        : await saveProviderProfileAction({ ...patch, providerPreset: patch.providerPreset });
+        : await saveProviderProfileAction(patch);
       console.log('[handleSave] saved result:', { id: saved?.id, defaultModel: saved?.defaultModel, visionModel: saved?.visionModel });
       if (saved && !form.id) {
         await activateProviderProfileAction(saved.id);
