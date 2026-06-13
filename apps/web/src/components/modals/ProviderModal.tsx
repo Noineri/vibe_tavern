@@ -207,7 +207,7 @@ export function ProviderModal({
 
     // 1. Try cached models from the profile object first (instant, no network)
     const profile = providerProfiles.find((p) => p.id === profileId);
-    const cached = (profile as any)?.cachedModels?.models as ModelOption[] | undefined;
+    const cached = profile?.cachedModels?.models;
     if (cached && cached.length > 0) {
       setModels(cached);
       return;

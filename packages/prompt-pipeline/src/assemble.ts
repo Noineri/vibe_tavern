@@ -743,7 +743,7 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
       keepCount = Math.max(keepCount, 2);
 
       const keepFrom = findSafeCompactionBoundary(
-        context.chat.recentMessages as unknown as Parameters<typeof findSafeCompactionBoundary>[0],
+        context.chat.recentMessages,
         keepCount,
       );
       if (keepFrom > 0) {

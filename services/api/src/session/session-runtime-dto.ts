@@ -110,8 +110,7 @@ export function mapMessageDto(message: Message, variants: MessageVariant[]): Mes
 export function mapMessageDto(message: DbMessage, variants: DbMessageVariant[]): MessageDto;
 export function mapMessageDto(message: Message | DbMessage, variants: MessageVariant[] | DbMessageVariant[]): MessageDto {
   const selectedVariant = variants.find((variant) => variant.isSelected) ?? null;
-  const dbMessage = message as unknown as Record<string, unknown>;
-  const attachments = parseAttachmentsJson(dbMessage['attachmentsJson'] as string | null | undefined);
+  const attachments = parseAttachmentsJson('attachmentsJson' in message ? message.attachmentsJson : null);
   return {
     id: message.id as MessageId,
     chatId: message.chatId as ChatId,

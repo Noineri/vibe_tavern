@@ -3,9 +3,9 @@ import { countTokens } from "../ai/tokenizer-service.js";
 import {
 	type ChatBranchId,
 	type ChatId,
+	type CharacterId,
 	type LoreEntry,
 	type RetrievedMemoryHit,
-	type Character,
 	type CustomInjection,
 	type PromptOrderEntry,
 } from "@vibe-tavern/domain";
@@ -34,7 +34,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			throw notFound("Character", `Character '${characterId}' was not found.`);
 		}
 		// No character versions in phase 1
-		return toCharacterRecord(character as unknown as Character, null);
+		return toCharacterRecord({ ...character, id: brandId<CharacterId>(character.id) }, null);
 	}
 
 	async getPersona(personaId: string): Promise<PersonaRecord | null> {

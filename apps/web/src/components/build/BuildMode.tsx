@@ -25,6 +25,11 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 
 export type BuildTab = string;
 
+/** Narrow view of an OpenAI-style final payload stored on a prompt trace. */
+interface TraceFinalPayload {
+  messages?: Array<{ role?: string; content?: Array<{ type?: string }> }>;
+}
+
 export type { BuildCharacterDraft };
 
 export function BuildMode() {
@@ -47,11 +52,12 @@ export function BuildMode() {
 
   let imageAttachmentsCount = 0;
   if (activeTrace?.finalPayload && typeof activeTrace.finalPayload === 'object') {
-    const messages = (activeTrace.finalPayload as any).messages;
+    const payload = activeTrace.finalPayload as TraceFinalPayload;
+    const messages = payload.messages;
     if (Array.isArray(messages)) {
       messages.forEach(msg => {
         if (Array.isArray(msg.content)) {
-          msg.content.forEach((part: any) => {
+          msg.content.forEach((part) => {
             if (part && (part.type === "image_url" || part.type === "image")) {
               imageAttachmentsCount++;
             }
