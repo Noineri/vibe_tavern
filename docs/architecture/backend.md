@@ -311,6 +311,70 @@ The fallback is acceptable for context-budget accounting, but **not** for logit 
 
 ---
 
+## Vision and Attachment Pipeline
+
+**Modules:** `ai/vision-gate.ts`, `image-compress.ts`, the two provider executors, and `adapters/chat-adapter.ts`.
+
+Image/video attachments attached to a message take one of three paths depending on the active profile's capabilities. The decision is made per-send in the provider executors (`stream-provider-executor.ts` / `nonstreaming-provider-executor.ts`) and finalized in `resolveMultimodalContent`.
+
+### The three paths
+
+| # | Condition | What happens |
+|---|-----------|--------------|
+| 1 | Primary model **has vision** (`capabilities.vision`) | Attachment is sent to the provider as an `ImagePart`. Large PNGs are compressed to JPEG first (`compressForVision`). |
+| 2 | Primary model **lacks vision**, but a **`visionModel`** is configured in the profile | Attachments are first *described* by the vision model into text, then injected into the prompt as a `TextPart`: `[Attached image: <name>]\n<description>`. The original `image`/`video` attachment is rewritten to `type: "file"` so it is never sent as an image. |
+| 3 | Primary model **lacks vision** *and* **no vision model** is configured | Send is rejected with `VisionNotSupportedError` → HTTP **422** `vision_not_supported`. |
+
+### Describe step (path 2) — `describeAttachments`
+
+Runs in the executor **before** `resolveMultimodalContent`, only when `shouldDescribe = hasAttachments && visionModel`:
+
+1. **Skip-if-described guard** — only attachments with `!description?.trim()` are collected. Attachments that already carry a description (auto-generated on a previous turn, or hand-edited in the lightbox) are left untouched. This is the non-destructive caching rule: descriptions are generated **once**, never re-generated unless the user explicitly asks.
+2. **Describe** — for each remaining image/video attachment, `generateText` is called against the profile's `visionModel` (same provider/endpoint/apiKey as the primary model), using the `vision_describe` system prompt (see resolution below). One call per attachment; no batching.
+3. **Reasoning strip** — the full response is passed through `splitReasoningFromText` (the same splitter the AI Assistant modal uses). Chain-of-thought (`<think>…</think>`, reasoning markers) is stripped so it never leaks into the persisted description or the model's context on later turns. Falls back to the raw text only if stripping yields an empty string.
+4. **Persist** — descriptions are written back to the message's attachments JSON via `onAttachmentDescriptions` callback → `chatApp.updateSingleAttachmentDescription`. This is **unconditional**: even when the primary model *has* vision (path 1), a `visionModel` config still triggers describing + persisting, purely so the lightbox can show the caption. The difference is the attachment keeps `type: "image"` (so `resolveMultimodalContent` sends it as an image), rather than being rewritten to `file`.
+
+### Prompt resolution (unified with the AI Assistant)
+
+`vision_describe` is registered as a real `AiAssistantMode` in `ai-assistant-modes.ts` (`MODE_CONFIGS`). It is **not user-facing** in the AI Assistant modal — it exists solely so the describe pipeline resolves its prompt through the *same* `resolveSystemPrompt` fallback chain as the other modes, and so the Settings prompt editor's `vision_describe` key is backed by a real config rather than a phantom.
+
+Resolution order (in `resolveVisionDescribePrompt` → `resolveSystemPrompt("vision_describe")`):
+
+1. Preset override — `aiAssistantPrompts["vision_describe"]` from the active prompt preset.
+2. Default `.md` — `services/api/assets/vision-describe-ai-prompt.md` (loaded + cached by `ai-assistant-prompts.ts`).
+
+There is no legacy column for this mode (it is newer than the `scriptAiSystemPrompt` migration). The default `.md` instructs the model to describe only what is visible, stay sensory/specific, quote in-image text verbatim, and emit **no** meta-commentary ("The image shows…").
+
+### Manual regeneration
+
+Because of the skip-if-described guard, a described attachment is never re-described automatically. Forced re-description is exposed as an explicit user action:
+
+`ChatAdapter.regenerateAttachmentDescription(chatId, messageId, attachmentId)` —
+- Validates the attachment is `image`/`video` and a `visionModel` is configured.
+- Calls `describeAttachments([single])` using the **same** vision resolution path as send (active profile's `visionModel` + the `vision_describe` prompt), **ignoring** any existing description.
+- Persists the new description via `updateSingleAttachmentDescription`.
+
+This keeps the auto-describe cache non-destructive while still letting the user force a fresh caption (or add one to a previously-empty attachment) from the lightbox.
+
+### Type: `Attachment` (`packages/domain/src/attachment.ts`)
+
+```ts
+type AttachmentType = "image" | "file" | "video";
+interface Attachment {
+  id: string;          // correlates vision descriptions back to the attachment
+  assetId: string;     // stored asset in AssetService
+  type: AttachmentType;// image → ImagePart, file → TextPart, video → frame extraction
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  description?: string | null;  // populated by the vision model (path 2); null = not described
+}
+```
+
+The `type` rewrite `image → file` in path 2 is how a described image becomes a pure-text prompt injection downstream — `resolveMultimodalContent` only sends `image`/`video` typed attachments as actual images.
+
+---
+
 ## Prompt Pipeline
 
 **Package:** `@vibe-tavern/prompt-pipeline` — pure function, no I/O, no database.
