@@ -48,6 +48,7 @@ desktop.ini
 *.temp
 .pi/
 .omo/
+.serena/
 
 # Drizzle generated output (dev-only)
 drizzle-generated/
