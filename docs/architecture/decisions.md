@@ -280,3 +280,38 @@
 - Simpler CSS — no negative margins or calc expressions
 
 **Trade-off:** None. Flex centering is strictly superior for this use case.
+
+---
+
+## AD-016: Endpoint-Scoped Responses over Monolithic Snapshots
+
+**Status:** Proposed (planned, Phase 3.4 of `CODE_REVIEW_REFACTOR_PLAN.md`). Not yet implemented — current code returns monolithic `SessionSnapshot` from every mutating endpoint.
+
+**Context:** The current architecture returns a full `SessionSnapshot` from every chat mutation. `getSnapshot(chatId)` recomputes *all* fields — chats list, all characters, messages, branches, summaries, prompt traces, context preview, character, persona — regardless of which field changed. Renaming a chat re-runs `assemblePrompt()` for the context preview and re-reads every character in the database.
+
+**Problem:**
+1. **Wasted work** — a rename that only needs `{ chatId, title }` triggers tokenization, prompt assembly, and a full DB sweep.
+2. **Coupling** — `contextPreview` is nulled whenever a prompt trace exists, conflating "live preview" with "last generation".
+3. **Blocks features** — Novel Mode, Sidechat, and Co-Author Mode each need a different subset of data; forcing them through one snapshot shape is awkward.
+
+**Decision:** Replace monolithic snapshots with **endpoint-scoped response types**. Each endpoint returns only the fields its consumer needs:
+
+| Endpoint | Response |
+|----------|----------|
+| `POST /messages/stream` | `{ messages, contextPreview, summaries }` |
+| `PATCH /variant` | `{ messages, activeBranch, contextPreview }` |
+| `PATCH /branch` | `{ messages, activeBranch, branches, summaries, contextPreview }` |
+| `PATCH /characters/:id` | `{ character, contextPreview }` |
+| `GET /bootstrap` | Full state (character, persona, contextPreview included for instant Build Mode switch) |
+
+There are no "modes" on the server — each endpoint is independently typed. The first examples of this pattern already exist in the codebase: `renameChat` returns `{ chatId, title }`, `archiveCharacter` returns `{ characterId, status }`.
+
+**Frontend impact:** `ingestSnapshot()` already guards most fields with presence checks, so absent fields are preserved. The exception is `messages` — an absent `messages` field currently wipes the store (load-bearing for chat switching). Chat-switching must be updated to call `clearMessages()` explicitly before this migration is safe.
+
+**Rationale:**
+- Each consumer gets exactly what it needs — no over-fetching, no wasted tokenization
+- `contextPreview` is included only in endpoints that change text content (token counts must update in the UI token bar)
+- Build Mode data (`character`, `persona`, `contextPreview`) is loaded once at bootstrap, enabling instant Chat ↔ Build switching with no extra requests
+- Trace (immutable record of a *past* generation) and Preview (live computation of the *next* prompt) become cleanly separated: traces load lazily via `GET /api/chats/:id/traces`
+
+**Trade-off:** More response types to maintain (one per endpoint family) instead of a single `SessionSnapshot`. Acceptable — the types are small and the backend derives them from the same DB reads, just selects fewer fields. Net reduction in wasted computation.

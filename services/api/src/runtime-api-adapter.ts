@@ -24,6 +24,11 @@ import { MobileAccessAdapter } from "./adapters/mobile-access-adapter.js";
 /**
  * Thin composite that wires domain adapters into the RuntimeApi contract.
  * No business logic lives here — every method is owned by a sub-adapter.
+ *
+ * This is the composition root for the adapter layer: it instantiates the 13
+ * domain adapters and exposes them as the flat `RuntimeApi` shape that routes
+ * consume. Each adapter is independently testable and owns its own store/service
+ * dependencies. To add a new domain, create an adapter and wire it here.
  */
 export class RuntimeApiAdapter implements RuntimeApi {
 	readonly bootstrap: RuntimeApi["bootstrap"];

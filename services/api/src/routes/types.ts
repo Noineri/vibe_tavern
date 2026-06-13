@@ -22,6 +22,22 @@ import type { StDirectoryScanResult, StDirectoryImportResult } from "../st-direc
 import type { MobileAccessInfo } from "../mobile-access-service.js";
 
 // ─── Shared type aliases ────────────────────────────────────────────
+//
+// This file defines `RuntimeApi` — the single contract between Hono route
+// handlers (routes/*.ts) and the adapter layer (runtime-api-adapter.ts +
+// adapters/*.ts). Routes should never import store/runtime internals directly;
+// they go through this interface.
+//
+// Response-type conventions:
+//   - Mutating chat endpoints currently return `SessionSnapshot` (monolithic).
+//     This will move to per-endpoint response shapes (Phase 3.4 refactor).
+//   - Some endpoints already return slim/partial responses:
+//       renameChat        → { chatId, title }
+//       archiveCharacter  → { characterId, status }
+//       updateChatSettings → void
+//     These are the first examples of endpoint-scoped responses.
+//   - Body params typed as `Record<string, unknown>` are Zod-validated upstream
+//     in the route handler before reaching the adapter.
 
 /** DB row shape returned by the lorebook store. */
 type Lorebook = LorebookRow;

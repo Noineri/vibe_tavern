@@ -8,7 +8,11 @@
 
 ### Store Architecture
 
-The frontend uses **Zustand as single source of truth**. No React Query, no SWR, no Apollo. The backend sends monolithic snapshots; the frontend normalizes them into Zustand stores.
+The frontend uses **Zustand as single source of truth**. No React Query, no SWR, no Apollo. The backend sends monolithic snapshots; the frontend normalizes them into Zustand stores via `ingestSnapshot()`.
+
+> **Note:** `ingestSnapshot()` uses Immer's structural sharing — it only replaces object references for fields that actually changed. Components subscribe to focused slices via selectors and only re-render when their specific data changes.
+>
+> **Partial-response caveat:** Most scalar/array fields (`chats`, `branches`, `summaries`, `character`, `persona`, `contextPreview`, etc.) are left untouched when absent from the response — they use `if (Array.isArray(...))` / `?? null` guards. **`messages` is the exception:** an absent `messages` field triggers a wipe (`messagesById = {}`, `messageOrder = []`). This is load-bearing for chat switching (since `clearMessages()` is never called explicitly). When migrating to endpoint-scoped responses (Phase 3.4), every chat-scoped response that omits `messages` must be updated to either include it or call `clearMessages()` explicitly.
 
 | Store | File | Responsibility |
 |-------|------|----------------|
@@ -21,7 +25,9 @@ The frontend uses **Zustand as single source of truth**. No React Query, no SWR,
 | `useProviderStore` | `stores/provider-store.ts` | Connection test UI state. |
 | `useModalStore` | `stores/modal-store.ts` | Modal open/close state. |
 
-**Key pattern:** `useSnapshotStore.ingestSnapshot(snapshot)` is the single entry point for backend data. API actions call the backend, receive a snapshot, and write it through this method. No individual `setState` calls for server data.
+**Key pattern:** `useSnapshotStore.ingestSnapshot(snapshot)` is the single entry point for backend data. API actions call the backend, receive a snapshot (or partial response), and write it through this method. No individual `setState` calls for server data.
+
+`ingestSnapshot` guards most fields with presence checks, so absent fields are preserved. The one exception is `messages`: when the `messages` array is absent, the store wipes existing messages (this drives chat-switching, since `clearMessages()` is never called directly). Endpoint-scoped responses that omit `messages` must account for this.
 
 ### Selectors
 

@@ -31,27 +31,29 @@ Both share the same bootstrap sequence:
 
 ### Routes
 
-11 domain modules composed via `Hono.app.route()`:
+12 domain route modules composed via `Hono.app.route()`, plus shared `types.ts` (contracts) and `helpers.ts` (utilities):
 
 | File | Domain | Endpoints |
-|------|--------|-----------|
-| `routes/chat.ts` | Chat CRUD, messages, branches, summaries, streaming | ~25 (largest) |
-| `routes/character.ts` | Character CRUD, archive, export | ~10 |
-| `routes/persona.ts` | Persona CRUD, lorebook toggle | ~8 |
-| `routes/lorebook.ts` | Lorebook CRUD, entry CRUD, test activation, import, links, duplicate, export | ~16 |
-| `routes/script.ts` | Script CRUD, test, import, AI assistant SSE | ~8 |
-| `routes/provider.ts` | Provider CRUD, test, model fetching, favorites | ~10 |
+|------|--------|----------|
+| `routes/chat.ts` | Chat CRUD, messages, branches, summaries, streaming, variants, fork | ~47 (largest) |
+| `routes/lorebook.ts` | Lorebook CRUD, entry CRUD, test activation, import, links, duplicate, export | ~19 |
+| `routes/provider.ts` | Provider CRUD, test, test-chat, model fetching, favorites | ~17 |
+| `routes/persona.ts` | Persona CRUD, duplicate, lorebook toggle | ~10 |
+| `routes/character.ts` | Character CRUD, archive, duplicate, export | ~9 |
+| `routes/script.ts` | Script CRUD, test, import, AI assistant SSE | ~9 |
+| `routes/settings.ts` | UI settings CRUD, mobile access: status, regenerate/revoke token | ~7 |
 | `routes/preset.ts` | Prompt preset CRUD | ~5 |
-| `routes/settings.ts` | Mobile access: status, regenerate/revoke token | 3 |
-| `routes/import.ts` | JSON import, ST directory scan + bulk import | ~4 |
-| `routes/asset.ts` | Asset upload/serve | 2 |
+| `routes/import.ts` | JSON import, ST directory scan + bulk import | ~3 |
 | `routes/debug.ts` | Debug log, bootstrap, defaults | ~3 |
+| `routes/asset.ts` | Asset upload/serve | 2 |
+| `routes/types.ts` | `RuntimeApi` interface — contract between routes and adapters |
+| `routes/helpers.ts` | `readOptionalJson` — shared utility for routes with optional bodies |
 
 ### RuntimeApi Interface
 
-`routes/types.ts` defines `RuntimeApi` — the contract between routes and business logic. `RuntimeApiAdapter` implements it as a **thin facade with zero business logic**: resolves active provider, handles asset cleanup, delegates to sub-runtimes.
+`routes/types.ts` defines `RuntimeApi` — the contract between routes and business logic. `RuntimeApiAdapter` (`runtime-api-adapter.ts`) implements it as a **pure composite with zero business logic**: it wires 13 sub-adapters (one per domain) and delegates every method to the appropriate adapter. Each adapter (`ChatAdapter`, `CharacterAdapter`, `LorebookAdapter`, etc.) is focused on its own domain.
 
-**Why an interface:** Routes are HTTP concern. Business logic lives in sub-runtimes. The adapter prevents routes from depending on runtime internals. Also enables testing routes with a mock adapter.
+**Why an interface:** Routes are HTTP concern. Business logic lives in sub-runtimes and adapters. The adapter prevents routes from depending on runtime internals. Also enables testing routes with a mock adapter.
 
 ---
 
@@ -67,9 +69,19 @@ session/SessionRuntime
 ├── session/PersonaRuntime     (CRUD personas, resolve defaults)
 ├── session/ChatOrderService   (in-memory ordered list by lastAccessedAt)
 ├── StoreContainer             (all DB stores behind a facade)
-└── direct methods             (lorebook CRUD, preset CRUD, scripts, provider profiles —
-                                delegated straight to stores, no sub-runtime class)
+├── PromptAssemblyService      (loads context from DB, calls assemblePrompt())
+├── StaticPromptResolver       (resolves character, persona, lore entries from DB)
+└── direct methods             (import/export, prompt trace history, bootstrap, getSnapshot)
 ```
+
+**Note:** Lorebook CRUD, scripts, provider profiles, presets, assets, AI assistant, and settings are **not** in SessionRuntime. They are handled by dedicated adapters that work directly with stores:
+- `LorebookAdapter` → `StoreContainer.lorebooks`
+- `ScriptAdapter` → `StoreContainer.scripts`
+- `ProviderAdapter` → `ProviderProfileService`
+- `PresetAdapter` → `PromptPresetService`
+- `AssetAdapter` → `AssetService`
+- `SettingsAdapter` → `StoreContainer.uiSettings`
+- `MobileAccessAdapter` → `MobileAccessService`
 
 **Why decomposition (not one god class):** Each sub-runtime owns a clear domain boundary. Dependencies flow one way — `ChatRuntime` uses `StoreContainer` but doesn't know about `PersonaRuntime`. The top-level `SessionRuntime` wires them together.
 
@@ -117,6 +129,10 @@ POST /api/chats/:chatId/messages/stream
       ├─ triggerAutoSummary()           → fire-and-forget background
       └─ getSnapshot()                  → full state for frontend
 ```
+
+> **Known issue:** `getSnapshot()` currently returns a monolithic `SessionSnapshot` on every call — it computes all fields including `contextPreview` (via `assemblePrompt`) and `promptTraceHistory` regardless of what triggered the call. When any prompt trace exists, `contextPreview` is set to `null` (the trace "shadows" the preview). This will be replaced with per-endpoint response builders (see Phase 3.4 in `CODE_REVIEW_REFACTOR_PLAN.md`).
+>
+> **Exception:** `renameChat` already returns a minimal `{ chatId, title }` object instead of a full snapshot — an early example of endpoint-scoped responses.
 
 **Pipeline order (summary):**
 
