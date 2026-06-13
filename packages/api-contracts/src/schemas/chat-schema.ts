@@ -7,6 +7,8 @@ export const createChatSchema = z.object({
 export const cloneChatSchema = z.object({});
 
 export const attachmentSchema = z.object({
+  /** Stable attachment id — correlates vision descriptions back to specific attachments. */
+  id: z.string().min(1),
   assetId: z.string().min(1),
   type: z.enum(["image", "file", "video"]),
   name: z.string().max(255),

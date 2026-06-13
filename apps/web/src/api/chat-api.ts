@@ -56,7 +56,7 @@ export async function setChatPromptPreset(chatId: ChatId, promptPresetId: string
 
 export async function sendChatMessage(
   chatId: ChatId,
-  input: { content: string; attachments?: { name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number }[] },
+  input: { content: string; attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number }[] },
   options?: { signal?: AbortSignal },
 ): Promise<AppSnapshot> {
   logClientSendDebug("web.client.sendChatMessage.start", { chatId, contentLength: input.content.length });
