@@ -451,30 +451,15 @@ export interface ImportResult {
 	}
 
 	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null }>> {
-		const characters = await this.stores.characters.listIncludingSystem();
-		const hasUserChars = characters.some((c) => c.id !== 'char_system');
-		if (!hasUserChars) {
-			return characters.map((c) => ({
-				id: c.id,
-				name: c.name,
-				subtitle: c.tags.length > 0 ? c.tags[0] : '',
-				avatarAssetId: c.avatarAssetId,
-				avatarFullAssetId: c.avatarFullAssetId,
-				avatarCropJson: c.avatarCropJson,
-			}));
-		}
-		const allChats = await this.stores.chats.listAll();
-		const hasSystemChat = allChats.some((c) => c.characterId === 'char_system');
-		return characters
-			.filter((c) => c.id !== 'char_system' || hasSystemChat)
-			.map((c) => ({
-				id: c.id,
-				name: c.name,
-				subtitle: c.tags.length > 0 ? c.tags[0] : '',
-				avatarAssetId: c.avatarAssetId,
-				avatarFullAssetId: c.avatarFullAssetId,
-				avatarCropJson: c.avatarCropJson,
-			}));
+		const characters = await this.stores.characters.listAll();
+		return characters.map((c) => ({
+			id: c.id,
+			name: c.name,
+			subtitle: c.tags.length > 0 ? c.tags[0] : '',
+			avatarAssetId: c.avatarAssetId,
+			avatarFullAssetId: c.avatarFullAssetId,
+			avatarCropJson: c.avatarCropJson,
+		}));
 	}
 
 	async setGreetingIndex(chatId: ChatId, greetingIndex: number): Promise<SessionSnapshot> {

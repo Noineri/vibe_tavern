@@ -70,7 +70,7 @@ export async function setChatPersonaAction(chatId: ChatId, personaId: string): P
   void fetchBootstrapAction({ silent: true });
 }
 
-export async function createChatAction(characterId?: string): Promise<void> {
+export async function createChatAction(characterId: string): Promise<void> {
   const snapshot = await createChat(characterId);
   // Creating a chat switches the active chat to the new one. Clear the
   // previous chat's messages first so a snapshot that omits `messages`

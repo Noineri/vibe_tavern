@@ -77,7 +77,6 @@ export interface BootstrapRuntimeApi {
 export interface ChatRuntimeApi {
 	getChatSnapshot: (chatId: string) => Promise<SessionSnapshot>;
 	createChatForCharacter: (characterId: string) => Promise<SessionSnapshot>;
-	createFreeChat: () => Promise<SessionSnapshot>;
 	cloneChat: (chatId: string) => Promise<SessionSnapshot>;
 	deleteChat: (chatId: string) => Promise<void>;
 	clearChat: (chatId: string) => Promise<SessionSnapshot>;

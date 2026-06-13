@@ -116,15 +116,6 @@ export class CharacterStore {
     return rows.map((row) => this.mapRow(row));
   }
 
-  async listIncludingSystem(): Promise<Character[]> {
-    const rows = await this.db
-      .select()
-      .from(characters)
-      .where(eq(characters.status, 'active'))
-      .all();
-    return rows.map((row) => this.mapRow(row));
-  }
-
   async search(query: string): Promise<Character[]> {
     const rows = await this.db
       .select()
@@ -254,14 +245,6 @@ export class CharacterStore {
     }
   }
 
-  async updateIsSystem(id: string, isSystem: boolean): Promise<void> {
-    await this.db
-      .update(characters)
-      .set({ isSystem: isSystem ? 1 : 0 })
-      .where(eq(characters.id, id))
-      .run();
-  }
-
   async duplicate(id: string): Promise<Character> {
     const original = await this.db.select().from(characters).where(eq(characters.id, id)).get();
     if (!original) {
@@ -351,40 +334,6 @@ export class CharacterStore {
   }
 
   // ─── System character ──────────────────────────────────────────────────────
-
-  async getSystemCharacter(): Promise<Character> {
-    const existing = await this.db
-      .select()
-      .from(characters)
-      .where(eq(characters.id, 'char_system'))
-      .get();
-
-    if (existing) return this.mapRow(existing);
-
-    await this.db
-      .insert(characters)
-      .values({
-        id: 'char_system',
-        name: 'Char',
-        isSystem: 1,
-        description: '',
-        status: 'active',
-        alternateGreetingsJson: '[]',
-        tagsJson: '[]',
-        extensionsJson: '{}',
-        createdAt: this.clock.now(),
-        updatedAt: this.clock.now(),
-      })
-      .run();
-
-    const created = await this.db
-      .select()
-      .from(characters)
-      .where(eq(characters.id, 'char_system'))
-      .get();
-
-    return this.mapRow(created!);
-  }
 
   // ─── File data helpers ────────────────────────────────────────────────────
 

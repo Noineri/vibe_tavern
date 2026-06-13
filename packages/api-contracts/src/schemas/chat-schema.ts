@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const createChatSchema = z.object({
-  characterId: z.string().optional(),
+  characterId: z.string(),
 });
 
 export const cloneChatSchema = z.object({});
