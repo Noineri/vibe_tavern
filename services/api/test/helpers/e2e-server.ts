@@ -267,7 +267,6 @@ export async function createTestServer(): Promise<TestServer> {
   const stores = await createRuntimeStore();
 
   await Promise.all([
-    stores.characters.getSystemCharacter(),
     stores.personas.ensureDefault(),
     stores.presets.ensureDefault(),
     stores.uiSettings.ensureDefaults(),

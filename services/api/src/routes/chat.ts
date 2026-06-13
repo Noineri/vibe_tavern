@@ -77,11 +77,7 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     })
     .post("/api/chats", zValidator("json", schemas.createChatSchema), async (c) => {
       const body = c.req.valid("json");
-      const characterId = body.characterId;
-      if (!characterId) {
-        return c.json(await runtime.createFreeChat());
-      }
-      return c.json(await runtime.createChatForCharacter(characterId));
+      return c.json(await runtime.createChatForCharacter(body.characterId));
     })
     .post("/api/chats/:chatId/clone", async (c) => {
       return c.json(await runtime.cloneChat(c.req.param("chatId")));

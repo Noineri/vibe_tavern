@@ -93,21 +93,6 @@ export class ChatLifecycleRuntime {
 		return this.deps.getSnapshot(createdChatId);
 	}
 
-	async createFreeChat(): Promise<SessionSnapshot> {
-		const systemChar = await this.deps.stores.characters.getSystemCharacter();
-
-		const created = await this.deps.chatApp.createChat({
-			characterId: systemChar.id as CharacterId,
-			personaId: await this.deps.persona.resolveDefaultId(),
-			title: "Free chat",
-			promptPresetId: await this.deps.resolveDefaultPromptPresetId(),
-		});
-
-		const freeChatId = created.id;
-		this.deps.chatOrder.add(freeChatId);
-		return this.deps.getSnapshot(freeChatId);
-	}
-
 	/**
 	 * Clear a chat: delete it and create a fresh one for the same character
 	 * with the first greeting message. Returns the new session snapshot.

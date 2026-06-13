@@ -13,7 +13,7 @@ export async function fetchChat(chatId: ChatId): Promise<AppSnapshot> {
   return normalizeSnapshot(data);
 }
 
-export async function createChat(characterId?: string): Promise<AppSnapshot> {
+export async function createChat(characterId: string): Promise<AppSnapshot> {
   const response = await client.api.chats.$post({ json: { characterId } });
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);

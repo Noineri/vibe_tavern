@@ -74,7 +74,6 @@ export interface CharacterControllerActions {
   handleRenameChat: (chatId: ChatId, title: string) => Promise<void>;
   handleCreateChat: (characterId?: string) => Promise<void>;
   handleCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string; mesExample?: string; alternateGreetings?: string[]; postHistoryInstructions?: string; creatorNotes?: string; systemPrompt?: string; depthPrompt?: string; depthPromptDepth?: number; depthPromptRole?: string; tags?: string[] }, avatarFile?: File | null, avatarOriginalFile?: File | null) => Promise<{ characterId: string; chatId: string } | null>;
-  handleFreeChat: () => Promise<void>;
   handleExportCharacter: (characterId: string) => Promise<void>;
   handleExportPng: (characterId: string) => Promise<void>;
   handleExportChatJsonl: (chatId: ChatId) => Promise<void>;
@@ -473,14 +472,6 @@ export function useCharacterController(): CharacterControllerActions {
     }
   }
 
-  async function handleFreeChat(): Promise<void> {
-    try {
-      await createChatAction();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : getT()("failed_to_create_free_chat"));
-    }
-  }
-
   async function handleExportCharacter(characterId: string): Promise<void> {
     try {
       const data = await exportCharacterAction(characterId);
@@ -569,7 +560,6 @@ export function useCharacterController(): CharacterControllerActions {
     handleRenameChat,
     handleCreateChat,
     handleCreateCharacter,
-    handleFreeChat,
     handleExportCharacter,
     handleExportPng,
     handleExportChatJsonl,

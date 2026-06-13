@@ -369,13 +369,6 @@ export class CharacterRuntime {
         : currentCharacter.avatarCropJson,
     });
 
-    // Promote system character to user character on first edit
-    if (currentCharacter.isSystem) {
-      await this.deps.stores.characters.updateIsSystem(characterId, false);
-      // Re-bootstrap chat order so the character appears in sidebar
-      await options?.rebuildChatOrder?.();
-    }
-
     const preferredChat = input.chatId
       ? await this.deps.stores.chats.getById(input.chatId)
       : null;

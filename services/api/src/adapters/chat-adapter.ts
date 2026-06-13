@@ -30,8 +30,6 @@ export class ChatAdapter implements ChatRuntimeApi {
 	createChatForCharacter = (characterId: string) =>
 		this.sessionRuntime.chatLifecycle.createChatForCharacter(characterId);
 
-	createFreeChat = () => this.sessionRuntime.chatLifecycle.createFreeChat();
-
 	cloneChat = (chatId: string) =>
 		this.sessionRuntime.chatRuntime.cloneChat(chatId);
 

@@ -70,7 +70,6 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 
 	// Seed
 	await Promise.all([
-		stores.characters.getSystemCharacter(),
 		stores.personas.ensureDefault(),
 		stores.presets.ensureDefault(),
 		stores.uiSettings.ensureDefaults(),
