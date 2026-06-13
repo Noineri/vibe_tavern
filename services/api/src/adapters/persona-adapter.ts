@@ -55,10 +55,4 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 
 	setDefaultPersona = (personaId: string) =>
 		this.sessionRuntime.persona.setDefault(personaId);
-
-	getPersonalLorebookStatus = (personaId: string) =>
-		this.sessionRuntime.getPersonalLorebookStatus(personaId);
-
-	setPersonalLorebookEnabled = (personaId: string, enabled: boolean) =>
-		this.sessionRuntime.setPersonalLorebookEnabled(personaId, enabled);
 }

@@ -633,7 +633,6 @@
   "chat_rename_failed": "Failed to rename chat.",
   "chat_create_failed": "Failed to create chat.",
   "cannot_delete_last_char": "Cannot delete the last character",
-  "failed_to_update_lorebook": "Failed to update personal lorebook.",
   "failed_to_create_character": "Failed to create character.",
   "failed_to_create_free_chat": "Failed to create free chat.",
   "failed_to_clone_chat": "Failed to clone chat.",

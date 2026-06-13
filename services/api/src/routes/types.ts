@@ -159,8 +159,6 @@ export interface PersonaRuntimeApi {
 	deletePersona: (personaId: string) => Promise<void>;
 	duplicatePersona: (personaId: string) => Promise<PersonaDuplicateRecord>;
 	setDefaultPersona: (personaId: string) => Promise<void>;
-	getPersonalLorebookStatus: (personaId: string) => { enabled: boolean; lorebookId: string | null };
-	setPersonalLorebookEnabled: (personaId: string, enabled: boolean) => { enabled: boolean; lorebookId: string | null };
 }
 
 // ─── Lorebook ────────────────────────────────────────────────────────

@@ -1,9 +1,5 @@
 import { z } from "zod";
 
-export const setPersonalLorebookSchema = z.object({
-  enabled: z.boolean(),
-});
-
 export const testActivationSchema = z.object({
   text: z.string(),
 });

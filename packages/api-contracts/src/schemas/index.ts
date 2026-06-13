@@ -11,7 +11,6 @@ export {
   renameBranchSchema,
 } from "./chat-schema.js";
 export {
-  setPersonalLorebookSchema,
   createLorebookSchema,
   updateLorebookMetaSchema,
   testActivationSchema,

@@ -97,8 +97,6 @@ export {
   deletePersona,
   duplicatePersona,
   setDefaultPersona,
-  getPersonalLorebookStatus,
-  setPersonalLorebookEnabled,
 } from "./api/persona-api.js";
 
 // ─── Lorebook ───────────────────────────────────────────────────────────

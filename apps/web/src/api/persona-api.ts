@@ -50,13 +50,3 @@ export async function duplicatePersona(personaId: string): Promise<PersonaRecord
 export async function setDefaultPersona(personaId: string): Promise<void> {
   await client.api.personas[":personaId"]["set-default"].$post({ param: { personaId } });
 }
-
-export async function getPersonalLorebookStatus(personaId: string): Promise<{ enabled: boolean; lorebookId: string | null }> {
-  const response = await client.api.personas[":personaId"]["personal-lorebook"].$get({ param: { personaId } });
-  return unwrapRpc<{ enabled: boolean; lorebookId: string | null }>(response);
-}
-
-export async function setPersonalLorebookEnabled(personaId: string, enabled: boolean): Promise<{ enabled: boolean; lorebookId: string | null }> {
-  const response = await client.api.personas[":personaId"]["personal-lorebook"].$put({ param: { personaId }, json: { enabled } });
-  return unwrapRpc<{ enabled: boolean; lorebookId: string | null }>(response);
-}

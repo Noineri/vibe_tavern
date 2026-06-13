@@ -3,7 +3,6 @@ import type { ChatId } from "@vibe-tavern/domain";
 import { toast } from "sonner";
 import { getT } from "../i18n/locale-helpers.js";
 import {
-  setPersonalLorebookEnabled,
   uploadAsset,
   updateCharacterAvatar,
   type AppSnapshot,
@@ -59,7 +58,6 @@ export interface CharacterControllerActions {
   handleDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
   handleDuplicatePersona: (personaId: string) => Promise<void>;
   handleSetDefaultPersona: (personaId: string) => Promise<void>;
-  handleSetPersonalLorebook: (personaId: string, enabled: boolean) => Promise<{ enabled: boolean; lorebookId: string | null } | null>;
   handleImportFiles: (files: FileList | File[]) => Promise<void>;
   handleImportDragOver: (event: DragEvent<HTMLLabelElement>) => void;
   handleImportDragLeave: () => void;
@@ -287,15 +285,6 @@ export function useCharacterController(): CharacterControllerActions {
       await setDefaultPersonaAction(personaId);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : getT()("failed_to_set_default_persona"));
-    }
-  }
-
-  async function handleSetPersonalLorebook(personaId: string, enabled: boolean): Promise<{ enabled: boolean; lorebookId: string | null } | null> {
-    try {
-      return await setPersonalLorebookEnabled(personaId, enabled);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : getT()("failed_to_update_lorebook"));
-      return null;
     }
   }
 
@@ -564,7 +553,6 @@ export function useCharacterController(): CharacterControllerActions {
     handleDeletePersona,
     handleDuplicatePersona,
     handleSetDefaultPersona,
-    handleSetPersonalLorebook,
     handleImportFiles,
     handleImportDragOver,
     handleImportDragLeave,
