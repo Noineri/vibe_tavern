@@ -141,16 +141,7 @@ export function LorebookImportModal({
     const lorebookId = mode === "new" ? "new" : targetLorebookId;
     if (!lorebookId) return;
 
-    const body: {
-      format: string;
-      data: unknown;
-      mode: string;
-      scopeType?: string;
-      characterId?: string;
-      personaId?: string;
-      chatId?: string;
-      fallbackName?: string;
-    } = {
+    const body: Parameters<typeof importLorebookEntries>[1] = {
       format: "st",
       data: importData,
       mode,

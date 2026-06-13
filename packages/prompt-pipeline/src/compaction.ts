@@ -1,5 +1,3 @@
-import type { Message } from "@vibe-tavern/domain";
-
 export interface CompactionConfig {
   preserveRecentMessages: number;
   maxEstimatedTokens: number;
@@ -75,7 +73,7 @@ export function estimateMessageArrayTokens(messages: Array<{ content: string }>)
  * @returns The index of the first message to be preserved (everything before it can be summarized).
  */
 export function findSafeCompactionBoundary(
-  messages: Message[],
+  messages: ReadonlyArray<{ role: string }>,
   preserveCount: number
 ): number {
   const totalLength = messages.length;

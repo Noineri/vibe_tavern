@@ -308,7 +308,7 @@ export interface ImportResult {
 	private get importExportDeps(): importExportModule.ImportExportModuleDeps {
 		return {
 			stores: this.stores,
-			resolver: this.resolver as unknown as importExportModule.ImportExportResolver,
+			resolver: this.resolver,
 			chatApp: this.chatApp,
 			chatOrder: this.chatOrder,
 			fileStore: this.stores.content.fileStore,

@@ -3,6 +3,8 @@ import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { appendTokenQuery } from "../lib/mobile-token.js";
+import { z } from "zod";
+import { importLorebookSchema } from "@vibe-tavern/api-contracts";
 
 // ─── Lorebook CRUD ──────────────────────────────────────────────────────
 
@@ -84,7 +86,7 @@ export async function testLoreActivation(lorebookId: string, text: string): Prom
   return unwrapRpc<{ activatedIds: string[]; totalEntries: number }>(response);
 }
 
-export async function importLorebookEntries(lorebookId: string, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string }): Promise<{ lorebookId?: string; imported: number; skipped: number; warnings: string[] }> {
-  const response = await client.api.lorebooks[":lorebookId"].import.$post({ param: { lorebookId }, json: body as any });
+export async function importLorebookEntries(lorebookId: string, body: z.input<typeof importLorebookSchema>): Promise<{ lorebookId?: string; imported: number; skipped: number; warnings: string[] }> {
+  const response = await client.api.lorebooks[":lorebookId"].import.$post({ param: { lorebookId }, json: body });
   return unwrapRpc<{ lorebookId?: string; imported: number; skipped: number; warnings: string[] }>(response);
 }

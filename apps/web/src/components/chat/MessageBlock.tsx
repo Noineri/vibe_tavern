@@ -715,7 +715,7 @@ function PendingUserMessage() {
         <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 opacity-88 [&_em]:italic [&_em]:text-msg-t2">
           <Markdown text={displayContent} />
         </div>
-        <AttachmentGrid attachments={pendingAttachments as any} messageId={undefined} />
+        <AttachmentGrid attachments={pendingAttachments} messageId={undefined} />
       </div>
     </MessageShell>
   );

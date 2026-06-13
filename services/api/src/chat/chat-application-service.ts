@@ -17,8 +17,24 @@ import type {
   MessageId,
   SummaryMemorySnapshot,
 } from "@vibe-tavern/domain";
-import type { ChatStore } from "@vibe-tavern/db";
+import type { ChatStore, Message as DbMessage } from "@vibe-tavern/db";
 import { notFound } from "../errors.js";
+
+/** Map a DB message row to a domain {@link Message} (brands IDs, narrows enum strings). */
+function mapDbMessage(m: DbMessage): Message {
+  return {
+    id: brandId<MessageId>(m.id),
+    chatId: brandId<ChatId>(m.chatId),
+    branchId: brandId<ChatBranchId>(m.branchId),
+    role: m.role as Message["role"],
+    authorType: m.authorType as Message["authorType"],
+    position: m.position,
+    content: m.content,
+    state: m.state as Message["state"],
+    createdAt: m.createdAt,
+    updatedAt: m.updatedAt,
+  };
+}
 
 export class ChatApplicationService {
   constructor(private readonly chatStore: ChatStore) {}
@@ -97,7 +113,7 @@ export class ChatApplicationService {
       attachmentsJson: input.attachments?.length ? JSON.stringify(input.attachments) : null,
     });
 
-    return message as unknown as Message;
+    return mapDbMessage(message);
   }
 
   async updateAttachmentDescriptions(messageId: string, currentAttachments: Attachment[], descriptions: Array<{ attachmentId: string; description: string }>): Promise<void> {
@@ -124,7 +140,7 @@ export class ChatApplicationService {
 
   async editMessage(messageId: string, content: string): Promise<Message> {
     const message = await this.chatStore.editMessage(messageId, content);
-    return message as unknown as Message;
+    return mapDbMessage(message);
   }
 
   async deleteMessage(messageId: string): Promise<void> {

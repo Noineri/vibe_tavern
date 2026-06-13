@@ -33,7 +33,7 @@ export async function updatePersona(
 ): Promise<AppSnapshot> {
   const response = await client.api.personas[":personaId"].$patch({ param: { personaId }, json: input });
   const data = await unwrapRpc<AppSnapshot>(response);
-  if (!data.character) return data as unknown as AppSnapshot;
+  if (!data.character) return data;
   return normalizeSnapshot(data);
 }
 

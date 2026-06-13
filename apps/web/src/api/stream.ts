@@ -2,6 +2,7 @@ import { getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { appendTokenQuery } from "../lib/mobile-token.js";
 import { parseSSEStream } from "../lib/sse-parser.js";
 import type { ChatGenerationStatus } from "./types.js";
+import type { RpcErrorBody } from "./unwrap.js";
 
 export interface StreamOpts {
   signal?: AbortSignal;
@@ -36,12 +37,16 @@ export async function streamChatEndpoint(
 
   if (!response.ok) {
     opts.onStatus("failed");
-    const errBody = await response.json().catch(() => null) as any;
-    if (errBody?.error?.code === "VISION_NOT_SUPPORTED") {
+    const errBody = await response.json().catch(() => null) as RpcErrorBody | null;
+    const error = errBody?.error;
+    if (error && typeof error === "object" && error.code === "VISION_NOT_SUPPORTED") {
       throw new Error("VISION_NOT_SUPPORTED");
     }
-    const message = errBody?.error?.message || errBody?.error || `Stream request failed: ${response.status}`;
-    throw new Error(typeof message === "string" ? message : `Stream request failed: ${response.status}`);
+    const message =
+      (typeof error === "object" ? error?.message : undefined)
+      || (typeof error === "string" ? error : undefined)
+      || `Stream request failed: ${response.status}`;
+    throw new Error(message);
   }
 
   opts.onStatus("streaming");
