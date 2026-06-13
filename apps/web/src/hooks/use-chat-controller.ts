@@ -200,6 +200,7 @@ export function useChatController(): ChatControllerActions {
     const draft = csStore.draft;
     const trimmed = draft.trim();
     const attachments = csStore.draftAttachments.map((a) => ({
+      id: a.id,
       name: a.name,
       type: a.type as "image" | "file" | "video",
       assetId: a.assetId,

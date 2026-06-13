@@ -5,6 +5,7 @@ export {
   createChatSchema,
   cloneChatSchema,
   sendMessageSchema,
+  attachmentSchema,
   editMessageSchema,
   renameChatSchema,
   setGreetingIndexSchema,

@@ -8,7 +8,7 @@ import type {
   SleepBranchRequest,
   SleepBranchResponse,
 } from "./chat-application-types.js";
-import { brandId } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments } from "@vibe-tavern/domain";
 import type {
   Attachment,
   ChatBranchId,
@@ -130,7 +130,7 @@ export class ChatApplicationService {
     if (typeof attachmentIdOrAttachments === 'string') {
       const message = await this.chatStore.getMessageById(messageId);
       if (!message) return;
-      const currentAttachments: Attachment[] = message.attachmentsJson ? JSON.parse(message.attachmentsJson) : [];
+      const currentAttachments: Attachment[] = parseStoredAttachments(message.attachmentsJson) ?? [];
       await this.updateAttachmentDescriptions(messageId, currentAttachments, [{ attachmentId: attachmentIdOrAttachments, description: descriptionOrAttachmentId ?? '' }]);
       return;
     }

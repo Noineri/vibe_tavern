@@ -1,4 +1,4 @@
-import { brandId } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments } from "@vibe-tavern/domain";
 import type {
   AssemblePromptResponse,
   CustomInjection,
@@ -179,7 +179,7 @@ export class PromptAssemblyService {
         id: message.id as MessageId,
         role: message.role as 'system' | 'user' | 'assistant' | 'tool',
         content: message.content,
-        ...(message.attachmentsJson ? { attachments: JSON.parse(message.attachmentsJson) as import('@vibe-tavern/domain').Attachment[] } : {}),
+        ...(message.attachmentsJson ? { attachments: parseStoredAttachments(message.attachmentsJson) ?? [] } : {}),
       }));
 
     const recentText = recentMessages.map((message) => message.content).join("\n");

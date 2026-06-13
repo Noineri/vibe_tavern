@@ -1,5 +1,5 @@
 import type { ChatRuntimeApi } from "../routes/types.js";
-import { brandId, type ChatId, type ChatBranchId, type MessageId } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, type ChatId, type ChatBranchId, type MessageId } from "@vibe-tavern/domain";
 import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { validation, notFound } from "../errors.js";
@@ -202,8 +202,8 @@ export class ChatAdapter implements ChatRuntimeApi {
 	regenerateAttachmentDescription = async (chatId: string, messageId: string, attachmentId: string): Promise<{ description: string }> => {
 		const message = await this.stores.chats.getMessageById(messageId);
 		if (!message?.attachmentsJson) throw validation("Message has no attachments.");
-		const attachments: Attachment[] = JSON.parse(message.attachmentsJson);
-		const att = attachments.find((a) => a.id === attachmentId);
+		const attachments = parseStoredAttachments(message.attachmentsJson);
+		const att = attachments?.find((a) => a.id === attachmentId);
 		if (!att) throw notFound("Attachment not found.");
 		if (att.type !== "image" && att.type !== "video") {
 			throw validation("Only image or video attachments can be described.");

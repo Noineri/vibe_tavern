@@ -4,6 +4,8 @@
 // The `type` field determines how the prompt pipeline handles the attachment.
 // `mimeType` is the actual content type used for provider-specific formatting.
 
+import { log } from "./logger.js";
+
 /** Determines how the prompt pipeline processes this attachment. */
 export type AttachmentType = "image" | "file" | "video";
 
@@ -67,4 +69,35 @@ export function classifyAttachment(mimeType: string): AttachmentType {
 /** Check whether a MIME type represents inline-able text content. */
 export function isTextMime(mimeType: string): boolean {
   return TEXT_MIMES.has(mimeType);
+}
+
+// ─── Stored attachment parsing ──────────────────────────────────────────────
+
+/**
+ * Parse a stored `attachmentsJson` column into typed {@link Attachment}s.
+ *
+ * Backfills a stable `id` on legacy rows that were persisted without one
+ * (pre-fix Zod stripped the client-provided id). Without a stable id, vision
+ * descriptions collide on `undefined` keys and the edit/regenerate UI gate
+ * (`att.id`) fails. The generated id is volatile across reads — callers that
+ * need persistence should write the normalized value back.
+ *
+ * Returns `undefined` when the column is empty or holds no attachments so
+ * callers can omit the field entirely from their DTOs.
+ */
+export function parseStoredAttachments(raw: string | null | undefined): Attachment[] | undefined {
+  if (!raw) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    log.tag("attachments").warn("failed to parse attachmentsJson: %s", err instanceof Error ? err.message : String(err));
+    return undefined;
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) return undefined;
+  return parsed.map((a) =>
+    a && typeof a === "object" && "id" in a && typeof a.id === "string" && a.id
+      ? (a as Attachment)
+      : { ...(a as object), id: crypto.randomUUID() } as Attachment,
+  );
 }

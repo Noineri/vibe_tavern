@@ -3,6 +3,8 @@ import { appendTokenQuery } from "../lib/mobile-token.js";
 import { parseSSEStream } from "../lib/sse-parser.js";
 import type { ChatGenerationStatus } from "./types.js";
 import type { RpcErrorBody } from "./unwrap.js";
+import type { z } from "zod";
+import type { attachmentSchema } from "@vibe-tavern/api-contracts";
 
 export interface StreamOpts {
   signal?: AbortSignal;
@@ -63,7 +65,7 @@ export async function streamChatEndpoint(
 /** Convenience: send message stream */
 export const sendStream = (
   chatId: string,
-  input: { content: string; attachments?: any[] },
+  input: { content: string; attachments?: z.infer<typeof attachmentSchema>[] },
   opts: StreamOpts,
 ) => streamChatEndpoint(`/api/chats/${chatId}/messages/stream`, input, opts);
 

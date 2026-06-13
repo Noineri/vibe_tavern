@@ -114,7 +114,7 @@ export async function setGreetingIndexAction(chatId: ChatId, greetingIndex: numb
   syncSnapshot(snapshot);
 }
 
-export async function sendChatMessageAction(chatId: ChatId, content: string, attachments?: { name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number; }[], signal?: AbortSignal): Promise<void> {
+export async function sendChatMessageAction(chatId: ChatId, content: string, attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number; }[], signal?: AbortSignal): Promise<void> {
   const snapshot = await sendChatMessage(chatId, { content, attachments }, { signal });
   syncSnapshot(snapshot);
 }

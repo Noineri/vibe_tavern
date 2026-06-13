@@ -1,6 +1,10 @@
 import { brandId, type ChatId, type ChatBranchId, type MessageId, type PromptTraceRecordDto } from "@vibe-tavern/domain";
 import type { LoreEntry, Message, MessageVariant, Attachment } from "@vibe-tavern/domain";
+import { parseStoredAttachments } from "@vibe-tavern/domain";
 import type { PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
+
+// Re-export the canonical attachment parser so DTO callers share one backfill path.
+export { parseStoredAttachments };
 
 // Re-export canonical domain type — single source of truth
 export type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
@@ -97,20 +101,11 @@ export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto
   };
 }
 
-function parseAttachmentsJson(raw: string | null | undefined): Attachment[] | undefined {
-  if (!raw) return undefined;
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-  } catch {}
-  return undefined;
-}
-
 export function mapMessageDto(message: Message, variants: MessageVariant[]): MessageDto;
 export function mapMessageDto(message: DbMessage, variants: DbMessageVariant[]): MessageDto;
 export function mapMessageDto(message: Message | DbMessage, variants: MessageVariant[] | DbMessageVariant[]): MessageDto {
   const selectedVariant = variants.find((variant) => variant.isSelected) ?? null;
-  const attachments = parseAttachmentsJson('attachmentsJson' in message ? message.attachmentsJson : null);
+  const attachments = parseStoredAttachments('attachmentsJson' in message ? message.attachmentsJson : null);
   return {
     id: message.id as MessageId,
     chatId: message.chatId as ChatId,
