@@ -15,6 +15,7 @@ describe("Prompt pipeline: ST custom injection semantics", () => {
       preset: {
         id: "preset_1",
         text: "system prompt",
+        advancedMode: true,
         customInjections: [
           {
             identifier: "relative_user",
@@ -53,6 +54,7 @@ describe("Prompt pipeline: ST custom injection semantics", () => {
       preset: {
         id: "preset_1",
         text: "system prompt",
+        advancedMode: true,
         customInjections: [
           {
             identifier: "relative_after_user",
@@ -92,6 +94,7 @@ describe("Prompt pipeline: ST custom injection semantics", () => {
       preset: {
         id: "preset_1",
         text: "system prompt",
+        advancedMode: true,
         customInjections: [
           {
             identifier: "absolute_user",

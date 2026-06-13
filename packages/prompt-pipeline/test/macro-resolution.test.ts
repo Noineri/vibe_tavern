@@ -112,6 +112,7 @@ describe("Prompt pipeline: macro resolution in assembled prompt", () => {
       preset: {
         id: "p1",
         text: "",
+        advancedMode: true,
         customInjections: [{
           identifier: "database",
           name: "Database",

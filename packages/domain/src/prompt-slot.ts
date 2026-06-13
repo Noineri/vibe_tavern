@@ -25,7 +25,7 @@ export const DEFAULT_PROMPT_ORDER: Record<string, number> = {
  * - ST preset parser (st-preset-parser.ts)
  * - Injection migration (migrateInjection)
  * - Canvas fallback (InjectionTable.getCanvasItemSlot)
- * - Backend fallback (assemble.ts applyPromptOrderPosition)
+ * - Backend fallback (assemble.ts AdvancedResolver, world-info zone inference)
  */
 export function inferSlot(args: {
   /** SillyTavern injection_position: 0 = relative, 1 = absolute. `undefined`/`null` = no ST data — falls through to `placement`/`defaultOrder` inference (NOT treated as absolute). */
