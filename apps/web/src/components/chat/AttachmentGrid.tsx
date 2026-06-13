@@ -66,6 +66,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
   const [saving, setSaving] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [localDescription, setLocalDescription] = useState<Record<number, string>>({});
   const att = attachments[index];
 
@@ -104,6 +105,20 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
     }
   }, [messageId, att?.id, editText, index]);
 
+  const regenerateDescription = useCallback(async () => {
+    if (!messageId || !att?.id) return;
+    setRegenerating(true);
+    try {
+      const { regenerateAttachmentDescription } = await import("../../app-client.js");
+      const { description } = await regenerateAttachmentDescription("_", messageId, att.id);
+      setLocalDescription((prev) => ({ ...prev, [index]: description }));
+    } catch {
+      // silently fail — keep local state
+    } finally {
+      setRegenerating(false);
+    }
+  }, [messageId, att?.id, index]);
+
   if (!att) return null;
 
   return (
@@ -113,14 +128,28 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
     >
       {/* Close button */}
       <div className="absolute right-4 top-4 z-10 flex gap-2">
-        {!editing && currentDescription && messageId && att.id && (
-          <button
-            className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
-            onClick={startEdit}
-            title="Edit description"
-          >
-            <Icons.edit className="h-4 w-4" />
-          </button>
+        {!editing && messageId && att.id && (
+          <>
+            <button
+              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
+              onClick={startEdit}
+              title={currentDescription ? "Edit description" : "Add description"}
+            >
+              <Icons.edit className="h-4 w-4" />
+            </button>
+            {att.type === "image" && (
+              <button
+                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95 disabled:cursor-wait disabled:opacity-50"
+                onClick={regenerateDescription}
+                disabled={regenerating}
+                title="Regenerate description with vision model"
+              >
+                <span className={regenerating ? "inline-flex animate-spin" : "inline-flex"}>
+                  <Icons.regen />
+                </span>
+              </button>
+            )}
+          </>
         )}
         <button
           className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
@@ -159,9 +188,19 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
         )}
 
         {/* Description area */}
-        {currentDescription && !editing && (
+        {regenerating && (
+          <div className="mx-auto max-w-2xl rounded-lg bg-white/10 px-4 py-2.5 text-center text-sm text-white/50">
+            Regenerating description…
+          </div>
+        )}
+        {currentDescription && !editing && !regenerating && (
           <div className="mx-auto max-w-2xl rounded-lg bg-white/10 px-4 py-2.5 text-center text-sm leading-relaxed text-white/80">
             {currentDescription}
+          </div>
+        )}
+        {!currentDescription && !editing && !regenerating && messageId && att.id && (
+          <div className="mx-auto max-w-2xl text-center text-xs text-white/30">
+            No description — use edit or regenerate to add one.
           </div>
         )}
 

@@ -33,7 +33,7 @@ export async function nonstreamingProviderExecute(
       const allAttachments = messages
         .filter((m) => m.role === "user")
         .flatMap((m) => m.attachments ?? [])
-        .filter((a) => a.type === "image" || a.type === "video");
+        .filter((a) => (a.type === "image" || a.type === "video") && !a.description?.trim());
       if (allAttachments.length > 0 && input.assetLoader) {
         const { describeAttachments } = await import("./vision-gate.js");
         const descriptions = await describeAttachments(

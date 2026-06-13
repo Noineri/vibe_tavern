@@ -20,7 +20,7 @@ export type AssemblyMode = "chat" | "continue" | "regenerate" | "summary" | "too
  * Each mode determines the system prompt, user message format, output parsing,
  * and which context layers are available.
  */
-export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import";
+export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe";
 
 export interface PromptLayer {
   id: string;
