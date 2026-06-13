@@ -84,7 +84,7 @@ jobs:
           echo "OK: All versions consistent"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
 
@@ -125,9 +125,9 @@ jobs:
         run: |
           $version = "${{ needs.release.outputs.version }}"
           Rename-Item -Path "out\installer\vibe-tavern-setup.exe" `
-                      -NewName "Vibe-Tavern-v${version}-windows-setup.exe"
+                      -NewName "Vibe-Tavern-${version}-windows-setup.exe"
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: out/installer/Vibe-Tavern-v${{ needs.release.outputs.version }}-windows-setup.exe
 
@@ -172,7 +172,7 @@ jobs:
           java-version: 17
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       - name: Build APK
         working-directory: mobile/android
@@ -182,9 +182,9 @@ jobs:
         run: |
           VERSION="${{ needs.release.outputs.version }}"
           mv mobile/android/app/build/outputs/apk/release/app-release.apk \
-              "vibe-tavern-${VERSION}-android.apk"
+              "Vibe-Tavern-${VERSION}-android.apk"
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: vibe-tavern-${{ needs.release.outputs.version }}-android.apk
 
@@ -214,6 +214,6 @@ jobs:
           VERSION="${{ needs.release.outputs.version }}"
           mv out/vibe-tavern-linux-x64.tar.gz "Vibe-Tavern-${VERSION}-linux.tar.gz"
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: Vibe-Tavern-${{ needs.release.outputs.version }}-linux.tar.gz

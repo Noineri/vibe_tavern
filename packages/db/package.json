@@ -1,6 +1,6 @@
 {
   "name": "@vibe-tavern/db",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -12,7 +12,7 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
-    "@vibe-tavern/domain": "0.3.4",
+    "@vibe-tavern/domain": "0.3.5",
     "drizzle-orm": "^0.38"
   },
   "devDependencies": {
