@@ -12,7 +12,7 @@ The frontend uses **Zustand as single source of truth**. No React Query, no SWR,
 
 > **Note:** `ingestSnapshot()` uses Immer's structural sharing — it only replaces object references for fields that actually changed. Components subscribe to focused slices via selectors and only re-render when their specific data changes.
 >
-> **Partial-response caveat:** Most scalar/array fields (`chats`, `branches`, `summaries`, `character`, `persona`, `contextPreview`, etc.) are left untouched when absent from the response — they use `if (Array.isArray(...))` / `?? null` guards. **`messages` is the exception:** an absent `messages` field triggers a wipe (`messagesById = {}`, `messageOrder = []`). This is load-bearing for chat switching (since `clearMessages()` is never called explicitly). When migrating to endpoint-scoped responses (Phase 3.4), every chat-scoped response that omits `messages` must be updated to either include it or call `clearMessages()` explicitly.
+> **Partial-response caveat (TD-004):** Absence is **not** preserved today. The pipeline is `backend → normalizeSnapshot() → ingestSnapshot()`, and `normalizeSnapshot()` (`api/normalize.ts`) coerces absent arrays → `[]` and absent scalars → `null`/`{}` *before* the snapshot reaches the store. That makes `ingestSnapshot()`'s `Array.isArray(...)` / `?? null` guards effectively dead (always truthy) and overwrites **11 of 12 fields** with emptiness when a field is absent — including `messages`, `character`, `persona`, `chats`, etc. The `else if` messages-wipe branch is unreachable in practice (absence never survives `normalize`). This is LATENT: every backend path returns a full `SessionSnapshot` today, so the wipe never fires — but it becomes active data-loss the moment endpoint-scoped responses (Phase 3.4 / AD-016) omit a field. `clearMessages()` is defined but has 0 callers. See TD-004 for the full data-flow analysis and the end-to-end fix.
 
 | Store | File | Responsibility |
 |-------|------|----------------|
@@ -27,7 +27,7 @@ The frontend uses **Zustand as single source of truth**. No React Query, no SWR,
 
 **Key pattern:** `useSnapshotStore.ingestSnapshot(snapshot)` is the single entry point for backend data. API actions call the backend, receive a snapshot (or partial response), and write it through this method. No individual `setState` calls for server data.
 
-`ingestSnapshot` guards most fields with presence checks, so absent fields are preserved. The one exception is `messages`: when the `messages` array is absent, the store wipes existing messages (this drives chat-switching, since `clearMessages()` is never called directly). Endpoint-scoped responses that omit `messages` must account for this.
+`ingestSnapshot`'s `Array.isArray(...)` / `?? null` guards *appear* to preserve absent fields, but `normalizeSnapshot()` (upstream of every call site) has already coerced absence into `[]`/`null`/`{}`, so 11 of 12 fields are overwritten with emptiness, not preserved. `messages` is no exception — the `else if` wipe branch is unreachable because `normalize` already converted absent `messages` to `[]`. Latent today (backend always returns full); must be fixed end-to-end (optional types + absence-preserving `normalize` + explicit `clearMessages()` on chat switch) before Phase 3.4 — see TD-004.
 
 ### Selectors
 
