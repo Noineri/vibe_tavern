@@ -320,6 +320,23 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     return assembleAiAssistant(context);
   }
 
+  return finalizeAssembly(context, buildLayers(context));
+}
+
+/**
+ * Stage 2 — create a PromptLayer for every non-empty content source.
+ *
+ * The single mode-sensitive stage of the pipeline: simple and advanced modes
+ * diverge here (see SimpleResolver/AdvancedResolver). Compaction also runs here
+ * because it depends on non-history layer tokens and feeds the chatHistory layer.
+ * Returns layers + droppedLayers + compactionSummary for finalizeAssembly.
+ */
+function buildLayers(context: PromptAssemblyContext): {
+  layers: PromptLayer[];
+  droppedLayers: Array<{ id: string; reason: string }>;
+  compactionSummary: string | undefined;
+  recentMessagesForHistory: PromptAssemblyContext["chat"]["recentMessages"];
+} {
   const layers: PromptLayer[] = [];
   const droppedLayers: Array<{ id: string; reason: string }> = [];
 
@@ -873,6 +890,23 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
     layer.injectionDepth = 0;
     layers.push(layer);
   }
+
+  return { layers, droppedLayers, compactionSummary, recentMessagesForHistory };
+}
+
+/**
+ * Stages 3–6 — mode filtering, sort, compaction-aware messages assembly.
+ *
+ * Mode-agnostic: operates purely on the PromptLayer[] from buildLayers.
+ * `effectiveMode` here is the AssemblyMode axis (chat/continue/regenerate/...),
+ * orthogonal to the preset simple/advanced axis resolved in buildLayers.
+ */
+function finalizeAssembly(
+  context: PromptAssemblyContext,
+  built: { layers: PromptLayer[]; droppedLayers: Array<{ id: string; reason: string }>; compactionSummary: string | undefined; recentMessagesForHistory: PromptAssemblyContext["chat"]["recentMessages"] },
+): PromptAssemblyResult {
+  const { layers, droppedLayers, compactionSummary, recentMessagesForHistory } = built;
+  const effectiveMode: AssemblyMode = context.mode ?? "chat";
 
   // --- Assign modes to built-in layers from LAYER_MODES ---
   for (const layer of layers) {
