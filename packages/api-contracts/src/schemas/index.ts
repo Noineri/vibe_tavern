@@ -4,7 +4,6 @@ export type { BuildCharacterDraft } from "./character-schema.js";
 export {
   createChatSchema,
   cloneChatSchema,
-  updateChatSettingsSchema,
   sendMessageSchema,
   editMessageSchema,
   renameChatSchema,

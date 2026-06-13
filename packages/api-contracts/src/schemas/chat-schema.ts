@@ -6,13 +6,6 @@ export const createChatSchema = z.object({
 
 export const cloneChatSchema = z.object({});
 
-export const updateChatSettingsSchema = z.object({
-  title: z.string(),
-  subtitle: z.string(),
-  scenario: z.string(),
-  systemPrompt: z.string(),
-});
-
 export const attachmentSchema = z.object({
   assetId: z.string().min(1),
   type: z.enum(["image", "file", "video"]),

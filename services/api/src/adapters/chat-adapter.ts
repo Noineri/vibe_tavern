@@ -48,13 +48,6 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return this.sessionRuntime.setGreetingIndex(brandId<ChatId>(chatId), greetingIndex);
 	};
 
-	updateChatSettings = (
-		_chatId: string,
-		_body: { title: string; subtitle: string; scenario: string; systemPrompt: string },
-	) => {
-		throw new Error("Chat settings route is not wired in this baseline.");
-	};
-
 	setChatPersona = (chatId: string, personaId: string) =>
 		this.sessionRuntime.persona.setChatPersona(brandId<ChatId>(chatId), personaId);
 
