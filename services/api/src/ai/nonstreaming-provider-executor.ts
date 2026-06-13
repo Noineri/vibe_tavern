@@ -98,7 +98,7 @@ export async function nonstreamingProviderExecute(
 
     const result = await generateText({
       model,
-      messages: conversationMessages as any,
+      messages: conversationMessages,
       allowSystemInMessages: true,
       abortSignal: input.signal,
       ...samplerConfig,

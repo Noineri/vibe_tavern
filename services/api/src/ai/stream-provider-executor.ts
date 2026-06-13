@@ -107,7 +107,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
 
     const result = streamText({
       model,
-      messages: conversationMessages as any,
+      messages: conversationMessages,
       allowSystemInMessages: true,
       abortSignal: input.signal,
       ...samplerConfig,
