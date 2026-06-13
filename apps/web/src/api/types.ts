@@ -46,58 +46,107 @@ export type ChatGenerationStatus =
   | "cancelled"
   | "failed";
 
+// ─── Snapshot element types ────────────────────────────────────────────
+//
+// Named element shapes used by AppSnapshot, the snapshot store, and build
+// mode. Named (not inline + indexed-access) so that making AppSnapshot's
+// fields optional (absence pipeline) does NOT leak `| undefined` into every
+// consumer via AppSnapshot["…"]. The store holds these as `T | null`
+// (concrete value or null, never "absent"); absence exists only on the wire.
+
+export interface AppCharacter {
+  id: string;
+  name: string;
+  description: string;
+  scenario: string;
+  systemPrompt: string;
+  subtitle: string;
+  firstMessage: string | null;
+  mesExample: string | null;
+  mesExampleMode: string;
+  mesExampleDepth: number;
+  alternateGreetings: string[];
+  postHistoryInstructions: string | null;
+  creatorNotes: string | null;
+  depthPrompt: string | null;
+  depthPromptDepth: number | null;
+  depthPromptRole: string | null;
+  tags: string[];
+  avatarAssetId: string | null;
+  avatarFullAssetId: string | null;
+  avatarCropJson: string | null;
+  personalitySummary: string | null;
+}
+
+export interface AppPersona {
+  id: string;
+  name: string;
+  description: string;
+  pronouns: string | null;
+  avatarAssetId: string | null;
+  avatarFullAssetId: string | null;
+  avatarCropJson: string | null;
+}
+
+export interface AppCharacterEntry {
+  id: string;
+  name: string;
+  subtitle: string;
+  avatarAssetId: string | null;
+  avatarFullAssetId: string | null;
+  avatarCropJson: string | null;
+}
+
 // ─── Snapshot ──────────────────────────────────────────────────────────
 
+/*
+ * AppSnapshot is the wire shape the frontend receives from the backend.
+ *
+ * EVERY field is optional: a given endpoint returns only the fields its
+ * consumer needs (Phase 3.4.2 per-endpoint response builders). Absence is
+ * meaningful — it means "this endpoint did not touch this data, so preserve
+ * whatever the store already holds". An explicit `null` (where allowed) or
+ * `[]` means "the server actively set this to empty".
+ *
+ * The absence pipeline (normalizeSnapshot → ingestSnapshot) distinguishes
+ * absent (preserve) from present-empty (replace): normalizeSnapshot passes
+ * absent fields through untouched, and ingestSnapshot guards each field with
+ * a presence check ("x" in snapshot / Array.isArray) before writing.
+ *
+ * Today the backend still sends full snapshots from getSnapshot(), so every
+ * bootstrap/mutation response populates all fields. The optional types exist
+ * so tsc enforces presence-aware reads as endpoint-scoped responses land.
+ *
+ * NOTE: the backend's SessionSnapshot (services/api/src/session/session-
+ * runtime.ts) is the parallel type with REQUIRED fields — it is truthful
+ * there because getSnapshot() always returns full. The two are decoupled by
+ * the explicit `unwrapRpc<AppSnapshot>` cast in apps/web/src/api/*.ts.
+ */
 export interface AppSnapshot {
-  chats: ChatListItem[];
-  allCharacters: Array<{
-    id: string;
-    name: string;
-    subtitle: string;
-    avatarAssetId: string | null;
-    avatarFullAssetId: string | null;
-    avatarCropJson: string | null;
-  }>;
-  activeChat: Chat & { summary?: string; messageHistoryLimit?: number; autoSummaryConfig?: AutoSummaryConfig };
-  activeBranch: ChatBranch;
-  branches: ChatBranch[];
-  messages: AppMessage[];
-  summaries: Array<{ id: string; kind: string; summary: string }>;
-  promptTrace: PromptTraceRecordDto | null;
-  promptTraceHistory: PromptTraceRecordDto[];
-  contextPreview: AssemblePromptResponse | null;
-  character: {
-    id: string;
-    name: string;
-    description: string;
-    scenario: string;
-    systemPrompt: string;
-    subtitle: string;
-    firstMessage: string | null;
-    mesExample: string | null;
-    mesExampleMode: string;
-    mesExampleDepth: number;
-    alternateGreetings: string[];
-    postHistoryInstructions: string | null;
-    creatorNotes: string | null;
-    depthPrompt: string | null;
-    depthPromptDepth: number | null;
-    depthPromptRole: string | null;
-    tags: string[];
-    avatarAssetId: string | null;
-    avatarFullAssetId: string | null;
-    avatarCropJson: string | null;
-    personalitySummary: string | null;
-  };
-  persona: {
-    id: string;
-    name: string;
-    description: string;
-    pronouns: string | null;
-    avatarAssetId: string | null;
-    avatarFullAssetId: string | null;
-    avatarCropJson: string | null;
-  } | null;
+  /** Sidebar: ordered list of chats with metadata. Absent → preserve. */
+  chats?: ChatListItem[];
+  /** All known characters (sidebar, build mode). Absent → preserve. */
+  allCharacters?: AppCharacterEntry[];
+  /** Active chat metadata (title, settings, greetingIndex, etc). Absent → preserve. */
+  activeChat?: Chat & { summary?: string; messageHistoryLimit?: number; autoSummaryConfig?: AutoSummaryConfig };
+  /** Currently active branch. Absent → preserve. */
+  activeBranch?: ChatBranch;
+  /** All branches for the active chat. Absent → preserve. */
+  branches?: ChatBranch[];
+  /** Messages for the active branch, with variant data. Absent → preserve (chat switching clears via clearMessages()). */
+  messages?: AppMessage[];
+  /** Ranged summaries for the active branch. Absent → preserve. */
+  summaries?: Array<{ id: string; kind: string; summary: string }>;
+  /** Latest prompt trace for the active branch (null if no traces). Absent → preserve. */
+  promptTrace?: PromptTraceRecordDto | null;
+  /** Last N prompt traces for the active branch. Absent → preserve. */
+  promptTraceHistory?: PromptTraceRecordDto[];
+  /** Live context preview (Phase 3.1 decouples this from prompt trace). Absent → preserve. */
+  contextPreview?: AssemblePromptResponse | null;
+  /** Active character record. Absent → preserve. */
+  character?: AppCharacter;
+  /** Active persona record (null if no persona set). Absent → preserve. */
+  persona?: AppPersona | null;
 }
 
 // ─── Persona ───────────────────────────────────────────────────────────

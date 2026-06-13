@@ -7,6 +7,10 @@ import {
   uploadAsset,
   updateCharacterAvatar,
   type AppSnapshot,
+  type AppCharacter,
+  type AppPersona,
+  type AppMessage,
+  type ChatListItem,
 } from "../app-client.js";
 import type { BuildCharacterDraft } from "../components/build/BuildMode.js";
 import { useCharacterImport } from "./use-character-import.js";
@@ -103,7 +107,20 @@ export function useCharacterController(): CharacterControllerActions {
   // --- Store helpers ---
   function getActiveChatId(): ChatId | null { return useChatStore.getState().activeChatId; }
 
-  function getSnapshot(): AppSnapshot | null {
+  /*
+   * A snapshot reconstructed from the store: every populated field is present
+   * (required, not optional) and character is non-null. getSnapshot() returns
+   * null entirely when there is no active character, so callers can read
+   * character/chats/etc. without presence guards. Distinct from the wire type
+   * AppSnapshot (all-optional, character may be null) because the store is the
+   * canonical MERGED state.
+   */
+  type StoreSnapshot = Required<Omit<AppSnapshot, "character" | "persona">> & {
+    character: AppCharacter;
+    persona: AppPersona | null;
+  };
+
+  function getSnapshot(): StoreSnapshot | null {
     const state = useSnapshotStore.getState();
     if (!state.character || !state.activeChat) return null;
 
@@ -116,15 +133,15 @@ export function useCharacterController(): CharacterControllerActions {
       summaries: state.summaries,
       messages: state.messageOrder
         .map((id) => state.messagesById[id])
-        .filter((message): message is AppSnapshot["messages"][number] => Boolean(message)),
+        .filter((message): message is AppMessage => Boolean(message)),
       chats: state.chatIds
         .map((id) => state.chatsById[id])
-        .filter((chat): chat is AppSnapshot["chats"][number] => Boolean(chat)),
+        .filter((chat): chat is ChatListItem => Boolean(chat)),
       allCharacters: state.allCharacters,
       promptTrace: state.promptTrace,
       promptTraceHistory: state.promptTraceHistory,
       contextPreview: state.contextPreview,
-    } as AppSnapshot;
+    } as StoreSnapshot;
   }
 
   function writeSnapshot(chatId: ChatId, next: AppSnapshot): void {

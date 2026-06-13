@@ -4,6 +4,9 @@ import { useShallow } from "zustand/react/shallow";
 import type {
   AppSnapshot,
   AppMessage,
+  AppCharacter,
+  AppPersona,
+  AppCharacterEntry,
   ChatListItem,
 } from "../app-client.js";
 import type { ChatBranch, PromptTraceRecordDto, AssemblePromptResponse } from "@vibe-tavern/domain";
@@ -30,17 +33,17 @@ interface SnapshotState {
   messageOrder: string[];
 
   /** Active character for the current chat. */
-  character: AppSnapshot["character"] | null;
+  character: AppCharacter | null;
   /** Active persona for the current chat. */
-  persona: AppSnapshot["persona"] | null;
+  persona: AppPersona | null;
   /** Active chat metadata. */
-  activeChat: AppSnapshot["activeChat"] | null;
+  activeChat: NonNullable<AppSnapshot["activeChat"]> | null;
   /** Active branch. */
   activeBranch: ChatBranch | null;
   /** All branches for the current chat. */
   branches: ChatBranch[];
   /** Summaries for the current chat. */
-  summaries: AppSnapshot["summaries"];
+  summaries: NonNullable<AppSnapshot["summaries"]>;
 
   /** Prompt trace from last generation. */
   promptTrace: PromptTraceRecordDto | null;
@@ -52,13 +55,28 @@ interface SnapshotState {
   /** Swipe direction for variant animation (1 = forward, -1 = back). */
   swipeDirection: 1 | -1;
 
+  /*
+   * The store is the canonical MERGED state — once a field is ingested it is
+   * a concrete value or null, never "absent". Absence exists only on the
+   * wire (AppSnapshot, all-optional). Store element types therefore use the
+   * named shapes (AppCharacter / AppPersona / AppCharacterEntry) or
+   * NonNullable<AppSnapshot["…"]> for fields that augment domain types
+   * (activeChat, summaries), NOT bare AppSnapshot["…"] (which would drag in
+   * the wire-level `| undefined`).
+   */
   /** Flat list of all available characters (for sidebar, etc). */
-  allCharacters: AppSnapshot["allCharacters"];
+  allCharacters: AppCharacterEntry[];
 }
 
 interface SnapshotActions {
   /**
-   * Ingest a monolithic AppSnapshot into the store.
+   * Ingest a (possibly partial) AppSnapshot into the store.
+   *
+   * Each field is written only when present in the snapshot — absence
+   * preserves the existing store value (Phase 3.4.1 absence pipeline).
+   * Chat switching clears messages explicitly via clearMessages() before
+   * ingesting, so non-message mutations can safely omit `messages`.
+   *
    * Immer's structural sharing preserves object references for unchanged
    * data — components only re-render when their specific values change.
    */
@@ -70,7 +88,10 @@ interface SnapshotActions {
   clear(): void;
 
   /**
-   * Clear only message data (used before switching chats).
+   * Clear only message data. Called explicitly before ingesting a snapshot
+   * for a different chat (switchChatAction, createChatAction) so that an
+   * endpoint which omits `messages` does not leave the previous chat's
+   * messages visible.
    */
   clearMessages(): void;
 
@@ -134,7 +155,15 @@ export const useSnapshotStore = create<SnapshotStore>()(
 
     ingestSnapshot: (snapshot) =>
       set((draft) => {
-        // ── Chats: dictionary + sorted order ──
+        // ── Absence pipeline (Phase 3.4.1) ──
+        // Every field is written ONLY when present in the snapshot. Absence
+        // means "this endpoint did not touch this data" and preserves the
+        // existing store value. An explicit `null` or `[]` still replaces.
+        // Chat switching clears messages explicitly via clearMessages()
+        // (see switchChatAction / createChatAction), so a non-message
+        // mutation can safely omit `messages` without wiping the chat.
+
+        // ── Chats: dictionary + sorted order (present only) ──
         if (Array.isArray(snapshot.chats)) {
           const nextChatIds = new Set<string>(snapshot.chats.map((chat) => chat.id));
           for (const id of Object.keys(draft.chatsById)) {
@@ -158,12 +187,8 @@ export const useSnapshotStore = create<SnapshotStore>()(
           }
         }
 
-        // ── Messages: dictionary (keyed by id) + order ──
-        // NOTE: an absent `messages` field WIPES existing messages. This is
-        // load-bearing for chat switching (clearMessages() is never called
-        // directly). When moving to endpoint-scoped responses (Phase 3.4),
-        // chat-switching must call clearMessages() explicitly so that
-        // non-message mutations can safely omit `messages`.
+        // ── Messages: dictionary (keyed by id) + order (present only) ──
+        // Absence is preserved — chat switching clears via clearMessages().
         if (Array.isArray(snapshot.messages)) {
           const nextMessageIds = new Set<string>(snapshot.messages.map((msg) => msg.id));
           for (const id of Object.keys(draft.messagesById)) {
@@ -178,45 +203,56 @@ export const useSnapshotStore = create<SnapshotStore>()(
           if (!sameStringArray(draft.messageOrder, nextOrder)) {
             draft.messageOrder = nextOrder;
           }
-        } else if (Object.keys(draft.messagesById).length > 0 || draft.messageOrder.length > 0) {
-          draft.messagesById = {};
-          draft.messageOrder = [];
         }
 
-        // ── Character, persona, branch ──
-        const nextCharacter = snapshot.character ?? null;
-        const nextPersona = snapshot.persona ?? null;
-        const nextActiveChat = snapshot.activeChat ?? null;
-        const nextActiveBranch = snapshot.activeBranch ?? null;
-        const nextBranches = Array.isArray(snapshot.branches) ? snapshot.branches : [];
-        const nextSummaries = Array.isArray(snapshot.summaries) ? snapshot.summaries : [];
-
-        if (!sameJson(draft.character, nextCharacter)) draft.character = nextCharacter;
-        if (!sameJson(draft.persona, nextPersona)) draft.persona = nextPersona;
-        if (!sameJson(draft.activeChat, nextActiveChat)) draft.activeChat = nextActiveChat;
-        if (!sameJson(draft.activeBranch, nextActiveBranch)) draft.activeBranch = nextActiveBranch;
-        if (!sameJson(draft.branches, nextBranches)) draft.branches = nextBranches;
-        if (!sameJson(draft.summaries, nextSummaries)) draft.summaries = nextSummaries;
-
-        // ── Traces ──
-        const nextPromptTrace = snapshot.promptTrace ?? null;
-        const nextPromptTraceHistory = Array.isArray(snapshot.promptTraceHistory)
-          ? snapshot.promptTraceHistory
-          : [];
-        const nextContextPreview = snapshot.contextPreview ?? null;
-
-        if (!sameJson(draft.promptTrace, nextPromptTrace)) draft.promptTrace = nextPromptTrace;
-        if (!sameJson(draft.promptTraceHistory, nextPromptTraceHistory)) {
-          draft.promptTraceHistory = nextPromptTraceHistory;
+        // ── Nullable objects: set only when the key is present ──
+        // An absent key preserves the existing store value; a present key
+        // writes the value (persona may be an explicit null when unset).
+        if ("character" in snapshot) {
+          const next = snapshot.character ?? null;
+          if (!sameJson(draft.character, next)) draft.character = next;
         }
-        if (!sameJson(draft.contextPreview, nextContextPreview)) draft.contextPreview = nextContextPreview;
+        if ("persona" in snapshot) {
+          const next = snapshot.persona ?? null;
+          if (!sameJson(draft.persona, next)) draft.persona = next;
+        }
+        if ("activeChat" in snapshot) {
+          const next = snapshot.activeChat ?? null;
+          if (!sameJson(draft.activeChat, next)) draft.activeChat = next;
+        }
+        if ("activeBranch" in snapshot) {
+          const next = snapshot.activeBranch ?? null;
+          if (!sameJson(draft.activeBranch, next)) draft.activeBranch = next;
+        }
+
+        // ── Arrays: replace only when present; absence preserves ──
+        if (Array.isArray(snapshot.branches)) {
+          if (!sameJson(draft.branches, snapshot.branches)) draft.branches = snapshot.branches;
+        }
+        if (Array.isArray(snapshot.summaries)) {
+          if (!sameJson(draft.summaries, snapshot.summaries)) draft.summaries = snapshot.summaries;
+        }
+
+        // ── Traces / preview ──
+        if ("promptTrace" in snapshot) {
+          const next = snapshot.promptTrace ?? null;
+          if (!sameJson(draft.promptTrace, next)) draft.promptTrace = next;
+        }
+        if (Array.isArray(snapshot.promptTraceHistory)) {
+          if (!sameJson(draft.promptTraceHistory, snapshot.promptTraceHistory)) {
+            draft.promptTraceHistory = snapshot.promptTraceHistory;
+          }
+        }
+        if ("contextPreview" in snapshot) {
+          const next = snapshot.contextPreview ?? null;
+          if (!sameJson(draft.contextPreview, next)) draft.contextPreview = next;
+        }
 
         // ── All characters (global list) ──
-        const nextAllCharacters = Array.isArray(snapshot.allCharacters)
-          ? snapshot.allCharacters
-          : [];
-        if (!sameJson(draft.allCharacters, nextAllCharacters)) {
-          draft.allCharacters = nextAllCharacters;
+        if (Array.isArray(snapshot.allCharacters)) {
+          if (!sameJson(draft.allCharacters, snapshot.allCharacters)) {
+            draft.allCharacters = snapshot.allCharacters;
+          }
         }
       }),
 
