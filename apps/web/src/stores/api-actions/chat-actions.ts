@@ -72,6 +72,10 @@ export async function setChatPersonaAction(chatId: ChatId, personaId: string): P
 
 export async function createChatAction(characterId?: string): Promise<void> {
   const snapshot = await createChat(characterId);
+  // Creating a chat switches the active chat to the new one. Clear the
+  // previous chat's messages first so a snapshot that omits `messages`
+  // (Phase 3.4.2) cannot leave stale messages visible.
+  useSnapshotStore.getState().clearMessages();
   syncSnapshot(snapshot);
   syncSelectedCharacterFromSnapshot(snapshot);
   // Auto-select the new chat
@@ -137,6 +141,10 @@ export async function deleteVariantAction(chatId: ChatId, messageId: string, var
 
 export async function switchChatAction(chatId: ChatId): Promise<void> {
   await waitForPendingVariantSelections(chatId);
+  // Switching chats must clear the previous chat's messages explicitly.
+  // ingestSnapshot preserves absent fields, so without this a snapshot that
+  // omits `messages` would leave the old chat's messages visible.
+  useSnapshotStore.getState().clearMessages();
   const snapshot = await fetchChat(chatId);
   syncSnapshot(snapshot);
   syncSelectedCharacterFromSnapshot(snapshot);

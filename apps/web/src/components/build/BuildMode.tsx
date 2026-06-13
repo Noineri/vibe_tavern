@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import type { AssemblePromptResponse, PromptTraceRecordDto } from "@vibe-tavern/domain";
-import type { AppSnapshot } from "../../app-client.js";
+import type { AppCharacter } from "../../app-client.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
@@ -97,7 +97,7 @@ export function BuildMode() {
   />;
 }
 
-function characterDefaults(character: AppSnapshot["character"]): BuildCharacterDraft {
+function characterDefaults(character: AppCharacter): BuildCharacterDraft {
   return {
     name: character.name,
     description: character.description,
@@ -119,7 +119,7 @@ function characterDefaults(character: AppSnapshot["character"]): BuildCharacterD
 }
 
 interface BuildModeInnerProps {
-  character: AppSnapshot["character"];
+  character: AppCharacter;
   isSaving: boolean;
   buildTab: BuildTab;
   activeTrace: PromptTraceRecordDto | AssemblePromptResponse | null;

@@ -13,6 +13,9 @@
 export type {
   AppSnapshot,
   AppMessage,
+  AppCharacter,
+  AppPersona,
+  AppCharacterEntry,
   ChatListItem,
   ChatGenerationStatus,
   PersonaRecord,
