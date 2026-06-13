@@ -34,7 +34,6 @@ import type { MobileAccessInfo } from "../mobile-access-service.js";
 //   - Some endpoints already return slim/partial responses:
 //       renameChat        → { chatId, title }
 //       archiveCharacter  → { characterId, status }
-//       updateChatSettings → void
 //     These are the first examples of endpoint-scoped responses.
 //   - Body params typed as `Record<string, unknown>` are Zod-validated upstream
 //     in the route handler before reaching the adapter.
@@ -84,7 +83,6 @@ export interface ChatRuntimeApi {
 	clearChat: (chatId: string) => Promise<SessionSnapshot>;
 	renameChat: (chatId: string, title: string) => Promise<{ chatId: string; title: string }>;
 	setGreetingIndex: (chatId: string, greetingIndex: number) => Promise<SessionSnapshot>;
-	updateChatSettings: (chatId: string, body: { title: string; subtitle: string; scenario: string; systemPrompt: string }) => Promise<void>;
 	setChatPersona: (chatId: string, personaId: string) => Promise<SessionSnapshot>;
 	setChatPromptPreset: (chatId: string, promptPresetId: string) => Promise<SessionSnapshot>;
 

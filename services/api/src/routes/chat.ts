@@ -98,12 +98,6 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       c.header("Content-Disposition", `attachment; filename="${c.req.param("traceId")}.json"`);
       return c.json(data);
     })
-    .patch("/api/chats/:chatId/settings", zValidator("json", schemas.updateChatSettingsSchema), async (c) => {
-      const body = c.req.valid("json");
-      return c.json(
-        await runtime.updateChatSettings(c.req.param("chatId"), body),
-      );
-    })
     .post("/api/chats/:chatId/messages/:messageId/branch", async (c) => {
       return c.json(await runtime.branchChat(c.req.param("chatId"), c.req.param("messageId")));
     })
