@@ -64,7 +64,6 @@ export interface Character {
   id: CharacterId;
   slug: string;
   name: string;
-  isSystem: boolean;
   description: string;
   personalitySummary: string | null;
   defaultScenario: string | null;

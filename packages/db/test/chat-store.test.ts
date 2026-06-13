@@ -214,7 +214,7 @@ async function createTestDb() {
  */
 function bootstrap(db: Awaited<ReturnType<typeof createTestDb>>) {
   db.insert(schema.characters).values({
-    id: "char_1", name: "TestChar", isSystem: 0, description: "",
+    id: "char_1", name: "TestChar", description: "",
     alternateGreetingsJson: "[]", extensionsJson: "{}", tagsJson: "[]",
     status: "active", createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
   }).run();

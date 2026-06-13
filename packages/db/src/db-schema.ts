@@ -5,7 +5,6 @@ import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from
 export const characters = sqliteTable('characters', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-  isSystem: integer('is_system').notNull().default(0),
   description: text('description').notNull().default(''),
   personalitySummary: text('personality_summary'),
   defaultScenario: text('default_scenario'),
