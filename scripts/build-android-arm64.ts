@@ -12,7 +12,7 @@
  *   bun run build:android-arm64
  */
 
-import { chmod, copyFile, cp, mkdir, rm } from "node:fs/promises";
+import { chmod, copyFile, cp, mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -24,7 +24,7 @@ const WEB_SOURCE = join(ROOT, "out", "apps", "web");
 const WEB_TARGET = join(ANDROID_DIST, "web");
 
 function exists(path: string): Promise<boolean> {
-	return Bun.file(path).exists();
+	return stat(path).then(() => true, () => false);
 }
 
 async function step(label: string, fn: () => Promise<void>) {
