@@ -1,4 +1,4 @@
-import { cp, copyFile, mkdir, readdir } from "node:fs/promises";
+import { cp, copyFile, mkdir, readdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -6,8 +6,13 @@ const API_ASSETS = join(ROOT, "services", "api", "assets");
 const API_OUT = join(ROOT, "out", "services", "api");
 const DB_MIGRATIONS = join(ROOT, "packages", "db", "drizzle");
 
+// NOTE: must use `stat`, not `Bun.file(path).exists()`. Bun.file is a *file*
+// abstraction — .exists() returns false for directories (the paths checked here
+// — tokenizerSource, DB_MIGRATIONS — are directories). The earlier "migrate stat
+// checks to Bun.file" refactor regressed this and broke dev:api startup.
+// Bun's own docs route directory ops (mkdir/readdir/existence) to node:fs.
 async function exists(path: string): Promise<boolean> {
-  return Bun.file(path).exists();
+  return stat(path).then(() => true, () => false);
 }
 
 const tokenizerSource = join(API_ASSETS, "tokenizers");
