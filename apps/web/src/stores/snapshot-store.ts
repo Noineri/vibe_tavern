@@ -159,6 +159,11 @@ export const useSnapshotStore = create<SnapshotStore>()(
         }
 
         // ── Messages: dictionary (keyed by id) + order ──
+        // NOTE: an absent `messages` field WIPES existing messages. This is
+        // load-bearing for chat switching (clearMessages() is never called
+        // directly). When moving to endpoint-scoped responses (Phase 3.4),
+        // chat-switching must call clearMessages() explicitly so that
+        // non-message mutations can safely omit `messages`.
         if (Array.isArray(snapshot.messages)) {
           const nextMessageIds = new Set<string>(snapshot.messages.map((msg) => msg.id));
           for (const id of Object.keys(draft.messagesById)) {

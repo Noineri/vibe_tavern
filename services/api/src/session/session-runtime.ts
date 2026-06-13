@@ -50,21 +50,33 @@ export interface ChatListItem {
 }
 
 export interface SessionSnapshot {
+	/** Sidebar: ordered list of chats with metadata. Absent when endpoint returns partial data. */
 	chats: ChatListItem[];
+	/** All known characters (sidebar, build mode). Absent when endpoint returns partial data. */
 	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null }>;
+	/** Active chat metadata (title, settings, greetingIndex, etc). */
 	activeChat: import("@vibe-tavern/db").Chat;
+	/** Currently active branch. */
 	activeBranch: import("@vibe-tavern/db").ChatBranch;
+	/** All branches for the active chat. */
 	branches: import("@vibe-tavern/db").ChatBranch[];
+	/** Messages for the active branch, with variant data. */
 	messages: import("./session-runtime-dto.js").MessageDto[];
+	/** Ranged summaries for the active branch. */
 	summaries: Array<{
 		id: string;
 		kind: string;
 		summary: string;
 	}>;
+	/** Latest prompt trace for the active branch (null if no traces). */
 	promptTrace: PromptTraceRecordDto | null;
+	/** Last N prompt traces for the active branch. */
 	promptTraceHistory: PromptTraceRecordDto[];
+	/** Live context preview (null when traces exist — known bug, see Phase 3.1). */
 	contextPreview: import("@vibe-tavern/domain").AssemblePromptResponse | null;
+	/** Active character record. */
 	character: CharacterRecord;
+	/** Active persona record (null if no persona set). */
 	persona: PersonaRecord | null;
 }
 
@@ -204,6 +216,18 @@ export interface ImportResult {
 	 * chat list, active chat messages + branches, persona, character, prompt traces.
 	 */
 	async getSnapshot(chatId: ChatId): Promise<SessionSnapshot> {
+		/*
+		 * Monolithic snapshot — returns EVERY field on every call.
+		 *
+		 * This will be replaced by per-endpoint response builders (Phase 3.4,
+		 * CODE_REVIEW_REFACTOR_PLAN.md). For now, every mutation returns the
+		 * full snapshot, which is correct but wasteful: renaming a chat
+		 * re-computes contextPreview and re-reads every character.
+		 *
+		 * Known behaviour: `contextPreview` is nulled when any prompt trace
+		 * exists (the trace "shadows" the live preview). This is intentional
+		 * for the current UI but couples two unrelated concepts.
+		 */
 		const { chat, branch, messages: branchMessages } = await this.chatApp.getChatState(chatId);
 		const branches = await this.stores.chats.getBranches(chat.id);
 		const branchMsgCounts = await this.stores.chats.getBranchMessageCounts(chat.id);

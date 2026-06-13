@@ -11,7 +11,7 @@
 | **Auth** | Loopback requests (`127.0.0.1`/`::1`) bypass auth. Remote/LAN/Tailscale `/api/*` requests are fail-closed: if no mobile token is configured they return 401; otherwise they require `Authorization: Bearer <token>` or `?token=<token>`. |
 | **Errors** | `{ error: string }` with appropriate HTTP status. `DomainError` kinds map to: 404 (NotFound), 400 (Validation), 409 (Conflict), 502 (Provider), 499 (Cancelled), 401 (Unauthorized), 500 (Internal). |
 | **SSE streams** | Endpoints with `/stream` return `text/event-stream`. Events: `text-delta`, `reasoning-delta`, `error`, `snapshot`, `done`. |
-| **Snapshots** | Most mutating endpoints return a monolithic snapshot (`ChatSnapshot`) that the frontend ingests atomically. |
+| **Snapshots** | Most mutating endpoints return a monolithic snapshot (`SessionSnapshot`) that the frontend ingests atomically via `ingestSnapshot()`. Some endpoints return partial data (e.g., `renameChat` returns `{ chatId, title }`). |
 | **Validation** | Request bodies validated via Zod schemas (`@hono/zod-validator`). Invalid requests return 400 with field-level error details. |
 
 ---
@@ -42,7 +42,7 @@ Create a new character.
 }
 ```
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `PATCH /api/characters/:characterId`
 
@@ -58,13 +58,13 @@ Update character fields.
 }
 ```
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `DELETE /api/characters/:characterId`
 
 Delete a character and all associated data.
 
-**Response:** `ChatSnapshot`
+**Response:** 200 OK (empty JSON or void).
 
 ### `GET /api/characters/:characterId/export`
 
@@ -76,19 +76,19 @@ Export character as SillyTavern V2/V3 PNG card.
 
 Archive a character (soft delete from active list).
 
-**Response:** `ChatSnapshot`
+**Response:** `{ characterId: string, status: "archived" }`
 
 ### `PATCH /api/characters/:characterId/unarchive`
 
 Restore an archived character.
 
-**Response:** `ChatSnapshot`
+**Response:** `{ characterId: string, status: "active" }`
 
 ### `POST /api/characters/:characterId/duplicate`
 
 Duplicate a character with a new ID.
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ---
 
@@ -106,13 +106,13 @@ Create a new chat.
 
 If `characterId` omitted, uses the system character.
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `GET /api/chats/:chatId`
 
 Get full chat state (messages, branches, variants, summaries).
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `PATCH /api/chats/:chatId/settings`
 
@@ -129,7 +129,7 @@ Update chat-level overrides (scenario, systemPrompt).
 }
 ```
 
-**Response:** `ChatSnapshot`
+**Response:** 200 OK (void — no snapshot returned).
 
 ### `PATCH /api/chats/:chatId/title`
 
@@ -137,7 +137,7 @@ Rename chat.
 
 **Body:** `{ "title": "New Title" }`
 
-**Response:** `ChatSnapshot`
+**Response:** `{ chatId: string, title: string }` — minimal response (not a full snapshot).
 
 ### `PATCH /api/chats/:chatId/greeting-index`
 
@@ -145,19 +145,19 @@ Select which alternate greeting to use.
 
 **Body:** `{ "greetingIndex": 2 }`
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `DELETE /api/chats/:chatId`
 
 Delete a chat and all associated data.
 
-**Response:** `ChatSnapshot`
+**Response:** 204 No Content (empty body).
 
 ### `POST /api/chats/:chatId/clone`
 
 Clone a chat (same character, same branch structure).
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `POST /api/chats/:chatId/fork`
 
@@ -165,9 +165,7 @@ Fork a chat from a specific message into a new branch.
 
 **Body:** `{ "fromMessageId": "msg_42" }` (optional — defaults to last message)
 
-**Response:** `ChatSnapshot`
-
-### `GET /api/chats/:chatId/export.jsonl`
+**Response:** `SessionSnapshot`
 
 Export chat as JSONL (one JSON object per line, SillyTavern-compatible format).
 
@@ -194,7 +192,7 @@ Events:
 |-------|---------|-------------|
 | `text-delta` | `{ text: string }` | Assistant text chunk |
 | `reasoning-delta` | `{ text: string }` | Thinking/reasoning chunk |
-| `snapshot` | `ChatSnapshot` | Final state after generation completes |
+| `snapshot` | `SessionSnapshot` | Final state after generation completes |
 | `error` | `{ error: string }` | Generation error |
 | `done` | — | Stream complete |
 
@@ -208,7 +206,7 @@ Send a user message **without** AI generation (append only).
 { "content": "A message without generation." }
 ```
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `POST /api/chats/:chatId/messages/:messageId/regenerate/stream`
 
@@ -220,7 +218,7 @@ Regenerate a specific assistant message (streaming).
 
 Regenerate a specific assistant message (non-streaming).
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `POST /api/chats/:chatId/generate-reply/stream`
 
@@ -232,25 +230,25 @@ Generate an assistant continuation without user input (streaming).
 
 Generate continuation without user input (non-streaming).
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `POST /api/chats/:chatId/messages/:messageId/branch`
 
 Create a new branch from a specific message.
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `POST /api/chats/:chatId/messages/:messageId/variants/:variantIndex/select`
 
 Switch the active variant (swipe) for a message.
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `DELETE /api/chats/:chatId/messages/:messageId/variants/:variantIndex`
 
 Delete a specific variant (swipe). Must not be the last variant.
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `PATCH /api/chats/:chatId/messages/:messageId`
 
@@ -262,13 +260,13 @@ Edit message content.
 { "content": "Edited message text." }
 ```
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `DELETE /api/chats/:chatId/messages/:messageId`
 
 Delete a message.
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ---
 
@@ -278,13 +276,13 @@ Delete a message.
 
 Switch to a different branch.
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `DELETE /api/chats/:chatId/branches/:branchId`
 
 Delete a branch and all its messages.
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `PATCH /api/chats/:chatId/branches/:branchId`
 
@@ -292,7 +290,7 @@ Rename a branch.
 
 **Body:** `{ label: string }`
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ---
 
@@ -302,7 +300,7 @@ Rename a branch.
 
 List all chat summaries.
 
-**Response:** `ChatSnapshot` (summaries included)
+**Response:** `SessionSnapshot` (summaries included)
 
 ### `POST /api/chats/:chatId/summaries`
 
@@ -322,7 +320,7 @@ Create a manual summary.
 }
 ```
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `PATCH /api/chats/:chatId/summaries/:summaryId`
 
@@ -330,13 +328,13 @@ Update a summary.
 
 **Body:** `updateChatSummarySchema` (all fields optional)
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `DELETE /api/chats/:chatId/summaries/:summaryId`
 
 Delete a summary.
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `POST /api/chats/:chatId/summaries/generate`
 
@@ -353,7 +351,7 @@ Generate a summary using AI.
 }
 ```
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `PATCH /api/chats/:chatId/memory-settings`
 
@@ -372,7 +370,7 @@ Update memory/summary configuration.
 }
 ```
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `POST /api/chats/:chatId/summary`
 
@@ -388,7 +386,7 @@ Save or replace the chat summary text.
 
 **Body:** `{ "summary": "Summary text..." }`
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `POST /api/chats/:chatId/set-persona`
 
@@ -396,7 +394,7 @@ Change the active persona for this chat.
 
 **Body:** `{ "personaId": "pers_2" }`
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ### `POST /api/chats/:chatId/set-prompt-preset`
 
@@ -404,7 +402,7 @@ Change the active prompt preset for this chat.
 
 **Body:** `{ "promptPresetId": "prompt_preset_2" }`
 
-**Response:** `ChatSnapshot`
+**Response:** `SessionSnapshot`
 
 ---
 
