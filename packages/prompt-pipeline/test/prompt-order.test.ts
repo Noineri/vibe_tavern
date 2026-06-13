@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { assemblePrompt } from "../src/assemble.ts";
 
 describe("Prompt pipeline: preset promptOrder toggles", () => {
-  it("disables built-in character/persona/history/example slots", () => {
+  it("disables built-in character/persona/example slots (chat history is always enabled)", () => {
     const result = assemblePrompt({
       identity: { chatId: "chat_1" },
       chat: {
@@ -21,12 +21,12 @@ describe("Prompt pipeline: preset promptOrder toggles", () => {
       preset: {
         id: "preset_1",
         text: "system prompt",
+        advancedMode: true,
         promptOrder: [
           { identifier: "charDescription", enabled: false },
           { identifier: "scenario", enabled: false },
           { identifier: "charPersonality", enabled: false },
           { identifier: "personaDescription", enabled: false },
-          { identifier: "chatHistory", enabled: false },
           { identifier: "dialogueExamples", enabled: false },
         ],
       },
@@ -37,9 +37,12 @@ describe("Prompt pipeline: preset promptOrder toggles", () => {
     expect(layerIds).not.toContain("character_scenario");
     expect(layerIds).not.toContain("character_personality");
     expect(layerIds).not.toContain("persona");
-    expect(layerIds).not.toContain("recent_history");
     expect(layerIds).not.toContain("mes_example");
-    expect(result.finalPayload.messages.some((message) => message.messageId === "m1")).toBe(false);
+    // chatHistory CANNOT be disabled: it carries container markup used for
+    // precise inject-depth placement, so it must always survive (unlike ST,
+    // which lets users drop it). Verify it is present despite no toggle.
+    expect(layerIds).toContain("recent_history");
+    expect(result.finalPayload.messages.some((message) => message.messageId === "m1")).toBe(true);
   });
 
   it("disables preset-owned main/jailbreak/authorsNote slots", () => {
@@ -52,6 +55,7 @@ describe("Prompt pipeline: preset promptOrder toggles", () => {
         text: "system prompt",
         jailbreak: "post history",
         authorsNote: "author note",
+        advancedMode: true,
         promptOrder: [
           { identifier: "main", enabled: false },
           { identifier: "jailbreak", enabled: false },
@@ -79,6 +83,7 @@ describe("Prompt pipeline: preset promptOrder toggles", () => {
       preset: {
         id: "preset_1",
         text: "system prompt",
+        advancedMode: true,
         customInjections: [{
           identifier: "custom_relative",
           name: "Custom Relative",
@@ -116,6 +121,7 @@ describe("Prompt pipeline: preset promptOrder toggles", () => {
       preset: {
         id: "preset_1",
         text: "system prompt",
+        advancedMode: true,
         customInjections: [{
           identifier: "custom_after",
           name: "Custom After",
@@ -124,6 +130,7 @@ describe("Prompt pipeline: preset promptOrder toggles", () => {
           role: "assistant",
           enabled: true,
           injectionPosition: 0,
+          slot: { zone: "after_chat", depth: null, order: 2 },
         }],
         promptOrder: [
           { identifier: "main", enabled: true, order: 0, kind: "built_in" },

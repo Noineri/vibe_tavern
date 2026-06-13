@@ -11,22 +11,53 @@ The pipeline transforms raw character/persona/preset/lore/memory data into an or
 ```
 PromptAssemblyContext
   │
+  ├─ 0. Mode resolution        ← resolvers/ (SimpleResolver | AdvancedResolver)
   ├─ 1. Macro resolution        ← macro-registry.ts (AST parser + evaluator)
-  ├─ 2. Layer creation          ← assemble.ts
+  ├─ 2. Layer creation          ← buildLayers() — the SINGLE mode-sensitive stage
+  │     • asks the resolver: enabled? rank? position? include custom injections?
   ├─ 3. Compaction              ← compaction.ts (if contextBudget exceeded)
   ├─ 4. Mode filtering          ← drop layers not active for current AssemblyMode
-  ├─ 5. Sorting                 ← position → subPosition → priority descending
-  └─ 6. Final assembly          ← interleave in_chat layers into history
+  ├─ 5. Sorting                 ← position → subPosition → insertionOrder → priority
+  └─ 6. Final assembly          ← finalizeAssembly() — interleave in_chat layers into history
   │
   ▼
 PromptAssemblyResult (layers + messages + metadata)
 ```
+
+Stages 1 and 3–6 are **mode-agnostic** — identical in Simple and Advanced modes.
+Only stage 2 (layer creation) consults the [mode resolver](#simple-vs-advanced-mode),
+and even there only for three policy questions (is this slot enabled? what rank
+sorts it? what zone/depth does it land in?). See [Mode-aware assembly](#simple-vs-advanced-mode).
 
 ---
 
 ## Entry Point: `assemblePrompt(context)`
 
 **File:** `packages/prompt-pipeline/src/assemble.ts`
+
+The entry point is a thin dispatcher. It resolves macros, picks the [mode
+resolver](#simple-vs-advanced-mode) once, and delegates to two stages:
+
+```ts
+export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssemblyResult {
+  const context = applyMacrosToContext(rawContext);
+  if (effectiveMode === "ai_assistant") return assembleAiAssistant(context);
+
+  const resolver = createResolver(context.preset);   // ← the single mode decision
+  return finalizeAssembly(context, buildLayers(context, resolver), resolver);
+}
+```
+
+- **`buildLayers(context, resolver)`** — stage 2. The only mode-sensitive stage.
+  Creates a `PromptLayer` per non-empty content source, asking the resolver
+  three questions per slot: `enabled(id)`, `rank(id)`, `position(layer, id)`.
+  Also runs compaction (it needs non-history layer token counts).
+- **`finalizeAssembly(context, built, resolver)`** — stages 3–6. Mode-agnostic:
+  assigns `LAYER_MODES`, filters by `AssemblyMode`, sorts, interleaves in_chat
+  layers into history, and builds `finalPayload`.
+
+Both stages share the same resolver instance, so the mode is decided exactly
+once and never re-derived downstream.
 
 ```ts
 import { assemblePrompt } from "@vibe-tavern/prompt-pipeline";
@@ -115,6 +146,12 @@ Layers are placed into four positions, rendered in this order:
 
 ### Priority Stack (default)
 
+> **Note:** `priority` is the **last-resort tiebreaker** in `sortLayers`. The
+> effective sort key chain is `position → subPosition → insertionOrder →
+> priority` (descending). Custom injections and canvas-driven slots always
+> carry a `subPosition`, so they never reach the `priority` tier — these
+> defaults matter only for legacy/built-in layers without a `subPosition`.
+
 ```
 1000  prompt_preset_system          ← Preset's main system prompt
  990  prompt_preset_jailbreak       ← Jailbreak / anti-censorship
@@ -179,6 +216,97 @@ Lore entries use SillyTavern position strings that map to pipeline positions:
 | `bottom_an` | `in_prompt` | 25 |
 | `at_depth` | `in_chat` | — (uses `depth` field) |
 | `outlet` | `hidden_system` | — |
+
+---
+
+## Simple vs Advanced Mode
+
+A preset operates in one of two modes, selected by `preset.advancedMode`. The
+mode decides **three policy questions** per slot during `buildLayers` and nothing
+else — content construction, macro resolution, compaction, sorting, and final
+assembly are identical in both modes.
+
+| Policy question | Simple | Advanced |
+|---|---|---|
+| Is a built-in slot enabled? | **always** (no canvas toggles) | canvas `promptOrder[id].enabled` |
+| What rank does it sort at? | `DEFAULT_PROMPT_ORDER[id]` | canvas `promptOrder[id].order` |
+| What zone/depth does it land in? | inferred from default order vs `chatHistory`(100) | canvas `promptOrder[id].zone`/`.depth` |
+| Are custom injections assembled? | **no** (stored only) | yes |
+
+### The `PositionResolver` seam
+
+The mode decision is encapsulated in a `PositionResolver`
+(`packages/prompt-pipeline/src/resolvers/`) so `buildLayers` is mode-blind:
+
+```
+resolvers/
+├── position-resolver.ts   interface + createResolver(preset) factory
+├── simple-resolver.ts     built-in always-on, DEFAULT_PROMPT_ORDER, no custom injections
+└── advanced-resolver.ts   canvas (promptOrder) is the single source of truth
+```
+
+```ts
+interface PositionResolver {
+  enabled(id): boolean;                  // built-in slot participation
+  rank(id, fallback?): number;           // sort rank
+  position(layer, id): PromptLayer;      // apply zone/order/depth
+  readonly includeCustomInjections: boolean;
+  worldInfoEntry(id): entry | undefined; // canvas WI slot (advanced only)
+}
+```
+
+`assemblePrompt` creates the resolver once and threads it through both stages:
+`buildLayers(context, resolver)` and `finalizeAssembly(context, built, resolver)`.
+The mode is never re-derived downstream — there is no `isSimpleMode()` check in
+the body of `buildLayers` or `finalizeAssembly`.
+
+### Shared-field model (2-in-1 preset)
+
+Simple and Advanced modes share the **same underlying preset data** for the four
+core fields — `system` (`text`), `jailbreak`, `prefill`, `authorsNote`. This is
+intentional: a preset is a 2-in-1 container, and switching modes must not lose
+the user's authored content.
+
+- **Simple → Advanced:** the basic fields are preserved; the canvas renders them
+  as built-in slots. Custom injections are retained on the preset (not
+  assembled in Simple, but available the moment the user switches to Advanced).
+- **Advanced → Simple:** the canvas state is retained on the preset but ignored
+  at assembly; the basic fields still drive the four core slots.
+
+### Author's Note — flat fields are authoritative
+
+The Author's Note is special: it owns **flat position fields**
+(`authorsNotePosition` / `authorsNoteDepth` / `authorsNoteRole`) that are
+**authoritative in both modes**. The resolver contributes only `subPosition`
+(sort rank) for the note — it never relocates it. The three placements:
+
+| `authorsNotePosition` | layer position | `injectionDepth` |
+|---|---|---|
+| `in_prompt` | `in_prompt` | — (none) |
+| `in_chat` (default) | `in_chat` | `authorsNoteDepth` (default 4) |
+| `after_chat` | `in_chat` | `0` |
+
+`after_chat` is semantically identical to `in_chat` at depth 0 — symmetry is
+expressed via the depth value, not a new `PromptLayer.position` enum value.
+
+### Invariant: chatHistory can never be disabled
+
+`chatHistory` carries container markup used for **precise inject-depth
+placement** (in_chat layers splice into history by depth). Disabling it would
+break depth math, so both resolvers force-enable it regardless of any canvas
+toggle. This intentionally diverges from SillyTavern, which lets users drop
+history — we reject that because our depth-injection model depends on the
+history layer always being present.
+
+### No-synthesis rule
+
+The backend **never derives `zone` from `order`**. In Advanced mode the canvas
+is expected to write `zone`/`depth` explicitly on each `promptOrder` entry;
+when an entry lacks `zone`, it is *inferred* via `inferSlot({ defaultOrder })`
+(SillyTavern's default-order-relative heuristic), not synthesized from the
+entry's position in the array. Tests that feed only `order` and expect a
+derived `zone` are synthetic and invalid — the canvas contract requires
+explicit `zone`.
 
 ---
 
@@ -481,6 +609,11 @@ The pipeline produces:
 
 ## Advanced Prompt Mode
 
+> The assembly-level contract for Advanced mode is documented in
+> [Simple vs Advanced Mode](#simple-vs-advanced-mode) above (resolver seam,
+> shared-field model, no-synthesis rule). This section covers the **UI /
+> persistence** side: the canvas, the data flow, and ST import.
+
 A preset can switch to **Advanced Mode** (SilkyTavern-compatible) via `advancedMode: true` on `PromptPresetDto`. The flag is **per-preset** and persisted in `prompt_presets.advanced_mode`.
 
 When advanced mode is active:
@@ -520,8 +653,8 @@ Three places store position data, all converging on `PromptSlot`:
 
 | Source | Location | How it's read |
 |--------|----------|---------------|
-| `PromptOrderEntry.zone` / `.depth` | `promptOrder[]` on preset | `applyPromptOrderPosition()` in `assemble.ts` |
-| `CustomInjection.slot` | `customInjections[]` on preset | Direct read in `assemble.ts` |
+| `PromptOrderEntry.zone` / `.depth` | `promptOrder[]` on preset | `AdvancedResolver.position()` (see [Simple vs Advanced Mode](#simple-vs-advanced-mode)) |
+| `CustomInjection.slot` | `customInjections[]` on preset | Direct read in `buildLayers()` |
 | Legacy ST fields | `injectionPosition`, `injectionOrder`, `depth` | `migrateInjection()` fallback |
 
 Migration: `migrateInjection()` converts legacy fields into `PromptSlot` on first access. `slotToStFields()` reverse-maps for export. The canvas always writes `slot` on custom injections and `zone`/`depth` on `promptOrder` entries — legacy fields are never the source of truth.
@@ -605,9 +738,18 @@ Test files:
 
 | File | What it tests |
 |------|---------------|
-| `assemble.test.ts` | Layer creation, sorting, mode filtering, compaction |
+| `assemble.test.ts` | Layer creation, sorting, mode filtering, compaction, author's-note flat-field placement |
 | `macro-resolution.test.ts` | All macro types, variables, conditionals, random, roll, nested if |
 | `lore-activation.test.ts` | Lore keyword matching, logic operators, cooldown, group weights |
 | `macros.test.ts` | Legacy macro tests (skipped — module removed) |
-| `prompt-order.test.ts` | Prompt order overrides and ST-compatible insertion positions |
-| `st-injections.test.ts` | SillyTavern-style prompt injections and placement behavior |
+| `prompt-order.test.ts` | Prompt order overrides, ST-compatible insertion positions, chatHistory-always-enabled invariant |
+| `st-injections.test.ts` | SillyTavern-style prompt injections, relative/absolute/depth placement |
+
+### Mode-contract testing
+
+Tests that exercise **Advanced** behavior (canvas toggles, custom injections, ST
+semantics) must declare `advancedMode: true` on their preset and write explicit
+`zone`/`depth` on `promptOrder` entries (the [no-synthesis rule](#no-synthesis-rule)).
+A test that omits `advancedMode` runs in Simple mode by default, where built-in
+slots are always enabled and custom injections are ignored — so an
+Advanced-behavior assertion will fail there, which is the contract, not a bug.

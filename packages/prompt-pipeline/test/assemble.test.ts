@@ -104,6 +104,52 @@ describe("assemblePrompt", () => {
     });
   });
 
+  describe("author's note placement (flat fields are authoritative)", () => {
+    it("places the note in_prompt when authorsNotePosition is in_prompt", () => {
+      const result = assemblePrompt(baseContext({
+        preset: {
+          id: "preset_1",
+          authorsNote: "Strict mode.",
+          authorsNotePosition: "in_prompt",
+        },
+      }));
+      const layer = result.layers.find((l) => l.id === "prompt_preset_authors_note");
+      expect(layer?.position).toBe("in_prompt");
+      expect(layer?.injectionDepth).toBeUndefined();
+    });
+
+    it("places the note at in_chat depth 0 when authorsNotePosition is after_chat", () => {
+      // Regression guard: previously the after_chat branch called
+      // resolver.position(), which in simple mode forced the note back into
+      // in_prompt (DEFAULT_PROMPT_ORDER.authorsNote=60 < chatHistory=100),
+      // silently dropping the user's after_chat placement.
+      const result = assemblePrompt(baseContext({
+        preset: {
+          id: "preset_1",
+          authorsNote: "After chat note.",
+          authorsNotePosition: "after_chat",
+        },
+      }));
+      const layer = result.layers.find((l) => l.id === "prompt_preset_authors_note");
+      expect(layer?.position).toBe("in_chat");
+      expect(layer?.injectionDepth).toBe(0);
+    });
+
+    it("places the note at the configured depth when authorsNotePosition is in_chat", () => {
+      const result = assemblePrompt(baseContext({
+        preset: {
+          id: "preset_1",
+          authorsNote: "Depth note.",
+          authorsNotePosition: "in_chat",
+          authorsNoteDepth: 3,
+        },
+      }));
+      const layer = result.layers.find((l) => l.id === "prompt_preset_authors_note");
+      expect(layer?.position).toBe("in_chat");
+      expect(layer?.injectionDepth).toBe(3);
+    });
+  });
+
   describe("persona", () => {
     it("includes persona layer when provided", () => {
       const result = assemblePrompt(baseContext({
@@ -169,6 +215,7 @@ describe("assemblePrompt", () => {
         preset: {
           id: "preset_1",
           text: "Global system instructions.",
+          advancedMode: true,
           promptOrder: [
             { identifier: "main", order: 0, enabled: true },
             { identifier: "worldInfoAfter", order: 10, enabled: true },
@@ -306,11 +353,12 @@ describe("assemblePrompt", () => {
         preset: {
           id: "p1",
           text: "Preset.",
+          advancedMode: true,
           promptOrder: [
             { identifier: "main", order: 0, enabled: true },
             { identifier: "charDescription", order: 10, enabled: true },
             { identifier: "chatHistory", order: 20, enabled: true },
-            { identifier: "worldInfoAfter", order: 30, enabled: true },
+            { identifier: "worldInfoAfter", order: 30, enabled: true, zone: "after_chat" },
           ],
         },
         lore: [
