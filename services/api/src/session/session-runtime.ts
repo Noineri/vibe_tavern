@@ -352,28 +352,6 @@ export interface ImportResult {
 		return importST(this.importExportDeps, dirPath);
 	}
 
-	// ─── Personal lorebook toggle (wired but unimplemented) ──────────
-	//
-	// Routes exist: GET/PUT /api/personas/:personaId/personal-lorebook
-	// Frontend client functions exist but NO component calls them yet.
-	//
-	// Implementation needed:
-	//   getPersonalLorebookStatus → check lorebook_links for targetType='persona'
-	//   setPersonalLorebookEnabled → create/disable persona-scoped lorebook + link
-	//
-	// The stores.lorebooks layer already fully supports persona-scoped lorebooks
-	// and persona-targeted links. Only the wiring here + a UI component are missing.
-	//
-	// TODO: Implement when "Personal Lorebook" UI is built.
-
-	getPersonalLorebookStatus(_personaId: string): { enabled: boolean; lorebookId: string | null } {
-		return { enabled: false, lorebookId: null };
-	}
-
-	setPersonalLorebookEnabled(_personaId: string, _enabled: boolean): { enabled: boolean; lorebookId: string | null } {
-		return { enabled: false, lorebookId: null };
-	}
-
 	// ─── Private: prompt wiring ─────────────────────────────────────────
 
 	/**

@@ -22,14 +22,6 @@ export function createPersonaRoutes(runtime: PersonaRuntimeApi) {
       runtime.deletePersona(c.req.param("personaId"));
       return c.body(null, 204);
     })
-    .get("/api/personas/:personaId/personal-lorebook", async (c) => {
-      return c.json(await runtime.getPersonalLorebookStatus(c.req.param("personaId")));
-    })
-    .put("/api/personas/:personaId/personal-lorebook", zValidator("json", schemas.setPersonalLorebookSchema), async (c) => {
-      const body = c.req.valid("json");
-      const enabled = body.enabled === true;
-      return c.json(await runtime.setPersonalLorebookEnabled(c.req.param("personaId"), enabled));
-    })
     .post("/api/personas/:personaId/duplicate", async (c) => {
       return c.json(await runtime.duplicatePersona(c.req.param("personaId")), 201);
     })

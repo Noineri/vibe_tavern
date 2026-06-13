@@ -633,7 +633,6 @@
   "chat_rename_failed": "Не удалось переименовать чат.",
   "chat_create_failed": "Не удалось создать чат.",
   "cannot_delete_last_char": "Нельзя удалить последнего персонажа",
-  "failed_to_update_lorebook": "Не удалось обновить личный лорбук.",
   "failed_to_create_character": "Не удалось создать персонажа.",
   "failed_to_create_free_chat": "Не удалось создать свободный чат.",
   "failed_to_clone_chat": "Не удалось клонировать чат.",
