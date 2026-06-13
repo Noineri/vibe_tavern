@@ -1,4 +1,4 @@
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { characters } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
@@ -43,7 +43,6 @@ export interface Character {
   id: string;
   slug: string;
   name: string;
-  isSystem: boolean;
   description: string;
   personalitySummary: string | null;
   defaultScenario: string | null;
@@ -111,7 +110,7 @@ export class CharacterStore {
     const rows = await this.db
       .select()
       .from(characters)
-      .where(and(eq(characters.isSystem, 0), eq(characters.status, 'active')))
+      .where(eq(characters.status, 'active'))
       .all();
     return rows.map((row) => this.mapRow(row));
   }
@@ -121,10 +120,7 @@ export class CharacterStore {
       .select()
       .from(characters)
       .where(
-        and(
-          eq(characters.isSystem, 0),
-          sql`lower(${characters.name}) LIKE lower(${'%' + query + '%'})`,
-        ),
+        sql`lower(${characters.name}) LIKE lower(${'%' + query + '%'})`,
       )
       .all();
     return rows.map((row) => this.mapRow(row));
@@ -162,7 +158,6 @@ export class CharacterStore {
         avatarFullAssetId: data.avatarFullAssetId ?? null,
         avatarCropJson: data.avatarCropJson ?? null,
         status: 'active',
-        isSystem: 0,
         createdAt: now,
         updatedAt: now,
       })
@@ -259,7 +254,6 @@ export class CharacterStore {
       .values({
         id: newId,
         name: `${original.name} (copy)`,
-        isSystem: 0,
         description: original.description,
         personalitySummary: original.personalitySummary,
         defaultScenario: original.defaultScenario,
@@ -371,7 +365,6 @@ export class CharacterStore {
       id: row.id,
       slug: deriveSlug(row.name),
       name: row.name,
-      isSystem: row.isSystem === 1,
       description: row.description,
       personalitySummary: row.personalitySummary,
       defaultScenario: row.defaultScenario,

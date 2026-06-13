@@ -211,6 +211,13 @@
       "when": 1781194928529,
       "tag": "0029_lazy_scrambler",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1781362575715,
+      "tag": "0030_slow_hitman",
+      "breakpoints": true
     }
   ]
 }
