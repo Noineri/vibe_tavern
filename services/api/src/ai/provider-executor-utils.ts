@@ -6,7 +6,7 @@
  * stream-provider-executor.ts and nonstreaming-provider-executor.ts.
  */
 
-import type { LanguageModel } from "ai";
+import type { LanguageModel, ModelMessage } from "ai";
 import { mapProfileToSdkModel } from "./provider-profile-mapper.js";
 import { getProviderCapabilities } from "./provider-capabilities.js";
 import type { ProviderType } from "@vibe-tavern/domain";
@@ -34,8 +34,8 @@ export interface PreparedMessages {
    * role/order shown in prompt traces.
    */
   systemPrompt?: undefined;
-  /** Prompt messages in trace order, with optional prefill appended. */
-  conversationMessages: Array<SdkMessage | { role: SdkMessage["role"]; content: Array<{ type: "text"; text: string } | { type: "image"; image: Buffer; mediaType?: string }> }>;
+  /** Prompt messages in trace order, mapped to SDK `ModelMessage[]`. */
+  conversationMessages: ModelMessage[];
 }
 
 // ---------------------------------------------------------------------------
@@ -141,18 +141,25 @@ export async function prepareSdkMessages(
     conversationMessages.push({ role: "assistant", content: options.prefill });
   }
 
-  // Resolve multimodal content (image attachments → ImageParts)
-  if (options.visionGate && options.assetLoader) {
-    conversationMessages = await Promise.all(
-      conversationMessages.map(async (msg) => {
-        if ("attachments" in msg && msg.attachments?.length) {
-          const content = await resolveMultimodalContent(msg, options.visionGate!, options.assetLoader!);
-          return { role: msg.role, content };
-        }
-        return msg;
-      }),
-    ) as typeof conversationMessages;
-  }
+  // Map to SDK `ModelMessage[]`. Attachments only ever live on user
+  // messages by design (see `toSdkMessages` + executor filtering), so only
+  // user content can become multimodal `UserContent` after vision resolution.
+  const conversationModelMessages: ModelMessage[] = await Promise.all(
+    conversationMessages.map(async (msg): Promise<ModelMessage> => {
+      if (msg.attachments?.length && options.visionGate && options.assetLoader) {
+        const parts = await resolveMultimodalContent(msg, options.visionGate, options.assetLoader);
+        return { role: "user", content: parts };
+      }
+      switch (msg.role) {
+        case "system":
+          return { role: "system", content: msg.content };
+        case "assistant":
+          return { role: "assistant", content: msg.content };
+        case "user":
+          return { role: "user", content: msg.content };
+      }
+    }),
+  );
 
-  return { systemPrompt: undefined, conversationMessages };
+  return { systemPrompt: undefined, conversationMessages: conversationModelMessages };
 }

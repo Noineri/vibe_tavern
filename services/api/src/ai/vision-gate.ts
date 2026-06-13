@@ -12,6 +12,7 @@
  */
 
 import type { Attachment } from "@vibe-tavern/domain";
+import type { ImagePart, TextPart } from "ai";
 import type { SdkMessage } from "./provider-executor-utils.js";
 import { compressForVision, isCompressibleImage } from "../image-compress.js";
 import { resolveSystemPrompt } from "../ai-assistant/ai-assistant-prompts.js";
@@ -113,8 +114,8 @@ export async function resolveMultimodalContent(
   message: SdkMessage,
   gate: VisionGateConfig,
   assetLoader: (assetId: string) => Promise<Buffer | null>,
-): Promise<Array<{ type: "text"; text: string } | { type: "image"; image: Buffer; mediaType?: string }>> {
-  const parts: Array<{ type: "text"; text: string } | { type: "image"; image: Buffer; mediaType?: string }> = [];
+): Promise<Array<TextPart | ImagePart>> {
+  const parts: Array<TextPart | ImagePart> = [];
 
   // Always include text content
   if (message.content) {
