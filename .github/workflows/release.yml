@@ -125,7 +125,7 @@ jobs:
         run: |
           $version = "${{ needs.release.outputs.version }}"
           Rename-Item -Path "out\installer\vibe-tavern-setup.exe" `
-                      -NewName "Vibe-Tavern-v${version}-windows-setup.exe"
+                      -NewName "Vibe-Tavern-${version}-windows-setup.exe"
 
       - uses: softprops/action-gh-release@v3
         with:
@@ -182,7 +182,7 @@ jobs:
         run: |
           VERSION="${{ needs.release.outputs.version }}"
           mv mobile/android/app/build/outputs/apk/release/app-release.apk \
-              "vibe-tavern-${VERSION}-android.apk"
+              "Vibe-Tavern-${VERSION}-android.apk"
 
       - uses: softprops/action-gh-release@v3
         with:
