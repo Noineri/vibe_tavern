@@ -121,7 +121,9 @@ export interface PromptAssemblyContext {
     nsfw?: string | null;
     /** Enhance Definitions prompt (ST identifier: enhanceDefinitions). Disabled by default in ST. Placed after scenario, before nsfw. */
     enhanceDefinitions?: string | null;
-    /** Custom injection blocks (advanced mode). */
+    /** Whether this preset is in advanced (canvas-driven) mode. `false`/`undefined` = simple mode (4 preset fields, no custom injections, `DEFAULT_PROMPT_ORDER` ordering). Mirrors `PromptPresetDto.advancedMode`. */
+    advancedMode?: boolean | null;
+    /** Custom injection blocks (advanced mode only — ignored when `advancedMode` is falsy). */
     customInjections?: Array<{
       identifier?: string;
       name: string;
