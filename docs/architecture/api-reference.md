@@ -268,6 +268,20 @@ Delete a message.
 
 **Response:** `SessionSnapshot`
 
+### `POST /api/chats/:chatId/messages/:messageId/attachments/:attachmentId/regenerate-description`
+
+Force-re-describe a single image/video attachment with the active profile's vision model, ignoring any existing description (even a hand-edited one). Uses the same vision resolution path as message send (profile `visionModel` + the `vision_describe` system prompt).
+
+**Preconditions:** the attachment must be `image` or `video`, and a `visionModel` must be configured in the active provider profile.
+
+**Errors:**
+- `400` — attachment is not an image/video, or no vision model is configured.
+- `404` — attachment not found.
+
+**Response:** `{ description: string }` — the new description, also persisted to the message's attachments JSON. Reasoning (`<think>…`) is stripped before persistence.
+
+> Exposed for the lightbox "regenerate" button. The auto-describe cache (skip-if-described) is non-destructive; this endpoint is the only way to re-describe or add a description out-of-band. See [Vision and Attachment Pipeline](./backend.md#vision-and-attachment-pipeline).
+
 ---
 
 ## Branches

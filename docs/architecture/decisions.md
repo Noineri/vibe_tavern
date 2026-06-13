@@ -315,3 +315,27 @@ There are no "modes" on the server — each endpoint is independently typed. The
 - Trace (immutable record of a *past* generation) and Preview (live computation of the *next* prompt) become cleanly separated: traces load lazily via `GET /api/chats/:id/traces`
 
 **Trade-off:** More response types to maintain (one per endpoint family) instead of a single `SessionSnapshot`. Acceptable — the types are small and the backend derives them from the same DB reads, just selects fewer fields. Net reduction in wasted computation.
+
+---
+
+## AD-017: `vision_describe` as a Non-User-Facing AI Assistant Mode
+
+**Status:** Implemented (commit `eb51215`).
+
+**Context:** The attachment-description pipeline (vision fallback — describing images as text when the primary model lacks vision) needs a system prompt. Before this ADR, `vision-gate.ts` carried its own duplicate prompt-loading machinery: a hard-coded candidate-path list and a separate cache, distinct from the `ai-assistant-prompts.ts` loader used by the five user-facing assistant modes (`script`, `lore_entry`, `lore_keys`, `chat_impersonate`, `md_import`). Two `.md`-loading code paths for prompts that should behave identically.
+
+At the same time, the Settings prompt editor already surfaced a `vision_describe` key in the preset's `aiAssistantPrompts` JSON — but that key resolved to nothing, because `vision_describe` was not a real mode in `MODE_CONFIGS`. It was a phantom: editable in the UI, ignored by the backend.
+
+**Decision:** Register `vision_describe` as a real `AiAssistantMode` in `MODE_CONFIGS` (`ai-assistant-modes.ts`), pointing its `defaultPromptFile` at `services/api/assets/vision-describe-ai-prompt.md`. Delete the bespoke candidate-path + cache in `vision-gate.ts`; `resolveVisionDescribePrompt` now delegates to the shared `resolveSystemPrompt("vision_describe")`. The preset override → default `.md` fallback chain now applies uniformly to all six modes.
+
+Crucially, `vision_describe` is **not added to the AI Assistant modal's mode picker** — it remains a backend-only mode. It exists in the mode registry purely to (a) share the prompt-loading machinery and (b) back the Settings prompt-editor key with a real config.
+
+**Rationale:**
+- **One prompt-loading truth.** All prompt `.md` files load through the same cache and the same fallback order. No second code path to keep in sync.
+- **No phantom keys.** The Settings prompt editor's `vision_describe` entry is now backed by a real mode config and a real default `.md`, instead of being silently ignored.
+- **Users can still override the describe prompt** via their prompt preset, the same way they override `script` or `lore_entry` — no special UI for vision prompt editing.
+- **Non-destructive to the modal.** The assistant modal's mode list is a separate concern (driven by what the modal offers), so adding a backend mode does not clutter the user-facing picker.
+
+**Trade-off:** A `AiAssistantMode` value that isn't reachable from the assistant modal — mildly counterintuitive for a reader of the mode union. Mitigated by a comment in `MODE_CONFIGS` stating explicitly that it is backend-only. Considered alternatives (a separate `PromptResolvableMode` type for backend modes; a flag on the config) and rejected as over-engineering for a single case.
+
+**Related:** This ADR covers prompt-resolution unification only. The three-path vision gate (native vision / describe-fallback / `VisionNotSupportedError`) and the skip-if-described caching rule are documented in [Vision and Attachment Pipeline](./backend.md#vision-and-attachment-pipeline), not part of this decision.
