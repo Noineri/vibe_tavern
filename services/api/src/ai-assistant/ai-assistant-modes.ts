@@ -73,6 +73,19 @@ const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
     outputFormat: "json",
     jsonSchemaHint: '{ "name": "...", "tagline": "...", "description": "...", "personality": "...", "scenario": "...", "firstMessage": "...", "alternateGreetings": ["..."], "exampleMessages": ["..."], "creatorNotes": "..." }',
   },
+  // vision_describe is NOT user-facing in the assistant modal — it drives the
+  // backend attachment-description pipeline (vision gate fallback). Surfaced
+  // here purely so its prompt resolves through the same fallback chain as the
+  // other modes, and so the Settings prompt editor's existing "vision_describe"
+  // entry is backed by a real mode config instead of a phantom key.
+  vision_describe: {
+    mode: "vision_describe",
+    presetKey: "vision_describe",
+    defaultPromptFile: "vision-describe-ai-prompt.md",
+    stripReasoning: true,
+    outputFormat: "text",
+    jsonSchemaHint: null,
+  },
 };
 
 export function getModeConfig(mode: AiAssistantMode): AiAssistantModeConfig {

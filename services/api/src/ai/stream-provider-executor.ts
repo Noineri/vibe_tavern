@@ -41,7 +41,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       const allAttachments = messages
         .filter(m => m.role === "user")
         .flatMap(m => m.attachments ?? [])
-        .filter(a => a.type === "image" || a.type === "video");
+        .filter(a => (a.type === "image" || a.type === "video") && !a.description?.trim());
 
       if (allAttachments.length > 0) {
         const descriptions = await describeAttachments(

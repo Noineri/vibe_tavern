@@ -104,6 +104,7 @@ export interface ChatRuntimeApi {
 	editMessage: (chatId: string, messageId: string, content: string) => Promise<SessionSnapshot>;
 	deleteMessage: (chatId: string, messageId: string) => Promise<SessionSnapshot>;
 	updateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string, description: string) => Promise<{ ok: boolean }>;
+	regenerateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string) => Promise<{ description: string }>;
 
 	// Export
 	exportChatJsonl: (chatId: string) => Promise<string>;

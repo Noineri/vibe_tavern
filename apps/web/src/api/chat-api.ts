@@ -143,6 +143,20 @@ export async function updateAttachmentDescription(
   return response.json();
 }
 
+export async function regenerateAttachmentDescription(
+  chatId: string,
+  messageId: string,
+  attachmentId: string,
+): Promise<{ description: string }> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/chats/${chatId}/messages/${messageId}/attachments/${attachmentId}/regenerate-description`),
+    { method: "POST" },
+  );
+  if (!response.ok) throw new Error(`Failed to regenerate description: ${response.status}`);
+  return response.json();
+}
+
 // ─── Streams ────────────────────────────────────────────────────────────
 
 export { sendStream as sendChatMessageStream, regenerateStream as regenerateChatMessageStream, generateReplyStream as generateReplyStream };

@@ -57,6 +57,7 @@ export {
   selectMessageVariant,
   deleteMessageVariant,
   updateAttachmentDescription,
+  regenerateAttachmentDescription,
   sendChatMessageStream,
   regenerateChatMessageStream,
   generateReplyStream,

@@ -1,5 +1,6 @@
 import type { ChatRuntimeApi } from "../routes/types.js";
 import { brandId, type ChatId, type ChatBranchId, type MessageId } from "@vibe-tavern/domain";
+import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { validation, notFound } from "../errors.js";
 import { logSendDebug } from "../send-debug-log.js";
@@ -189,6 +190,38 @@ export class ChatAdapter implements ChatRuntimeApi {
 	updateAttachmentDescription = async (chatId: string, messageId: string, attachmentId: string, description: string) => {
 		await this.sessionRuntime.chatApp.updateSingleAttachmentDescription(messageId, attachmentId, description);
 		return { ok: true };
+	};
+
+	/**
+	 * Force re-describe a single attachment via the configured vision model,
+	 * ignoring any existing (possibly hand-edited) description. Uses the SAME
+	 * vision resolution path as send: active profile's visionModel + the
+	 * `vision_describe` system prompt. Exposed for the lightbox "regenerate"
+	 * button so the auto-describe cache (skip-if-described) stays non-destructive.
+	 */
+	regenerateAttachmentDescription = async (chatId: string, messageId: string, attachmentId: string): Promise<{ description: string }> => {
+		const message = await this.stores.chats.getMessageById(messageId);
+		if (!message?.attachmentsJson) throw validation("Message has no attachments.");
+		const attachments: Attachment[] = JSON.parse(message.attachmentsJson);
+		const att = attachments.find((a) => a.id === attachmentId);
+		if (!att) throw notFound("Attachment not found.");
+		if (att.type !== "image" && att.type !== "video") {
+			throw validation("Only image or video attachments can be described.");
+		}
+
+		const profile = await this.resolveActiveProfileOrThrow();
+		if (!profile.visionModel) {
+			throw validation("No vision model configured in the active provider profile. Set one in Provider settings.");
+		}
+
+		const { describeAttachments } = await import("../ai/vision-gate.js");
+		const prompt = await this.resolveVisionDescribePromptFromPreset();
+		const assetLoader = (assetId: string) => this.assetService.loadBuffer(assetId);
+
+		const descriptions = await describeAttachments([att], profile.visionModel, profile, assetLoader, prompt);
+		const description = descriptions.get(att.id)?.trim() ?? "";
+		await this.sessionRuntime.chatApp.updateSingleAttachmentDescription(messageId, attachmentId, description);
+		return { description };
 	};
 
 	deleteMessage = (chatId: string, messageId: string) =>

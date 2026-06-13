@@ -373,7 +373,7 @@ export interface AiAssistantChunk {
   error?: string;
 }
 
-export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import";
+export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe";
 
 export interface AiAssistantRequestBody {
   mode: AiAssistantMode;

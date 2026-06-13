@@ -14,57 +14,49 @@
 import type { Attachment } from "@vibe-tavern/domain";
 import type { SdkMessage } from "./provider-executor-utils.js";
 import { compressForVision, isCompressibleImage } from "../image-compress.js";
-import { resolve, join } from "node:path";
+import { resolveSystemPrompt } from "../ai-assistant/ai-assistant-prompts.js";
+import { splitReasoningFromText, type ReasoningSplitState } from "../ai-assistant/reasoning-split.js";
 
 // ---------------------------------------------------------------------------
 // Vision describe prompt resolution
 // ---------------------------------------------------------------------------
 
-const VISION_DESCRIBE_PROMPT_FILE = "vision-describe-ai-prompt.md";
-let _cachedDefaultPrompt: string | null = null;
-
-async function loadDefaultVisionDescribePrompt(): Promise<string> {
-  if (_cachedDefaultPrompt !== null) return _cachedDefaultPrompt;
-
-  const candidates = [
-    process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR
-      ? join(process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR, VISION_DESCRIBE_PROMPT_FILE)
-      : null,
-    join(resolve(process.execPath, ".."), "prompts", VISION_DESCRIBE_PROMPT_FILE),
-    resolve(import.meta.dir, "..", "..", "assets", VISION_DESCRIBE_PROMPT_FILE),
-    join(process.cwd(), "services", "api", "assets", VISION_DESCRIBE_PROMPT_FILE),
-    resolve(import.meta.dir, "..", VISION_DESCRIBE_PROMPT_FILE),
-    resolve(import.meta.dir, "..", "..", "..", "..", "out", "services", "api", VISION_DESCRIBE_PROMPT_FILE),
-    join(process.cwd(), "out", "services", "api", VISION_DESCRIBE_PROMPT_FILE),
-  ].filter(Boolean) as string[];
-
-  for (const path of candidates) {
-    if (await Bun.file(path).exists()) {
-      _cachedDefaultPrompt = await Bun.file(path).text();
-      return _cachedDefaultPrompt;
-    }
-  }
-
-  _cachedDefaultPrompt = "Describe this image in detail.";
-  return _cachedDefaultPrompt;
-}
+// `vision_describe` is a real AiAssistantMode, so its prompt resolves through
+// the SAME fallback chain as the other modes (preset override → default .md),
+// via the shared `resolveSystemPrompt`. This kills the duplicate candidate-path
+// list + cache that used to live here, leaving a single source of truth for
+// where prompt .md files are loaded from.
 
 /**
- * Resolve the vision describe system prompt.
- *
- * Priority:
- * 1. `vision_describe` key in the preset's `aiAssistantPrompts` JSON
- * 2. Default `vision-describe-ai-prompt.md` file
- * 3. Hardcoded fallback
+ * Resolve the vision describe system prompt via the shared assistant fallback
+ * chain (preset `vision_describe` override → default `vision-describe-ai-prompt.md`).
  */
 export async function resolveVisionDescribePrompt(
   aiAssistantPrompts: Record<string, string> | null,
 ): Promise<string> {
-  if (aiAssistantPrompts) {
-    const override = aiAssistantPrompts["vision_describe"]?.trim();
-    if (override) return override;
+  const { prompt } = await resolveSystemPrompt("vision_describe", { aiAssistantPrompts });
+  return prompt;
+}
+
+/**
+ * Strip model reasoning (<think>…</think>, reasoning markers) from a complete
+ * (non-streaming) generated description. Reuses the assistant's splitter so the
+ * describe path benefits from the same reasoning hygiene as the assistant modal.
+ */
+function stripReasoning(fullText: string): string {
+  const state: ReasoningSplitState = {
+    buffer: "",
+    insideMarkerReasoning: false,
+    insideThinkTag: false,
+  };
+  let text = "";
+  for (const chunk of splitReasoningFromText(state, fullText)) {
+    if (chunk.type === "text" && chunk.text) text += chunk.text;
   }
-  return loadDefaultVisionDescribePrompt();
+  for (const chunk of splitReasoningFromText(state, "", { flush: true })) {
+    if (chunk.type === "text" && chunk.text) text += chunk.text;
+  }
+  return text;
 }
 
 // ---------------------------------------------------------------------------
@@ -233,7 +225,12 @@ export async function describeAttachments(
       maxOutputTokens: 1500,
     });
 
-    results.set(att.id, response.text);
+    // Strip reasoning (<think>…, markers) so chain-of-thought never leaks into
+    // the persisted description. Vision models frequently emit reasoning when
+    // describing images; without this it floods the lightbox caption and the
+    // model's context on subsequent turns.
+    const cleaned = stripReasoning(response.text).trim();
+    results.set(att.id, cleaned || response.text.trim());
   }
 
   return results;
