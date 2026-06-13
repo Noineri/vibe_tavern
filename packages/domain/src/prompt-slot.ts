@@ -28,7 +28,7 @@ export const DEFAULT_PROMPT_ORDER: Record<string, number> = {
  * - Backend fallback (assemble.ts applyPromptOrderPosition)
  */
 export function inferSlot(args: {
-  /** SillyTavern injection_position: 0 = relative, 1 = absolute. */
+  /** SillyTavern injection_position: 0 = relative, 1 = absolute. `undefined`/`null` = no ST data — falls through to `placement`/`defaultOrder` inference (NOT treated as absolute). */
   injectionPosition?: number;
   /** Injection depth (messages from bottom of chat). */
   depth?: number;
@@ -39,7 +39,11 @@ export function inferSlot(args: {
   /** Default order from DEFAULT_PROMPT_ORDER (for built-in identifiers). */
   defaultOrder?: number;
 }): PromptSlot {
-  const isAbsolute = args.injectionPosition === 1 || args.injectionPosition == null;
+  // `injectionPosition == null` means "no SillyTavern data" — it does NOT mean
+  // absolute. Only an explicit `1` selects the absolute/depth-based branch.
+  // Callers without ST data (canvas fallback, built-in slots) must reach the
+  // defaultOrder-relative branch below.
+  const isAbsolute = args.injectionPosition === 1;
   const rawDepth = args.depth ?? 0;
 
   let zone: PromptZone;

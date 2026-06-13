@@ -6,6 +6,8 @@ import {
 	type LoreEntry,
 	type RetrievedMemoryHit,
 	type Character,
+	type CustomInjection,
+	type PromptOrderEntry,
 } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
 import { notFound } from "../errors.js";
@@ -55,37 +57,17 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		authorsNoteRole: string;
 		nsfw: string;
 		enhanceDefinitions: string;
-		customInjections: Array<{
-			identifier?: string;
-			name: string;
-			content: string;
-			depth: number;
-			role: string;
-			enabled: boolean;
-			injectionPosition?: 0 | 1 | "relative" | "absolute";
-			injectionOrder?: number;
-			promptOrderIndex?: number;
-			promptOrderPlacement?: "before_chat" | "after_chat";
-		}>;
-		promptOrder: Array<{ identifier: string; enabled: boolean; order?: number; kind?: "built_in" | "custom" }>;
+		/** Whether this preset is in advanced (canvas) mode. */
+		advancedMode: boolean;
+		customInjections: CustomInjection[];
+		promptOrder: PromptOrderEntry[];
 	} | null> {
 		const preset = await this.stores.presets.getById(presetId);
 		if (!preset) return null;
-		let customInjections: Array<{
-			identifier?: string;
-			name: string;
-			content: string;
-			depth: number;
-			role: string;
-			enabled: boolean;
-			injectionPosition?: 0 | 1 | "relative" | "absolute";
-			injectionOrder?: number;
-			promptOrderIndex?: number;
-			promptOrderPlacement?: "before_chat" | "after_chat";
-		}> = [];
-		let promptOrder: Array<{ identifier: string; enabled: boolean; order?: number; kind?: "built_in" | "custom" }> = [];
-		try { customInjections = JSON.parse(preset.customInjectionsJson); } catch {}
-		try { promptOrder = JSON.parse(preset.promptOrderJson); } catch {}
+		let customInjections: CustomInjection[] = [];
+		let promptOrder: PromptOrderEntry[] = [];
+		try { customInjections = JSON.parse(preset.customInjectionsJson) as CustomInjection[]; } catch {}
+		try { promptOrder = JSON.parse(preset.promptOrderJson) as PromptOrderEntry[]; } catch {}
 		return {
 			id: preset.id,
 			name: preset.name,
@@ -100,6 +82,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			authorsNoteRole: (preset.authorsNoteRole as "system" | "user" | "assistant") ?? "system",
 			nsfw: preset.nsfwPrompt,
 			enhanceDefinitions: preset.enhanceDefinitionsPrompt,
+			advancedMode: preset.advancedMode,
 			customInjections,
 			promptOrder,
 		};

@@ -1,7 +1,9 @@
 import { brandId } from "@vibe-tavern/domain";
 import type {
   AssemblePromptResponse,
+  CustomInjection,
   PromptLayerDto,
+  PromptOrderEntry,
 } from "@vibe-tavern/domain";
 import type {
   ChatBranchId,
@@ -62,19 +64,10 @@ export interface PromptAssemblyResolver {
       authorsNoteRole: string;
       nsfw: string;
       enhanceDefinitions: string;
-      customInjections: Array<{
-        identifier?: string;
-        name: string;
-        content: string;
-        depth: number;
-        role: string;
-        enabled: boolean;
-        injectionPosition?: 0 | 1 | "relative" | "absolute";
-        injectionOrder?: number;
-        promptOrderIndex?: number;
-        promptOrderPlacement?: "before_chat" | "after_chat";
-      }>;
-      promptOrder: Array<{ identifier: string; enabled: boolean; order?: number; kind?: "built_in" | "custom" }>;
+      /** Whether this preset is in advanced (canvas) mode. */
+      advancedMode: boolean;
+      customInjections: CustomInjection[];
+      promptOrder: PromptOrderEntry[];
     } | null>;
   listActiveLoreEntries(input: {
     chatId: ChatId;
@@ -258,6 +251,7 @@ export class PromptAssemblyService {
             authorsNoteRole: (promptPreset.authorsNoteRole as "system" | "user" | "assistant") ?? "system",
             nsfw: promptPreset.nsfw,
             enhanceDefinitions: promptPreset.enhanceDefinitions,
+            advancedMode: promptPreset.advancedMode,
             customInjections: promptPreset.customInjections,
             promptOrder: promptPreset.promptOrder,
           }
