@@ -1,14 +1,21 @@
 /**
  * Vision gate — converts image/video attachments into AI SDK content parts.
  *
- * Three paths:
- * 1. Primary model has vision → send as ImagePart directly
- * 2. No vision, but vision fallback model configured → describe first, then text
- *    (description is done by the executor before calling resolveMultimodalContent)
- * 3. No vision, no fallback → throw VisionNotSupportedError
+ * Routing is decided by the PRIMARY model's vision capability, NOT by whether
+ * a description exists (the description is only consulted on the non-vision
+ * path). This asymmetry is what makes vision/non-vision model switching safe:
  *
- * The executor handles path 2 (describeAttachments) separately.
- * This module handles paths 1 and 3.
+ *  • Vision primary  → images are sent as ImageParts (pixels). The
+ *    fallback-vision model describes them IN PARALLEL via the executor so a
+ *    future non-vision reroll can ingest them as text. On the vision path the
+ *    description is intentionally ignored — the vision model wants pixels.
+ *  • Non-vision primary → the executor describes the image FIRST (via the
+ *    configured fallback-vision model), then this gate sends only the textual
+ *    description. A raw undescribed image reaching the non-vision path means
+ *    no fallback was configured → VisionNotSupportedError.
+ *
+ * `describeAttachments` (the parallel/first describe step) lives here too; the
+ * executor calls it and persists descriptions before/assembling each turn.
  */
 
 import type { Attachment } from "@vibe-tavern/domain";
@@ -124,58 +131,92 @@ export async function resolveMultimodalContent(
 
   if (!message.attachments?.length) return parts;
 
-  // Collect image/video attachments that still need vision processing
-  const visionAttachments = message.attachments.filter(
+  // ── Vision routing (ASYMMETRIC by design) ───────────────────────────────
+  // The primary model's vision capability decides how image/video attachments
+  // are rendered. `description` presence matters ONLY on the non-vision path.
+  //
+  //  • Vision primary  → images are sent as ImageParts (pixels) directly.
+  //    The fallback-vision model describes them IN PARALLEL (executor path 2)
+  //    purely so a FUTURE non-vision reroll can ingest them as text. The
+  //    description is intentionally ignored for THIS send — the vision model
+  //    wants the pixels. (Even a DB-loaded image with a persisted description
+  //    is re-sent as an ImagePart when the active model has vision.)
+  //
+  //  • Non-vision primary → the fallback-vision model MUST have described the
+  //    image first (executor runs describeAttachments before calling us). We
+  //    send only the textual description — no pixels. A raw undescribed image
+  //    reaching here means no fallback was configured (or the describe step
+  //    failed) → VisionNotSupportedError.
+  //
+  // Routing invariant: the DB persists `type: "image"` + `description`; only
+  // the executor's in-memory copy flips `type` to `"file"`. So we route by
+  // `hasVision` first, then by `description` only on the non-vision path.
+  const imageVideoAttachments = message.attachments.filter(
     (a) => a.type === "image" || a.type === "video",
   );
-
-  // Handle already-described attachments (executor ran describeAttachments first)
-  const describedAttachments = message.attachments.filter(
-    (a) => a.description,
+  const otherAttachments = message.attachments.filter(
+    (a) => a.type !== "image" && a.type !== "video",
   );
-  for (const att of describedAttachments) {
+
+  // Non-image/video attachments (e.g. files) → text when they carry a
+  // description; otherwise dropped (no native multimodal handling). Same on
+  // both paths — these never need vision.
+  for (const att of otherAttachments) {
+    if (att.description?.trim()) {
+      parts.push({
+        type: "text",
+        text: `[Attached ${att.type}: ${att.name}]\n${att.description}`,
+      });
+    }
+  }
+
+  if (imageVideoAttachments.length === 0) return parts;
+
+  if (gate.hasVision) {
+    // Vision primary: always pixels, regardless of whether a description
+    // exists (description is a parallel artifact for future non-vision rerolls).
+    for (const att of imageVideoAttachments) {
+      let buffer = await assetLoader(att.assetId);
+      if (!buffer) {
+        throw new Error(`Asset file not found for attachment: ${att.name}`);
+      }
+      let mimeType = att.mimeType;
+
+      // Compress large PNGs to JPEG for provider size limits
+      if (isCompressibleImage(mimeType)) {
+        try {
+          const compressed = compressForVision(buffer, mimeType);
+          buffer = compressed.buffer;
+          mimeType = compressed.mimeType;
+        } catch {
+          // If compression fails, send original — let the provider decide
+        }
+      }
+
+      parts.push({
+        type: "image",
+        image: buffer,
+        mediaType: mimeType,
+      });
+    }
+    return parts;
+  }
+
+  // Non-vision primary: described images → textual description; raw → error.
+  const describedImages = imageVideoAttachments.filter((a) => a.description?.trim());
+  const rawImages = imageVideoAttachments.filter((a) => !a.description?.trim());
+
+  for (const att of describedImages) {
     parts.push({
       type: "text",
-      text: `[Attached ${att.type}: ${att.name}]\n${att.description}`,
+      text: `[Image attachment: ${att.name}]\nImage description: ${att.description}`,
     });
   }
 
-  if (visionAttachments.length === 0) return parts;
-
-  // If we still have raw image/video attachments at this point, the primary
-  // model MUST have vision. If it doesn't, the executor failed to describe
-  // them (no vision model configured) — honest error.
-  if (!gate.hasVision) {
-    throw new VisionNotSupportedError(
-      visionAttachments.map((a) => a.name),
-    );
-  }
-
-  // Primary model has vision — load assets as ImageParts
-  for (const att of visionAttachments) {
-    if (att.description) continue; // already handled above
-    let buffer = await assetLoader(att.assetId);
-    if (!buffer) {
-      throw new Error(`Asset file not found for attachment: ${att.name}`);
-    }
-    let mimeType = att.mimeType;
-
-    // Compress large PNGs to JPEG for provider size limits
-    if (isCompressibleImage(mimeType)) {
-      try {
-        const compressed = compressForVision(buffer, mimeType);
-        buffer = compressed.buffer;
-        mimeType = compressed.mimeType;
-      } catch {
-        // If compression fails, send original — let the provider decide
-      }
-    }
-
-    parts.push({
-      type: "image",
-      image: buffer,
-      mediaType: mimeType,
-    });
+  if (rawImages.length > 0) {
+    // The executor should have described these (vision fallback configured).
+    // Reaching here means no fallback was set OR describe failed — honest error.
+    throw new VisionNotSupportedError(rawImages.map((a) => a.name));
   }
 
   return parts;
