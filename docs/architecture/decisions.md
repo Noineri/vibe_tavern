@@ -190,7 +190,7 @@
 - **Local-first** — no horizontal scaling needed. One user, one machine.
 - **Zero network hops** — API and DB are in the same process. SQLite queries take microseconds, not milliseconds.
 - **Simple deployment** — `bun run dev` or a single `.exe`. No docker-compose for local use (Docker is optional).
-- **Cold start** — <1 second to fully operational. No container orchestration, no health checks.
+- **Cold start** — port reachable in milliseconds, fully operational in 2–7s (loading placeholder bridges the gap; see AD-018). No container orchestration, no health checks.
 
 **Trade-off:** No horizontal scaling. Acceptable — the app is explicitly single-user by design.
 
@@ -339,3 +339,33 @@ Crucially, `vision_describe` is **not added to the AI Assistant modal's mode pic
 **Trade-off:** A `AiAssistantMode` value that isn't reachable from the assistant modal — mildly counterintuitive for a reader of the mode union. Mitigated by a comment in `MODE_CONFIGS` stating explicitly that it is backend-only. Considered alternatives (a separate `PromptResolvableMode` type for backend modes; a flag on the config) and rejected as over-engineering for a single case.
 
 **Related:** This ADR covers prompt-resolution unification only. The three-path vision gate (native vision / describe-fallback / `VisionNotSupportedError`) and the skip-if-described caching rule are documented in [Vision and Attachment Pipeline](./backend.md#vision-and-attachment-pipeline), not part of this decision.
+
+---
+
+## AD-018: Bind-First Loading Placeholder for Server Startup
+
+**Context:** All initialization (DB open, 32 migrations, 56MB tokenizer warmup, service wiring) ran BEFORE `Bun.serve()`, leaving port 8787 unreachable for 2–7 seconds after launch. Users saw "connection refused" in their browser during this window.
+
+**Options considered:**
+
+| Approach | Description | Problem |
+|----------|-------------|---------|
+| **Status quo** | Init everything, then `Bun.serve()` last | 2–7s of "connection refused" on every launch |
+| **`server.reload()`** | Bind with placeholder, swap via Bun's built-in `reload()` API | Reported bugs in `reload()` (see effect-start's `BunServer.ts`); designed for `routes` + `fetch` together, overkill for a handler-only swap |
+| **Mutable closure** | `let fetchHandler = placeholder; /* init */ fetchHandler = app.fetch` | Pure JS, no API surface, atomic swap |
+
+**Decision:** Mutable closure pattern. `Bun.serve()` is called immediately with a loading placeholder handler from `loading-placeholder.ts`. After all init completes, the `fetchHandler` variable is reassigned to `app.fetch`. The next request sees the real Hono app.
+
+**Rationale:**
+- **Port reachable in milliseconds** — the user's browser gets a branded "Vibe Tavern is loading…" page instead of "connection refused" during the entire init window
+- **Auto-refresh** — the loading page polls `/health` every 1s (503 → 200) and reloads into the real SPA when the server is ready
+- **API clients get structured feedback** — `/health` and `/api/*` return 503 with `Retry-After: 2` during startup, so programmatic clients can retry with backoff instead of guessing
+- **Graceful failure** — if init fails, the handler is swapped to a static 500 error page. The process stays alive so the user can read the error; Ctrl+C still exits cleanly
+- **Zero API surface** — the mutable closure is plain JavaScript. No dependency on `server.reload()`, no risk of Bun type-parameter issues, no framework coupling
+- **Single-file change** — the entire pattern lives in `server-runtime.ts` + `loading-placeholder.ts`. No changes to the Hono app, routes, adapters, or any other module
+
+**Trade-off:** During the init window (2–7s), all requests are served by the placeholder handler — no API functionality. This is acceptable because the user's browser is showing a loading page and API clients receive structured 503s with retry guidance.
+
+**Implementation:** See [Backend Architecture — Entry Points](./backend.md#entry-points) for the full two-phase bootstrap sequence.
+
+**Related:** AD-011 (Single-Process Architecture) — this ADR refines the cold-start characteristic by splitting "port available" (milliseconds) from "fully operational" (2–7s).

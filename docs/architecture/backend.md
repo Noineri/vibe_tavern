@@ -13,17 +13,28 @@ Two server entry points for different deployment scenarios:
 | `server/prod-server.ts` → `out/services/api/prod-server.js` | Dev, Docker, production bundle | `data/` relative to project root, `out/apps/web/` for frontend |
 | `server/standalone-server.ts` → `out/standalone/vibe-tavern.exe` | Compiled `.exe` | OS-specific (`%LOCALAPPDATA%\VibeTavern`, `~/Library/Application Support/VibeTavern`, `~/.local/share/vibe-tavern`) |
 
-Both share the same bootstrap sequence:
-1. `runStartupFileChecks()` — verify all runtime files exist (DB, migrations, tokenizers, prompt, web bundle)
-2. `createRuntimeStore()` → `createStoreContainer()` → `createDb()` (SQLite + migrations)
-3. Seed data (system character, default persona, default preset, UI settings)
-4. Tokenizer warmup + registration with prompt pipeline
-5. Service construction (providers, presets, session runtime, orchestrators, mobile access)
-6. Hono app creation with auth middleware
-7. `Bun.serve()` with optional TLS
-8. Graceful shutdown on SIGINT/SIGTERM
+Both entry points delegate to `server-runtime.ts:startServerRuntime()`, which uses a **two-phase bind-first bootstrap** so the port is reachable within milliseconds of launch:
 
-**Why single process:** Local-first single-user app. No horizontal scaling needed. One process = zero deployment complexity, zero network hops between API and DB, instant cold start.
+**Phase 1 — Immediate port bind** (milliseconds):
+1. Port availability check (if `checkPortBeforeListen`)
+2. Pre-load Alegreya font for the loading placeholder (from `staticDir/fonts/` or `apps/web/public/fonts/`)
+3. `Bun.serve()` binds the port with a **loading placeholder handler** (`loading-placeholder.ts`) — returns branded loading HTML for browser routes, 503 JSON for `/health` and `/api/*`
+4. Browser opens, SIGINT/SIGTERM handlers registered
+
+**Phase 2 — Background initialization** (~2–7s, port already bound):
+5. `runStartupFileChecks()` — verify runtime files exist (DB, migrations, tokenizers, prompt, web bundle)
+6. `createRuntimeStore()` → `createStoreContainer()` → `createDb()` (SQLite + migrations)
+7. Seed data (system character, default persona, default preset, UI settings)
+8. Tokenizer warmup + registration with prompt pipeline
+9. Service construction (providers, presets, session runtime, orchestrators, mobile access)
+10. Hono app creation with auth middleware (`createApp()`)
+11. **Handler swap** — the mutable `fetchHandler` closure is reassigned from the loading placeholder to `app.fetch`; all subsequent requests hit the real Hono app
+
+**On init failure:** handler is swapped to a static 500 error page so the user sees "Vibe Tavern failed to start" in their browser instead of an infinite loading spinner. The process stays alive for Ctrl+C.
+
+**Why bind-first:** the user's browser gets a branded loading page instead of "connection refused" during the init window. The loading page auto-polls `/health` (503 → 200) and reloads into the real SPA when the server is ready.
+
+**Why single process:** Local-first single-user app. No horizontal scaling needed. One process = zero deployment complexity, zero network hops between API and DB.
 
 ---
 
