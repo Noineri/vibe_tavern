@@ -1,3 +1,4 @@
+import { PROVIDER_TYPE } from "@vibe-tavern/domain";
 import { normalizeProviderType } from "../ai/provider-profile-mapper.js";
 
 export interface ProviderConnectionInput {
@@ -287,15 +288,16 @@ export async function probeProviderConnection(input: {
 }): Promise<ProviderProbeResult> {
 	const providerType = normalizeProviderType(input.providerType ?? "openai_compat");
 	switch (providerType) {
-		case "google":
+		case PROVIDER_TYPE.google:
 			return probeGoogleConnection(input);
-		case "anthropic":
+		case PROVIDER_TYPE.anthropic:
 			return probeAnthropicConnection(input);
-		case "ollama":
+		case PROVIDER_TYPE.ollama:
 			return probeOllamaConnection(input);
-		case "koboldcpp":
+		case PROVIDER_TYPE.koboldCpp:
 			return probeKoboldCppConnection(input);
-		case "llamacpp":
+		case PROVIDER_TYPE.llamaCpp:
+		case PROVIDER_TYPE.unsloth:
 			return probeOpenAiCompatibleConnection({ ...input, baseUrl: normalizeLocalOpenAiCompatibleBaseUrl(input.baseUrl) });
 		default:
 			return probeOpenAiCompatibleConnection(input);
@@ -524,15 +526,16 @@ export async function testProviderChat(
 ): Promise<TestChatResult> {
 	const providerType = normalizeProviderType(input.providerType ?? "openai_compat");
 	switch (providerType) {
-		case "google":
+		case PROVIDER_TYPE.google:
 			return testGoogleChat(input);
-		case "anthropic":
+		case PROVIDER_TYPE.anthropic:
 			return testAnthropicChat(input);
-		case "ollama":
+		case PROVIDER_TYPE.ollama:
 			return testOllamaChat(input);
-		case "koboldcpp":
+		case PROVIDER_TYPE.koboldCpp:
 			return testKoboldCppChat(input);
-		case "llamacpp":
+		case PROVIDER_TYPE.llamaCpp:
+		case PROVIDER_TYPE.unsloth:
 			return testOpenAiCompatChat({ ...input, baseUrl: normalizeLocalOpenAiCompatibleBaseUrl(input.baseUrl) });
 		default:
 			return testOpenAiCompatChat(input);
@@ -826,15 +829,16 @@ export async function listProviderModels(
 	}
 
 	switch (providerType) {
-		case "anthropic":
+		case PROVIDER_TYPE.anthropic:
 			return listAnthropicModels(input);
-		case "google":
+		case PROVIDER_TYPE.google:
 			return listGoogleModels(input);
-		case "ollama":
+		case PROVIDER_TYPE.ollama:
 			return listOllamaModels(input);
-		case "koboldcpp":
+		case PROVIDER_TYPE.koboldCpp:
 			return listKoboldCppModels(input);
-		case "llamacpp":
+		case PROVIDER_TYPE.llamaCpp:
+		case PROVIDER_TYPE.unsloth:
 			return listOpenAiCompatModels({ ...input, baseUrl: normalizeLocalOpenAiCompatibleBaseUrl(input.baseUrl) });
 		default:
 			return listOpenAiCompatModels(input);

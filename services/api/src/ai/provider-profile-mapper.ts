@@ -167,6 +167,25 @@ export function mapProfileToSdkModel(
       };
     }
 
+    case PROVIDER_TYPE.unsloth: {
+      const endpoint = normalizeLocalOpenAiCompatibleBaseUrl(profile.endpoint || "http://localhost:8888");
+      const apiKey = profile.apiKey ?? "";
+      const provider = createOpenAICompatible({
+        name: "unsloth",
+        apiKey: apiKey || "not-needed",
+        baseURL: endpoint,
+        fetch: createReasoningAwareFetch(),
+      });
+      return {
+        model: provider.chatModel(model),
+        capabilities,
+        limitations: [
+          "Uses Unsloth Studio's OpenAI-compatible /v1 endpoint (llama-server under the hood).",
+          "Requires an sk-unsloth- API key created from Studio Settings → API.",
+        ],
+      };
+    }
+
     default: {
       throw providerError(
         `Unknown provider type '${profile.providerPreset}'. ` +
