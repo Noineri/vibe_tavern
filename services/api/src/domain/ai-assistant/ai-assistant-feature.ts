@@ -1,4 +1,4 @@
-import type { FeatureDeps, FeatureModule } from "../../feature-module.js";
+import type { FeatureDeps, FeatureModule } from "../../shared/feature-module.js";
 import type { AiAssistantRuntimeApi } from "../../api/contract/runtime-api.js";
 
 /**

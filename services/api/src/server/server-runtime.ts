@@ -8,7 +8,7 @@ import { createChatSummaryFeature } from "../domain/chat/chat-summary-feature.js
 import { ChatSummaryService } from "../domain/chat/chat-summary-service.js";
 import { getChatModeStrategy } from "../domain/chat/chat-mode-strategy.js";
 import { LiveChatOrchestrator } from "../domain/chat/live-chat-orchestrator.js";
-import { FeatureRegistry } from "../feature-registry.js";
+import { FeatureRegistry } from "../shared/feature-registry.js";
 import { MobileAccessService } from "../mobile-access-service.js";
 import { resolveTlsConfig } from "../mobile-auth.js";
 import { PromptPresetService } from "../domain/prompt/prompt-preset-service.js";
@@ -18,7 +18,7 @@ import { RuntimeApiAdapter } from "../runtime-api-adapter.js";
 import { SessionRuntime } from "../session/session-runtime.js";
 import { createAiAssistantFeature } from "../domain/ai-assistant/ai-assistant-feature.js";
 import { createRuntimeStore } from "../session/session-runtime-store.js";
-import { configureLogDir } from "../send-debug-log.js";
+import { configureLogDir } from "../shared/send-debug-log.js";
 import { createApp } from "./app-factory.js";
 import { createLoadingHandler } from "./loading-placeholder.js";
 import { runStartupFileChecks } from "./startup-checks.js";

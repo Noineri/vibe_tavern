@@ -5,9 +5,9 @@
  * depending on the full executor pipeline.
  */
 
-import { logSendDebug } from "../../send-debug-log.js";
+import { logSendDebug } from "../../shared/send-debug-log.js";
 import { extractProviderErrorMessage } from "./provider-error-message.js";
-import { cancelled, providerError } from "../../errors.js";
+import { cancelled, providerError } from "../../shared/errors.js";
 import { REASONING_START_MARKER, REASONING_END_MARKER } from "../../domain/providers/openai-reasoning-fetch.js";
 import type { ProviderStreamChunk, ProviderStreamFinish } from "./provider-execution-types.js";
 

@@ -3,7 +3,7 @@ import type { ChatStore, CharacterStore, StoreContainer } from "@vibe-tavern/db"
 import type { ChatApplicationService } from "../chat/chat-application-service.js";
 import type { IChatOrder } from "../../session/session-runtime-chat-order.js";
 import type { SessionSnapshot, ImportResult } from "../../api/contract/session-types.js";
-import { notFound, validation } from "../../errors.js";
+import { notFound, validation } from "../../shared/errors.js";
 import { brandId } from "@vibe-tavern/domain";
 
 export type CharacterRecord = {

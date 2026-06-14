@@ -14,7 +14,7 @@ import {
 	serializeSillyTavernChat,
 } from "@vibe-tavern/import-export";
 import type { ChatApplicationService } from "../domain/chat/chat-application-service.js";
-import { notFound, validation } from "../errors.js";
+import { notFound, validation } from "../shared/errors.js";
 import type { CharacterRecord } from "../domain/character/character-runtime.js";
 
 export interface ImportExportResolver {

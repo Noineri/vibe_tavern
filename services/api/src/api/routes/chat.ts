@@ -3,7 +3,7 @@ import type { ChatRuntimeApi } from "../contract/runtime-api.js";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { streamSSE } from "hono/streaming";
-import { logSendDebug } from "../../send-debug-log.js";
+import { logSendDebug } from "../../shared/send-debug-log.js";
 import * as schemas from "@vibe-tavern/api-contracts";
 import { readOptionalJson } from "./helpers.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";

@@ -8,7 +8,7 @@ import type { ProviderExecutionInput, ProviderStreamResult } from "../../infrast
 import type { ChatModeStrategy } from "./chat-mode-strategy.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../../infrastructure/ai/stream-provider-executor.js";
-import { logSendDebug } from "../../send-debug-log.js";
+import { logSendDebug } from "../../shared/send-debug-log.js";
 import { extractThinkingTags } from "../../infrastructure/ai/extract-thinking-tags.js";
 import { ensurePrefillInResponse } from "../../infrastructure/ai/ensure-prefill-in-response.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";

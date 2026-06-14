@@ -1,4 +1,4 @@
-import type { FeatureModule, FeatureDeps } from "../../feature-module.js";
+import type { FeatureModule, FeatureDeps } from "../../shared/feature-module.js";
 import { ChatSummaryService } from "./chat-summary-service.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../session/session-runtime.js";
