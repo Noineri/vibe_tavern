@@ -11,7 +11,7 @@ import {
 import { notFound } from "../errors.js";
 import type { ChatApplicationService } from "../chat/chat-application-service.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
-import type { PersonaRuntime } from "./session-runtime-persona.js";
+import type { PersonaRuntime } from "../domain/persona/persona-runtime.js";
 import type { SessionSnapshot } from "./session-runtime.js";
 
 function buildGreetingVariants(firstMessage: string | null | undefined, alternateGreetings: string[] = []): string[] {

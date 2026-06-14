@@ -43,7 +43,7 @@ type Lorebook = LorebookRow;
 type LoreEntry = LoreEntryRow;
 type Script = ScriptRow;
 
-/** Persona shape returned by list/create/duplicate in session-runtime-persona. */
+/** Persona shape returned by list/create/duplicate in domain/persona. */
 interface PersonaRecord {
 	id: string;
 	name: string;

@@ -28,10 +28,8 @@ import type {
 } from "@vibe-tavern/domain";
 import type { Chat, ChatBranch, UiSettings } from "@vibe-tavern/db";
 import type { MessageDto } from "../../session/session-runtime-dto.js";
-import type {
-	CharacterRecord,
-	PersonaRecord,
-} from "../../session/session-runtime-character.js";
+import type { CharacterRecord } from "../../domain/character/character-runtime.js";
+import type { PersonaRecord } from "../../domain/persona/persona-runtime.js";
 
 export interface ChatListItem {
 	id: ChatId;

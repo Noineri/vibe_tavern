@@ -15,7 +15,7 @@ import {
 } from "@vibe-tavern/import-export";
 import type { ChatApplicationService } from "../chat/chat-application-service.js";
 import { notFound, validation } from "../errors.js";
-import type { CharacterRecord } from "./session-runtime-character.js";
+import type { CharacterRecord } from "../domain/character/character-runtime.js";
 
 export interface ImportExportResolver {
 	getCharacter(characterId: string): Promise<CharacterRecord>;

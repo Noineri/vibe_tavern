@@ -38,12 +38,11 @@ export type {
 
 import {
 	type CharacterRecord,
-	type PersonaRecord,
 	CharacterRuntime,
-} from "./session-runtime-character.js";
+} from "../domain/character/character-runtime.js";
+import { type PersonaRecord, PersonaRuntime } from "../domain/persona/persona-runtime.js";
 import { ChatRuntime } from "./session-runtime-chat.js";
 import { ChatOrderService } from "./session-runtime-chat-order.js";
-import { PersonaRuntime } from "./session-runtime-persona.js";
 import { ChatLifecycleRuntime } from "./session-runtime-chat-lifecycle.js";
 import * as importExportModule from "./session-runtime-import-export.js";
 // lorebookModule removed — CRUD is wired directly through stores in RuntimeApiAdapter
