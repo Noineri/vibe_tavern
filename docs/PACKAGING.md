@@ -190,18 +190,21 @@ All three modes share the same DI wiring, services, and app factory. The only di
 ### Path resolution flow
 
 ```
-standalone-server.ts
-  → resolveStandalonePaths()     // resolves all dirs from env/OS
-    → createRuntimeStore(dataDir) // creates DB in data dir
-    → SessionRuntime({ dataDir }) // passes to file store + prompt service
-    → configureLogDir(logsDir)    // sets debug log path
-    → AssetService(assetsDir)     // sets avatar path
-    → createApp({ staticDir })    // serves frontend from webDir
+standalone-server.ts / prod-server.ts
+  → resolveStandalonePaths() / env vars   // resolves all dirs from env/OS
+  → startServerRuntime(config)
+    → Bun.serve() with loading-placeholder handler  // port binds IMMEDIATELY
+    → createRuntimeStore(dataDir)                   // creates DB in data dir
+    → SessionRuntime({ dataDir })                   // passes to file store + prompt service
+    → configureLogDir(logsDir)                      // sets debug log path
+    → AssetService(assetsDir)                       // sets avatar path
+    → createApp({ staticDir })                      // serves frontend from webDir
+    → swap fetch handler to app.fetch               // real Hono app takes over
 ```
 
 ### Startup checks
 
-All server modes run `runStartupFileChecks()` before bootstrapping services. This verifies the existence and readability of:
+All server modes run `runStartupFileChecks()` during Phase 2 initialization — **after** the port is already bound and serving the loading placeholder. This verifies the existence and readability of:
 
 - Data directory + asset subdirectory
 - Database file (or confirms it will be created)
@@ -210,7 +213,7 @@ All server modes run `runStartupFileChecks()` before bootstrapping services. Thi
 - Script AI prompt (`script-ai-prompt.md`)
 - Web bundle + `index.html` (if applicable)
 
-If any required file is missing, the server exits with a clear error message indicating which file and resolved path.
+The checks are advisory — missing files produce warnings in the log. If a later initialization step (DB open, migration, tokenizer warmup) fails, the loading handler is swapped to a static 500 error page instead of the process crashing. The user sees "Vibe Tavern failed to start" in their browser.
 
 ## Troubleshooting
 
