@@ -19,7 +19,7 @@ import type { GenerateChatSummaryResult, SummarizeChatResult } from "../../domai
 import type { LorebookImportResult } from "../../domain/lorebook/lorebook-import-service.js";
 import type { ScriptTestResult } from "../../domain/scripts-engine/script-test-service.js";
 import type { StDirectoryScanResult, StDirectoryImportResult } from "../../shared/st-directory-scanner.js";
-import type { MobileAccessInfo } from "../../mobile-access-service.js";
+import type { MobileAccessInfo } from "../../domain/mobile-access/mobile-access-service.js";
 
 // ─── Shared type aliases ────────────────────────────────────────────
 //
