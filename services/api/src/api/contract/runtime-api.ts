@@ -24,7 +24,7 @@ import type { MobileAccessInfo } from "../../domain/mobile-access/mobile-access-
 // ─── Shared type aliases ────────────────────────────────────────────
 //
 // This file defines `RuntimeApi` — the single contract between Hono route
-// handlers (routes/*.ts) and the adapter layer (runtime-api-adapter.ts +
+// handlers (routes/*.ts) and the adapter layer (api/adapters/runtime-api-adapter.ts +
 // adapters/*.ts). Routes should never import store/runtime internals directly;
 // they go through this interface.
 //
