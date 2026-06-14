@@ -20,6 +20,7 @@ import { createAiAssistantFeature } from "../ai-assistant/ai-assistant-feature.j
 import { createRuntimeStore } from "../session/session-runtime-store.js";
 import { configureLogDir } from "../send-debug-log.js";
 import { createApp } from "./app-factory.js";
+import { createLoadingHandler } from "./loading-placeholder.js";
 import { runStartupFileChecks } from "./startup-checks.js";
 
 export interface ServerRuntimeConfig {
@@ -48,94 +49,44 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 	console.log(`${tag} Static: ${config.staticEnabled ? config.staticDir : "(not built — API-only mode)"}`);
 	console.log(`${tag} Host: ${config.host}:${config.port}`);
 
-	await mkdir(config.dataDir, { recursive: true });
-	await mkdir(config.assetsDir, { recursive: true });
-	for (const dir of config.extraDataDirs ?? []) {
-		await mkdir(dir, { recursive: true });
-	}
-	if (config.logsDir) {
-		await mkdir(config.logsDir, { recursive: true });
-		configureLogDir(config.logsDir);
-	}
-
-	await runStartupFileChecks({
-		mode: config.mode,
-		rootDir: config.rootDir,
-		dataDir: config.dataDir,
-		staticDir: config.staticDir,
-	});
-
-	// Stores
-	const stores = await createRuntimeStore(config.dataDir);
-
-	// Seed
-	await Promise.all([
-		stores.personas.ensureDefault(),
-		stores.presets.ensureDefault(),
-		stores.uiSettings.ensureDefaults(),
-	]);
-	console.log(`${tag} Seed data ensured.`);
-
-	// Tokenizers
-	await warmupTokenizers();
-	setTokenCountFn(countTokens);
-	console.log(`${tag} Tokenizers ready.`);
-
-	// Services
-	const providerProfileService = createProviderProfileService(stores.providers);
-	const promptPresetService = new PromptPresetService(stores.presets, stores.chats);
-	const sessionRuntime = new SessionRuntime(stores, {
-		getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
-		dataDir: config.dataDir,
-	});
-	const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
-	const events = new EventBus();
-	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
-	const liveChatOrchestrator = new LiveChatOrchestrator(
-		sessionRuntime.chatRuntime,
-		sessionRuntime.chatApp,
-		providerOrchestrator,
-		events,
-		getChatModeStrategy("rp"),
-	);
-
-	// Feature registry — features subscribe to events and mount routes
-	const features = new FeatureRegistry();
-	features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService }));
-
-	const assetService = new AssetService(config.assetsDir);
-	const mobileAccessService = new MobileAccessService(config.dataDir);
-
-	// RuntimeApi adapter
-	const runtime = new RuntimeApiAdapter(
-		stores,
-		providerProfileService,
-		liveChatOrchestrator,
-		chatSummaryService,
-		sessionRuntime,
-		promptPresetService,
-		assetService,
-		mobileAccessService,
-	);
-
-	features.register(createAiAssistantFeature(runtime.aiAssistant));
-
-	// Hono app — with static frontend if available
-	const app = await createApp({
-		runtime,
-		staticDir: config.staticEnabled ? config.staticDir : undefined,
-		mobileAccessToken: () => mobileAccessService.getToken(),
-		enforceMobileAuth: true,
-		configureFeatures: (router) => features.activateAll({ events, router }),
-	});
-
+	// ─── Early bind ───────────────────────────────────────────────────
+	// Bind the port immediately with a loading placeholder so the user's
+	// browser gets a branded "Vibe Tavern is loading..." page within
+	// milliseconds of launch instead of "connection refused" for several
+	// seconds while the DB / tokenizers / services initialize.
 	if (config.checkPortBeforeListen) {
 		await ensurePortAvailable({ host: config.host, port: config.port, tag });
 	}
 
 	const tlsOptions = tlsConfig ? { tls: tlsConfig } : {};
+
+	let alegreyaFont: ArrayBuffer | null = null;
+	const fontCandidates = [
+		resolve(config.staticDir, 'fonts', 'Alegreya-VariableFont_wght.ttf'),
+		...(config.rootDir
+			? [resolve(config.rootDir, 'apps', 'web', 'public', 'fonts', 'Alegreya-VariableFont_wght.ttf')]
+			: []),
+	];
+	for (const candidate of fontCandidates) {
+		try {
+			const fontFile = Bun.file(candidate);
+			if (await fontFile.exists()) {
+				alegreyaFont = await fontFile.arrayBuffer();
+				break;
+			}
+		} catch {}
+	}
+
+	// Mutable handler reference — swapped to the real Hono app once init
+	// completes. Using a closure (rather than Bun's server.reload) keeps
+	// the swap atomic and avoids the reported reload() bugs.
+	let fetchHandler: (
+		req: Request,
+		server: Bun.Server<undefined>,
+	) => Response | Promise<Response> = createLoadingHandler({ alegreyaFont });
+
 	const server = Bun.serve({
-		fetch: app.fetch,
+		fetch: (req, s) => fetchHandler(req, s),
 		port: config.port,
 		hostname: config.host,
 		idleTimeout: 255,
@@ -143,7 +94,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 	});
 
 	const proto = tlsConfig ? "https" : "http";
-	console.log(`${tag} Listening on ${proto}://${config.host}:${config.port}`);
+	console.log(`${tag} Listening on ${proto}://${config.host}:${config.port} (initializing...)`);
 	if (config.host === "0.0.0.0") {
 		console.log(`${tag} Mobile access enabled — accepting connections from all interfaces.`);
 	}
@@ -158,13 +109,113 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 		missingFrontendMessage: config.missingFrontendMessage,
 	});
 
-	// Graceful shutdown on Ctrl+C / SIGTERM / optional window close signal
+	// Register shutdown handlers early so Ctrl+C works even during init.
 	for (const signal of config.shutdownSignals ?? ["SIGINT", "SIGTERM"]) {
 		process.on(signal, () => {
 			console.log(`\n${tag} Received ${signal}, shutting down...`);
 			server.stop(true);
 			process.exit(0);
 		});
+	}
+
+	// ─── Background initialization ────────────────────────────────────
+	// All heavy init runs AFTER the port is bound. The placeholder handler
+	// serves loading HTML + 503 for API routes until this completes.
+	try {
+		await mkdir(config.dataDir, { recursive: true });
+		await mkdir(config.assetsDir, { recursive: true });
+		for (const dir of config.extraDataDirs ?? []) {
+			await mkdir(dir, { recursive: true });
+		}
+		if (config.logsDir) {
+			await mkdir(config.logsDir, { recursive: true });
+			configureLogDir(config.logsDir);
+		}
+
+		await runStartupFileChecks({
+			mode: config.mode,
+			rootDir: config.rootDir,
+			dataDir: config.dataDir,
+			staticDir: config.staticDir,
+		});
+
+		// Stores
+		const stores = await createRuntimeStore(config.dataDir);
+
+		// Seed
+		await Promise.all([
+			stores.personas.ensureDefault(),
+			stores.presets.ensureDefault(),
+			stores.uiSettings.ensureDefaults(),
+		]);
+		console.log(`${tag} Seed data ensured.`);
+
+		// Tokenizers
+		await warmupTokenizers();
+		setTokenCountFn(countTokens);
+		console.log(`${tag} Tokenizers ready.`);
+
+		// Services
+		const providerProfileService = createProviderProfileService(stores.providers);
+		const promptPresetService = new PromptPresetService(stores.presets, stores.chats);
+		const sessionRuntime = new SessionRuntime(stores, {
+			getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
+			dataDir: config.dataDir,
+		});
+		const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
+		const events = new EventBus();
+		const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
+		const liveChatOrchestrator = new LiveChatOrchestrator(
+			sessionRuntime.chatRuntime,
+			sessionRuntime.chatApp,
+			providerOrchestrator,
+			events,
+			getChatModeStrategy("rp"),
+		);
+
+		// Feature registry — features subscribe to events and mount routes
+		const features = new FeatureRegistry();
+		features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService }));
+
+		const assetService = new AssetService(config.assetsDir);
+		const mobileAccessService = new MobileAccessService(config.dataDir);
+
+		// RuntimeApi adapter
+		const runtime = new RuntimeApiAdapter(
+			stores,
+			providerProfileService,
+			liveChatOrchestrator,
+			chatSummaryService,
+			sessionRuntime,
+			promptPresetService,
+			assetService,
+			mobileAccessService,
+		);
+
+		features.register(createAiAssistantFeature(runtime.aiAssistant));
+
+		// Hono app — with static frontend if available
+		const app = await createApp({
+			runtime,
+			staticDir: config.staticEnabled ? config.staticDir : undefined,
+			mobileAccessToken: () => mobileAccessService.getToken(),
+			enforceMobileAuth: true,
+			configureFeatures: (router) => features.activateAll({ events, router }),
+		});
+
+		// ─── Swap handler — real app is now serving all requests ───────
+		fetchHandler = (req, s) => app.fetch(req, s);
+		console.log(`${tag} Application ready.`);
+	} catch (err) {
+		console.error(`${tag} Initialization failed:`, err);
+		// Serve a static error page instead of hanging on the loading
+		// placeholder forever. The process stays alive so the user can
+		// read the error in their browser; Ctrl+C still exits cleanly.
+		fetchHandler = () =>
+			new Response(STARTUP_ERROR_HTML, {
+				status: 500,
+				headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+			});
 	}
 }
 
@@ -265,6 +316,36 @@ async function killProcessAndWaitForPort(
 		process.exit(1);
 	}
 }
+
+const STARTUP_ERROR_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vibe Tavern — Startup Failed</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{
+    display:flex;align-items:center;justify-content:center;min-height:100vh;padding:2rem;
+    background:#141210;color:#d1d0ba;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  .wrap{text-align:center;max-width:480px}
+  .glyph{font-size:2.5rem;margin-bottom:1.25rem;opacity:.5}
+  h1{font-size:1.2rem;font-weight:500;margin-bottom:.75rem}
+  p{font-size:.95rem;line-height:1.6;color:#a3988f}
+  code{font-family:ui-monospace,"SF Mono",Monaco,monospace;font-size:.85rem;
+       background:#1f1d1a;padding:.15em .4em;border-radius:3px;color:#d1d0ba}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="glyph" aria-hidden="true">\u26A0\uFE0F</div>
+    <h1>Vibe Tavern failed to start</h1>
+    <p>Check the server console for error details. Press <code>Ctrl+C</code> to exit and try again.</p>
+  </div>
+</body>
+</html>`;
 
 function openBrowserOrPrintMessage(options: {
 	readonly mode: ServerRuntimeConfig["mode"];
