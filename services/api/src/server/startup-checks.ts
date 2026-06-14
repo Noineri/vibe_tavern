@@ -1,7 +1,7 @@
 import { readdir, mkdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { resolveMigrationsFolder } from "@vibe-tavern/db";
-import { resolveTokenizerDir } from "../ai/tokenizer-service.js";
+import { resolveTokenizerDir } from "../infrastructure/ai/tokenizer-service.js";
 import { resolvePromptPathForMode } from "../domain/ai-assistant/ai-assistant-prompts.js";
 import { resolveRuntimeStorePaths } from "../session/session-runtime-store.js";
 

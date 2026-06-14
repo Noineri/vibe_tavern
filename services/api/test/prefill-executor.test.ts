@@ -1,7 +1,7 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import { getProviderCapabilities, PROVIDER_CAPABILITIES } from "../src/ai/provider-capabilities.js";
+import { getProviderCapabilities, PROVIDER_CAPABILITIES } from "../src/infrastructure/ai/provider-capabilities.js";
 import type { ProviderType } from "@vibe-tavern/domain";
-import type { ProviderExecutionInput } from "../src/ai/provider-execution-types.js";
+import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Mock the 'ai' module — must be at top level before importing executors
@@ -36,10 +36,10 @@ mock.module("ai", () => ({
 
 // Import executors after mock is registered
 const { nonstreamingProviderExecute } = await import(
-  "../src/ai/nonstreaming-provider-executor.js"
+  "../src/infrastructure/ai/nonstreaming-provider-executor.js"
 );
 const { streamProviderExecutor } = await import(
-  "../src/ai/stream-provider-executor.js"
+  "../src/infrastructure/ai/stream-provider-executor.js"
 );
 
 // ═══════════════════════════════════════════════════════════════════════════

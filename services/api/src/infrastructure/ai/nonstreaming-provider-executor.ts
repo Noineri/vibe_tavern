@@ -12,8 +12,8 @@ import type { ProviderExecutionInput } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
 import { normalizeProviderType, type ProviderType } from "@vibe-tavern/domain";
-import { cancelled, providerError } from "../errors.js";
-import { logSendDebug } from "../send-debug-log.js";
+import { cancelled, providerError } from "../../errors.js";
+import { logSendDebug } from "../../send-debug-log.js";
 
 export async function nonstreamingProviderExecute(
   input: ProviderExecutionInput,

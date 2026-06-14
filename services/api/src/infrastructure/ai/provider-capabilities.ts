@@ -16,7 +16,7 @@ import {
 	PROTOCOL_CAPABILITIES,
 	resolveProtocol,
 	type ProviderCapabilityFlags,
-} from "../domain/providers/protocol-registry.js";
+} from "../../domain/providers/protocol-registry.js";
 
 export type { ProviderCapabilityFlags };
 

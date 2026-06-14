@@ -1,5 +1,5 @@
 import type { StoreContainer } from "@vibe-tavern/db";
-import { countTokens } from "../../ai/tokenizer-service.js";
+import { countTokens } from "../../infrastructure/ai/tokenizer-service.js";
 import {
 	type ChatBranchId,
 	type ChatId,

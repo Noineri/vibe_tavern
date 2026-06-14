@@ -11,7 +11,7 @@ import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-exec
 import { buildSamplerConfig } from "./sampler-mapper.js";
 import { normalizeProviderType } from "@vibe-tavern/domain";
 import { log } from "@vibe-tavern/domain";
-import { cancelled, providerError } from "../errors.js";
+import { cancelled, providerError } from "../../errors.js";
 import { createMappedStream, mapFinish, safeStreamTextPromise, safeReasoningPromise } from "./stream-helpers.js";
 import { describeAttachments } from "./vision-gate.js";
 import type { VisionGateConfig } from "./vision-gate.js";

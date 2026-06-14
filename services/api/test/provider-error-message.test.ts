@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { extractProviderErrorMessage } from "../src/ai/provider-error-message.js";
+import { extractProviderErrorMessage } from "../src/infrastructure/ai/provider-error-message.js";
 
 describe("extractProviderErrorMessage", () => {
   it("extracts provider message from AI SDK APICallError data", () => {

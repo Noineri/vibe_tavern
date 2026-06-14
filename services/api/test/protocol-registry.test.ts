@@ -22,7 +22,7 @@ import {
 import {
 	PROVIDER_CAPABILITIES,
 	getProviderCapabilities,
-} from "../src/ai/provider-capabilities.js";
+} from "../src/infrastructure/ai/provider-capabilities.js";
 
 const ALL_TYPES = Object.values(PROVIDER_TYPE) as ProviderType[];
 
