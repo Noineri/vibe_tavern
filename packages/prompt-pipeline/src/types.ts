@@ -123,19 +123,12 @@ export interface PromptAssemblyContext {
     enhanceDefinitions?: string | null;
     /** Whether this preset is in advanced (canvas-driven) mode. `false`/`undefined` = simple mode (4 preset fields, no custom injections, `DEFAULT_PROMPT_ORDER` ordering). Mirrors `PromptPresetDto.advancedMode`. */
     advancedMode?: boolean | null;
-    /** Custom injection blocks (advanced mode only — ignored when `advancedMode` is falsy). */
+    /** Custom injection blocks (advanced mode only — ignored when `advancedMode` is falsy). Content-only — positional state (zone/depth/order/enabled) lives on the matching `promptOrder` entry. */
     customInjections?: Array<{
       identifier?: string;
       name: string;
       content: string;
-      depth: number;
       role: string;
-      enabled: boolean;
-      slot?: { zone: "before_chat" | "in_chat" | "after_chat"; depth: number | null; order: number };
-      injectionPosition?: 0 | 1 | "relative" | "absolute";
-      injectionOrder?: number;
-      promptOrderIndex?: number;
-      promptOrderPlacement?: "before_chat" | "after_chat";
     }>;
     promptOrder?: Array<{ identifier: string; enabled: boolean; order?: number; kind?: "built_in" | "custom"; zone?: "before_chat" | "in_chat" | "after_chat"; depth?: number | null }>;
   } | null;

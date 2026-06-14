@@ -4,6 +4,8 @@ import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import type { ContentStore } from '../content-store.js';
 import { STORAGE_FOLDERS } from '../file-store.js';
+import type { CustomInjection, PromptOrderEntry } from '@vibe-tavern/domain';
+import { normalizePresetCanvas } from '@vibe-tavern/domain';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -23,8 +25,8 @@ export interface CreatePresetData {
   enhanceDefinitionsPrompt?: string;
   scriptAiSystemPrompt?: string;
   aiAssistantPrompts?: string;
-  customInjectionsJson?: string;
-  promptOrderJson?: string;
+  customInjections?: CustomInjection[];
+  promptOrder?: PromptOrderEntry[];
   advancedMode?: boolean;
 }
 
@@ -52,8 +54,8 @@ export interface PromptPreset {
   enhanceDefinitionsPrompt: string;
   scriptAiSystemPrompt: string;
   aiAssistantPrompts: string;
-  customInjectionsJson: string;
-  promptOrderJson: string;
+  customInjections: CustomInjection[];
+  promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
   createdAt: string;
   updatedAt: string;
@@ -83,12 +85,14 @@ export class PresetStore {
 
     // Lazy migration: generate file if it doesn't exist on disk
     if (this.content && !row.hasFileOnDisk) {
-      const fileData = this.toFilePayload(row);
+      const preset = this.mapRow(row);
+      const fileData = this.toFilePayload(preset);
       const hash = await this.content.writeEntity(STORAGE_FOLDERS.promptPresets, id, fileData);
       await this.db.update(promptPresets)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
         .where(eq(promptPresets.id, id))
         .run();
+      return preset;
     }
 
     return this.mapRow(row);
@@ -124,17 +128,19 @@ export class PresetStore {
         enhanceDefinitionsPrompt: data.enhanceDefinitionsPrompt ?? '',
         scriptAiSystemPrompt: data.scriptAiSystemPrompt ?? '',
         aiAssistantPrompts: data.aiAssistantPrompts ?? '{}',
-        customInjectionsJson: data.customInjectionsJson ?? '[]',
-        promptOrderJson: data.promptOrderJson ?? '[]',
+        customInjectionsJson: JSON.stringify(data.customInjections ?? []),
+        promptOrderJson: JSON.stringify(data.promptOrder ?? []),
         advancedMode: data.advancedMode ? 1 : 0,
         createdAt: now,
         updatedAt: now,
       })
       .returning();
 
+    const preset = this.mapRow(row!);
+
     // Dual-write: write canonical JSON file
     if (this.content) {
-      const fileData = this.toFilePayload(row!);
+      const fileData = this.toFilePayload(preset);
       const hash = await this.content.writeEntity(STORAGE_FOLDERS.promptPresets, id, fileData);
       await this.db.update(promptPresets)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -142,7 +148,7 @@ export class PresetStore {
         .run();
     }
 
-    return this.mapRow(row!);
+    return preset;
   }
 
   async update(id: string, data: UpdatePresetData): Promise<PromptPreset> {
@@ -165,8 +171,8 @@ export class PresetStore {
     if (data.enhanceDefinitionsPrompt !== undefined) values.enhanceDefinitionsPrompt = data.enhanceDefinitionsPrompt;
     if (data.scriptAiSystemPrompt !== undefined) values.scriptAiSystemPrompt = data.scriptAiSystemPrompt;
     if (data.aiAssistantPrompts !== undefined) values.aiAssistantPrompts = data.aiAssistantPrompts;
-    if (data.customInjectionsJson !== undefined) values.customInjectionsJson = data.customInjectionsJson;
-    if (data.promptOrderJson !== undefined) values.promptOrderJson = data.promptOrderJson;
+    if (data.customInjections !== undefined) values.customInjectionsJson = JSON.stringify(data.customInjections);
+    if (data.promptOrder !== undefined) values.promptOrderJson = JSON.stringify(data.promptOrder);
     if (data.advancedMode !== undefined) values.advancedMode = data.advancedMode ? 1 : 0;
 
     const [row] = await this.db
@@ -179,9 +185,11 @@ export class PresetStore {
       throw new Error(`Preset '${id}' not found after update`);
     }
 
+    const preset = this.mapRow(row);
+
     // Dual-write: update canonical JSON file
     if (this.content) {
-      const fileData = this.toFilePayload(row);
+      const fileData = this.toFilePayload(preset);
       const hash = await this.content.writeEntity(STORAGE_FOLDERS.promptPresets, id, fileData);
       await this.db.update(promptPresets)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -189,7 +197,7 @@ export class PresetStore {
         .run();
     }
 
-    return this.mapRow(row);
+    return preset;
   }
 
   async delete(id: string): Promise<void> {
@@ -237,9 +245,11 @@ export class PresetStore {
       })
       .returning();
 
+    const preset = this.mapRow(row!);
+
     // Dual-write: write canonical JSON file for duplicate
     if (this.content) {
-      const fileData = this.toFilePayload(row!);
+      const fileData = this.toFilePayload(preset);
       const hash = await this.content.writeEntity(STORAGE_FOLDERS.promptPresets, newId, fileData);
       await this.db.update(promptPresets)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -247,7 +257,7 @@ export class PresetStore {
         .run();
     }
 
-    return this.mapRow(row!);
+    return preset;
   }
 
   async ensureDefault(): Promise<PromptPreset> {
@@ -276,8 +286,8 @@ export class PresetStore {
       enhanceDefinitionsPrompt: '',
       scriptAiSystemPrompt: '',
       aiAssistantPrompts: '{}',
-      customInjectionsJson: '[]',
-      promptOrderJson: '[]',
+      customInjections: [],
+      promptOrder: [],
       advancedMode: false,
       bindProviderPresetId: null,
     });
@@ -285,31 +295,36 @@ export class PresetStore {
 
   // ─── File payload ──────────────────────────────────────────────────────────
 
-  private toFilePayload(row: typeof promptPresets.$inferSelect): Record<string, unknown> {
+  private toFilePayload(preset: PromptPreset): Record<string, unknown> {
     return {
-      name: row.name,
-      systemPrompt: row.systemPrompt,
-      postHistoryInstructions: row.postHistoryInstructions,
-      assistantPrefix: row.assistantPrefix,
-      authorsNote: row.authorsNote,
-      authorsNoteDepth: row.authorsNoteDepth,
-      authorsNotePosition: row.authorsNotePosition,
-      authorsNoteRole: row.authorsNoteRole,
-      summaryPrompt: row.summaryPrompt,
-      toolsPrompt: row.toolsPrompt,
-      nsfwPrompt: row.nsfwPrompt,
-      enhanceDefinitionsPrompt: row.enhanceDefinitionsPrompt,
-      scriptAiSystemPrompt: row.scriptAiSystemPrompt,
-      aiAssistantPrompts: row.aiAssistantPrompts ?? '{}',
-      customInjections: JSON.parse(row.customInjectionsJson || '[]'),
-      promptOrder: JSON.parse(row.promptOrderJson || '[]'),
-      advancedMode: Boolean(row.advancedMode),
+      name: preset.name,
+      systemPrompt: preset.systemPrompt,
+      postHistoryInstructions: preset.postHistoryInstructions,
+      assistantPrefix: preset.assistantPrefix,
+      authorsNote: preset.authorsNote,
+      authorsNoteDepth: preset.authorsNoteDepth,
+      authorsNotePosition: preset.authorsNotePosition,
+      authorsNoteRole: preset.authorsNoteRole,
+      summaryPrompt: preset.summaryPrompt,
+      toolsPrompt: preset.toolsPrompt,
+      nsfwPrompt: preset.nsfwPrompt,
+      enhanceDefinitionsPrompt: preset.enhanceDefinitionsPrompt,
+      scriptAiSystemPrompt: preset.scriptAiSystemPrompt,
+      aiAssistantPrompts: preset.aiAssistantPrompts,
+      customInjections: preset.customInjections,
+      promptOrder: preset.promptOrder,
+      advancedMode: preset.advancedMode,
     };
   }
 
   // ─── Row mapper ────────────────────────────────────────────────────────────
 
   private mapRow(row: typeof promptPresets.$inferSelect): PromptPreset {
+    // Single materialization + normalization site (CANVAS_SINGLE_SOURCE_PLAN D2):
+    // parse the two JSON columns once, normalize the canvas, assign typed arrays.
+    const rawInjections = JSON.parse(row.customInjectionsJson || '[]');
+    const rawOrder = JSON.parse(row.promptOrderJson || '[]');
+    const { customInjections, promptOrder } = normalizePresetCanvas(rawInjections, rawOrder);
     return {
       id: row.id,
       name: row.name,
@@ -327,8 +342,8 @@ export class PresetStore {
       enhanceDefinitionsPrompt: row.enhanceDefinitionsPrompt,
       scriptAiSystemPrompt: row.scriptAiSystemPrompt ?? '',
       aiAssistantPrompts: row.aiAssistantPrompts ?? '{}',
-      customInjectionsJson: row.customInjectionsJson,
-      promptOrderJson: row.promptOrderJson,
+      customInjections,
+      promptOrder,
       advancedMode: Boolean(row.advancedMode),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

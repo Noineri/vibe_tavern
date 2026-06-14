@@ -64,10 +64,6 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 	} | null> {
 		const preset = await this.stores.presets.getById(presetId);
 		if (!preset) return null;
-		let customInjections: CustomInjection[] = [];
-		let promptOrder: PromptOrderEntry[] = [];
-		try { customInjections = JSON.parse(preset.customInjectionsJson) as CustomInjection[]; } catch {}
-		try { promptOrder = JSON.parse(preset.promptOrderJson) as PromptOrderEntry[]; } catch {}
 		return {
 			id: preset.id,
 			name: preset.name,
@@ -83,8 +79,8 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			nsfw: preset.nsfwPrompt,
 			enhanceDefinitions: preset.enhanceDefinitionsPrompt,
 			advancedMode: preset.advancedMode,
-			customInjections,
-			promptOrder,
+			customInjections: preset.customInjections,
+			promptOrder: preset.promptOrder,
 		};
 	}
 

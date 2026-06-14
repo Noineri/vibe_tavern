@@ -1,5 +1,5 @@
 import type { PresetStore } from "@vibe-tavern/db";
-import type { PromptPresetDto } from "@vibe-tavern/domain";
+import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
 import {
   listPromptPresets,
   createPromptPreset,
@@ -36,8 +36,8 @@ export class PromptPresetService {
     tools?: string;
     nsfw?: string;
     enhanceDefinitions?: string;
-    customInjections?: unknown[];
-    promptOrder?: unknown[];
+    customInjections?: CustomInjection[];
+    promptOrder?: PromptOrderEntry[];
     advancedMode?: boolean;
     scriptAiSystemPrompt?: string;
   }): Promise<PromptPresetDto> {
@@ -58,8 +58,8 @@ export class PromptPresetService {
     tools?: string;
     nsfw?: string;
     enhanceDefinitions?: string;
-    customInjections?: unknown[];
-    promptOrder?: unknown[];
+    customInjections?: CustomInjection[];
+    promptOrder?: PromptOrderEntry[];
     advancedMode?: boolean;
     scriptAiSystemPrompt?: string;
   }): Promise<PromptPresetDto> {

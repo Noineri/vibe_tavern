@@ -23,7 +23,6 @@ export const DEFAULT_PROMPT_ORDER: Record<string, number> = {
  *
  * This is the single source of truth for zone inference. Used by:
  * - ST preset parser (st-preset-parser.ts)
- * - Injection migration (migrateInjection)
  * - Canvas fallback (InjectionTable.getCanvasItemSlot)
  * - Backend fallback (assemble.ts AdvancedResolver, world-info zone inference)
  */
@@ -69,33 +68,18 @@ export function inferSlot(args: {
 }
 
 // ─── CustomInjection migration ────────────────────────────────────────────
-
-/**
- * Migrate a CustomInjection that lacks `slot` into the new unified position model.
- * Returns the same reference if `slot` is already present.
- */
-export function migrateInjection(inj: CustomInjection): CustomInjection & { slot: PromptSlot } {
-  if (inj.slot) return inj as CustomInjection & { slot: PromptSlot };
-
-  const isAbsolute =
-    inj.injectionPosition === 1 ||
-    inj.injectionPosition === "absolute" ||
-    inj.injectionPosition == null;
-
-  const slot = inferSlot({
-    injectionPosition: isAbsolute ? 1 : 0,
-    depth: inj.depth ?? 0,
-    placement: inj.promptOrderPlacement,
-    order: isAbsolute
-      ? (inj.injectionOrder ?? inj.promptOrderIndex ?? 0)
-      : (inj.promptOrderIndex ?? inj.injectionOrder ?? 0),
-  });
-
-  return { ...inj, slot };
-}
+// NOTE: `migrateInjection` was removed in CANVAS_SINGLE_SOURCE_PLAN Wave 1.
+// `CustomInjection` is now content-only (no positional/ST-compat fields), so
+// there is nothing on an injection to "migrate". Positional state lives on the
+// matching `PromptOrderEntry` in `promptOrder`. Importers (Wave 3) build canvas
+// entries directly via `inferSlot`; the UI (Wave 4) reads/writes them directly.
 
 /**
  * Reverse-map a PromptSlot back to SillyTavern-compatible fields for export.
+ *
+ * Consumes a slot *derived from a canvas `PromptOrderEntry`* (by `inferSlot`
+ * at import or by direct canvas reads at export), NOT a stored injection field —
+ * `CustomInjection` no longer carries positional state.
  */
 export function slotToStFields(slot: PromptSlot): {
   injection_position: 0 | 1;

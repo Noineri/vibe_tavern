@@ -11,7 +11,8 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { getT } from "../../i18n/locale-helpers.js";
 import { parseStPersonas } from "../../lib/st-persona-parser.js";
-import { parseStPreset } from "../../lib/st-preset-parser.js";
+import { parseStPreset, stBlockToCanvasEntry, synthesizeCanvasEntry } from "../../lib/st-preset-parser.js";
+import type { CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
 import { fetchBootstrapAction, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { loadPromptPresetsAction } from "../../stores/api-actions/preset-actions.js";
 
@@ -322,23 +323,32 @@ interface ImportError {
 
         const presetName = entry.file.name.replace(/\.json$/i, "");
         const { blocks, promptOrder } = stPreset;
-
-        // Build custom injections from non-system blocks
-        const { migrateInjection } = await import("@vibe-tavern/domain");
         const mainBlock = blocks.find(b => b.identifier === "main");
         const jailbreakBlock = blocks.find(b => b.identifier === "jailbreak");
 
-        const customInjections = blocks
-          .filter(b => b.identifier !== "main" && b.identifier !== "jailbreak" && b.identifier !== "nsfw" && b.identifier !== "enhanceDefinitions" && b.identifier !== "worldInfoBefore" && b.identifier !== "worldInfoAfter")
-          .filter(b => b.content.trim())
-          .map(b => {
-            const raw = { identifier: b.identifier, name: b.name, content: b.content, depth: b.injectionDepth, role: b.role, enabled: b.enabled, injectionPosition: b.injectionPosition, injectionOrder: b.injectionOrder, promptOrderIndex: b.promptOrderIndex, promptOrderPlacement: b.promptOrderPlacement };
-            const migrated = migrateInjection(raw);
-            return { name: b.name || b.identifier, content: b.content, role: b.role, enabled: b.enabled, depth: b.injectionDepth, injectionPosition: b.injectionPosition, slot: migrated.slot };
-          });
+        // Built-in identifiers whose content goes into preset fields (not custom injections)
+        const excluded = new Set(["main", "jailbreak", "nsfw", "enhanceDefinitions", "worldInfoBefore", "worldInfoAfter"]);
+        const customBlocks = blocks.filter(b => !excluded.has(b.identifier) && b.content.trim());
 
-        const promptOrderResult = stPreset.promptOrder
-          .map(b => ({ identifier: b.identifier, enabled: b.enabled }));
+        // Content-only custom injections: {identifier, name, content, role}
+        const customInjections: CustomInjection[] = customBlocks.map(b => ({
+          identifier: b.identifier,
+          name: b.name || b.identifier,
+          content: b.content,
+          role: b.role,
+        }));
+
+        // COMPLETE canvas: preserve ALL fields from ST prompt_order (fixes the
+        // old strip-to-{identifier,enabled} bug) + synthesize entries for custom
+        // blocks absent from ST prompt_order.
+        const canvas: PromptOrderEntry[] = promptOrder.map(stBlockToCanvasEntry);
+        const canvasIds = new Set(canvas.map(e => e.identifier));
+        for (const b of customBlocks) {
+          if (!canvasIds.has(b.identifier)) {
+            canvas.push(synthesizeCanvasEntry(b));
+            canvasIds.add(b.identifier);
+          }
+        }
 
         await createPromptPreset({
           name: presetName,
@@ -346,7 +356,7 @@ interface ImportError {
           jailbreak: jailbreakBlock?.content || "",
           prefill: "",
           customInjections: customInjections.length > 0 ? customInjections : undefined,
-          promptOrder: promptOrderResult.length > 0 ? promptOrderResult : undefined,
+          promptOrder: canvas.length > 0 ? canvas : undefined,
         });
         importedPresets++;
       } catch (err) {
