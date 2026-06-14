@@ -5,8 +5,8 @@ import type { ProviderProfileService } from "./domain/providers/provider-profile
 import type { LiveChatOrchestrator } from "./domain/chat/live-chat-orchestrator.js";
 import type { ChatSummaryService } from "./domain/chat/chat-summary-service.js";
 import type { PromptPresetService } from "./domain/prompt/prompt-preset-service.js";
-import type { AssetService } from "./asset-service.js";
-import type { MobileAccessService } from "./mobile-access-service.js";
+import type { AssetService } from "./domain/asset/asset-service.js";
+import type { MobileAccessService } from "./domain/mobile-access/mobile-access-service.js";
 import { BootstrapAdapter } from "./api/adapters/bootstrap-adapter.js";
 import { ChatAdapter } from "./api/adapters/chat-adapter.js";
 import { CharacterAdapter } from "./api/adapters/character-adapter.js";

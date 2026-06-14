@@ -9,7 +9,7 @@ import type { SessionSnapshot } from "../contract/session-types.js";
 import type { LiveChatOrchestrator } from "../../domain/chat/live-chat-orchestrator.js";
 import type { ChatSummaryService } from "../../domain/chat/chat-summary-service.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
-import type { AssetService } from "../../asset-service.js";
+import type { AssetService } from "../../domain/asset/asset-service.js";
 import { resolveCachedModels } from "../../domain/providers/model-cache-service.js";
 import { resolveVisionDescribePrompt } from "../../infrastructure/ai/vision-gate.js";
 
