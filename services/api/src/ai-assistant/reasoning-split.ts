@@ -1,4 +1,4 @@
-import { REASONING_END_MARKER, REASONING_START_MARKER } from "../ai/openai-reasoning-fetch.js";
+import { REASONING_END_MARKER, REASONING_START_MARKER } from "../providers/openai-reasoning-fetch.js";
 
 export interface AiAssistantStreamChunk {
   type: "text" | "reasoning" | "partial_json" | "error" | "done";

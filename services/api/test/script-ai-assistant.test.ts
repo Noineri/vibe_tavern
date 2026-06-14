@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { REASONING_END_MARKER, REASONING_START_MARKER } from "../src/ai/openai-reasoning-fetch.js";
+import { REASONING_END_MARKER, REASONING_START_MARKER } from "../src/providers/openai-reasoning-fetch.js";
 import {
   splitReasoningFromText,
   type AiAssistantStreamChunk,

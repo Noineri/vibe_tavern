@@ -8,7 +8,7 @@
 import { logSendDebug } from "../send-debug-log.js";
 import { extractProviderErrorMessage } from "./provider-error-message.js";
 import { cancelled, providerError } from "../errors.js";
-import { REASONING_START_MARKER, REASONING_END_MARKER } from "./openai-reasoning-fetch.js";
+import { REASONING_START_MARKER, REASONING_END_MARKER } from "../providers/openai-reasoning-fetch.js";
 import type { ProviderStreamChunk, ProviderStreamFinish } from "./provider-execution-types.js";
 
 // ─── createMappedStream ──────────────────────────────────────────────────

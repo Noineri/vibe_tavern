@@ -2,7 +2,7 @@ import { describe, it, expect, mock, beforeEach } from "bun:test";
 import {
   createKoboldCppModel,
   fetchKoboldModel,
-} from "../src/ai/koboldcpp-adapter.js";
+} from "../src/providers/koboldcpp-adapter.js";
 
 // ─── Mock fetch ──────────────────────────────────────────────────────────
 
