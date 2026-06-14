@@ -17,17 +17,10 @@ describe("Prompt pipeline: ST custom injection semantics", () => {
         text: "system prompt",
         advancedMode: true,
         customInjections: [
-          {
-            identifier: "relative_user",
-            name: "Relative User",
-            content: "relative instruction",
-            depth: 4,
-            role: "user",
-            enabled: true,
-            injectionPosition: 0,
-            promptOrderIndex: 12,
-            promptOrderPlacement: "before_chat",
-          },
+          { identifier: "relative_user", name: "Relative User", content: "relative instruction", role: "user" },
+        ],
+        promptOrder: [
+          { identifier: "relative_user", enabled: true, zone: "before_chat", depth: null, order: 12, kind: "custom" },
         ],
       },
     });
@@ -56,17 +49,10 @@ describe("Prompt pipeline: ST custom injection semantics", () => {
         text: "system prompt",
         advancedMode: true,
         customInjections: [
-          {
-            identifier: "relative_after_user",
-            name: "Relative After User",
-            content: "relative after chat instruction",
-            depth: 4,
-            role: "user",
-            enabled: true,
-            injectionPosition: 0,
-            promptOrderIndex: 20,
-            promptOrderPlacement: "after_chat",
-          },
+          { identifier: "relative_after_user", name: "Relative After User", content: "relative after chat instruction", role: "user" },
+        ],
+        promptOrder: [
+          { identifier: "relative_after_user", enabled: true, zone: "after_chat", depth: null, order: 20, kind: "custom" },
         ],
       },
     });
@@ -96,16 +82,10 @@ describe("Prompt pipeline: ST custom injection semantics", () => {
         text: "system prompt",
         advancedMode: true,
         customInjections: [
-          {
-            identifier: "absolute_user",
-            name: "Absolute User",
-            content: "absolute depth instruction",
-            depth: 1,
-            role: "user",
-            enabled: true,
-            injectionPosition: 1,
-            injectionOrder: 200,
-          },
+          { identifier: "absolute_user", name: "Absolute User", content: "absolute depth instruction", role: "user" },
+        ],
+        promptOrder: [
+          { identifier: "absolute_user", enabled: true, zone: "in_chat", depth: 1, order: 200, kind: "custom" },
         ],
       },
     });
