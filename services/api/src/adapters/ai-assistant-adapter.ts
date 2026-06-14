@@ -1,4 +1,4 @@
-import type { AiAssistantRuntimeApi } from "../routes/types.js";
+import type { AiAssistantRuntimeApi } from "../api/contract/runtime-api.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { countAiAssistantTokens, streamAiAssistant, type AiAssistantStreamRequest } from "../ai-assistant/ai-assistant-stream.js";
 import { createAiAssistantDeps } from "../ai-assistant/ai-assistant-deps.js";

@@ -1,4 +1,4 @@
-import type { PresetRuntimeApi } from "../routes/types.js";
+import type { PresetRuntimeApi } from "../api/contract/runtime-api.js";
 import type { PromptPresetService } from "../prompt/prompt-preset-service.js";
 
 export class PresetAdapter implements PresetRuntimeApi {

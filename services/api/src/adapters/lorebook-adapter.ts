@@ -1,4 +1,4 @@
-import type { LorebookRuntimeApi } from "../routes/types.js";
+import type { LorebookRuntimeApi } from "../api/contract/runtime-api.js";
 import type { StoreContainer, CreateLoreEntryData, UpdateLoreEntryData } from "@vibe-tavern/db";
 import { importLorebook } from "../lorebook/lorebook-import-service.js";
 

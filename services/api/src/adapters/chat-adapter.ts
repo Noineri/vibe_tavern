@@ -1,4 +1,4 @@
-import type { ChatRuntimeApi } from "../routes/types.js";
+import type { ChatRuntimeApi } from "../api/contract/runtime-api.js";
 import { brandId, parseStoredAttachments, type ChatId, type ChatBranchId, type MessageId } from "@vibe-tavern/domain";
 import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";

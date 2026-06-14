@@ -1,4 +1,4 @@
-import type { AssetRuntimeApi } from "../routes/types.js";
+import type { AssetRuntimeApi } from "../api/contract/runtime-api.js";
 import type { AssetService } from "../asset-service.js";
 
 export class AssetAdapter implements AssetRuntimeApi {

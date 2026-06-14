@@ -1,4 +1,4 @@
-import type { ImportExportRuntimeApi } from "../routes/types.js";
+import type { ImportExportRuntimeApi } from "../api/contract/runtime-api.js";
 import type { SessionRuntime } from "../session/session-runtime.js";
 
 export class ImportExportAdapter implements ImportExportRuntimeApi {

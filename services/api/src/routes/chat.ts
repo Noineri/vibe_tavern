@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { ChatRuntimeApi } from "./types.js";
+import type { ChatRuntimeApi } from "../api/contract/runtime-api.js";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { streamSSE } from "hono/streaming";

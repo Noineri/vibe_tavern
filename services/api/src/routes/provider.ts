@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { ProviderRuntimeApi } from "./types.js";
+import type { ProviderRuntimeApi } from "../api/contract/runtime-api.js";
 import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";
 import { isDomainError, providerError } from "../errors.js";

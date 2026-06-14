@@ -1,4 +1,4 @@
-import type { ProviderRuntimeApi } from "../routes/types.js";
+import type { ProviderRuntimeApi } from "../api/contract/runtime-api.js";
 import type { ClientProviderProfileRecord } from "../session/session-runtime-dto.js";
 import { notFound } from "../errors.js";
 import type { StoreContainer } from "@vibe-tavern/db";

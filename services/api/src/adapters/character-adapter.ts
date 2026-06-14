@@ -1,4 +1,4 @@
-import type { CharacterRuntimeApi } from "../routes/types.js";
+import type { CharacterRuntimeApi } from "../api/contract/runtime-api.js";
 import { brandId, type CharacterId, type ChatId } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../session/session-runtime.js";

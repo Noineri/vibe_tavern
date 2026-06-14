@@ -1,5 +1,5 @@
 import type { FeatureDeps, FeatureModule } from "../feature-module.js";
-import type { AiAssistantRuntimeApi } from "../routes/types.js";
+import type { AiAssistantRuntimeApi } from "../api/contract/runtime-api.js";
 
 /**
  * Universal AI Assistant Feature — mounts the single `/api/ai-assistant` endpoint.

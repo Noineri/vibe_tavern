@@ -1,11 +1,11 @@
-import type { AiAssistantStreamChunk } from "../ai-assistant/reasoning-split.js";
-import type { AiAssistantStreamRequest } from "../ai-assistant/ai-assistant-stream.js";
-import type { ClientProviderProfileRecord } from "../session/session-runtime-dto.js";
+import type { AiAssistantStreamChunk } from "../../ai-assistant/reasoning-split.js";
+import type { AiAssistantStreamRequest } from "../../ai-assistant/ai-assistant-stream.js";
+import type { ClientProviderProfileRecord } from "../../session/session-runtime-dto.js";
 import type {
 	BootstrapState,
 	ImportResult,
 	SessionSnapshot,
-} from "../session/session-runtime.js";
+} from "../../session/session-runtime.js";
 import type { PromptTraceRecordDto, PromptPresetDto } from "@vibe-tavern/domain";
 import type {
 	ChatSummary,
@@ -14,12 +14,12 @@ import type {
 	UiSettings,
 } from "@vibe-tavern/db";
 import type { LorebookRow, LoreEntryRow, ScriptRow } from "@vibe-tavern/db";
-import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../providers/provider-gateway.js";
-import type { GenerateChatSummaryResult, SummarizeChatResult } from "../chat/chat-summary-service.js";
-import type { LorebookImportResult } from "../lorebook/lorebook-import-service.js";
-import type { ScriptTestResult } from "../scripts-engine/script-test-service.js";
-import type { StDirectoryScanResult, StDirectoryImportResult } from "../st-directory-scanner.js";
-import type { MobileAccessInfo } from "../mobile-access-service.js";
+import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../../providers/provider-gateway.js";
+import type { GenerateChatSummaryResult, SummarizeChatResult } from "../../chat/chat-summary-service.js";
+import type { LorebookImportResult } from "../../lorebook/lorebook-import-service.js";
+import type { ScriptTestResult } from "../../scripts-engine/script-test-service.js";
+import type { StDirectoryScanResult, StDirectoryImportResult } from "../../st-directory-scanner.js";
+import type { MobileAccessInfo } from "../../mobile-access-service.js";
 
 // ─── Shared type aliases ────────────────────────────────────────────
 //
