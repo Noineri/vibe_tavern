@@ -230,7 +230,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
 
         {/* Edit mode */}
         {editing && (
-          <div className="mx-auto flex max-w-2xl flex-col gap-2">
+          <div className="flex w-[min(640px,90vw)] flex-col gap-2">
             <AutoTextarea
               value={editText}
               onChange={(e) => setEditText(e.target.value)}
