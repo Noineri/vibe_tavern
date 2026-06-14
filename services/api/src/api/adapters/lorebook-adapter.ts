@@ -1,6 +1,6 @@
-import type { LorebookRuntimeApi } from "../api/contract/runtime-api.js";
+import type { LorebookRuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer, CreateLoreEntryData, UpdateLoreEntryData } from "@vibe-tavern/db";
-import { importLorebook } from "../domain/lorebook/lorebook-import-service.js";
+import { importLorebook } from "../../domain/lorebook/lorebook-import-service.js";
 
 export class LorebookAdapter implements LorebookRuntimeApi {
 	constructor(private readonly stores: StoreContainer) {}

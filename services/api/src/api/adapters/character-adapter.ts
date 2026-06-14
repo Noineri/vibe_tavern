@@ -1,8 +1,8 @@
-import type { CharacterRuntimeApi } from "../api/contract/runtime-api.js";
+import type { CharacterRuntimeApi } from "../contract/runtime-api.js";
 import { brandId, type CharacterId, type ChatId } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
-import type { SessionRuntime } from "../session/session-runtime.js";
-import type { AssetService } from "../asset-service.js";
+import type { SessionRuntime } from "../../session/session-runtime.js";
+import type { AssetService } from "../../asset-service.js";
 
 export class CharacterAdapter implements CharacterRuntimeApi {
 	constructor(
