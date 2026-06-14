@@ -14,7 +14,7 @@ import {
 	internal,
 	notFound,
 	validation,
-} from "../errors.js";
+} from "../shared/errors.js";
 import { PromptAssemblyService } from "../domain/prompt/prompt-assembly-service.js";
 import { StaticPromptResolver } from "../domain/prompt/prompt-resolver.js";
 import {
@@ -53,7 +53,7 @@ import { ChatOrderService } from "./session-runtime-chat-order.js";
 import { ChatLifecycleRuntime } from "./session-runtime-chat-lifecycle.js";
 import * as importExportModule from "./session-runtime-import-export.js";
 // lorebookModule removed — CRUD is wired directly through stores in RuntimeApiAdapter
-import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as importST } from "../st-directory-scanner.js";
+import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as importST } from "../shared/st-directory-scanner.js";
 
 
 	/**

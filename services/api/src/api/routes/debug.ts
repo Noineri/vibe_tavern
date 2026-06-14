@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { BootstrapRuntimeApi } from "../contract/runtime-api.js";
 import { zValidator } from "@hono/zod-validator";
-import { logSendDebug } from "../../send-debug-log.js";
+import { logSendDebug } from "../../shared/send-debug-log.js";
 import * as schemas from "@vibe-tavern/api-contracts";
 
 export function createDebugRoutes(runtime: BootstrapRuntimeApi) {

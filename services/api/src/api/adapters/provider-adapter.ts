@@ -1,6 +1,6 @@
 import type { ProviderRuntimeApi } from "../contract/runtime-api.js";
 import type { ClientProviderProfileRecord } from "../../session/session-runtime-dto.js";
-import { notFound } from "../../errors.js";
+import { notFound } from "../../shared/errors.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import {

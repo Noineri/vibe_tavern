@@ -7,8 +7,8 @@ import {
   type CachedProviderModelsRecord,
   type FavoriteProviderModelRecord,
 } from "../../session/session-runtime-dto.js";
-import { notFound } from "../../errors.js";
-import { logSendDebug } from "../../send-debug-log.js";
+import { notFound } from "../../shared/errors.js";
+import { logSendDebug } from "../../shared/send-debug-log.js";
 
 // ─── Public contract (duck-typed — consumers import this as `type`) ──────
 

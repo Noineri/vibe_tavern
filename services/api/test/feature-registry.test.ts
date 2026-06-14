@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { EventBus } from "@vibe-tavern/domain";
-import { FeatureRegistry } from "../src/feature-registry.js";
-import type { FeatureModule } from "../src/feature-module.js";
+import { FeatureRegistry } from "../src/shared/feature-registry.js";
+import type { FeatureModule } from "../src/shared/feature-module.js";
 
 function makeDeps() {
   return { events: new EventBus(), router: new Hono() };

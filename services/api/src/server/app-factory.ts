@@ -2,8 +2,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
 import { resolve } from "node:path";
-import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "../errors.js";
-import { logSendDebug } from "../send-debug-log.js";
+import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "../shared/errors.js";
+import { logSendDebug } from "../shared/send-debug-log.js";
 import { createApiRouter, type RuntimeApi } from "../api/routes/index.js";
 import { createMobileAuthMiddleware, type MobileAccessTokenSource } from "../mobile-auth.js";
 

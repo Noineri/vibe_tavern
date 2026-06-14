@@ -11,7 +11,7 @@ import {
 	isDomainError,
 	notFound,
 	validation,
-} from "../../errors.js";
+} from "../../shared/errors.js";
 import type { IChatOrder } from "../../session/session-runtime-chat-order.js";
 import type { SessionSnapshot } from "../../api/contract/session-types.js";
 

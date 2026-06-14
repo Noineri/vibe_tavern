@@ -1,5 +1,5 @@
 import type { StoreContainer } from "@vibe-tavern/db";
-import { logSendDebug } from "../../send-debug-log.js";
+import { logSendDebug } from "../../shared/send-debug-log.js";
 import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
 
 /**

@@ -16,7 +16,7 @@ import {
 	importStLorebookJson,
 	parseSillyTavernChat,
 } from "@vibe-tavern/import-export";
-import type { ImportExportModuleDeps, ImportResult } from "./session/session-runtime-import-export.js";
+import type { ImportExportModuleDeps, ImportResult } from "../session/session-runtime-import-export.js";
 import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 import type { CharacterId, ChatId } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";

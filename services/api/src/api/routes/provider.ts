@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { ProviderRuntimeApi } from "../contract/runtime-api.js";
 import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";
-import { isDomainError, providerError } from "../../errors.js";
+import { isDomainError, providerError } from "../../shared/errors.js";
 import { tokenizeText } from "../../infrastructure/ai/tokenizer-service.js";
 
 export function createProviderRoutes(runtime: ProviderRuntimeApi) {

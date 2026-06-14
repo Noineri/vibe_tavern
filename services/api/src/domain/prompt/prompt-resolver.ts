@@ -10,7 +10,7 @@ import {
 	type PromptOrderEntry,
 } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
-import { notFound } from "../../errors.js";
+import { notFound } from "../../shared/errors.js";
 import {
 	type CharacterRecord,
 	toCharacterRecord,
