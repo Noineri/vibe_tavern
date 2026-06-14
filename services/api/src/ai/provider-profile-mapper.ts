@@ -22,9 +22,9 @@ import {
   getProviderCapabilities,
   type ProviderCapabilityFlags,
 } from "./provider-capabilities.js";
-import { createReasoningAwareFetch } from "./openai-reasoning-fetch.js";
-import { createKoboldCppModel } from "./koboldcpp-adapter.js";
-import { createOllamaModel } from "./ollama-adapter.js";
+import { createReasoningAwareFetch } from "../providers/openai-reasoning-fetch.js";
+import { createKoboldCppModel } from "../providers/koboldcpp-adapter.js";
+import { createOllamaModel } from "../providers/ollama-adapter.js";
 
 // ---------------------------------------------------------------------------
 // SDK support classification
