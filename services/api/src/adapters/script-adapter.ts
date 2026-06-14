@@ -1,4 +1,4 @@
-import type { ScriptRuntimeApi } from "../routes/types.js";
+import type { ScriptRuntimeApi } from "../api/contract/runtime-api.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { testScript, parseScriptImport } from "../scripts-engine/script-test-service.js";
 

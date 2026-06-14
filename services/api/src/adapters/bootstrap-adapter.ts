@@ -1,4 +1,4 @@
-import type { BootstrapRuntimeApi } from "../routes/types.js";
+import type { BootstrapRuntimeApi } from "../api/contract/runtime-api.js";
 import type { SessionRuntime } from "../session/session-runtime.js";
 
 export class BootstrapAdapter implements BootstrapRuntimeApi {

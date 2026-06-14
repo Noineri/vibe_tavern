@@ -1,4 +1,4 @@
-import type { MobileAccessRuntimeApi } from "../routes/types.js";
+import type { MobileAccessRuntimeApi } from "../api/contract/runtime-api.js";
 import type { MobileAccessService } from "../mobile-access-service.js";
 
 export class MobileAccessAdapter implements MobileAccessRuntimeApi {

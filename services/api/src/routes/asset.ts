@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { AssetRuntimeApi } from "./types.js";
+import type { AssetRuntimeApi } from "../api/contract/runtime-api.js";
 
 export function createAssetRoutes(runtime: AssetRuntimeApi) {
   return new Hono()
