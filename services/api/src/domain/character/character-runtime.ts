@@ -1,9 +1,9 @@
 import type { Character, CharacterVersion, CharacterId, ChatId, PersonaId, PromptPresetId } from "@vibe-tavern/domain";
 import type { ChatStore, CharacterStore, StoreContainer } from "@vibe-tavern/db";
-import type { ChatApplicationService } from "../chat/chat-application-service.js";
-import type { IChatOrder } from "./session-runtime-chat-order.js";
-import type { SessionSnapshot, ImportResult } from "./session-runtime.js";
-import { notFound, validation } from "../errors.js";
+import type { ChatApplicationService } from "../../chat/chat-application-service.js";
+import type { IChatOrder } from "../../session/session-runtime-chat-order.js";
+import type { SessionSnapshot, ImportResult } from "../../api/contract/session-types.js";
+import { notFound, validation } from "../../errors.js";
 import { brandId } from "@vibe-tavern/domain";
 
 export type CharacterRecord = {
@@ -28,16 +28,6 @@ export type CharacterRecord = {
   extensions: Record<string, unknown>;
   tags: string[];
   subtitle: string;
-  avatarAssetId: string | null;
-  avatarFullAssetId: string | null;
-  avatarCropJson: string | null;
-};
-
-export type PersonaRecord = {
-  id: string;
-  name: string;
-  description: string;
-  pronouns: string | null;
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;

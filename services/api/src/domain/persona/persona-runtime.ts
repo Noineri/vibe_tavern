@@ -11,9 +11,24 @@ import {
 	isDomainError,
 	notFound,
 	validation,
-} from "../errors.js";
-import type { IChatOrder } from "./session-runtime-chat-order.js";
-import type { SessionSnapshot } from "./session-runtime.js";
+} from "../../errors.js";
+import type { IChatOrder } from "../../session/session-runtime-chat-order.js";
+import type { SessionSnapshot } from "../../api/contract/session-types.js";
+
+/**
+ * Persona shape returned by list/create/duplicate. The contract's own
+ * `PersonaRecord` (in runtime-api.ts) is a wire-type duplicate of this —
+ * see audit §6.1 / refactor plan for dedup.
+ */
+export type PersonaRecord = {
+	id: string;
+	name: string;
+	description: string;
+	pronouns: string | null;
+	avatarAssetId: string | null;
+	avatarFullAssetId: string | null;
+	avatarCropJson: string | null;
+};
 
 export interface PersonaRuntimeDeps {
 	stores: StoreContainer;

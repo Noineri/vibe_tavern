@@ -13,9 +13,9 @@ import { brandId } from "@vibe-tavern/domain";
 import { notFound } from "../errors.js";
 import {
 	type CharacterRecord,
-	type PersonaRecord,
 	toCharacterRecord,
-} from "../session/session-runtime-character.js";
+} from "../domain/character/character-runtime.js";
+import type { PersonaRecord } from "../domain/persona/persona-runtime.js";
 import {
 	type PromptAssemblyResolver,
 } from "./prompt-assembly-service.js";
