@@ -207,7 +207,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
           <img
             src={`${getGatewayBaseUrl()}/api/assets/${att.assetId}`}
             alt={att.name || "Attachment full view"}
-            className="max-h-[55vh] w-auto max-w-full shrink-0 rounded-md object-contain shadow-2xl"
+            className="max-h-[80vh] w-auto max-w-full shrink-0 rounded-md object-contain shadow-2xl"
           />
         )}
 
