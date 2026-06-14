@@ -202,35 +202,35 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
       )}
 
       {/* Image + description */}
-      <div className="flex max-h-full max-w-full flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
+      <div className="flex max-h-full w-full max-w-2xl flex-col items-center gap-3 overflow-y-auto p-2" onClick={(e) => e.stopPropagation()}>
         {att.type === "image" && (
           <img
             src={`${getGatewayBaseUrl()}/api/assets/${att.assetId}`}
             alt={att.name || "Attachment full view"}
-            className="max-h-[70vh] max-w-full rounded-md object-contain shadow-2xl"
+            className="max-h-[55vh] w-auto max-w-full shrink-0 rounded-md object-contain shadow-2xl"
           />
         )}
 
         {/* Description area */}
         {regenerating && (
-          <div className="mx-auto max-w-2xl rounded-lg bg-white/10 px-4 py-2.5 text-center text-sm text-white/50">
+          <div className="w-full rounded-lg bg-white/10 px-4 py-2.5 text-center text-sm text-white/50">
             Regenerating description…
           </div>
         )}
         {currentDescription && !editing && !regenerating && (
-          <div className="mx-auto max-w-2xl rounded-lg bg-white/10 px-4 py-2.5 text-center text-sm leading-relaxed text-white/80">
+          <div className="w-full rounded-lg bg-white/10 px-4 py-2.5 text-center text-sm leading-relaxed text-white/80">
             {currentDescription}
           </div>
         )}
         {!currentDescription && !editing && !regenerating && messageId && att.id && (
-          <div className="mx-auto max-w-2xl text-center text-xs text-white/30">
+          <div className="w-full text-center text-xs text-white/30">
             No description — use edit or regenerate to add one.
           </div>
         )}
 
         {/* Edit mode */}
         {editing && (
-          <div className="flex w-[min(640px,90vw)] flex-col gap-2">
+          <div className="flex w-full flex-col gap-2">
             <AutoTextarea
               value={editText}
               onChange={(e) => setEditText(e.target.value)}
