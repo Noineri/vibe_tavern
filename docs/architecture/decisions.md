@@ -369,3 +369,79 @@ Crucially, `vision_describe` is **not added to the AI Assistant modal's mode pic
 **Implementation:** See [Backend Architecture — Entry Points](./backend.md#entry-points) for the full two-phase bootstrap sequence.
 
 **Related:** AD-011 (Single-Process Architecture) — this ADR refines the cold-start characteristic by splitting "port available" (milliseconds) from "fully operational" (2–7s).
+
+---
+
+## AD-019: Protocol Registry over Switch-Ladders for Provider Knowledge
+
+**Context:** Per-protocol knowledge was scattered across four sites that had to be edited in lock-step by hand:
+
+1. `mapProfileToSdkModel` — a 7-arm `switch (providerType)` returning the AI SDK model
+2. `PROVIDER_CAPABILITIES` — a separate capability-flag map keyed by type
+3. `provider-gateway` — `switch` ladders for probe / test-chat / list-models
+4. `SAMPLER_SETS` — a separate per-protocol sampler-surface lookup
+
+Adding a native provider (e.g. Vertex AI) meant touching all four sites and keeping their `ProviderType` cases consistent. Capability/protocol mismatches were easy to introduce silently, and the duplication made the provider layer the single biggest obstacle to Novel Mode's text-completion axis.
+
+**Options considered:**
+
+| Approach | Description | Problem |
+|----------|-------------|--------|
+| **Status quo** | Keep the four switch sites, add a fifth for `textCompletion` | Lock-step edits; silent drift; every new protocol multiplies the surface |
+| **Strategy/enum per axis** | Separate registry per concern (capabilities, model, ops, samplers) | Four registries to keep in sync — same problem, relocated |
+| **One `ProtocolAdapter` per type** | A single object per `ProviderType` carrying capabilities + model resolution + limitations + probe/test/list | One edit site; the adapter is the protocol's complete description |
+
+**Decision:** One `ProtocolAdapter` object per `ProviderType`, registered in an exhaustive `Record<ProviderType, ProtocolAdapter>` in `domain/providers/protocol-registry.ts`. `resolveProtocol(type)` is the single lookup. The gateway becomes a thin delegator; the legacy `mapProfileToSdkModel` / `PROVIDER_CAPABILITIES` become compat shims that delegate inward (tracked as TD-006).
+
+**Rationale:**
+- **One-site edits** — adding a native protocol is one object entry + one `protocols` record line, not a four-site lock-step edit
+- **Compile-time exhaustiveness** — the `Record<ProviderType, ProtocolAdapter>` is exhaustive over the union; a new `PROVIDER_TYPE` without an adapter is a type error, not a silent fallthrough
+- **Colocation** — a protocol's capabilities, model resolution, limitations, and HTTP ops sit together; nothing about one protocol is spread across files
+- **Gateway stays thin** — `provider-gateway.ts` only normalizes the preset and dispatches; per-protocol HTTP shapes live in the registry, not in a switch
+- **Forward-looking axis** — the `textCompletion` capability flag is present on every adapter (default `false`) and is the sole switch needed to opt a protocol into Novel Mode's flat-prompt assembler (plan §5.3.3)
+
+**Trade-off:** One intentional switch remains: per-protocol sampler *wire serialization* in `buildSamplerConfig` (`infrastructure/ai/sampler-mapper.ts`). Native parameter names genuinely differ per protocol (`repeat_penalty` vs `repetition_penalty`, `typical` vs `typical_p`, etc.), so this is legitimate per-protocol logic, not a registry candidate. Capability *gating* is registry-driven (`SAMPLER_SETS`); only the wire *names* are switched.
+
+**Implementation:** See [Adding a new AI provider](./adding-a-provider.md) and [Backend Architecture — AI Execution Layer](./backend.md#ai-execution-layer).
+
+**Related:** AD-020 (Feature-Sliced Layout) — the registry lives in `domain/providers/`, with the generation pipeline in `infrastructure/ai/` depending on it one-way.
+
+---
+
+## AD-020: Feature-Sliced Layout for the Backend Source Tree
+
+**Context:** `services/api/src/` had accumulated ~20 folders and loose files at the root — `ai/`, `routes/`, `adapters/`, `session/`, `chat/`, `prompt/`, `providers/`, `ai-assistant/`, `lorebook/`, `scripts-engine/`, `errors/`, plus loose `asset-service.ts`, `mobile-access-*.ts`, `runtime-api-adapter.ts`. Placement was ad-hoc: some folders were technical layers (`routes/`, `adapters/`), some were features (`chat/`, `lorebook/`), some were mixed. There was no reliable answer to "where do I look / where does this go?", so agent navigation required memorizing incidental history.
+
+**Options considered:**
+
+| Approach | Description | Problem |
+|----------|-------------|--------|
+| **Status quo** | Flat root with mixed technical/feature folders | No navigation heuristic; agents grep instead of navigate |
+| **Technical layering (MVC)** | `controllers/`, `services/`, `models/`, `views/` | Forces cross-cutting features into separate folders; a single feature touches 3+ dirs |
+| **Feature-sliced by agent question** | Folders answer "what am I doing?" — adding a feature → `domain/`; wiring endpoints → `api/`; transport → `infrastructure/` | One more migration; but each slice has a single clear responsibility |
+
+**Decision:** Six slices, each answering a distinct question:
+
+| Slice | Question it answers | Contents |
+|-------|---------------------|----------|
+| `domain/` | "I'm adding/changing a feature" | `chat/`, `prompt/`, `providers/`, `character/`, `persona/`, `lorebook/`, `scripts-engine/`, `ai-assistant/`, `asset/`, `mobile-access/` |
+| `infrastructure/` | "How does it talk to the outside world?" | `ai/` (generation pipeline: executors, sampler wiring, tokenizer, vision) |
+| `api/` | "How is it exposed over HTTP?" | `routes/`, `adapters/`, `contract/` (the `RuntimeApi` interface + session types) |
+| `runtime/` | "How is it all wired together at boot?" | `session/` (the composition root: `SessionRuntime` + sub-runtimes) |
+| `server/` | "How does it start?" | `server-runtime.ts`, entry points |
+| `shared/` | "What's cross-cutting?" | `errors/`, logging, shared utilities |
+
+Dependencies flow strictly downward: `api/` → `runtime/` → `domain/` → `infrastructure/` → `shared/`, and `domain/providers/` ← `infrastructure/ai/` (never reversed). The central API contract (`RuntimeApi` + session types) is colocated with the routes under `api/contract/`.
+
+**Rationale:**
+- **Navigation-first** — an agent (or human) can pick the slice from the task: a feature goes in `domain/`, an endpoint in `api/`, transport details in `infrastructure/`
+- **Single responsibility per slice** — no folder is simultaneously a technical layer and a feature bucket
+- **Isolated composition root** — the only place that wires everything together is `runtime/session/`, so bootstrap dependencies are auditable in one place
+- **Contract colocated with consumers** — `api/contract/` sits beside the routes that implement it and the adapters that consume it
+- **Mirrors AD-006 at a finer grain** — the same strict-downward-dependency principle that governs the monorepo packages now governs the backend folders
+
+**Trade-off:** Import paths are longer and a one-time migration churn touched every backend file. A handful of compat shims (TD-006) carry old names so call sites migrate incrementally. The navigation payoff outweighs the path verbosity: the folder name now predicts the file's role.
+
+**Implementation:** See [Backend Architecture](./backend.md) for the per-slice contents and the migration map in `CODE_REVIEW_REFACTOR_PLAN.md` §5.2.
+
+**Related:** AD-006 (Monorepo with Strict Package Boundaries) — same strict-dependency principle, applied at the folder level within `services/api`. AD-019 (Protocol Registry) — the registry/generation split between `domain/providers/` and `infrastructure/ai/` is a direct instance of this layout.
