@@ -42,27 +42,27 @@ Both entry points delegate to `server-runtime.ts:startServerRuntime()`, which us
 
 ### Routes
 
-12 domain route modules composed via `Hono.app.route()`, plus shared `types.ts` (contracts) and `helpers.ts` (utilities):
+12 domain route modules under `api/routes/`, composed via `Hono.app.route()`, plus shared `api/routes/types.ts` (contracts) and `api/routes/helpers.ts` (utilities):
 
 | File | Domain | Endpoints |
 |------|--------|----------|
-| `routes/chat.ts` | Chat CRUD, messages, branches, summaries, streaming, variants, fork | ~47 (largest) |
-| `routes/lorebook.ts` | Lorebook CRUD, entry CRUD, test activation, import, links, duplicate, export | ~19 |
-| `routes/provider.ts` | Provider CRUD, test, test-chat, model fetching, favorites | ~17 |
-| `routes/persona.ts` | Persona CRUD, duplicate, lorebook toggle | ~10 |
-| `routes/character.ts` | Character CRUD, archive, duplicate, export | ~9 |
-| `routes/script.ts` | Script CRUD, test, import, AI assistant SSE | ~9 |
-| `routes/settings.ts` | UI settings CRUD, mobile access: status, regenerate/revoke token | ~7 |
-| `routes/preset.ts` | Prompt preset CRUD | ~5 |
-| `routes/import.ts` | JSON import, ST directory scan + bulk import | ~3 |
-| `routes/debug.ts` | Debug log, bootstrap, defaults | ~3 |
-| `routes/asset.ts` | Asset upload/serve | 2 |
-| `routes/types.ts` | `RuntimeApi` interface — contract between routes and adapters |
-| `routes/helpers.ts` | `readOptionalJson` — shared utility for routes with optional bodies |
+| `api/routes/chat.ts` | Chat CRUD, messages, branches, summaries, streaming, variants, fork | ~47 (largest) |
+| `api/routes/lorebook.ts` | Lorebook CRUD, entry CRUD, test activation, import, links, duplicate, export | ~19 |
+| `api/routes/provider.ts` | Provider CRUD, test, test-chat, model fetching, favorites | ~17 |
+| `api/routes/persona.ts` | Persona CRUD, duplicate, lorebook toggle | ~10 |
+| `api/routes/character.ts` | Character CRUD, archive, duplicate, export | ~9 |
+| `api/routes/script.ts` | Script CRUD, test, import, AI assistant SSE | ~9 |
+| `api/routes/settings.ts` | UI settings CRUD, mobile access: status, regenerate/revoke token | ~7 |
+| `api/routes/preset.ts` | Prompt preset CRUD | ~5 |
+| `api/routes/import.ts` | JSON import, ST directory scan + bulk import | ~3 |
+| `api/routes/debug.ts` | Debug log, bootstrap, defaults | ~3 |
+| `api/routes/asset.ts` | Asset upload/serve | 2 |
+| `api/routes/types.ts` | `RuntimeApi` interface — contract between routes and adapters |
+| `api/routes/helpers.ts` | `readOptionalJson` — shared utility for routes with optional bodies |
 
 ### RuntimeApi Interface
 
-`routes/types.ts` defines `RuntimeApi` — the contract between routes and business logic. `RuntimeApiAdapter` (`runtime-api-adapter.ts`) implements it as a **pure composite with zero business logic**: it wires 13 sub-adapters (one per domain) and delegates every method to the appropriate adapter. Each adapter (`ChatAdapter`, `CharacterAdapter`, `LorebookAdapter`, etc.) is focused on its own domain.
+`api/routes/types.ts` defines `RuntimeApi` — the contract between routes and business logic. `RuntimeApiAdapter` (`api/adapters/runtime-api-adapter.ts`) implements it as a **pure composite with zero business logic**: it wires the sub-adapters in `api/adapters/` (one per domain) and delegates every method to the appropriate adapter. Each adapter (`ChatAdapter`, `CharacterAdapter`, `LorebookAdapter`, etc.) is focused on its own domain.
 
 **Why an interface:** Routes are HTTP concern. Business logic lives in sub-runtimes and adapters. The adapter prevents routes from depending on runtime internals. Also enables testing routes with a mock adapter.
 
@@ -70,20 +70,30 @@ Both entry points delegate to `server-runtime.ts:startServerRuntime()`, which us
 
 ## Session Runtime Decomposition
 
-`SessionRuntime` is the top-level coordinator. It creates and wires all sub-runtimes via constructor injection:
+`SessionRuntime` (`runtime/session/session-runtime.ts`) is the top-level coordinator. It creates and wires all sub-runtimes via constructor injection. The runtime is split across focused files in `runtime/session/`:
 
 ```
-session/SessionRuntime
-├── chat/ChatRuntime           (live chat: prepare turn, append reply, manage variants)
-├── chat/ChatLifecycleRuntime  (create/delete/switch chats, seed openings)
-├── session/CharacterRuntime   (CRUD characters, archive, duplicate, promote system char)
-├── session/PersonaRuntime     (CRUD personas, resolve defaults)
-├── session/ChatOrderService   (in-memory ordered list by lastAccessedAt)
-├── StoreContainer             (all DB stores behind a facade)
-├── PromptAssemblyService      (loads context from DB, calls assemblePrompt())
-├── StaticPromptResolver       (resolves character, persona, lore entries from DB)
-└── direct methods             (import/export, prompt trace history, bootstrap, getSnapshot)
+runtime/session/
+├── session-runtime.ts            SessionRuntime (coordinator)
+├── session-runtime-chat.ts       ChatRuntime (live chat: prepare turn, append reply, manage variants)
+├── session-runtime-chat-lifecycle.ts  ChatLifecycleRuntime (create/delete/switch chats, seed openings)
+├── session-runtime-chat-order.ts ChatOrderService (in-memory ordered list by lastAccessedAt)
+├── session-runtime-store.ts      StoreContainer (all DB stores behind a facade)
+├── session-runtime-presets.ts    preset/prompt wiring
+├── session-runtime-import-export.ts  import/export
+└── session-runtime-dto.ts        snapshot/DTO builders
 ```
+
+Domain sub-runtimes live with their own domain:
+
+```
+domain/character/character-runtime.ts   CharacterRuntime (CRUD characters, archive, duplicate, promote system char)
+domain/persona/persona-runtime.ts       PersonaRuntime (CRUD personas, resolve defaults)
+domain/prompt/prompt-assembly-service.ts  PromptAssemblyService (loads context from DB, calls assemblePrompt())
+domain/prompt/prompt-resolver.ts        StaticPromptResolver (resolves character, persona, lore entries from DB)
+```
+
+SessionRuntime also exposes direct methods for prompt trace history, bootstrap, and `getSnapshot()`.
 
 **Note:** Lorebook CRUD, scripts, provider profiles, presets, assets, AI assistant, and settings are **not** in SessionRuntime. They are handled by dedicated adapters that work directly with stores:
 - `LorebookAdapter` → `StoreContainer.lorebooks`
@@ -117,8 +127,8 @@ POST /api/chats/:chatId/messages/stream
   │       │   ├─ Load character, persona, preset from DB
   │       │   ├─ Load lorebooks + entries (scope-filtered, enabled-only)
   │       │   ├─ Load ranged summaries + exclusion ranges
-  │       │   ├─ resolveActivatedEntries()       → prompt/lore-activation-engine
-  │       │   ├─ executeScripts()                 → scripts-engine/script-sandbox
+  │       │   ├─ resolveActivatedEntries()       → domain/prompt/lore-activation-engine
+  │       │   ├─ executeScripts()                 → domain/scripts-engine/script-sandbox
   │       │   └─ Persist activation + script state
   │       ├─ Macro resolution ({{user}}, {{char}}, {{scenario}}, etc.)
   │       └─ assemblePrompt()                    → @vibe-tavern/prompt-pipeline
@@ -128,10 +138,10 @@ POST /api/chats/:chatId/messages/stream
   │           ├─ Sort by position → priority
   │           └─ Filter by AssemblyMode
   │
-  ├─ streamProviderExecutor()
-  │   ├─ mapProfileToSdkModel()         → Vercel AI SDK provider instance
+  ├─ streamProviderExecutor()   (infrastructure/ai/stream-provider-executor)
+  │   ├─ mapProfileToSdkModel()         → resolveProtocol(type).resolveModel() — Vercel AI SDK model
   │   ├─ prepareSdkMessages()           → split system/conversation, inject prefill
-  │   ├─ buildSamplerConfig()           → temperature, topP, penalties
+  │   ├─ buildSamplerConfig()           → infrastructure/ai/sampler-mapper
   │   └─ streamText()                   → Vercel AI SDK → SSE
   │
   └─ ChatRuntime.appendAssistantReply()
@@ -158,7 +168,7 @@ Scripts run BEFORE prompt assembly. They can modify `character.personality`, `ch
 
 ## Lorebook Activation Engine
 
-**File:** `prompt/lore-activation-engine.ts` — **pure function**, no DB access, no side effects.
+**File:** `domain/prompt/lore-activation-engine.ts` — **pure function**, no DB access, no side effects.
 
 Takes: lorebooks with entries + recent messages + activation state
 Returns: activated entries + updated state
@@ -188,7 +198,7 @@ Activation state (`LoreActivationState`) is stored as JSON on the `chats` table,
 
 ## Script System
 
-**File:** `scripts-engine/script-sandbox.ts`
+**File:** `domain/scripts-engine/script-sandbox.ts`
 
 Scripts execute **synchronously** in `node:vm` with 5-second timeout.
 
@@ -263,30 +273,45 @@ This pattern (cache keyed by input content in `context.state`) is the recommende
 
 ## AI Execution Layer
 
-**Directory:** `services/api/src/ai/`
+The AI layer is split across two slices: **provider knowledge** lives in `domain/providers/` (the registry), and the **generation pipeline** lives in `infrastructure/ai/` (executors, sampler wiring, tokenizer, vision).
 
-### Provider Mapping
+### Protocol registry — `domain/providers/protocol-registry.ts`
 
-`provider-profile-mapper.ts` maps stored provider profiles to Vercel AI SDK `LanguageModelV1` instances:
+The single source of truth for per-protocol behaviour. Each canonical `ProviderType` (defined in `packages/domain/src/platform-constants.ts`) has one `ProtocolAdapter` object that carries **everything** previously scattered across four hand-synced switch-ladders:
 
-| Provider Type | SDK Package | Notes |
-|---------------|-------------|-------|
-| `openai_compat` | `@ai-sdk/openai` | OpenAI-compatible endpoints and presets: OpenAI, OpenRouter, DeepSeek, Groq, xAI, Mistral, Xiaomi MiMo, ZAI, local vLLM/Ooba/Tabby/Aphrodite, etc. |
-| `anthropic` | `@ai-sdk/anthropic` | Claude models |
-| `google` | `@ai-sdk/google` | Gemini models |
-| `ollama` | `@ai-sdk/openai` (fallback) | Uses `/api/tags` for model list |
-| `llamacpp` | `@ai-sdk/openai` (fallback) | Single loaded model |
+- `capabilities` — capability flags (`streaming`, `nonStreamGeneration`, `abortSignal`, `prefill`, `logitBias`, `samplers`, `textCompletion`). The derived `PROTOCOL_CAPABILITIES` map is exported for compat callers.
+- `resolveModel(profile, model)` — builds the Vercel AI SDK `LanguageModel` (chat model) for this protocol.
+- `limitations` — human-readable constraints surfaced to the UI.
+- `probe / testChat / listModels` — the HTTP shape of that protocol's connectivity probe, test chat, and model-list endpoints.
 
-**Why normalize to AI SDK:** One streaming interface for all providers. Adding a provider = adding a case in the mapper + the SDK package. No SSE parsing, no provider-specific error handling.
+`resolveProtocol(type)` looks up the adapter. `normalizeProviderType(raw)` (in `packages/domain/src/provider-support.ts`) maps a raw preset id to a `ProviderType` via `PRESET_TO_PROVIDER_TYPE`, falling back to `openai_compat`.
 
-### Sampler Mapping
+The 7 protocols: `openai_compat`, `anthropic`, `google`, `ollama`, `llamacpp`, `koboldcpp`, `unsloth`. Native (non-SDK) protocols (`ollama`, `koboldcpp`) have dedicated adapters (`ollama-adapter.ts`, `koboldcpp-adapter.ts`) for their text-completion API shapes.
 
-`sampler-mapper.ts` converts stored provider-profile sampler fields into AI SDK arguments:
+### Compat shims — `infrastructure/ai/`
+
+These are thin delegators kept for call-site compatibility (tracked as tech-debt TD-006 — callers should eventually import `resolveProtocol()` directly):
+
+- `provider-profile-mapper.ts` → `mapProfileToSdkModel()` calls `resolveProtocol(type).resolveModel()`. `isUnsupportedProvider()` checks capabilities.
+- `provider-capabilities.ts` → `PROVIDER_CAPABILITIES` re-exports `PROTOCOL_CAPABILITIES`; `getProviderCapabilities(type)` delegates to the registry.
+
+### Gateway & orchestrator — `domain/providers/`
+
+- `provider-gateway.ts` — public dispatch surface for probe / test-chat / model-list. `normalizeProviderType` → `resolveProtocol(type).<op>`. Plus the `requiresAuthForModels` guard. This is a thin delegator; the per-protocol HTTP shapes live in the registry, not here.
+- `vendor-registry.ts` — aggregator-specific quirks for OpenAI-compat `/models` responses (OpenRouter, xAI, ElectronHub, Groq, etc.). `resolveVendor(baseUrl)` returns a `VendorAdapter` (match regex, optional `buildModelsUrl` / `extractRecords` / `filterRecords` / `extractCapabilities`). First match wins, else `genericVendor`. Adding a vendor that speaks standard OpenAI-compat = zero new code; a vendor with a non-standard model list = one `VendorAdapter` entry here.
+- `provider-orchestrator.ts` → `ProviderOrchestrator.refreshProfileModels()` composes `listProviderModels` + `provider-profile-service` caching + a `defaultModel` fallback.
+- `provider-transport.ts` — shared HTTP helpers (URL normalisation, header building, timeouts, `extractChoiceContent`, error wrapping) and the shared types (`ProviderConnectionInput`, `ProviderModelOption`, `ProviderProbeResult`, `TestChatResult`).
+
+**Why a registry:** Adding a native provider is one object entry in `protocol-registry.ts`, not a four-site lock-step edit. See [Adding a new AI provider](./adding-a-provider.md).
+
+### Sampler wiring — `infrastructure/ai/sampler-mapper.ts`
+
+`buildSamplerConfig(profile)` converts stored provider-profile sampler fields into AI SDK arguments. Capability gating comes from `resolveSamplerCapabilities(preset, type)` → `SAMPLER_SETS` (`packages/domain/src/sampler-params.ts`), which defines per-set capability flags (e.g. `openai_local`, `anthropic`, `minimal_reasoning`, `koboldcpp_native`).
 
 - `temperature`, `maxTokens`, and `stopSequences` are sent whenever set.
 - `stopSequences` are provider-profile strings; the UI `ChipInput` supports literal `\n`, `\t`, and space shortcuts and stores the parsed characters.
 - `seed` is still sent when set, even if custom samplers are disabled.
-- Advanced sampler fields (`topP`, `topK`, `minP`, repetition/frequency/presence penalties, reasoning effort) are only sent when `customSamplers` is enabled, then routed through native AI SDK fields or `providerOptions.openai` depending on provider type.
+- Advanced sampler fields are only sent when `customSamplers` is enabled, then routed per protocol: native AI SDK fields, or `providerOptions.<providerName>` for OpenAI-compat locals (Ollama/llamacpp/unsloth), or `providerOptions.koboldcpp` for KoboldCPP's native body params. The per-protocol serialization switch in `buildSamplerConfig` is intentionally kept here — native param *names* genuinely differ per protocol, unlike capabilities which are registry-driven.
 
 ### Logit Bias
 
@@ -308,11 +333,11 @@ Logit bias is model-aware and fail-closed because token IDs are tokenizer/model-
 
 ### OpenAI Reasoning Fetch
 
-`openai-reasoning-fetch.ts` — custom fetch wrapper that intercepts SSE streams and rewrites `reasoning_content` fields into regular content with markers. This prevents AI SDK from silently stripping reasoning from providers that include it as a non-standard field.
+`domain/providers/openai-reasoning-fetch.ts` — custom fetch wrapper that intercepts SSE streams and rewrites `reasoning_content` fields into regular content with markers. This prevents AI SDK from silently stripping reasoning from providers that include it as a non-standard field.
 
 ### Tokenizer Service
 
-`ai/tokenizer-service.ts` — three-tier token counting:
+`infrastructure/ai/tokenizer-service.ts` — three-tier token counting:
 
 1. **`js-tiktoken`** — BPE tokenization for OpenAI models (cl100k, o200k, p50k). Fast, accurate.
 2. **`@agnai/web-tokenizers`** — WASM/JSON tokenizers for Claude, Llama 3, Mistral, Nemo, Qwen2, DeepSeek, Xiaomi MiMo, GLM-4.6/ZAI, and Cohere Command R/A. Slower but accurate for non-GPT models.
@@ -324,9 +349,9 @@ The fallback is acceptable for context-budget accounting, but **not** for logit 
 
 ## Vision and Attachment Pipeline
 
-**Modules:** `ai/vision-gate.ts`, `image-compress.ts`, the two provider executors, and `adapters/chat-adapter.ts`.
+**Modules:** `infrastructure/ai/vision-gate.ts`, `image-compress.ts`, the two provider executors, and `api/adapters/chat-adapter.ts`.
 
-Image/video attachments attached to a message take one of three paths depending on the active profile's capabilities. The decision is made per-send in the provider executors (`stream-provider-executor.ts` / `nonstreaming-provider-executor.ts`) and finalized in `resolveMultimodalContent`.
+Image/video attachments attached to a message take one of three paths depending on the active profile's capabilities. The decision is made per-send in the provider executors (`infrastructure/ai/stream-provider-executor.ts` / `nonstreaming-provider-executor.ts`) and finalized in `resolveMultimodalContent`.
 
 ### The three paths
 
@@ -347,7 +372,7 @@ Runs in the executor **before** `resolveMultimodalContent`, only when `shouldDes
 
 ### Prompt resolution (unified with the AI Assistant)
 
-`vision_describe` is registered as a real `AiAssistantMode` in `ai-assistant-modes.ts` (`MODE_CONFIGS`). It is **not user-facing** in the AI Assistant modal — it exists solely so the describe pipeline resolves its prompt through the *same* `resolveSystemPrompt` fallback chain as the other modes, and so the Settings prompt editor's `vision_describe` key is backed by a real config rather than a phantom.
+`vision_describe` is registered as a real `AiAssistantMode` in `domain/ai-assistant/ai-assistant-modes.ts` (`MODE_CONFIGS`). It is **not user-facing** in the AI Assistant modal — it exists solely so the describe pipeline resolves its prompt through the *same* `resolveSystemPrompt` fallback chain as the other modes, and so the Settings prompt editor's `vision_describe` key is backed by a real config rather than a phantom.
 
 Resolution order (in `resolveVisionDescribePrompt` → `resolveSystemPrompt("vision_describe")`):
 
@@ -360,7 +385,7 @@ There is no legacy column for this mode (it is newer than the `scriptAiSystemPro
 
 Because of the skip-if-described guard, a described attachment is never re-described automatically. Forced re-description is exposed as an explicit user action:
 
-`ChatAdapter.regenerateAttachmentDescription(chatId, messageId, attachmentId)` —
+`ChatAdapter.regenerateAttachmentDescription(chatId, messageId, attachmentId)` (`api/adapters/chat-adapter.ts`) —
 - Validates the attachment is `image`/`video` and a `visionModel` is configured.
 - Calls `describeAttachments([single])` using the **same** vision resolution path as send (active profile's `visionModel` + the `vision_describe` prompt), **ignoring** any existing description.
 - Persists the new description via `updateSingleAttachmentDescription`.
