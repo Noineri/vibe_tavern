@@ -1,25 +1,25 @@
-import type { RuntimeApi } from "./api/contract/runtime-api.js";
+import type { RuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer } from "@vibe-tavern/db";
-import type { SessionRuntime } from "./session/session-runtime.js";
-import type { ProviderProfileService } from "./domain/providers/provider-profile-service.js";
-import type { LiveChatOrchestrator } from "./domain/chat/live-chat-orchestrator.js";
-import type { ChatSummaryService } from "./domain/chat/chat-summary-service.js";
-import type { PromptPresetService } from "./domain/prompt/prompt-preset-service.js";
-import type { AssetService } from "./domain/asset/asset-service.js";
-import type { MobileAccessService } from "./domain/mobile-access/mobile-access-service.js";
-import { BootstrapAdapter } from "./api/adapters/bootstrap-adapter.js";
-import { ChatAdapter } from "./api/adapters/chat-adapter.js";
-import { CharacterAdapter } from "./api/adapters/character-adapter.js";
-import { PersonaAdapter } from "./api/adapters/persona-adapter.js";
-import { LorebookAdapter } from "./api/adapters/lorebook-adapter.js";
-import { ScriptAdapter } from "./api/adapters/script-adapter.js";
-import { ProviderAdapter } from "./api/adapters/provider-adapter.js";
-import { PresetAdapter } from "./api/adapters/preset-adapter.js";
-import { ImportExportAdapter } from "./api/adapters/import-export-adapter.js";
-import { AssetAdapter } from "./api/adapters/asset-adapter.js";
-import { AiAssistantAdapter } from "./api/adapters/ai-assistant-adapter.js";
-import { SettingsAdapter } from "./api/adapters/settings-adapter.js";
-import { MobileAccessAdapter } from "./api/adapters/mobile-access-adapter.js";
+import type { SessionRuntime } from "../../session/session-runtime.js";
+import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
+import type { LiveChatOrchestrator } from "../../domain/chat/live-chat-orchestrator.js";
+import type { ChatSummaryService } from "../../domain/chat/chat-summary-service.js";
+import type { PromptPresetService } from "../../domain/prompt/prompt-preset-service.js";
+import type { AssetService } from "../../domain/asset/asset-service.js";
+import type { MobileAccessService } from "../../domain/mobile-access/mobile-access-service.js";
+import { BootstrapAdapter } from "./bootstrap-adapter.js";
+import { ChatAdapter } from "./chat-adapter.js";
+import { CharacterAdapter } from "./character-adapter.js";
+import { PersonaAdapter } from "./persona-adapter.js";
+import { LorebookAdapter } from "./lorebook-adapter.js";
+import { ScriptAdapter } from "./script-adapter.js";
+import { ProviderAdapter } from "./provider-adapter.js";
+import { PresetAdapter } from "./preset-adapter.js";
+import { ImportExportAdapter } from "./import-export-adapter.js";
+import { AssetAdapter } from "./asset-adapter.js";
+import { AiAssistantAdapter } from "./ai-assistant-adapter.js";
+import { SettingsAdapter } from "./settings-adapter.js";
+import { MobileAccessAdapter } from "./mobile-access-adapter.js";
 
 /**
  * Thin composite that wires domain adapters into the RuntimeApi contract.

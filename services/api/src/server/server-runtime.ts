@@ -14,7 +14,7 @@ import { resolveTlsConfig } from "../domain/mobile-access/mobile-auth.js";
 import { PromptPresetService } from "../domain/prompt/prompt-preset-service.js";
 import { ProviderOrchestrator } from "../domain/providers/provider-orchestrator.js";
 import { createProviderProfileService } from "../domain/providers/provider-profile-service.js";
-import { RuntimeApiAdapter } from "../runtime-api-adapter.js";
+import { RuntimeApiAdapter } from "../api/adapters/runtime-api-adapter.js";
 import { SessionRuntime } from "../session/session-runtime.js";
 import { createAiAssistantFeature } from "../domain/ai-assistant/ai-assistant-feature.js";
 import { createRuntimeStore } from "../session/session-runtime-store.js";

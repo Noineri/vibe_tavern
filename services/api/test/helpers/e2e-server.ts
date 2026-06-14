@@ -25,7 +25,7 @@ import { createChatSummaryFeature } from "../../src/chat/chat-summary-feature.js
 import { ChatSummaryService } from "../../src/chat/chat-summary-service.js";
 import { AssetService } from "../../src/asset-service.js";
 import { MobileAccessService } from "../../src/mobile-access-service.js";
-import { RuntimeApiAdapter } from "../../src/runtime-api-adapter.js";
+import { RuntimeApiAdapter } from "../../src/api/adapters/runtime-api-adapter.js";
 import { FeatureRegistry } from "../../src/feature-registry.js";
 import { createAiAssistantFeature } from "../../src/ai-assistant/ai-assistant-feature.js";
 import { createApp } from "../../src/server/app-factory.js";
