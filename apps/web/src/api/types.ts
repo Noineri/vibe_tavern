@@ -25,7 +25,7 @@ export interface AppMessage extends Message {
   variants: MessageVariant[];
   selectedVariantIndex: number | null;
   modelId: string | null;
-  attachments?: { id: string; assetId: string; type: string; name?: string; mimeType?: string; sizeBytes?: number }[];
+  attachments?: { id: string; assetId: string; type: string; name?: string; mimeType?: string; sizeBytes?: number; description?: string | null }[];
 }
 
 export interface AutoSummaryConfig {

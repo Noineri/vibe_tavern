@@ -2,12 +2,16 @@ import React, { useCallback, useState } from "react";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
+import { AutoTextarea } from "../shared/auto-textarea.js";
+import { useSnapshotStore } from "../../stores/snapshot-store.js";
 
 interface Attachment {
   id?: string;
   assetId: string;
   type: string;
   name?: string;
+  mimeType?: string;
+  sizeBytes?: number;
   description?: string | null;
 }
 
@@ -90,41 +94,61 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
     setEditing(true);
   }, [currentDescription]);
 
+  const persistDescription = useCallback((description: string) => {
+    if (!messageId || !att?.id) return;
+    // Update canonical message data so the change survives lightbox close/reopen
+    // and reflects in the thumbnail caption. localDescription is just an
+    // optimistic overlay for the current lightbox session.
+    const updateMessage = useSnapshotStore.getState().updateMessage;
+    const nextAttachments = attachments.map((a) => ({
+      id: a.id!,
+      assetId: a.assetId,
+      type: a.type,
+      name: a.name,
+      mimeType: a.mimeType,
+      sizeBytes: a.sizeBytes,
+      description: a.id === att.id ? description : a.description,
+    }));
+    updateMessage(messageId, { attachments: nextAttachments });
+    setLocalDescription((prev) => ({ ...prev, [index]: description }));
+  }, [messageId, att?.id, attachments, index]);
+
   const saveDescription = useCallback(async () => {
     if (!messageId || !att?.id) return;
     setSaving(true);
     try {
       const { updateAttachmentDescription } = await import("../../app-client.js");
       await updateAttachmentDescription("_", messageId, att.id, editText);
-      setLocalDescription((prev) => ({ ...prev, [index]: editText }));
+      persistDescription(editText);
       setEditing(false);
-    } catch {
-      // silently fail — keep local state
+    } catch (err) {
+      console.error("Failed to save attachment description:", err);
     } finally {
       setSaving(false);
     }
-  }, [messageId, att?.id, editText, index]);
+  }, [messageId, att?.id, editText, persistDescription]);
 
-  const regenerateDescription = useCallback(async () => {
+  const regenerateDescription = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (!messageId || !att?.id) return;
     setRegenerating(true);
     try {
       const { regenerateAttachmentDescription } = await import("../../app-client.js");
       const { description } = await regenerateAttachmentDescription("_", messageId, att.id);
-      setLocalDescription((prev) => ({ ...prev, [index]: description }));
-    } catch {
-      // silently fail — keep local state
+      persistDescription(description);
+    } catch (err) {
+      console.error("Failed to regenerate attachment description:", err);
     } finally {
       setRegenerating(false);
     }
-  }, [messageId, att?.id, index]);
+  }, [messageId, att?.id, persistDescription]);
 
   if (!att) return null;
 
   return (
     <div
       className="fixed inset-0 z-[100] flex animate-fade-in items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
-      onClick={onClose}
+      onClick={editing ? undefined : onClose}
     >
       {/* Close button */}
       <div className="absolute right-4 top-4 z-10 flex gap-2">
@@ -207,11 +231,13 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
         {/* Edit mode */}
         {editing && (
           <div className="mx-auto flex max-w-2xl flex-col gap-2">
-            <textarea
+            <AutoTextarea
               value={editText}
               onChange={(e) => setEditText(e.target.value)}
-              className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm text-white outline-none ring-1 ring-white/20 focus:ring-accent"
-              rows={3}
+              className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm leading-relaxed text-white outline-none ring-1 ring-white/20 focus:ring-accent"
+              style={{}}
+              maxHeight={400}
+              placeholder="Describe this attachment…"
               autoFocus
               onClick={(e) => e.stopPropagation()}
             />
