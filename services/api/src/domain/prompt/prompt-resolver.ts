@@ -1,5 +1,5 @@
 import type { StoreContainer } from "@vibe-tavern/db";
-import { countTokens } from "../ai/tokenizer-service.js";
+import { countTokens } from "../../ai/tokenizer-service.js";
 import {
 	type ChatBranchId,
 	type ChatId,
@@ -10,12 +10,12 @@ import {
 	type PromptOrderEntry,
 } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
-import { notFound } from "../errors.js";
+import { notFound } from "../../errors.js";
 import {
 	type CharacterRecord,
 	toCharacterRecord,
-} from "../domain/character/character-runtime.js";
-import type { PersonaRecord } from "../domain/persona/persona-runtime.js";
+} from "../character/character-runtime.js";
+import type { PersonaRecord } from "../persona/persona-runtime.js";
 import {
 	type PromptAssemblyResolver,
 } from "./prompt-assembly-service.js";

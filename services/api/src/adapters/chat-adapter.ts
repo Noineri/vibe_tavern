@@ -4,12 +4,13 @@ import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { validation, notFound } from "../errors.js";
 import { logSendDebug } from "../send-debug-log.js";
-import type { SessionRuntime, SessionSnapshot } from "../session/session-runtime.js";
-import type { LiveChatOrchestrator } from "../chat/live-chat-orchestrator.js";
-import type { ChatSummaryService } from "../chat/chat-summary-service.js";
-import type { ProviderProfileService } from "../providers/provider-profile-service.js";
+import type { SessionRuntime } from "../session/session-runtime.js";
+import type { SessionSnapshot } from "../api/contract/session-types.js";
+import type { LiveChatOrchestrator } from "../domain/chat/live-chat-orchestrator.js";
+import type { ChatSummaryService } from "../domain/chat/chat-summary-service.js";
+import type { ProviderProfileService } from "../domain/providers/provider-profile-service.js";
 import type { AssetService } from "../asset-service.js";
-import { resolveCachedModels } from "../providers/model-cache-service.js";
+import { resolveCachedModels } from "../domain/providers/model-cache-service.js";
 import { resolveVisionDescribePrompt } from "../ai/vision-gate.js";
 
 export class ChatAdapter implements ChatRuntimeApi {

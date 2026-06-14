@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { REASONING_END_MARKER, REASONING_START_MARKER } from "../src/providers/openai-reasoning-fetch.js";
+import { REASONING_END_MARKER, REASONING_START_MARKER } from "../src/domain/providers/openai-reasoning-fetch.js";
 import {
   splitReasoningFromText,
   type AiAssistantStreamChunk,
   type ReasoningSplitState,
-} from "../src/ai-assistant/reasoning-split.js";
+} from "../src/domain/ai-assistant/reasoning-split.js";
 
 function makeState(): ReasoningSplitState {
   return { buffer: "", insideMarkerReasoning: false, insideThinkTag: false };

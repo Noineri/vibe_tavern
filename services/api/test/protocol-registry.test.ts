@@ -18,7 +18,7 @@ import type { ProviderType } from "@vibe-tavern/domain";
 import {
 	resolveProtocol,
 	PROTOCOL_CAPABILITIES,
-} from "../src/providers/protocol-registry.js";
+} from "../src/domain/providers/protocol-registry.js";
 import {
 	PROVIDER_CAPABILITIES,
 	getProviderCapabilities,

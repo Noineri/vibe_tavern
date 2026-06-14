@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { EventBus } from "@vibe-tavern/domain";
 import { createApp } from "../src/server/app-factory.js";
 import { FeatureRegistry } from "../src/feature-registry.js";
-import { createAiAssistantFeature } from "../src/ai-assistant/ai-assistant-feature.js";
+import { createAiAssistantFeature } from "../src/domain/ai-assistant/ai-assistant-feature.js";
 import type { RuntimeApi } from "../src/routes/types.js";
 
 describe("feature routes", () => {

@@ -1,10 +1,10 @@
 import type { RuntimeApi } from "./api/contract/runtime-api.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "./session/session-runtime.js";
-import type { ProviderProfileService } from "./providers/provider-profile-service.js";
-import type { LiveChatOrchestrator } from "./chat/live-chat-orchestrator.js";
-import type { ChatSummaryService } from "./chat/chat-summary-service.js";
-import type { PromptPresetService } from "./prompt/prompt-preset-service.js";
+import type { ProviderProfileService } from "./domain/providers/provider-profile-service.js";
+import type { LiveChatOrchestrator } from "./domain/chat/live-chat-orchestrator.js";
+import type { ChatSummaryService } from "./domain/chat/chat-summary-service.js";
+import type { PromptPresetService } from "./domain/prompt/prompt-preset-service.js";
 import type { AssetService } from "./asset-service.js";
 import type { MobileAccessService } from "./mobile-access-service.js";
 import { BootstrapAdapter } from "./adapters/bootstrap-adapter.js";

@@ -17,7 +17,7 @@ import type {
 } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { assemblePrompt, setModelHint } from "@vibe-tavern/prompt-pipeline";
-import { logSendDebug } from "../send-debug-log.js";
+import { logSendDebug } from "../../send-debug-log.js";
 import { type FileStore, STORAGE_FOLDERS } from "@vibe-tavern/db";
 
 export interface PromptAssemblyResolver {

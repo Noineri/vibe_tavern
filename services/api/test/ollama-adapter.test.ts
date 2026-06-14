@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
-import { createOllamaModel, fetchOllamaModels } from "../src/providers/ollama-adapter.js";
+import { createOllamaModel, fetchOllamaModels } from "../src/domain/providers/ollama-adapter.js";
 
 const originalFetch = globalThis.fetch;
 let mockFetch: ReturnType<typeof mock>;

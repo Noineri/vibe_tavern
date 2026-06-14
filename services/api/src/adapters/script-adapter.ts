@@ -1,6 +1,6 @@
 import type { ScriptRuntimeApi } from "../api/contract/runtime-api.js";
 import type { StoreContainer } from "@vibe-tavern/db";
-import { testScript, parseScriptImport } from "../scripts-engine/script-test-service.js";
+import { testScript, parseScriptImport } from "../domain/scripts-engine/script-test-service.js";
 
 export class ScriptAdapter implements ScriptRuntimeApi {
 	constructor(private readonly stores: StoreContainer) {}

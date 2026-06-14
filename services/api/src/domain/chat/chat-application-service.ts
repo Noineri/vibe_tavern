@@ -18,7 +18,7 @@ import type {
   SummaryMemorySnapshot,
 } from "@vibe-tavern/domain";
 import type { ChatStore, Message as DbMessage } from "@vibe-tavern/db";
-import { notFound } from "../errors.js";
+import { notFound } from "../../errors.js";
 
 /** Map a DB message row to a domain {@link Message} (brands IDs, narrows enum strings). */
 function mapDbMessage(m: DbMessage): Message {

@@ -5,7 +5,7 @@ import {
 	inferCapabilities,
 	type OpenAiModelRecord,
 	type OpenAiModelsResponse,
-} from "../src/providers/vendor-registry.js";
+} from "../src/domain/providers/vendor-registry.js";
 
 /**
  * Regression coverage for the vendor registry. The previous implementation

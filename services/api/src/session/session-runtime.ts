@@ -9,14 +9,14 @@ import {
 	type StoredProviderProfileRecord,
 	SYSTEM_RESOURCE_ID,
 } from "@vibe-tavern/domain";
-import { ChatApplicationService } from "../chat/chat-application-service.js";
+import { ChatApplicationService } from "../domain/chat/chat-application-service.js";
 import {
 	internal,
 	notFound,
 	validation,
 } from "../errors.js";
-import { PromptAssemblyService } from "../prompt/prompt-assembly-service.js";
-import { StaticPromptResolver } from "../prompt/prompt-resolver.js";
+import { PromptAssemblyService } from "../domain/prompt/prompt-assembly-service.js";
+import { StaticPromptResolver } from "../domain/prompt/prompt-resolver.js";
 import {
 	mapMessageDto,
 	mapPromptTraceRecord,
@@ -26,15 +26,22 @@ export type { PreparedLiveTurn } from "./session-runtime-chat.js";
 export type { MessageDto } from "./session-runtime-dto.js";
 
 // Domain response DTOs live in the contract now (api/contract/session-types).
-// Re-exported here for backwards compatibility with internal callers under
-// session/ that still reach for them through the composition root. New code
-// should import from ../api/contract/session-types.js directly.
-export type {
+// Imported locally so this module can name them in its own signatures, and
+// re-exported for the sibling session/* files (composition-root-adjacent)
+// that still reach for them here. External domains import from the contract
+// directly.
+import type {
 	ChatListItem,
 	SessionSnapshot,
 	BootstrapState,
 	ImportResult,
 } from "../api/contract/session-types.js";
+export type {
+	ChatListItem,
+	SessionSnapshot,
+	BootstrapState,
+	ImportResult,
+};
 
 import {
 	type CharacterRecord,

@@ -1,6 +1,6 @@
 import type { StoreContainer } from "@vibe-tavern/db";
-import { logSendDebug } from "../send-debug-log.js";
-import { resolveModel } from "../ai/provider-executor-utils.js";
+import { logSendDebug } from "../../send-debug-log.js";
+import { resolveModel } from "../../ai/provider-executor-utils.js";
 
 /**
  * Builds the dependency object expected by streamAiAssistant / countAiAssistantTokens.
