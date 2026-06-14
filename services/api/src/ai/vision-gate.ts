@@ -15,8 +15,8 @@ import type { Attachment } from "@vibe-tavern/domain";
 import type { ImagePart, TextPart } from "ai";
 import type { SdkMessage } from "./provider-executor-utils.js";
 import { compressForVision, isCompressibleImage } from "../image-compress.js";
-import { resolveSystemPrompt } from "../ai-assistant/ai-assistant-prompts.js";
-import { splitReasoningFromText, type ReasoningSplitState } from "../ai-assistant/reasoning-split.js";
+import { resolveSystemPrompt } from "../domain/ai-assistant/ai-assistant-prompts.js";
+import { splitReasoningFromText, type ReasoningSplitState } from "../domain/ai-assistant/reasoning-split.js";
 
 // ---------------------------------------------------------------------------
 // Vision describe prompt resolution

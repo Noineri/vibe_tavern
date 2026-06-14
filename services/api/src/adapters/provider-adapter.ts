@@ -2,13 +2,13 @@ import type { ProviderRuntimeApi } from "../api/contract/runtime-api.js";
 import type { ClientProviderProfileRecord } from "../session/session-runtime-dto.js";
 import { notFound } from "../errors.js";
 import type { StoreContainer } from "@vibe-tavern/db";
-import type { ProviderProfileService } from "../providers/provider-profile-service.js";
+import type { ProviderProfileService } from "../domain/providers/provider-profile-service.js";
 import {
 	probeProviderConnection,
 	testProviderChat,
 	listProviderModels,
 	normalizeOpenAiCompatibleBaseUrl,
-} from "../providers/provider-gateway.js";
+} from "../domain/providers/provider-gateway.js";
 
 export class ProviderAdapter implements ProviderRuntimeApi {
 	constructor(

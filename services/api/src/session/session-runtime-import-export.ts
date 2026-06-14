@@ -13,7 +13,7 @@ import {
 	parseSillyTavernChat,
 	serializeSillyTavernChat,
 } from "@vibe-tavern/import-export";
-import type { ChatApplicationService } from "../chat/chat-application-service.js";
+import type { ChatApplicationService } from "../domain/chat/chat-application-service.js";
 import { notFound, validation } from "../errors.js";
 import type { CharacterRecord } from "../domain/character/character-runtime.js";
 

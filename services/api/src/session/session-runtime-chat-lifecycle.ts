@@ -9,7 +9,7 @@ import {
 	SYSTEM_RESOURCE_ID,
 } from "@vibe-tavern/domain";
 import { notFound } from "../errors.js";
-import type { ChatApplicationService } from "../chat/chat-application-service.js";
+import type { ChatApplicationService } from "../domain/chat/chat-application-service.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
 import type { PersonaRuntime } from "../domain/persona/persona-runtime.js";
 import type { SessionSnapshot } from "./session-runtime.js";

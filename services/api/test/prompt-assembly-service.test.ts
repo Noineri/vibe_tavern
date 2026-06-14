@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/prompt/prompt-assembly-service.js";
+import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { ChatId, ChatBranchId, LoreEntry, MessageId, RetrievedMemoryHit } from "@vibe-tavern/domain";
 

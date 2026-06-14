@@ -15,7 +15,7 @@ import {
 	resolveProtocol,
 	type ProviderCapabilityFlags,
 	type ProviderProfileInput,
-} from "../providers/protocol-registry.js";
+} from "../domain/providers/protocol-registry.js";
 
 export { normalizeProviderType };
 export type { ProviderProfileInput };

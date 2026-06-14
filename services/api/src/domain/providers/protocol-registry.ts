@@ -33,7 +33,7 @@ import {
 	SAMPLER_SETS,
 } from "@vibe-tavern/domain";
 import type { ProviderType, SamplerCapabilityFlags } from "@vibe-tavern/domain";
-import { providerError } from "../errors.js";
+import { providerError } from "../../errors.js";
 import { createReasoningAwareFetch } from "./openai-reasoning-fetch.js";
 import { createKoboldCppModel } from "./koboldcpp-adapter.js";
 import { createOllamaModel } from "./ollama-adapter.js";

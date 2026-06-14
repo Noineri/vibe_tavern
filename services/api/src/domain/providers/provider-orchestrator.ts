@@ -1,8 +1,8 @@
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ProviderProfileService } from "./provider-profile-service.js";
 import { listProviderModels } from "./provider-gateway.js";
-import { normalizeProviderType } from "../ai/provider-profile-mapper.js";
-import { logSendDebug } from "../send-debug-log.js";
+import { normalizeProviderType } from "../../ai/provider-profile-mapper.js";
+import { logSendDebug } from "../../send-debug-log.js";
 
 /** Provider types whose model-list API requires authentication. */
 const AUTH_REQUIRED_FOR_MODEL_LIST = new Set(["anthropic", "google"]);

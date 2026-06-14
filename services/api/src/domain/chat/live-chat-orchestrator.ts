@@ -1,17 +1,17 @@
 import { brandId, EventBus } from "@vibe-tavern/domain";
 import type { ChatId, MessageId } from "@vibe-tavern/domain";
-import type { ChatRuntime } from "../session/session-runtime-chat.js";
-import type { SessionSnapshot } from "../api/contract/session-types.js";
+import type { ChatRuntime } from "../../session/session-runtime-chat.js";
+import type { SessionSnapshot } from "../../api/contract/session-types.js";
 import type { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
-import type { ProviderExecutionInput, ProviderStreamResult } from "../ai/provider-execution-types.js";
+import type { ProviderExecutionInput, ProviderStreamResult } from "../../ai/provider-execution-types.js";
 import type { ChatModeStrategy } from "./chat-mode-strategy.js";
-import { nonstreamingProviderExecute } from "../ai/nonstreaming-provider-executor.js";
-import { streamProviderExecutor } from "../ai/stream-provider-executor.js";
-import { logSendDebug } from "../send-debug-log.js";
-import { extractThinkingTags } from "../ai/extract-thinking-tags.js";
-import { ensurePrefillInResponse } from "../ai/ensure-prefill-in-response.js";
-import { extractProviderErrorMessage } from "../ai/provider-error-message.js";
+import { nonstreamingProviderExecute } from "../../ai/nonstreaming-provider-executor.js";
+import { streamProviderExecutor } from "../../ai/stream-provider-executor.js";
+import { logSendDebug } from "../../send-debug-log.js";
+import { extractThinkingTags } from "../../ai/extract-thinking-tags.js";
+import { ensurePrefillInResponse } from "../../ai/ensure-prefill-in-response.js";
+import { extractProviderErrorMessage } from "../../ai/provider-error-message.js";
 
 /**
  * Coordinates the prepare → execute → append cycle for all AI generation paths:

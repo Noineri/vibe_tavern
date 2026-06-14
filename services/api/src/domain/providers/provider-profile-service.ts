@@ -6,9 +6,9 @@ import {
   type ClientProviderProfileRecord,
   type CachedProviderModelsRecord,
   type FavoriteProviderModelRecord,
-} from "../session/session-runtime-dto.js";
-import { notFound } from "../errors.js";
-import { logSendDebug } from "../send-debug-log.js";
+} from "../../session/session-runtime-dto.js";
+import { notFound } from "../../errors.js";
+import { logSendDebug } from "../../send-debug-log.js";
 
 // ─── Public contract (duck-typed — consumers import this as `type`) ──────
 
