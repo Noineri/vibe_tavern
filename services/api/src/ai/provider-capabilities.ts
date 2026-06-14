@@ -1,103 +1,36 @@
 /**
- * Conservative capability metadata for current provider kinds.
+ * @module ai/provider-capabilities
  *
- * These flags describe what the replacement execution boundary (FW-AI2)
- * can rely on for each provider type. Flags start as conservative/false
- * and are flipped to true only when verified or explicitly implemented.
+ * Compatibility shim over the protocol registry
+ * (`providers/protocol-registry.ts`). The capability map lived here
+ * historically; the registry is now the source of truth. This file preserves
+ * the public names (`PROVIDER_CAPABILITIES`, `getProviderCapabilities`,
+ * `ProviderCapabilityFlags`, `ProviderCapabilityMap`) so existing importers
+ * keep working.
+ *
+ * Refactor plan: `CODE_REVIEW_REFACTOR_PLAN.md` §5.3.2.
  */
 
-import { SAMPLER_SETS } from "@vibe-tavern/domain";
-import type { ProviderType, SamplerCapabilityFlags } from "@vibe-tavern/domain";
+import type { ProviderType } from "@vibe-tavern/domain";
+import {
+	PROTOCOL_CAPABILITIES,
+	resolveProtocol,
+	type ProviderCapabilityFlags,
+} from "../providers/protocol-registry.js";
 
-export interface ProviderCapabilityFlags {
-  /** Provider can produce a complete non-streamed reply. */
-  nonStreamGeneration: boolean;
-  /** Provider execution respects an AbortSignal for cancellation. */
-  abortSignal: boolean;
-  /** Provider supports SSE/streaming responses. */
-  streaming: boolean;
-  /** Provider supports prefill (prefixing assistant content). */
-  prefill: boolean;
-  /** Provider supports logit bias (token-level output control). */
-  logitBias: boolean;
-  /** Granular sampler controls supported by this provider type. */
-  samplers: SamplerCapabilityFlags;
-}
+export type { ProviderCapabilityFlags };
 
-/** Capability map keyed by provider type. */
 export type ProviderCapabilityMap = Record<ProviderType, ProviderCapabilityFlags>;
 
 /**
- * Capability declarations for all current provider kinds.
- *
- * `openai_compat` is intentionally broad: in this app it covers aggregators and
- * non-OpenAI model-family providers, not only the real OpenAI Chat API. The
- * stricter OpenAI-only sampler surface is selected by preset-level
- * resolveSamplerCapabilities("openai", ...).
+ * Capability declarations for all provider kinds. Derived from the protocol
+ * registry (source of truth) and re-exported under the legacy name.
  */
-export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
-  openai_compat: {
-    nonStreamGeneration: true,
-    abortSignal: true,
-    streaming: true,
-    prefill: true,
-    logitBias: true,
-    samplers: SAMPLER_SETS.openai_compat_minimal,
-  },
-  anthropic: {
-    nonStreamGeneration: true,
-    abortSignal: true,
-    streaming: true,
-    prefill: false,
-    logitBias: false,
-    samplers: SAMPLER_SETS.anthropic,
-  },
-  google: {
-    nonStreamGeneration: true,
-    abortSignal: true,
-    streaming: true,
-    prefill: false,
-    logitBias: false,
-    samplers: SAMPLER_SETS.minimal_reasoning,
-  },
-  ollama: {
-    nonStreamGeneration: true,
-    abortSignal: true,
-    streaming: true,
-    prefill: true,
-    logitBias: true,
-    samplers: SAMPLER_SETS.openai_local,
-  },
-  llamacpp: {
-    nonStreamGeneration: true,
-    abortSignal: true,
-    streaming: true,
-    prefill: true,
-    logitBias: true,
-    samplers: SAMPLER_SETS.openai_local,
-  },
-  koboldcpp: {
-    nonStreamGeneration: true,
-    abortSignal: true,
-    streaming: true,
-    prefill: false,
-    logitBias: false,
-    samplers: SAMPLER_SETS.koboldcpp_native,
-  },
-  unsloth: {
-    // Unsloth Studio wraps llama-server behind OpenAI-compat /v1 endpoints.
-    nonStreamGeneration: true,
-    abortSignal: true,
-    streaming: true,
-    prefill: true,
-    logitBias: true,
-    samplers: SAMPLER_SETS.openai_local,
-  },
-};
+export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = PROTOCOL_CAPABILITIES;
 
 /** Look up capabilities for a given provider type. */
 export function getProviderCapabilities(
-  type: ProviderType,
+	type: ProviderType,
 ): ProviderCapabilityFlags {
-  return PROVIDER_CAPABILITIES[type];
+	return resolveProtocol(type).capabilities;
 }
