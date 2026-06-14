@@ -420,69 +420,52 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
   // assembly — the user cannot author them in simple mode and they would
   // duplicate the preset's 4 basic fields (main/jailbreak/authorsNote/prefill).
   if (resolver.includeCustomInjections) {
-    // `customInjections[i].enabled` is the authoritative enabled flag.
-    // `promptOrder` is used for ordering/placement only (not enabled) — kept authoritative for built-in slots elsewhere.
+    // CANVAS_SINGLE_SOURCE_PLAN Wave 5: `customInjections` is content-only
+    // ({identifier, name, content, role}). Positional + enabled state live on
+    // the matching `PromptOrderEntry` in `promptOrder` — the canvas is the
+    // single source of truth for assembly, mirroring the UI's single-read path.
+    // `role` is content metadata (the assembled layer's message role), taken
+    // from the injection — NOT the canvas (I12). D1: in_chat items carry
+    // depth ≥ 1 so they never collide with after_chat (pinned at depth 0).
   // Skip built-in identifiers that are handled as dedicated fields (nsfw, enhanceDefinitions).
   const BUILTIN_FIELD_IDENTIFIERS = new Set(["nsfw", "enhanceDefinitions"]);
   for (const injection of (context.preset?.customInjections ?? [])) {
-    if (!injection.enabled || !injection.content?.trim()) continue;
+    if (!injection.content?.trim()) continue;
     if (BUILTIN_FIELD_IDENTIFIERS.has(injection.identifier ?? injection.name)) continue;
 
     const role = injection.role === "user" || injection.role === "assistant" ? injection.role : "system";
     const identifier = injection.identifier ?? injection.name;
 
-    // New path: use slot when present
-    if (injection.slot) {
-      const s = injection.slot;
-      const layer = makeLayer({
-        id: `preset_injection_${identifier}`,
-        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-        sourceId: context.preset?.id ?? "",
-        sourceName: injection.name,
-        position: s.zone === "before_chat" ? "in_prompt" : "in_chat",
-        // priority is omitted: custom injections always carry a subPosition,
-        // which sortLayers/inChatWithDepth consult before priority, so a
-        // synthetic priority would be dead weight. makeLayer defaults to 0.
-        subPosition: resolver.rank(identifier, s.order),
-        role,
-        reason: `included (slot zone=${s.zone}, depth=${s.depth ?? "-"}, order=${s.order})`,
-        text: injection.content,
-      });
-      if (s.zone === "in_chat") {
-        layer.injectionDepth = s.depth ?? 0;
-      } else if (s.zone === "after_chat") {
-        layer.injectionDepth = 0;
-      }
-      layers.push(layer);
-      continue;
-    }
+    // Single canvas-lookup read path: enabled/zone/depth/order come ONLY from
+    // the matching canvas entry. No canvas entry = skip (defensive —
+    // normalizePresetCanvas in Wave 2 guarantees one per custom injection on
+    // hydrate, so this only guards against hand-crafted/legacy input).
+    const canvasEntry = context.preset?.promptOrder?.find(e => e.identifier === identifier);
+    if (!canvasEntry?.enabled) continue;
 
-    // Legacy path (no slot data — old ST import or manual creation)
-    const isAbsolute = injection.injectionPosition === 1 || injection.injectionPosition === "absolute" || injection.injectionPosition == null;
-    const orderIndex = resolver.rank(identifier, injection.promptOrderIndex ?? 10_000);
-    // Check promptOrder for zone, else infer from promptOrderPlacement, else use injection field
-    const orderEntry = context.preset?.promptOrder?.find(e => e.identifier === identifier);
-    const effectivePlacement: "before_chat" | "after_chat" = orderEntry?.zone === "after_chat" ? "after_chat" : (orderEntry?.zone === "in_chat" ? "after_chat" : (injection.promptOrderPlacement ?? "before_chat"));
+    const zone = canvasEntry.zone;
+    const depth = canvasEntry.depth ?? null;
+    const order = canvasEntry.order;
 
     const layer = makeLayer({
       id: `preset_injection_${identifier}`,
       sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
       sourceId: context.preset?.id ?? "",
       sourceName: injection.name,
-      position: isAbsolute
-        ? "in_chat"
-        : effectivePlacement === "after_chat" ? "in_chat" : "in_prompt",
-      // priority omitted — see the slot path above (subPosition always decides).
-      subPosition: orderIndex,
+      position: zone === "before_chat" ? "in_prompt" : "in_chat",
+      // priority omitted — custom injections always carry a subPosition, which
+      // sortLayers/inChatWithDepth consult before priority (synthetic priority
+      // would be dead weight). makeLayer defaults to 0.
+      subPosition: resolver.rank(identifier, order),
       role,
-      reason: isAbsolute
-        ? `included (ST absolute depth=${injection.depth ?? 0}, order=${injection.injectionOrder ?? 100})`
-        : `included (ST relative ${effectivePlacement}, orderIndex=${orderIndex})`,
+      reason: `included (canvas zone=${zone}, depth=${depth ?? "-"}, order=${order})`,
       text: injection.content,
     });
 
-    if (isAbsolute || effectivePlacement === "after_chat") {
-      layer.injectionDepth = isAbsolute ? (injection.depth ?? 0) : 0;
+    if (zone === "in_chat") {
+      layer.injectionDepth = depth ?? 0;
+    } else if (zone === "after_chat") {
+      layer.injectionDepth = 0;
     }
     layers.push(layer);
   }

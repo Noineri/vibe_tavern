@@ -117,11 +117,11 @@ describe("Prompt pipeline: macro resolution in assembled prompt", () => {
           identifier: "database",
           name: "Database",
           content: "<scenario>\n{{scenario}}\n</scenario>\n<{{char}}>\n{{personality}}\n{{description}}\n</{{char}}>\n<{{user}}>\n{{persona}}\n</{{user}}>",
-          depth: 4,
           role: "system",
-          enabled: true,
-          injectionPosition: "relative",
         }],
+        promptOrder: [
+          { identifier: "database", enabled: true, zone: "in_chat", depth: 4, order: 60, kind: "custom" },
+        ],
       },
     });
 
