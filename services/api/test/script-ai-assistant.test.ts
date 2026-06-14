@@ -57,4 +57,17 @@ describe("AI assistant reasoning split", () => {
       { type: "text", text: "after" },
     ]);
   });
+
+  test("strips <thinking> tags (long form) as reasoning", () => {
+    // Gemini/Qwen emit <thinking>…</thinking>. The THINK_END prefix ("</think")
+    // must match both </think> and </thinking>, else the whole block leaks.
+    const chunks = collect([
+      "<thinking>Let me describe this.</thinking>A woman takes a selfie.",
+    ]);
+
+    expect(chunks).toEqual([
+      { type: "reasoning", text: "Let me describe this." },
+      { type: "text", text: "A woman takes a selfie." },
+    ]);
+  });
 });

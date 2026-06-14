@@ -14,7 +14,7 @@ export interface ReasoningSplitState {
 }
 
 const THINK_START = "<think";
-const THINK_END = "</think>";
+const THINK_END = "</think";
 
 function findEarliestToken(input: string, tokens: readonly string[]): { token: string; index: number } | null {
   let best: { token: string; index: number } | null = null;
@@ -63,7 +63,13 @@ export function splitReasoningFromText(
         break;
       }
       pushChunk(out, "reasoning", state.buffer.slice(0, endIndex));
-      state.buffer = state.buffer.slice(endIndex + THINK_END.length);
+      // THINK_END is a prefix ("</think") so it matches both </think> and
+      // </thinking>. Slice off the matching prefix, then consume the closing
+      // ">" and any trailing tag name chars (e.g. "ing" in </thinking>).
+      let rest = state.buffer.slice(endIndex + THINK_END.length);
+      const closeBracket = rest.indexOf(">");
+      if (closeBracket !== -1) rest = rest.slice(closeBracket + 1);
+      state.buffer = rest;
       state.insideThinkTag = false;
       continue;
     }
