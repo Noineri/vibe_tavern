@@ -1,6 +1,7 @@
 import { brandId, normalizeProviderType, PROVIDER_TYPE, type ChatId } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
-import type { SessionRuntime, SessionSnapshot } from "../session/session-runtime.js";
+import type { SessionRuntime } from "../session/session-runtime.js";
+import type { SessionSnapshot } from "../api/contract/session-types.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 import { nonstreamingProviderExecute } from "../ai/nonstreaming-provider-executor.js";
 import { notFound, validation } from "../errors.js";

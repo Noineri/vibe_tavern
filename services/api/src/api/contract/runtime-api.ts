@@ -5,7 +5,7 @@ import type {
 	BootstrapState,
 	ImportResult,
 	SessionSnapshot,
-} from "../../session/session-runtime.js";
+} from "./session-types.js";
 import type { PromptTraceRecordDto, PromptPresetDto } from "@vibe-tavern/domain";
 import type {
 	ChatSummary,

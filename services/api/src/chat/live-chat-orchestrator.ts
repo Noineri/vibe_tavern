@@ -1,7 +1,7 @@
 import { brandId, EventBus } from "@vibe-tavern/domain";
 import type { ChatId, MessageId } from "@vibe-tavern/domain";
 import type { ChatRuntime } from "../session/session-runtime-chat.js";
-import type { SessionSnapshot } from "../session/session-runtime.js";
+import type { SessionSnapshot } from "../api/contract/session-types.js";
 import type { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ProviderExecutionInput, ProviderStreamResult } from "../ai/provider-execution-types.js";

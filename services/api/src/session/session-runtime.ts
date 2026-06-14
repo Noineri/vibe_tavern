@@ -25,6 +25,17 @@ import {
 export type { PreparedLiveTurn } from "./session-runtime-chat.js";
 export type { MessageDto } from "./session-runtime-dto.js";
 
+// Domain response DTOs live in the contract now (api/contract/session-types).
+// Re-exported here for backwards compatibility with internal callers under
+// session/ that still reach for them through the composition root. New code
+// should import from ../api/contract/session-types.js directly.
+export type {
+	ChatListItem,
+	SessionSnapshot,
+	BootstrapState,
+	ImportResult,
+} from "../api/contract/session-types.js";
+
 import {
 	type CharacterRecord,
 	type PersonaRecord,
@@ -38,70 +49,6 @@ import * as importExportModule from "./session-runtime-import-export.js";
 // lorebookModule removed — CRUD is wired directly through stores in RuntimeApiAdapter
 import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as importST } from "../st-directory-scanner.js";
 
-export interface ChatListItem {
-	id: ChatId;
-	title: string;
-	characterId: CharacterId;
-	characterName: string;
-	subtitle: string;
-	activeBranchLabel: string;
-	messageCount: number;
-	updatedAt: string;
-}
-
-export interface SessionSnapshot {
-	/** Sidebar: ordered list of chats with metadata. Absent when endpoint returns partial data. */
-	chats: ChatListItem[];
-	/** All known characters (sidebar, build mode). Absent when endpoint returns partial data. */
-	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null }>;
-	/** Active chat metadata (title, settings, greetingIndex, etc). */
-	activeChat: import("@vibe-tavern/db").Chat;
-	/** Currently active branch. */
-	activeBranch: import("@vibe-tavern/db").ChatBranch;
-	/** All branches for the active chat. */
-	branches: import("@vibe-tavern/db").ChatBranch[];
-	/** Messages for the active branch, with variant data. */
-	messages: import("./session-runtime-dto.js").MessageDto[];
-	/** Ranged summaries for the active branch. */
-	summaries: Array<{
-		id: string;
-		kind: string;
-		summary: string;
-	}>;
-	/** Latest prompt trace for the active branch (null if no traces). */
-	promptTrace: PromptTraceRecordDto | null;
-	/** Last N prompt traces for the active branch. */
-	promptTraceHistory: PromptTraceRecordDto[];
-	/** Live context preview (null when traces exist — known bug, see Phase 3.1). */
-	contextPreview: import("@vibe-tavern/domain").AssemblePromptResponse | null;
-	/** Active character record. */
-	character: CharacterRecord;
-	/** Active persona record (null if no persona set). */
-	persona: PersonaRecord | null;
-}
-
-export interface BootstrapState {
-	initialChatId: ChatId | null;
-	snapshot: SessionSnapshot | null;
-	isFirstRun: boolean;
-	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null }>;
-	promptPresets: PromptPresetDto[];
-	uiSettings: UiSettings;
-	isArmServer: boolean;
-}
-
-export interface ImportResult {
-	activeChatId: ChatId;
-	snapshot: SessionSnapshot;
-	imported: {
-		kind: "character" | "lorebook" | "chat";
-		name: string;
-		fileName: string;
-		warningCount: number;
-		warnings: string[];
-		attachedToCharacterName?: string;
-	};
-}
 
 	/**
 	 * Top-level coordinator for all session state.
