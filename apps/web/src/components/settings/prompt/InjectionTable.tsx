@@ -29,8 +29,8 @@ function DragHandle({ disabled }: { disabled?: boolean }) {
   );
 }
 import { NumberInput } from "../../shared/NumberInput.js";
-import type { PromptOrderEntry, PromptSlot, PromptZone } from "@vibe-tavern/domain";
-import { inferSlot, migrateInjection, DEFAULT_PROMPT_ORDER } from "@vibe-tavern/domain";
+import type { CustomInjection, PromptOrderEntry, PromptSlot, PromptZone } from "@vibe-tavern/domain";
+import { inferSlot } from "@vibe-tavern/domain";
 import {
   closestCenter,
   DndContext,
@@ -60,19 +60,10 @@ import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 
-export interface InjectionRow {
-  identifier?: string;
-  name: string;
-  content: string;
-  depth: number;
-  role: "system" | "user" | "assistant";
-  enabled: boolean;
-  slot?: PromptSlot;
-  injectionPosition?: 0 | 1 | "relative" | "absolute";
-  injectionOrder?: number;
-  promptOrderIndex?: number;
-  promptOrderPlacement?: "before_chat" | "after_chat";
-}
+// NOTE (CANVAS_SINGLE_SOURCE_PLAN Wave 4): injection rows are content-only
+// `CustomInjection` ({identifier, name, content, role}). ALL positional state
+// (enabled/zone/depth/order) lives on the matching `PromptOrderEntry` in
+// `promptOrder` — the canvas is the single source of truth.
 
 export type CharacterCanvasDraft = {
   charSystemPrompt: string;
@@ -95,8 +86,8 @@ type PromptCanvasDraft = {
 };
 
 interface InjectionTableProps {
-  injections: InjectionRow[];
-  onChange: (injections: InjectionRow[]) => void;
+  injections: CustomInjection[];
+  onChange: (injections: CustomInjection[]) => void;
   draft?: PromptCanvasDraft | null;
   onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number) => void;
   characterDraft?: CharacterCanvasDraft | null;
@@ -170,26 +161,33 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     useSensor(TouchSensor, { activationConstraint: { distance: 1 } }),
   );
 
-  function update(index: number, patch: Partial<InjectionRow>) {
-    const next = injections.map((inj, i) => i === index ? { ...inj, ...patch } : inj);
-    onChange(next);
-    if (Object.prototype.hasOwnProperty.call(patch, "enabled")) {
-      const identifier = customIdentifier(next[index]!, index);
-      syncPromptOrderEnabled(identifier, patch.enabled!);
+  // Content-only write: `name`/`content`/`role` live on the injection.
+  // Positional state (`enabled`/`zone`/`depth`/`order`) is written via the
+  // dedicated canvas callbacks (togglePromptSlot / updateSlotDepth) — never here.
+  function update(index: number, patch: Partial<CustomInjection>) {
+    onChange(injections.map((inj, i) => i === index ? { ...inj, ...patch } : inj));
+  }
+  function remove(index: number) {
+    const removed = injections[index];
+    const identifier = removed ? customIdentifier(removed, index) : null;
+    onChange(injections.filter((_, i) => i !== index));
+    // Drop the matching canvas entry too so the deleted content isn't orphaned
+    // (keeps the 1:1 injection<->custom-entry invariant, I3).
+    if (identifier) {
+      onPromptOrderChange?.(promptOrder.filter((e) => e.identifier !== identifier));
     }
   }
-  function remove(index: number) { onChange(injections.filter((_, i) => i !== index)); }
   function add() {
     const suffix = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
-    const newInj: InjectionRow = { identifier: `custom_${suffix}`, name: "", content: "", depth: 4, role: "system", enabled: true, slot: { zone: "before_chat", depth: null, order: 999 } };
-    onChange([...injections, newInj]);
-  }
-  function syncPromptOrderEnabled(identifier: string, enabled: boolean) {
-    const existing = promptOrder.find((entry) => entry.identifier === identifier);
-    const next = existing
-      ? promptOrder.map((entry) => entry.identifier === identifier ? { ...entry, enabled } : entry)
-      : [...promptOrder, { identifier, enabled, kind: "custom" as const, zone: "before_chat" as const, depth: null, order: 999 }];
-    onPromptOrderChange?.(next);
+    const identifier = `custom_${suffix}`;
+    // Content entry + canvas entry appended together (spec point 2).
+    // `order: 999` sorts last among before_chat defaults (max ~75); dense-
+    // renumbered on the next drag via commitList (I6).
+    onChange([...injections, { identifier, name: "", content: "", role: "system" }]);
+    onPromptOrderChange?.([
+      ...promptOrder,
+      { identifier, enabled: true, kind: "custom" as const, zone: "before_chat" as const, depth: null, order: 999 },
+    ]);
   }
   function togglePromptSlot(identifier: string) {
     const existing = promptOrder.find((entry) => entry.identifier === identifier);
@@ -202,7 +200,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
   function slotEnabled(identifier: string) {
     return promptOrder.find((entry) => entry.identifier === identifier)?.enabled ?? true;
   }
-  function customIdentifier(injection: InjectionRow, index: number) {
+  function customIdentifier(injection: CustomInjection, index: number) {
     return injection.identifier || `custom_${index}`;
   }
 
@@ -229,16 +227,15 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     onPromptOrderChange?.(next);
   }
 
+  // Single read path: positional state comes ONLY from the `promptOrder`
+  // entry (the canvas). Custom items no longer carry `slot` — they read the
+  // SAME canvas entry as built-ins. Falls back to `inferSlot` from default order
+  // when no canvas entry exists yet (e.g. a built-in never toggled/moved).
   function getCanvasItemSlot(item: CanvasItem): PromptSlot {
-    if (item.kind === "custom") {
-      const inj = injections[item.injectionIndex];
-      return inj.slot ?? migrateInjection(inj).slot;
-    }
     const existingOrder = promptOrder.find(e => e.identifier === item.identifier);
     if (existingOrder?.zone) {
       return { zone: existingOrder.zone, depth: existingOrder.depth ?? null, order: existingOrder.order ?? item.defaultOrder };
     }
-    // No zone in promptOrder — infer from defaults via inferSlot
     return inferSlot({ defaultOrder: item.defaultOrder, order: existingOrder?.order ?? item.defaultOrder });
   }
 
@@ -269,14 +266,34 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
 
   const customItems: CanvasItem[] = injections.map((inj, i) => {
     const identifier = customIdentifier(inj, i);
-    const defaultOrder = inj.promptOrderIndex ?? (inj.promptOrderPlacement === "after_chat" ? 125 + i : 70 + i);
+    // A canvas entry should always exist (built at import/apply — Wave 3); this
+    // defaultOrder is only an `inferSlot` fallback if it's somehow missing.
+    const defaultOrder = 70 + i;
     return {
       key: `custom:${identifier}`,
       identifier,
       kind: "custom" as const,
       defaultOrder,
       injectionIndex: i,
-      render: () => <InjectionRowView injection={inj} index={i} isMobile={isMobile} onUpdate={update} onRemove={remove} />,
+      render: () => {
+        const entry = promptOrder.find(e => e.identifier === identifier);
+        const slot: PromptSlot = entry?.zone
+          ? { zone: entry.zone, depth: entry.depth ?? null, order: entry.order ?? defaultOrder }
+          : inferSlot({ defaultOrder, order: defaultOrder });
+        return (
+          <InjectionRowView
+            injection={inj}
+            index={i}
+            isMobile={isMobile}
+            enabled={entry?.enabled ?? true}
+            slot={slot}
+            onUpdate={update}
+            onToggleEnabled={() => togglePromptSlot(identifier)}
+            onSlotDepthChange={(d) => updateSlotDepth(identifier, d)}
+            onRemove={remove}
+          />
+        );
+      },
     };
   });
 
@@ -379,24 +396,28 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
          }
       }
 
+      // Unified single write: EVERY item (built-in + custom) commits positional
+      // state to its `promptOrder` entry with a dense zone-local `order` (= the
+      // visual index). Custom items are content-only, so drag NEVER touches
+      // `customInjections` (I2, I6). D1: in_chat zones pass depth ≥ 1
+      // (1/2/3/4) — never 0 — so they cannot collide with after_chat (pinned at
+      // depth 0). See the ordering model.
       let nextPromptOrder = [...promptOrder];
-      let nextInjections = [...injections];
 
       const commitList = (list: CanvasItem[], targetZone: PromptZone, targetDepth: number | null) => {
         list.forEach((item, index) => {
-          if (item.kind === "custom") {
-             const idx = item.injectionIndex;
-             const inj = nextInjections[idx];
-             const slot = inj.slot ?? migrateInjection(inj).slot;
-             nextInjections[idx] = { ...inj, slot: { ...slot, zone: targetZone, depth: targetDepth, order: index }, depth: targetDepth ?? inj.depth };
-          } else {
-             const idx = nextPromptOrder.findIndex(e => e.identifier === item.identifier);
-             if (idx >= 0) {
-               nextPromptOrder[idx] = { ...nextPromptOrder[idx], zone: targetZone, depth: targetDepth, order: index };
-             } else {
-               nextPromptOrder.push({ identifier: item.identifier, enabled: true, zone: targetZone, depth: targetDepth, order: index, kind: "built_in" });
-             }
-          }
+          const idx = nextPromptOrder.findIndex(e => e.identifier === item.identifier);
+          const existing = idx >= 0 ? nextPromptOrder[idx] : null;
+          const entry: PromptOrderEntry = {
+            identifier: item.identifier,
+            enabled: existing?.enabled ?? true,
+            zone: targetZone,
+            depth: targetDepth,
+            order: index,
+            kind: item.kind === "custom" ? "custom" : (existing?.kind ?? "built_in"),
+          };
+          if (idx >= 0) nextPromptOrder[idx] = entry;
+          else nextPromptOrder.push(entry);
         });
       };
 
@@ -408,7 +429,6 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
       commitList(finalZones.depth1, "in_chat", 1);
 
       onPromptOrderChange?.(nextPromptOrder);
-      onChange(nextInjections);
 
       return null;
     });
@@ -886,18 +906,27 @@ function CharacterFieldCard({ identifier, enabled = true, onToggle, label, role,
   );
 }
 
-function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
-  injection: InjectionRow; index: number;
+function InjectionRowView({ injection, index, isMobile, enabled, slot, onUpdate, onToggleEnabled, onSlotDepthChange, onRemove }: {
+  injection: CustomInjection;
+  index: number;
   isMobile: boolean;
-  onUpdate: (i: number, p: Partial<InjectionRow>) => void;
+  /** Enabled flag — sourced from the canvas `PromptOrderEntry`, not the injection. */
+  enabled: boolean;
+  /** Positional slot — sourced from the canvas `PromptOrderEntry`. */
+  slot: PromptSlot;
+  /** Content-only writes: name / content / role. */
+  onUpdate: (i: number, p: Partial<CustomInjection>) => void;
+  /** Canvas write: toggle enabled on the `PromptOrderEntry`. */
+  onToggleEnabled: () => void;
+  /** Canvas write: set depth on the `PromptOrderEntry` (in_chat only; UI floors at 4 here, ≥1 globally — D1). */
+  onSlotDepthChange: (depth: number) => void;
   onRemove: (i: number) => void;
 }) {
   const { t } = useT();
   const [expanded, setExpanded] = useState(false);
   const [editingName, setEditingName] = useState(false);
-  const enabled = injection.enabled;
-  const slotDepth = injection.slot?.depth ?? injection.depth;
-  const slotZone = injection.slot?.zone;
+  const slotDepth = slot.depth ?? 0;
+  const slotZone = slot.zone;
   const showDepthInput = slotZone === "in_chat" && slotDepth >= 4;
   const showDepthBadge = slotZone === "in_chat";
 
@@ -914,7 +943,7 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
             "flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center rounded text-[14px] transition-colors",
             enabled ? "text-accent hover:bg-accent/10" : "text-t4 hover:text-t2"
           )}
-          onClick={(e) => { e.stopPropagation(); onUpdate(index, { enabled: !enabled }); }}
+          onClick={(e) => { e.stopPropagation(); onToggleEnabled(); }}
         >
           {enabled ? "●" : "○"}
         </button>
@@ -993,7 +1022,7 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
                     className="h-[30px] w-[90px]"
                     min={4} max={99}
                     value={slotDepth}
-                    onChange={(v) => onUpdate(index, { depth: v, slot: { ...(injection.slot ?? { zone: "in_chat", depth: 4, order: 0 }), depth: v } })}
+                    onChange={(v) => onSlotDepthChange(v)}
                   />
                 </div>
               </CustomTooltip>
@@ -1004,7 +1033,7 @@ function InjectionRowView({ injection, index, isMobile, onUpdate, onRemove }: {
               <SegmentedControl
                 value={injection.role}
                 options={roleOptions.map(r => ({ value: r, label: r }))}
-                onChange={(v) => onUpdate(index, { role: v as InjectionRow["role"] })}
+                onChange={(v) => onUpdate(index, { role: v as CustomInjection["role"] })}
                 compact
               />
             </label>
