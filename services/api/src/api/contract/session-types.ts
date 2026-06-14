@@ -27,7 +27,7 @@ import type {
 	PromptTraceRecordDto,
 } from "@vibe-tavern/domain";
 import type { Chat, ChatBranch, UiSettings } from "@vibe-tavern/db";
-import type { MessageDto } from "../../session/session-runtime-dto.js";
+import type { MessageDto } from "../../runtime/session/session-runtime-dto.js";
 import type { CharacterRecord } from "../../domain/character/character-runtime.js";
 import type { PersonaRecord } from "../../domain/persona/persona-runtime.js";
 

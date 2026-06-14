@@ -1,6 +1,6 @@
 import type { AiAssistantStreamChunk } from "../../domain/ai-assistant/reasoning-split.js";
 import type { AiAssistantStreamRequest } from "../../domain/ai-assistant/ai-assistant-stream.js";
-import type { ClientProviderProfileRecord } from "../../session/session-runtime-dto.js";
+import type { ClientProviderProfileRecord } from "../../runtime/session/session-runtime-dto.js";
 import type {
 	BootstrapState,
 	ImportResult,

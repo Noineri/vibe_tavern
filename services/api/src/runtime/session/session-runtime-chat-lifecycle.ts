@@ -8,10 +8,10 @@ import {
 	type PromptPresetId,
 	SYSTEM_RESOURCE_ID,
 } from "@vibe-tavern/domain";
-import { notFound } from "../shared/errors.js";
-import type { ChatApplicationService } from "../domain/chat/chat-application-service.js";
+import { notFound } from "../../shared/errors.js";
+import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
-import type { PersonaRuntime } from "../domain/persona/persona-runtime.js";
+import type { PersonaRuntime } from "../../domain/persona/persona-runtime.js";
 import type { SessionSnapshot } from "./session-runtime.js";
 
 function buildGreetingVariants(firstMessage: string | null | undefined, alternateGreetings: string[] = []): string[] {

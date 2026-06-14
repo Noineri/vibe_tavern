@@ -9,14 +9,14 @@ import {
 	type StoredProviderProfileRecord,
 	SYSTEM_RESOURCE_ID,
 } from "@vibe-tavern/domain";
-import { ChatApplicationService } from "../domain/chat/chat-application-service.js";
+import { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import {
 	internal,
 	notFound,
 	validation,
-} from "../shared/errors.js";
-import { PromptAssemblyService } from "../domain/prompt/prompt-assembly-service.js";
-import { StaticPromptResolver } from "../domain/prompt/prompt-resolver.js";
+} from "../../shared/errors.js";
+import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
+import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
 import {
 	mapMessageDto,
 	mapPromptTraceRecord,
@@ -35,7 +35,7 @@ import type {
 	SessionSnapshot,
 	BootstrapState,
 	ImportResult,
-} from "../api/contract/session-types.js";
+} from "../../api/contract/session-types.js";
 export type {
 	ChatListItem,
 	SessionSnapshot,
@@ -46,14 +46,14 @@ export type {
 import {
 	type CharacterRecord,
 	CharacterRuntime,
-} from "../domain/character/character-runtime.js";
-import { type PersonaRecord, PersonaRuntime } from "../domain/persona/persona-runtime.js";
+} from "../../domain/character/character-runtime.js";
+import { type PersonaRecord, PersonaRuntime } from "../../domain/persona/persona-runtime.js";
 import { ChatRuntime } from "./session-runtime-chat.js";
 import { ChatOrderService } from "./session-runtime-chat-order.js";
 import { ChatLifecycleRuntime } from "./session-runtime-chat-lifecycle.js";
 import * as importExportModule from "./session-runtime-import-export.js";
 // lorebookModule removed — CRUD is wired directly through stores in RuntimeApiAdapter
-import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as importST } from "../shared/st-directory-scanner.js";
+import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as importST } from "../../shared/st-directory-scanner.js";
 
 
 	/**

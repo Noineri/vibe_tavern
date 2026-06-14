@@ -1,10 +1,10 @@
 import type { AssemblePromptResponse, Message, PromptTrace } from "@vibe-tavern/domain";
 import { brandId, type ChatBranchId, type ChatId, type MessageId } from "@vibe-tavern/domain";
 import type { ChatStore } from "@vibe-tavern/db";
-import type { ChatApplicationService } from "../domain/chat/chat-application-service.js";
+import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import type { SessionSnapshot } from "./session-runtime.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
-import { logSendDebug } from "../shared/send-debug-log.js";
+import { logSendDebug } from "../../shared/send-debug-log.js";
 
 export interface PreparedLiveTurn {
   prompt: AssemblePromptResponse;
