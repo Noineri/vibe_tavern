@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
+import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
@@ -8,7 +8,7 @@ import { Icons } from "../shared/icons.js";
 import { SaveButton } from "../shared/SaveBar.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { PresetList, PromptFields } from "../settings/prompt/index.js";
-import { PromptOrderCanvas, type InjectionRow, type CharacterCanvasDraft } from "../settings/prompt/InjectionTable.js";
+import { PromptOrderCanvas, type CharacterCanvasDraft } from "../settings/prompt/InjectionTable.js";
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
@@ -32,7 +32,7 @@ type DraftData = {
   enhanceDefinitions: string;
   scriptAiSystemPrompt: string;
   aiAssistantPrompts: Record<string, string>;
-  customInjections: InjectionRow[];
+  customInjections: CustomInjection[];
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
 };
@@ -56,7 +56,7 @@ interface PromptManagerModalProps {
     nsfw?: string;
     enhanceDefinitions?: string;
     scriptAiSystemPrompt?: string;
-    customInjections?: InjectionRow[];
+    customInjections?: CustomInjection[];
     promptOrder?: PromptOrderEntry[];
     advancedMode?: boolean;
   }) => Promise<{ id: string } | null>;

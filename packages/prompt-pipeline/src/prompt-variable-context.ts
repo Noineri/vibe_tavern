@@ -52,13 +52,7 @@ export interface PromptPresetContext {
     identifier?: string;
     name: string;
     content: string;
-    depth: number;
     role: string;
-    enabled: boolean;
-    injectionPosition?: 0 | 1 | "relative" | "absolute";
-    injectionOrder?: number;
-    promptOrderIndex?: number;
-    promptOrderPlacement?: "before_chat" | "after_chat";
   }>;
   promptOrder: Array<{ identifier: string; enabled: boolean; order?: number; kind?: "built_in" | "custom" }>;
   original: string | null;

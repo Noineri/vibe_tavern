@@ -4,10 +4,9 @@ import { cn } from "../../lib/cn.js";
 import { Modal } from "../shared/Modal.js";
 import { Icons } from "../shared/icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
-import { parseStPreset, type ParsedStPreset, type StPresetBlock, type StPromptOrderBlock } from "../../lib/st-preset-parser.js";
-import { migrateInjection } from "@vibe-tavern/domain";
-import type { InjectionRow } from "../settings/prompt/InjectionTable.js";
-import type { PromptSlot } from "@vibe-tavern/domain";
+import { parseStPreset, stBlockToCanvasEntry, synthesizeCanvasEntry, type ParsedStPreset, type StPresetBlock } from "../../lib/st-preset-parser.js";
+import { inferSlot } from "@vibe-tavern/domain";
+import type { CustomInjection, PromptOrderEntry, PromptSlot } from "@vibe-tavern/domain";
 
 type TargetMapping = "system" | "post" | "authors" | "nsfw" | "enhanceDefinitions" | "injection";
 
@@ -27,8 +26,8 @@ export interface PresetImportResult {
   authorsRole?: "system" | "user" | "assistant";
   nsfw: string[];
   enhanceDefinitions: string[];
-  injections: InjectionRow[];
-  promptOrder: StPromptOrderBlock[];
+  injections: CustomInjection[];
+  promptOrder: PromptOrderEntry[];
   target: 'current' | 'new';
   newPresetName?: string;
 }
@@ -55,21 +54,16 @@ interface BlockInfo {
 
 function computeBlockInfo(block: StPresetBlock): BlockInfo {
   const target = smartDefault(block.identifier);
+  // Transient slot for the read-only preview line only — NOT persisted onto
+  // the stored injection. Positional state lives on the canvas entry.
   let slot: PromptSlot | undefined;
   if (target === "injection") {
-    const migrated = migrateInjection({
-      identifier: block.identifier,
-      name: block.name,
-      content: block.content,
-      depth: block.injectionDepth,
-      role: block.role,
-      enabled: block.enabled,
+    slot = inferSlot({
       injectionPosition: block.injectionPosition,
-      injectionOrder: block.injectionOrder,
-      promptOrderIndex: block.promptOrderIndex,
-      promptOrderPlacement: block.promptOrderPlacement,
+      depth: block.injectionDepth,
+      placement: block.promptOrderPlacement,
+      order: block.injectionOrder,
     });
-    slot = migrated.slot;
   }
   return { block, target, slot };
 }
@@ -126,9 +120,19 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
 
   function handleImport() {
     if (!parsed || blockInfos.length === 0) return;
+
+    // Start canvas from ALL parsed ST prompt_order entries (complete PromptOrderEntry).
+    // This preserves built-in markers (main, chatHistory, worldInfoBefore, etc.)
+    // and any custom entries ST already positioned.
+    const canvas: PromptOrderEntry[] = parsed.promptOrder.map(stBlockToCanvasEntry);
+    const canvasIds = new Set(canvas.map((e) => e.identifier));
+
+    // Content-only custom injections
+    const injections: CustomInjection[] = [];
+
     const result: PresetImportResult = {
       system: [], post: [], authors: [], nsfw: [], enhanceDefinitions: [],
-      injections: [], promptOrder: parsed.promptOrder,
+      injections: [], promptOrder: canvas,
       target: importTarget, newPresetName: newPresetName || undefined,
     };
 
@@ -144,24 +148,24 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
         case "nsfw": result.nsfw.push(block.content); break;
         case "enhanceDefinitions": result.enhanceDefinitions.push(block.content); break;
         case "injection": {
-          const raw: InjectionRow = {
+          // Content-only: {identifier, name, content, role}
+          injections.push({
             identifier: block.identifier,
             name: block.name,
             content: block.content,
-            depth: block.injectionDepth,
             role: block.role,
-            enabled: block.enabled,
-            injectionPosition: block.injectionPosition,
-            injectionOrder: block.injectionOrder,
-            promptOrderIndex: block.promptOrderIndex,
-            promptOrderPlacement: block.promptOrderPlacement,
-          };
-          const migrated = migrateInjection(raw);
-          result.injections.push({ ...raw, slot: migrated.slot });
+          });
+          // Ensure a canvas entry exists — synthesize if absent from ST prompt_order.
+          if (!canvasIds.has(block.identifier)) {
+            const entry = synthesizeCanvasEntry(block);
+            canvas.push(entry);
+            canvasIds.add(block.identifier);
+          }
           break;
         }
       }
     }
+    result.injections = injections;
     onImport(result);
   }
 

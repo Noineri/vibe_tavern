@@ -1,15 +1,11 @@
 import type { PresetStore } from "@vibe-tavern/db";
-import type { PromptPresetId, PromptPresetDto } from "@vibe-tavern/domain";
+import type { CustomInjection, PromptOrderEntry, PromptPresetId, PromptPresetDto } from "@vibe-tavern/domain";
 import { validation, notFound, conflict, isDomainError } from "../../shared/errors.js";
 
 type AuthorsNotePosition = "in_prompt" | "in_chat" | "after_chat";
 type AuthorsNoteRole = "system" | "user" | "assistant";
 
-function safeParseJson<T>(json: string, fallback: T): T {
-  try { return JSON.parse(json); } catch { return fallback; }
-}
-
-function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: string | null; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; authorsNoteRole: string; summaryPrompt: string; toolsPrompt: string; nsfwPrompt: string; enhanceDefinitionsPrompt: string; customInjectionsJson: string; promptOrderJson: string; advancedMode?: boolean | number | null; scriptAiSystemPrompt: string | null; aiAssistantPrompts?: string | null; createdAt: string; updatedAt: string; }): PromptPresetDto {
+function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: string | null; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; authorsNoteRole: string; summaryPrompt: string; toolsPrompt: string; nsfwPrompt: string; enhanceDefinitionsPrompt: string; customInjections: CustomInjection[]; promptOrder: PromptOrderEntry[]; advancedMode?: boolean | number | null; scriptAiSystemPrompt: string | null; aiAssistantPrompts?: string | null; createdAt: string; updatedAt: string; }): PromptPresetDto {
   return {
     id: p.id,
     name: p.name,
@@ -25,8 +21,8 @@ function mapPresetToDto(p: { id: string; name: string; bindProviderPresetId: str
     tools: p.toolsPrompt,
     nsfw: p.nsfwPrompt ?? "",
     enhanceDefinitions: p.enhanceDefinitionsPrompt ?? "",
-    customInjections: safeParseJson(p.customInjectionsJson, []),
-    promptOrder: safeParseJson(p.promptOrderJson, []),
+    customInjections: p.customInjections,
+    promptOrder: p.promptOrder,
     advancedMode: Boolean(p.advancedMode),
     scriptAiSystemPrompt: p.scriptAiSystemPrompt ?? "",
     aiAssistantPrompts: p.aiAssistantPrompts ?? "{}",
@@ -59,8 +55,8 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
   tools?: string;
   nsfw?: string;
   enhanceDefinitions?: string;
-  customInjections?: unknown[];
-  promptOrder?: unknown[];
+  customInjections?: CustomInjection[];
+  promptOrder?: PromptOrderEntry[];
   advancedMode?: boolean;
   scriptAiSystemPrompt?: string;
   aiAssistantPrompts?: string;
@@ -83,8 +79,8 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
     toolsPrompt: input.tools ?? "",
     nsfwPrompt: input.nsfw ?? "",
     enhanceDefinitionsPrompt: input.enhanceDefinitions ?? "",
-    customInjectionsJson: input.customInjections != null ? JSON.stringify(input.customInjections) : undefined,
-    promptOrderJson: input.promptOrder != null ? JSON.stringify(input.promptOrder) : undefined,
+    customInjections: input.customInjections,
+    promptOrder: input.promptOrder,
     advancedMode: input.advancedMode ?? false,
     scriptAiSystemPrompt: input.scriptAiSystemPrompt ?? "",
     aiAssistantPrompts: input.aiAssistantPrompts ?? "{}",
@@ -106,8 +102,8 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
   tools?: string;
   nsfw?: string;
   enhanceDefinitions?: string;
-  customInjections?: unknown[];
-  promptOrder?: unknown[];
+  customInjections?: CustomInjection[];
+  promptOrder?: PromptOrderEntry[];
   advancedMode?: boolean;
   scriptAiSystemPrompt?: string;
   aiAssistantPrompts?: string;
@@ -127,8 +123,8 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
       toolsPrompt: patch.tools,
       nsfwPrompt: patch.nsfw,
       enhanceDefinitionsPrompt: patch.enhanceDefinitions,
-      customInjectionsJson: patch.customInjections != null ? JSON.stringify(patch.customInjections) : undefined,
-      promptOrderJson: patch.promptOrder != null ? JSON.stringify(patch.promptOrder) : undefined,
+      customInjections: patch.customInjections,
+      promptOrder: patch.promptOrder,
       advancedMode: patch.advancedMode,
       scriptAiSystemPrompt: patch.scriptAiSystemPrompt,
       aiAssistantPrompts: patch.aiAssistantPrompts,

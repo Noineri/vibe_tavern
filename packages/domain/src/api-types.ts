@@ -108,33 +108,28 @@ export interface PromptSlot {
 export interface PromptOrderEntry {
   identifier: string;
   enabled: boolean;
-  order?: number;
+  /** Sort order within the same zone (+ depth bucket). Dense ascending 0,1,2,… within a zone. */
+  order: number;
   /** Visual canvas zone. */
-  zone?: PromptZone;
-  /** For items placed at a specific chat depth. */
-  depth?: number | null;
-  kind?: "built_in" | "custom";
+  zone: PromptZone;
+  /** Chat depth for `in_chat` items (`null` for `before_chat`/`after_chat`). `in_chat` items MUST carry `depth ≥ 1` so they never collide with `after_chat` (pinned to depth 0) — see ordering model. */
+  depth: number | null;
+  kind: "built_in" | "custom";
 }
 
 // ─── Custom Injections (attached to PromptPreset) ───────────────────────────
+//
+// Content-only (CANVAS_SINGLE_SOURCE_PLAN, I2). Positional state (zone/depth/
+// order/enabled) lives ONLY on the matching `PromptOrderEntry` in `promptOrder`.
+// `role` is content metadata (the message role in assembly) and is taken from
+// the ST preset block at import — distinct from ST's role-*grouping* algorithm
+// (merging same-role prompts on a depth), which is intentionally NOT replicated.
 
 export interface CustomInjection {
-  identifier?: string;
+  identifier: string;
   name: string;
   content: string;
-  depth: number;
   role: 'system' | 'user' | 'assistant';
-  enabled: boolean;
-  /** Unified visual position on the canvas. Authoritative when present. */
-  slot?: PromptSlot;
-  /** ST compatibility: 0/relative = prompt-order block, 1/absolute = depth injection. */
-  injectionPosition?: 0 | 1 | 'relative' | 'absolute';
-  /** ST compatibility: order bucket for absolute/depth injections. */
-  injectionOrder?: number;
-  /** ST compatibility: original prompt_order index. */
-  promptOrderIndex?: number;
-  /** Derived ST prompt_order placement relative to chatHistory. */
-  promptOrderPlacement?: 'before_chat' | 'after_chat';
 }
 
 export interface ProviderProbeResponse {

@@ -1,3 +1,6 @@
+import type { PromptOrderEntry } from "@vibe-tavern/domain";
+import { inferSlot } from "@vibe-tavern/domain";
+
 export interface StPresetBlock {
   identifier: string;
   name: string;
@@ -19,6 +22,50 @@ export interface StPromptOrderBlock {
   kind: "built_in" | "custom";
   zone?: "before_chat" | "after_chat" | "in_chat";
   depth?: number;
+}
+
+export function stBlockToCanvasEntry(block: StPromptOrderBlock): PromptOrderEntry {
+  if (block.zone) {
+    return {
+      identifier: block.identifier,
+      enabled: block.enabled,
+      order: block.order ?? 0,
+      kind: block.kind,
+      zone: block.zone,
+      depth: block.depth ?? null,
+    };
+  }
+  const slot = inferSlot({ order: block.order });
+  return {
+    identifier: block.identifier,
+    enabled: block.enabled,
+    order: slot.order,
+    kind: block.kind,
+    zone: slot.zone,
+    depth: slot.depth,
+  };
+}
+
+/**
+ * Synthesize a canvas entry for a custom block that is ABSENT from ST
+ * prompt_order. Uses the block's ST-compat fields (injectionPosition /
+ * injectionDepth / injectionOrder / promptOrderPlacement) via inferSlot.
+ */
+export function synthesizeCanvasEntry(block: StPresetBlock): PromptOrderEntry {
+  const slot = inferSlot({
+    injectionPosition: block.injectionPosition,
+    depth: block.injectionDepth,
+    placement: block.promptOrderPlacement,
+    order: block.injectionOrder,
+  });
+  return {
+    identifier: block.identifier,
+    enabled: block.enabled,
+    order: slot.order,
+    kind: "custom",
+    zone: slot.zone,
+    depth: slot.depth,
+  };
 }
 
 export interface ParsedStPreset {
