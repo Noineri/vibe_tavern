@@ -42,6 +42,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   { id: "ollama", label: "Ollama", type: PROVIDER_TYPE.ollama, baseUrl: "http://localhost:11434", group: PROVIDER_PRESET_GROUP.local, noApiKey: true },
   { id: "llamacpp", label: "llama.cpp server", type: PROVIDER_TYPE.llamaCpp, baseUrl: "http://localhost:8080", group: PROVIDER_PRESET_GROUP.local, noApiKey: true },
   { id: "koboldcpp", label: "KoboldCPP", type: PROVIDER_TYPE.koboldCpp, baseUrl: "http://localhost:5001", group: PROVIDER_PRESET_GROUP.local, noApiKey: true },
+  { id: "unsloth", label: "Unsloth Studio", type: PROVIDER_TYPE.unsloth, baseUrl: "http://localhost:8888", group: PROVIDER_PRESET_GROUP.local, requiresAuthForModels: true },
   { id: "vllm", label: "vLLM", type: PROVIDER_TYPE.openaiCompat, baseUrl: "http://localhost:8000/v1", group: PROVIDER_PRESET_GROUP.local, noApiKey: true },
   { id: "ooba", label: "text-generation-webui", type: PROVIDER_TYPE.openaiCompat, baseUrl: "http://localhost:5000/v1", group: PROVIDER_PRESET_GROUP.local, noApiKey: true },
   { id: "tabby", label: "TabbyAPI", type: PROVIDER_TYPE.openaiCompat, baseUrl: "http://localhost:5000/v1", group: PROVIDER_PRESET_GROUP.local, noApiKey: true },
@@ -55,6 +56,7 @@ export const TYPE_LABELS: Record<string, string> = {
   [PROVIDER_TYPE.ollama]: "Ollama",
   [PROVIDER_TYPE.llamaCpp]: "llama.cpp",
   [PROVIDER_TYPE.koboldCpp]: "KoboldCPP",
+  [PROVIDER_TYPE.unsloth]: "Unsloth Studio",
 };
 
 export function getVisibleProviderPresets(isArmServer: boolean): ProviderPreset[] {

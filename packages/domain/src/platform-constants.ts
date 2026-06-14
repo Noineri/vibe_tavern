@@ -42,7 +42,8 @@ export type SystemResourceId = typeof SYSTEM_RESOURCE_ID[keyof typeof SYSTEM_RES
  * - `google` — Google Gemini API
  * - `ollama` — Ollama (via OpenAI-compatible adapter)
  * - `llamaCpp` — llama.cpp server (via OpenAI-compatible adapter)
- * - `koboldCpp` — KoboldCpp (not supported yet)
+ * - `koboldCpp` — KoboldCpp (native adapter, non-OpenAI API)
+ * - `unsloth` — Unsloth Studio (OpenAI-compatible /v1 endpoints; requires sk-unsloth- key)
  */
 export const PROVIDER_TYPE = {
   openaiCompat: "openai_compat",
@@ -51,6 +52,7 @@ export const PROVIDER_TYPE = {
   ollama: "ollama",
   llamaCpp: "llamacpp",
   koboldCpp: "koboldcpp",
+  unsloth: "unsloth",
 } as const;
 
 export type ProviderType = typeof PROVIDER_TYPE[keyof typeof PROVIDER_TYPE];

@@ -97,7 +97,8 @@ export function buildSamplerConfig(
     // -- OpenAI-compatible providers + local native Ollama/llamacpp --------
     case PROVIDER_TYPE.openaiCompat:
     case PROVIDER_TYPE.ollama:
-    case PROVIDER_TYPE.llamaCpp: {
+    case PROVIDER_TYPE.llamaCpp:
+    case PROVIDER_TYPE.unsloth: {
       // Native params (gated by capabilities)
       if (can("frequencyPenalty") && profile.frequencyPenalty != null) config.frequencyPenalty = profile.frequencyPenalty;
       if (can("presencePenalty") && profile.presencePenalty != null) config.presencePenalty = profile.presencePenalty;
@@ -111,6 +112,7 @@ export function buildSamplerConfig(
       // providerOptions.<providerName> namespace — must match createOpenAICompatible({ name })
       const providerOptionsKey = providerType === PROVIDER_TYPE.openaiCompat ? "openai_compat"
         : providerType === PROVIDER_TYPE.ollama ? "ollama"
+        : providerType === PROVIDER_TYPE.unsloth ? "unsloth"
         : "llamacpp";
       const providerOpts: Record<string, JSONValue> = {};
       if (can("topK") && profile.topK != null) providerOpts.top_k = profile.topK;
@@ -151,6 +153,12 @@ export function buildSamplerConfig(
       // reasoningEffort — gated by capabilities
       if (can("reasoningEffort") && profile.reasoningEffort != null) {
         providerOpts.reasoningEffort = profile.reasoningEffort;
+      }
+
+      // Unsloth Studio: map showReasoning -> enable_thinking (Unsloth-specific body field
+      // consumed by the underlying llama-server). Forwarded via providerOptions.unsloth.
+      if (providerType === PROVIDER_TYPE.unsloth) {
+        providerOpts.enable_thinking = profile.showReasoning;
       }
 
       if (Object.keys(providerOpts).length > 0) {

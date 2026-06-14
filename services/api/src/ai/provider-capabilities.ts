@@ -84,6 +84,15 @@ export const PROVIDER_CAPABILITIES: ProviderCapabilityMap = {
     logitBias: false,
     samplers: SAMPLER_SETS.koboldcpp_native,
   },
+  unsloth: {
+    // Unsloth Studio wraps llama-server behind OpenAI-compat /v1 endpoints.
+    nonStreamGeneration: true,
+    abortSignal: true,
+    streaming: true,
+    prefill: true,
+    logitBias: true,
+    samplers: SAMPLER_SETS.openai_local,
+  },
 };
 
 /** Look up capabilities for a given provider type. */

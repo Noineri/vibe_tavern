@@ -59,7 +59,7 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 			baseUrl: profile.endpoint,
 			apiKey: profile.apiKey ?? "",
 			providerType: profile.providerPreset,
-			requiresAuthForModels: profile.providerPreset === "anthropic" || profile.providerPreset === "google",
+			requiresAuthForModels: profile.providerPreset === "anthropic" || profile.providerPreset === "google" || profile.providerPreset === "unsloth",
 		});
 
 		// Persist to DB cache so send path has capability data
@@ -87,7 +87,7 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 
 	fetchModelsByEndpoint = async (baseUrl: string, apiKey?: string, providerType?: string) => {
 		const normalized = normalizeOpenAiCompatibleBaseUrl(baseUrl);
-		const requiresAuth = providerType === "anthropic" || providerType === "google";
+		const requiresAuth = providerType === "anthropic" || providerType === "google" || providerType === "unsloth";
 		return listProviderModels({
 			baseUrl: normalized,
 			apiKey: apiKey ?? "",

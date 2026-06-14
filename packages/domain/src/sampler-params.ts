@@ -371,6 +371,9 @@ export function resolveSamplerSet(
       return "openai_local";
     case PROVIDER_TYPE.llamaCpp:
       return "openai_local";
+    case PROVIDER_TYPE.unsloth:
+      // Unsloth Studio wraps llama-server; full local sampler surface.
+      return "openai_local";
     case PROVIDER_TYPE.koboldCpp:
       return "koboldcpp_native";
     case PROVIDER_TYPE.openaiCompat:

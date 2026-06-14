@@ -11,6 +11,7 @@ const PRESET_TO_PROVIDER_TYPE: Record<string, ProviderType> = {
   [PROVIDER_TYPE.ollama]: PROVIDER_TYPE.ollama,
   [PROVIDER_TYPE.llamaCpp]: PROVIDER_TYPE.llamaCpp,
   [PROVIDER_TYPE.koboldCpp]: PROVIDER_TYPE.koboldCpp,
+  [PROVIDER_TYPE.unsloth]: PROVIDER_TYPE.unsloth,
 
   openai: PROVIDER_TYPE.openaiCompat,
   openrouter: PROVIDER_TYPE.openaiCompat,

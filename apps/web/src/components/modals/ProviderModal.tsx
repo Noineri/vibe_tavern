@@ -3,7 +3,7 @@ import { devLog } from "../../lib/dev-log.js";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../../app-client.js";
-import { PROVIDER_PRESET_GROUP, resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
+import { PROVIDER_PRESET_GROUP, PROVIDER_TYPE, resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
 import type { ProviderProbeResponse, SamplerCapabilityFlags } from "@vibe-tavern/domain";
 import { saveProviderDraftSchema } from "@vibe-tavern/api-contracts";
 import { computeSavePatch } from "../../hooks/save-provider-patch.js";
@@ -144,11 +144,11 @@ interface Capabilities {
 
 function getCapabilities(type: string, providerPreset: string, model: string, endpoint: string): Capabilities {
   switch (type) {
-    case "anthropic": case "google":
+    case PROVIDER_TYPE.anthropic: case PROVIDER_TYPE.google:
       return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: false, logitBias: false, samplers: resolveSamplerCapabilities(providerPreset, type) };
-    case "ollama": case "llamacpp":
+    case PROVIDER_TYPE.ollama: case PROVIDER_TYPE.llamaCpp: case PROVIDER_TYPE.unsloth:
       return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: resolveLogitBiasSupport(providerPreset, model, endpoint).supported, samplers: resolveSamplerCapabilities(providerPreset, type) };
-    case "koboldcpp":
+    case PROVIDER_TYPE.koboldCpp:
       return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: false, logitBias: false, samplers: resolveSamplerCapabilities(providerPreset, type) };
     default:
       return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: resolveLogitBiasSupport(providerPreset, model, endpoint).supported, samplers: resolveSamplerCapabilities(providerPreset, type) };
