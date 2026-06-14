@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { EventBus } from "@vibe-tavern/domain";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
-import { countTokens, warmupTokenizers } from "../ai/tokenizer-service.js";
+import { countTokens, warmupTokenizers } from "../infrastructure/ai/tokenizer-service.js";
 import { AssetService } from "../asset-service.js";
 import { createChatSummaryFeature } from "../domain/chat/chat-summary-feature.js";
 import { ChatSummaryService } from "../domain/chat/chat-summary-service.js";

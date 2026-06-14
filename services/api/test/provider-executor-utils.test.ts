@@ -2,8 +2,8 @@ import { describe, it, expect } from "bun:test";
 import {
   toSdkMessages,
   prepareSdkMessages,
-} from "../src/ai/provider-executor-utils.js";
-import type { SdkMessage } from "../src/ai/provider-executor-utils.js";
+} from "../src/infrastructure/ai/provider-executor-utils.js";
+import type { SdkMessage } from "../src/infrastructure/ai/provider-executor-utils.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // toSdkMessages

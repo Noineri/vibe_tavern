@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { buildSamplerConfig } from "../src/ai/sampler-mapper.js";
+import { buildSamplerConfig } from "../src/infrastructure/ai/sampler-mapper.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 
 /** Minimal profile factory — override only what matters for the test. */

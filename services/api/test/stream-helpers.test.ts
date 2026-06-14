@@ -5,7 +5,7 @@ import {
   isNoOutputGeneratedError,
   safeStreamTextPromise,
   safeReasoningPromise,
-} from "../src/ai/stream-helpers.js";
+} from "../src/infrastructure/ai/stream-helpers.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
