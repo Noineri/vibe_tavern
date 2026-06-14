@@ -7,19 +7,19 @@ import type { ChatSummaryService } from "./domain/chat/chat-summary-service.js";
 import type { PromptPresetService } from "./domain/prompt/prompt-preset-service.js";
 import type { AssetService } from "./asset-service.js";
 import type { MobileAccessService } from "./mobile-access-service.js";
-import { BootstrapAdapter } from "./adapters/bootstrap-adapter.js";
-import { ChatAdapter } from "./adapters/chat-adapter.js";
-import { CharacterAdapter } from "./adapters/character-adapter.js";
-import { PersonaAdapter } from "./adapters/persona-adapter.js";
-import { LorebookAdapter } from "./adapters/lorebook-adapter.js";
-import { ScriptAdapter } from "./adapters/script-adapter.js";
-import { ProviderAdapter } from "./adapters/provider-adapter.js";
-import { PresetAdapter } from "./adapters/preset-adapter.js";
-import { ImportExportAdapter } from "./adapters/import-export-adapter.js";
-import { AssetAdapter } from "./adapters/asset-adapter.js";
-import { AiAssistantAdapter } from "./adapters/ai-assistant-adapter.js";
-import { SettingsAdapter } from "./adapters/settings-adapter.js";
-import { MobileAccessAdapter } from "./adapters/mobile-access-adapter.js";
+import { BootstrapAdapter } from "./api/adapters/bootstrap-adapter.js";
+import { ChatAdapter } from "./api/adapters/chat-adapter.js";
+import { CharacterAdapter } from "./api/adapters/character-adapter.js";
+import { PersonaAdapter } from "./api/adapters/persona-adapter.js";
+import { LorebookAdapter } from "./api/adapters/lorebook-adapter.js";
+import { ScriptAdapter } from "./api/adapters/script-adapter.js";
+import { ProviderAdapter } from "./api/adapters/provider-adapter.js";
+import { PresetAdapter } from "./api/adapters/preset-adapter.js";
+import { ImportExportAdapter } from "./api/adapters/import-export-adapter.js";
+import { AssetAdapter } from "./api/adapters/asset-adapter.js";
+import { AiAssistantAdapter } from "./api/adapters/ai-assistant-adapter.js";
+import { SettingsAdapter } from "./api/adapters/settings-adapter.js";
+import { MobileAccessAdapter } from "./api/adapters/mobile-access-adapter.js";
 
 /**
  * Thin composite that wires domain adapters into the RuntimeApi contract.

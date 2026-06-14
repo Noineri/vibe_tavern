@@ -1,4 +1,4 @@
-import type { SettingsRuntimeApi } from "../api/contract/runtime-api.js";
+import type { SettingsRuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 
 export class SettingsAdapter implements SettingsRuntimeApi {

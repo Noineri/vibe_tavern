@@ -1,5 +1,5 @@
-import type { AssetRuntimeApi } from "../api/contract/runtime-api.js";
-import type { AssetService } from "../asset-service.js";
+import type { AssetRuntimeApi } from "../contract/runtime-api.js";
+import type { AssetService } from "../../asset-service.js";
 
 export class AssetAdapter implements AssetRuntimeApi {
 	constructor(private readonly assetService: AssetService) {}

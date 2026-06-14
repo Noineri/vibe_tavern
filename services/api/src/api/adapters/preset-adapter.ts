@@ -1,5 +1,5 @@
-import type { PresetRuntimeApi } from "../api/contract/runtime-api.js";
-import type { PromptPresetService } from "../domain/prompt/prompt-preset-service.js";
+import type { PresetRuntimeApi } from "../contract/runtime-api.js";
+import type { PromptPresetService } from "../../domain/prompt/prompt-preset-service.js";
 
 export class PresetAdapter implements PresetRuntimeApi {
 	constructor(private readonly presetService: PromptPresetService) {}

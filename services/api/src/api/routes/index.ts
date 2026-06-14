@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { RuntimeApi } from "../api/contract/runtime-api.js";
+import type { RuntimeApi } from "../contract/runtime-api.js";
 import { createDebugRoutes } from "./debug.js";
 import { createChatRoutes } from "./chat.js";
 import { createCharacterRoutes } from "./character.js";
@@ -12,7 +12,7 @@ import { createImportRoutes } from "./import.js";
 import { createAssetRoutes } from "./asset.js";
 import { createSettingsRoutes } from "./settings.js";
 
-export type { RuntimeApi } from "../api/contract/runtime-api.js";
+export type { RuntimeApi } from "../contract/runtime-api.js";
 
 export function createApiRouter(runtime: RuntimeApi) {
   return new Hono()

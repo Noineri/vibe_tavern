@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { SettingsRuntimeApi, MobileAccessRuntimeApi } from "../api/contract/runtime-api.js";
+import type { SettingsRuntimeApi, MobileAccessRuntimeApi } from "../contract/runtime-api.js";
 
 export function createSettingsRoutes(runtime: SettingsRuntimeApi & MobileAccessRuntimeApi) {
   return new Hono()

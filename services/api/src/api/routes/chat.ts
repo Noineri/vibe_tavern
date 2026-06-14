@@ -1,12 +1,12 @@
 import { Hono } from "hono";
-import type { ChatRuntimeApi } from "../api/contract/runtime-api.js";
+import type { ChatRuntimeApi } from "../contract/runtime-api.js";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { streamSSE } from "hono/streaming";
-import { logSendDebug } from "../send-debug-log.js";
+import { logSendDebug } from "../../send-debug-log.js";
 import * as schemas from "@vibe-tavern/api-contracts";
 import { readOptionalJson } from "./helpers.js";
-import { extractProviderErrorMessage } from "../infrastructure/ai/provider-error-message.js";
+import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 
 type ChatStreamEvent = { event: string; data: string };
 type RouteAbortBridge = ReturnType<typeof createRouteAbortBridge>;
@@ -178,7 +178,7 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       try {
         return c.json(await runtime.sendMessage(chatId, body, c.req.raw.signal));
       } catch (err) {
-        if (err instanceof (await import("../infrastructure/ai/vision-gate.js")).VisionNotSupportedError) {
+        if (err instanceof (await import("../../infrastructure/ai/vision-gate.js")).VisionNotSupportedError) {
           return c.json({ type: "vision_not_supported", message: err.message, attachments: err.attachmentNames }, 422);
         }
         throw err;

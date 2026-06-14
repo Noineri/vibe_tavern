@@ -1,17 +1,17 @@
-import type { ChatRuntimeApi } from "../api/contract/runtime-api.js";
+import type { ChatRuntimeApi } from "../contract/runtime-api.js";
 import { brandId, parseStoredAttachments, type ChatId, type ChatBranchId, type MessageId } from "@vibe-tavern/domain";
 import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
-import { validation, notFound } from "../errors.js";
-import { logSendDebug } from "../send-debug-log.js";
-import type { SessionRuntime } from "../session/session-runtime.js";
-import type { SessionSnapshot } from "../api/contract/session-types.js";
-import type { LiveChatOrchestrator } from "../domain/chat/live-chat-orchestrator.js";
-import type { ChatSummaryService } from "../domain/chat/chat-summary-service.js";
-import type { ProviderProfileService } from "../domain/providers/provider-profile-service.js";
-import type { AssetService } from "../asset-service.js";
-import { resolveCachedModels } from "../domain/providers/model-cache-service.js";
-import { resolveVisionDescribePrompt } from "../infrastructure/ai/vision-gate.js";
+import { validation, notFound } from "../../errors.js";
+import { logSendDebug } from "../../send-debug-log.js";
+import type { SessionRuntime } from "../../session/session-runtime.js";
+import type { SessionSnapshot } from "../contract/session-types.js";
+import type { LiveChatOrchestrator } from "../../domain/chat/live-chat-orchestrator.js";
+import type { ChatSummaryService } from "../../domain/chat/chat-summary-service.js";
+import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
+import type { AssetService } from "../../asset-service.js";
+import { resolveCachedModels } from "../../domain/providers/model-cache-service.js";
+import { resolveVisionDescribePrompt } from "../../infrastructure/ai/vision-gate.js";
 
 export class ChatAdapter implements ChatRuntimeApi {
 	constructor(
@@ -125,7 +125,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 				},
 			});
 		} catch (err) {
-			if (err instanceof (await import("../infrastructure/ai/vision-gate.js")).VisionNotSupportedError) {
+			if (err instanceof (await import("../../infrastructure/ai/vision-gate.js")).VisionNotSupportedError) {
 				yield { event: "error", data: JSON.stringify({ type: "vision_not_supported", message: err.message, attachments: err.attachmentNames }) };
 				return;
 			}
@@ -215,7 +215,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			throw validation("No vision model configured in the active provider profile. Set one in Provider settings.");
 		}
 
-		const { describeAttachments } = await import("../infrastructure/ai/vision-gate.js");
+		const { describeAttachments } = await import("../../infrastructure/ai/vision-gate.js");
 		const prompt = await this.resolveVisionDescribePromptFromPreset();
 		const assetLoader = (assetId: string) => this.assetService.loadBuffer(assetId);
 

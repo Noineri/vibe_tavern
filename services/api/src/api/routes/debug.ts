@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import type { BootstrapRuntimeApi } from "../api/contract/runtime-api.js";
+import type { BootstrapRuntimeApi } from "../contract/runtime-api.js";
 import { zValidator } from "@hono/zod-validator";
-import { logSendDebug } from "../send-debug-log.js";
+import { logSendDebug } from "../../send-debug-log.js";
 import * as schemas from "@vibe-tavern/api-contracts";
 
 export function createDebugRoutes(runtime: BootstrapRuntimeApi) {
@@ -15,7 +15,7 @@ export function createDebugRoutes(runtime: BootstrapRuntimeApi) {
       return c.json(await runtime.bootstrap());
     })
     .get("/api/defaults/ai-assistant-prompt", async (c) => {
-      const { getDefaultPromptForMode } = await import("../domain/ai-assistant/ai-assistant-prompts.js");
+      const { getDefaultPromptForMode } = await import("../../domain/ai-assistant/ai-assistant-prompts.js");
       const mode = c.req.query("mode") ?? "script";
       return c.json({ prompt: await getDefaultPromptForMode(mode as never) });
     })

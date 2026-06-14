@@ -1,5 +1,5 @@
-import type { MobileAccessRuntimeApi } from "../api/contract/runtime-api.js";
-import type { MobileAccessService } from "../mobile-access-service.js";
+import type { MobileAccessRuntimeApi } from "../contract/runtime-api.js";
+import type { MobileAccessService } from "../../mobile-access-service.js";
 
 export class MobileAccessAdapter implements MobileAccessRuntimeApi {
 	constructor(private readonly mobileAccessService: MobileAccessService) {}

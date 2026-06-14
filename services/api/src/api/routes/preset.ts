@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { PresetRuntimeApi } from "../api/contract/runtime-api.js";
+import type { PresetRuntimeApi } from "../contract/runtime-api.js";
 import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";
 
