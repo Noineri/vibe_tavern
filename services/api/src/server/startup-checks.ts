@@ -3,7 +3,7 @@ import { resolve, join } from "node:path";
 import { resolveMigrationsFolder } from "@vibe-tavern/db";
 import { resolveTokenizerDir } from "../infrastructure/ai/tokenizer-service.js";
 import { resolvePromptPathForMode } from "../domain/ai-assistant/ai-assistant-prompts.js";
-import { resolveRuntimeStorePaths } from "../session/session-runtime-store.js";
+import { resolveRuntimeStorePaths } from "../runtime/session/session-runtime-store.js";
 
 export interface StartupFileCheckOptions {
 	readonly mode: string;

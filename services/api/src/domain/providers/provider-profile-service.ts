@@ -6,7 +6,7 @@ import {
   type ClientProviderProfileRecord,
   type CachedProviderModelsRecord,
   type FavoriteProviderModelRecord,
-} from "../../session/session-runtime-dto.js";
+} from "../../runtime/session/session-runtime-dto.js";
 import { notFound } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 

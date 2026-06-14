@@ -1,6 +1,6 @@
 import type { PresetStore } from "@vibe-tavern/db";
 import type { PromptPresetId, PromptPresetDto } from "@vibe-tavern/domain";
-import { validation, notFound, conflict, isDomainError } from "../shared/errors.js";
+import { validation, notFound, conflict, isDomainError } from "../../shared/errors.js";
 
 type AuthorsNotePosition = "in_prompt" | "in_chat" | "after_chat";
 type AuthorsNoteRole = "system" | "user" | "assistant";

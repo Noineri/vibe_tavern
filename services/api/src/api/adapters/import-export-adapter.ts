@@ -1,5 +1,5 @@
 import type { ImportExportRuntimeApi } from "../contract/runtime-api.js";
-import type { SessionRuntime } from "../../session/session-runtime.js";
+import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 
 export class ImportExportAdapter implements ImportExportRuntimeApi {
 	constructor(private readonly sessionRuntime: SessionRuntime) {}

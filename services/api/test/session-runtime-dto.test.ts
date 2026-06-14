@@ -4,7 +4,7 @@ import {
   entryMatchesRecentText,
   toClientProviderProfile,
   resolveStoredApiKey,
-} from "../src/session/session-runtime-dto.js";
+} from "../src/runtime/session/session-runtime-dto.js";
 import type { LoreEntry } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 

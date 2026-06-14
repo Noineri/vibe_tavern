@@ -1,6 +1,6 @@
 import type { RuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer } from "@vibe-tavern/db";
-import type { SessionRuntime } from "../../session/session-runtime.js";
+import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import type { LiveChatOrchestrator } from "../../domain/chat/live-chat-orchestrator.js";
 import type { ChatSummaryService } from "../../domain/chat/chat-summary-service.js";

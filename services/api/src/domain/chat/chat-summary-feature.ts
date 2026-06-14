@@ -1,7 +1,7 @@
 import type { FeatureModule, FeatureDeps } from "../../shared/feature-module.js";
 import { ChatSummaryService } from "./chat-summary-service.js";
 import type { StoreContainer } from "@vibe-tavern/db";
-import type { SessionRuntime } from "../../session/session-runtime.js";
+import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 
 // ────────────────────────────────────────────────────────────────────────────

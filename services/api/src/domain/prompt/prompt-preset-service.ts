@@ -6,7 +6,7 @@ import {
   updatePromptPreset,
   deletePromptPreset,
   type PresetModuleDeps,
-} from "../../session/session-runtime-presets.js";
+} from "../../runtime/session/session-runtime-presets.js";
 
 export class PromptPresetService {
   constructor(
