@@ -1,205 +1,57 @@
 /**
- * Provider profile mapper - maps stored provider profiles to AI SDK configuration.
+ * @module ai/provider-profile-mapper
  *
- * Each provider kind has exactly one outcome:
- * - **supported SDK-native**: dedicated AI SDK package (openai_compat, anthropic, google).
- * - **supported local-native**: custom LanguageModelV3 adapter (ollama, koboldcpp).
- * - **supported fallback**: OpenAI-compatible adapter (llamacpp).
+ * Thin compatibility shim over the protocol registry
+ * (`providers/protocol-registry.ts`). The per-protocol switch lived here
+ * historically; it now delegates to {@link resolveProtocol}.
  *
- * Local-native providers use their own HTTP APIs so sampler fields can be
- * forwarded losslessly instead of being silently dropped by OpenAI-compatible
- * shims.
+ * Refactor plan: `CODE_REVIEW_REFACTOR_PLAN.md` §5.3.2.
  */
 
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import type { LanguageModel } from "ai";
-import { PROVIDER_TYPE, normalizeProviderType } from "@vibe-tavern/domain";
+import { normalizeProviderType } from "@vibe-tavern/domain";
 import type { ProviderType } from "@vibe-tavern/domain";
-import { providerError } from "../errors.js";
 import {
-  getProviderCapabilities,
-  type ProviderCapabilityFlags,
-} from "./provider-capabilities.js";
-import { createReasoningAwareFetch } from "../providers/openai-reasoning-fetch.js";
-import { createKoboldCppModel } from "../providers/koboldcpp-adapter.js";
-import { createOllamaModel } from "../providers/ollama-adapter.js";
-
-// ---------------------------------------------------------------------------
-// SDK support classification
-// ---------------------------------------------------------------------------
-
-export interface ProviderMappingResult {
-  /** The resolved AI SDK language model. */
-  model: LanguageModel;
-  /** Capability flags for this provider kind. */
-  capabilities: ProviderCapabilityFlags;
-  /** Human-readable description of any limitations. */
-  limitations: string[];
-}
+	resolveProtocol,
+	type ProviderCapabilityFlags,
+	type ProviderProfileInput,
+} from "../providers/protocol-registry.js";
 
 export { normalizeProviderType };
+export type { ProviderProfileInput };
 
-function normalizeLocalOpenAiCompatibleBaseUrl(endpoint: string): string {
-  const normalized = (endpoint || "").trim().replace(/\/+$/, "");
-  if (!normalized) return "http://localhost:11434/v1";
-  if (normalized.endsWith("/v1")) return normalized;
-  if (normalized.endsWith("/api")) return `${normalized.slice(0, -"/api".length)}/v1`;
-  return `${normalized}/v1`;
+export interface ProviderMappingResult {
+	/** The resolved AI SDK language model. */
+	model: LanguageModel;
+	/** Capability flags for this provider kind. */
+	capabilities: ProviderCapabilityFlags;
+	/** Human-readable description of any limitations. */
+	limitations: string[];
 }
-
-// ---------------------------------------------------------------------------
-// Mapper implementation
-// ---------------------------------------------------------------------------
 
 /**
  * Resolve a stored provider profile + model name into an AI SDK LanguageModel.
  *
- * This is the single canonical mapping point. Every provider kind has an explicit
- * outcome.
+ * Delegates to the canonical protocol registry — the single mapping point.
  */
 export function mapProfileToSdkModel(
-  profile: { providerPreset: string; endpoint: string; apiKey: string | null },
-  model: string,
+	profile: { providerPreset: string; endpoint: string; apiKey: string | null },
+	model: string,
 ): ProviderMappingResult {
-  const providerType = normalizeProviderType(profile.providerPreset);
-  const capabilities = getProviderCapabilities(providerType);
-
-  switch (providerType) {
-    // -- Native SDK support --------------------------------------------------
-    case PROVIDER_TYPE.openaiCompat: {
-      const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
-      const apiKey = profile.apiKey ?? "";
-      const provider = createOpenAICompatible({
-        name: "openai_compat",
-        apiKey: apiKey || "not-needed",
-        baseURL: endpoint || "https://api.openai.com/v1",
-        fetch: createReasoningAwareFetch(),
-        // Many OpenAI-compatible aggregators/models support response_format: json_schema,
-        // but the generic provider defaults this capability to false unless declared.
-        supportsStructuredOutputs: true,
-      });
-      return {
-        model: provider.chatModel(model),
-        
-        capabilities,
-        limitations: [],
-      };
-    }
-
-    case PROVIDER_TYPE.anthropic: {
-      const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
-      const apiKey = profile.apiKey ?? "";
-      const provider = createAnthropic({ apiKey: apiKey || "not-needed", baseURL: endpoint || undefined });
-      return {
-        model: provider(model),
-
-        capabilities,
-        limitations: [],
-      };
-    }
-
-    case PROVIDER_TYPE.google: {
-      const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
-      const apiKey = profile.apiKey ?? "";
-      // Google SDK defaults to https://generativelanguage.googleapis.com/v1beta.
-      // Only override baseURL if the user explicitly changed it (e.g. Vertex AI proxy).
-      const defaultGoogleBase = "https://generativelanguage.googleapis.com";
-      const googleBaseUrl = (!endpoint || endpoint === defaultGoogleBase) ? undefined : endpoint;
-      const provider = createGoogleGenerativeAI({ apiKey: apiKey || "not-needed", baseURL: googleBaseUrl });
-      return {
-        model: provider(model),
-
-        capabilities,
-        limitations: [],
-      };
-    }
-
-    // -- OpenAI-compatible fallback ------------------------------------------
-    case PROVIDER_TYPE.ollama: {
-      const endpoint = (profile.endpoint || "").replace(/\/+$/, "") || "http://localhost:11434";
-      const ollamaModel = createOllamaModel({
-        baseURL: endpoint,
-        modelId: model,
-      });
-      return {
-        model: ollamaModel,
-        capabilities,
-        limitations: [
-          "Uses Ollama native /api/chat endpoint for full sampler support.",
-          "Model list uses Ollama's native /api/tags endpoint.",
-        ],
-      };
-    }
-
-    case PROVIDER_TYPE.llamaCpp: {
-      const endpoint = normalizeLocalOpenAiCompatibleBaseUrl(profile.endpoint);
-      const apiKey = profile.apiKey ?? "";
-      const provider = createOpenAICompatible({ name: "llamacpp", apiKey: apiKey || "not-needed", baseURL: endpoint, fetch: createReasoningAwareFetch() });
-      return {
-        model: provider.chatModel(model),
-        
-        capabilities,
-        limitations: [
-          "Uses llama.cpp server's OpenAI-compatible /v1 endpoint for generation.",
-          "Sampling parameters top_k, typical_p, min_p, rep_pen, freq_pen, pres_pen are not forwarded via OpenAI-compatible adapter.",
-          "Model selection is limited to the single loaded model on the llama.cpp server.",
-        ],
-      };
-    }
-
-    // -- Explicitly unsupported ----------------------------------------------
-    case PROVIDER_TYPE.koboldCpp: {
-      const endpoint = (profile.endpoint || "").replace(/\/+$/, "") || "http://localhost:5001";
-      const koboldModel = createKoboldCppModel({
-        baseURL: endpoint,
-        modelId: model ?? "koboldcpp",
-      });
-      return {
-        model: koboldModel,
-        capabilities,
-        limitations: [
-          "Uses KoboldCPP native /api/v1/generate endpoint (not OpenAI-compat).",
-          "Chat messages are serialized into a flat text prompt.",
-          "Tool calling is not supported.",
-        ],
-      };
-    }
-
-    case PROVIDER_TYPE.unsloth: {
-      const endpoint = normalizeLocalOpenAiCompatibleBaseUrl(profile.endpoint || "http://localhost:8888");
-      const apiKey = profile.apiKey ?? "";
-      const provider = createOpenAICompatible({
-        name: "unsloth",
-        apiKey: apiKey || "not-needed",
-        baseURL: endpoint,
-        fetch: createReasoningAwareFetch(),
-      });
-      return {
-        model: provider.chatModel(model),
-        capabilities,
-        limitations: [
-          "Uses Unsloth Studio's OpenAI-compatible /v1 endpoint (llama-server under the hood).",
-          "Requires an sk-unsloth- API key created from Studio Settings → API.",
-        ],
-      };
-    }
-
-    default: {
-      throw providerError(
-        `Unknown provider type '${profile.providerPreset}'. ` +
-        `Supported types: ${Object.values(PROVIDER_TYPE).join(", ")}.`,
-        { providerType: profile.providerPreset },
-      );
-    }
-  }
+	const providerType = normalizeProviderType(profile.providerPreset);
+	const adapter = resolveProtocol(providerType);
+	return {
+		model: adapter.resolveModel(profile, model),
+		capabilities: adapter.capabilities,
+		limitations: adapter.limitations,
+	};
 }
 
 /**
- * Check whether a provider type is explicitly unsupported.
+ * Check whether a provider type is explicitly unsupported (neither streaming
+ * nor non-streaming generation).
  */
 export function isUnsupportedProvider(type: ProviderType): boolean {
-  const caps = getProviderCapabilities(type);
-  return !caps.nonStreamGeneration && !caps.streaming;
+	const caps = resolveProtocol(type).capabilities;
+	return !caps.nonStreamGeneration && !caps.streaming;
 }
