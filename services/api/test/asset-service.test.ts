@@ -111,3 +111,75 @@ describe("AssetService folder-resident avatars (B3)", () => {
 		expect(await bare.migrateFlatAvatarToFolder({ kind: "character", id: "c1" }, "asset_x")).toBeNull();
 	});
 });
+
+describe("AssetService character media gallery (A4)", () => {
+	test("writeGalleryImage writes {charId}/gallery/{rowId}.{ext} and returns {ext, mimeType}", async () => {
+		const { dataRoot, service } = await setup();
+		const result = await service.writeGalleryImage("char_1", "row_7", new File([PNG_BYTES], "p.png", { type: "image/png" }));
+		expect(result).toEqual({ ext: "png", mimeType: "image/png" });
+		const onDisk = await readFile(join(dataRoot, CHARS, "char_1", "gallery", "row_7.png"));
+		expect(onDisk).toEqual(Buffer.from(PNG_BYTES));
+	});
+
+	test("writeGalleryImage rejects unsupported mime", async () => {
+		const { service } = await setup();
+		await expect(
+			service.writeGalleryImage("char_1", "row_1", new File([new Uint8Array(1)], "a.bmp", { type: "image/bmp" })),
+		).rejects.toThrow(/Unsupported image type/);
+	});
+
+	test("serveGalleryImage returns bytes + Content-Type; null when wrong ext / missing", async () => {
+		const { service } = await setup();
+		await service.writeGalleryImage("char_1", "row_1", new File([WEBP_BYTES], "a.webp", { type: "image/webp" }));
+
+		const res = await service.serveGalleryImage("char_1", "row_1", "webp");
+		expect(res).not.toBeNull();
+		expect(res!.headers.get("Content-Type")).toBe("image/webp");
+		expect(new Uint8Array(await res!.arrayBuffer())).toEqual(WEBP_BYTES);
+
+		// wrong ext → file not found → null (no serve-time probing)
+		expect(await service.serveGalleryImage("char_1", "row_1", "png")).toBeNull();
+		// unknown row → null
+		expect(await service.serveGalleryImage("char_1", "row_missing", "webp")).toBeNull();
+	});
+
+	test("loadGalleryImageBuffer round-trips a Buffer (for vision describe)", async () => {
+		const { service } = await setup();
+		await service.writeGalleryImage("char_1", "row_1", new File([PNG_BYTES], "a.png", { type: "image/png" }));
+		const buf = await service.loadGalleryImageBuffer("char_1", "row_1", "png");
+		expect(buf).not.toBeNull();
+		expect(new Uint8Array(buf!)).toEqual(PNG_BYTES);
+		expect(await service.loadGalleryImageBuffer("char_1", "row_1", "gif")).toBeNull();
+	});
+
+	test("deleteGalleryImage removes the single leaf and leaves siblings; no-op when missing", async () => {
+		const { dataRoot, service } = await setup();
+		await service.writeGalleryImage("char_1", "row_1", new File([PNG_BYTES], "a.png", { type: "image/png" }));
+		await service.writeGalleryImage("char_1", "row_2", new File([WEBP_BYTES], "b.webp", { type: "image/webp" }));
+
+		await service.deleteGalleryImage("char_1", "row_1", "png");
+
+		// targeted leaf gone
+		await expect(readFile(join(dataRoot, CHARS, "char_1", "gallery", "row_1.png"))).rejects.toThrow();
+		// sibling untouched
+		const sibling = await readFile(join(dataRoot, CHARS, "char_1", "gallery", "row_2.webp"));
+		expect(sibling).toEqual(Buffer.from(WEBP_BYTES));
+
+		// no-op when already missing
+		await expect(service.deleteGalleryImage("char_1", "row_1", "png")).resolves.toBeUndefined();
+		// no-op when wrong ext (file not present at that path)
+		await expect(service.deleteGalleryImage("char_1", "row_2", "png")).resolves.toBeUndefined();
+	});
+
+	test("gallery methods throw / no-op when contentStore is unset (bare helper)", async () => {
+		const { assetsDir } = await setup();
+		const bare = new AssetService(assetsDir); // no contentStore
+		await expect(
+			bare.writeGalleryImage("c1", "row_1", new File([PNG_BYTES], "a.png", { type: "image/png" })),
+		).rejects.toThrow(/folder storage/);
+		expect(await bare.serveGalleryImage("c1", "row_1", "png")).toBeNull();
+		expect(await bare.loadGalleryImageBuffer("c1", "row_1", "png")).toBeNull();
+		// delete is a silent no-op (consistent with avatar serve/load)
+		await expect(bare.deleteGalleryImage("c1", "row_1", "png")).resolves.toBeUndefined();
+	});
+});

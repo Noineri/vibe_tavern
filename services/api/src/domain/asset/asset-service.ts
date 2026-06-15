@@ -107,10 +107,12 @@ export class AssetService {
     }
   }
 
-  // ─── Folder-resident avatars (per-entity) ────────────────────────────
-  // Avatars written inside the entity folder at {id}/avatar.{ext}. The ext is
-  // derived from the upload mime type and returned so the caller persists it in
-  // the new `avatarExt` column. Serve/load take that stored ext directly — no
+  // ─── Folder-resident images (per-entity) ────────────────────────────
+  // Images written inside an entity folder as {id}/{leafBase}.{ext}. Avatars
+  // use leafBase "avatar" ({id}/avatar.{ext}); gallery rows use
+  // "gallery/{rowId}" ({id}/gallery/{rowId}.{ext}). The ext is derived from
+  // the upload mime type and returned so the caller persists it (avatarExt /
+  // character_assets.ext). Serve/load/delete take that stored ext directly — no
   // probing. Chat attachments keep using the flat upload/serve above.
 
   private requireContentStore(): ContentStore {
@@ -120,20 +122,14 @@ export class AssetService {
     return this.contentStore;
   }
 
-  /**
-   * Write avatar bytes into the character folder at {id}/avatar.{ext}.
-   * Returns the ext so the caller stores it in `avatarExt`.
-   */
-  async writeCharacterAvatar(characterId: string, file: File): Promise<{ ext: string }> {
-    return this.writeFolderAvatar(STORAGE_FOLDERS.characters, characterId, file);
-  }
+  // ─── Folder images: private generalized helpers (leafBase = pre-ext part) ─
 
-  /** Persona variant — {id}/avatar.{ext} under personas/. */
-  async writePersonaAvatar(personaId: string, file: File): Promise<{ ext: string }> {
-    return this.writeFolderAvatar(STORAGE_FOLDERS.personas, personaId, file);
-  }
-
-  private async writeFolderAvatar(folder: StorageFolder, entityId: string, file: File): Promise<{ ext: string }> {
+  private async writeFolderImage(
+    folder: StorageFolder,
+    entityId: string,
+    leafBase: string,
+    file: File,
+  ): Promise<{ ext: string; mimeType: string }> {
     const mime = file.type;
     if (!ALLOWED_MIMES.has(mime)) {
       throw new Error(`Unsupported image type: ${mime}. Allowed: jpeg, png, gif, webp.`);
@@ -143,23 +139,18 @@ export class AssetService {
       throw new Error(`Image too large: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB. Maximum: 20 MB.`);
     }
     const ext = MIME_TO_EXT[mime];
-    await this.requireContentStore().writeBinary(folder, entityId, `avatar.${ext}`, buffer);
-    return { ext };
+    await this.requireContentStore().writeBinary(folder, entityId, `${leafBase}.${ext}`, buffer);
+    return { ext, mimeType: mime };
   }
 
-  /** Serve a folder-resident character avatar. `ext` is the stored avatarExt. */
-  async serveCharacterAvatar(characterId: string, ext: string): Promise<Response | null> {
-    return this.serveFolderAvatar(STORAGE_FOLDERS.characters, characterId, ext);
-  }
-
-  /** Persona variant. */
-  async servePersonaAvatar(personaId: string, ext: string): Promise<Response | null> {
-    return this.serveFolderAvatar(STORAGE_FOLDERS.personas, personaId, ext);
-  }
-
-  private async serveFolderAvatar(folder: StorageFolder, entityId: string, ext: string): Promise<Response | null> {
+  private async serveFolderImage(
+    folder: StorageFolder,
+    entityId: string,
+    leafBase: string,
+    ext: string,
+  ): Promise<Response | null> {
     if (!this.contentStore) return null;
-    const buf = await this.contentStore.readBinary(folder, entityId, `avatar.${ext}`);
+    const buf = await this.contentStore.readBinary(folder, entityId, `${leafBase}.${ext}`);
     if (!buf) return null;
     const mime = EXT_TO_MIME[ext] ?? "application/octet-stream";
     // Copy Buffer bytes into a fresh ArrayBuffer-backed Uint8Array so the value
@@ -173,16 +164,95 @@ export class AssetService {
     });
   }
 
+  private async loadFolderImageBuffer(
+    folder: StorageFolder,
+    entityId: string,
+    leafBase: string,
+    ext: string,
+  ): Promise<Buffer | null> {
+    if (!this.contentStore) return null;
+    return this.contentStore.readBinary(folder, entityId, `${leafBase}.${ext}`);
+  }
+
+  private async deleteFolderImage(
+    folder: StorageFolder,
+    entityId: string,
+    leafBase: string,
+    ext: string,
+  ): Promise<void> {
+    if (!this.contentStore) return;
+    await this.contentStore.deleteBinary(folder, entityId, `${leafBase}.${ext}`);
+  }
+
+  // ─── Avatars (leafBase = "avatar") ──────────────────────────────────
+
+  /**
+   * Write avatar bytes into the character folder at {id}/avatar.{ext}.
+   * Returns the ext so the caller stores it in `avatarExt`.
+   */
+  async writeCharacterAvatar(characterId: string, file: File): Promise<{ ext: string }> {
+    const r = await this.writeFolderImage(STORAGE_FOLDERS.characters, characterId, "avatar", file);
+    return { ext: r.ext };
+  }
+
+  /** Persona variant — {id}/avatar.{ext} under personas/. */
+  async writePersonaAvatar(personaId: string, file: File): Promise<{ ext: string }> {
+    const r = await this.writeFolderImage(STORAGE_FOLDERS.personas, personaId, "avatar", file);
+    return { ext: r.ext };
+  }
+
+  /** Serve a folder-resident character avatar. `ext` is the stored avatarExt. */
+  async serveCharacterAvatar(characterId: string, ext: string): Promise<Response | null> {
+    return this.serveFolderImage(STORAGE_FOLDERS.characters, characterId, "avatar", ext);
+  }
+
+  /** Persona variant. */
+  async servePersonaAvatar(personaId: string, ext: string): Promise<Response | null> {
+    return this.serveFolderImage(STORAGE_FOLDERS.personas, personaId, "avatar", ext);
+  }
+
   /** Load a folder-resident character avatar as a Buffer (for vision describe). */
   async loadCharacterAvatarBuffer(characterId: string, ext: string): Promise<Buffer | null> {
-    if (!this.contentStore) return null;
-    return this.contentStore.readBinary(STORAGE_FOLDERS.characters, characterId, `avatar.${ext}`);
+    return this.loadFolderImageBuffer(STORAGE_FOLDERS.characters, characterId, "avatar", ext);
   }
 
   /** Persona variant. */
   async loadPersonaAvatarBuffer(personaId: string, ext: string): Promise<Buffer | null> {
-    if (!this.contentStore) return null;
-    return this.contentStore.readBinary(STORAGE_FOLDERS.personas, personaId, `avatar.${ext}`);
+    return this.loadFolderImageBuffer(STORAGE_FOLDERS.personas, personaId, "avatar", ext);
+  }
+
+  // ─── Character media gallery (leafBase = "gallery/{rowId}") ──────────
+  // Gallery images live at {characterId}/gallery/{rowId}.{ext}. `rowId` is the
+  // character_assets.id the caller already generated; there is no separate
+  // assetId — the row id IS the file identifier (MEDIA_GALLERY_BACKEND_PLAN).
+
+  /**
+   * Write a gallery image into the character folder at
+   * {characterId}/gallery/{rowId}.{ext}. `rowId` is the character_assets.id the
+   * caller already generated. Returns ext + mimeType (also derivable, but
+   * returned for symmetry with the avatar writers).
+   */
+  async writeGalleryImage(
+    characterId: string,
+    rowId: string,
+    file: File,
+  ): Promise<{ ext: string; mimeType: string }> {
+    return this.writeFolderImage(STORAGE_FOLDERS.characters, characterId, `gallery/${rowId}`, file);
+  }
+
+  /** Serve a gallery image. Caller passes the stored ext. */
+  async serveGalleryImage(characterId: string, rowId: string, ext: string): Promise<Response | null> {
+    return this.serveFolderImage(STORAGE_FOLDERS.characters, characterId, `gallery/${rowId}`, ext);
+  }
+
+  /** Load a gallery image as a Buffer (vision describe). Caller passes stored ext. */
+  async loadGalleryImageBuffer(characterId: string, rowId: string, ext: string): Promise<Buffer | null> {
+    return this.loadFolderImageBuffer(STORAGE_FOLDERS.characters, characterId, `gallery/${rowId}`, ext);
+  }
+
+  /** Delete a single gallery image file. No-op if missing. Caller passes stored ext. */
+  async deleteGalleryImage(characterId: string, rowId: string, ext: string): Promise<void> {
+    await this.deleteFolderImage(STORAGE_FOLDERS.characters, characterId, `gallery/${rowId}`, ext);
   }
 
   /**
