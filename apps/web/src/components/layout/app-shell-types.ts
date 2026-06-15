@@ -3,7 +3,10 @@ import type { OpenAiModelOption } from "../../openai-compatible.js";
 
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "error";
 export type AppMode = "play" | "build";
-export type ThemeMode = "dark" | "light";
+// ThemeMode is owned by the theme registry — re-exported here for back-compat
+// with the many files that import it from this module. The registry is the
+// single source of truth (adding a theme requires no change here).
+export type { ThemeMode } from "../../themes/registry.js";
 
 export interface ConnectionState {
   providerLabel: string;

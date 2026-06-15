@@ -1,4 +1,5 @@
-import type { ConnectionState, ThemeMode } from "../components/layout/app-shell-types.js";
+import type { ConnectionState } from "../components/layout/app-shell-types.js";
+import { normalizeTheme, type ThemeMode } from "../themes/registry.js";
 
 const THEME_STORAGE_KEY = "vibe-tavern.theme";
 const TWEAKS_STORAGE_KEY = "vibe-tavern.tweaks";
@@ -18,10 +19,12 @@ export const DEFAULT_TWEAKS: TweaksSettings = { fontSize: 17, uiFontSize: 17, me
 
 export function readSavedTheme(): ThemeMode {
   try {
-    const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
-    return raw === "light" ? "light" : "dark";
+    // Any registered theme id survives; unknown/missing values fall back to
+    // the default via normalizeTheme. This is what makes new themes load
+    // correctly after a reload once they are added to the registry.
+    return normalizeTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
   } catch {
-    return "dark";
+    return normalizeTheme(null);
   }
 }
 
