@@ -3,9 +3,13 @@ import { createPortal } from "react-dom";
 import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
-import { avatarUrl } from "../../lib/avatar.js";
+import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { initials } from "./app-shell-helpers.js";
 import { CharacterImportModal, ChatImportModal } from "../modals/ImportModals.js";
+
+/** Resolve a character list entry's avatar URL (folder avatar when migrated). */
+const charAvatarSrc = (c: { id: string; avatarExt: string | null; avatarAssetId: string | null }) =>
+  resolveEntityAvatarUrl({ kind: "characters", id: c.id, avatarExt: c.avatarExt, avatarAssetId: c.avatarAssetId });
 import { useT } from "../../i18n/context.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { activateBranchAction, renameBranchAction } from "../../stores/api-actions/chat-actions.js";
@@ -318,8 +322,8 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                   onClick={() => { useChatStore.getState().setSelectedCharacterId(c.id); }}
                   title={c.name}
                 >
-                  {c.avatarAssetId ? (
-                    <img className="h-full w-full object-cover" src={avatarUrl(c.avatarAssetId)} alt={c.name} />
+                  {charAvatarSrc(c) ? (
+                    <img className="h-full w-full object-cover" src={charAvatarSrc(c)!} alt={c.name} />
                   ) : (
                     <span className={cn("flex h-full w-full items-center justify-center rounded-full font-ui text-sm", selectedCharacterId === c.id ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>{initials(c.name)}</span>
                   )}
@@ -436,7 +440,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                         onClick={() => { useChatStore.getState().setSelectedCharacterId(c.id); }}
                       >
                         <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg", selectedCharacterId === c.id ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>
-                          {c.avatarAssetId ? <img className="h-full w-full object-cover" src={avatarUrl(c.avatarAssetId)} alt={c.name} /> : initials(c.name)}
+                          {charAvatarSrc(c) ? <img className="h-full w-full object-cover" src={charAvatarSrc(c)!} alt={c.name} /> : initials(c.name)}
                         </div>
                         <span className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)] text-t1">{c.name}</span>
                         {/* Three-dot menu button */}

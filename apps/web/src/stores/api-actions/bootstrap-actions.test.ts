@@ -55,6 +55,7 @@ function snapshot(id: string, personaName = "Persona"): AppSnapshot {
     character: {
       id: "char-1",
       name: "Character",
+      avatarExt: null,
       description: "",
       scenario: "",
       systemPrompt: "",
@@ -78,6 +79,7 @@ function snapshot(id: string, personaName = "Persona"): AppSnapshot {
     persona: {
       id: "persona-1",
       name: personaName,
+      avatarExt: null,
       description: "",
       pronouns: null,
       avatarAssetId: null,

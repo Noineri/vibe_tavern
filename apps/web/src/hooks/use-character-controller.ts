@@ -18,7 +18,7 @@ import { useNavigationStore } from "../stores/navigation-store.js";
 import { useCharacterStore } from "../stores/character-store.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { exportCharaCardPng } from "../lib/png-writer.js";
-import { getGatewayBaseUrl } from "../gateway-client.js";
+import { resolveEntityAvatarUrl } from "../lib/avatar.js";
 import {
   saveCharacterAction,
   createCharacterAction,
@@ -491,10 +491,11 @@ export function useCharacterController(): CharacterControllerActions {
       const json = JSON.stringify(data);
 
       const char = getSnapshot()?.character;
-      const avatarId = char?.avatarFullAssetId ?? char?.avatarAssetId;
-      if (!avatarId) throw new Error("No avatar");
+      const avatarUrl = char
+        ? resolveEntityAvatarUrl({ kind: "characters", id: char.id, avatarExt: char.avatarExt, avatarAssetId: char.avatarAssetId, avatarFullAssetId: char.avatarFullAssetId, preferFull: true })
+        : null;
+      if (!avatarUrl) throw new Error("No avatar");
 
-      const avatarUrl = `${getGatewayBaseUrl()}/api/assets/${avatarId}`;
       const resp = await fetch(avatarUrl);
       if (!resp.ok) throw new Error(`Avatar fetch failed: ${resp.status}`);
 

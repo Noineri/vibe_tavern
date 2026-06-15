@@ -10,7 +10,7 @@ import { Icons } from "../shared/icons.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { CharacterForm } from "./editors/CharacterForm.js";
 import { formatTraceTimestamp } from "../layout/app-shell-helpers.js";
-import { getGatewayBaseUrl } from "../../gateway-client.js";
+import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { useT } from "../../i18n/context.js";
 import { useCharacterStore } from "../../stores/character-store.js";
 import { useActiveTrace } from "../../stores/chat-selectors.js";
@@ -99,7 +99,7 @@ export function BuildMode() {
         onConfirm: () => { void character.handleDeleteCharacter(charData.id); },
       });
     }}
-    hasAvatar={!!(charData.avatarFullAssetId || charData.avatarAssetId)}
+    hasAvatar={!!(charData.avatarExt || charData.avatarFullAssetId || charData.avatarAssetId)}
   />;
 }
 
@@ -192,11 +192,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
     void Promise.resolve(onAvatarUpload(file, originalFile)).then(() => setAvatarPreview(null));
   }
 
-  const avatarUrl = character.avatarFullAssetId
-    ? `${getGatewayBaseUrl()}/api/assets/${character.avatarFullAssetId}`
-    : character.avatarAssetId
-      ? `${getGatewayBaseUrl()}/api/assets/${character.avatarAssetId}`
-      : undefined;
+  const avatarUrl = resolveEntityAvatarUrl({ kind: "characters", id: character.id, avatarExt: character.avatarExt, avatarAssetId: character.avatarAssetId, avatarFullAssetId: character.avatarFullAssetId, preferFull: true }) ?? undefined;
 
   const ctx = { characterId, chatId: activeChatId, personaId };
 

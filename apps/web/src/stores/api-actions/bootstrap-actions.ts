@@ -9,7 +9,7 @@ export interface BootstrapData {
   initialChatId: ChatId | null;
   snapshot: AppSnapshot | null;
   isFirstRun: boolean;
-  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarCropJson: string | null }>;
+  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null }>;
   promptPresets: PromptPresetDto[];
   uiSettings: UiSettingsRecord;
   isArmServer: boolean;

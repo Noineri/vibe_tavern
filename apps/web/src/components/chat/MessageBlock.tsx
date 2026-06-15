@@ -1,6 +1,7 @@
 import { memo, useState, useMemo, useRef, useEffect, useLayoutEffect } from "react";
 import { motion, AnimatePresence, useAnimationControls, type PanInfo } from "framer-motion";
 import { cn } from "../../lib/cn.js";
+import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { Markdown } from "../../lib/markdown.js";
 import { useDisplayMessage, useChatMeta, useMessageOrder, useMacroContext } from "../../stores/chat-selectors.js";
 import { useChatStore, useActiveGeneration, useIsSending } from "../../stores/index.js";
@@ -132,8 +133,8 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   // Author info
   const author: MessageShellAuthorInfo = isUser
-    ? { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null, avatarCropJson: chatMeta.persona?.avatarCropJson ?? null }
-    : { name: chatMeta.character.name, avatarAssetId: chatMeta.character.avatarAssetId, avatarCropJson: chatMeta.character.avatarCropJson };
+    ? { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null, avatarCropJson: chatMeta.persona?.avatarCropJson ?? null, avatarSrc: chatMeta.persona ? resolveEntityAvatarUrl({ kind: "personas", id: chatMeta.persona.id, avatarExt: chatMeta.persona.avatarExt, avatarAssetId: chatMeta.persona.avatarAssetId }) : null }
+    : { name: chatMeta.character.name, avatarAssetId: chatMeta.character.avatarAssetId, avatarCropJson: chatMeta.character.avatarCropJson, avatarSrc: resolveEntityAvatarUrl({ kind: "characters", id: chatMeta.character.id, avatarExt: chatMeta.character.avatarExt, avatarAssetId: chatMeta.character.avatarAssetId }) };
 
   // UI State
   const isEditing = editingMessageId === input.messageId;
@@ -675,7 +676,7 @@ function PendingUserMessage() {
   const content = activeGen.pendingUserMessageContent ?? "";
   const pendingAttachments = activeGen.pendingUserMessageAttachments ?? [];
   const displayContent = macroContext ? replaceUiMacros(content, macroContext) : content;
-  const author = { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null, avatarCropJson: chatMeta.persona?.avatarCropJson ?? null };
+  const author = { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null, avatarCropJson: chatMeta.persona?.avatarCropJson ?? null, avatarSrc: chatMeta.persona ? resolveEntityAvatarUrl({ kind: "personas", id: chatMeta.persona.id, avatarExt: chatMeta.persona.avatarExt, avatarAssetId: chatMeta.persona.avatarAssetId }) : null };
 
   return (
     <MessageShell
@@ -729,7 +730,7 @@ function PendingAssistantMessage() {
   const variantControlsRef = useRef<HTMLSpanElement>(null);
   if (!chatMeta || !activeGen) return null;
 
-  const author = { name: chatMeta.character.name, avatarAssetId: chatMeta.character.avatarAssetId, avatarCropJson: chatMeta.character.avatarCropJson };
+  const author = { name: chatMeta.character.name, avatarAssetId: chatMeta.character.avatarAssetId, avatarCropJson: chatMeta.character.avatarCropJson, avatarSrc: resolveEntityAvatarUrl({ kind: "characters", id: chatMeta.character.id, avatarExt: chatMeta.character.avatarExt, avatarAssetId: chatMeta.character.avatarAssetId }) };
   const streamingText = activeGen.streamingText;
   const streamingRevealedText = activeGen.streamingRevealedText;
   const streamingReasoning = activeGen.streamingReasoningText;

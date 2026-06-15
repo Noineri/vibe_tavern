@@ -75,6 +75,8 @@ export interface AppCharacter {
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;
+  /** Folder-resident avatar extension (CFS migration). Null = legacy flat avatar or none. */
+  avatarExt: string | null;
   personalitySummary: string | null;
 }
 
@@ -86,6 +88,7 @@ export interface AppPersona {
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;
+  avatarExt: string | null;
 }
 
 export interface AppCharacterEntry {
@@ -95,6 +98,7 @@ export interface AppCharacterEntry {
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;
+  avatarExt: string | null;
 }
 
 // ─── Snapshot ──────────────────────────────────────────────────────────
@@ -158,6 +162,7 @@ export interface PersonaRecord {
   pronouns: string | null;
   avatarAssetId: string | null;
   avatarCropJson: string | null;
+  avatarExt: string | null;
   defaultForNewChats: boolean;
 }
 

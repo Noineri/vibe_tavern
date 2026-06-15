@@ -1,7 +1,6 @@
 import { type ReactNode, useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../../lib/cn.js";
-import { avatarUrl } from "../../lib/avatar.js";
 import { resolveModelLabel } from "../../lib/model-resolve.js";
 import { initials } from "../layout/app-shell-helpers.js";
 import { Icons } from "../shared/icons.js";
@@ -39,6 +38,8 @@ export interface MessageShellAuthorInfo {
   name: string;
   avatarAssetId: string | null;
   avatarCropJson: string | null;
+  /** Pre-resolved avatar URL (folder avatar when migrated, else legacy flat). Null = no avatar. */
+  avatarSrc: string | null;
 }
 
 export interface MessageShellActions {
@@ -215,8 +216,8 @@ export function MessageShell(props: MessageShellProps) {
               "shrink-0 overflow-hidden rounded-full bg-s3 font-body italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover ",
               "flex h-11 w-11 items-center justify-center text-[calc(var(--ui-fs)+1px)]",
             )}>
-              {author.avatarAssetId
-                ? <img src={avatarUrl(author.avatarAssetId)} alt={author.name} className="h-full w-full object-cover" />
+              {author.avatarSrc
+                ? <img src={author.avatarSrc} alt={author.name} className="h-full w-full object-cover" />
                 : initials(author.name)}
             </div>
             <span>{author.name}</span>

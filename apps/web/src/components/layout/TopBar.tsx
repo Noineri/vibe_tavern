@@ -9,7 +9,7 @@ import { usePresetController } from "../../hooks/use-preset-controller.js";
 import { useNavigationStore, useProviderStore, useChatStore, useModalStore } from "../../stores/index.js";
 import { useActiveTrace, useChatMeta } from "../../stores/chat-selectors.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
-import { getGatewayBaseUrl } from "../../gateway-client.js";
+import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 
 export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onShowRail?: () => void }) {
@@ -34,8 +34,8 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
   // --- Derived ---
   const characterName = chatMeta?.character.name ?? "";
   const characterSubtitle = chatMeta?.character.subtitle ?? "";
-  const characterAvatar = chatMeta?.character.avatarAssetId
-    ? `${getGatewayBaseUrl()}/api/assets/${chatMeta.character.avatarAssetId}`
+  const characterAvatar = chatMeta?.character
+    ? resolveEntityAvatarUrl({ kind: "characters", id: chatMeta.character.id, avatarExt: chatMeta.character.avatarExt, avatarAssetId: chatMeta.character.avatarAssetId }) ?? undefined
     : undefined;
   const providerConnected = connection.status === "connected";
   const providerLabel = provider.activeProviderProfile?.name || t("no_provider");
