@@ -1,5 +1,6 @@
 export * from "./api-types.js";
 export * from "./attachment.js";
+export * from "./character-asset.js";
 export * from "./entities.js";
 export * from "./event-bus.js";
 export * from "./extract-thinking-tags.js";
