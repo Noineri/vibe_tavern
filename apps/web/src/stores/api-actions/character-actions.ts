@@ -9,8 +9,7 @@ import {
   importJson,
   unarchiveCharacter,
   updateCharacter,
-  updateCharacterAvatar,
-  uploadAsset,
+  uploadCharacterAvatar,
   type AppSnapshot,
   type ImportJsonResponse,
 } from "../../app-client.js";
@@ -66,18 +65,15 @@ export async function avatarUploadAction(input: {
   characterId: string;
   chatId: ChatId;
 }): Promise<void> {
-  const [croppedAsset, originalAsset] = await Promise.all([
-    uploadAsset(input.file),
-    input.originalFile ? uploadAsset(input.originalFile) : Promise.resolve(null),
-  ]);
-  const snapshot = await updateCharacterAvatar(
-    input.characterId,
-    input.chatId,
-    croppedAsset.assetId,
-    originalAsset?.assetId,
-  );
-  useSnapshotStore.getState().ingestSnapshot(snapshot);
-  void fetchBootstrapAction({ silent: true });
+  // Folder-resident upload (CFS migration): a single avatar is written to
+  // {id}/avatar.{ext}, avatarExt is set, and legacy avatarAssetId is cleared.
+  // The folder model stores one avatar for all display sizes, so originalFile
+  // (the uncropped source) is no longer persisted separately.
+  await uploadCharacterAvatar(input.characterId, input.file);
+  // Refresh bootstrap; syncBootstrapSnapshotForActiveChat re-fetches the active
+  // chat's snapshot if it differs from bootstrap's initial chat, so the open
+  // chat header picks up the new avatarExt.
+  await fetchBootstrapAction({ silent: true });
 }
 
 export async function importCharacterAction(input: {
