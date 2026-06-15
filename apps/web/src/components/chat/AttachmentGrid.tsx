@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
@@ -71,6 +71,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
   const [editText, setEditText] = useState("");
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
   const [localDescription, setLocalDescription] = useState<Record<number, string>>({});
   const att = attachments[index];
 
@@ -131,17 +132,26 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
   const regenerateDescription = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!messageId || !att?.id) return;
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
     setRegenerating(true);
     try {
       const { regenerateAttachmentDescription } = await import("../../app-client.js");
-      const { description } = await regenerateAttachmentDescription("_", messageId, att.id);
+      const { description } = await regenerateAttachmentDescription("_", messageId, att.id, { signal: ac.signal });
       persistDescription(description);
     } catch (err) {
-      console.error("Failed to regenerate attachment description:", err);
+      if (!ac.signal.aborted) console.error("Failed to regenerate attachment description:", err);
     } finally {
       setRegenerating(false);
+      abortRef.current = null;
     }
   }, [messageId, att?.id, persistDescription]);
+
+  const cancelRegenerate = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    abortRef.current?.abort();
+  }, []);
 
   if (!att) return null;
 
@@ -162,16 +172,23 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
               <Icons.edit className="h-4 w-4" />
             </button>
             {att.type === "image" && (
-              <button
-                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95 disabled:cursor-wait disabled:opacity-50"
-                onClick={regenerateDescription}
-                disabled={regenerating}
-                title="Regenerate description with vision model"
-              >
-                <span className={regenerating ? "inline-flex animate-spin" : "inline-flex"}>
+              regenerating ? (
+                <button
+                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-danger/80 text-white transition-colors hover:bg-danger active:scale-95"
+                  onClick={cancelRegenerate}
+                  title="Cancel regeneration"
+                >
+                  <Icons.Close className="h-4 w-4" />
+                </button>
+              ) : (
+                <button
+                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
+                  onClick={regenerateDescription}
+                  title="Regenerate description with vision model"
+                >
                   <Icons.regen />
-                </span>
-              </button>
+                </button>
+              )
             )}
           </>
         )}

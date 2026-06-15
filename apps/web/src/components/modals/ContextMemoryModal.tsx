@@ -564,13 +564,22 @@ export function ContextMemoryModal({
             </button>
           </div>
         </div>
-        <button type="button"
-          className="mt-3 h-10 w-full rounded-md bg-accent px-4 font-ui text-sm font-semibold text-on-accent hover:brightness-110 disabled:opacity-50"
-          disabled={!activeChatId || generating || !effectiveProviderId || !effectiveModel}
-          onClick={() => void handleGenerate()}
-        >
-          {generating ? t("summarizing_btn") : t("summary_generate_range").replace("{from}", String(rangeFrom)).replace("{to}", String(rangeTo))}
-        </button>
+        {generating ? (
+          <button type="button"
+            className="mt-3 h-10 w-full rounded-md bg-danger px-4 font-ui text-sm font-semibold text-white transition-all hover:brightness-110"
+            onClick={() => abortRef.current?.abort()}
+          >
+            {t("summary_stop_btn")}
+          </button>
+        ) : (
+          <button type="button"
+            className="mt-3 h-10 w-full rounded-md bg-accent px-4 font-ui text-sm font-semibold text-on-accent hover:brightness-110 disabled:opacity-50"
+            disabled={!activeChatId || !effectiveProviderId || !effectiveModel}
+            onClick={() => void handleGenerate()}
+          >
+            {t("summary_generate_range").replace("{from}", String(rangeFrom)).replace("{to}", String(rangeTo))}
+          </button>
+        )}
       </section>
 
       {/* ── Auto-summary ── */}

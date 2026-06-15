@@ -537,6 +537,7 @@
   "summary_provider_label": "Провайдер и модель",
   "summary_use_chat_model": "Использовать модель чата (по умолчанию)",
   "summary_generate_range": "Свести сообщения {from}–{to}",
+  "summary_stop_btn": "Стоп",
   "summary_auto_toggle": "Автосводка",
   "summary_auto_every": "Каждые",
   "summary_auto_messages": "сообщений вызывает пересказ",
