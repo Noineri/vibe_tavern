@@ -1,5 +1,6 @@
 import type { Character, CharacterVersion, CharacterId, ChatId, PersonaId, PromptPresetId } from "@vibe-tavern/domain";
 import type { ChatStore, CharacterStore, StoreContainer } from "@vibe-tavern/db";
+import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 import type { ChatApplicationService } from "../chat/chat-application-service.js";
 import type { IChatOrder } from "../../runtime/session/session-runtime-chat-order.js";
 import type { SessionSnapshot, ImportResult } from "../../api/contract/session-types.js";
@@ -402,9 +403,20 @@ export class CharacterRuntime {
       avatarAssetId: source.avatarAssetId,
       avatarFullAssetId: source.avatarFullAssetId,
       avatarCropJson: source.avatarCropJson,
+      avatarExt: source.avatarExt,
     });
 
     const newCharacterId = character.id as CharacterId;
+
+    // Copy the folder-resident avatar (if any) into the duplicate's own folder
+    // — a separate file, not a shared reference. The flat avatarAssetId above
+    // is the legacy fallback and stays shared; only the folder avatar is copied.
+    if (source.avatarExt) {
+      const buf = await this.deps.stores.content.readBinary(STORAGE_FOLDERS.characters, source.id, `avatar.${source.avatarExt}`);
+      if (buf) {
+        await this.deps.stores.content.writeBinary(STORAGE_FOLDERS.characters, newCharacterId, `avatar.${source.avatarExt}`, new Uint8Array(buf));
+      }
+    }
 
     // Duplicate character-scoped lorebooks
     const sourceLorebooks = await this.deps.stores.lorebooks.listLorebooksByScope("character", characterId);

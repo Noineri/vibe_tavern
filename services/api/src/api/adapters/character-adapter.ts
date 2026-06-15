@@ -57,7 +57,10 @@ export class CharacterAdapter implements CharacterRuntimeApi {
 	) => {
 		if (body.avatarAssetId !== undefined) {
 			const character = await this.stores.characters.getById(brandId<CharacterId>(characterId));
-			if (character?.avatarAssetId && character.avatarAssetId !== body.avatarAssetId) {
+			// Folder-resident avatar (avatarExt set) is handled by the folder
+			// lifecycle — skip flat cleanup. Only legacy flat avatars
+			// (avatarExt null) get the old cleanup-on-change behavior.
+			if (!character?.avatarExt && character?.avatarAssetId && character.avatarAssetId !== body.avatarAssetId) {
 				this.assetService.cleanup(character.avatarAssetId);
 			}
 		}
@@ -73,7 +76,11 @@ export class CharacterAdapter implements CharacterRuntimeApi {
 
 	deleteCharacter = async (characterId: string) => {
 		const character = await this.stores.characters.getById(brandId<CharacterId>(characterId));
-		if (character?.avatarAssetId) this.assetService.cleanup(character.avatarAssetId);
+		// Folder-resident avatar (avatarExt) is removed by the store's
+		// deleteEntityFolder; only legacy flat avatars need explicit cleanup.
+		if (!character?.avatarExt && character?.avatarAssetId) {
+			this.assetService.cleanup(character.avatarAssetId);
+		}
 		await this.sessionRuntime.character.delete(characterId);
 	};
 

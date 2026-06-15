@@ -30,6 +30,7 @@ export interface CreateCharacterData {
   avatarAssetId?: string | null;
   avatarFullAssetId?: string | null;
   avatarCropJson?: string | null;
+  avatarExt?: string | null;
 }
 
 export type UpdateCharacterData = Partial<CreateCharacterData>;
@@ -63,6 +64,8 @@ export interface Character {
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;
+  /** Extension of the folder-resident avatar at {id}/avatar.{avatarExt}. Null = no folder avatar (legacy flat avatar via avatarAssetId, or none). */
+  avatarExt: string | null;
   status: 'active' | 'draft' | 'archived';
   createdAt: string;
   updatedAt: string;
@@ -165,6 +168,7 @@ export class CharacterStore {
         avatarAssetId: data.avatarAssetId ?? null,
         avatarFullAssetId: data.avatarFullAssetId ?? null,
         avatarCropJson: data.avatarCropJson ?? null,
+        avatarExt: data.avatarExt ?? null,
         status: 'active',
         createdAt: now,
         updatedAt: now,
@@ -213,6 +217,7 @@ export class CharacterStore {
     if (data.avatarAssetId !== undefined) values.avatarAssetId = data.avatarAssetId;
     if (data.avatarFullAssetId !== undefined) values.avatarFullAssetId = data.avatarFullAssetId;
     if (data.avatarCropJson !== undefined) values.avatarCropJson = data.avatarCropJson;
+    if (data.avatarExt !== undefined) values.avatarExt = data.avatarExt;
 
     const [row] = await this.db
       .update(characters)
@@ -284,6 +289,7 @@ export class CharacterStore {
         avatarAssetId: original.avatarAssetId,
         avatarFullAssetId: original.avatarFullAssetId,
         avatarCropJson: original.avatarCropJson,
+        avatarExt: original.avatarExt,
         status: 'active',
         createdAt: now,
         updatedAt: now,
@@ -301,6 +307,17 @@ export class CharacterStore {
         .set({ contentHash: hash, hasFileOnDisk: 1 })
         .where(eq(characters.id, newId))
         .run();
+
+      // Copy the folder-resident avatar (if any) into the duplicate's own
+      // folder — a separate file, not a shared reference. The flat
+      // avatarAssetId (shared above) is the legacy fallback and is left shared
+      // per the plan (avatarFullAssetId also stays shared).
+      if (original.avatarExt) {
+        const buf = await this.content.readBinary(STORAGE_FOLDERS.characters, original.id, `avatar.${original.avatarExt}`);
+        if (buf) {
+          await this.content.writeBinary(STORAGE_FOLDERS.characters, newId, `avatar.${original.avatarExt}`, new Uint8Array(buf));
+        }
+      }
     }
 
     return copy;
@@ -394,6 +411,7 @@ export class CharacterStore {
       avatarAssetId: row.avatarAssetId,
       avatarFullAssetId: row.avatarFullAssetId,
       avatarCropJson: row.avatarCropJson ?? null,
+      avatarExt: row.avatarExt ?? null,
       status: row.status as Character['status'],
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

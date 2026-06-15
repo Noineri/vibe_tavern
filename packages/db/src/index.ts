@@ -10,6 +10,6 @@ export {
   type StoreIdGenerator,
   type StoreRuntimeOptions,
 } from './persistence.js';
-export { createFileStore, STORAGE_FOLDERS, type FileStore } from './file-store.js';
+export { createFileStore, STORAGE_FOLDERS, type FileStore, type StorageFolder } from './file-store.js';
 export { ContentStore } from './content-store.js';
 export * from './stores/index.js';

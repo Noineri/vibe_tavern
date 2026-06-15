@@ -177,7 +177,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 		const features = new FeatureRegistry();
 		features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService }));
 
-		const assetService = new AssetService(config.assetsDir);
+		const assetService = new AssetService(config.assetsDir, stores.content);
 		const mobileAccessService = new MobileAccessService(config.dataDir);
 
 		// RuntimeApi adapter
