@@ -225,6 +225,17 @@ export class ContentStore {
 	}
 
 	/**
+	 * Delete a single binary file inside an entity folder
+	 * (e.g. data/{folder}/{entityId}/gallery/{id}.{ext}). No-op if missing.
+	 * `leafName` includes the extension and may be multi-segment. Uses deleteFile
+	 * (same pattern as deleteText); binary writes are not cached, so no eviction.
+	 */
+	async deleteBinary(folder: StorageFolder, entityId: string, leafName: string): Promise<void> {
+		const path = this.resolveLeafPath(folder, entityId, leafName);
+		await this._fileStore.deleteFile(path);
+	}
+
+	/**
 	 * Delete the entire entity folder data/{folder}/{entityId}/ and everything
 	 * under it (card.json, original.json, avatar.*, gallery/). Evicts all cache
 	 * entries for this entity (flat key + nested-name keys). No-op if the folder

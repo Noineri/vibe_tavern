@@ -87,11 +87,11 @@ export interface Character {
   /** Extension of the folder-resident avatar at data/characters/{id}/avatar.{avatarExt}. Null = legacy flat avatar (avatarAssetId) or none. Backed by the CFS migration (C1+). */
   avatarExt: string | null;
   /** When true, the character's described gallery images are injected as a text prompt layer. */
-  includeGalleryInPrompt?: boolean;
+  includeGalleryInPrompt: boolean;
   /** When true, the avatar appearance description is injected as a text prompt layer. */
-  includeAvatarInPrompt?: boolean;
-  /** Vision-generated or user-edited avatar appearance description. Null/undefined = not described. */
-  avatarDescription?: string | null;
+  includeAvatarInPrompt: boolean;
+  /** Vision-generated or user-edited avatar appearance description. Null = not described. */
+  avatarDescription: string | null;
   status: "active" | "draft" | "archived";
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -124,9 +124,9 @@ export interface Persona {
   /** Extension of the folder-resident avatar at data/personas/{id}/avatar.{avatarExt}. Null = legacy flat avatar (avatarAssetId) or none. Backed by the CFS migration (C1+). */
   avatarExt: string | null;
   /** When true, the persona avatar appearance description is injected as a text prompt layer. */
-  includeAvatarInPrompt?: boolean;
-  /** Vision-generated or user-edited avatar appearance description. Null/undefined = not described. */
-  avatarDescription?: string | null;
+  includeAvatarInPrompt: boolean;
+  /** Vision-generated or user-edited avatar appearance description. Null = not described. */
+  avatarDescription: string | null;
   defaultForNewChats: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;

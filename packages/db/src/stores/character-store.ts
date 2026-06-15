@@ -30,6 +30,9 @@ export interface CreateCharacterData {
   avatarFullAssetId?: string | null;
   avatarCropJson?: string | null;
   avatarExt?: string | null;
+  includeGalleryInPrompt?: boolean;
+  includeAvatarInPrompt?: boolean;
+  avatarDescription?: string | null;
 }
 
 export type UpdateCharacterData = Partial<CreateCharacterData>;
@@ -65,6 +68,10 @@ export interface Character {
   avatarCropJson: string | null;
   /** Extension of the folder-resident avatar at {id}/avatar.{avatarExt}. Null = no folder avatar (legacy flat avatar via avatarAssetId, or none). */
   avatarExt: string | null;
+  // Media gallery / avatar-appearance prompt injection (MEDIA_GALLERY_BACKEND_PLAN).
+  includeGalleryInPrompt: boolean;
+  includeAvatarInPrompt: boolean;
+  avatarDescription: string | null;
   status: 'active' | 'draft' | 'archived';
   createdAt: string;
   updatedAt: string;
@@ -194,6 +201,9 @@ export class CharacterStore {
         avatarFullAssetId: data.avatarFullAssetId ?? null,
         avatarCropJson: data.avatarCropJson ?? null,
         avatarExt: data.avatarExt ?? null,
+        includeGalleryInPrompt: data.includeGalleryInPrompt ?? false,
+        includeAvatarInPrompt: data.includeAvatarInPrompt ?? false,
+        avatarDescription: data.avatarDescription ?? null,
         status: 'active',
         createdAt: now,
         updatedAt: now,
@@ -453,6 +463,9 @@ export class CharacterStore {
       avatarFullAssetId: row.avatarFullAssetId,
       avatarCropJson: row.avatarCropJson ?? null,
       avatarExt: row.avatarExt ?? null,
+      includeGalleryInPrompt: row.includeGalleryInPrompt,
+      includeAvatarInPrompt: row.includeAvatarInPrompt,
+      avatarDescription: row.avatarDescription ?? null,
       status: row.status as Character['status'],
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
