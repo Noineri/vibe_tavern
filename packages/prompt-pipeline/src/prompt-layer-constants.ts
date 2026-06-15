@@ -58,7 +58,13 @@ export const PROMPT_LAYER_PRIORITY = {
   characterBase: 900,
   characterScenario: 895,
   characterPersonality: 890,
+  // Media (A7) — avatar/gallery appearance blocks. Sit between the character
+  // definition block and persona, so appearance reads as part of the character
+  // block but after personality, and persona's avatar reads right after persona.
+  characterAvatar: 888,
+  characterGallery: 886,
   persona: 850,
+  personaAvatar: 849,
   presetEnhanceDefinitions: 830,
   presetNsfw: 820,
   summaryMemory: 500,
@@ -89,7 +95,11 @@ export const PROMPT_LAYER_ID = {
   characterBase: "character_base",
   characterScenario: "character_scenario",
   characterPersonality: "character_personality",
+  // Media (A7) — appearance text blocks for avatar/gallery descriptions.
+  characterAvatar: "character_avatar",
+  characterGallery: "character_gallery",
   persona: "persona",
+  personaAvatar: "persona_avatar",
   toolInstructions: "tool_instructions",
   preflightCompaction: "preflight_compaction",
   recentHistory: "recent_history",
@@ -108,6 +118,10 @@ export const PROMPT_LAYER_SOURCE_TYPE = {
   promptPreset: "prompt_preset",
   characterSystemPrompt: "character_system_prompt",
   character: "character",
+  // Media (A7) — sourced from the character/persona media fields.
+  characterAvatar: "character_avatar",
+  characterGallery: "character_gallery",
+  personaAvatar: "persona_avatar",
   persona: "persona",
   loreEntry: "lore_entry",
   summaryMemory: "summary_memory",
@@ -198,6 +212,11 @@ export const LAYER_MODES: Record<string, AssemblyMode[]> = {
   character_base:              ["chat", "continue", "regenerate", "summary"],
   character_scenario:          ["chat", "continue", "regenerate", "summary"],
   character_personality:       ["chat", "continue", "regenerate", "summary"],
+  // Media (A7) — appearance blocks participate in all chat modes + summary
+  // (a summary of the chat should still "see" the character's appearance).
+  character_avatar:            ["chat", "continue", "regenerate", "summary"],
+  character_gallery:           ["chat", "continue", "regenerate", "summary"],
+  persona_avatar:              ["chat", "continue", "regenerate", "summary"],
   persona:                     ["chat", "continue", "regenerate", "summary"],
   tool_instructions:           ["chat", "continue", "regenerate", "tool_call"],
   post_history_instructions:   ["chat", "continue", "regenerate"],

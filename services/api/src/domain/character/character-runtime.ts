@@ -34,6 +34,13 @@ export type CharacterRecord = {
   avatarCropJson: string | null;
   /** Extension of the folder-resident avatar at {id}/avatar.{avatarExt}. Null = legacy flat avatar (avatarAssetId) or none. Frontend uses this to pick the avatar URL (C2). */
   avatarExt: string | null;
+  // ─── Media injection (A7) ────────────────────────────────────────────
+  /** Vision-generated appearance description of the avatar. Null = undescribed. */
+  avatarDescription: string | null;
+  /** Whether the avatar appearance is injected into the prompt. */
+  includeAvatarInPrompt: boolean;
+  /** Whether described gallery images are injected into the prompt. */
+  includeGalleryInPrompt: boolean;
 };
 
 export function toCharacterRecord(
@@ -80,6 +87,9 @@ export function toCharacterRecord(
     avatarFullAssetId: character.avatarFullAssetId,
     avatarCropJson: character.avatarCropJson,
     avatarExt: character.avatarExt,
+    avatarDescription: character.avatarDescription,
+    includeAvatarInPrompt: character.includeAvatarInPrompt,
+    includeGalleryInPrompt: character.includeGalleryInPrompt,
   };
 }
 

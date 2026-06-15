@@ -549,6 +549,44 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
     );
   }
 
+  // ─── Media injection (A7) — character avatar/gallery appearance blocks ───
+  // Text-only layers sourced from vision-generated descriptions. Both route
+  // through resolver.position() with their DEFAULT_PROMPT_ORDER rank so they
+  // land in before_chat and honour advanced-mode canvas toggles/overrides.
+  if (context.character.includeAvatarInPrompt && context.character.avatarDescription?.trim() && resolver.enabled("characterAvatar")) {
+    layers.push(
+      resolver.position(makeLayer({
+        id: PROMPT_LAYER_ID.characterAvatar,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.characterAvatar,
+        sourceId: context.character.id,
+        sourceName: `${context.character.name} — Appearance`,
+        priority: PROMPT_LAYER_PRIORITY.characterAvatar,
+        subPosition: resolver.rank("characterAvatar", DEFAULT_PROMPT_ORDER.characterAvatar),
+        text: `[Character appearance: ${context.character.avatarDescription.trim()}]`,
+      }), "characterAvatar"),
+    );
+  }
+
+  if (context.character.includeGalleryInPrompt && context.character.gallery?.length && resolver.enabled("characterGallery")) {
+    // Caller pre-filters to rows with a non-empty description, so every entry
+    // here contributes. Join as one combined reference block (one layer, not
+    // N) to keep the prompt compact and the trace readable.
+    const galleryText = context.character.gallery
+      .map((g) => `Image "${g.caption}": ${g.description}`)
+      .join("\n");
+    layers.push(
+      resolver.position(makeLayer({
+        id: PROMPT_LAYER_ID.characterGallery,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.characterGallery,
+        sourceId: context.character.id,
+        sourceName: `${context.character.name} — Reference Images`,
+        priority: PROMPT_LAYER_PRIORITY.characterGallery,
+        subPosition: resolver.rank("characterGallery", DEFAULT_PROMPT_ORDER.characterGallery),
+        text: `[Character references:\n${galleryText}]`,
+      }), "characterGallery"),
+    );
+  }
+
   if (context.persona?.description?.trim() && resolver.enabled("personaDescription")) {
     layers.push(
       resolver.position(makeLayer({
@@ -560,6 +598,23 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
         subPosition: resolver.rank("personaDescription", DEFAULT_PROMPT_ORDER.personaDescription),
         text: PROMPT_FORMAT.personaBlock(context.persona.name, context.persona.description, context.persona.pronouns),
       }), "personaDescription"),
+    );
+  }
+
+  // ─── Media injection (A7) — persona avatar appearance block ───────────
+  // Mirrors the character avatar layer. Sits right after the persona block so
+  // the persona's appearance reads as part of the user's identity.
+  if (context.persona?.includeAvatarInPrompt && context.persona.avatarDescription?.trim() && resolver.enabled("personaAvatar")) {
+    layers.push(
+      resolver.position(makeLayer({
+        id: PROMPT_LAYER_ID.personaAvatar,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.personaAvatar,
+        sourceId: context.persona.id,
+        sourceName: `${context.persona.name} — Appearance`,
+        priority: PROMPT_LAYER_PRIORITY.personaAvatar,
+        subPosition: resolver.rank("personaAvatar", DEFAULT_PROMPT_ORDER.personaAvatar),
+        text: `[Persona appearance: ${context.persona.avatarDescription.trim()}]`,
+      }), "personaAvatar"),
     );
   }
 

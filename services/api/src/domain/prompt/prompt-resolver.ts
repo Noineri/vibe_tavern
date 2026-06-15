@@ -40,7 +40,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 	async getPersona(personaId: string): Promise<PersonaRecord | null> {
 		const p = await this.stores.personas.getById(personaId);
 		if (!p) return null;
-		return { id: p.id, name: p.name, description: p.description, pronouns: p.pronouns, avatarAssetId: p.avatarAssetId, avatarFullAssetId: p.avatarFullAssetId, avatarCropJson: p.avatarCropJson, avatarExt: p.avatarExt };
+		return { id: p.id, name: p.name, description: p.description, pronouns: p.pronouns, avatarAssetId: p.avatarAssetId, avatarFullAssetId: p.avatarFullAssetId, avatarCropJson: p.avatarCropJson, avatarExt: p.avatarExt, avatarDescription: p.avatarDescription, includeAvatarInPrompt: p.includeAvatarInPrompt };
 	}
 
 	async getPromptPreset(presetId: string): Promise<{
