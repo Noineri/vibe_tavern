@@ -129,7 +129,45 @@ jobs:
 
       - uses: softprops/action-gh-release@v3
         with:
-          files: out/installer/Vibe-Tavern-v${{ needs.release.outputs.version }}-windows-setup.exe
+          files: out/installer/Vibe-Tavern-${{ needs.release.outputs.version }}-windows-setup.exe
+
+  build-windows:
+    needs: release
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: v${{ needs.release.outputs.version }}
+
+      - name: Set version from release
+        shell: bash
+        run: |
+          VERSION="${{ needs.release.outputs.version }}"
+          jq --arg v "$VERSION" '.version = $v' package.json > package.json.tmp
+          mv package.json.tmp package.json
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Install platform optional dependencies
+        run: bun scripts/install-platform-optionals.ts
+
+      - run: bun scripts/build-windows-dist.ts
+
+      - name: Rename archive with version
+        shell: bash
+        run: |
+          VERSION="${{ needs.release.outputs.version }}"
+          mv out/vibe-tavern-windows-x64.zip "Vibe-Tavern-${VERSION}-windows.zip"
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: Vibe-Tavern-${{ needs.release.outputs.version }}-windows.zip
 
   build-android-apk:
     needs: release
