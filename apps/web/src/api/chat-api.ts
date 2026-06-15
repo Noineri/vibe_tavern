@@ -147,11 +147,12 @@ export async function regenerateAttachmentDescription(
   chatId: string,
   messageId: string,
   attachmentId: string,
+  options?: { signal?: AbortSignal },
 ): Promise<{ description: string }> {
   const baseUrl = getGatewayBaseUrl();
   const response = await fetch(
     appendTokenQuery(`${baseUrl}/api/chats/${chatId}/messages/${messageId}/attachments/${attachmentId}/regenerate-description`),
-    { method: "POST" },
+    { method: "POST", signal: options?.signal },
   );
   if (!response.ok) throw new Error(`Failed to regenerate description: ${response.status}`);
   return response.json();

@@ -537,6 +537,7 @@
   "summary_provider_label": "Provider & Model",
   "summary_use_chat_model": "Use chat model (default)",
   "summary_generate_range": "Summarize messages {from}–{to}",
+  "summary_stop_btn": "Stop",
   "summary_auto_toggle": "Autosummary",
   "summary_auto_every": "Every",
   "summary_auto_messages": "messages triggers a recap",
