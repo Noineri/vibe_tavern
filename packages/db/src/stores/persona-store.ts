@@ -15,6 +15,8 @@ export interface CreatePersonaData {
   avatarFullAssetId?: string | null;
   avatarCropJson?: string | null;
   avatarExt?: string | null;
+  includeAvatarInPrompt?: boolean;
+  avatarDescription?: string | null;
   defaultForNewChats?: boolean;
 }
 
@@ -35,6 +37,9 @@ export interface Persona {
   avatarCropJson: string | null;
   /** Extension of the folder-resident avatar at {id}/avatar.{avatarExt}. Null = no folder avatar (legacy flat avatar via avatarAssetId, or none). */
   avatarExt: string | null;
+  // Avatar-appearance prompt injection (MEDIA_GALLERY_BACKEND_PLAN).
+  includeAvatarInPrompt: boolean;
+  avatarDescription: string | null;
   defaultForNewChats: boolean;
   createdAt: string;
   updatedAt: string;
@@ -137,6 +142,8 @@ export class PersonaStore {
         avatarFullAssetId: data.avatarFullAssetId ?? null,
         avatarCropJson: data.avatarCropJson ?? null,
         avatarExt: data.avatarExt ?? null,
+        includeAvatarInPrompt: data.includeAvatarInPrompt ?? false,
+        avatarDescription: data.avatarDescription ?? null,
         defaultForNewChats: data.defaultForNewChats ? 1 : 0,
         createdAt: now,
         updatedAt: now,
@@ -280,6 +287,8 @@ export class PersonaStore {
       avatarFullAssetId: row.avatarFullAssetId,
       avatarCropJson: row.avatarCropJson ?? null,
       avatarExt: row.avatarExt ?? null,
+      includeAvatarInPrompt: row.includeAvatarInPrompt,
+      avatarDescription: row.avatarDescription ?? null,
       defaultForNewChats: row.defaultForNewChats === 1,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

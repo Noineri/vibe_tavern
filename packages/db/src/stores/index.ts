@@ -1,6 +1,13 @@
 export { CharacterStore } from './character-store.js';
 export type { CreateCharacterData, UpdateCharacterData } from './character-store.js';
 
+export { CharacterAssetStore } from './character-asset-store.js';
+export type {
+  CharacterAsset as CharacterAssetRow,
+  CreateCharacterAssetData,
+  UpdateCharacterAssetData,
+} from './character-asset-store.js';
+
 export { PersonaStore } from './persona-store.js';
 export type { CreatePersonaData, UpdatePersonaData, Persona } from './persona-store.js';
 
