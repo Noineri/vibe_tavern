@@ -7,6 +7,9 @@ import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../
 
 export interface CreateCharacterAssetData {
   characterId: string;
+  /** Optional caller-supplied id (e.g. when the file is written before the
+   * row, so both share the same id). If omitted, the store generates one. */
+  id?: string;
   ext: string;
   mimeType: string;
   caption?: string;
@@ -69,8 +72,15 @@ export class CharacterAssetStore {
 
   // ─── Write operations ──────────────────────────────────────────────────────
 
+  /** Generate a fresh gallery row id (same generator `create` uses). Handy when
+   * the caller writes the file at `gallery/{id}.{ext}` before creating the row,
+   * so both share the id. */
+  nextId(): string {
+    return this.idGen.next('char_asset');
+  }
+
   async create(data: CreateCharacterAssetData): Promise<CharacterAsset> {
-    const id = this.idGen.next('char_asset');
+    const id = data.id ?? this.idGen.next('char_asset');
     const now = this.clock.now();
 
     const [row] = await this.db

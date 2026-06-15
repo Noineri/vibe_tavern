@@ -68,6 +68,18 @@ interface PersonaDuplicateRecord {
 	defaultForNewChats: boolean;
 }
 
+/** A single image in a character's media gallery (plain-string DTO for the API layer). */
+interface CharacterAssetRecord {
+	id: string;
+	characterId: string;
+	ext: string;
+	mimeType: string;
+	caption: string;
+	description: string | null;
+	order: number;
+	createdAt: string;
+}
+
 // ─── Bootstrap / Debug ───────────────────────────────────────────────
 
 export interface BootstrapRuntimeApi {
@@ -152,6 +164,17 @@ export interface CharacterRuntimeApi {
 	duplicateCharacter: (characterId: string) => Promise<ImportResult>;
 	uploadCharacterAvatar: (characterId: string, file: File) => Promise<{ avatarExt: string }>;
 	serveCharacterAvatar: (characterId: string) => Promise<Response | null>;
+}
+
+// ─── Character media gallery ───────────────────────────────────────
+
+export interface CharacterAssetRuntimeApi {
+	listCharacterAssets: (characterId: string) => Promise<CharacterAssetRecord[]>;
+	serveCharacterAsset: (characterId: string, assetRowId: string) => Promise<Response | null>;
+	uploadCharacterAsset: (characterId: string, file: File) => Promise<CharacterAssetRecord>;
+	updateCharacterAsset: (characterId: string, assetRowId: string, patch: { caption?: string; description?: string | null }) => Promise<CharacterAssetRecord>;
+	reorderCharacterAssets: (characterId: string, orderedIds: string[]) => Promise<void>;
+	deleteCharacterAsset: (characterId: string, assetRowId: string) => Promise<void>;
 }
 
 // ─── Persona ─────────────────────────────────────────────────────────
@@ -277,7 +300,7 @@ export interface MobileAccessRuntimeApi {
 export interface RuntimeApi {
 	bootstrap: BootstrapRuntimeApi["bootstrap"];
 	chat: ChatRuntimeApi;
-	character: CharacterRuntimeApi;
+	character: CharacterRuntimeApi & CharacterAssetRuntimeApi;
 	persona: PersonaRuntimeApi;
 	lorebook: LorebookRuntimeApi;
 	script: ScriptRuntimeApi;
