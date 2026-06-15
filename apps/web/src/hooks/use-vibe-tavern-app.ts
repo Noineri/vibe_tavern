@@ -14,6 +14,7 @@ import {
   type TweaksSettings,
   MESSAGE_WIDTH_MAP,
 } from "../lib/local-storage.js";
+import { applyThemeClass } from "../themes/registry.js";
 import { extractTokenFromHash, saveMobileToken, clearMobileToken } from "../lib/mobile-token.js";
 
 function createInitialConnectionState(): ConnectionState {
@@ -121,7 +122,7 @@ export function useRpPlatformApp() {
     root.style.setProperty('--ui-fs', `${tweaksSettings.uiFontSize}px`);
     root.style.setProperty('--mw', MESSAGE_WIDTH_MAP[tweaksSettings.messageWidth]);
     persistTweaks(tweaksSettings);
-    root.classList.toggle("light", theme === "light");
+    applyThemeClass(root, theme);
     persistTheme(theme);
   }, [tweaksSettings, theme]);
 

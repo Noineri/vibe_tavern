@@ -4,9 +4,10 @@ import { Icons } from '../../shared/icons.js';
 import { useIsMobile } from '../../../hooks/use-mobile.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import { DropdownSelect } from '../../shared/DropdownSelect.js';
+import { THEMES, type ThemeMode } from '../../../themes/registry.js';
 
 interface TweaksSettings {
-  theme: 'dark' | 'light';
+  theme: ThemeMode;
   fontSize: number;
   uiFontSize: number;
   messageWidth: 'narrow' | 'medium' | 'wide';
@@ -40,10 +41,12 @@ export function TweaksPanel({ settings, setSetting, onOpenMobileAccess, onClose 
 
   if (isMobile) return null;
 
-  const themeOptions = [
-    { value: 'light', label: <Icons.sun /> },
-    { value: 'dark', label: <Icons.moon /> },
-  ];
+  // Theme options derive from the registry — a newly added theme appears
+  // here automatically (no hardcoded icon list to keep in sync).
+  const themeOptions = THEMES.map((t) => {
+    const Icon = Icons[t.icon];
+    return { value: t.id, label: <Icon /> };
+  });
 
   const fontSizeOptions = [
     { value: '17', label: <span className="font-body text-[11px] font-semibold">Aa</span> },
@@ -78,7 +81,7 @@ export function TweaksPanel({ settings, setSetting, onOpenMobileAccess, onClose 
         <SegmentedControl
           value={settings.theme}
           options={themeOptions}
-          onChange={v => setSetting('theme', v as 'dark' | 'light')}
+          onChange={v => setSetting('theme', v as ThemeMode)}
           compact
         />
       </div>

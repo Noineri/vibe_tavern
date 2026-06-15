@@ -3,6 +3,7 @@ import { Toaster } from "sonner";
 import { useT } from "../../i18n/context.js";
 import { Icons } from "../shared/icons.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
+import { type ThemeMode } from "../../themes/registry.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useIsSending } from "../../stores/index.js";
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
 import { useActiveTrace } from "../../stores/chat-selectors.js";
@@ -227,7 +228,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     : undefined;
 
   const tweaksPanelSettings = {
-    theme: theme as 'dark' | 'light',
+    theme: theme as ThemeMode,
     fontSize: tweaksSettings.fontSize,
     uiFontSize: tweaksSettings.uiFontSize,
     messageWidth: tweaksSettings.messageWidth,
@@ -236,7 +237,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   };
 
   const handleSetTweak = (key: string, value: unknown) => {
-    if (key === 'theme') setTheme(value as 'dark' | 'light');
+    if (key === 'theme') setTheme(value as ThemeMode);
     else if (key === 'showRail') updateTweak(key, value as boolean);
     else if (key === 'fontSize' || key === 'uiFontSize') updateTweak(key, value as number);
     else if (key === 'messageWidth') updateTweak(key, value as 'narrow' | 'medium' | 'wide');

@@ -1,9 +1,11 @@
 import { Toggle } from "../../shared/Toggle.js";
 import { useT } from "../../../i18n/context.js";
 import { Icons } from "../../shared/icons.js";
+import { SegmentedControl } from "../../shared/SegmentedControl.js";
+import { THEMES, type ThemeMode } from "../../../themes/registry.js";
 
 interface TweaksSettings {
-	theme: 'dark' | 'light';
+	theme: ThemeMode;
 	fontSize: number;
 	uiFontSize: number;
 	messageWidth: 'narrow' | 'medium' | 'wide';
@@ -87,16 +89,19 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 					<div className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.08em] text-t3">{t("tweaks_theme")}</div>
 				</div>
 
-				{/* Theme toggle */}
+				{/* Theme — segment control mirrors desktop TweaksPanel (driven by the registry) */}
 				<div className="px-5 py-2.5">
-					<div className="flex min-h-[48px] items-center justify-between">
-						<div className="flex items-center gap-3">
-							<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
-								{settings.theme === "dark" ? <Icons.Moon /> : <Icons.Sun />}
-							</div>
-							<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_dark_theme")}</span>
-						</div>
-						<Toggle checked={settings.theme === "dark"} onChange={(checked) => setSetting("theme", checked ? "dark" : "light")} className="text-[18px]" />
+					<div className="flex min-h-[48px] items-center justify-between gap-3">
+						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_theme")}</span>
+						<SegmentedControl
+							value={settings.theme}
+							options={THEMES.map((th) => {
+								const Icon = Icons[th.icon];
+								return { value: th.id, label: <Icon /> };
+							})}
+							onChange={(v) => setSetting("theme", v as ThemeMode)}
+							mobileFill
+						/>
 					</div>
 				</div>
 
