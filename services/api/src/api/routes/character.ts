@@ -73,6 +73,9 @@ export function createCharacterRoutes(runtime: CharacterRuntimeApi & CharacterAs
       if (!result) return c.json({ error: "Avatar not found" }, 404);
       return result;
     })
+    .post("/api/characters/:characterId/avatar/describe", async (c) => {
+      return c.json(await runtime.describeCharacterAvatar(c.req.param("characterId")));
+    })
     // ─── Character media gallery ────────────────────────────────────────
     .get("/api/characters/:characterId/assets", async (c) => {
       const list = await runtime.listCharacterAssets(c.req.param("characterId"));
@@ -98,6 +101,13 @@ export function createCharacterRoutes(runtime: CharacterRuntimeApi & CharacterAs
         if (message.includes("Unsupported")) return c.json({ error: message }, 415);
         return c.json({ error: message }, 400);
       }
+    })
+    .post("/api/characters/:characterId/assets/describe", async (c) => {
+      const body = (await c.req.json().catch(() => ({}))) as { assetRowIds?: unknown };
+      const assetRowIds = Array.isArray(body.assetRowIds) && body.assetRowIds.every((v) => typeof v === "string")
+        ? (body.assetRowIds as string[])
+        : undefined;
+      return c.json(await runtime.describeCharacterAssets(c.req.param("characterId"), assetRowIds));
     })
     .patch("/api/characters/:characterId/assets/:assetRowId", async (c) => {
       const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;

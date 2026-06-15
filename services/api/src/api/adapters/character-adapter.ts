@@ -3,12 +3,16 @@ import { brandId, type CharacterId, type ChatId } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { AssetService } from "../../domain/asset/asset-service.js";
+import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
+import { validation } from "../../shared/errors.js";
+import { describeAttachments, resolveVisionDescribePrompt } from "../../infrastructure/ai/vision-gate.js";
 
 export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRuntimeApi {
 	constructor(
 		private readonly sessionRuntime: SessionRuntime,
 		private readonly stores: StoreContainer,
 		private readonly assetService: AssetService,
+		private readonly providerProfileService: ProviderProfileService,
 	) {}
 
 	createCharacterFromScratch = (body: {
@@ -169,4 +173,129 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			await this.assetService.deleteGalleryImage(result.characterId, assetRowId, result.ext);
 		}
 	};
+
+	// ─── Vision describe (A6) ───────────────────────────────────────
+	// Reuses the SAME vision resolution path as chat attachment describe:
+	// active profile's visionModel + the `vision_describe` system prompt (preset
+	// override → default). Mirrors ChatAdapter's resolveActiveProfileOrThrow /
+	// resolveVisionDescribePromptFromPreset verbatim (same deps, same fallbacks).
+
+	/** Describe gallery images in a batch. If `assetRowIds` is omitted/empty,
+	 *  describes all currently-undescribed rows for this character. Rows whose
+	 *  file can't be loaded go to `failed` (no throw); the rest are described
+	 *  in one describeAttachments call and persisted. */
+	describeCharacterAssets = async (
+		characterId: string,
+		assetRowIds?: string[],
+	): Promise<{ updated: string[]; failed: string[] }> => {
+		const all = await this.stores.characterAssets.listByCharacter(characterId);
+		const requested = assetRowIds && assetRowIds.length > 0 ? new Set(assetRowIds) : null;
+		// Ownership: `all` is already scoped to characterId, so intersecting with
+		// it drops any foreign ids the caller passed in assetRowIds.
+		const target = all.filter((r) => (requested ? requested.has(r.id) : r.description == null));
+
+		const failed: string[] = [];
+		const loadable: Array<{ row: (typeof all)[number]; buffer: Buffer }> = [];
+		for (const row of target) {
+			const buffer = await this.assetService.loadGalleryImageBuffer(characterId, row.id, row.ext);
+			if (!buffer) failed.push(row.id);
+			else loadable.push({ row, buffer });
+		}
+		if (loadable.length === 0) return { updated: [], failed };
+
+		const profile = await this.resolveActiveProfileOrThrow();
+		if (!profile.visionModel) {
+			throw validation("No vision model configured in the active provider profile. Set one in Provider settings.");
+		}
+		const prompt = await this.resolveVisionDescribePromptFromPreset();
+
+		const byId = new Map(loadable.map((x) => [x.row.id, x.buffer] as const));
+		const attachments = loadable.map((x) => ({
+			id: x.row.id,
+			assetId: x.row.id, // loader key
+			type: "image" as const,
+			name: x.row.caption || `gallery-${x.row.id}`,
+			mimeType: x.row.mimeType,
+			sizeBytes: 0,
+			description: x.row.description ?? undefined,
+		}));
+		// Preloaded loader — describeAttachments won't hit the disk again, and a
+		// missing buffer can't surprise us mid-batch (those rows are already failed).
+		const assetLoader = async (assetId: string) => byId.get(assetId) ?? null;
+
+		const descriptions = await describeAttachments(
+			attachments,
+			profile.visionModel,
+			profile,
+			assetLoader,
+			prompt,
+		);
+		const updated: string[] = [];
+		for (const [id, text] of descriptions) {
+			await this.stores.characterAssets.update(id, { description: text });
+			updated.push(id);
+		}
+		return { updated, failed };
+	};
+
+	/** Describe the character's avatar and persist to `avatarDescription`. Uses
+	 *  the same priority chain as the serve route: folder-resident avatar
+	 *  (`avatarExt`, which getById's B4 lazy migrator populates for legacy flat
+	 *  avatars). 400 if there's no avatar at all. */
+	describeCharacterAvatar = async (characterId: string): Promise<{ description: string }> => {
+		const character = await this.stores.characters.getById(brandId<CharacterId>(characterId));
+		if (!character) throw validation("Character not found.");
+		if (!character.avatarExt) {
+			throw validation("Character has no avatar.");
+		}
+		const buffer = await this.assetService.loadCharacterAvatarBuffer(characterId, character.avatarExt);
+		const mimeType = this.assetService.mimeForExt(character.avatarExt);
+		if (!buffer || !mimeType) throw validation("Character has no avatar.");
+
+		const profile = await this.resolveActiveProfileOrThrow();
+		if (!profile.visionModel) {
+			throw validation("No vision model configured in the active provider profile. Set one in Provider settings.");
+		}
+		const prompt = await this.resolveVisionDescribePromptFromPreset();
+
+		const descriptions = await describeAttachments(
+			[{ id: "avatar", assetId: "avatar", type: "image", name: `${character.name} avatar`, mimeType, sizeBytes: 0 }],
+			profile.visionModel,
+			profile,
+			async () => buffer,
+			prompt,
+		);
+		const text = descriptions.get("avatar")?.trim() ?? "";
+		await this.stores.characters.setMediaFields(brandId<CharacterId>(characterId), { avatarDescription: text });
+		return { description: text };
+	};
+
+	// ─── Vision describe helpers (mirror ChatAdapter) ────────────────
+
+	private async resolveActiveProfileOrThrow() {
+		const profile = await this.providerProfileService.resolveActiveProviderProfile();
+		if (!profile) {
+			throw validation("No active provider profile. Activate one in Provider settings.");
+		}
+		return { ...profile, defaultModel: profile.defaultModel as string };
+	}
+
+	private async resolveVisionDescribePromptFromPreset(): Promise<string> {
+		const settings = await this.stores.uiSettings.get();
+		let aiAssistantPrompts: Record<string, string> | null = null;
+		if (settings?.activePromptPresetId) {
+			const preset = await this.stores.presets.getById(settings.activePromptPresetId);
+			if (preset?.aiAssistantPrompts) {
+				try {
+					const parsed = JSON.parse(preset.aiAssistantPrompts);
+					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+						aiAssistantPrompts = Object.fromEntries(
+							Object.entries(parsed).filter(([, v]) => typeof v === "string"),
+						) as Record<string, string>;
+					}
+				} catch {}
+			}
+		}
+		return resolveVisionDescribePrompt(aiAssistantPrompts);
+	}
 }

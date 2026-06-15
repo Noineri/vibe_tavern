@@ -50,5 +50,8 @@ export function createPersonaRoutes(runtime: PersonaRuntimeApi) {
       if (!result) return c.json({ error: "Avatar not found" }, 404);
       return result;
     })
+    .post("/api/personas/:personaId/avatar/describe", async (c) => {
+      return c.json(await runtime.describePersonaAvatar(c.req.param("personaId")));
+    })
   ;
 }
