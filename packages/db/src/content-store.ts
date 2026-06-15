@@ -1,7 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { FileStore, StorageFolder } from "./file-store.js";
-import { hashCanonicalJson } from "./file-store.js";
+import { STORAGE_FOLDERS, hashCanonicalJson } from "./file-store.js";
 
 export interface ContentStoreConfig {
 	fileStore: FileStore;
@@ -303,6 +303,47 @@ export class ContentStore {
 		await this.writeEntityFile(folder, entityId, targetName, data);
 		// Intentionally do NOT delete legacyPath — copy-forward policy.
 		return true;
+	}
+
+	/**
+	 * Copy a flat asset from data/assets/{assetId}.{ext} into an entity folder
+	 * at data/{folder}/{entityId}/{leafBaseName}.{ext}. Probes the candidate
+	 * extensions in order and copies the first one found. Copy-forward: the
+	 * flat source is NOT deleted (single-user data-safety invariant).
+	 *
+	 * This is the lazy-migration path for legacy flat avatars: the caller
+	 * passes the stored `avatarAssetId` and gets back the discovered ext to
+	 * persist in `avatarExt`. Returns null if no candidate file exists on disk
+	 * (caller leaves `avatarAssetId` as-is — the avatar 404s, same as today) or
+	 * if `assetId` is not a single safe filename. Idempotent and safe to retry.
+	 */
+	async copyAssetToEntityFolder(
+		assetId: string,
+		folder: StorageFolder,
+		entityId: string,
+		leafBaseName: string,
+		candidateExts: readonly string[],
+	): Promise<string | null> {
+		// assetId must be a single filename segment — asset ids are always
+		// `asset_<hex>`. Reject anything that could traverse or nest.
+		if (!assetId || assetId.includes("/") || assetId.includes("\\") || assetId.includes("..")) {
+			return null;
+		}
+		for (const ext of candidateExts) {
+			const safeExt = ext.replace(/[^a-zA-Z0-9]/g, "");
+			if (!safeExt) continue;
+			try {
+				const srcPath = this._fileStore.resolvePath(STORAGE_FOLDERS.assets, `${assetId}.${safeExt}`);
+				if (!(await this._fileStore.pathExists(srcPath))) continue;
+				const buf = await this._fileStore.readBinary(srcPath);
+				if (buf.byteLength === 0) continue;
+				await this.writeBinary(folder, entityId, `${leafBaseName}.${safeExt}`, new Uint8Array(buf));
+				return safeExt;
+			} catch {
+				// try next extension
+			}
+		}
+		return null;
 	}
 
 	/**

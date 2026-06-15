@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { ContentStore, StorageFolder } from "@vibe-tavern/db";
-import { STORAGE_FOLDERS } from "@vibe-tavern/db";
+import { IMAGE_EXTENSIONS, STORAGE_FOLDERS } from "@vibe-tavern/db";
 
 const MIME_TO_EXT: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -198,20 +198,10 @@ export class AssetService {
     assetId: string,
   ): Promise<{ ext: string } | null> {
     if (!this.contentStore) return null;
-    if (assetId.includes("/") || assetId.includes("\\") || assetId.includes("..")) return null;
     const folder = owner.kind === "character" ? STORAGE_FOLDERS.characters : STORAGE_FOLDERS.personas;
-    for (const ext of Object.keys(EXT_TO_MIME)) {
-      const filePath = resolve(this.assetsDir, `${assetId}.${ext}`);
-      try {
-        const buf = new Uint8Array(await Bun.file(filePath).arrayBuffer());
-        if (buf.length > 0) {
-          await this.contentStore.writeBinary(folder, owner.id, `avatar.${ext}`, buf);
-          return { ext };
-        }
-      } catch {
-        // try next extension
-      }
-    }
-    return null;
+    // Delegate to ContentStore so the probe-and-copy logic lives in one place
+    // (packages/db) and is shared with the stores' lazy getById migration.
+    const ext = await this.contentStore.copyAssetToEntityFolder(assetId, folder, owner.id, "avatar", IMAGE_EXTENSIONS);
+    return ext === null ? null : { ext };
   }
 }

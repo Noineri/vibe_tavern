@@ -3,8 +3,7 @@ import { characters } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import type { ContentStore } from '../content-store.js';
-import { STORAGE_FOLDERS } from '../file-store.js';
-import { hashCanonicalJson } from '../file-store.js';
+import { STORAGE_FOLDERS, IMAGE_EXTENSIONS, hashCanonicalJson } from '../file-store.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -112,6 +111,32 @@ export class CharacterStore {
         .set({ contentHash: hash, hasFileOnDisk: 1 })
         .where(eq(characters.id, id))
         .run();
+    }
+
+    // Avatar lazy migration (B4): legacy flat avatar (avatarAssetId set,
+    // avatarExt null) → copy into {id}/avatar.{ext} and persist the ext.
+    // Copy-forward: the flat asset under data/assets/ is NOT deleted. If the
+    // flat asset is gone, leave avatarAssetId as-is (avatar 404s, same as
+    // today). Idempotent: a successful run stamps avatarExt so the next read
+    // skips this block; a mid-flight crash retries safely. Independent of the
+    // card block above — runs whenever avatarExt is null and avatarAssetId set.
+    if (this.content && !row.avatarExt && row.avatarAssetId) {
+      const ext = await this.content.copyAssetToEntityFolder(
+        row.avatarAssetId,
+        STORAGE_FOLDERS.characters,
+        id,
+        'avatar',
+        IMAGE_EXTENSIONS,
+      );
+      if (ext) {
+        await this.db
+          .update(characters)
+          .set({ avatarExt: ext, avatarAssetId: null })
+          .where(eq(characters.id, id))
+          .run();
+        char.avatarExt = ext;
+        char.avatarAssetId = null;
+      }
     }
 
     return char;

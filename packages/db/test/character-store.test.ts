@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sql, eq } from "drizzle-orm";
@@ -180,5 +180,53 @@ describe("CharacterStore folder storage (B1)", () => {
 		await content.writeBinary(CHARS, copy.id, "avatar.png", new Uint8Array([9, 9]));
 		const originalAvatar = await readFile(join(dataRoot, CHARS, original.id, "avatar.png"));
 		expect(originalAvatar).toEqual(Buffer.from([1, 2, 3]));
+	});
+
+	// ── B4: lazy avatar migration in getById ───────────────────────────────
+
+	test("getById lazy-migrates a legacy flat avatar into {id}/avatar.{ext} and clears avatarAssetId", async () => {
+		const { dataRoot, db, store } = await setup();
+		const id = "char_ava_1";
+		const assetId = "asset_test_ava1";
+		// seed a legacy flat asset under data/assets/ (pre-folder-layout avatar)
+		await mkdir(join(dataRoot, "assets"), { recursive: true });
+		const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+		await Bun.write(join(dataRoot, "assets", `${assetId}.png`), bytes);
+		// DB row: legacy avatar via avatarAssetId, avatarExt null, card on disk
+		await db.run(sql`INSERT INTO characters (id, name, description, personality_summary, alternate_greetings_json, extensions_json, tags_json, mes_example_mode, mes_example_depth, status, has_file_on_disk, avatar_asset_id, avatar_ext, created_at, updated_at)
+			 VALUES (${id}, ${"Ava Hero"}, '', NULL, '[]', '{}', '[]', 'always', 4, 'active', 1, ${assetId}, NULL, ${fixedClock.now()}, ${fixedClock.now()})`);
+
+		const fetched = await store.getById(id);
+		expect(fetched?.avatarExt).toBe("png");
+		expect(fetched?.avatarAssetId).toBeNull();
+
+		// avatar copied into the entity folder
+		const copied = await readFile(join(dataRoot, CHARS, id, "avatar.png"));
+		expect(new Uint8Array(copied)).toEqual(bytes);
+
+		// legacy flat asset still on disk (copy-forward)
+		const legacy = await readFile(join(dataRoot, "assets", `${assetId}.png`));
+		expect(new Uint8Array(legacy)).toEqual(bytes);
+
+		// DB stamped
+		const row = db.select({ ext: charactersTable.avatarExt, aid: charactersTable.avatarAssetId }).from(charactersTable).where(eq(charactersTable.id, id)).get();
+		expect(row?.ext).toBe("png");
+		expect(row?.aid).toBeNull();
+
+		// idempotent: a second getById is a no-op (avatarExt now set → block skipped)
+		await store.getById(id);
+		const row2 = db.select({ ext: charactersTable.avatarExt }).from(charactersTable).where(eq(charactersTable.id, id)).get();
+		expect(row2?.ext).toBe("png");
+	});
+
+	test("getById leaves avatarAssetId as-is when the flat asset is missing (no throw)", async () => {
+		const { db, store } = await setup();
+		const id = "char_ava_2";
+		await db.run(sql`INSERT INTO characters (id, name, description, personality_summary, alternate_greetings_json, extensions_json, tags_json, mes_example_mode, mes_example_depth, status, has_file_on_disk, avatar_asset_id, avatar_ext, created_at, updated_at)
+			 VALUES (${id}, ${"NoAva Hero"}, '', NULL, '[]', '{}', '[]', 'always', 4, 'active', 1, ${"asset_gone"}, NULL, ${fixedClock.now()}, ${fixedClock.now()})`);
+
+		const fetched = await store.getById(id);
+		expect(fetched?.avatarExt).toBeNull();
+		expect(fetched?.avatarAssetId).toBe("asset_gone");
 	});
 });
