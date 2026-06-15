@@ -5,6 +5,7 @@ import type { SessionSnapshot } from "../../api/contract/session-types.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import { notFound, validation } from "../../shared/errors.js";
+import { BackgroundTaskLocks } from "../../shared/background-task-locks.js";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
@@ -40,7 +41,7 @@ export interface GenerateChatSummaryResult extends SummarizeChatResult {
 }
 
 export class ChatSummaryService {
-  private readonly autoSummaryLocks = new Set<string>();
+  private readonly autoSummaryLocks = new BackgroundTaskLocks();
 
   constructor(
     private readonly stores: StoreContainer,
@@ -199,49 +200,46 @@ export class ChatSummaryService {
     if (!config.enabled) return;
 
     const lockKey = `${chat.id}:${chat.activeBranchId}`;
-    if (this.autoSummaryLocks.has(lockKey)) return;
+    await this.autoSummaryLocks.runExclusive(
+      lockKey,
+      async () => {
+        const summaries = await this.stores.chatSummaries.listByChatBranch(chat.id, chat.activeBranchId);
+        const lastCovered = summaries.reduce((max, summary) => Math.max(max, summary.summarizedTo), 0);
+        const messages = await this.stores.chats.getMessages(chat.activeBranchId);
+        const currentLast = Math.max(1, messages.reduce((max, message) => Math.max(max, message.position + 1), 0) - 1);
+        if (currentLast - lastCovered < config.everyN) return;
 
-    const summaries = await this.stores.chatSummaries.listByChatBranch(chat.id, chat.activeBranchId);
-    const lastCovered = summaries.reduce((max, summary) => Math.max(max, summary.summarizedTo), 0);
-    const messages = await this.stores.chats.getMessages(chat.activeBranchId);
-    const currentLast = Math.max(1, messages.reduce((max, message) => Math.max(max, message.position + 1), 0) - 1);
-    if (currentLast - lastCovered < config.everyN) return;
+        const profile = config.useChatModel
+          ? await this.providerProfiles.resolveActiveProviderProfile()
+          : (config.providerProfileId ? await this.providerProfiles.getProviderProfile(config.providerProfileId) : null);
+        if (!profile?.id) {
+          logSendDebug("summary.auto.skip", { chatId: chat.id, reason: "no_provider" });
+          return;
+        }
+        const model = config.model?.trim() || profile.defaultModel?.trim();
+        if (!model) {
+          logSendDebug("summary.auto.skip", { chatId: chat.id, reason: "no_model", providerProfileId: profile.id });
+          return;
+        }
 
-    const profile = config.useChatModel
-      ? await this.providerProfiles.resolveActiveProviderProfile()
-      : (config.providerProfileId ? await this.providerProfiles.getProviderProfile(config.providerProfileId) : null);
-    if (!profile?.id) {
-      logSendDebug("summary.auto.skip", { chatId: chat.id, reason: "no_provider" });
-      return;
-    }
-    const model = config.model?.trim() || profile.defaultModel?.trim();
-    if (!model) {
-      logSendDebug("summary.auto.skip", { chatId: chat.id, reason: "no_model", providerProfileId: profile.id });
-      return;
-    }
-
-    this.autoSummaryLocks.add(lockKey);
-    try {
-      await this.generateChatSummary({
-        chatId: chat.id,
-        providerProfileId: profile.id,
-        model,
-        summarizedFrom: lastCovered + 1,
-        summarizedTo: currentLast,
-        label: `T${lastCovered + 1}–T${currentLast}`,
-        includeInContext: true,
-        excludeSummarized: config.excludeSummarized,
-        source: 'auto',
-      });
-    } catch (err) {
-      logSendDebug("summary.auto.error", {
+        await this.generateChatSummary({
+          chatId: chat.id,
+          providerProfileId: profile.id,
+          model,
+          summarizedFrom: lastCovered + 1,
+          summarizedTo: currentLast,
+          label: `T${lastCovered + 1}–T${currentLast}`,
+          includeInContext: true,
+          excludeSummarized: config.excludeSummarized,
+          source: 'auto',
+        });
+      },
+      (err) => logSendDebug("summary.auto.error", {
         chatId: chat.id,
         branchId: chat.activeBranchId,
         message: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      this.autoSummaryLocks.delete(lockKey);
-    }
+      }),
+    );
   }
 
   async saveChatSummary(input: { chatId: string; summary: string }): Promise<SummarizeChatResult> {
