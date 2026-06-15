@@ -104,7 +104,7 @@ describe("assemblePrompt", () => {
     });
   });
 
-  describe("author's note placement (flat fields are authoritative)", () => {
+  describe("author's note placement (simple mode — flat fields are authoritative)", () => {
     it("places the note in_prompt when authorsNotePosition is in_prompt", () => {
       const result = assemblePrompt(baseContext({
         preset: {
@@ -147,6 +147,81 @@ describe("assemblePrompt", () => {
       const layer = result.layers.find((l) => l.id === "prompt_preset_authors_note");
       expect(layer?.position).toBe("in_chat");
       expect(layer?.injectionDepth).toBe(3);
+    });
+  });
+
+  describe("author's note placement (advanced mode — canvas is authoritative)", () => {
+    it("uses the canvas zone/depth even when flat authorsNotePosition disagrees (in_chat)", () => {
+      const result = assemblePrompt(baseContext({
+        preset: {
+          id: "preset_1",
+          authorsNote: "Canvas-placed note.",
+          // Flat fields disagree (after_chat @ depth 0) — must be ignored in advanced mode.
+          authorsNotePosition: "after_chat",
+          authorsNoteDepth: 0,
+          advancedMode: true,
+          promptOrder: [
+            { identifier: "authorsNote", order: 60, enabled: true, zone: "in_chat", depth: 2 },
+          ],
+        },
+      }));
+      const layer = result.layers.find((l) => l.id === "prompt_preset_authors_note");
+      expect(layer?.position).toBe("in_chat");
+      expect(layer?.injectionDepth).toBe(2);
+    });
+
+    it("uses canvas after_chat even when flat authorsNotePosition is in_prompt", () => {
+      const result = assemblePrompt(baseContext({
+        preset: {
+          id: "preset_1",
+          authorsNote: "Canvas-placed note.",
+          authorsNotePosition: "in_prompt",
+          advancedMode: true,
+          promptOrder: [
+            { identifier: "authorsNote", order: 60, enabled: true, zone: "after_chat" },
+          ],
+        },
+      }));
+      const layer = result.layers.find((l) => l.id === "prompt_preset_authors_note");
+      expect(layer?.position).toBe("in_chat");
+      expect(layer?.injectionDepth).toBe(0);
+    });
+
+    it("uses canvas before_chat even when flat authorsNotePosition is in_chat at depth", () => {
+      const result = assemblePrompt(baseContext({
+        preset: {
+          id: "preset_1",
+          authorsNote: "Canvas-placed note.",
+          authorsNotePosition: "in_chat",
+          authorsNoteDepth: 3,
+          advancedMode: true,
+          promptOrder: [
+            { identifier: "authorsNote", order: 60, enabled: true, zone: "before_chat" },
+          ],
+        },
+      }));
+      const layer = result.layers.find((l) => l.id === "prompt_preset_authors_note");
+      expect(layer?.position).toBe("in_prompt");
+      expect(layer?.injectionDepth).toBeUndefined();
+    });
+
+    it("still respects the flat fields when advancedMode is off (canvas entry ignored)", () => {
+      // Guard: canvas entry present but advancedMode is false → simple mode,
+      // flat fields must still win (mirrors the simple-mode describe above).
+      const result = assemblePrompt(baseContext({
+        preset: {
+          id: "preset_1",
+          authorsNote: "Simple-placed note.",
+          authorsNotePosition: "after_chat",
+          advancedMode: false,
+          promptOrder: [
+            { identifier: "authorsNote", order: 60, enabled: true, zone: "in_chat", depth: 2 },
+          ],
+        },
+      }));
+      const layer = result.layers.find((l) => l.id === "prompt_preset_authors_note");
+      expect(layer?.position).toBe("in_chat");
+      expect(layer?.injectionDepth).toBe(0);
     });
   });
 

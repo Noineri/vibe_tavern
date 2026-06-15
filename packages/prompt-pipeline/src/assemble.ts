@@ -341,51 +341,70 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
   }
 
   if (context.preset?.authorsNote?.trim() && resolver.enabled("authorsNote")) {
-    const position = context.preset.authorsNotePosition ?? "in_chat";
-    const depth = context.preset.authorsNoteDepth ?? 4;
     const role = context.preset.authorsNoteRole ?? "system";
-
-    // The author's note owns flat position fields (authorsNotePosition / Depth)
-    // that are AUTHORITATIVE in both modes — the canvas / default order must
-    // not relocate the note. The resolver contributes only subPosition (sort
-    // rank within the chosen position). Previously the in_prompt / after_chat
-    // branches called resolver.position(), which in simple mode forced an
-    // after_chat note back into in_prompt (DEFAULT_PROMPT_ORDER.authorsNote=60
-    // < chatHistory=100), silently dropping the user's placement. The in_chat
-    // branch already followed this pattern; the three are now consistent.
-    // subPosition fallback is DEFAULT_PROMPT_ORDER.authorsNote (60), matching
-    // the value resolver.position() previously overwrote in every case.
     const noteSubPosition = resolver.rank("authorsNote", DEFAULT_PROMPT_ORDER.authorsNote);
 
-    if (position === "in_prompt") {
-      // Inside the system prompt block.
-      layers.push(makeLayer({
-        id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
-        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-        sourceId: context.preset.id,
-        sourceName: "Author's Note",
-        position: "in_prompt",
-        priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
-        role,
-        subPosition: noteSubPosition,
-        text: context.preset.authorsNote,
-      }));
-    } else {
-      // after_chat (depth=0) and in_chat (at `depth`) both land in the chat at a
-      // numeric injectionDepth; the only difference is the depth value.
+    if (context.preset.advancedMode) {
+      // Advanced (canvas) mode: the canvas entry for "authorsNote" is the single
+      // source of truth for zone/depth/order — exactly like every other built-in
+      // slot, the note is routed through resolver.position(). The flat
+      // authorsNotePosition/Depth fields are NOT consulted for placement here;
+      // they stay persisted on the preset so switching back to simple mode
+      // restores the user's dropdown choice. (Bug fix: previously the flat
+      // fields were authoritative in BOTH modes, so dragging the note on the
+      // canvas had no effect on its actual placement.)
       const layer = makeLayer({
         id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
         sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
         sourceId: context.preset.id,
-        sourceName: position === "after_chat" ? "Author's Note" : "Author's Note (depth)",
-        position: "in_chat",
+        sourceName: "Author's Note",
+        position: "in_prompt", // overwritten by resolver.position() per canvas zone
         priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
         role,
         subPosition: noteSubPosition,
         text: context.preset.authorsNote,
       });
-      layer.injectionDepth = position === "after_chat" ? 0 : depth;
-      layers.push(layer);
+      layers.push(resolver.position(layer, "authorsNote"));
+    } else {
+      // Simple mode: the flat position fields (authorsNotePosition/Depth) are
+      // authoritative — they are what the simple-mode dropdown drives. The
+      // resolver's position() would infer zone from DEFAULT_PROMPT_ORDER alone
+      // (authorsNote=60 < chatHistory=100 → before_chat), silently dropping an
+      // after_chat placement, so the note is NOT routed through the resolver
+      // here. subPosition still comes from resolver.rank() for sort stability.
+      const position = context.preset.authorsNotePosition ?? "in_chat";
+      const depth = context.preset.authorsNoteDepth ?? 4;
+
+      if (position === "in_prompt") {
+        // Inside the system prompt block.
+        layers.push(makeLayer({
+          id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
+          sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+          sourceId: context.preset.id,
+          sourceName: "Author's Note",
+          position: "in_prompt",
+          priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
+          role,
+          subPosition: noteSubPosition,
+          text: context.preset.authorsNote,
+        }));
+      } else {
+        // after_chat (depth=0) and in_chat (at `depth`) both land in the chat at a
+        // numeric injectionDepth; the only difference is the depth value.
+        const layer = makeLayer({
+          id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
+          sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+          sourceId: context.preset.id,
+          sourceName: position === "after_chat" ? "Author's Note" : "Author's Note (depth)",
+          position: "in_chat",
+          priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
+          role,
+          subPosition: noteSubPosition,
+          text: context.preset.authorsNote,
+        });
+        layer.injectionDepth = position === "after_chat" ? 0 : depth;
+        layers.push(layer);
+      }
     }
   }
 
