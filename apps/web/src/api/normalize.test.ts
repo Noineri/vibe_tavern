@@ -15,6 +15,7 @@ function makeCharacter(): AppCharacter {
   return {
     id: "c1",
     name: "Char",
+    avatarExt: null,
     description: "",
     scenario: "",
     systemPrompt: "",

@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from "react";
 import { Toaster } from "sonner";
 import { useT } from "../../i18n/context.js";
 import { Icons } from "../shared/icons.js";
-import { getGatewayBaseUrl } from "../../gateway-client.js";
+import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useIsSending } from "../../stores/index.js";
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
 import { useActiveTrace } from "../../stores/chat-selectors.js";
@@ -219,13 +219,12 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     shellSurface = <BuildMode />;
   }
 
-  // AvatarPanel shows the full-size original image (for zoom/pan preview)
-  // Falls back to the cropped avatar if no separate full asset exists
-  const avatarSrc = activeCharacter?.avatarFullAssetId
-    ? `${getGatewayBaseUrl()}/api/assets/${activeCharacter.avatarFullAssetId}`
-    : activeCharacter?.avatarAssetId
-      ? `${getGatewayBaseUrl()}/api/assets/${activeCharacter.avatarAssetId}`
-      : undefined;
+  // AvatarPanel shows the full-size original image (for zoom/pan preview).
+  // Folder avatar (avatarExt) wins; otherwise prefer the uncropped full asset
+  // over the cropped one.
+  const avatarSrc = activeCharacter
+    ? resolveEntityAvatarUrl({ kind: "characters", id: activeCharacter.id, avatarExt: activeCharacter.avatarExt, avatarAssetId: activeCharacter.avatarAssetId, avatarFullAssetId: activeCharacter.avatarFullAssetId, preferFull: true }) ?? undefined
+    : undefined;
 
   const tweaksPanelSettings = {
     theme: theme as 'dark' | 'light',

@@ -4,7 +4,7 @@ import type { ChatId } from "@vibe-tavern/domain";
 import { initials } from "./app-shell-helpers.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
-import { avatarUrl } from "../../lib/avatar.js";
+import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { CharacterImportModal, ChatImportModal } from "../modals/ImportModals.js";
 import { useT } from "../../i18n/context.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
@@ -15,6 +15,10 @@ import { useNavigationStore, useChatStore, useCharacterStore, useModalStore } fr
 import { buildCharacterTabs } from "../../lib/character-tabs.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { useBuildPanels } from "../../hooks/use-build-panels.js";
+
+/** Resolve a character tab's avatar URL (folder avatar when migrated). */
+const tabAvatarSrc = (tab: { id: string; avatarExt: string | null; avatarAssetId: string | null }) =>
+  resolveEntityAvatarUrl({ kind: "characters", id: tab.id, avatarExt: tab.avatarExt, avatarAssetId: tab.avatarAssetId });
 
 export function Sidebar() {
   const { t } = useT();
@@ -60,7 +64,13 @@ export function Sidebar() {
   const bootstrapPersonas = useBootstrapStore((s) => s.personas);
   const activePersona = bootstrapPersonas?.find((p) => p.defaultForNewChats) ?? bootstrapPersonas?.[0];
   const personaName = snapshot?.persona?.name ?? activePersona?.name ?? t("no_persona");
-  const personaAvatarAssetId = snapshot?.persona?.avatarAssetId ?? activePersona?.avatarAssetId ?? null;
+  const personaForAvatar = snapshot?.persona ?? activePersona ?? null;
+  const personaAvatarSrc = personaForAvatar
+    ? resolveEntityAvatarUrl({ kind: "personas", id: personaForAvatar.id, avatarExt: personaForAvatar.avatarExt, avatarAssetId: personaForAvatar.avatarAssetId })
+    : null;
+  const activeCharAvatarSrc = snapshot?.character
+    ? resolveEntityAvatarUrl({ kind: "characters", id: snapshot.character.id, avatarExt: snapshot.character.avatarExt, avatarAssetId: snapshot.character.avatarAssetId })
+    : null;
 
   const characterTabs = useMemo(
     () => buildCharacterTabs(allCharacters, allChats),
@@ -169,7 +179,7 @@ export function Sidebar() {
                         <div className="absolute -left-[7px] top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-accent transition-all" />
                       )}
                       <span className={cn('flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm', (isActive || isFlyout) ? 'bg-accent text-on-accent ring-1 ring-accent/50 ring-offset-2 ring-offset-surface' : 'bg-s3 text-t2')}>
-                        {tab.avatarAssetId ? <img src={avatarUrl(tab.avatarAssetId)} alt={tab.name} className="h-full w-full object-cover" /> : initials(tab.name)}
+                        {tabAvatarSrc(tab) ? <img src={tabAvatarSrc(tab)!} alt={tab.name} className="h-full w-full object-cover" /> : initials(tab.name)}
                       </span>
                     </div>
                   </CustomTooltip>
@@ -185,7 +195,7 @@ export function Sidebar() {
               </CustomTooltip>
               <CustomTooltip content={personaName} side="right">
                 <div className="flex h-9 w-9 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}>
-                  {personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover" /> : initials(personaName)}
+                  {personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}
                 </div>
               </CustomTooltip>
             </div>
@@ -204,7 +214,7 @@ export function Sidebar() {
               {/* Заголовок с именем персонажа */}
               <div className="flex h-[52px] shrink-0 items-center gap-2.5 border-b border-border px-3">
                 <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full font-ui text-sm bg-s3 text-t2')}>
-                  {(() => { const tab = characterTabs.find(t => t.id === flyoutCharId); return tab?.avatarAssetId ? <img src={avatarUrl(tab.avatarAssetId)} alt="" className="h-full w-full object-cover" /> : initials(tab?.name ?? '?'); })()}
+                  {(() => { const tab = characterTabs.find(t => t.id === flyoutCharId); const src = tab ? tabAvatarSrc(tab) : null; return src ? <img src={src} alt="" className="h-full w-full object-cover" /> : initials(tab?.name ?? '?'); })()}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[calc(var(--ui-fs)+0px)] font-medium text-t1">
                   {characterTabs.find(t => t.id === flyoutCharId)?.name}
@@ -260,8 +270,8 @@ export function Sidebar() {
                 onClick={() => setCharSwitcherOpen(v => !v)}
               >
                 <span className={cn("flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-accent font-ui text-sm text-on-accent", charSwitcherOpen && "ring-1 ring-accent/50 ring-offset-2 ring-offset-surface")}>
-                  {snapshot?.character?.avatarAssetId
-                    ? <img src={avatarUrl(snapshot.character.avatarAssetId)} alt="" className="h-full w-full object-cover" />
+                  {activeCharAvatarSrc
+                    ? <img src={activeCharAvatarSrc!} alt="" className="h-full w-full object-cover" />
                     : initials(snapshot?.character?.name ?? '?')}
                 </span>
               </div>
@@ -279,8 +289,8 @@ export function Sidebar() {
                         setCharSwitcherOpen(false);
                       }}
                     >
-                      {tab.avatarAssetId
-                        ? <img className="h-full w-full object-cover" src={avatarUrl(tab.avatarAssetId)} alt={tab.name} />
+                      {tabAvatarSrc(tab)
+                        ? <img className="h-full w-full object-cover" src={tabAvatarSrc(tab)!} alt={tab.name} />
                         : <span className="flex h-full w-full items-center justify-center rounded-full bg-s3 font-ui text-xs text-t2">{initials(tab.name)}</span>}
                     </div>
                   </CustomTooltip>
@@ -313,7 +323,7 @@ export function Sidebar() {
               </CustomTooltip>
               <CustomTooltip content={personaName} side="right">
                 <div className="flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}>
-                  {personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover" /> : initials(personaName)}
+                  {personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}
                 </div>
               </CustomTooltip>
             </div>
@@ -363,7 +373,7 @@ export function Sidebar() {
                       <span className={cn(
                         'flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full font-ui text-[calc(var(--ui-fs)-2px)] not-italic avatar-fallback initials crop-framing',
                         isActive ? 'bg-accent text-on-accent' : 'bg-s3 text-t2'
-                      )}>{tab.avatarAssetId ? <img src={avatarUrl(tab.avatarAssetId)} alt={tab.name} className="h-full w-full object-cover" /> : initials(tab.name)}</span>
+                      )}>{tabAvatarSrc(tab) ? <img src={tabAvatarSrc(tab)!} alt={tab.name} className="h-full w-full object-cover" /> : initials(tab.name)}</span>
                       <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                         {tab.name}
                       </span>
@@ -724,7 +734,7 @@ export function Sidebar() {
                   }
                 }}
               >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">{personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover" /> : initials(personaName)}</span>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">{personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}</span>
                 <span>{personaName}</span>
                 <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">
                   {t("sidebar_your_persona")}
@@ -744,9 +754,9 @@ export function Sidebar() {
                   style={{ padding: '6px 8px' }}
                   onClick={() => setCharSwitcherOpen(v => !v)}
                 >
-                  <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full', snapshot?.character?.avatarAssetId ? '' : 'bg-accent text-on-accent')}>
-                    {snapshot?.character?.avatarAssetId ? (
-                      <img className="h-full w-full object-cover" src={avatarUrl(snapshot.character.avatarAssetId)} alt="" />
+                  <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full', activeCharAvatarSrc ? '' : 'bg-accent text-on-accent')}>
+                    {activeCharAvatarSrc ? (
+                      <img className="h-full w-full object-cover" src={activeCharAvatarSrc!} alt="" />
                     ) : (
                       <span className="font-ui text-sm">{initials(snapshot?.character?.name ?? '?')}</span>
                     )}
@@ -773,9 +783,9 @@ export function Sidebar() {
                           setCharSwitcherOpen(false);
                         }}
                       >
-                        <div className={cn('flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full', tab.avatarAssetId ? '' : tab.id === snapshot?.character?.id ? 'bg-accent text-on-accent' : 'bg-s3 text-t2')}>
-                          {tab.avatarAssetId
-                            ? <img className="h-full w-full object-cover" src={avatarUrl(tab.avatarAssetId)} alt={tab.name} />
+                        <div className={cn('flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full', tabAvatarSrc(tab) ? '' : tab.id === snapshot?.character?.id ? 'bg-accent text-on-accent' : 'bg-s3 text-t2')}>
+                          {tabAvatarSrc(tab)
+                            ? <img className="h-full w-full object-cover" src={tabAvatarSrc(tab)!} alt={tab.name} />
                             : <span className="font-ui text-[calc(var(--ui-fs)-4px)]">{initials(tab.name)}</span>}
                         </div>
                         <span className={cn('truncate text-[calc(var(--ui-fs)-1px)]', tab.id === snapshot?.character?.id ? 'text-accent-t font-medium' : 'text-t2')}>{tab.name}</span>
@@ -824,7 +834,7 @@ export function Sidebar() {
                 onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">
-                  {personaAvatarAssetId ? <img src={avatarUrl(personaAvatarAssetId)} alt="" className="h-full w-full object-cover" /> : initials(personaName)}
+                  {personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}
                 </span>
                 <span>{personaName}</span>
                 <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">{t('sidebar_your_persona')}</span>

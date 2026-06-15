@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { PersonaQuickSwitch } from "../modals/PersonaQuickSwitch.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
-import { avatarUrl } from "../../lib/avatar.js";
+import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useT } from "../../i18n/context.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
@@ -224,7 +224,7 @@ export function InputArea() {
             <div className="relative" ref={mobilePersonaRef}>
               <button type="button" onClick={() => setMobilePersonaOpen(o => !o)} className="flex h-9 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2">
                 {activePersonaId ? (
-                  <PersonaAvatar assetId={personas.find(p => p.id === activePersonaId)?.avatarAssetId ?? null}  size={20} />
+                  <PersonaAvatar src={(() => { const p = personas.find(p => p.id === activePersonaId); return p ? resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId }) : null; })()}  size={20} />
                 ) : (
                   <Icons.User />
                 )}
@@ -237,7 +237,7 @@ export function InputArea() {
                   {personas.map(p => (
                     <button type="button" key={p.id} className="flex w-full min-h-[44px] cursor-pointer items-center gap-2 px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2" onClick={() => { void character.handleSetChatPersona(p.id); setMobilePersonaOpen(false); }}>
                       <div className="w-4 shrink-0 flex justify-center text-accent-t">{activePersonaId === p.id && <Icons.Check/>}</div>
-                      <PersonaAvatar assetId={p.avatarAssetId}  size={22} />
+                      <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId })}  size={22} />
                       <div className="min-w-0 truncate">{p.name}</div>
                     </button>
                   ))}
@@ -595,8 +595,8 @@ function ChatImpersonateAiPill({
   );
 }
 
-function PersonaAvatar({ assetId, size }: { assetId: string | null; size: number }) {
-  if (!assetId) {
+function PersonaAvatar({ src, size }: { src: string | null; size: number }) {
+  if (!src) {
     return (
       <div className="shrink-0 rounded-full bg-s3 flex items-center justify-center text-[calc(var(--ui-fs)-3px)] text-t2 font-ui" style={{ width: size, height: size }}>
         <Icons.User />
@@ -604,6 +604,6 @@ function PersonaAvatar({ assetId, size }: { assetId: string | null; size: number
     );
   }
   return (
-    <img src={avatarUrl(assetId)} alt="" className="shrink-0 rounded-full object-cover" style={{ width: size, height: size }} />
+    <img src={src} alt="" className="shrink-0 rounded-full object-cover" style={{ width: size, height: size }} />
   );
 }

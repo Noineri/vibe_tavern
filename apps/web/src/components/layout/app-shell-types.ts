@@ -42,4 +42,5 @@ export interface CharacterTab {
   chatId: ChatId | null;
   avatarAssetId: string | null;
   avatarCropJson: string | null;
+  avatarExt: string | null;
 }
