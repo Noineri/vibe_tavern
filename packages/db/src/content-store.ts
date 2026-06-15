@@ -1,3 +1,5 @@
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
 import type { FileStore, StorageFolder } from "./file-store.js";
 import { hashCanonicalJson } from "./file-store.js";
 
@@ -50,6 +52,8 @@ export class ContentStore {
 	/**
 	 * Read entity content from file. Try filename with ID first, then try any file starting with the ID.
 	 * This handles both old format (id.json) and new format (id.slug.json).
+	 *
+	 * Legacy flat-layout read; prefer readEntityFile for folder-resident entities.
 	 */
 	async readEntity<T>(folder: StorageFolder, entityId: string): Promise<T | null> {
 		const key = this.cacheKey(folder, entityId);
@@ -70,6 +74,9 @@ export class ContentStore {
 	/**
 	 * Write entity content to file with atomic tmp→rename.
 	 * Updates cache. Returns the content hash.
+	 *
+	 * Legacy flat-layout write (data/{folder}/{id}(.{slug}).json). Prefer
+	 * writeEntityFile for new folder-resident entities.
 	 */
 	async writeEntity(folder: StorageFolder, entityId: string, data: unknown, opts?: WriteEntityOptions): Promise<string> {
 		const path = this.resolvePath(folder, entityId, opts?.displayName);
@@ -144,6 +151,9 @@ export class ContentStore {
 	/**
 	 * Delete entity file from disk and evict from cache.
 	 * Tries both filename formats.
+	 *
+	 * Legacy flat-layout delete; prefer deleteEntityFolder for folder-resident
+	 * entities (which also removes original.json, avatar.*, and gallery/).
 	 */
 	async deleteEntity(folder: StorageFolder, entityId: string): Promise<void> {
 		// Try default path
@@ -156,6 +166,143 @@ export class ContentStore {
 		for (const key of this.textCache.keys()) {
 			if (key.startsWith(`${this.cacheKey(folder, entityId)}.`)) this.textCache.delete(key);
 		}
+	}
+
+	// ─── Folder-aware primitives ───────────────────────────────────────────
+	// Each entity lives in data/{folder}/{entityId}/ with named files inside
+	// (card.json, persona.json, original.json, avatar.{ext}, gallery/, ...).
+	// New code should prefer these over the flat writeEntity/readEntity/
+	// deleteEntity above, which remain only to read/serve legacy flat files
+	// during migration.
+
+	private resolveLeafPath(folder: StorageFolder, entityId: string, leafName: string): string {
+		return this._fileStore.resolvePath(folder, `${entityId}/${leafName}`);
+	}
+
+	/**
+	 * Write a named entity file inside its folder:
+	 * data/{folder}/{entityId}/{name}.json. Atomic (tmp→rename). Returns hash.
+	 */
+	async writeEntityFile(folder: StorageFolder, entityId: string, name: string, data: unknown): Promise<string> {
+		const path = this.resolveLeafPath(folder, entityId, `${name}.json`);
+		const hash = hashCanonicalJson(data);
+		await this._fileStore.writeJson(path, data);
+		this.cache.set(`${this.cacheKey(folder, entityId)}/${name}`, { hash, data });
+		return hash;
+	}
+
+	/** Read a named entity file: data/{folder}/{entityId}/{name}.json. Null if missing. */
+	async readEntityFile<T>(folder: StorageFolder, entityId: string, name: string): Promise<T | null> {
+		const key = `${this.cacheKey(folder, entityId)}/${name}`;
+		const cached = this.cache.get(key);
+		if (cached) return cached.data as T;
+		const path = this.resolveLeafPath(folder, entityId, `${name}.json`);
+		try {
+			const data = await this._fileStore.readJson<T>(path);
+			const hash = hashCanonicalJson(data);
+			this.cache.set(key, { hash, data });
+			return data;
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * Write a binary file inside an entity folder (avatar, gallery image, ...).
+	 * `leafName` includes the extension, e.g. "avatar.png". Returns the path.
+	 */
+	async writeBinary(folder: StorageFolder, entityId: string, leafName: string, data: Uint8Array): Promise<string> {
+		const path = this.resolveLeafPath(folder, entityId, leafName);
+		await this._fileStore.writeBinary(path, data);
+		return path;
+	}
+
+	/** Read a binary file inside an entity folder. Null if missing. `leafName` includes the ext. */
+	async readBinary(folder: StorageFolder, entityId: string, leafName: string): Promise<Buffer | null> {
+		const path = this.resolveLeafPath(folder, entityId, leafName);
+		if (!(await this._fileStore.pathExists(path))) return null;
+		return this._fileStore.readBinary(path);
+	}
+
+	/**
+	 * Delete the entire entity folder data/{folder}/{entityId}/ and everything
+	 * under it (card.json, original.json, avatar.*, gallery/). Evicts all cache
+	 * entries for this entity (flat key + nested-name keys). No-op if the folder
+	 * is missing. Legacy flat files at data/{folder}/{entityId}.json are a
+	 * separate path and are intentionally left in place (copy-forward policy).
+	 */
+	async deleteEntityFolder(folder: StorageFolder, entityId: string): Promise<void> {
+		const dirPath = this._fileStore.resolvePath(folder, entityId);
+		await this._fileStore.removeDir(dirPath);
+		const prefix = this.cacheKey(folder, entityId);
+		this.cache.delete(prefix);
+		for (const key of [...this.cache.keys()]) {
+			if (key.startsWith(`${prefix}/`)) this.cache.delete(key);
+		}
+		for (const key of [...this.textCache.keys()]) {
+			if (key === prefix || key.startsWith(`${prefix}.`) || key.startsWith(`${prefix}/`)) {
+				this.textCache.delete(key);
+			}
+		}
+	}
+
+	/** True if the entity folder data/{folder}/{entityId}/ exists on disk. */
+	async entityFolderExists(folder: StorageFolder, entityId: string): Promise<boolean> {
+		const dirPath = this._fileStore.resolvePath(folder, entityId);
+		return this._fileStore.pathExists(dirPath);
+	}
+
+	// ─── Legacy flat-file migration helpers ───────────────────────────────
+	// Pre-folder-layout entities live as flat data/{folder}/{id}(.{slug}).json.
+	// These helpers find and copy them into the folder layout WITHOUT deleting
+	// the source (copy-forward policy — single-user data-safety invariant).
+
+	/**
+	 * Find the legacy flat file for an entity, if any. Tries `{id}.json` first,
+	 * then any `{id}.{slug}.json`. Returns the absolute path or null. Never
+	 * matches the entity *folder* (`{id}/`) or unrelated ids sharing a prefix.
+	 */
+	async findLegacyFlatFile(folder: StorageFolder, entityId: string): Promise<string | null> {
+		const dir = join(this._fileStore.dataRoot, folder);
+		let entries: string[];
+		try {
+			entries = await readdir(dir);
+		} catch {
+			return null;
+		}
+		// Prefer the exact `{id}.json` then fall back to `{id}.{slug}.json`.
+		const exact = `${entityId}.json`;
+		let fallback: string | null = null;
+		for (const name of entries) {
+			if (name === exact) return join(dir, name);
+			if (name.endsWith(".json") && name.startsWith(`${entityId}.`)) {
+				// startsWith(`${id}.`) excludes the folder `{id}` (no dot) and ids
+				// that merely share a prefix (e.g. `char_1` vs `char_10`).
+				fallback ??= join(dir, name);
+			}
+		}
+		return fallback;
+	}
+
+	/**
+	 * Copy-forward migration of a single entity from flat file to folder.
+	 * Reads the legacy flat file → writes `{entityId}/{targetName}.json` →
+	 * **does NOT delete the source**. Returns `true` if a migration happened,
+	 * `false` if the folder already has the target file or there is no legacy
+	 * source to migrate from. Idempotent and safe to retry.
+	 */
+	async migrateFlatToFolder(folder: StorageFolder, entityId: string, targetName: string): Promise<boolean> {
+		// Already in folder — nothing to do.
+		const existing = await this.readEntityFile(folder, entityId, targetName);
+		if (existing !== null) return false;
+
+		const legacyPath = await this.findLegacyFlatFile(folder, entityId);
+		if (legacyPath === null) return false;
+
+		const data = await this._fileStore.readJson<unknown>(legacyPath);
+		await this.writeEntityFile(folder, entityId, targetName, data);
+		// Intentionally do NOT delete legacyPath — copy-forward policy.
+		return true;
 	}
 
 	/**

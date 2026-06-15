@@ -23,6 +23,11 @@ export const characters = sqliteTable('characters', {
   avatarAssetId: text('avatar_asset_id'),
   avatarFullAssetId: text('avatar_full_asset_id'),
   avatarCropJson: text('avatar_crop_json'),
+  // Folder-resident avatar extension (e.g. "png"). When set, the avatar lives
+  // at data/characters/{id}/avatar.{avatarExt} and is served via
+  // /api/characters/:id/avatar. Null = legacy avatar pointed at by avatarAssetId
+  // (flat asset), or no avatar. See CHARACTER_FOLDER_STORAGE_PLAN.
+  avatarExt: text('avatar_ext'),
   mesExampleMode: text('mes_example_mode').notNull().default('always'),
   mesExampleDepth: integer('mes_example_depth').notNull().default(4),
   status: text('status').notNull().default('active'),
@@ -42,6 +47,8 @@ export const personas = sqliteTable('personas', {
   avatarAssetId: text('avatar_asset_id'),
   avatarFullAssetId: text('avatar_full_asset_id'),
   avatarCropJson: text('avatar_crop_json'),
+  // Folder-resident avatar extension; see characters.avatarExt.
+  avatarExt: text('avatar_ext'),
   defaultForNewChats: integer('default_for_new_chats').notNull().default(0),
   contentHash: text('content_hash'),
   hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),

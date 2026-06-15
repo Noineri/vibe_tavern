@@ -218,6 +218,13 @@
       "when": 1781362575715,
       "tag": "0030_slow_hitman",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1781526017765,
+      "tag": "0031_grey_sumo",
+      "breakpoints": true
     }
   ]
 }

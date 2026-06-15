@@ -1,4 +1,4 @@
-import { rename } from "node:fs/promises";
+import { access, rename, rm } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
 
 export const STORAGE_FOLDERS = {
@@ -25,6 +25,14 @@ export interface FileStore {
 	readText(absolutePath: string): Promise<string>;
 	writeText(absolutePath: string, text: string): Promise<void>;
 	deleteFile(absolutePath: string): Promise<void>;
+	/** Write raw bytes atomically (tmp→rename). */
+	writeBinary(absolutePath: string, data: Uint8Array): Promise<void>;
+	/** Read raw bytes as a Buffer. Throws if the path is missing — check pathExists first. */
+	readBinary(absolutePath: string): Promise<Buffer>;
+	/** Recursively remove a directory (or a file). No-op if the path is missing. */
+	removeDir(absolutePath: string): Promise<void>;
+	/** True if a file or directory exists at the path. */
+	pathExists(absolutePath: string): Promise<boolean>;
 }
 
 function sortObjectKeys(_key: string, value: unknown): unknown {
@@ -119,6 +127,23 @@ export function createFileStore(dataRoot?: string): FileStore {
 		async deleteFile(absolutePath: string): Promise<void> {
 			const file = Bun.file(absolutePath);
 			if (await file.exists()) await file.delete();
+		},
+		writeBinary(absolutePath: string, data: Uint8Array): Promise<void> {
+			return writeLocked(writeLocks, absolutePath, data);
+		},
+		async readBinary(absolutePath: string): Promise<Buffer> {
+			return Buffer.from(await Bun.file(absolutePath).arrayBuffer());
+		},
+		async removeDir(absolutePath: string): Promise<void> {
+			// force:true makes removal a no-op when the path is missing.
+			await rm(absolutePath, { recursive: true, force: true });
+		},
+		pathExists(absolutePath: string): Promise<boolean> {
+			// access() resolves both files and directories; its "missing" failure
+			// is the expected negative result, not a swallowed real error.
+			return access(absolutePath)
+				.then(() => true)
+				.catch(() => false);
 		},
 	};
 }
