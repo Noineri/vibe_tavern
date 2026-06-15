@@ -1,6 +1,6 @@
 import type { ChatId } from "@vibe-tavern/domain";
 import type { AppSnapshot, PersonaRecord } from "./types.js";
-import { client } from "./client.js";
+import { client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { normalizeSnapshot } from "./normalize.js";
 
@@ -49,4 +49,26 @@ export async function duplicatePersona(personaId: string): Promise<PersonaRecord
 
 export async function setDefaultPersona(personaId: string): Promise<void> {
   await client.api.personas[":personaId"]["set-default"].$post({ param: { personaId } });
+}
+
+/**
+ * Upload an avatar to the persona's entity folder (POST /api/personas/:id/avatar).
+ * The backend writes {id}/avatar.{ext}, sets avatarExt, and clears the legacy
+ * avatarAssetId. Returns the stored extension.
+ */
+export async function uploadPersonaAvatar(personaId: string, file: File): Promise<{ avatarExt: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const baseUrl = getGatewayBaseUrl();
+  const token = getMobileToken();
+  const response = await fetch(`${baseUrl}/api/personas/${personaId}/avatar`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: formData,
+  });
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Avatar upload failed (${response.status}): ${errorBody}`);
+  }
+  return response.json();
 }

@@ -3,8 +3,7 @@ import type { ChatId } from "@vibe-tavern/domain";
 import { toast } from "sonner";
 import { getT } from "../i18n/locale-helpers.js";
 import {
-  uploadAsset,
-  updateCharacterAvatar,
+  uploadCharacterAvatar,
   type AppSnapshot,
   type AppCharacter,
   type AppPersona,
@@ -31,6 +30,7 @@ import {
   exportChatJsonlAction,
   exportPromptTraceAction,
 } from "../stores/api-actions/character-actions.js";
+import { fetchBootstrapAction } from "../stores/api-actions/bootstrap-actions.js";
 import {
   createPersonaAction,
   updatePersonaAction,
@@ -438,20 +438,12 @@ export function useCharacterController(): CharacterControllerActions {
 
       const characterId = result.snapshot?.character?.id;
 
-      // Upload avatar(s) if provided
+      // Upload avatar if provided (folder-resident route: single avatar,
+      // sets avatarExt, clears legacy avatarAssetId).
       if (avatarFile && characterId) {
         try {
-          const [croppedAsset, originalAsset] = await Promise.all([
-            uploadAsset(avatarFile),
-            avatarOriginalFile ? uploadAsset(avatarOriginalFile) : Promise.resolve(null),
-          ]);
-          const updatedSnapshot = await updateCharacterAvatar(
-            characterId,
-            result.activeChatId,
-            croppedAsset.assetId,
-            originalAsset?.assetId,
-          );
-          writeSnapshot(result.activeChatId as ChatId, updatedSnapshot);
+          await uploadCharacterAvatar(characterId, avatarFile);
+          await fetchBootstrapAction({ silent: true });
         } catch (err) {
           console.warn("Failed to upload avatar during character creation:", err);
           // createCharacterAction already synced the base snapshot

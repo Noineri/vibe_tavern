@@ -10,16 +10,15 @@ import { CustomTooltip } from "../shared/Tooltip.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { Checkbox } from "../shared/Checkbox.js";
 import { Modal } from "../shared/Modal.js";
-import { avatarUrl } from "../../lib/avatar.js";
+import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 
-import { uploadAsset } from "../../app-client.js";
+import { createPersona, uploadPersonaAvatar } from "../../app-client.js";
 import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useT } from "../../i18n/context.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { parseStPersonas, type StPersonaEntry } from "../../lib/st-persona-parser.js";
 import { toast } from "sonner";
 import { fetchBootstrapAction, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
-import { createPersona, updatePersona } from "../../app-client.js";
 
 interface PersonaListItem {
   id: string;
@@ -27,6 +26,7 @@ interface PersonaListItem {
   description: string;
   pronouns: string | null;
   avatarAssetId: string | null;
+  avatarExt: string | null;
   avatarCropJson: string | null;
   defaultForNewChats: boolean;
 }
@@ -172,16 +172,11 @@ export function PersonaModal(input: PersonaModalProps) {
         });
         if (shouldSetDefault) didSetDefault = true;
 
-        // Upload avatar if found
+        // Upload avatar to the persona's entity folder (sets avatarExt).
         const avatarFile = stAvatarFiles.current.get(entry.key);
         if (avatarFile) {
           try {
-            const asset = await uploadAsset(avatarFile);
-            await updatePersona(persona.id, {
-              name: persona.name,
-              description: persona.description,
-              avatarAssetId: asset.assetId,
-            });
+            await uploadPersonaAvatar(persona.id, avatarFile);
           } catch {
             // Avatar upload failure is non-critical
           }
@@ -258,15 +253,19 @@ export function PersonaModal(input: PersonaModalProps) {
   }
 
   function handleAvatarCropConfirm(result: AvatarCropResult): void {
+    if (!editingId) return;
+    const targetId = editingId;
     form.setValue("avatarPreview", pendingAvatar!.url);
     setAvatarUploading(true);
-    Promise.all([
-      uploadAsset(result.croppedFile),
-      uploadAsset(pendingAvatar!.file),
-    ])
-      .then(([croppedRes, originalRes]) => {
-        form.setValue("avatarAssetId", croppedRes.assetId, { shouldDirty: true });
-        form.setValue("avatarFullAssetId", originalRes.assetId, { shouldDirty: true });
+    // Folder-resident upload: a single (cropped) avatar is written to
+    // {id}/avatar.{ext}, avatarExt is set, and legacy avatarAssetId is cleared.
+    uploadPersonaAvatar(targetId, result.croppedFile)
+      .then(() => {
+        // Backend cleared avatarAssetId; null these so onSaveEdit won't re-send
+        // stale legacy ids (PATCH never touches avatarExt either way).
+        form.setValue("avatarAssetId", null, { shouldDirty: true });
+        form.setValue("avatarFullAssetId", null, { shouldDirty: true });
+        void fetchPersonasAction();
       })
       .catch(() => {
         form.setValue("avatarPreview", null);
@@ -299,8 +298,9 @@ export function PersonaModal(input: PersonaModalProps) {
   const editAvatarAssetId = form.watch("avatarAssetId");
   const editAvatarPreview = form.watch("avatarPreview");
 
+  const editingPersona = input.personas.find(p => p.id === editingId) ?? null;
   const editDisplayAvatar = editAvatarPreview
-    || (editAvatarAssetId ? avatarUrl(editAvatarAssetId) : null);
+    ?? (editingId ? resolveEntityAvatarUrl({ kind: "personas", id: editingId, avatarExt: editingPersona?.avatarExt ?? null, avatarAssetId: editAvatarAssetId }) : null);
   const editAvatarCropJson = form.watch("avatarCropJson");
 
   const PRONOUN_OPTIONS: { v: string; l: string }[] = [
@@ -316,7 +316,7 @@ export function PersonaModal(input: PersonaModalProps) {
   const renderCard = (persona: PersonaListItem) => {
     const isActive = input.activePersonaId === persona.id;
     const editingThis = editingId === persona.id;
-    const avatar = persona.avatarAssetId ? avatarUrl(persona.avatarAssetId) : null;
+    const avatar = resolveEntityAvatarUrl({ kind: "personas", id: persona.id, avatarExt: persona.avatarExt, avatarAssetId: persona.avatarAssetId });
 
     return (
       <div

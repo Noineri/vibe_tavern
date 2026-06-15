@@ -1,6 +1,6 @@
 import type { ChatId } from "@vibe-tavern/domain";
 import type { AppSnapshot, ImportJsonResponse } from "./types.js";
-import { client } from "./client.js";
+import { client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { normalizeSnapshot } from "./normalize.js";
 
@@ -91,4 +91,28 @@ export async function updateCharacterAvatar(
   const response = await client.api.characters[":characterId"].$patch({ param: { characterId }, json: payload });
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);
+}
+
+/**
+ * Upload an avatar to the character's entity folder (POST /api/characters/:id/avatar).
+ * The backend writes {id}/avatar.{ext}, sets avatarExt, and clears the legacy
+ * avatarAssetId. Returns the stored extension. The folder model stores a
+ * single avatar used for all display sizes — the cropped/full distinction only
+ * survives for legacy flat-asset avatars.
+ */
+export async function uploadCharacterAvatar(characterId: string, file: File): Promise<{ avatarExt: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const baseUrl = getGatewayBaseUrl();
+  const token = getMobileToken();
+  const response = await fetch(`${baseUrl}/api/characters/${characterId}/avatar`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: formData,
+  });
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Avatar upload failed (${response.status}): ${errorBody}`);
+  }
+  return response.json();
 }
