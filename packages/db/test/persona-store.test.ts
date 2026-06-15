@@ -115,4 +115,22 @@ describe("PersonaStore folder storage (B2)", () => {
 		const raw = JSON.parse(await readFile(join(dataRoot, PERSONAS, id, "persona.json"), "utf8"));
 		expect(raw.name).toBe("Orphan User");
 	});
+
+	// ── B3: avatarExt plumbing ────────────────────────────────────────────
+
+	test("create persists avatarExt and mapRow surfaces it", async () => {
+		const { store } = await setup();
+		const created = await store.create({ name: "Alex", avatarExt: "png" });
+		expect(created.avatarExt).toBe("png");
+		expect((await store.getById(created.id))?.avatarExt).toBe("png");
+	});
+
+	test("update writes avatarExt (including clearing to null)", async () => {
+		const { store } = await setup();
+		const created = await store.create({ name: "Alex", avatarExt: "png" });
+		await store.update(created.id, { avatarExt: "webp" });
+		expect((await store.getById(created.id))?.avatarExt).toBe("webp");
+		await store.update(created.id, { avatarExt: null });
+		expect((await store.getById(created.id))?.avatarExt).toBeNull();
+	});
 });

@@ -145,4 +145,40 @@ describe("CharacterStore folder storage (B1)", () => {
 		const raw = JSON.parse(await readFile(join(dataRoot, CHARS, id, "card.json"), "utf8"));
 		expect(raw.data.name).toBe("Orphan Hero");
 	});
+
+	// ── B3: avatarExt plumbing ────────────────────────────────────────────
+
+	test("create persists avatarExt and mapRow surfaces it", async () => {
+		const { store } = await setup();
+		const created = await store.create({ name: "Aria", avatarExt: "png" });
+		expect(created.avatarExt).toBe("png");
+		// round-trip through getById
+		expect((await store.getById(created.id))?.avatarExt).toBe("png");
+	});
+
+	test("update writes avatarExt (including clearing to null)", async () => {
+		const { store } = await setup();
+		const created = await store.create({ name: "Aria", avatarExt: "png" });
+		await store.update(created.id, { avatarExt: "webp" });
+		expect((await store.getById(created.id))?.avatarExt).toBe("webp");
+		await store.update(created.id, { avatarExt: null });
+		expect((await store.getById(created.id))?.avatarExt).toBeNull();
+	});
+
+	test("duplicate copies avatarExt column AND the folder avatar file", async () => {
+		const { dataRoot, content, store } = await setup();
+		const original = await store.create({ name: "Aria", avatarExt: "png" });
+		// seed a folder avatar for the original
+		await content.writeBinary(CHARS, original.id, "avatar.png", new Uint8Array([1, 2, 3]));
+
+		const copy = await store.duplicate(original.id);
+		expect(copy.avatarExt).toBe("png");
+		// copy has its OWN avatar file (separate bytes, not a shared reference)
+		const copyAvatar = await readFile(join(dataRoot, CHARS, copy.id, "avatar.png"));
+		expect(copyAvatar).toEqual(Buffer.from([1, 2, 3]));
+		// mutate the copy's avatar; original is untouched (separate file)
+		await content.writeBinary(CHARS, copy.id, "avatar.png", new Uint8Array([9, 9]));
+		const originalAvatar = await readFile(join(dataRoot, CHARS, original.id, "avatar.png"));
+		expect(originalAvatar).toEqual(Buffer.from([1, 2, 3]));
+	});
 });

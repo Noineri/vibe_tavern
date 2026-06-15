@@ -34,7 +34,9 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 	) => {
 		if (body.avatarAssetId !== undefined) {
 			const persona = await this.stores.personas.getById(personaId);
-			if (persona?.avatarAssetId && persona.avatarAssetId !== body.avatarAssetId) {
+			// Folder-resident avatar (avatarExt set) is handled by the folder
+			// lifecycle — skip flat cleanup.
+			if (!persona?.avatarExt && persona?.avatarAssetId && persona.avatarAssetId !== body.avatarAssetId) {
 				this.assetService.cleanup(persona.avatarAssetId);
 			}
 		}
@@ -46,7 +48,11 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 
 	deletePersona = async (personaId: string) => {
 		const persona = await this.stores.personas.getById(personaId);
-		if (persona?.avatarAssetId) this.assetService.cleanup(persona.avatarAssetId);
+		// Folder-resident avatar (avatarExt) is removed by the store's
+		// deleteEntityFolder; only legacy flat avatars need explicit cleanup.
+		if (!persona?.avatarExt && persona?.avatarAssetId) {
+			this.assetService.cleanup(persona.avatarAssetId);
+		}
 		await this.sessionRuntime.persona.delete(personaId);
 	};
 

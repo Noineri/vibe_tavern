@@ -14,6 +14,7 @@ export interface CreatePersonaData {
   avatarAssetId?: string | null;
   avatarFullAssetId?: string | null;
   avatarCropJson?: string | null;
+  avatarExt?: string | null;
   defaultForNewChats?: boolean;
 }
 
@@ -32,6 +33,8 @@ export interface Persona {
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;
+  /** Extension of the folder-resident avatar at {id}/avatar.{avatarExt}. Null = no folder avatar (legacy flat avatar via avatarAssetId, or none). */
+  avatarExt: string | null;
   defaultForNewChats: boolean;
   createdAt: string;
   updatedAt: string;
@@ -110,6 +113,7 @@ export class PersonaStore {
         avatarAssetId: data.avatarAssetId ?? null,
         avatarFullAssetId: data.avatarFullAssetId ?? null,
         avatarCropJson: data.avatarCropJson ?? null,
+        avatarExt: data.avatarExt ?? null,
         defaultForNewChats: data.defaultForNewChats ? 1 : 0,
         createdAt: now,
         updatedAt: now,
@@ -140,6 +144,7 @@ export class PersonaStore {
     if (data.avatarAssetId !== undefined) values.avatarAssetId = data.avatarAssetId;
     if (data.avatarFullAssetId !== undefined) values.avatarFullAssetId = data.avatarFullAssetId;
     if (data.avatarCropJson !== undefined) values.avatarCropJson = data.avatarCropJson;
+    if (data.avatarExt !== undefined) values.avatarExt = data.avatarExt;
     if (data.defaultForNewChats !== undefined) values.defaultForNewChats = data.defaultForNewChats ? 1 : 0;
 
     const [row] = await this.db
@@ -237,6 +242,7 @@ export class PersonaStore {
       avatarAssetId: row.avatarAssetId,
       avatarFullAssetId: row.avatarFullAssetId,
       avatarCropJson: row.avatarCropJson ?? null,
+      avatarExt: row.avatarExt ?? null,
       defaultForNewChats: row.defaultForNewChats === 1,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

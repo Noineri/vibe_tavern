@@ -1,4 +1,5 @@
 import type { StoreContainer } from "@vibe-tavern/db";
+import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 import {
 	brandId,
 	type ChatBranchId,
@@ -240,7 +241,16 @@ export class PersonaRuntime {
 			pronouns: source.pronouns,
 			avatarAssetId: source.avatarAssetId,
 			avatarFullAssetId: source.avatarFullAssetId,
+			avatarExt: source.avatarExt,
 		});
+
+		// Copy the folder-resident avatar (if any) into the duplicate's own folder.
+		if (source.avatarExt) {
+			const buf = await this.deps.stores.content.readBinary(STORAGE_FOLDERS.personas, source.id, `avatar.${source.avatarExt}`);
+			if (buf) {
+				await this.deps.stores.content.writeBinary(STORAGE_FOLDERS.personas, persona.id, `avatar.${source.avatarExt}`, new Uint8Array(buf));
+			}
+		}
 
 		// Duplicate persona-scoped lorebooks
 		const sourceLorebooks = await this.deps.stores.lorebooks.listLorebooksByScope("persona", personaId);
