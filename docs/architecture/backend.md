@@ -494,6 +494,8 @@ Fire-and-forget background task triggered after `appendAssistantReply()`:
 - Creates a new summary covering messages since the last summary's `summarizedTo`
 - Range capped at `lastMessagePosition - 1` (excludes last user message)
 
+The dedup-lock + error-boundary pattern used here is shared by all background LLM features via `BackgroundTaskLocks`. To add a new feature of this shape (summary, objective, tracker, badge, dream), see [Adding a feature](./adding-a-feature.md).
+
 ---
 
 ## Mobile Access
