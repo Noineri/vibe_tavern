@@ -7,7 +7,14 @@
    ══════════════════════════════════════════════════════════════ */
 :root.glass-purple {
   /* ─── Backgrounds (Глубокий ежевичный/ночной) ─── */
-  --bg: radial-gradient(circle at 50% 0%, oklch(0.18 0.02 290), oklch(0.13 0.015 285) 100%);
+  /* --bg is a SOLID color so it works as a background-color utility (bg-bg)
+     on inputs/cards and as an SVG fill (e.g. the sliders icon knob). The
+     radial gradient for the page lives separately in --page-bg and is applied
+     via the `background` shorthand on <body> (see styles.css); themes without
+     a gradient fall back to --bg. The value matches the gradient's lower end —
+     the dark blueberry that shows behind the chat area. */
+  --bg:       oklch(0.14 0.02 288);  /* deepest blueberry — solid, for utilities */
+  --page-bg:  radial-gradient(circle at 50% 0%, oklch(0.18 0.02 290), oklch(0.13 0.015 285) 100%);
   
   /* Плотные поверхности, чтобы не смешивать текст слоев */
   --surface:   oklch(0.19 0.015 290); 

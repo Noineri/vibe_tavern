@@ -97,7 +97,7 @@
 }
 
 
-html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
+html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overflow:hidden}
 ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 
 /* ── Sidebar icon button ── */
