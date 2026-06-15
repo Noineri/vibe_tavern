@@ -84,6 +84,8 @@ export interface Character {
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;
+  /** Extension of the folder-resident avatar at data/characters/{id}/avatar.{avatarExt}. Null = legacy flat avatar (avatarAssetId) or none. Backed by the CFS migration (C1+). */
+  avatarExt: string | null;
   status: "active" | "draft" | "archived";
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -113,6 +115,8 @@ export interface Persona {
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;
+  /** Extension of the folder-resident avatar at data/personas/{id}/avatar.{avatarExt}. Null = legacy flat avatar (avatarAssetId) or none. Backed by the CFS migration (C1+). */
+  avatarExt: string | null;
   defaultForNewChats: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;

@@ -61,4 +61,22 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 
 	setDefaultPersona = (personaId: string) =>
 		this.sessionRuntime.persona.setDefault(personaId);
+
+	uploadPersonaAvatar = async (personaId: string, file: File): Promise<{ avatarExt: string }> => {
+		const { ext } = await this.assetService.writePersonaAvatar(personaId, file);
+		await this.stores.personas.setFolderAvatar(personaId, ext);
+		return { avatarExt: ext };
+	};
+
+	servePersonaAvatar = async (personaId: string): Promise<Response | null> => {
+		const persona = await this.stores.personas.getById(personaId);
+		if (!persona) return null;
+		if (persona.avatarExt) {
+			return this.assetService.servePersonaAvatar(personaId, persona.avatarExt);
+		}
+		if (persona.avatarAssetId) {
+			return this.assetService.serve(persona.avatarAssetId);
+		}
+		return null;
+	};
 }
