@@ -115,6 +115,13 @@ export class AssetService {
   // character_assets.ext). Serve/load/delete take that stored ext directly — no
   // probing. Chat attachments keep using the flat upload/serve above.
 
+  /** MimeType derived from a stored extension, or null if unknown. Used by
+   *  describe paths that only have the ext (folder avatars) to build an
+   *  Attachment.mimeType for the vision ImagePart. */
+  mimeForExt(ext: string): string | null {
+    return EXT_TO_MIME[ext] ?? null;
+  }
+
   private requireContentStore(): ContentStore {
     if (!this.contentStore) {
       throw new Error("AssetService is not configured for folder storage (contentStore missing).");

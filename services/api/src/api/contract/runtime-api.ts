@@ -164,6 +164,9 @@ export interface CharacterRuntimeApi {
 	duplicateCharacter: (characterId: string) => Promise<ImportResult>;
 	uploadCharacterAvatar: (characterId: string, file: File) => Promise<{ avatarExt: string }>;
 	serveCharacterAvatar: (characterId: string) => Promise<Response | null>;
+
+	// Vision describe (A6) — uses the active provider profile's visionModel.
+	describeCharacterAvatar: (characterId: string) => Promise<{ description: string }>;
 }
 
 // ─── Character media gallery ───────────────────────────────────────
@@ -175,6 +178,9 @@ export interface CharacterAssetRuntimeApi {
 	updateCharacterAsset: (characterId: string, assetRowId: string, patch: { caption?: string; description?: string | null }) => Promise<CharacterAssetRecord>;
 	reorderCharacterAssets: (characterId: string, orderedIds: string[]) => Promise<void>;
 	deleteCharacterAsset: (characterId: string, assetRowId: string) => Promise<void>;
+
+	// Vision describe (A6) — uses the active provider profile's visionModel.
+	describeCharacterAssets: (characterId: string, assetRowIds?: string[]) => Promise<{ updated: string[]; failed: string[] }>;
 }
 
 // ─── Persona ─────────────────────────────────────────────────────────
@@ -188,6 +194,9 @@ export interface PersonaRuntimeApi {
 	setDefaultPersona: (personaId: string) => Promise<void>;
 	uploadPersonaAvatar: (personaId: string, file: File) => Promise<{ avatarExt: string }>;
 	servePersonaAvatar: (personaId: string) => Promise<Response | null>;
+
+	// Vision describe (A6) — uses the active provider profile's visionModel.
+	describePersonaAvatar: (personaId: string) => Promise<{ description: string }>;
 }
 
 // ─── Lorebook ────────────────────────────────────────────────────────

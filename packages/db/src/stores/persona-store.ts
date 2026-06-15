@@ -234,6 +234,25 @@ export class PersonaStore {
       .run();
   }
 
+  /**
+   * Point-update for the persona's media prompt-injection fields (avatar
+   * description + the include toggle). Does NOT touch other columns — used by
+   * the vision describe endpoint (A6) and the persona media settings UI.
+   * Mirrors CharacterStore.setMediaFields (persona has no gallery).
+   */
+  async setMediaFields(
+    id: string,
+    patch: {
+      avatarDescription?: string | null;
+      includeAvatarInPrompt?: boolean;
+    },
+  ): Promise<void> {
+    const values: Record<string, unknown> = { updatedAt: this.clock.now() };
+    if (patch.avatarDescription !== undefined) values.avatarDescription = patch.avatarDescription;
+    if (patch.includeAvatarInPrompt !== undefined) values.includeAvatarInPrompt = patch.includeAvatarInPrompt;
+    await this.db.update(personas).set(values).where(eq(personas.id, id)).run();
+  }
+
   async setDefault(id: string): Promise<void> {
     await this.db.transaction(async (tx) => {
       await tx.update(personas).set({ defaultForNewChats: 0 }).run();

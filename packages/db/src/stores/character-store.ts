@@ -374,6 +374,27 @@ export class CharacterStore {
       .run();
   }
 
+  /**
+   * Point-update for media prompt-injection fields (avatar description + the
+   * gallery/avatar include toggles). Does NOT rewrite {id}/card.json (unlike
+   * `update`) — these are display/prompt columns, not card content. Used by
+   * the vision describe endpoints (A6) and the media settings UI.
+   */
+  async setMediaFields(
+    id: string,
+    patch: {
+      avatarDescription?: string | null;
+      includeGalleryInPrompt?: boolean;
+      includeAvatarInPrompt?: boolean;
+    },
+  ): Promise<void> {
+    const values: Record<string, unknown> = { updatedAt: this.clock.now() };
+    if (patch.avatarDescription !== undefined) values.avatarDescription = patch.avatarDescription;
+    if (patch.includeGalleryInPrompt !== undefined) values.includeGalleryInPrompt = patch.includeGalleryInPrompt;
+    if (patch.includeAvatarInPrompt !== undefined) values.includeAvatarInPrompt = patch.includeAvatarInPrompt;
+    await this.db.update(characters).set(values).where(eq(characters.id, id)).run();
+  }
+
   // ─── Status operations ─────────────────────────────────────────────────────
 
   async archive(id: string): Promise<Character> {
