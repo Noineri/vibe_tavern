@@ -9,6 +9,12 @@ export const DEFAULT_PROMPT_ORDER: Record<string, number> = {
   charDescription: 30,
   charPersonality: 40,
   scenario: 50,
+  // Media injection (A7) — before chatHistory, after the character block.
+  // All < 100 → before_chat zone. Auto-registers as canvas built-ins via
+  // Object.keys(DEFAULT_PROMPT_ORDER) in prompt-canvas.ts.
+  characterAvatar: 52,
+  characterGallery: 54,
+  personaAvatar: 56,
   authorsNote: 60,
   enhanceDefinitions: 70,
   nsfw: 75,

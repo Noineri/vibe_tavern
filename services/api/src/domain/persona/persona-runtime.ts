@@ -30,6 +30,11 @@ export type PersonaRecord = {
 	avatarFullAssetId: string | null;
 	avatarCropJson: string | null;
 	avatarExt: string | null;
+	// ─── Media injection (A7) ────────────────────────────────────────────
+	/** Vision-generated appearance description of the avatar. Null = undescribed. */
+	avatarDescription: string | null;
+	/** Whether the avatar appearance is injected into the prompt. */
+	includeAvatarInPrompt: boolean;
 };
 
 export interface PersonaRuntimeDeps {

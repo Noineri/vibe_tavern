@@ -94,12 +94,30 @@ export interface PromptAssemblyContext {
     depthPrompt?: string | null;
     depthPromptDepth?: number | null;
     depthPromptRole?: "system" | "user" | "assistant" | null;
+    // ─── Media injection (A7) ────────────────────────────────────────
+    /** Vision-generated appearance description of the character's avatar.
+     *  Injected as a text layer only when `includeAvatarInPrompt` is set. */
+    avatarDescription?: string | null;
+    /** Whether to inject `avatarDescription` into the prompt. */
+    includeAvatarInPrompt?: boolean;
+    /** Described gallery rows (caller pre-filters to rows with a non-empty
+     *  `description` — undescribed rows are skipped before reaching here).
+     *  Injected as one combined text layer when `includeGalleryInPrompt` is set. */
+    gallery?: Array<{ caption: string; description: string }> | null;
+    /** Whether to inject `gallery` descriptions into the prompt. */
+    includeGalleryInPrompt?: boolean;
   };
   persona?: {
     id: string;
     name: string;
     description: string;
     pronouns?: string | null;
+    // ─── Media injection (A7) ────────────────────────────────────────
+    /** Vision-generated appearance description of the persona's avatar.
+     *  Injected as a text layer only when `includeAvatarInPrompt` is set. */
+    avatarDescription?: string | null;
+    /** Whether to inject `avatarDescription` into the prompt. */
+    includeAvatarInPrompt?: boolean;
   } | null;
   preset?: {
     id: string;

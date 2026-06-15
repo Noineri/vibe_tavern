@@ -40,6 +40,10 @@ export interface PromptAssemblyResolver {
     depthPromptRole?: string | null;
     creatorNotes?: string | null;
     subtitle?: string;
+    // Media (A7) — avatar/gallery appearance injection.
+    avatarDescription?: string | null;
+    includeAvatarInPrompt?: boolean;
+    includeGalleryInPrompt?: boolean;
   }>;
   getPersona(
     personaId: string,
@@ -47,6 +51,9 @@ export interface PromptAssemblyResolver {
       id: string;
       name: string;
       description: string;
+      // Media (A7) — avatar appearance injection.
+      avatarDescription?: string | null;
+      includeAvatarInPrompt?: boolean;
     } | null>;
   getPromptPreset(
     presetId: string,
@@ -216,6 +223,15 @@ export class PromptAssemblyService {
     // Set model hint so estimateTokens uses the model-specific tokenizer
     setModelHint(input.model);
 
+    // ─── A7: media context — gallery descriptions (one read, only when the
+    // character has gallery injection enabled). Pre-filter to described rows:
+    // undescribed images carry no prompt value and would emit empty entries.
+    const gallery = character.includeGalleryInPrompt
+      ? (await this.stores.characterAssets.listByCharacter(character.id))
+          .filter((row) => row.description?.trim())
+          .map((row) => ({ caption: row.caption || `gallery-${row.id}`, description: row.description!.trim() }))
+      : null;
+
     const result = assemblePrompt({
       identity: {
         chatId: chat.id as ChatId,
@@ -234,6 +250,11 @@ export class PromptAssemblyService {
         depthPrompt: character.depthPrompt,
         depthPromptDepth: character.depthPromptDepth,
         depthPromptRole: (character.depthPromptRole as "system" | "user" | "assistant") ?? "system",
+        // Media (A7) — avatar/gallery appearance text injection.
+        avatarDescription: character.avatarDescription,
+        includeAvatarInPrompt: character.includeAvatarInPrompt,
+        gallery,
+        includeGalleryInPrompt: character.includeGalleryInPrompt,
       },
       persona,
       preset: promptPreset
