@@ -274,7 +274,7 @@ export function LoreEntryEditor({
         >
           <span className="text-[10px]">{advancedOpen ? "▲" : "▼"}</span>
           {advancedOpen
-            ? t("lore_cancel_edit")
+            ? t("lore_advanced_collapse")
             : t("lore_advanced_settings")}
         </button>
 
