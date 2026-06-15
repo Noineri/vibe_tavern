@@ -91,11 +91,19 @@ export class CharacterStore {
     if (!row) return null;
     const char = this.mapRow(row);
 
-    // Lazy migration: if not yet on disk, write now
+    // Lazy migration: if not yet on disk, copy-forward from a legacy flat
+    // file into {id}/card.json when one exists, otherwise write fresh from
+    // the DB row. Either way the file lands in the per-entity folder.
     if (this.content && !row.hasFileOnDisk) {
-      const fileData = this.toFileData(char);
-      const displayName = char.name || char.slug;
-      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, id, fileData, { displayName });
+      const migrated = await this.content.migrateFlatToFolder(STORAGE_FOLDERS.characters, id, 'card');
+      let hash: string;
+      if (migrated) {
+        const copied = await this.content.readEntityFile<unknown>(STORAGE_FOLDERS.characters, id, 'card');
+        hash = this.content.hashContent(copied);
+      } else {
+        const fileData = this.toFileData(char);
+        hash = await this.content.writeEntityFile(STORAGE_FOLDERS.characters, id, 'card', fileData);
+      }
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -165,11 +173,10 @@ export class CharacterStore {
 
     const char = this.mapRow(row!);
 
-    // Dual write: persist content to file store
+    // Dual write: persist content to {id}/card.json in the file store
     if (this.content) {
       const fileData = this.toFileData(char);
-      const displayName = char.name || char.slug;
-      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, id, fileData, { displayName });
+      const hash = await this.content.writeEntityFile(STORAGE_FOLDERS.characters, id, 'card', fileData);
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -218,11 +225,10 @@ export class CharacterStore {
     }
     const updated = this.mapRow(row);
 
-    // Dual write: update content file
+    // Dual write: update {id}/card.json in the file store
     if (this.content) {
       const fileData = this.toFileData(updated);
-      const displayName = updated.name || updated.slug;
-      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, id, fileData, { displayName });
+      const hash = await this.content.writeEntityFile(STORAGE_FOLDERS.characters, id, 'card', fileData);
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -236,7 +242,11 @@ export class CharacterStore {
   async delete(id: string): Promise<void> {
     await this.db.delete(characters).where(eq(characters.id, id)).run();
     if (this.content) {
-      await this.content.deleteEntity(STORAGE_FOLDERS.characters, id);
+      // Remove the whole per-entity folder (card.json, original.json,
+      // avatar.*, future gallery/). Legacy flat files ({id}.json /
+      // {id}.{slug}.json) are intentionally left in place — copy-forward
+      // policy; they become harmless orphans.
+      await this.content.deleteEntityFolder(STORAGE_FOLDERS.characters, id);
     }
   }
 
@@ -282,11 +292,10 @@ export class CharacterStore {
 
     const copy = this.mapRow(row!);
 
-    // Dual write: persist copy to file store
+    // Dual write: persist copy to {newId}/card.json in the file store
     if (this.content) {
       const fileData = this.toFileData(copy);
-      const displayName = copy.name || copy.slug;
-      const hash = await this.content.writeEntity(STORAGE_FOLDERS.characters, newId, fileData, { displayName });
+      const hash = await this.content.writeEntityFile(STORAGE_FOLDERS.characters, newId, 'card', fileData);
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
