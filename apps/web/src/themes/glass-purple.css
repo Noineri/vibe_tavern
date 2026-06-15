@@ -1,0 +1,97 @@
+/* ══════════════════════════════════════════════════════════════
+   Mystic Dusk Theme (Amethyst, Gold & Mint)
+   Роскошная, многослойная палитра для комфортного чтения.
+   База: глубокий ежевичный/аметистовый.
+   Текст: мягкий кремовый.
+   Акценты: золото (главный) и мята (детали).
+   ══════════════════════════════════════════════════════════════ */
+:root.glass-purple {
+  /* ─── Backgrounds (Глубокий ежевичный/ночной) ─── */
+  --bg: radial-gradient(circle at 50% 0%, oklch(0.18 0.02 290), oklch(0.13 0.015 285) 100%);
+  
+  /* Плотные поверхности, чтобы не смешивать текст слоев */
+  --surface:   oklch(0.19 0.015 290); 
+  --s2:        oklch(0.23 0.018 290); 
+  --s3:        oklch(0.27 0.020 290); 
+
+  /* ─── Borders (Едва заметный сливовый отлив) ─── */
+  --border:    oklch(0.33 0.025 290); 
+  --border2:   oklch(0.40 0.030 290); 
+
+  /* ─── Text (Теплый кремовый для отдыха глаз) ─── */
+  --t1:        oklch(0.88 0.020 80);   /* Основной кремовый текст */
+  --t2:        oklch(0.78 0.025 80);   /* Вторичный кремово-персиковый */
+  --t3:        oklch(0.60 0.030 290);  /* Приглушенный лавандовый для неактивных элементов */
+  --t4:        oklch(0.45 0.030 290);  
+
+  /* ─── Message text ─── */
+  --msg-t1:    oklch(0.88 0.020 80);
+  --msg-t2:    oklch(0.78 0.025 80);
+
+  /* ─── Text selection (Мятное свечение) ─── */
+  --sel-bg:    oklch(0.80 0.10 160 / 25%); 
+  --sel-text:  oklch(0.98 0.02 160);
+
+  /* ─── Accent (Нежный персиковый) ─── */
+  --accent:       oklch(0.72 0.14 45);       
+  --accent-t:     oklch(0.82 0.12 45);       
+  --accent-dim:   oklch(0.72 0.14 45 / 15%); 
+  --accent-hover: oklch(0.72 0.14 45 / 25%); 
+
+  /* ─── User message background (Пыльно-розовый/персиковый подтон) ─── */
+  --user-bg:   oklch(0.23 0.025 330); 
+
+  /* ─── Danger (Пыльная роза / мягкий красный) ─── */
+  --danger:      oklch(0.65 0.15 15);    
+  --danger-dim:  oklch(0.65 0.15 15 / 15%); 
+  --danger-text: oklch(0.80 0.10 15);    
+
+  /* ─── Success (Магический мятный) ─── */
+  --success:      oklch(0.75 0.12 160);  
+  --success-dim:  oklch(0.75 0.12 160 / 15%);
+  --success-text: oklch(0.85 0.10 160);  
+
+  /* ─── Info (Приглушенный голубой/циан) ─── */
+  --info:      oklch(0.70 0.10 230);     
+  --info-dim:  oklch(0.70 0.10 230 / 15%);
+  --info-text: oklch(0.85 0.08 230);     
+
+  /* ─── Warning (Золото/Персик) ─── */
+  --warning:      oklch(0.75 0.12 75);   
+  --warning-dim:  oklch(0.75 0.12 75 / 15%);
+  --warning-text: oklch(0.85 0.10 75);   
+
+  /* ─── On-color text (Для кнопок) ─── */
+  --on-accent: oklch(0.15 0.02 290); /* Темный текст на золотых кнопках для контраста */
+  --on-danger: oklch(0.95 0.01 285);
+
+  /* ─── Shadows ─── */
+  --shadow-sm: 0 4px 16px oklch(0 0 0 / 30%);
+  --shadow-md: 0 12px 28px oklch(0 0 0 / 45%);
+  --shadow-lg: 0 24px 60px oklch(0 0 0 / 55%);
+  --shadow-xl: 0 8px 40px oklch(0 0 0 / 50%);
+
+  /* ─── Markdown inline sizes ─── */
+  --md-fs-italic:       calc(var(--mfs) + 1px);
+  --md-fs-bold-italic:  calc(var(--mfs) + 1px);
+
+  /* ─── Markdown inline colors (Синтез палитры) ─── */
+  --md-italic:       oklch(0.75 0.08 240);  /* Мягкий голубой курсив */
+  --md-bold:         oklch(0.65 0.07 160);  /* Темно-мятный полужирный */
+  --md-bold-italic:  oklch(0.72 0.14 45);   /* Персиковый акцент */
+  --md-quoted:       oklch(0.72 0.14 45);   /* Персиковые цитаты (в цвет кнопок) */
+
+  /* ─── Syntax highlighting (Адаптация под новую палитру) ─── */
+  --syn-bg:          transparent;
+  --syn-keyword:     oklch(0.75 0.10 300);  /* Фиолетовый */
+  --syn-string:      oklch(0.80 0.10 160);  /* Мятный */
+  --syn-number:      oklch(0.80 0.10 40);   /* Персиковый */
+  --syn-comment:     var(--t3);
+  --syn-variable:    var(--t1);
+  --syn-property:    oklch(0.80 0.12 75);   /* Золотой */
+  --syn-operator:    oklch(0.75 0.10 320);  /* Розовый */
+  --syn-punctuation: var(--t2);
+  --syn-bool:        oklch(0.80 0.12 75);   
+  --syn-null:        oklch(0.80 0.10 40);   
+  --syn-function:    oklch(0.75 0.10 230);  /* Голубой */
+}
