@@ -876,6 +876,7 @@
   "delete_entry_confirm": "Delete Entry",
   "delete_entry_msg": "This will delete this lorebook entry.",
   "lore_cancel_edit": "Cancel",
+  "lore_advanced_collapse": "Collapse",
   "lore_no_entries": "No entries yet",
   "lore_add_entry": "Add Entry",
   "lore_duplicate": "Duplicate",

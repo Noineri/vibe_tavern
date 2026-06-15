@@ -876,6 +876,7 @@
   "delete_entry_confirm": "Удалить запись",
   "delete_entry_msg": "Это удалит запись из лорбука.",
   "lore_cancel_edit": "Отмена",
+  "lore_advanced_collapse": "Свернуть",
   "lore_no_entries": "Пока нет записей",
   "lore_add_entry": "Добавить запись",
   "lore_duplicate": "Дублировать",
