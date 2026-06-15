@@ -11,6 +11,7 @@ type Brand<TBrand extends string> = string & { readonly __brand: TBrand };
 
 export type CharacterId = Brand<"CharacterId">;
 export type CharacterVersionId = Brand<"CharacterVersionId">;
+export type CharacterAssetId = Brand<"CharacterAssetId">;
 export type PersonaId = Brand<"PersonaId">;
 export type LorebookId = Brand<"LorebookId">;
 export type LoreEntryId = Brand<"LoreEntryId">;
