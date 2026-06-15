@@ -28,6 +28,10 @@ export const characters = sqliteTable('characters', {
   // /api/characters/:id/avatar. Null = legacy avatar pointed at by avatarAssetId
   // (flat asset), or no avatar. See CHARACTER_FOLDER_STORAGE_PLAN.
   avatarExt: text('avatar_ext'),
+  // Media gallery / avatar-appearance prompt injection (MEDIA_GALLERY_BACKEND_PLAN).
+  includeGalleryInPrompt: integer('include_gallery_in_prompt', { mode: 'boolean' }).notNull().default(false),
+  includeAvatarInPrompt: integer('include_avatar_in_prompt', { mode: 'boolean' }).notNull().default(false),
+  avatarDescription: text('avatar_description'),
   mesExampleMode: text('mes_example_mode').notNull().default('always'),
   mesExampleDepth: integer('mes_example_depth').notNull().default(4),
   status: text('status').notNull().default('active'),
@@ -49,11 +53,31 @@ export const personas = sqliteTable('personas', {
   avatarCropJson: text('avatar_crop_json'),
   // Folder-resident avatar extension; see characters.avatarExt.
   avatarExt: text('avatar_ext'),
+  // Avatar-appearance prompt injection (MEDIA_GALLERY_BACKEND_PLAN).
+  includeAvatarInPrompt: integer('include_avatar_in_prompt', { mode: 'boolean' }).notNull().default(false),
+  avatarDescription: text('avatar_description'),
   defaultForNewChats: integer('default_for_new_chats').notNull().default(0),
   contentHash: text('content_hash'),
   hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
+});
+
+// ─── character assets (media gallery) ───────────────────────────────────────
+// Folder-resident gallery images: data/characters/{characterId}/gallery/{id}.{ext}.
+// The row `id` IS the filename leaf; there is no flat assetId. `ext` + `mimeType`
+// are stored per row so serve/vision-load read them directly. Cascade-deleted
+// with the character (FK) and the folder dies with deleteEntityFolder.
+// See MEDIA_GALLERY_BACKEND_PLAN.md.
+export const characterAssets = sqliteTable('character_assets', {
+  id: text('id').primaryKey(),
+  characterId: text('character_id').notNull().references(() => characters.id, { onDelete: 'cascade' }),
+  ext: text('ext').notNull(),
+  mimeType: text('mime_type').notNull(),
+  caption: text('caption').notNull().default(''),
+  description: text('description'),
+  order: integer('order').notNull().default(0),
+  createdAt: text('created_at').notNull(),
 });
 
 // ─── chats ─────────────────────────────────────────────────────────────────────
