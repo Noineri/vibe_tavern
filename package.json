@@ -19,6 +19,7 @@
     "build:standalone": "bun scripts/build-standalone.ts",
     "build:android-arm64": "bun scripts/build-android-arm64.ts",
     "build:linux-dist": "bun scripts/build-linux-dist.ts",
+    "build:windows-dist": "bun scripts/build-windows-dist.ts",
     "build:installer": "bun scripts/build-installer.ts",
     "dev": "bun run build && bun services/api/src/server/prod-server.ts",
     "typecheck": "bun run --filter '*' typecheck",
