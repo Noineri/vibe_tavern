@@ -59,10 +59,18 @@ export class PersonaStore {
     const row = await this.db.select().from(personas).where(eq(personas.id, id)).get();
     if (!row) return null;
 
-    // Lazy migration: generate file if it doesn't exist on disk
+    // Lazy migration: copy-forward from a legacy flat file into {id}/persona.json
+    // when one exists, otherwise write fresh from the DB row.
     if (this.content && !row.hasFileOnDisk) {
-      const fileData = this.toFilePayload(row);
-      const hash = await this.content.writeEntity(STORAGE_FOLDERS.personas, id, fileData);
+      const migrated = await this.content.migrateFlatToFolder(STORAGE_FOLDERS.personas, id, 'persona');
+      let hash: string;
+      if (migrated) {
+        const copied = await this.content.readEntityFile<unknown>(STORAGE_FOLDERS.personas, id, 'persona');
+        hash = this.content.hashContent(copied);
+      } else {
+        const fileData = this.toFilePayload(row);
+        hash = await this.content.writeEntityFile(STORAGE_FOLDERS.personas, id, 'persona', fileData);
+      }
       await this.db.update(personas)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
         .where(eq(personas.id, id))
@@ -108,10 +116,10 @@ export class PersonaStore {
       })
       .returning();
 
-    // Dual-write: write canonical JSON file
+    // Dual-write: write canonical {id}/persona.json
     if (this.content) {
       const fileData = this.toFilePayload(row!);
-      const hash = await this.content.writeEntity(STORAGE_FOLDERS.personas, id, fileData);
+      const hash = await this.content.writeEntityFile(STORAGE_FOLDERS.personas, id, 'persona', fileData);
       await this.db.update(personas)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
         .where(eq(personas.id, id))
@@ -144,10 +152,10 @@ export class PersonaStore {
       throw new Error(`Persona '${id}' not found after update`);
     }
 
-    // Dual-write: update canonical JSON file
+    // Dual-write: update canonical {id}/persona.json
     if (this.content) {
       const fileData = this.toFilePayload(row);
-      const hash = await this.content.writeEntity(STORAGE_FOLDERS.personas, id, fileData);
+      const hash = await this.content.writeEntityFile(STORAGE_FOLDERS.personas, id, 'persona', fileData);
       await this.db.update(personas)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
         .where(eq(personas.id, id))
@@ -168,9 +176,10 @@ export class PersonaStore {
       throw new Error('Cannot delete the last persona');
     }
 
-    // Delete file from disk
+    // Remove the whole per-entity folder ({id}/persona.json, future avatar.*).
+    // Legacy flat {id}.json is left in place (copy-forward; harmless orphan).
     if (this.content) {
-      await this.content.deleteEntity(STORAGE_FOLDERS.personas, id);
+      await this.content.deleteEntityFolder(STORAGE_FOLDERS.personas, id);
     }
 
     await this.db.delete(personas).where(eq(personas.id, id)).run();
