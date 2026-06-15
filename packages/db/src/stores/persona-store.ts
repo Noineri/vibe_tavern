@@ -3,7 +3,7 @@ import { personas } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import type { ContentStore } from '../content-store.js';
-import { STORAGE_FOLDERS } from '../file-store.js';
+import { STORAGE_FOLDERS, IMAGE_EXTENSIONS } from '../file-store.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -61,6 +61,7 @@ export class PersonaStore {
   async getById(id: string): Promise<Persona | null> {
     const row = await this.db.select().from(personas).where(eq(personas.id, id)).get();
     if (!row) return null;
+    const persona = this.mapRow(row);
 
     // Lazy migration: copy-forward from a legacy flat file into {id}/persona.json
     // when one exists, otherwise write fresh from the DB row.
@@ -80,7 +81,29 @@ export class PersonaStore {
         .run();
     }
 
-    return this.mapRow(row);
+    // Avatar lazy migration (B4): legacy flat avatar → {id}/avatar.{ext}.
+    // See CharacterStore.getById for full rationale (copy-forward, null on
+    // missing flat asset, idempotent). Independent of the card block above —
+    // runs whenever avatarExt is null and avatarAssetId is set.
+    if (this.content && !row.avatarExt && row.avatarAssetId) {
+      const ext = await this.content.copyAssetToEntityFolder(
+        row.avatarAssetId,
+        STORAGE_FOLDERS.personas,
+        id,
+        'avatar',
+        IMAGE_EXTENSIONS,
+      );
+      if (ext) {
+        await this.db.update(personas)
+          .set({ avatarExt: ext, avatarAssetId: null })
+          .where(eq(personas.id, id))
+          .run();
+        persona.avatarExt = ext;
+        persona.avatarAssetId = null;
+      }
+    }
+
+    return persona;
   }
 
   async listAll(): Promise<Persona[]> {

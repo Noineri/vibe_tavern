@@ -16,6 +16,13 @@ export const STORAGE_FOLDERS = {
 export type StorageFolder =
 	(typeof STORAGE_FOLDERS)[keyof typeof STORAGE_FOLDERS];
 
+/**
+ * Image extensions probed when locating a flat asset file on disk
+ * (data/assets/{assetId}.{ext}). Asset ids never encode the ext, so the ext is
+ * discovered by probe at migration time. Ordered by commonality.
+ */
+export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp"] as const;
+
 export interface FileStore {
 	readonly dataRoot: string;
 	resolvePath(folder: StorageFolder, relativePath: string): string;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq, sql } from "drizzle-orm";
@@ -132,5 +132,49 @@ describe("PersonaStore folder storage (B2)", () => {
 		expect((await store.getById(created.id))?.avatarExt).toBe("webp");
 		await store.update(created.id, { avatarExt: null });
 		expect((await store.getById(created.id))?.avatarExt).toBeNull();
+	});
+
+	// ── B4: lazy avatar migration in getById ───────────────────────────────
+
+	test("getById lazy-migrates a legacy flat avatar into {id}/avatar.{ext} and clears avatarAssetId", async () => {
+		const { dataRoot, db, store } = await setup();
+		const id = "pers_ava_1";
+		const assetId = "asset_test_pava1";
+		await mkdir(join(dataRoot, "assets"), { recursive: true });
+		const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+		await Bun.write(join(dataRoot, "assets", `${assetId}.png`), bytes);
+		await db.run(sql`INSERT INTO personas (id, name, description, pronouns, default_for_new_chats, has_file_on_disk, avatar_asset_id, avatar_ext, created_at, updated_at)
+			 VALUES (${id}, ${"Ava User"}, '', NULL, 0, 1, ${assetId}, NULL, ${fixedClock.now()}, ${fixedClock.now()})`);
+
+		const fetched = await store.getById(id);
+		expect(fetched?.avatarExt).toBe("png");
+		expect(fetched?.avatarAssetId).toBeNull();
+
+		const copied = await readFile(join(dataRoot, PERSONAS, id, "avatar.png"));
+		expect(new Uint8Array(copied)).toEqual(bytes);
+
+		// legacy flat asset still on disk (copy-forward)
+		const legacy = await readFile(join(dataRoot, "assets", `${assetId}.png`));
+		expect(new Uint8Array(legacy)).toEqual(bytes);
+
+		const row = db.select({ ext: personasTable.avatarExt, aid: personasTable.avatarAssetId }).from(personasTable).where(eq(personasTable.id, id)).get();
+		expect(row?.ext).toBe("png");
+		expect(row?.aid).toBeNull();
+
+		// idempotent
+		await store.getById(id);
+		const row2 = db.select({ ext: personasTable.avatarExt }).from(personasTable).where(eq(personasTable.id, id)).get();
+		expect(row2?.ext).toBe("png");
+	});
+
+	test("getById leaves avatarAssetId as-is when the flat asset is missing (no throw)", async () => {
+		const { db, store } = await setup();
+		const id = "pers_ava_2";
+		await db.run(sql`INSERT INTO personas (id, name, description, pronouns, default_for_new_chats, has_file_on_disk, avatar_asset_id, avatar_ext, created_at, updated_at)
+			 VALUES (${id}, ${"NoAva User"}, '', NULL, 0, 1, ${"asset_gone"}, NULL, ${fixedClock.now()}, ${fixedClock.now()})`);
+
+		const fetched = await store.getById(id);
+		expect(fetched?.avatarExt).toBeNull();
+		expect(fetched?.avatarAssetId).toBe("asset_gone");
 	});
 });
