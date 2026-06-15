@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "./themes/dark.css";
 @import "./themes/light.css";
+@import "./themes/glass-purple.css";
 
 /* ─── Font faces ─── */
 @font-face {
