@@ -29,6 +29,7 @@ export type PersonaRecord = {
 	avatarAssetId: string | null;
 	avatarFullAssetId: string | null;
 	avatarCropJson: string | null;
+	avatarExt: string | null;
 };
 
 export interface PersonaRuntimeDeps {
@@ -52,6 +53,7 @@ export class PersonaRuntime {
 		avatarAssetId: string | null;
 		avatarFullAssetId: string | null;
 		avatarCropJson: string | null;
+		avatarExt: string | null;
 		defaultForNewChats: boolean;
 	}>> {
 		const personas = await this.deps.stores.personas.listAll();
@@ -63,6 +65,7 @@ export class PersonaRuntime {
 			avatarAssetId: p.avatarAssetId,
 			avatarFullAssetId: p.avatarFullAssetId,
 			avatarCropJson: p.avatarCropJson,
+			avatarExt: p.avatarExt,
 			defaultForNewChats: p.defaultForNewChats,
 		}));
 	}
@@ -80,6 +83,7 @@ export class PersonaRuntime {
 		avatarAssetId: string | null;
 		avatarFullAssetId: string | null;
 		avatarCropJson: string | null;
+		avatarExt: string | null;
 		defaultForNewChats: boolean;
 	}> {
 		const trimmedName = (input.name ?? "").trim();
@@ -101,6 +105,7 @@ export class PersonaRuntime {
 			avatarAssetId: persona.avatarAssetId,
 			avatarFullAssetId: persona.avatarFullAssetId,
 			avatarCropJson: persona.avatarCropJson,
+			avatarExt: persona.avatarExt,
 			defaultForNewChats: persona.defaultForNewChats,
 		};
 	}
@@ -228,6 +233,7 @@ export class PersonaRuntime {
 		pronouns: string | null;
 		avatarAssetId: string | null;
 		avatarFullAssetId: string | null;
+		avatarExt: string | null;
 		defaultForNewChats: boolean;
 	}> {
 		const source = await this.deps.stores.personas.getById(brandId<PersonaId>(personaId));
@@ -313,6 +319,7 @@ export class PersonaRuntime {
 			pronouns: persona.pronouns,
 			avatarAssetId: persona.avatarAssetId,
 			avatarFullAssetId: persona.avatarFullAssetId,
+			avatarExt: persona.avatarExt,
 			defaultForNewChats: persona.defaultForNewChats,
 		};
 	}

@@ -32,6 +32,8 @@ export type CharacterRecord = {
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;
+  /** Extension of the folder-resident avatar at {id}/avatar.{avatarExt}. Null = legacy flat avatar (avatarAssetId) or none. Frontend uses this to pick the avatar URL (C2). */
+  avatarExt: string | null;
 };
 
 export function toCharacterRecord(
@@ -77,6 +79,7 @@ export function toCharacterRecord(
     avatarAssetId: character.avatarAssetId,
     avatarFullAssetId: character.avatarFullAssetId,
     avatarCropJson: character.avatarCropJson,
+    avatarExt: character.avatarExt,
   };
 }
 

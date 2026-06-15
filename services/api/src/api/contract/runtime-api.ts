@@ -52,6 +52,7 @@ interface PersonaRecord {
 	avatarAssetId: string | null;
 	avatarFullAssetId: string | null;
 	avatarCropJson: string | null;
+	avatarExt: string | null;
 	defaultForNewChats: boolean;
 }
 
@@ -63,6 +64,7 @@ interface PersonaDuplicateRecord {
 	pronouns: string | null;
 	avatarAssetId: string | null;
 	avatarFullAssetId: string | null;
+	avatarExt: string | null;
 	defaultForNewChats: boolean;
 }
 
@@ -148,6 +150,8 @@ export interface CharacterRuntimeApi {
 	deleteCharacter: (characterId: string) => Promise<void>;
 	exportCharacter: (characterId: string) => Promise<Record<string, unknown>>;
 	duplicateCharacter: (characterId: string) => Promise<ImportResult>;
+	uploadCharacterAvatar: (characterId: string, file: File) => Promise<{ avatarExt: string }>;
+	serveCharacterAvatar: (characterId: string) => Promise<Response | null>;
 }
 
 // ─── Persona ─────────────────────────────────────────────────────────
@@ -159,6 +163,8 @@ export interface PersonaRuntimeApi {
 	deletePersona: (personaId: string) => Promise<void>;
 	duplicatePersona: (personaId: string) => Promise<PersonaDuplicateRecord>;
 	setDefaultPersona: (personaId: string) => Promise<void>;
+	uploadPersonaAvatar: (personaId: string, file: File) => Promise<{ avatarExt: string }>;
+	servePersonaAvatar: (personaId: string) => Promise<Response | null>;
 }
 
 // ─── Lorebook ────────────────────────────────────────────────────────

@@ -348,6 +348,22 @@ export class CharacterStore {
     return copy;
   }
 
+  // ─── Avatar ────────────────────────────────────────────────────────────────
+
+  /**
+   * Point update of the folder-resident avatar: sets `avatarExt` and clears
+   * the legacy `avatarAssetId` in a single UPDATE. Does NOT rewrite
+   * {id}/card.json (avatar upload must not touch the card — see C1 plan).
+   * Use after writing {id}/avatar.{ext} bytes out-of-band (AssetService).
+   */
+  async setFolderAvatar(id: string, ext: string): Promise<void> {
+    await this.db
+      .update(characters)
+      .set({ avatarExt: ext, avatarAssetId: null, updatedAt: this.clock.now() })
+      .where(eq(characters.id, id))
+      .run();
+  }
+
   // ─── Status operations ─────────────────────────────────────────────────────
 
   async archive(id: string): Promise<Character> {

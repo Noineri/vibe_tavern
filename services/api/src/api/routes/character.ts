@@ -52,5 +52,26 @@ export function createCharacterRoutes(runtime: CharacterRuntimeApi) {
     .post("/api/characters/:characterId/duplicate", async (c) => {
       return c.json(await runtime.duplicateCharacter(c.req.param("characterId")), 201);
     })
+    .post("/api/characters/:characterId/avatar", async (c) => {
+      const body = await c.req.parseBody();
+      const file = body["file"];
+      if (!file || !(file instanceof File)) {
+        return c.json({ error: "No file provided. Use 'file' field in multipart form." }, 400);
+      }
+      try {
+        const result = await runtime.uploadCharacterAvatar(c.req.param("characterId"), file);
+        return c.json(result, 200);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("too large")) return c.json({ error: message }, 413);
+        if (message.includes("Unsupported")) return c.json({ error: message }, 415);
+        return c.json({ error: message }, 400);
+      }
+    })
+    .get("/api/characters/:characterId/avatar", async (c) => {
+      const result = await runtime.serveCharacterAvatar(c.req.param("characterId"));
+      if (!result) return c.json({ error: "Avatar not found" }, 404);
+      return result;
+    })
   ;
 }

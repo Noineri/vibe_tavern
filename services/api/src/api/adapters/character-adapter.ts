@@ -88,4 +88,25 @@ export class CharacterAdapter implements CharacterRuntimeApi {
 
 	duplicateCharacter = (characterId: string) =>
 		this.sessionRuntime.character.duplicate(brandId<CharacterId>(characterId));
+
+	uploadCharacterAvatar = async (characterId: string, file: File): Promise<{ avatarExt: string }> => {
+		const { ext } = await this.assetService.writeCharacterAvatar(characterId, file);
+		await this.stores.characters.setFolderAvatar(brandId<CharacterId>(characterId), ext);
+		return { avatarExt: ext };
+	};
+
+	serveCharacterAvatar = async (characterId: string): Promise<Response | null> => {
+		const character = await this.stores.characters.getById(brandId<CharacterId>(characterId));
+		if (!character) return null;
+		// Folder-resident avatar (post-migration) — serve directly.
+		if (character.avatarExt) {
+			return this.assetService.serveCharacterAvatar(characterId, character.avatarExt);
+		}
+		// Legacy flat avatar (avatarAssetId set, not yet migrated / flat asset
+		// missing so B4 left it as-is) — delegate to the flat serve path.
+		if (character.avatarAssetId) {
+			return this.assetService.serve(character.avatarAssetId);
+		}
+		return null;
+	};
 }

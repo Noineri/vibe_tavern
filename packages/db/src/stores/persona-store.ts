@@ -213,6 +213,20 @@ export class PersonaStore {
     await this.db.delete(personas).where(eq(personas.id, id)).run();
   }
 
+  /**
+   * Point update of the folder-resident avatar: sets `avatarExt` and clears
+   * the legacy `avatarAssetId` in a single UPDATE. Does NOT rewrite
+   * {id}/persona.json (avatar upload must not touch the persona file — C1).
+   * Use after writing {id}/avatar.{ext} bytes out-of-band (AssetService).
+   */
+  async setFolderAvatar(id: string, ext: string): Promise<void> {
+    await this.db
+      .update(personas)
+      .set({ avatarExt: ext, avatarAssetId: null, updatedAt: this.clock.now() })
+      .where(eq(personas.id, id))
+      .run();
+  }
+
   async setDefault(id: string): Promise<void> {
     await this.db.transaction(async (tx) => {
       await tx.update(personas).set({ defaultForNewChats: 0 }).run();
