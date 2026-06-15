@@ -12,7 +12,18 @@ const CHARS = STORAGE_FOLDERS.characters;
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 // ─── Vision-gate mock: capture calls, return deterministic descriptions ────
-// Applied before the adapter modules are imported (setup uses a lazy import).
+// IMPORTANT (Bun): `mock.module` persists for the whole process. The factory
+// MUST spread the real module's exports so that other test files (notably
+// vision-gate.test.ts, which exercises `resolveMultimodalContent` directly)
+// still get the real implementation. We only override `describeAttachments`
+// and `resolveVisionDescribePrompt` — everything else passes through. Without
+// this spread, resolveMultimodalContent would be `undefined` and vision-gate's
+// suite would collapse with a cross-file leak.
+//
+// The real module is imported BEFORE the mock is registered, so `real` holds
+// the genuine function references; the mock factory then spreads them back.
+const real = await import("../src/infrastructure/ai/vision-gate.js");
+
 let lastDescribeArgs: { count: number; ids: string[]; visionModel: string | null; prompt: string | null } = {
 	count: 0,
 	ids: [],
@@ -22,6 +33,7 @@ let lastDescribeArgs: { count: number; ids: string[]; visionModel: string | null
 let describeOverride: ((ids: string[]) => Map<string, string>) | null = null;
 
 await mock.module("../src/infrastructure/ai/vision-gate.js", () => ({
+	...real,
 	describeAttachments: async (attachments: Array<{ id: string }>) => {
 		const ids = attachments.map((a) => a.id);
 		lastDescribeArgs = { count: ids.length, ids, visionModel: lastDescribeArgs.visionModel, prompt: lastDescribeArgs.prompt };
@@ -29,7 +41,6 @@ await mock.module("../src/infrastructure/ai/vision-gate.js", () => ({
 		return describeOverride ? describeOverride(ids) : new Map(ids.map((id) => [id, `DESC(${id})`] as const));
 	},
 	resolveVisionDescribePrompt: async () => "MOCK_VISION_PROMPT",
-	VisionNotSupportedError: class extends Error {},
 }));
 
 beforeEach(() => {
