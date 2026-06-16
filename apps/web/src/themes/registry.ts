@@ -15,7 +15,7 @@
  * Themes are applied exclusively as a single CSS class on `<html>`:
  *   - The default theme (`coffee`) uses `className: ""` — it is the bare `:root`
  *     in coffee.css and needs no class.
- *   - Every other theme carries a className (e.g. `"light"`, `"glass-purple"`)
+ *   - Every other theme carries a className (e.g. `"light"`, `"mystic-night"`)
  *     matching the `:root.<className>` selector in its CSS file.
  *
  * {@link applyThemeClass} strips ALL theme classes first, then adds only the
@@ -46,7 +46,8 @@ export interface ThemeDef {
 export const THEMES: readonly ThemeDef[] = [
 	{ id: "light",        className: "light",        icon: "sun" },
 	{ id: "coffee",       className: "",             icon: "coffee" },
-	{ id: "glass-purple", className: "glass-purple", icon: "sparkles" },
+	{ id: "mystic-night", className: "mystic-night", icon: "sparkles" },
+	{ id: "light-lava",   className: "light-lava",   icon: "flame" },
 ];
 
 /** Union of all theme ids. The canonical `ThemeMode` type. */
