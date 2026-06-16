@@ -235,6 +235,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
             onDelete={onDelete}
             onAfterImport={async () => { await handleSave(); void onCreateChat(); }}
             hasAvatar={hasAvatar}
+            characterId={characterId}
           />
         </div>
       );

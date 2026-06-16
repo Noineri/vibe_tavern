@@ -11,6 +11,7 @@ import { useActiveTrace, useChatMeta } from "../../stores/chat-selectors.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
+import { useSnapshotStore } from "../../stores/snapshot-store.js";
 
 export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onShowRail?: () => void }) {
   const { t } = useT();
@@ -108,7 +109,21 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
       </div>
       <div className="flex min-w-0 shrink items-center gap-[5px] flex-1 overflow-visible">
           {mode === 'play' && (
-            <MemBadge label={t("topbar_memory")} onClick={() => useModalStore.getState().setContextMemoryOpen(true)} />
+            <>
+              <MemBadge label={t("topbar_memory")} onClick={() => useModalStore.getState().setContextMemoryOpen(true)} />
+              <CustomTooltip content={t("gallery_title") || "Media Gallery"}>
+                <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t1"
+                  onClick={() => {
+                    const charId = useSnapshotStore.getState().character?.id;
+                    if (charId) {
+                      localStorage.setItem(`gallery:open:${charId}`, "true");
+                    }
+                    useNavigationStore.getState().setMode("build");
+                  }}>
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="5" cy="5" r="1.5"/><polyline points="2 10 6 6 14 14"/></svg>
+                </div>
+              </CustomTooltip>
+            </>
           )}
 
           <CustomTooltip content={t("provider_settings_title")}>
