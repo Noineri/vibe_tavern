@@ -99,14 +99,15 @@ export async function updateCharacterAvatar(
 
 /**
  * Upload an avatar to the character's entity folder (POST /api/characters/:id/avatar).
- * The backend writes {id}/avatar.{ext}, sets avatarExt, and clears the legacy
- * avatarAssetId. Returns the stored extension. The folder model stores a
- * single avatar used for all display sizes — the cropped/full distinction only
- * survives for legacy flat-asset avatars.
+ * `crop` is the thumbnail written to {id}/avatar.{ext} (small slots);
+ * `full` (optional, the uncropped source) is written to {id}/avatar-full.{ext}
+ * (large slots: preview, editor). When `full` is omitted the thumbnail serves
+ * both sizes. Returns the stored extensions.
  */
-export async function uploadCharacterAvatar(characterId: string, file: File): Promise<{ avatarExt: string }> {
+export async function uploadCharacterAvatar(characterId: string, crop: File, full?: File): Promise<{ avatarExt: string; avatarFullExt: string | null }> {
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("crop", crop);
+  if (full) formData.append("full", full);
   const baseUrl = getGatewayBaseUrl();
   const token = getMobileToken();
   const response = await fetch(`${baseUrl}/api/characters/${characterId}/avatar`, {

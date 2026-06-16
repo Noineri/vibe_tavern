@@ -56,12 +56,13 @@ export async function setDefaultPersona(personaId: string): Promise<void> {
 
 /**
  * Upload an avatar to the persona's entity folder (POST /api/personas/:id/avatar).
- * The backend writes {id}/avatar.{ext}, sets avatarExt, and clears the legacy
- * avatarAssetId. Returns the stored extension.
+ * `crop` is the thumbnail ({id}/avatar.{ext}); `full` (optional, uncropped
+ * source) is written to {id}/avatar-full.{ext}. See uploadCharacterAvatar.
  */
-export async function uploadPersonaAvatar(personaId: string, file: File): Promise<{ avatarExt: string }> {
+export async function uploadPersonaAvatar(personaId: string, crop: File, full?: File): Promise<{ avatarExt: string; avatarFullExt: string | null }> {
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("crop", crop);
+  if (full) formData.append("full", full);
   const baseUrl = getGatewayBaseUrl();
   const token = getMobileToken();
   const response = await fetch(`${baseUrl}/api/personas/${personaId}/avatar`, {

@@ -65,11 +65,12 @@ export async function avatarUploadAction(input: {
   characterId: string;
   chatId: ChatId;
 }): Promise<void> {
-  // Folder-resident upload (CFS migration): a single avatar is written to
-  // {id}/avatar.{ext}, avatarExt is set, and legacy avatarAssetId is cleared.
-  // The folder model stores one avatar for all display sizes, so originalFile
-  // (the uncropped source) is no longer persisted separately.
-  await uploadCharacterAvatar(input.characterId, input.file);
+  // Folder-resident upload (CFS migration): the crop is written to
+  // {id}/avatar.{ext} (thumbnail, small slots) and the uncropped original to
+  // {id}/avatar-full.{ext} (large slots: preview, editor). When originalFile is
+  // absent (single-image upload) only the thumbnail is stored and large slots
+  // fall back to it server-side.
+  await uploadCharacterAvatar(input.characterId, input.file, input.originalFile ?? undefined);
   // Refresh bootstrap; syncBootstrapSnapshotForActiveChat re-fetches the active
   // chat's snapshot if it differs from bootstrap's initial chat, so the open
   // chat header picks up the new avatarExt.

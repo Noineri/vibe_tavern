@@ -6,7 +6,7 @@ import type { CharacterRuntimeApi, PersonaRuntimeApi } from "../src/api/contract
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 
 // Build a mock runtime that lets each test override the avatar methods.
-function mockCharacter(overrides: Partial<Pick<CharacterRuntimeApi, "uploadCharacterAvatar" | "serveCharacterAvatar">> = {}): CharacterRuntimeApi {
+function mockCharacter(overrides: Partial<Pick<CharacterRuntimeApi, "uploadCharacterAvatar" | "serveCharacterAvatar" | "serveCharacterAvatarFull">> = {}): CharacterRuntimeApi {
 	return { ...overrides } as unknown as CharacterRuntimeApi;
 }
 function mockPersona(overrides: Partial<Pick<PersonaRuntimeApi, "uploadPersonaAvatar" | "servePersonaAvatar">> = {}): PersonaRuntimeApi {
@@ -86,6 +86,44 @@ describe("C1 character avatar routes", () => {
 		const res = await app.request("/api/characters/char_1/avatar");
 		expect(res.status).toBe(404);
 		expect((await res.json()).error).toMatch(/Avatar not found/i);
+	});
+
+	test("POST avatar: multipart `crop` + `full` fields are forwarded to the adapter", async () => {
+		const calls: Array<{ crop?: string; full?: string }> = [];
+		const runtime = mockCharacter({
+			uploadCharacterAvatar: async (_id, crop, full) => {
+				calls.push({ crop: crop?.name, full: full?.name });
+				return { avatarExt: "png", avatarFullExt: full ? "png" : null };
+			},
+		});
+		const app = createCharacterRoutes(runtime);
+
+		const form = new FormData();
+		form.append("crop", new File([PNG], "crop.png", { type: "image/png" }));
+		form.append("full", new File([PNG], "full.png", { type: "image/png" }));
+
+		const res = await app.request("/api/characters/char_1/avatar", { method: "POST", body: form });
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ avatarExt: "png", avatarFullExt: "png" });
+		expect(calls).toEqual([{ crop: "crop.png", full: "full.png" }]);
+	});
+
+	test("GET /avatar/full: proxies to serveCharacterAvatarFull and returns its Response", async () => {
+		const FULL = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xff]);
+		const runtime = mockCharacter({
+			serveCharacterAvatarFull: async () => new Response(FULL, { headers: { "Content-Type": "image/png" } }),
+		});
+		const app = createCharacterRoutes(runtime);
+		const res = await app.request("/api/characters/char_1/avatar/full");
+		expect(res.status).toBe(200);
+		expect(new Uint8Array(await res.arrayBuffer())).toEqual(FULL);
+	});
+
+	test("GET /avatar/full: null (no full and no thumbnail) → 404", async () => {
+		const runtime = mockCharacter({ serveCharacterAvatarFull: async () => null });
+		const app = createCharacterRoutes(runtime);
+		const res = await app.request("/api/characters/char_1/avatar/full");
+		expect(res.status).toBe(404);
 	});
 });
 

@@ -6,16 +6,18 @@ export function avatarUrl(assetId: string): string {
 }
 
 /**
- * Resolve the best avatar URL for an entity, preferring the folder-resident
- * avatar (CFS migration) over legacy flat assets.
+ * Resolve the best avatar URL for an entity.
  *
- * - When `avatarExt` is set the avatar lives at /api/{kind}/:id/avatar and is
- *   canonical (folder-resident). Legacy columns are ignored — a folder avatar
- *   always wins, matching the migration direction.
- * - Otherwise fall back to flat assets: with `preferFull` (large display slots
- *   — AppShell header, BuildMode preview, card export) prefer the uncropped
- *   `avatarFullAssetId` over the cropped `avatarAssetId`; without it (small
- *   slots — chat bubbles, sidebar, top bar) use `avatarAssetId` directly.
+ * Two folder-resident files exist side by side:
+ *  - avatar.{ext}    → thumbnail (crop). Used for SMALL slots (chat bubbles,
+ *    sidebar, top bar). Served at /api/{kind}/:id/avatar.
+ *  - avatar-full.{ext} → uncropped original. Used for LARGE slots (top-bar
+ *    preview, editor). Served at /api/{kind}/:id/avatar/full, which falls
+ *    back to the thumbnail server-side when no separate full is stored.
+ *
+ * `preferFull` selects the full endpoint. Without it (or for legacy flat
+ * avatars with no avatarExt) the thumbnail is used. Legacy fallback: with
+ * preferFull, prefer avatarFullAssetId over avatarAssetId.
  *
  * Returns null when the entity has no avatar at all.
  */
@@ -24,11 +26,20 @@ export function resolveEntityAvatarUrl(args: {
 	id: string;
 	avatarExt: string | null;
 	avatarAssetId: string | null;
+	avatarFullExt?: string | null;
 	avatarFullAssetId?: string | null;
 	preferFull?: boolean;
 }): string | null {
-	const { kind, id, avatarExt, avatarAssetId, avatarFullAssetId, preferFull } = args;
-	if (avatarExt) return `${getGatewayBaseUrl()}/api/${kind}/${id}/avatar`;
+	const { kind, id, avatarExt, avatarAssetId, avatarFullExt, avatarFullAssetId, preferFull } = args;
+	if (avatarExt) {
+		// Folder-resident: pick the full endpoint for large slots, thumbnail for
+		// small ones. /avatar/full falls back to avatar.{ext} server-side when
+		// avatarFullExt is null (single-image upload, no crop made).
+		return preferFull
+			? `${getGatewayBaseUrl()}/api/${kind}/${id}/avatar/full`
+			: `${getGatewayBaseUrl()}/api/${kind}/${id}/avatar`;
+	}
+	// Legacy flat assets (pre-folder). preferFull picks the uncropped original.
 	const legacy = preferFull
 		? (avatarFullAssetId ?? avatarAssetId ?? null)
 		: avatarAssetId;

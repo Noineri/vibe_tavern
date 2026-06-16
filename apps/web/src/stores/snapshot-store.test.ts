@@ -22,6 +22,7 @@ function makeCharacter(id: string, name = `Char ${id}`): AppCharacter {
     id,
     name,
     avatarExt: null,
+    avatarFullExt: null,
     description: "",
     scenario: "",
     systemPrompt: "",
