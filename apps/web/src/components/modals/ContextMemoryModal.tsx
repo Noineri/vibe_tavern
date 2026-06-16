@@ -470,7 +470,7 @@ export function ContextMemoryModal({
           <div className="flex gap-2">
             {activeSummaryId && isMobile && (
               <button type="button"
-                className="flex h-7 w-7 items-center justify-center rounded-md bg-danger-dim text-danger-text hover:bg-danger hover:text-white transition-colors md:hidden"
+                className="flex h-7 w-7 items-center justify-center rounded-md bg-danger-dim text-danger-text hover:bg-danger hover:text-on-danger transition-colors md:hidden"
                 onClick={() => { 
                   void handleDelete(activeSummaryId); 
                 }}
@@ -566,7 +566,7 @@ export function ContextMemoryModal({
         </div>
         {generating ? (
           <button type="button"
-            className="mt-3 h-10 w-full rounded-md bg-danger px-4 font-ui text-sm font-semibold text-white transition-all hover:brightness-110"
+            className="mt-3 h-10 w-full rounded-md bg-danger px-4 font-ui text-sm font-semibold text-on-danger transition-all hover:brightness-110"
             onClick={() => abortRef.current?.abort()}
           >
             {t("summary_stop_btn")}

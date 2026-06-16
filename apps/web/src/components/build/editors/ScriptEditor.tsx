@@ -194,7 +194,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             <div className="p-5 text-[13px] text-t2">{t("delete_script_msg")}</div>
             <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
               <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
-              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={() => handleDeleteScript(confirmDeleteId)}>{t("delete_script_confirm")}</button>
+              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all" onClick={() => handleDeleteScript(confirmDeleteId)}>{t("delete_script_confirm")}</button>
             </div>
           </div>
         </div>

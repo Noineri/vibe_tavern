@@ -142,7 +142,7 @@ export function ProviderEditHeader({
             {t("cancel")}
           </button>
         )}
-        <button type="button" onClick={onSave} className="min-h-11 rounded-md bg-accent px-5 py-2 font-ui text-[13px] font-medium text-white shadow-lg shadow-accent/20 transition-all hover:bg-accent-t sm:min-h-0">
+        <button type="button" onClick={onSave} className="min-h-11 rounded-md bg-accent px-5 py-2 font-ui text-[13px] font-medium text-on-accent shadow-lg shadow-accent/20 transition-all hover:bg-accent-t sm:min-h-0">
           {t("save_settings_btn")}
         </button>
       </div>

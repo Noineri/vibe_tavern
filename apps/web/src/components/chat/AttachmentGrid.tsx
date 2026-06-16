@@ -174,7 +174,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
             {att.type === "image" && (
               regenerating ? (
                 <button
-                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-danger/80 text-white transition-colors hover:bg-danger active:scale-95"
+                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-danger/80 text-on-danger transition-colors hover:bg-danger active:scale-95"
                   onClick={cancelRegenerate}
                   title="Cancel regeneration"
                 >
@@ -266,7 +266,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
                 Cancel
               </button>
               <button
-                className="cursor-pointer rounded-md bg-accent px-3 py-1.5 text-sm text-white transition-colors hover:bg-accent/80 disabled:opacity-50"
+                className="cursor-pointer rounded-md bg-accent px-3 py-1.5 text-sm text-on-accent transition-colors hover:bg-accent/80 disabled:opacity-50"
                 onClick={saveDescription}
                 disabled={saving}
               >

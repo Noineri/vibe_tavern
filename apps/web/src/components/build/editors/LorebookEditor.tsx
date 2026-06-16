@@ -595,7 +595,7 @@ export function LorebookEditor({
           className={cn(
             "flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 font-ui text-[11px] font-medium transition-all select-none",
             scope === s.id
-              ? "bg-accent text-white"
+              ? "bg-accent text-on-accent"
               : "text-t3 bg-transparent hover:bg-s2 active:bg-s3"
           )}
           onClick={() => setScope(s.id)}
@@ -940,7 +940,7 @@ export function LorebookEditor({
             {t("lore_cancel_edit")}
           </button>
           <button type="button"
-            className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all"
+            className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all"
             onClick={() => handleDeleteLb(confirmDeleteLorebook)}
           >
             {t("delete_lorebook_confirm")}

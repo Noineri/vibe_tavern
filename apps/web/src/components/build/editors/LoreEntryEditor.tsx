@@ -814,7 +814,7 @@ export function LoreEntryEditor({
                 {t("lore_cancel_edit")}
               </button>
               <button type="button"
-                className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all"
+                className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all"
                 onClick={handleDelete}
                 disabled={deletingEntry}
               >

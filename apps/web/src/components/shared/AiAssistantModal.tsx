@@ -900,7 +900,7 @@ export function AiAssistantModal({
                   <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleMdImportApply} disabled={checkedFields.size === 0}>{t("import_md_apply")}</button>
                 )}
                 {streaming ? (
-                  <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
+                  <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
                 ) : (
                   <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", providerId && mdContent.trim() ? "bg-s3 text-t2 hover:bg-border2 hover:text-t1" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleGenerate} disabled={!providerId || !mdContent.trim()}>{Object.keys(parsedFields).length > 0 ? t("import_md_reparse") : t("import_md_start")}</button>
                 )}
@@ -921,7 +921,7 @@ export function AiAssistantModal({
                   )
                 )}
                 {streaming ? (
-                  <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-white transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
+                  <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
                 ) : (
                   <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", providerId && prompt.trim() ? "bg-accent text-on-accent" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleGenerate} disabled={!providerId || !prompt.trim()}>{t("script_ai_generate")}</button>
                 )}

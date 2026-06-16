@@ -21,7 +21,7 @@ export function ConfirmCloseModal(input: ConfirmCloseModalProps) {
         </div>
         <div className="flex justify-center gap-4">
           <button type="button"
-            className="h-12 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[14px] leading-[1.2] font-medium text-white transition-[filter] duration-100 hover:brightness-110"
+            className="h-12 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-[14px] leading-[1.2] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110"
             onClick={input.onCancel}
           >
             {t("keep_editing")}

@@ -161,7 +161,7 @@ export function AvatarCropModal({
             {t("cancel")}
           </button>
           <button type="button"
-            className="h-[37px] cursor-pointer rounded-md bg-accent py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:opacity-50"
+            className="h-[37px] cursor-pointer rounded-md bg-accent py-0 px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:opacity-50"
             onClick={() => void handleConfirm()}
             disabled={confirming}
           >

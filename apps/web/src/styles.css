@@ -70,6 +70,7 @@
   --color-danger: var(--danger);
   --color-danger-dim: var(--danger-dim);
   --color-danger-text: var(--danger-text);
+  --color-on-danger: var(--on-danger);
   --color-success: var(--success);
   --color-success-dim: var(--success-dim);
   --color-success-text: var(--success-text);

@@ -63,7 +63,7 @@ export function MobileExpandTextarea({
               {label || t("edit_field")}
             </div>
             <div
-              className="flex h-8 cursor-pointer items-center justify-center rounded-md bg-accent px-4 font-ui text-[13px] font-medium text-white transition-colors hover:bg-accent/90"
+              className="flex h-8 cursor-pointer items-center justify-center rounded-md bg-accent px-4 font-ui text-[13px] font-medium text-on-accent transition-colors hover:bg-accent/90"
               onClick={handleDone}
             >
               {t("done_btn")}

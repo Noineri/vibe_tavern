@@ -233,7 +233,7 @@ export function CharacterForm({
               {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
             </span>
             <button type="button"
-              className="min-h-9 cursor-pointer rounded-md border-0 bg-accent px-3 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold text-white transition-all disabled:opacity-40"
+              className="min-h-9 cursor-pointer rounded-md border-0 bg-accent px-3 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold text-on-accent transition-all disabled:opacity-40"
               disabled={!canSave || !isDirty}
               onClick={onSave}
             >
@@ -308,7 +308,7 @@ export function CharacterForm({
           </button>
           </CustomTooltip>
           <button type="button"
-            className="cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
+            className="cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
             style={{ height: 28, padding: "0 14px" }}
             disabled={!canSave || !isDirty}
             onClick={onSave}
@@ -369,14 +369,14 @@ export function CharacterForm({
       )}
 
       {importError && (
-        <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-red-400">
+        <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-danger-text">
           {importError}
         </div>
       )}
 
       {/* Validation error for name */}
       {errors.name && (
-        <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-red-400">
+        <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-danger-text">
           {errors.name.message}
         </div>
       )}

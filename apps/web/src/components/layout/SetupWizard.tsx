@@ -263,7 +263,7 @@ function ProviderStep({
               {t("wizard_edit_provider")}
             </button>
           </div>
-          <button type="button" className="min-h-11 w-full rounded-md border border-accent bg-accent-dim px-4 font-ui text-[13px] font-medium text-accent-t transition-colors hover:bg-accent hover:text-white disabled:cursor-not-allowed disabled:opacity-50 sm:h-[34px] sm:min-h-0 sm:w-auto" disabled>
+          <button type="button" className="min-h-11 w-full rounded-md border border-accent bg-accent-dim px-4 font-ui text-[13px] font-medium text-accent-t transition-colors hover:bg-accent hover:text-on-accent disabled:cursor-not-allowed disabled:opacity-50 sm:h-[34px] sm:min-h-0 sm:w-auto" disabled>
             ✓ {t("provider_active")}
           </button>
         </div>
@@ -309,7 +309,7 @@ function ProviderStep({
         <div className="flex items-center justify-end pt-2">
           <button
             type="button"
-            className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-white transition-all"
+            className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-on-accent transition-all"
             onClick={onComplete}
           >
             {t("next")}
@@ -394,7 +394,7 @@ function ProviderStep({
         </button>
         <button
           type="button"
-          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
+          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
           disabled={!canContinue || saving}
           onClick={() => void handleSave()}
         >
@@ -580,7 +580,7 @@ function PersonaStep({
         </button>
         <button
           type="button"
-          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
+          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
           disabled={!name.trim() || saving}
           onClick={() => void handleSave()}
         >
@@ -831,7 +831,7 @@ function CharacterStep({
         </button>
         <button
           type="button"
-          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
+          className="cursor-pointer rounded-lg border-0 bg-accent px-[22px] py-2.5 font-ui text-[0.9rem] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
           disabled={cardPreview ? busy : (!name.trim() || busy)}
           onClick={() => cardPreview ? void handleImportPreview() : void handleCreate()}
         >

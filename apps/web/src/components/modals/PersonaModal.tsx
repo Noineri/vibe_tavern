@@ -426,7 +426,7 @@ export function PersonaModal(input: PersonaModalProps) {
             {/* Save / Cancel */}
             <div className="flex gap-2">
               <button type="button"
-                className="min-h-[40px] cursor-pointer rounded-md bg-accent px-4 font-ui text-sm font-medium text-white transition-all hover:brightness-110"
+                className="min-h-[40px] cursor-pointer rounded-md bg-accent px-4 font-ui text-sm font-medium text-on-accent transition-all hover:brightness-110"
                 disabled={input.isSaving || !(editName || "").trim()}
                 onClick={commitEdit}
               >
@@ -448,7 +448,7 @@ export function PersonaModal(input: PersonaModalProps) {
               className={cn(
                 "flex shrink-0 items-center justify-center overflow-hidden rounded-full text-base shadow-inner ring-1 ring-white/5",
                 isMobile ? "h-[68px] w-[68px]" : "h-[88px] w-[88px] text-lg",
-                isActive ? "bg-accent text-white" : "bg-s3 text-t2",
+                isActive ? "bg-accent text-on-accent" : "bg-s3 text-t2",
               )}
             >
               {avatar
@@ -664,7 +664,7 @@ export function PersonaModal(input: PersonaModalProps) {
           </div>
           <div className="flex gap-2 mt-3">
             <button type="button"
-              className="h-[34px] cursor-pointer rounded-md bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:opacity-45"
+              className="h-[34px] cursor-pointer rounded-md bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:opacity-45"
               disabled={stImporting || stImportSelected.size === 0}
               onClick={() => void handleStImport()}
             >
