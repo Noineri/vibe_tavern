@@ -96,10 +96,23 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 	duplicateCharacter = (characterId: string) =>
 		this.sessionRuntime.character.duplicate(brandId<CharacterId>(characterId));
 
-	uploadCharacterAvatar = async (characterId: string, file: File): Promise<{ avatarExt: string }> => {
-		const { ext } = await this.assetService.writeCharacterAvatar(characterId, file);
+	uploadCharacterAvatar = async (characterId: string, crop: File, full?: File): Promise<{ avatarExt: string; avatarFullExt: string | null }> => {
+		// Thumbnail (crop): written to {id}/avatar.{ext}, avatarExt set, legacy
+		// avatarAssetId cleared. Always present — the crop is the canonical
+		// small-slot image (chat bubbles, sidebar, top bar).
+		const { ext } = await this.assetService.writeCharacterAvatar(characterId, crop);
 		await this.stores.characters.setFolderAvatar(brandId<CharacterId>(characterId), ext);
-		return { avatarExt: ext };
+		// Full (uncropped original): optional. Written to {id}/avatar-full.{ext}
+		// when provided (crop-confirm flow passes the unmodified source). When
+		// omitted (single-image upload, ST import) no full is stored and large
+		// slots fall back to the thumbnail avatar.{ext}.
+		let avatarFullExt: string | null = null;
+		if (full) {
+			const f = await this.assetService.writeCharacterAvatarFull(characterId, full);
+			await this.stores.characters.setFolderAvatarFull(brandId<CharacterId>(characterId), f.ext);
+			avatarFullExt = f.ext;
+		}
+		return { avatarExt: ext, avatarFullExt };
 	};
 
 	serveCharacterAvatar = async (characterId: string): Promise<Response | null> => {
@@ -111,6 +124,24 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 		}
 		// Legacy flat avatar (avatarAssetId set, not yet migrated / flat asset
 		// missing so B4 left it as-is) — delegate to the flat serve path.
+		if (character.avatarAssetId) {
+			return this.assetService.serve(character.avatarAssetId);
+		}
+		return null;
+	};
+
+	serveCharacterAvatarFull = async (characterId: string): Promise<Response | null> => {
+		const character = await this.stores.characters.getById(brandId<CharacterId>(characterId));
+		if (!character) return null;
+		// Dedicated full (crop-confirm flow, or lazy-migrated from avatarFullAssetId).
+		if (character.avatarFullExt) {
+			return this.assetService.serveCharacterAvatarFull(characterId, character.avatarFullExt);
+		}
+		// No separate full → fall back to the thumbnail avatar, which is itself
+		// uncropped when no crop was made (single-image upload / ST import).
+		if (character.avatarExt) {
+			return this.assetService.serveCharacterAvatar(characterId, character.avatarExt);
+		}
 		if (character.avatarAssetId) {
 			return this.assetService.serve(character.avatarAssetId);
 		}

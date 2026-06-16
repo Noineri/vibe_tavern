@@ -54,12 +54,17 @@ export function createCharacterRoutes(runtime: CharacterRuntimeApi & CharacterAs
     })
     .post("/api/characters/:characterId/avatar", async (c) => {
       const body = await c.req.parseBody();
-      const file = body["file"];
-      if (!file || !(file instanceof File)) {
-        return c.json({ error: "No file provided. Use 'file' field in multipart form." }, 400);
+      // `crop` (required) is the thumbnail avatar.{ext}; `full` (optional) is
+      // the uncropped original avatar-full.{ext}. Back-compat: a `file` field
+      // is accepted as the crop for single-image uploads (ST import / clients
+      // that don't distinguish crop vs full).
+      const crop = body["crop"] instanceof File ? body["crop"] : (body["file"] instanceof File ? body["file"] : null);
+      const full = body["full"] instanceof File ? body["full"] : null;
+      if (!crop) {
+        return c.json({ error: "No file provided. Use 'crop' (and optional 'full') in multipart form." }, 400);
       }
       try {
-        const result = await runtime.uploadCharacterAvatar(c.req.param("characterId"), file);
+        const result = await runtime.uploadCharacterAvatar(c.req.param("characterId"), crop, full ?? undefined);
         return c.json(result, 200);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -70,6 +75,13 @@ export function createCharacterRoutes(runtime: CharacterRuntimeApi & CharacterAs
     })
     .get("/api/characters/:characterId/avatar", async (c) => {
       const result = await runtime.serveCharacterAvatar(c.req.param("characterId"));
+      if (!result) return c.json({ error: "Avatar not found" }, 404);
+      return result;
+    })
+    .get("/api/characters/:characterId/avatar/full", async (c) => {
+      // Uncropped original for large display slots (top-bar preview, editor).
+      // Falls back to the thumbnail avatar when no separate full is stored.
+      const result = await runtime.serveCharacterAvatarFull(c.req.param("characterId"));
       if (!result) return c.json({ error: "Avatar not found" }, 404);
       return result;
     })

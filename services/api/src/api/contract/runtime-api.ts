@@ -53,6 +53,7 @@ interface PersonaRecord {
 	avatarFullAssetId: string | null;
 	avatarCropJson: string | null;
 	avatarExt: string | null;
+	avatarFullExt: string | null;
 	defaultForNewChats: boolean;
 }
 
@@ -65,6 +66,7 @@ interface PersonaDuplicateRecord {
 	avatarAssetId: string | null;
 	avatarFullAssetId: string | null;
 	avatarExt: string | null;
+	avatarFullExt: string | null;
 	defaultForNewChats: boolean;
 }
 
@@ -162,8 +164,9 @@ export interface CharacterRuntimeApi {
 	deleteCharacter: (characterId: string) => Promise<void>;
 	exportCharacter: (characterId: string) => Promise<Record<string, unknown>>;
 	duplicateCharacter: (characterId: string) => Promise<ImportResult>;
-	uploadCharacterAvatar: (characterId: string, file: File) => Promise<{ avatarExt: string }>;
+	uploadCharacterAvatar: (characterId: string, crop: File, full?: File) => Promise<{ avatarExt: string; avatarFullExt: string | null }>;
 	serveCharacterAvatar: (characterId: string) => Promise<Response | null>;
+	serveCharacterAvatarFull: (characterId: string) => Promise<Response | null>;
 
 	// Vision describe (A6) — uses the active provider profile's visionModel.
 	describeCharacterAvatar: (characterId: string) => Promise<{ description: string }>;
@@ -192,8 +195,9 @@ export interface PersonaRuntimeApi {
 	deletePersona: (personaId: string) => Promise<void>;
 	duplicatePersona: (personaId: string) => Promise<PersonaDuplicateRecord>;
 	setDefaultPersona: (personaId: string) => Promise<void>;
-	uploadPersonaAvatar: (personaId: string, file: File) => Promise<{ avatarExt: string }>;
+	uploadPersonaAvatar: (personaId: string, crop: File, full?: File) => Promise<{ avatarExt: string; avatarFullExt: string | null }>;
 	servePersonaAvatar: (personaId: string) => Promise<Response | null>;
+	servePersonaAvatarFull: (personaId: string) => Promise<Response | null>;
 
 	// Vision describe (A6) — uses the active provider profile's visionModel.
 	describePersonaAvatar: (personaId: string) => Promise<{ description: string }>;

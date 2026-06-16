@@ -31,12 +31,13 @@ export function createPersonaRoutes(runtime: PersonaRuntimeApi) {
     })
     .post("/api/personas/:personaId/avatar", async (c) => {
       const body = await c.req.parseBody();
-      const file = body["file"];
-      if (!file || !(file instanceof File)) {
-        return c.json({ error: "No file provided. Use 'file' field in multipart form." }, 400);
+      const crop = body["crop"] instanceof File ? body["crop"] : (body["file"] instanceof File ? body["file"] : null);
+      const full = body["full"] instanceof File ? body["full"] : null;
+      if (!crop) {
+        return c.json({ error: "No file provided. Use 'crop' (and optional 'full') in multipart form." }, 400);
       }
       try {
-        const result = await runtime.uploadPersonaAvatar(c.req.param("personaId"), file);
+        const result = await runtime.uploadPersonaAvatar(c.req.param("personaId"), crop, full ?? undefined);
         return c.json(result, 200);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -47,6 +48,11 @@ export function createPersonaRoutes(runtime: PersonaRuntimeApi) {
     })
     .get("/api/personas/:personaId/avatar", async (c) => {
       const result = await runtime.servePersonaAvatar(c.req.param("personaId"));
+      if (!result) return c.json({ error: "Avatar not found" }, 404);
+      return result;
+    })
+    .get("/api/personas/:personaId/avatar/full", async (c) => {
+      const result = await runtime.servePersonaAvatarFull(c.req.param("personaId"));
       if (!result) return c.json({ error: "Avatar not found" }, 404);
       return result;
     })

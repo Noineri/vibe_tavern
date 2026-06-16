@@ -170,6 +170,7 @@ export function importCharacterCardV3Json(
     avatarFullAssetId: null,
     avatarCropJson: null,
     avatarExt: null,
+    avatarFullExt: null,
     includeGalleryInPrompt: false,
     includeAvatarInPrompt: false,
     avatarDescription: null,
