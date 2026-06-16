@@ -167,7 +167,7 @@ export function MobileAccessModal({ open, onClose, onDisabled }: MobileAccessMod
             onClick={handleRegenerate}
           >{t("mobile_access_regenerate")}</button>
           <button type="button"
-            className="rounded px-3 py-1.5 text-[calc(var(--ui-fs)-2px)] text-red-400 hover:bg-red-400/10"
+            className="rounded px-3 py-1.5 text-[calc(var(--ui-fs)-2px)] text-danger-text hover:bg-danger-dim"
             onClick={handleDisable}
           >{t("mobile_access_disable")}</button>
         </div>

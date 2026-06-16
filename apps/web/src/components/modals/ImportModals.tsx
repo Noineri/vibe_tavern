@@ -442,7 +442,7 @@ interface ImportError {
               .replace("{lorebooks}", String(scanResult.lorebooks.length))}
           </div>
           <button type="button"
-            className="h-[34px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45"
+            className="h-[34px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45"
             disabled={scanResult.characters.length + scanResult.chats.length + scanResult.presets.length + scanResult.personaCount === 0}
             onClick={handleImport}
           >
@@ -728,7 +728,7 @@ function BusyLine(props: { label: string }) {
 
 function ModalFooter(props: { onClose: () => void; onConfirm: () => void; confirmLabel: string; disabled: boolean; busy: boolean }) {
   const { t } = useT();
-  return <div className="flex shrink-0 items-center gap-2.5 border-t border-border px-5 py-3.5"><button type="button" className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" onClick={props.onClose}>{t("cancel")}</button><button type="button" className="h-[37px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45" disabled={props.disabled} onClick={props.onConfirm}>{props.busy ? t("importing") : props.confirmLabel}</button></div>;
+  return <div className="flex shrink-0 items-center gap-2.5 border-t border-border px-5 py-3.5"><button type="button" className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" onClick={props.onClose}>{t("cancel")}</button><button type="button" className="h-[37px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45" disabled={props.disabled} onClick={props.onConfirm}>{props.busy ? t("importing") : props.confirmLabel}</button></div>;
 }
 
 // ─── Utility functions ─────────────────────────────────────────────────────

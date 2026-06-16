@@ -430,7 +430,7 @@ function DeleteMessageConfirm(input: {
               {t("delete_swipe_btn")}
             </button>
           )}
-          <button type="button" className={`${btnBase} shrink-0 whitespace-nowrap bg-danger font-medium text-white hover:brightness-110`} onClick={input.onDeleteMessage}>
+          <button type="button" className={`${btnBase} shrink-0 whitespace-nowrap bg-danger font-medium text-on-danger hover:brightness-110`} onClick={input.onDeleteMessage}>
             {input.hasSwipes ? t("delete_message_btn") : t("delete")}
           </button>
         </div>

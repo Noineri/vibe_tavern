@@ -14,7 +14,7 @@ const TARGET_BADGE: Record<TargetMapping, { cls: string; key: string }> = {
   system: { cls: "bg-blue-500/15 text-blue-400", key: "preset_import_target_system" },
   post: { cls: "bg-purple-500/15 text-purple-400", key: "preset_import_target_post" },
   authors: { cls: "bg-amber-500/15 text-amber-400", key: "preset_import_target_authors" },
-  nsfw: { cls: "bg-rose-500/15 text-rose-400", key: "preset_import_target_nsfw" },
+  nsfw: { cls: "bg-danger-dim text-danger-text", key: "preset_import_target_nsfw" },
   enhanceDefinitions: { cls: "bg-cyan-500/15 text-cyan-400", key: "preset_import_target_enhance_defs" },
   injection: { cls: "bg-emerald-500/15 text-emerald-400", key: "preset_import_target_injection" },
 };
@@ -279,7 +279,7 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
           </button>
           {phase === "preview" && (
             <button type="button"
-              className="h-[37px] cursor-pointer rounded-md border-0 bg-accent px-6 font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40 hover:brightness-110"
+              className="h-[37px] cursor-pointer rounded-md border-0 bg-accent px-6 font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40 hover:brightness-110"
               disabled={blockInfos.length === 0}
               onClick={handleImport}
             >

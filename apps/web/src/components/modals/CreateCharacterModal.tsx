@@ -239,7 +239,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                 autoFocus
               />
               {errors.name && (
-                <div className="text-[11px] text-red-400 mt-0.5">{errors.name.message}</div>
+                <div className="text-[11px] text-danger-text mt-0.5">{errors.name.message}</div>
               )}
             </div>
           </div>
@@ -487,7 +487,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             disabled={busy}
           >{t("cancel")}</button>
           <button type="button"
-            className="h-[37px] px-[18px] cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-white transition-all disabled:cursor-default disabled:opacity-40"
+            className="h-[37px] px-[18px] cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
             disabled={!canSave}
             onClick={handleSave}
           >

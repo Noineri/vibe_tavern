@@ -41,7 +41,7 @@ export function ProviderViewHeader({ form, isActive, onEdit, onActivate }: Provi
         </div>
         <button type="button"
           onClick={onActivate}
-          className="min-h-11 w-full rounded-md border border-accent bg-accent-dim px-4 font-ui text-[13px] font-medium text-accent-t transition-colors hover:bg-accent hover:text-white disabled:cursor-not-allowed disabled:opacity-50 sm:h-[34px] sm:min-h-0 sm:w-auto"
+          className="min-h-11 w-full rounded-md border border-accent bg-accent-dim px-4 font-ui text-[13px] font-medium text-accent-t transition-colors hover:bg-accent hover:text-on-accent disabled:cursor-not-allowed disabled:opacity-50 sm:h-[34px] sm:min-h-0 sm:w-auto"
           disabled={isActive}
         >
           {isActive ? t("provider_active") : t("make_active")}

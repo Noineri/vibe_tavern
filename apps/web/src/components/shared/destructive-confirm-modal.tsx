@@ -33,7 +33,7 @@ export function DestructiveConfirmModal(input: DestructiveConfirmModalProps) {
             {t("cancel")}
           </button>
           <button type="button"
-            className="h-8 cursor-pointer rounded-md border-0 bg-[oklch(0.4_0.15_25)] px-[18px] font-ui text-[12.5px] font-medium text-white transition-[filter] duration-100 hover:brightness-110"
+            className="h-8 cursor-pointer rounded-md border-0 bg-danger px-[18px] font-ui text-[12.5px] font-medium text-on-danger transition-[filter] duration-100 hover:brightness-110"
             onClick={input.onConfirm}
           >
             {input.confirmLabel || t("confirm")}
@@ -71,7 +71,7 @@ export function ShellDestructiveConfirmModal() {
             {t("cancel")}
           </button>
           <button type="button"
-            className="h-8 cursor-pointer rounded-md border-0 bg-[oklch(0.4_0.15_25)] px-[18px] font-ui text-[12.5px] font-medium text-white transition-[filter] duration-100 hover:brightness-110"
+            className="h-8 cursor-pointer rounded-md border-0 bg-danger px-[18px] font-ui text-[12.5px] font-medium text-on-danger transition-[filter] duration-100 hover:brightness-110"
             onClick={() => {
               confirmDestroy!.onConfirm();
               setConfirmDestroy(null);
