@@ -134,7 +134,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // Author info
   const author: MessageShellAuthorInfo = isUser
     ? { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null, avatarCropJson: chatMeta.persona?.avatarCropJson ?? null, avatarSrc: chatMeta.persona ? resolveEntityAvatarUrl({ kind: "personas", id: chatMeta.persona.id, avatarExt: chatMeta.persona.avatarExt, avatarAssetId: chatMeta.persona.avatarAssetId }) : null }
-    : { name: chatMeta.character.name, avatarAssetId: chatMeta.character.avatarAssetId, avatarCropJson: chatMeta.character.avatarCropJson, avatarSrc: resolveEntityAvatarUrl({ kind: "characters", id: chatMeta.character.id, avatarExt: chatMeta.character.avatarExt, avatarAssetId: chatMeta.character.avatarAssetId }) };
+    : { name: chatMeta.character.name, avatarAssetId: chatMeta.character.avatarAssetId, avatarCropJson: chatMeta.character.avatarCropJson, avatarSrc: resolveEntityAvatarUrl({ kind: "characters", id: chatMeta.character.id, avatarExt: chatMeta.character.avatarExt, avatarAssetId: chatMeta.character.avatarAssetId, updatedAt: chatMeta.character.updatedAt }) };
 
   // UI State
   const isEditing = editingMessageId === input.messageId;
@@ -730,7 +730,7 @@ function PendingAssistantMessage() {
   const variantControlsRef = useRef<HTMLSpanElement>(null);
   if (!chatMeta || !activeGen) return null;
 
-  const author = { name: chatMeta.character.name, avatarAssetId: chatMeta.character.avatarAssetId, avatarCropJson: chatMeta.character.avatarCropJson, avatarSrc: resolveEntityAvatarUrl({ kind: "characters", id: chatMeta.character.id, avatarExt: chatMeta.character.avatarExt, avatarAssetId: chatMeta.character.avatarAssetId }) };
+  const author = { name: chatMeta.character.name, avatarAssetId: chatMeta.character.avatarAssetId, avatarCropJson: chatMeta.character.avatarCropJson, avatarSrc: resolveEntityAvatarUrl({ kind: "characters", id: chatMeta.character.id, avatarExt: chatMeta.character.avatarExt, avatarAssetId: chatMeta.character.avatarAssetId, updatedAt: chatMeta.character.updatedAt }) };
   const streamingText = activeGen.streamingText;
   const streamingRevealedText = activeGen.streamingRevealedText;
   const streamingReasoning = activeGen.streamingReasoningText;

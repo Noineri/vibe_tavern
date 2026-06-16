@@ -485,7 +485,7 @@ export function useCharacterController(): CharacterControllerActions {
 
       const char = getSnapshot()?.character;
       const avatarUrl = char
-        ? resolveEntityAvatarUrl({ kind: "characters", id: char.id, avatarExt: char.avatarExt, avatarAssetId: char.avatarAssetId, avatarFullAssetId: char.avatarFullAssetId, preferFull: true })
+        ? resolveEntityAvatarUrl({ kind: "characters", id: char.id, avatarExt: char.avatarExt, avatarAssetId: char.avatarAssetId, avatarFullAssetId: char.avatarFullAssetId, updatedAt: char.updatedAt, preferFull: true })
         : null;
       if (!avatarUrl) throw new Error("No avatar");
 

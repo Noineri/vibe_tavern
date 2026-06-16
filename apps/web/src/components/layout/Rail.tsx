@@ -8,8 +8,8 @@ import { initials } from "./app-shell-helpers.js";
 import { CharacterImportModal, ChatImportModal } from "../modals/ImportModals.js";
 
 /** Resolve a character list entry's avatar URL (folder avatar when migrated). */
-const charAvatarSrc = (c: { id: string; avatarExt: string | null; avatarAssetId: string | null }) =>
-  resolveEntityAvatarUrl({ kind: "characters", id: c.id, avatarExt: c.avatarExt, avatarAssetId: c.avatarAssetId });
+const charAvatarSrc = (c: { id: string; avatarExt: string | null; avatarAssetId: string | null; updatedAt?: string | null }) =>
+  resolveEntityAvatarUrl({ kind: "characters", id: c.id, avatarExt: c.avatarExt, avatarAssetId: c.avatarAssetId, updatedAt: c.updatedAt });
 import { useT } from "../../i18n/context.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { activateBranchAction, renameBranchAction } from "../../stores/api-actions/chat-actions.js";

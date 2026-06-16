@@ -158,6 +158,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 				avatarFullAssetId: c.avatarFullAssetId,
 				avatarCropJson: c.avatarCropJson,
 				avatarExt: c.avatarExt,
+				updatedAt: c.updatedAt,
 			})),
 			promptPresets: promptPresets.map((p) => this.mapPresetToDto(p)),
 			uiSettings,
@@ -404,7 +405,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 		};
 	}
 
-	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null }>> {
+	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null; updatedAt: string }>> {
 		const characters = await this.stores.characters.listAll();
 		return characters.map((c) => ({
 			id: c.id,
@@ -414,6 +415,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			avatarFullAssetId: c.avatarFullAssetId,
 			avatarCropJson: c.avatarCropJson,
 			avatarExt: c.avatarExt,
+			updatedAt: c.updatedAt,
 		}));
 	}
 

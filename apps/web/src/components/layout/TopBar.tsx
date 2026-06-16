@@ -35,7 +35,7 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
   const characterName = chatMeta?.character.name ?? "";
   const characterSubtitle = chatMeta?.character.subtitle ?? "";
   const characterAvatar = chatMeta?.character
-    ? resolveEntityAvatarUrl({ kind: "characters", id: chatMeta.character.id, avatarExt: chatMeta.character.avatarExt, avatarAssetId: chatMeta.character.avatarAssetId }) ?? undefined
+    ? resolveEntityAvatarUrl({ kind: "characters", id: chatMeta.character.id, avatarExt: chatMeta.character.avatarExt, avatarAssetId: chatMeta.character.avatarAssetId, updatedAt: chatMeta.character.updatedAt }) ?? undefined
     : undefined;
   const providerConnected = connection.status === "connected";
   const providerLabel = provider.activeProviderProfile?.name || t("no_provider");

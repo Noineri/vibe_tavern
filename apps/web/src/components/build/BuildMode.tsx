@@ -192,7 +192,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
     void Promise.resolve(onAvatarUpload(file, originalFile)).then(() => setAvatarPreview(null));
   }
 
-  const avatarUrl = resolveEntityAvatarUrl({ kind: "characters", id: character.id, avatarExt: character.avatarExt, avatarAssetId: character.avatarAssetId, avatarFullAssetId: character.avatarFullAssetId, preferFull: true }) ?? undefined;
+  const avatarUrl = resolveEntityAvatarUrl({ kind: "characters", id: character.id, avatarExt: character.avatarExt, avatarAssetId: character.avatarAssetId, avatarFullAssetId: character.avatarFullAssetId, updatedAt: character.updatedAt, preferFull: true }) ?? undefined;
 
   const ctx = { characterId, chatId: activeChatId, personaId };
 

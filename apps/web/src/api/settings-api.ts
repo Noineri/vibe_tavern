@@ -10,7 +10,7 @@ export async function bootstrapApp(): Promise<{
   initialChatId: ChatId | null;
   snapshot: AppSnapshot | null;
   isFirstRun: boolean;
-  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null }>;
+  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null; avatarFullExt: string | null; updatedAt: string }>;
   promptPresets: PromptPresetDto[];
   uiSettings: UiSettingsRecord;
   isArmServer: boolean;
@@ -24,7 +24,7 @@ export async function bootstrapApp(): Promise<{
     initialChatId: ChatId | null;
     snapshot: AppSnapshot | null;
     isFirstRun?: boolean;
-    allCharacters?: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarCropJson?: string | null; avatarExt?: string | null }>;
+    allCharacters?: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId?: string | null; avatarCropJson?: string | null; avatarExt?: string | null; avatarFullExt?: string | null; updatedAt?: string }>;
     promptPresets?: PromptPresetDto[];
     uiSettings?: UiSettingsRecord;
     isArmServer?: boolean;
@@ -34,7 +34,7 @@ export async function bootstrapApp(): Promise<{
     initialChatId: data.initialChatId,
     snapshot: data.snapshot ? normalizeSnapshot(data.snapshot) : null,
     isFirstRun: data.isFirstRun ?? false,
-    allCharacters: (data.allCharacters ?? []).map(c => ({ ...c, avatarCropJson: c.avatarCropJson ?? null, avatarExt: c.avatarExt ?? null })),
+    allCharacters: (data.allCharacters ?? []).map(c => ({ ...c, avatarFullAssetId: c.avatarFullAssetId ?? null, avatarCropJson: c.avatarCropJson ?? null, avatarExt: c.avatarExt ?? null, avatarFullExt: c.avatarFullExt ?? null, updatedAt: c.updatedAt ?? "" })),
     promptPresets: data.promptPresets ?? [],
     uiSettings: data.uiSettings ?? {
       id: "default",
