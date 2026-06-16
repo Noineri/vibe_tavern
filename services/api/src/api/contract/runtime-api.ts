@@ -78,6 +78,7 @@ interface CharacterAssetRecord {
 	mimeType: string;
 	caption: string;
 	description: string | null;
+	includeInPrompt: boolean;
 	order: number;
 	createdAt: string;
 }
@@ -178,7 +179,7 @@ export interface CharacterAssetRuntimeApi {
 	listCharacterAssets: (characterId: string) => Promise<CharacterAssetRecord[]>;
 	serveCharacterAsset: (characterId: string, assetRowId: string) => Promise<Response | null>;
 	uploadCharacterAsset: (characterId: string, file: File) => Promise<CharacterAssetRecord>;
-	updateCharacterAsset: (characterId: string, assetRowId: string, patch: { caption?: string; description?: string | null }) => Promise<CharacterAssetRecord>;
+	updateCharacterAsset: (characterId: string, assetRowId: string, patch: { caption?: string; description?: string | null; includeInPrompt?: boolean }) => Promise<CharacterAssetRecord>;
 	reorderCharacterAssets: (characterId: string, orderedIds: string[]) => Promise<void>;
 	deleteCharacterAsset: (characterId: string, assetRowId: string) => Promise<void>;
 

@@ -224,11 +224,13 @@ export class PromptAssemblyService {
     setModelHint(input.model);
 
     // ─── A7: media context — gallery descriptions (one read, only when the
-    // character has gallery injection enabled). Pre-filter to described rows:
-    // undescribed images carry no prompt value and would emit empty entries.
+    // character has gallery injection enabled). Pre-filter to described rows
+    // the user explicitly selected for inclusion (D7): undescribed images
+    // carry no prompt value, and includeInPrompt defaults OFF so a gallery
+    // only injects what the user opts in per-image.
     const gallery = character.includeGalleryInPrompt
       ? (await this.stores.characterAssets.listByCharacter(character.id))
-          .filter((row) => row.description?.trim())
+          .filter((row) => row.description?.trim() && row.includeInPrompt)
           .map((row) => ({ caption: row.caption || `gallery-${row.id}`, description: row.description!.trim() }))
       : null;
 

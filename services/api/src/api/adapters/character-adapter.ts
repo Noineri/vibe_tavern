@@ -180,7 +180,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 	updateCharacterAsset = async (
 		characterId: string,
 		assetRowId: string,
-		patch: { caption?: string; description?: string | null },
+		patch: { caption?: string; description?: string | null; includeInPrompt?: boolean },
 	) => {
 		// Verify ownership before updating (cross-character guard).
 		const row = await this.stores.characterAssets.getById(assetRowId);

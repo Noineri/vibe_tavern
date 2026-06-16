@@ -149,6 +149,53 @@ describe("Character gallery adapter (A5)", () => {
 		await expect(characters.deleteCharacterAsset(char.id, "row_nope")).rejects.toThrow(/not found/);
 	});
 
+	test("update includeInPrompt flows through list and is returned on the record (D7)", async () => {
+		const { stores, characters } = await setup();
+		const char = await stores.characters.create({ name: "Aria" });
+		const a = await characters.uploadCharacterAsset(char.id, new File([PNG], "a.png", { type: "image/png" }));
+
+		// new uploads default to includeInPrompt = false
+		expect(a.includeInPrompt).toBe(false);
+
+		// toggle on via the adapter (the path R2's UI will use)
+		const on = await characters.updateCharacterAsset(char.id, a.id, { includeInPrompt: true });
+		expect(on).toMatchObject({ includeInPrompt: true });
+
+		// list surfaces it
+		expect((await characters.listCharacterAssets(char.id))[0]?.includeInPrompt).toBe(true);
+
+		// toggle back off
+		const off = await characters.updateCharacterAsset(char.id, a.id, { includeInPrompt: false });
+		expect(off?.includeInPrompt).toBe(false);
+	});
+
+	test("PATCH route persists includeInPrompt boolean (200) and rejects nothing on absent field", async () => {
+		const { stores, characters } = await setup();
+		const char = await stores.characters.create({ name: "Aria" });
+		const a = await characters.uploadCharacterAsset(char.id, new File([PNG], "a.png", { type: "image/png" }));
+		const app = createCharacterRoutes(characters);
+
+		const res = await app.request(`/api/characters/${char.id}/assets/${a.id}`, {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ includeInPrompt: true }),
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { includeInPrompt: boolean };
+		expect(body.includeInPrompt).toBe(true);
+
+		// a PATCH without the field leaves it unchanged
+		const res2 = await app.request(`/api/characters/${char.id}/assets/${a.id}`, {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ caption: "x" }),
+		});
+		expect(res2.status).toBe(200);
+		const body2 = (await res2.json()) as { includeInPrompt: boolean; caption: string };
+		expect(body2.includeInPrompt).toBe(true);
+		expect(body2.caption).toBe("x");
+	});
+
 	test("character-delete cascade removes gallery rows (FK) and the gallery folder", async () => {
 		const { dataRoot, stores, characters } = await setup();
 		const char = await stores.characters.create({ name: "Aria" });

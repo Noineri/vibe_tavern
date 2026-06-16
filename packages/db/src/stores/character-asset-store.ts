@@ -21,6 +21,8 @@ export interface UpdateCharacterAssetData {
   caption?: string;
   /** Pass null to clear the description. */
   description?: string | null;
+  /** D7: per-image prompt inclusion toggle. */
+  includeInPrompt?: boolean;
 }
 
 /**
@@ -36,6 +38,8 @@ export interface CharacterAsset {
   mimeType: string;
   caption: string;
   description: string | null;
+  /** D7: per-image prompt inclusion (selected rows only are injected). */
+  includeInPrompt: boolean;
   order: number;
   createdAt: string;
 }
@@ -101,9 +105,10 @@ export class CharacterAssetStore {
   }
 
   async update(id: string, patch: UpdateCharacterAssetData): Promise<CharacterAsset | null> {
-    const values: { caption?: string; description?: string | null } = {};
+    const values: { caption?: string; description?: string | null; includeInPrompt?: boolean } = {};
     if (patch.caption !== undefined) values.caption = patch.caption;
     if (patch.description !== undefined) values.description = patch.description;
+    if (patch.includeInPrompt !== undefined) values.includeInPrompt = patch.includeInPrompt;
 
     const [row] = await this.db
       .update(characterAssets)
@@ -162,6 +167,7 @@ export class CharacterAssetStore {
       mimeType: row.mimeType,
       caption: row.caption,
       description: row.description,
+      includeInPrompt: row.includeInPrompt,
       order: row.order,
       createdAt: row.createdAt,
     };

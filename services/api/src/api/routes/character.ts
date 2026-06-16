@@ -123,9 +123,10 @@ export function createCharacterRoutes(runtime: CharacterRuntimeApi & CharacterAs
     })
     .patch("/api/characters/:characterId/assets/:assetRowId", async (c) => {
       const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-      const patch: { caption?: string; description?: string | null } = {};
+      const patch: { caption?: string; description?: string | null; includeInPrompt?: boolean } = {};
       if (typeof body.caption === "string") patch.caption = body.caption;
       if (body.description === null || typeof body.description === "string") patch.description = body.description;
+      if (typeof body.includeInPrompt === "boolean") patch.includeInPrompt = body.includeInPrompt;
       try {
         const asset = await runtime.updateCharacterAsset(c.req.param("characterId"), c.req.param("assetRowId"), patch);
         return c.json(asset, 200);
