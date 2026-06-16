@@ -3,7 +3,7 @@
 > Companion to [Frontend Architecture](../architecture/frontend.md).
 > Read this before adding a color theme — the registry design means most additions are one CSS file + one array entry.
 
-Theming is **registry-driven**. There is exactly one source of truth — `apps/web/src/themes/registry.ts` — and every consumer (storage, the `<html>` class, the theme picker in desktop Tweaks *and* mobile settings) derives from it. Adding a theme is two mechanical steps plus a CSS file. The two gotchas that historically bit us are documented in [§ The two traps](#the-two-traps) below; read those before writing CSS.
+Theming is **registry-driven**. There is exactly one source of truth — `apps/web/src/themes/registry.ts` — and every consumer (storage, the `<html>` class, the theme picker in desktop Tweaks *and* mobile settings) derives from it. Adding a theme is two mechanical steps plus a CSS file. The three traps that historically shipped bugs are documented in [§ The three traps](#the-three-traps) below; read those before writing CSS. If your theme uses a gradient or animated background, also read [§ Page-background gradients and transparency](#page-background-gradients-and-transparency).
 
 ---
 
@@ -32,7 +32,7 @@ Everything below `registry.ts` in that tree adapts automatically. **Do not touch
 
 ### 1. Create the theme CSS file
 
-Add `apps/web/src/themes/<name>.css`. The selector is `:root.<name>`. Mirror the token set of `coffee.css` / `light.css` — every `--*` custom property the UI uses must be defined (copy the full block from an existing theme and adjust values). The relevant groups: backgrounds (`--bg`, `--surface`, `--s2`, `--s3`), borders (`--border`, `--border2`), text (`--t1`–`--t4`, `--msg-t1/2`), accent (`--accent`, `--accent-t`, `--accent-dim`, `--accent-hover`), danger/success/info/warning, shadows, markdown colors, syntax-highlight colors.
+Add `apps/web/src/themes/<name>.css`. The selector is `:root.<name>`. Mirror the token set of `coffee.css` / `light.css` — every `--*` custom property the UI uses must be defined (copy the full block from an existing theme and adjust values). The relevant groups: backgrounds (`--bg`, `--surface`, `--s2`, `--s3`; optionally `--page-bg` for a page gradient — see [§ Page-background gradients and transparency](#page-background-gradients-and-transparency)), borders (`--border`, `--border2`), text (`--t1`–`--t4`, `--msg-t1/2`), accent (`--accent`, `--accent-t`, `--accent-dim`, `--accent-hover`), danger/success/info/warning, shadows, markdown colors, syntax-highlight colors.
 
 ```css
 :root.my-theme {
@@ -75,9 +75,9 @@ That's it. The theme now appears in both pickers, persists across reloads, and s
 
 ---
 
-## The two traps
+## The three traps
 
-These are the two things that look optional but are load-bearing. Both have shipped bugs. Read before writing CSS.
+These look optional but are load-bearing. Each has shipped a bug. Read before writing CSS.
 
 ### Trap #1 — `--bg` must be a solid color, not a gradient
 
@@ -107,6 +107,81 @@ Switching is **exclusive**: `applyThemeClass()` removes *every* theme class from
 
 > **Renaming a theme:** the `id` is what's stored in localStorage. If you change an existing id (e.g. the espresso palette was renamed `dark` → `coffee` once a third theme made "dark" misleading), users with the old id saved fall through to `normalizeTheme()` → `DEFAULT_THEME`, so they land on the default theme automatically — only safe when the default theme *is* the renamed one, otherwise they'd land on the wrong palette.
 
+### Trap #3 — the root app `<div>` must stay transparent
+
+`--page-bg` paints `<body>`, but it only reaches the eye through the root `<div>` in `AppShell.tsx`. That div is deliberately `className="flex text-t1 font-ui"` with **no background**. If someone re-adds `bg-bg` (opaque) to it, it masks `--page-bg` completely and **every gradient theme ships invisible** — exactly the bug that hid glass-purple's gradient for its entire life until it was fixed. Never add `bg-bg` (or any opaque background) to the root app div. The full picture is in [§ Page-background gradients and transparency](#page-background-gradients-and-transparency).
+
+---
+
+## Page-background gradients and transparency
+
+A theme's page background is **live**: when `--page-bg` is set, it paints the whole viewport through a deliberate transparency stack. Understanding that stack is the difference between a gradient that glows and one that's invisible.
+
+### The transparency stack
+
+```
+<body>                        ← paints var(--page-bg, var(--bg)) — the gradient lives here
+└─ root <div> (AppShell)      ← transparent (no bg-bg — trap #3)
+   ├─ <Sidebar>               ← opaque --surface panel
+   └─ <main>
+      ├─ <TopBar>             ← opaque --surface panel
+      └─ chat reading area    ← transparent — the gradient glows through here
+         └─ <InputArea>       ← opaque --surface panel
+```
+
+The gradient shows only in the gaps between opaque panels — chiefly the chat reading area. The panels (`Sidebar`, `TopBar`, `InputArea`, AI message surfaces) carry their own opaque `--surface` and sit *above* the gradient. This is intentional: text rests on solid color for readability while the background supplies atmosphere.
+
+- A theme **without** `--page-bg` (coffee, light) gets a flat solid `--bg` on `<body>` — the stack still holds, the background is simply uniform.
+- A theme **with** `--page-bg` gets a gradient visible through the reading area.
+
+### Gradient stops must clear the just-noticeable difference
+
+Stops too close in lightness read as flat. glass-purple originally ran `oklch(0.18 …) → oklch(0.13 …)` — a 0.05 spread that was invisible; raising the top stop to `0.24` made the glow perceptible. **Aim for ≥ 0.06–0.08 lightness between the brightest and darkest stops**, or the gradient ships invisible (and looks like a bug — it did).
+
+### Alpha on surfaces — the "glass" look
+
+Tokens consumed as `background-color` (via the `bg-*` Tailwind utilities: `bg-surface`, `bg-user-bg`, `bg-s2`, …) **do accept alpha**, so translucent surfaces work:
+
+```css
+--user-bg: oklch(0.23 0.025 330 / 60%);  /* user bubble lets the gradient bleed through */
+```
+
+What does **not** work: a gradient inside any color-consumed token. `bg-accent`, `bg-user-bg`, `bg-surface` all compile to `background-color: var(--…)`, and a gradient is not a valid `<color>` — it's silently dropped (Trap #1, generalized beyond `--bg`). Gradients belong only in `--page-bg`.
+
+> glass-purple keeps `--user-bg` opaque by maintainer decision. Translucent surfaces are a per-theme choice, not a requirement — but the mechanism is there.
+
+### Animated gradients (lava-lamp / aurora)
+
+`--page-bg` accepts any `background-image`, including **layered** radial gradients. Animate `background-position` with `background-size > 100%` and the blobs drift. Because `--page-bg` is consumed by a global `background` shorthand on `<body>`, set `background-size` and `animation` on `<body>` scoped under your theme selector so the cascade wins over the global rule:
+
+```css
+:root.lava-lamp {
+  /* four layers: three drifting color blobs + a dark opaque base */
+  --page-bg:
+    radial-gradient(circle at 20% 30%, oklch(0.40 0.12 300 / 70%), transparent 45%),
+    radial-gradient(circle at 80% 60%, oklch(0.36 0.14 25  / 65%), transparent 45%),
+    radial-gradient(circle at 50% 80%, oklch(0.32 0.10 160 / 60%), transparent 50%),
+    oklch(0.12 0.02 285);
+}
+
+/* size + animation go on body, scoped to the theme so they don't leak */
+:root.lava-lamp body {
+  background-size: 180% 180%;
+  animation: lava-drift 18s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root.lava-lamp body { animation: none; }
+}
+
+@keyframes lava-drift {
+  0%, 100% { background-position:   0% 0%, 100% 100%, 50% 50%; }
+  50%      { background-position: 100% 50%,   0% 50%, 50% 0%; }
+}
+```
+
+Validated against the running app: the three blobs render in the reading area, drift over ~18s, panels stay opaque, text stays readable. Keep the base layer opaque and dark, and keep blob alpha ≤ ~70% so text contrast holds. Always respect `prefers-reduced-motion`.
+
 ---
 
 ## When you need a new icon
@@ -123,7 +198,10 @@ There is no external icon library and no online catalog; to preview the full set
 ## Checklist
 
 - [ ] New `apps/web/src/themes/<name>.css` with the **full** token set, selector `:root.<name>`.
-- [ ] `--bg` is a solid color. Gradient (if any) is in `--page-bg` only.
+- [ ] `--bg` is a solid color. No gradient inside any color-consumed token (`--bg`, `--surface`, `--accent`, `--user-bg`, …) — gradients only in `--page-bg`.
+- [ ] If the theme sets `--page-bg`: brightest-vs-darkest stop differs by **≥ 0.06** lightness (else it ships invisible).
+- [ ] If the gradient is animated: `background-size` + `animation` are scoped to `:root.<theme> body`, and a `prefers-reduced-motion` block disables them.
+- [ ] The root app div in `AppShell.tsx` was **not** given a `bg-bg` (it would mask `--page-bg`).
 - [ ] `@import` added to `apps/web/src/styles.css`.
 - [ ] One `ThemeDef` appended to `THEMES` in `registry.ts`; `className` matches the selector and is **non-empty** (unless this is intentionally the new default).
 - [ ] `bun run typecheck` green.
