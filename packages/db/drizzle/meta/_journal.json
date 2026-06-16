@@ -232,6 +232,13 @@
       "when": 1781556677953,
       "tag": "0032_silly_mercury",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1781630757512,
+      "tag": "0033_bent_doctor_strange",
+      "breakpoints": true
     }
   ]
 }

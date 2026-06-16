@@ -28,6 +28,12 @@ export const characters = sqliteTable('characters', {
   // /api/characters/:id/avatar. Null = legacy avatar pointed at by avatarAssetId
   // (flat asset), or no avatar. See CHARACTER_FOLDER_STORAGE_PLAN.
   avatarExt: text('avatar_ext'),
+  // Folder-resident FULL (uncropped) avatar extension. When set, the original
+  // lives at data/characters/{id}/avatar-full.{avatarFullExt} and is served via
+  // /api/characters/:id/avatar/full (large display slots: top-bar preview,
+  // editor). Null = no separate full image; the thumbnail avatar.{avatarExt} is
+  // itself uncropped (no crop was made) and serves both sizes. See AVATAR_FULL_PLAN.
+  avatarFullExt: text('avatar_full_ext'),
   // Media gallery / avatar-appearance prompt injection (MEDIA_GALLERY_BACKEND_PLAN).
   includeGalleryInPrompt: integer('include_gallery_in_prompt', { mode: 'boolean' }).notNull().default(false),
   includeAvatarInPrompt: integer('include_avatar_in_prompt', { mode: 'boolean' }).notNull().default(false),
@@ -53,6 +59,8 @@ export const personas = sqliteTable('personas', {
   avatarCropJson: text('avatar_crop_json'),
   // Folder-resident avatar extension; see characters.avatarExt.
   avatarExt: text('avatar_ext'),
+  // Folder-resident FULL (uncropped) avatar extension; see characters.avatarFullExt.
+  avatarFullExt: text('avatar_full_ext'),
   // Avatar-appearance prompt injection (MEDIA_GALLERY_BACKEND_PLAN).
   includeAvatarInPrompt: integer('include_avatar_in_prompt', { mode: 'boolean' }).notNull().default(false),
   avatarDescription: text('avatar_description'),

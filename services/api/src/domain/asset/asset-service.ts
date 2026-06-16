@@ -228,6 +228,34 @@ export class AssetService {
     return this.loadFolderImageBuffer(STORAGE_FOLDERS.personas, personaId, "avatar", ext);
   }
 
+  // ─── Full avatars (leafBase = "avatar-full") ───────────────────────
+  // The uncropped original, stored alongside the thumbnail avatar.{ext}.
+  // Used by the large display slots (top-bar preview, editor). When a character
+  // has no separate full (no crop was made), avatarFullExt is null and the
+  // thumbnail avatar.{ext} IS the original — callers fall back to it.
+
+  /** Write the uncropped full avatar into {id}/avatar-full.{ext}. */
+  async writeCharacterAvatarFull(characterId: string, file: File): Promise<{ ext: string }> {
+    const r = await this.writeFolderImage(STORAGE_FOLDERS.characters, characterId, "avatar-full", file);
+    return { ext: r.ext };
+  }
+
+  /** Persona variant — {id}/avatar-full.{ext} under personas/. */
+  async writePersonaAvatarFull(personaId: string, file: File): Promise<{ ext: string }> {
+    const r = await this.writeFolderImage(STORAGE_FOLDERS.personas, personaId, "avatar-full", file);
+    return { ext: r.ext };
+  }
+
+  /** Serve the folder-resident full character avatar. `ext` is the stored avatarFullExt. */
+  async serveCharacterAvatarFull(characterId: string, ext: string): Promise<Response | null> {
+    return this.serveFolderImage(STORAGE_FOLDERS.characters, characterId, "avatar-full", ext);
+  }
+
+  /** Persona variant. */
+  async servePersonaAvatarFull(personaId: string, ext: string): Promise<Response | null> {
+    return this.serveFolderImage(STORAGE_FOLDERS.personas, personaId, "avatar-full", ext);
+  }
+
   // ─── Character media gallery (leafBase = "gallery/{rowId}") ──────────
   // Gallery images live at {characterId}/gallery/{rowId}.{ext}. `rowId` is the
   // character_assets.id the caller already generated; there is no separate

@@ -15,6 +15,7 @@ export interface CreatePersonaData {
   avatarFullAssetId?: string | null;
   avatarCropJson?: string | null;
   avatarExt?: string | null;
+  avatarFullExt?: string | null;
   includeAvatarInPrompt?: boolean;
   avatarDescription?: string | null;
   defaultForNewChats?: boolean;
@@ -35,8 +36,10 @@ export interface Persona {
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;
-  /** Extension of the folder-resident avatar at {id}/avatar.{avatarExt}. Null = no folder avatar (legacy flat avatar via avatarAssetId, or none). */
+  /** Extension of the folder-resident thumbnail (crop) avatar at {id}/avatar.{avatarExt}. Null = no folder avatar (legacy flat avatar via avatarAssetId, or none). */
   avatarExt: string | null;
+  /** Extension of the folder-resident FULL (uncropped) avatar at {id}/avatar-full.{avatarFullExt}. Null = no separate full image (the thumbnail avatar is itself uncropped, or none). */
+  avatarFullExt: string | null;
   // Avatar-appearance prompt injection (MEDIA_GALLERY_BACKEND_PLAN).
   includeAvatarInPrompt: boolean;
   avatarDescription: string | null;
@@ -108,6 +111,29 @@ export class PersonaStore {
       }
     }
 
+    // Full-avatar lazy migration (AVATAR_FULL_PLAN): legacy uncropped flat
+    // avatar (avatarFullAssetId set, avatarFullExt null) → {id}/avatar-full.{ext}.
+    // Same lazy/copy-forward/idempotent shape as the thumbnail block above.
+    // Restores the original for the large display slots. Independent of the
+    // thumbnail block.
+    if (this.content && !row.avatarFullExt && row.avatarFullAssetId) {
+      const fullExt = await this.content.copyAssetToEntityFolder(
+        row.avatarFullAssetId,
+        STORAGE_FOLDERS.personas,
+        id,
+        'avatar-full',
+        IMAGE_EXTENSIONS,
+      );
+      if (fullExt) {
+        await this.db.update(personas)
+          .set({ avatarFullExt: fullExt, avatarFullAssetId: null })
+          .where(eq(personas.id, id))
+          .run();
+        persona.avatarFullExt = fullExt;
+        persona.avatarFullAssetId = null;
+      }
+    }
+
     return persona;
   }
 
@@ -142,6 +168,7 @@ export class PersonaStore {
         avatarFullAssetId: data.avatarFullAssetId ?? null,
         avatarCropJson: data.avatarCropJson ?? null,
         avatarExt: data.avatarExt ?? null,
+        avatarFullExt: data.avatarFullExt ?? null,
         includeAvatarInPrompt: data.includeAvatarInPrompt ?? false,
         avatarDescription: data.avatarDescription ?? null,
         defaultForNewChats: data.defaultForNewChats ? 1 : 0,
@@ -175,6 +202,7 @@ export class PersonaStore {
     if (data.avatarFullAssetId !== undefined) values.avatarFullAssetId = data.avatarFullAssetId;
     if (data.avatarCropJson !== undefined) values.avatarCropJson = data.avatarCropJson;
     if (data.avatarExt !== undefined) values.avatarExt = data.avatarExt;
+    if (data.avatarFullExt !== undefined) values.avatarFullExt = data.avatarFullExt;
     if (data.defaultForNewChats !== undefined) values.defaultForNewChats = data.defaultForNewChats ? 1 : 0;
     // Avatar-appearance prompt-injection fields. Mirrored on setMediaFields;
     // mapped here too so the PATCH path can set them.
@@ -234,6 +262,18 @@ export class PersonaStore {
     await this.db
       .update(personas)
       .set({ avatarExt: ext, avatarAssetId: null, updatedAt: this.clock.now() })
+      .where(eq(personas.id, id))
+      .run();
+  }
+
+  /**
+   * Point update of the folder-resident FULL avatar: sets `avatarFullExt` and
+   * clears the legacy `avatarFullAssetId`. Symmetric with setFolderAvatar.
+   */
+  async setFolderAvatarFull(id: string, ext: string): Promise<void> {
+    await this.db
+      .update(personas)
+      .set({ avatarFullExt: ext, avatarFullAssetId: null, updatedAt: this.clock.now() })
       .where(eq(personas.id, id))
       .run();
   }
@@ -310,6 +350,7 @@ export class PersonaStore {
       avatarFullAssetId: row.avatarFullAssetId,
       avatarCropJson: row.avatarCropJson ?? null,
       avatarExt: row.avatarExt ?? null,
+      avatarFullExt: row.avatarFullExt ?? null,
       includeAvatarInPrompt: row.includeAvatarInPrompt,
       avatarDescription: row.avatarDescription ?? null,
       defaultForNewChats: row.defaultForNewChats === 1,

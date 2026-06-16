@@ -59,6 +59,7 @@ export class PersonaRuntime {
 		avatarFullAssetId: string | null;
 		avatarCropJson: string | null;
 		avatarExt: string | null;
+		avatarFullExt: string | null;
 		defaultForNewChats: boolean;
 	}>> {
 		const personas = await this.deps.stores.personas.listAll();
@@ -71,6 +72,7 @@ export class PersonaRuntime {
 			avatarFullAssetId: p.avatarFullAssetId,
 			avatarCropJson: p.avatarCropJson,
 			avatarExt: p.avatarExt,
+			avatarFullExt: p.avatarFullExt,
 			defaultForNewChats: p.defaultForNewChats,
 		}));
 	}
@@ -89,6 +91,7 @@ export class PersonaRuntime {
 		avatarFullAssetId: string | null;
 		avatarCropJson: string | null;
 		avatarExt: string | null;
+		avatarFullExt: string | null;
 		defaultForNewChats: boolean;
 	}> {
 		const trimmedName = (input.name ?? "").trim();
@@ -111,6 +114,7 @@ export class PersonaRuntime {
 			avatarFullAssetId: persona.avatarFullAssetId,
 			avatarCropJson: persona.avatarCropJson,
 			avatarExt: persona.avatarExt,
+			avatarFullExt: persona.avatarFullExt,
 			defaultForNewChats: persona.defaultForNewChats,
 		};
 	}
@@ -248,6 +252,7 @@ export class PersonaRuntime {
 		avatarAssetId: string | null;
 		avatarFullAssetId: string | null;
 		avatarExt: string | null;
+		avatarFullExt: string | null;
 		defaultForNewChats: boolean;
 	}> {
 		const source = await this.deps.stores.personas.getById(brandId<PersonaId>(personaId));
@@ -262,6 +267,7 @@ export class PersonaRuntime {
 			avatarAssetId: source.avatarAssetId,
 			avatarFullAssetId: source.avatarFullAssetId,
 			avatarExt: source.avatarExt,
+			avatarFullExt: source.avatarFullExt,
 		});
 
 		// Copy the folder-resident avatar (if any) into the duplicate's own folder.
@@ -269,6 +275,13 @@ export class PersonaRuntime {
 			const buf = await this.deps.stores.content.readBinary(STORAGE_FOLDERS.personas, source.id, `avatar.${source.avatarExt}`);
 			if (buf) {
 				await this.deps.stores.content.writeBinary(STORAGE_FOLDERS.personas, persona.id, `avatar.${source.avatarExt}`, new Uint8Array(buf));
+			}
+		}
+		// Copy the folder-resident FULL avatar (if any) into the duplicate's folder.
+		if (source.avatarFullExt) {
+			const buf = await this.deps.stores.content.readBinary(STORAGE_FOLDERS.personas, source.id, `avatar-full.${source.avatarFullExt}`);
+			if (buf) {
+				await this.deps.stores.content.writeBinary(STORAGE_FOLDERS.personas, persona.id, `avatar-full.${source.avatarFullExt}`, new Uint8Array(buf));
 			}
 		}
 
@@ -334,6 +347,7 @@ export class PersonaRuntime {
 			avatarAssetId: persona.avatarAssetId,
 			avatarFullAssetId: persona.avatarFullAssetId,
 			avatarExt: persona.avatarExt,
+			avatarFullExt: persona.avatarFullExt,
 			defaultForNewChats: persona.defaultForNewChats,
 		};
 	}

@@ -34,6 +34,8 @@ export type CharacterRecord = {
   avatarCropJson: string | null;
   /** Extension of the folder-resident avatar at {id}/avatar.{avatarExt}. Null = legacy flat avatar (avatarAssetId) or none. Frontend uses this to pick the avatar URL (C2). */
   avatarExt: string | null;
+  /** Extension of the folder-resident FULL (uncropped) avatar at {id}/avatar-full.{avatarFullExt}. Null = no separate full (the thumbnail avatar is itself uncropped, or none). */
+  avatarFullExt: string | null;
   // ─── Media injection (A7) ────────────────────────────────────────────
   /** Vision-generated appearance description of the avatar. Null = undescribed. */
   avatarDescription: string | null;
@@ -87,6 +89,7 @@ export function toCharacterRecord(
     avatarFullAssetId: character.avatarFullAssetId,
     avatarCropJson: character.avatarCropJson,
     avatarExt: character.avatarExt,
+    avatarFullExt: character.avatarFullExt,
     avatarDescription: character.avatarDescription,
     includeAvatarInPrompt: character.includeAvatarInPrompt,
     includeGalleryInPrompt: character.includeGalleryInPrompt,
@@ -432,6 +435,7 @@ export class CharacterRuntime {
       avatarFullAssetId: source.avatarFullAssetId,
       avatarCropJson: source.avatarCropJson,
       avatarExt: source.avatarExt,
+      avatarFullExt: source.avatarFullExt,
     });
 
     const newCharacterId = character.id as CharacterId;
@@ -443,6 +447,13 @@ export class CharacterRuntime {
       const buf = await this.deps.stores.content.readBinary(STORAGE_FOLDERS.characters, source.id, `avatar.${source.avatarExt}`);
       if (buf) {
         await this.deps.stores.content.writeBinary(STORAGE_FOLDERS.characters, newCharacterId, `avatar.${source.avatarExt}`, new Uint8Array(buf));
+      }
+    }
+    // Copy the folder-resident FULL avatar (if any) into the duplicate's folder.
+    if (source.avatarFullExt) {
+      const buf = await this.deps.stores.content.readBinary(STORAGE_FOLDERS.characters, source.id, `avatar-full.${source.avatarFullExt}`);
+      if (buf) {
+        await this.deps.stores.content.writeBinary(STORAGE_FOLDERS.characters, newCharacterId, `avatar-full.${source.avatarFullExt}`, new Uint8Array(buf));
       }
     }
 

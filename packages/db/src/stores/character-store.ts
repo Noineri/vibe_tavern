@@ -30,6 +30,7 @@ export interface CreateCharacterData {
   avatarFullAssetId?: string | null;
   avatarCropJson?: string | null;
   avatarExt?: string | null;
+  avatarFullExt?: string | null;
   includeGalleryInPrompt?: boolean;
   includeAvatarInPrompt?: boolean;
   avatarDescription?: string | null;
@@ -66,8 +67,10 @@ export interface Character {
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;
-  /** Extension of the folder-resident avatar at {id}/avatar.{avatarExt}. Null = no folder avatar (legacy flat avatar via avatarAssetId, or none). */
+  /** Extension of the folder-resident thumbnail (crop) avatar at {id}/avatar.{avatarExt}. Null = no folder avatar (legacy flat avatar via avatarAssetId, or none). */
   avatarExt: string | null;
+  /** Extension of the folder-resident FULL (uncropped) avatar at {id}/avatar-full.{avatarFullExt}. Null = no separate full image (the thumbnail avatar is itself uncropped, or none). */
+  avatarFullExt: string | null;
   // Media gallery / avatar-appearance prompt injection (MEDIA_GALLERY_BACKEND_PLAN).
   includeGalleryInPrompt: boolean;
   includeAvatarInPrompt: boolean;
@@ -146,6 +149,31 @@ export class CharacterStore {
       }
     }
 
+    // Full-avatar lazy migration (AVATAR_FULL_PLAN): legacy uncropped flat
+    // avatar (avatarFullAssetId set, avatarFullExt null) → copy into
+    // {id}/avatar-full.{ext} and persist the ext. Same lazy/copy-forward/
+    // idempotent shape as the thumbnail block above. Restores the original for
+    // the large display slots (top-bar preview, editor) when only the crop was
+    // migrated into avatar.{ext}. Runs independently of the thumbnail block.
+    if (this.content && !row.avatarFullExt && row.avatarFullAssetId) {
+      const fullExt = await this.content.copyAssetToEntityFolder(
+        row.avatarFullAssetId,
+        STORAGE_FOLDERS.characters,
+        id,
+        'avatar-full',
+        IMAGE_EXTENSIONS,
+      );
+      if (fullExt) {
+        await this.db
+          .update(characters)
+          .set({ avatarFullExt: fullExt, avatarFullAssetId: null })
+          .where(eq(characters.id, id))
+          .run();
+        char.avatarFullExt = fullExt;
+        char.avatarFullAssetId = null;
+      }
+    }
+
     return char;
   }
 
@@ -201,6 +229,7 @@ export class CharacterStore {
         avatarFullAssetId: data.avatarFullAssetId ?? null,
         avatarCropJson: data.avatarCropJson ?? null,
         avatarExt: data.avatarExt ?? null,
+        avatarFullExt: data.avatarFullExt ?? null,
         includeGalleryInPrompt: data.includeGalleryInPrompt ?? false,
         includeAvatarInPrompt: data.includeAvatarInPrompt ?? false,
         avatarDescription: data.avatarDescription ?? null,
@@ -253,6 +282,7 @@ export class CharacterStore {
     if (data.avatarFullAssetId !== undefined) values.avatarFullAssetId = data.avatarFullAssetId;
     if (data.avatarCropJson !== undefined) values.avatarCropJson = data.avatarCropJson;
     if (data.avatarExt !== undefined) values.avatarExt = data.avatarExt;
+    if (data.avatarFullExt !== undefined) values.avatarFullExt = data.avatarFullExt;
     // Media gallery / avatar-appearance prompt-injection fields. Mirrored on
     // setMediaFields; mapped here too so the PATCH path can set them (the
     // describe endpoints write avatarDescription via setMediaFields, but the
@@ -382,6 +412,19 @@ export class CharacterStore {
   }
 
   /**
+   * Point update of the folder-resident FULL avatar: sets `avatarFullExt` and
+   * clears the legacy `avatarFullAssetId` in a single UPDATE. Symmetric with
+   * setFolderAvatar. Does NOT rewrite {id}/card.json.
+   */
+  async setFolderAvatarFull(id: string, ext: string): Promise<void> {
+    await this.db
+      .update(characters)
+      .set({ avatarFullExt: ext, avatarFullAssetId: null, updatedAt: this.clock.now() })
+      .where(eq(characters.id, id))
+      .run();
+  }
+
+  /**
    * Point-update for media prompt-injection fields (avatar description + the
    * gallery/avatar include toggles). Does NOT rewrite {id}/card.json (unlike
    * `update`) — these are display/prompt columns, not card content. Used by
@@ -491,6 +534,7 @@ export class CharacterStore {
       avatarFullAssetId: row.avatarFullAssetId,
       avatarCropJson: row.avatarCropJson ?? null,
       avatarExt: row.avatarExt ?? null,
+      avatarFullExt: row.avatarFullExt ?? null,
       includeGalleryInPrompt: row.includeGalleryInPrompt,
       includeAvatarInPrompt: row.includeAvatarInPrompt,
       avatarDescription: row.avatarDescription ?? null,
