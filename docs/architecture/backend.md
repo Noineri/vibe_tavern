@@ -302,7 +302,7 @@ These are thin delegators kept for call-site compatibility (tracked as tech-debt
 - `provider-orchestrator.ts` → `ProviderOrchestrator.refreshProfileModels()` composes `listProviderModels` + `provider-profile-service` caching + a `defaultModel` fallback.
 - `provider-transport.ts` — shared HTTP helpers (URL normalisation, header building, timeouts, `extractChoiceContent`, error wrapping) and the shared types (`ProviderConnectionInput`, `ProviderModelOption`, `ProviderProbeResult`, `TestChatResult`).
 
-**Why a registry:** Adding a native provider is one object entry in `protocol-registry.ts`, not a four-site lock-step edit. See [Adding a new AI provider](./adding-a-provider.md).
+**Why a registry:** Adding a native provider is one object entry in `protocol-registry.ts`, not a four-site lock-step edit. See [Adding a new AI provider](../guides/adding-a-provider.md).
 
 ### Sampler wiring — `infrastructure/ai/sampler-mapper.ts`
 
@@ -494,7 +494,7 @@ Fire-and-forget background task triggered after `appendAssistantReply()`:
 - Creates a new summary covering messages since the last summary's `summarizedTo`
 - Range capped at `lastMessagePosition - 1` (excludes last user message)
 
-The dedup-lock + error-boundary pattern used here is shared by all background LLM features via `BackgroundTaskLocks`. To add a new feature of this shape (summary, objective, tracker, badge, dream), see [Adding a feature](./adding-a-feature.md).
+The dedup-lock + error-boundary pattern used here is shared by all background LLM features via `BackgroundTaskLocks`. To add a new feature of this shape (summary, objective, tracker, badge, dream), see [Adding a feature](../guides/adding-a-feature.md).
 
 ---
 

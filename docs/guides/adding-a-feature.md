@@ -1,6 +1,6 @@
 # Adding a new feature
 
-> Companion to [Backend Architecture](./backend.md) and [Prompt Pipeline](./prompt-pipeline.md).
+> Companion to [Backend Architecture](../architecture/backend.md) and [Prompt Pipeline](../architecture/prompt-pipeline.md).
 > Read this before adding any LLM-backed capability — the two feature kinds look similar but wire up very differently.
 
 The server has a **feature module** system (`FeatureModule` + `FeatureRegistry`) that lets a capability register routes, subscribe to chat events, and own background work as a self-contained unit. But "add a feature" is ambiguous: there are two genuinely different shapes, and picking the wrong one is the #1 way to over-engineer. Decide first:
@@ -120,7 +120,7 @@ Decide where the feature's output lives:
 - **New table** (e.g. summaries, dream memories) → add to `packages/db/src/db-schema.ts`, add a store in `packages/db/src/stores/`, run `bun run db:generate`. **Never edit existing migration files.**
 - **JSON column on an existing entity** (e.g. `chats.insightsObjectiveStateJson`, `message.extra.sceneTracker`) → add the column via migration, type the accessor.
 
-See [Database Migrations](./DATABASE_MIGRATIONS.md).
+See [Database Migrations](../DATABASE_MIGRATIONS.md).
 
 ### Step 2 — Prompt layer (if the feature injects into future prompts)
 
