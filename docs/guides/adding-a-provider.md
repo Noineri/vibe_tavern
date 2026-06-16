@@ -1,6 +1,6 @@
 # Adding a new AI provider
 
-> Companion to [Backend Architecture → AI Execution Layer](./backend.md#ai-execution-layer).
+> Companion to [Backend Architecture → AI Execution Layer](../architecture/backend.md#ai-execution-layer).
 > Read this before touching provider code — the registry design means most additions are 1–2 lines.
 
 The provider system is **registry-driven**. There are two distinct kinds of "new provider", and they cost very different amounts of work. Pick your case first:

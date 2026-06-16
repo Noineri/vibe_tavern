@@ -338,7 +338,7 @@ Crucially, `vision_describe` is **not added to the AI Assistant modal's mode pic
 
 **Trade-off:** A `AiAssistantMode` value that isn't reachable from the assistant modal — mildly counterintuitive for a reader of the mode union. Mitigated by a comment in `MODE_CONFIGS` stating explicitly that it is backend-only. Considered alternatives (a separate `PromptResolvableMode` type for backend modes; a flag on the config) and rejected as over-engineering for a single case.
 
-**Related:** This ADR covers prompt-resolution unification only. The three-path vision gate (native vision / describe-fallback / `VisionNotSupportedError`) and the skip-if-described caching rule are documented in [Vision and Attachment Pipeline](./backend.md#vision-and-attachment-pipeline), not part of this decision. `vision_describe` is a Case A (stateless) feature in the taxonomy of [Adding a feature](./adding-a-feature.md) — the result is returned to the caller, not persisted and not injected into future prompts.
+**Related:** This ADR covers prompt-resolution unification only. The three-path vision gate (native vision / describe-fallback / `VisionNotSupportedError`) and the skip-if-described caching rule are documented in [Vision and Attachment Pipeline](./backend.md#vision-and-attachment-pipeline), not part of this decision. `vision_describe` is a Case A (stateless) feature in the taxonomy of [Adding a feature](../guides/adding-a-feature.md) — the result is returned to the caller, not persisted and not injected into future prompts.
 
 ---
 
@@ -402,7 +402,7 @@ Adding a native provider (e.g. Vertex AI) meant touching all four sites and keep
 
 **Trade-off:** One intentional switch remains: per-protocol sampler *wire serialization* in `buildSamplerConfig` (`infrastructure/ai/sampler-mapper.ts`). Native parameter names genuinely differ per protocol (`repeat_penalty` vs `repetition_penalty`, `typical` vs `typical_p`, etc.), so this is legitimate per-protocol logic, not a registry candidate. Capability *gating* is registry-driven (`SAMPLER_SETS`); only the wire *names* are switched.
 
-**Implementation:** See [Adding a new AI provider](./adding-a-provider.md) and [Backend Architecture — AI Execution Layer](./backend.md#ai-execution-layer).
+**Implementation:** See [Adding a new AI provider](../guides/adding-a-provider.md) and [Backend Architecture — AI Execution Layer](./backend.md#ai-execution-layer).
 
 **Related:** AD-020 (Feature-Sliced Layout) — the registry lives in `domain/providers/`, with the generation pipeline in `infrastructure/ai/` depending on it one-way.
 
