@@ -21,15 +21,19 @@ const testIdGen: StoreIdGenerator = {
   },
 };
 
+async function mkStore(): Promise<LorebookStore> {
+  const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
+  const db = await createDb(join(dir, "test.db"));
+  return new LorebookStore(db, {
+    clock: testClock,
+    idGenerator: testIdGen,
+    content: null,
+  });
+}
+
 describe("LorebookStore.listLorebooksByScope", () => {
   test("includes lorebooks linked to a persona via lorebook_links", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
-    const db = await createDb(join(dir, "test.db"));
-    const store = new LorebookStore(db, {
-      clock: testClock,
-      idGenerator: testIdGen,
-      content: null,
-    });
+    const store = await mkStore();
 
     const linked = await store.createLorebook({
       name: "Persona-linked lorebook",
@@ -50,5 +54,42 @@ describe("LorebookStore.listLorebooksByScope", () => {
 
     const otherPersonaLorebooks = await store.listLorebooksByScope("persona", "persona_other");
     expect(otherPersonaLorebooks.map((lb) => lb.id)).not.toContain(linked.id);
+  });
+});
+
+describe("LorebookStore.updateLorebook", () => {
+  test("persists name and description changes", async () => {
+    const store = await mkStore();
+    const created = await store.createLorebook({
+      name: "Original name",
+      description: "Original description",
+      scopeType: "global",
+    });
+
+    await store.updateLorebook(created.id, {
+      name: "Renamed",
+      description: "New description",
+    });
+
+    const updated = await store.getLorebook(created.id);
+    expect(updated?.name).toBe("Renamed");
+    expect(updated?.description).toBe("New description");
+  });
+
+  test("does not drop other fields when only name changes", async () => {
+    const store = await mkStore();
+    const created = await store.createLorebook({
+      name: "Original",
+      description: "Keep me",
+      scopeType: "global",
+      scanDepth: 30,
+    });
+
+    await store.updateLorebook(created.id, { name: "Renamed" });
+
+    const updated = await store.getLorebook(created.id);
+    expect(updated?.name).toBe("Renamed");
+    expect(updated?.description).toBe("Keep me");
+    expect(updated?.scanDepth).toBe(30);
   });
 });

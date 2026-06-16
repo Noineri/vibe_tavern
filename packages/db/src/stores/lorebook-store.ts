@@ -285,6 +285,8 @@ export class LorebookStore {
   async updateLorebook(id: string, data: UpdateLorebookData): Promise<Lorebook> {
     const now = this.clock.now();
     const values: Partial<typeof lorebooks.$inferInsert> = { updatedAt: now };
+    if (data.name !== undefined) values.name = data.name;
+    if (data.description !== undefined) values.description = data.description;
     if (data.scopeType !== undefined) values.scopeType = data.scopeType;
     if (data.scanDepth !== undefined) values.scanDepth = data.scanDepth;
     if (data.tokenBudget !== undefined) values.tokenBudget = data.tokenBudget;
