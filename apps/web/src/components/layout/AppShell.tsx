@@ -244,8 +244,13 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     else if (key === 'lang') { updateTweak(key, value as string); setLocale(value as 'en' | 'ru'); }
   };
 
+  // Root is intentionally transparent: the page background (solid --bg or a
+  // --page-bg gradient, per theme) lives on <body> and shines through here.
+  // Panels (Sidebar/TopBar/InputArea) carry their own opaque --surface; the
+  // chat reading area stays transparent so the gradient shows. Do NOT add
+  // bg-bg here — it masks --page-bg (see docs/guides/adding-a-theme.md).
   return (
-    <div className="flex bg-bg text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
+    <div className="flex text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
       {isMobile ? <Rail hidden={!showRail} /> : <Sidebar />}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar railHidden={isMobile && !showRail} onShowRail={() => useNavigationStore.getState().triggerRailOpen()} />

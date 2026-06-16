@@ -14,7 +14,7 @@
      a gradient fall back to --bg. The value matches the gradient's lower end —
      the dark blueberry that shows behind the chat area. */
   --bg:       oklch(0.14 0.02 288);  /* deepest blueberry — solid, for utilities */
-  --page-bg:  radial-gradient(circle at 50% 0%, oklch(0.18 0.02 290), oklch(0.13 0.015 285) 100%);
+  --page-bg:  radial-gradient(circle at 50% 0%, oklch(0.24 0.03 290), oklch(0.13 0.015 285) 70%);
   
   /* Плотные поверхности, чтобы не смешивать текст слоев */
   --surface:   oklch(0.19 0.015 290); 
