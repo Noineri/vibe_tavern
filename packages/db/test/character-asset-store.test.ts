@@ -101,7 +101,33 @@ describe("CharacterAssetStore (DB-only)", () => {
 	});
 });
 
-describe("ContentStore.deleteBinary", () => {
+	describe("includeInPrompt (D7)", () => {
+		test("create defaults includeInPrompt to false", async () => {
+			const { store, charId } = await setup();
+			const a = await store.create({ characterId: charId, ext: "png", mimeType: "image/png", order: 0 });
+			expect(a.includeInPrompt).toBe(false);
+			// persists through re-read
+			expect((await store.getById(a.id))?.includeInPrompt).toBe(false);
+			expect((await store.listByCharacter(charId))[0]?.includeInPrompt).toBe(false);
+		});
+
+		test("update toggles includeInPrompt true/false", async () => {
+			const { store, charId } = await setup();
+			const a = await store.create({ characterId: charId, ext: "png", mimeType: "image/png", order: 0 });
+			expect(await store.update(a.id, { includeInPrompt: true })).toMatchObject({ includeInPrompt: true });
+			expect(await store.update(a.id, { includeInPrompt: false })).toMatchObject({ includeInPrompt: false });
+		});
+
+		test("update includeInPrompt leaves other fields untouched", async () => {
+			const { store, charId } = await setup();
+			const a = await store.create({ characterId: charId, ext: "png", mimeType: "image/png", caption: "cap", order: 0 });
+			await store.update(a.id, { description: "a portrait" });
+			const updated = await store.update(a.id, { includeInPrompt: true });
+			expect(updated).toMatchObject({ caption: "cap", description: "a portrait", includeInPrompt: true });
+		});
+	});
+
+	describe("ContentStore.deleteBinary", () => {
 	test("removes a single binary leaf inside an entity folder", async () => {
 		const { dataRoot, content, store, charId } = await setup();
 		const a = await store.create({ characterId: charId, ext: "png", mimeType: "image/png", order: 0 });

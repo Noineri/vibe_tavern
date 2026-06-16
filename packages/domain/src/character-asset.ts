@@ -23,6 +23,8 @@ export interface CharacterAsset {
   caption: string;
   /** Vision-generated or user-edited description. Null = not described. */
   description: string | null;
+  /** D7: per-image prompt inclusion. Only described rows with this flag are injected into the prompt (gated by the character's master includeGalleryInPrompt toggle). */
+  includeInPrompt: boolean;
   /** Display order (drag-and-drop reorder). Lower = earlier. */
   order: number;
   /** Creation timestamp (ISO). */

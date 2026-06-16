@@ -84,6 +84,10 @@ export const characterAssets = sqliteTable('character_assets', {
   mimeType: text('mime_type').notNull(),
   caption: text('caption').notNull().default(''),
   description: text('description'),
+  // D7: per-image prompt inclusion. Default OFF so existing galleries don't
+  // suddenly flood prompts — only described rows the user explicitly selects
+  // are injected (prompt-assembly-service filters on description && includeInPrompt).
+  includeInPrompt: integer('include_in_prompt', { mode: 'boolean' }).notNull().default(false),
   order: integer('order').notNull().default(0),
   createdAt: text('created_at').notNull(),
 });

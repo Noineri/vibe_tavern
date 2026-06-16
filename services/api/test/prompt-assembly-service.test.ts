@@ -244,3 +244,116 @@ describe.skip("PromptAssemblyService", () => {
     expect(result.prompt.tokenAccounting.recentHistory).toBe(5);
   });
 });
+
+// ─── D7: per-image gallery prompt inclusion filter ─────────────────────────
+// The gallery filter lives in PromptAssemblyService.assembleForChat (the pure
+// assemblePrompt receives an already-curated `gallery` array). These tests pin
+// the exact filter line — `row.description?.trim() && row.includeInPrompt` —
+// by driving the real service with a minimal mock store + fake resolver, so a
+// silent regression (e.g. dropping the includeInPrompt clause, or inverting it)
+// is caught. Self-contained: does not touch the legacy skipped suite above.
+
+function makeFilterService(
+  galleryRows: Array<{
+    id: string;
+    description: string | null;
+    includeInPrompt: boolean;
+    caption?: string;
+  }>,
+  options?: { includeGalleryInPrompt?: boolean },
+) {
+  const includeGalleryInPrompt = options?.includeGalleryInPrompt ?? true;
+
+  const stores = {
+    chats: {
+      getById: async () => ({
+        id: "chat_1",
+        characterId: "char_1",
+        personaId: null,
+        promptPresetId: null,
+        activeBranchId: "branch_1",
+        title: "T",
+        summary: null,
+        messageHistoryLimit: 0,
+        createdAt: "2025-01-01T00:00:00Z",
+        updatedAt: "2025-01-01T00:00:00Z",
+      }),
+      getBranches: async () => [{ id: "branch_1", chatId: "chat_1", parentBranchId: null, label: "main" }],
+      getMessages: async () => [],
+    },
+    personas: { listAll: async () => [] },
+    presets: { listAll: async () => [] },
+    chatSummaries: { listByChatBranch: async () => [] },
+    characterAssets: {
+      listByCharacter: async () =>
+        galleryRows.map((r) => ({
+          id: r.id,
+          characterId: "char_1",
+          ext: "png",
+          mimeType: "image/png",
+          caption: r.caption ?? "",
+          description: r.description,
+          includeInPrompt: r.includeInPrompt,
+          order: 0,
+          createdAt: "2025-01-01T00:00:00Z",
+        })),
+    },
+  } as unknown as StoreContainer;
+
+  const resolver: PromptAssemblyResolver = {
+    getCharacter: async () => ({
+      id: "char_1",
+      name: "Aria",
+      description: "A fire mage.",
+      personality: "Bold.",
+      includeGalleryInPrompt,
+    }),
+    getPersona: async () => null,
+    getPromptPreset: async () => null,
+    listActiveLoreEntries: async () => [],
+    listRetrievedMemories: async () => [],
+    executeScripts: async () => ({ personality: "Bold.", scenario: null, injectedMessages: [], errors: [] }),
+    getToolInstructions: () => null,
+  };
+
+  return new PromptAssemblyService(stores, resolver, mockFileStore);
+}
+
+describe("PromptAssemblyService gallery includeInPrompt filter (D7)", () => {
+  it("injects only described + includeInPrompt rows", async () => {
+    const service = makeFilterService([
+      { id: "row_a", description: "A black battle dress.", includeInPrompt: true, caption: "outfit" },
+      { id: "row_b", description: "A flaming staff.", includeInPrompt: false, caption: "weapon" }, // selected off
+      { id: "row_c", description: null, includeInPrompt: true, caption: "undescribed" }, // undescribed
+      { id: "row_d", description: "A crimson cloak.", includeInPrompt: true, caption: "cloak" },
+    ]);
+
+    const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "test-model" });
+    const layer = result.prompt.layers.find((l) => l.id === "character_gallery");
+
+    expect(layer, "gallery layer must emit when master toggle on + >=1 selected/described row").toBeTruthy();
+    const text = layer!.text;
+    expect(text).toContain("battle dress"); // row_a
+    expect(text).toContain("crimson cloak"); // row_d
+    expect(text).not.toContain("flaming staff"); // row_b: includeInPrompt false
+    expect(text).not.toContain("undescribed"); // row_c: no description (caption not rendered either)
+  });
+
+  it("suppresses the gallery layer entirely when no described+selected rows remain", async () => {
+    const service = makeFilterService([
+      { id: "row_b", description: "A flaming staff.", includeInPrompt: false },
+      { id: "row_c", description: null, includeInPrompt: true },
+    ]);
+    const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "test-model" });
+    expect(result.prompt.layers.find((l) => l.id === "character_gallery")).toBeUndefined();
+  });
+
+  it("suppresses the gallery layer when the master includeGalleryInPrompt toggle is off", async () => {
+    const service = makeFilterService(
+      [{ id: "row_a", description: "A black battle dress.", includeInPrompt: true }],
+      { includeGalleryInPrompt: false },
+    );
+    const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "test-model" });
+    expect(result.prompt.layers.find((l) => l.id === "character_gallery")).toBeUndefined();
+  });
+});
