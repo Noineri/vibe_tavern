@@ -14,7 +14,7 @@ apps/web/src/
 ├── styles.css                     @import each theme CSS file here; body background
 ├── themes/
 │   ├── registry.ts                ← THEMES array — the single source of truth
-│   ├── dark.css                   :root                 (default — no class)
+│   ├── coffee.css                  :root                 (default — no class)
 │   ├── light.css                  :root.light
 │   └── glass-purple.css           :root.glass-purple
 └── (consumers — no edits needed when adding a theme)
@@ -32,7 +32,7 @@ Everything below `registry.ts` in that tree adapts automatically. **Do not touch
 
 ### 1. Create the theme CSS file
 
-Add `apps/web/src/themes/<name>.css`. The selector is `:root.<name>`. Mirror the token set of `dark.css` / `light.css` — every `--*` custom property the UI uses must be defined (copy the full block from an existing theme and adjust values). The relevant groups: backgrounds (`--bg`, `--surface`, `--s2`, `--s3`), borders (`--border`, `--border2`), text (`--t1`–`--t4`, `--msg-t1/2`), accent (`--accent`, `--accent-t`, `--accent-dim`, `--accent-hover`), danger/success/info/warning, shadows, markdown colors, syntax-highlight colors.
+Add `apps/web/src/themes/<name>.css`. The selector is `:root.<name>`. Mirror the token set of `coffee.css` / `light.css` — every `--*` custom property the UI uses must be defined (copy the full block from an existing theme and adjust values). The relevant groups: backgrounds (`--bg`, `--surface`, `--s2`, `--s3`), borders (`--border`, `--border2`), text (`--t1`–`--t4`, `--msg-t1/2`), accent (`--accent`, `--accent-t`, `--accent-dim`, `--accent-hover`), danger/success/info/warning, shadows, markdown colors, syntax-highlight colors.
 
 ```css
 :root.my-theme {
@@ -57,7 +57,7 @@ Append a `ThemeDef` to the `THEMES` array in `apps/web/src/themes/registry.ts`:
 ```ts
 export const THEMES: readonly ThemeDef[] = [
   { id: "light",    className: "light",    icon: "sun" },
-  { id: "dark",     className: "",         icon: "moon" },
+  { id: "coffee",   className: "",         icon: "coffee" },
   { id: "glass-purple", className: "glass-purple", icon: "sparkles" },
   { id: "my-theme", className: "my-theme", icon: "star" },  // ← new
 ];
@@ -68,7 +68,7 @@ That's it. The theme now appears in both pickers, persists across reloads, and s
 | Field | What it is |
 |-------|------------|
 | `id` | Persistent id (stored in localStorage). Used as the segment-control value. **kebab-case.** |
-| `className` | CSS class applied to `<html>`. **Must match the `:root.<className>` selector.** Empty string `""` for the default theme only (one theme — currently `dark` — must have no class, see trap #1). |
+| `className` | CSS class applied to `<html>`. **Must match the `:root.<className>` selector.** Empty string `""` for the default theme only (one theme — currently `coffee` — must have no class, see trap #1). |
 | `icon` | Key into the `Ic` icon set (`apps/web/src/components/shared/icons.tsx`). Resolved via the `Icons` proxy, so either casing works. |
 
 > **Order matters:** the array order is the display order in the segment control.
@@ -97,13 +97,15 @@ The utility `bg-bg` compiles to `background-color: var(--bg)`. A `radial-gradien
 html, body { background: var(--page-bg, var(--bg)); }
 ```
 
-Themes without `--page-bg` fall back to their solid `--bg` — so dark/light are unaffected. Never put a gradient directly in `--bg`.
+Themes without `--page-bg` fall back to their solid `--bg` — so coffee/light are unaffected. Never put a gradient directly in `--bg`.
 
 ### Trap #2 — exactly one theme has `className: ""`; switching is exclusive
 
-The default theme (`dark`) targets the bare `:root` selector and therefore needs **no class** — its `ThemeDef.className` is `""`. Every other theme carries a class that matches `:root.<className>`.
+The default theme (`coffee`) targets the bare `:root` selector and therefore needs **no class** — its `ThemeDef.className` is `""`. Every other theme carries a class that matches `:root.<className>`.
 
 Switching is **exclusive**: `applyThemeClass()` removes *every* theme class from `<html>` before adding the active one. This replaced an older binary `classList.toggle("light", …)` that only worked for two themes — with a third theme, toggling `light` on/off left stale classes and the themes fought. **Never** apply a theme class with `classList.add`/`toggle` directly; always go through `applyThemeClass()`, and never give a second theme an empty `className`.
+
+> **Renaming a theme:** the `id` is what's stored in localStorage. If you change an existing id (e.g. the espresso palette was renamed `dark` → `coffee` once a third theme made "dark" misleading), users with the old id saved fall through to `normalizeTheme()` → `DEFAULT_THEME`, so they land on the default theme automatically — only safe when the default theme *is* the renamed one, otherwise they'd land on the wrong palette.
 
 ---
 
