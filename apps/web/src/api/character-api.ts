@@ -24,6 +24,10 @@ export async function updateCharacter(
     depthPromptDepth: number | null;
     depthPromptRole: string | null;
     tags: string[];
+    // Media gallery / avatar-appearance prompt injection (MEDIA_GALLERY).
+    includeGalleryInPrompt?: boolean;
+    includeAvatarInPrompt?: boolean;
+    avatarDescription?: string | null;
   }>,
 ): Promise<AppSnapshot> {
   const response = await client.api.characters[":characterId"].$patch({ param: { characterId }, json: input });

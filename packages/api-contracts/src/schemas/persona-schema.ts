@@ -15,6 +15,10 @@ export const updatePersonaSchema = z.object({
   avatarAssetId: z.string().nullable().optional(),
   avatarFullAssetId: z.string().nullable().optional(),
   avatarCropJson: z.string().nullable().optional(),
+  // Avatar-appearance prompt injection (MEDIA_GALLERY). Personas have no
+  // gallery, only the avatar toggle + description.
+  includeAvatarInPrompt: z.boolean().optional(),
+  avatarDescription: z.string().nullable().optional(),
 });
 
 export const setPersonaSchema = z.object({

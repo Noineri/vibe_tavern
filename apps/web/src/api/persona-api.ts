@@ -29,6 +29,9 @@ export async function updatePersona(
     avatarAssetId?: string | null;
     avatarFullAssetId?: string | null;
     avatarCropJson?: string | null;
+    // Avatar-appearance prompt injection (MEDIA_GALLERY).
+    includeAvatarInPrompt?: boolean;
+    avatarDescription?: string | null;
   },
 ): Promise<AppSnapshot> {
   const response = await client.api.personas[":personaId"].$patch({ param: { personaId }, json: input });

@@ -41,6 +41,9 @@ function makeCharacter(id: string, name = `Char ${id}`): AppCharacter {
     avatarFullAssetId: null,
     avatarCropJson: null,
     personalitySummary: null,
+    includeGalleryInPrompt: false,
+    includeAvatarInPrompt: false,
+    avatarDescription: null,
   };
 }
 

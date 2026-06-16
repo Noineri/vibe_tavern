@@ -253,6 +253,13 @@ export class CharacterStore {
     if (data.avatarFullAssetId !== undefined) values.avatarFullAssetId = data.avatarFullAssetId;
     if (data.avatarCropJson !== undefined) values.avatarCropJson = data.avatarCropJson;
     if (data.avatarExt !== undefined) values.avatarExt = data.avatarExt;
+    // Media gallery / avatar-appearance prompt-injection fields. Mirrored on
+    // setMediaFields; mapped here too so the PATCH path can set them (the
+    // describe endpoints write avatarDescription via setMediaFields, but the
+    // toggles and manual description edits go through the PATCH path).
+    if (data.includeGalleryInPrompt !== undefined) values.includeGalleryInPrompt = data.includeGalleryInPrompt;
+    if (data.includeAvatarInPrompt !== undefined) values.includeAvatarInPrompt = data.includeAvatarInPrompt;
+    if (data.avatarDescription !== undefined) values.avatarDescription = data.avatarDescription;
 
     const [row] = await this.db
       .update(characters)
