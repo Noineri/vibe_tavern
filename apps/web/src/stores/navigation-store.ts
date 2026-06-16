@@ -19,7 +19,7 @@ export type NavigationStore = NavigationState & NavigationActions;
 
 export const useNavigationStore = create<NavigationStore>()((set) => ({
   mode: "play",
-  theme: "dark",
+  theme: "coffee",
   sidebarCollapsed: false,
   railForceOpen: 0,
   setMode: (mode) => set({ mode }),

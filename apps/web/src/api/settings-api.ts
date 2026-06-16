@@ -38,7 +38,7 @@ export async function bootstrapApp(): Promise<{
     promptPresets: data.promptPresets ?? [],
     uiSettings: data.uiSettings ?? {
       id: "default",
-      theme: "dark",
+      theme: "coffee",
       chatFontSize: 15,
       uiFontSize: 14,
       messageWidth: 700,

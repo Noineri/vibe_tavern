@@ -10,11 +10,11 @@
  * theme segmented control options — derives from this array, so no other file
  * needs editing when a theme is added.
  *
- * ## The dark/light class nuance
+ * ## The coffee/light class nuance
  *
  * Themes are applied exclusively as a single CSS class on `<html>`:
- *   - The default theme (`dark`) uses `className: ""` — it is the bare `:root`
- *     in dark.css and needs no class.
+ *   - The default theme (`coffee`) uses `className: ""` — it is the bare `:root`
+ *     in coffee.css and needs no class.
  *   - Every other theme carries a className (e.g. `"light"`, `"glass-purple"`)
  *     matching the `:root.<className>` selector in its CSS file.
  *
@@ -40,12 +40,12 @@ export interface ThemeDef {
 
 /**
  * Ordered list of available themes. Order = display order in the segment
- * control. Keep the default (`dark`) here so it is selectable, not just the
+ * control. Keep the default (`coffee`) here so it is selectable, not just the
  * implicit fallback.
  */
 export const THEMES: readonly ThemeDef[] = [
 	{ id: "light",        className: "light",        icon: "sun" },
-	{ id: "dark",         className: "",             icon: "moon" },
+	{ id: "coffee",       className: "",             icon: "coffee" },
 	{ id: "glass-purple", className: "glass-purple", icon: "sparkles" },
 ];
 
@@ -55,7 +55,7 @@ export type ThemeId = (typeof THEMES)[number]["id"];
 /** Back-compat alias — existing code imports `ThemeMode`. */
 export type ThemeMode = ThemeId;
 
-const DEFAULT_THEME: ThemeId = "dark";
+const DEFAULT_THEME: ThemeId = "coffee";
 
 /** True if `id` is a registered theme id. */
 export function isValidTheme(id: string): id is ThemeId {
