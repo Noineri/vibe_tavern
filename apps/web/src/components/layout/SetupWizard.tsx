@@ -19,7 +19,7 @@ import { Icons, Ic } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
 import { AvatarCropModal } from "../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
-import { updatePersona, createPersona, uploadAsset } from "../../app-client.js";
+import { updatePersona, createPersona, uploadPersonaAvatar } from "../../app-client.js";
 import { toast } from "sonner";
 import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader.js";
 
@@ -440,6 +440,9 @@ function PersonaStep({
   const avatarPreview = avatarPreviewProp;
   const croppedAvatarFile = avatarFileProp;
   const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
+  // Uncropped source captured at crop-confirm, passed to the folder route so
+  // avatar-full.{ext} is stored (large display slots). Cleared alongside the crop.
+  const [avatarOriginalFile, setAvatarOriginalFile] = useState<File | null>(null);
   const personaAvatarRef = useRef<HTMLInputElement | null>(null);
 
   const PRONOUN_OPTIONS: { v: string; l: string }[] = [
@@ -458,14 +461,18 @@ function PersonaStep({
       const existing = existingPersona;
       const resolvedPronouns = pronouns === "custom" ? (pronounsCustom.trim() || null) : (pronouns || null);
       if (existing) {
-        const avatarAssetId = avatarFileProp ? (await uploadAsset(avatarFileProp)).assetId : undefined;
-        await updatePersona(existing.id, { name: name.trim(), description, pronouns: resolvedPronouns, avatarAssetId });
+        await updatePersona(existing.id, { name: name.trim(), description, pronouns: resolvedPronouns });
+        // Folder-resident avatar route (consistent with PersonaModal): crop →
+        // {id}/avatar.{ext}, original → {id}/avatar-full.{ext}. Only upload when
+        // the user picked a new avatar this session.
+        if (avatarFileProp) {
+          await uploadPersonaAvatar(existing.id, avatarFileProp, avatarOriginalFile ?? undefined);
+        }
         await fetchPersonasAction();
       } else {
         const persona = await createPersona({ name: name.trim(), description, pronouns: resolvedPronouns });
         if (avatarFileProp && persona.id) {
-          const asset = await uploadAsset(avatarFileProp);
-          await updatePersona(persona.id, { name: name.trim(), description, pronouns: resolvedPronouns, avatarAssetId: asset.assetId });
+          await uploadPersonaAvatar(persona.id, avatarFileProp, avatarOriginalFile ?? undefined);
         }
         await fetchPersonasAction();
       }
@@ -511,6 +518,7 @@ function PersonaStep({
           onConfirm={(result: AvatarCropResult) => {
             onAvatarPreviewChange(URL.createObjectURL(result.croppedFile));
             onAvatarFileChange(result.croppedFile);
+            setAvatarOriginalFile(pendingAvatar!.file);
             setPendingAvatar(null);
           }}
           onCancel={() => {
@@ -644,6 +652,7 @@ function CharacterStep({
   const [charAvatarPreview, setCharAvatarPreview] = useState<string | null>(null);
   const [charAvatarPending, setCharAvatarPending] = useState<{ file: File; url: string } | null>(null);
   const [charAvatarFile, setCharAvatarFile] = useState<File | null>(null);
+  const [charAvatarOriginal, setCharAvatarOriginal] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const charAvatarRef = useRef<HTMLInputElement | null>(null);
 
@@ -691,7 +700,7 @@ function CharacterStep({
         name: name.trim(),
         description: desc.trim() || undefined,
         firstMessage: firstMsg.trim() || undefined,
-      }, charAvatarFile);
+      }, charAvatarFile, charAvatarOriginal);
       onComplete();
     } finally {
       setBusy(false);
@@ -733,6 +742,10 @@ function CharacterStep({
           onConfirm={(result: AvatarCropResult) => {
             setCharAvatarPreview(URL.createObjectURL(result.croppedFile));
             setCharAvatarFile(result.croppedFile);
+            // Keep the uncropped source so the folder route can store it as
+            // avatar-full.{ext} (large display slots). Without this the original
+            // is lost and only the 512x512 crop persists.
+            setCharAvatarOriginal(charAvatarPending!.file);
             setCharAvatarPending(null);
           }}
           onCancel={() => {

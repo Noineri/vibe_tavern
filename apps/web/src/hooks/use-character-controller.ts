@@ -438,11 +438,12 @@ export function useCharacterController(): CharacterControllerActions {
 
       const characterId = result.snapshot?.character?.id;
 
-      // Upload avatar if provided (folder-resident route: single avatar,
-      // sets avatarExt, clears legacy avatarAssetId).
+      // Upload avatar if provided (folder-resident route: crop → {id}/avatar.{ext},
+      // original → {id}/avatar-full.{ext}). Sets avatarExt, clears legacy
+      // avatarAssetId.
       if (avatarFile && characterId) {
         try {
-          await uploadCharacterAvatar(characterId, avatarFile);
+          await uploadCharacterAvatar(characterId, avatarFile, avatarOriginalFile ?? undefined);
           await fetchBootstrapAction({ silent: true });
         } catch (err) {
           console.warn("Failed to upload avatar during character creation:", err);

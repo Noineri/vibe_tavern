@@ -31,8 +31,8 @@ describe("C1 avatar adapter: character", () => {
 		const { dataRoot, stores, characters } = await setup();
 		const char = await stores.characters.create({ name: "Aria", avatarAssetId: "asset_old1" });
 
-		const res = await characters.uploadCharacterAvatar(char.id, new File([PNG], "a.png", { type: "image/png" }));
-		expect(res).toEqual({ avatarExt: "png" });
+	const res = await characters.uploadCharacterAvatar(char.id, new File([PNG], "a.png", { type: "image/png" }));
+	expect(res).toEqual({ avatarExt: "png", avatarFullExt: null });
 
 		// file on disk
 		const bytes = await readFile(join(dataRoot, CHARS, char.id, "avatar.png"));
@@ -41,7 +41,30 @@ describe("C1 avatar adapter: character", () => {
 		// DB columns flipped
 		const row = await stores.characters.getById(char.id);
 		expect(row?.avatarExt).toBe("png");
+		expect(row?.avatarFullExt).toBeNull();
 		expect(row?.avatarAssetId).toBeNull();
+	});
+
+	test("upload with full writes {id}/avatar-full.{ext} alongside the thumbnail", async () => {
+		const { dataRoot, stores, characters } = await setup();
+		const FULL = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0b]);
+		const char = await stores.characters.create({ name: "Aria" });
+
+		const res = await characters.uploadCharacterAvatar(
+			char.id,
+			new File([PNG], "crop.png", { type: "image/png" }),
+			new File([FULL], "full.png", { type: "image/png" }),
+		);
+		expect(res).toEqual({ avatarExt: "png", avatarFullExt: "png" });
+
+		// thumbnail
+		expect(new Uint8Array(await readFile(join(dataRoot, CHARS, char.id, "avatar.png")))).toEqual(PNG);
+		// full / uncropped original
+		expect(new Uint8Array(await readFile(join(dataRoot, CHARS, char.id, "avatar-full.png")))).toEqual(FULL);
+
+		const row = await stores.characters.getById(char.id);
+		expect(row?.avatarExt).toBe("png");
+		expect(row?.avatarFullExt).toBe("png");
 	});
 
 	test("upload does NOT rewrite {id}/card.json (point update only)", async () => {
@@ -103,7 +126,7 @@ describe("C1 avatar adapter: persona", () => {
 		const persona = await stores.personas.create({ name: "User" });
 
 		const res = await personas.uploadPersonaAvatar(persona.id, new File([PNG], "a.png", { type: "image/png" }));
-		expect(res).toEqual({ avatarExt: "png" });
+		expect(res).toEqual({ avatarExt: "png", avatarFullExt: null });
 
 		const bytes = await readFile(join(dataRoot, PERSONAS, persona.id, "avatar.png"));
 		expect(new Uint8Array(bytes)).toEqual(PNG);

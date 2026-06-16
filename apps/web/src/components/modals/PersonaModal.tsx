@@ -257,9 +257,10 @@ export function PersonaModal(input: PersonaModalProps) {
     const targetId = editingId;
     form.setValue("avatarPreview", pendingAvatar!.url);
     setAvatarUploading(true);
-    // Folder-resident upload: a single (cropped) avatar is written to
-    // {id}/avatar.{ext}, avatarExt is set, and legacy avatarAssetId is cleared.
-    uploadPersonaAvatar(targetId, result.croppedFile)
+    // Folder-resident upload: the crop is written to {id}/avatar.{ext}
+    // (thumbnail) and the uncropped source to {id}/avatar-full.{ext} (large
+    // slots). avatarExt is set, legacy avatarAssetId cleared.
+    uploadPersonaAvatar(targetId, result.croppedFile, pendingAvatar!.file)
       .then(() => {
         // Backend cleared avatarAssetId; null these so onSaveEdit won't re-send
         // stale legacy ids (PATCH never touches avatarExt either way).
