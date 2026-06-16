@@ -47,6 +47,8 @@ export interface GalleryActions {
   upload(characterId: string, file: File): Promise<void>;
   /** Optimistically edit a caption; rolls back on error. */
   updateCaption(characterId: string, rowId: string, caption: string): Promise<void>;
+  /** Optimistically toggle a row's per-image prompt inclusion (D7); rolls back on error. */
+  setIncludeInPrompt(characterId: string, rowId: string, includeInPrompt: boolean): Promise<void>;
   /** Optimistically reorder; rolls back on error. `orderedIds` is the FULL new order. */
   reorder(characterId: string, orderedIds: string[]): Promise<void>;
   /** Optimistically remove one row; rolls back (restores) on error. */
@@ -125,6 +127,31 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
       }));
     } catch (err) {
       // Rollback to the pre-edit list.
+      set((s) => ({ byCharacter: { ...s.byCharacter, [characterId]: prev } }));
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(message);
+    }
+  },
+
+  async setIncludeInPrompt(characterId, rowId, includeInPrompt) {
+    const prev = get().byCharacter[characterId] ?? [];
+    // Optimistic: flip the flag locally.
+    set((s) => ({
+      byCharacter: {
+        ...s.byCharacter,
+        [characterId]: prev.map((a) => (a.id === rowId ? { ...a, includeInPrompt } : a)),
+      },
+    }));
+    try {
+      const updated = await updateCharacterAsset(characterId, rowId, { includeInPrompt });
+      set((s) => ({
+        byCharacter: {
+          ...s.byCharacter,
+          [characterId]: (s.byCharacter[characterId] ?? []).map((a) => (a.id === rowId ? updated : a)),
+        },
+      }));
+    } catch (err) {
+      // Rollback to the pre-toggle list.
       set((s) => ({ byCharacter: { ...s.byCharacter, [characterId]: prev } }));
       const message = err instanceof Error ? err.message : String(err);
       toast.error(message);

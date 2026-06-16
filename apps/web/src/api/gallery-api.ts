@@ -70,11 +70,11 @@ export async function uploadCharacterAsset(characterId: string, file: File): Pro
   return unwrapJson<CharacterAsset>(response);
 }
 
-/** `PATCH /api/characters/:id/assets/:rowId` — edit caption and/or description. */
+/** `PATCH /api/characters/:id/assets/:rowId` — edit caption, description, and/or per-image prompt inclusion (D7). */
 export async function updateCharacterAsset(
   characterId: string,
   rowId: string,
-  patch: { caption?: string; description?: string | null },
+  patch: { caption?: string; description?: string | null; includeInPrompt?: boolean },
 ): Promise<CharacterAsset> {
   return unwrapJson<CharacterAsset>(
     await jsonRequest("PATCH", `/api/characters/${characterId}/assets/${rowId}`, patch),
