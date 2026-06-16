@@ -1,0 +1,116 @@
+/* ══════════════════════════════════════════════════════════════
+   Daylight Lava Lamp (Light Theme)
+   Frosted mint liquid with drifting hot coral/magma blobs.
+   Text is deep teal-graphite for crisp reading contrast.
+   ══════════════════════════════════════════════════════════════ */
+:root.light-lava {
+  /* ─── Backgrounds (Solid fallback for SVG fills and utilities) ─── */
+  --bg:        oklch(0.97 0.010 210);    /* Сплошной бледный мятный (Frosted Glass) */
+  
+  /* ─── Animated Lava Lamp Background ─── */
+  /* Три плавающих цветовых пятна (коралловое, персиковое, циановое) на мятной базе */
+  --page-bg:
+    radial-gradient(circle at 20% 30%, oklch(0.85 0.15 35 / 50%), transparent 55%),
+    radial-gradient(circle at 80% 60%, oklch(0.88 0.10 50 / 50%), transparent 55%),
+    radial-gradient(circle at 50% 80%, oklch(0.90 0.08 200 / 60%), transparent 60%),
+    var(--bg);
+
+  /* ─── Surfaces (Translucent glass so blobs show through) ─── */
+  --surface:   oklch(0.94 0.015 210 / 75%);    
+  --s2:        oklch(0.90 0.020 210 / 75%);    
+  --s3:        oklch(0.85 0.030 210 / 75%);    
+
+  /* ─── Borders ─── */
+  --border:    oklch(0.82 0.035 210);      
+  --border2:   oklch(0.75 0.040 210);     
+
+  /* ─── Text (Deep Teal-Graphite) ─── */
+  --t1:        oklch(0.25 0.02 210);     
+  --t2:        oklch(0.40 0.03 210);     
+  --t3:        oklch(0.55 0.04 210);     
+  --t4:        oklch(0.70 0.03 210);     
+
+  /* ─── Message text ─── */
+  --msg-t1:    oklch(0.22 0.02 210);     
+  --msg-t2:    oklch(0.45 0.03 210);     
+
+  /* ─── Text selection ─── */
+  --sel-bg:    oklch(0.68 0.22 35 / 25%);   
+  --sel-text:  oklch(0.20 0.02 210);        
+
+  /* ─── Accent (Solid Magma Orange, NO GRADIENTS HERE) ─── */
+  --accent:       oklch(0.65 0.22 35);           
+  --accent-t:     oklch(0.55 0.22 35);           
+  --accent-dim:   oklch(0.68 0.22 35 / 12%);     
+  --accent-hover: oklch(0.60 0.22 35);     
+
+  /* ─── User message background ─── */
+  --user-bg:   oklch(0.95 0.015 35 / 80%);     /* Полупрозрачный теплый персик */
+
+  /* ─── Danger / Success / Info / Warning ─── */
+  --danger:      oklch(0.52 0.16 18);    
+  --danger-dim:  oklch(0.92 0.03 18 / 50%);    
+  --danger-text: oklch(0.42 0.14 18);    
+
+  --success:      oklch(0.50 0.10 155);  
+  --success-dim:  oklch(0.92 0.03 155 / 50%);  
+  --success-text: oklch(0.40 0.09 155);  
+
+  --info:      oklch(0.52 0.15 250);     
+  --info-dim:  oklch(0.92 0.03 250 / 50%);     
+  --info-text: oklch(0.42 0.13 250);     
+
+  --warning:      oklch(0.52 0.11 65);   
+  --warning-dim:  oklch(0.92 0.03 65 / 50%);   
+  --warning-text: oklch(0.42 0.09 65);   
+
+  /* ─── On-color text ─── */
+  --on-accent: oklch(0.98 0.005 80);    
+  --on-danger: oklch(0.98 0.005 80);    
+  
+  /* ─── Shadows ─── */
+  --shadow-sm: 0 4px 16px oklch(0 0 0 / 8%);
+  --shadow-md: 0 12px 28px oklch(0 0 0 / 10%);
+  --shadow-lg: 0 24px 60px oklch(0 0 0 / 12%);
+  --shadow-xl: 0 8px 40px oklch(0 0 0 / 10%);
+
+  /* ─── Markdown inline sizes ─── */
+  --md-fs-italic:       calc(var(--mfs) + 1px);    /* italic reads smaller at same size */
+  --md-fs-bold-italic:  calc(var(--mfs) + 1px);    /* same compensation */
+
+  /* ─── Markdown inline colors (Lava & Ocean) ─── */
+  --md-italic:       oklch(0.35 0.06 230);  /* Глубокий океанический синий */
+  --md-bold:         oklch(0.18 0.04 210);  /* Почти чёрный с бирюзовым отливом */
+  --md-bold-italic:  oklch(0.45 0.16 35);   /* Тёмная магма */
+  --md-quoted:       oklch(0.45 0.12 250);  /* Приглушенный сине-фиолетовый */
+
+  /* ─── Syntax highlighting (Lava & Ocean ink) ─── */
+  --syn-bg:          transparent;
+  --syn-keyword:     oklch(0.40 0.12 300);  /* Темно-сливовый/Аметистовый */
+  --syn-string:      oklch(0.42 0.09 160);  /* Темно-мятный */
+  --syn-number:      oklch(0.45 0.15 15);   /* Насыщенный гранатово-красный */
+  --syn-comment:     var(--t3);             /* Тускло-бирюзовый из основной палитры */
+  --syn-variable:    var(--t1);
+  --syn-property:    oklch(0.48 0.12 75);   /* Темно-горчичный / темное золото */
+  --syn-operator:    oklch(0.45 0.15 340);  /* Пурпурно-розовый */
+  --syn-punctuation: var(--t2);
+  --syn-bool:        oklch(0.50 0.15 45);   /* Обожженный апельсин / Терракота */
+  --syn-null:        oklch(0.50 0.15 45);   
+  --syn-function:    oklch(0.40 0.12 250);  /* Глубокий синий */
+}
+
+/* ─── Lava Drift Animation ─── */
+/* Анимация вешается на body только для этой темы */
+:root.light-lava body {
+  background-size: 180% 180%;
+  animation: light-lava-drift 20s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root.light-lava body { animation: none; }
+}
+
+@keyframes light-lava-drift {
+  0%, 100% { background-position:   0% 0%, 100% 100%, 50% 50%; }
+  50%      { background-position: 100% 50%,   0% 50%, 50% 0%; }
+}

@@ -1,11 +1,11 @@
 /* ══════════════════════════════════════════════════════════════
-   Mystic Dusk Theme (Amethyst, Gold & Mint)
+   Mystic Night Theme (Amethyst, Gold & Mint)
    Роскошная, многослойная палитра для комфортного чтения.
    База: глубокий ежевичный/аметистовый.
    Текст: мягкий кремовый.
    Акценты: золото (главный) и мята (детали).
    ══════════════════════════════════════════════════════════════ */
-:root.glass-purple {
+:root.mystic-night {
   /* ─── Backgrounds (Глубокий ежевичный/ночной) ─── */
   /* --bg is a SOLID color so it works as a background-color utility (bg-bg)
      on inputs/cards and as an SVG fill (e.g. the sliders icon knob). The
