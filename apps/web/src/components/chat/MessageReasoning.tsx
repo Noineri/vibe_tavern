@@ -17,6 +17,11 @@ interface MessageReasoningProps {
   reasoningDurationMs?: number | null;
   /** If true, the model used reasoning but the content was redacted. */
   redacted?: boolean;
+  /**
+   * Expand the block on first render instead of defaulting to collapsed.
+   * Used by the dev ThemeTuner to show reasoning styling without an extra click.
+   */
+  defaultOpen?: boolean;
 }
 
 /**
@@ -55,9 +60,9 @@ registerMessageSlot({
   },
 });
 
-export function MessageReasoning({ reasoning, reasoningDurationMs, redacted }: MessageReasoningProps) {
+export function MessageReasoning({ reasoning, reasoningDurationMs, redacted, defaultOpen = false }: MessageReasoningProps) {
   const { t } = useT();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
 
   const hasContent = reasoning && reasoning.trim().length > 0;
   const hasDuration = reasoningDurationMs != null && reasoningDurationMs > 0;
