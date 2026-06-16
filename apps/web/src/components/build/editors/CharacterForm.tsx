@@ -8,6 +8,7 @@ import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CharacterImportModal } from "../../modals/ImportModals.js";
 import { AiAssistantModal, type MdImportResult } from "../../shared/AiAssistantModal.js";
 import { extractPngMetadata, parseCharacterMetadata } from "../../../lib/png-reader";
+import { GalleryAccordion } from "./GalleryAccordion.js";
 import { useTokenCount } from "../../../hooks/use-token-count.js";
 import { useT } from "../../../i18n/context.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
@@ -35,6 +36,7 @@ export interface CharacterFormProps {
   onDuplicate: () => void;
   onDelete: () => void;
   hasAvatar: boolean;
+  characterId: string;
 }
 
 function parseCardToDraft(raw: unknown): Partial<BuildCharacterDraft> {
@@ -81,7 +83,7 @@ function TokenBadge({ text }: { text: string }) {
 export function CharacterForm({
   form, avatarPreview, setAvatarPreview, isDirty, isSaving, avatarUrl, onSave, onReset, onAvatarUpload,
   onAfterImport,
-  onExportJson, onExportPng, onDuplicate, onDelete, hasAvatar,
+  onExportJson, onExportPng, onDuplicate, onDelete, hasAvatar, characterId
 }: CharacterFormProps) {
   const { t } = useT();
   const { register, formState: { errors }, watch, setValue, handleSubmit } = form;
@@ -461,6 +463,9 @@ export function CharacterForm({
         </div>
       </div>
       )}
+
+      {/* Gallery Accordion */}
+      <GalleryAccordion characterId={characterId} onSetAvatarPreview={setAvatarPreview} />
 
       {/* Description */}
       <div className="mb-5">
