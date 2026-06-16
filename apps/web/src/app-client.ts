@@ -163,6 +163,19 @@ export {
 // ─── Asset ──────────────────────────────────────────────────────────────
 export { uploadAsset } from "./api/asset-api.js";
 
+// ─── Gallery (character media gallery) ──────────────────────────────────
+export {
+  serveCharacterAssetUrl,
+  listCharacterAssets,
+  uploadCharacterAsset,
+  updateCharacterAsset,
+  reorderCharacterAssets,
+  deleteCharacterAsset,
+  describeCharacterAssets,
+  describeCharacterAvatar,
+  describePersonaAvatar,
+} from "./api/gallery-api.js";
+
 // ─── AI Assistant ───────────────────────────────────────────────────────
 export { streamAiAssistant, countAiAssistantTokens } from "./api/ai-assistant-api.js";
 

@@ -57,6 +57,9 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			avatarAssetId?: string | null;
 			avatarFullAssetId?: string | null;
 			avatarCropJson?: string | null;
+			includeGalleryInPrompt?: boolean;
+			includeAvatarInPrompt?: boolean;
+			avatarDescription?: string | null;
 		},
 	) => {
 		if (body.avatarAssetId !== undefined) {

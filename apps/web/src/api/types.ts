@@ -78,6 +78,12 @@ export interface AppCharacter {
   /** Folder-resident avatar extension (CFS migration). Null = legacy flat avatar or none. */
   avatarExt: string | null;
   personalitySummary: string | null;
+  // Media gallery / avatar-appearance prompt injection (MEDIA_GALLERY). Mirrors
+  // the backend CharacterRecord — backend always sends these (required), so no
+  // normalize-default is needed (same as avatarExt).
+  includeGalleryInPrompt: boolean;
+  includeAvatarInPrompt: boolean;
+  avatarDescription: string | null;
 }
 
 export interface AppPersona {
@@ -89,6 +95,10 @@ export interface AppPersona {
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;
   avatarExt: string | null;
+  // Avatar-appearance prompt injection (MEDIA_GALLERY). Personas have no gallery,
+  // only the avatar toggle + description.
+  includeAvatarInPrompt: boolean;
+  avatarDescription: string | null;
 }
 
 export interface AppCharacterEntry {
@@ -164,6 +174,9 @@ export interface PersonaRecord {
   avatarCropJson: string | null;
   avatarExt: string | null;
   defaultForNewChats: boolean;
+  // Avatar-appearance prompt injection (MEDIA_GALLERY).
+  includeAvatarInPrompt: boolean;
+  avatarDescription: string | null;
 }
 
 // ─── Settings ──────────────────────────────────────────────────────────

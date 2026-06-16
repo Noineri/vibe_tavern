@@ -176,6 +176,10 @@ export class PersonaStore {
     if (data.avatarCropJson !== undefined) values.avatarCropJson = data.avatarCropJson;
     if (data.avatarExt !== undefined) values.avatarExt = data.avatarExt;
     if (data.defaultForNewChats !== undefined) values.defaultForNewChats = data.defaultForNewChats ? 1 : 0;
+    // Avatar-appearance prompt-injection fields. Mirrored on setMediaFields;
+    // mapped here too so the PATCH path can set them.
+    if (data.includeAvatarInPrompt !== undefined) values.includeAvatarInPrompt = data.includeAvatarInPrompt;
+    if (data.avatarDescription !== undefined) values.avatarDescription = data.avatarDescription;
 
     const [row] = await this.db
       .update(personas)

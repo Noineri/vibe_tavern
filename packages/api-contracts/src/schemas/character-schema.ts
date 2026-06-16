@@ -40,6 +40,14 @@ export const updateCharacterSchema = z.object({
   avatarAssetId: z.string().nullable().optional(),
   avatarFullAssetId: z.string().nullable().optional(),
   avatarCropJson: z.string().nullable().optional(),
+  // Media gallery / avatar-appearance prompt injection (MEDIA_GALLERY).
+  // The toggle + the (vision-described or user-edited) avatar appearance text
+  // round-trip through the normal PATCH path; the describe endpoints write
+  // avatarDescription out-of-band via setMediaFields, but editing them
+  // directly must also work.
+  includeGalleryInPrompt: z.boolean().optional(),
+  includeAvatarInPrompt: z.boolean().optional(),
+  avatarDescription: z.string().nullable().optional(),
 });
 
 export const buildCharacterDraftSchema = z.object({

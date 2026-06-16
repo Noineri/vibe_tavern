@@ -34,6 +34,8 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 			avatarAssetId?: string | null;
 			avatarFullAssetId?: string | null;
 			avatarCropJson?: string | null;
+			includeAvatarInPrompt?: boolean;
+			avatarDescription?: string | null;
 		},
 	) => {
 		if (body.avatarAssetId !== undefined) {

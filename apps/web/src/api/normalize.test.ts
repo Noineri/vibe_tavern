@@ -35,6 +35,9 @@ function makeCharacter(): AppCharacter {
     avatarFullAssetId: null,
     avatarCropJson: null,
     personalitySummary: null,
+    includeGalleryInPrompt: false,
+    includeAvatarInPrompt: false,
+    avatarDescription: null,
   };
 }
 

@@ -306,6 +306,10 @@ export class CharacterRuntime {
       avatarAssetId?: string | null;
       avatarFullAssetId?: string | null;
       avatarCropJson?: string | null;
+      // Media gallery / avatar-appearance prompt injection (MEDIA_GALLERY).
+      includeGalleryInPrompt?: boolean;
+      includeAvatarInPrompt?: boolean;
+      avatarDescription?: string | null;
     },
     options?: {
       rebuildChatOrder: () => Promise<void>;
@@ -371,6 +375,17 @@ export class CharacterRuntime {
       avatarCropJson: input.avatarCropJson !== undefined
         ? input.avatarCropJson
         : currentCharacter.avatarCropJson,
+      // Media gallery / avatar-appearance prompt injection — pass through if
+      // present, preserve current value otherwise (same pattern as above).
+      includeGalleryInPrompt: input.includeGalleryInPrompt !== undefined
+        ? input.includeGalleryInPrompt
+        : currentCharacter.includeGalleryInPrompt,
+      includeAvatarInPrompt: input.includeAvatarInPrompt !== undefined
+        ? input.includeAvatarInPrompt
+        : currentCharacter.includeAvatarInPrompt,
+      avatarDescription: input.avatarDescription !== undefined
+        ? input.avatarDescription
+        : currentCharacter.avatarDescription,
     });
 
     const preferredChat = input.chatId

@@ -149,6 +149,9 @@ export class PersonaRuntime {
 			avatarAssetId?: string | null;
 			avatarFullAssetId?: string | null;
 			avatarCropJson?: string | null;
+			// Avatar-appearance prompt injection (MEDIA_GALLERY).
+			includeAvatarInPrompt?: boolean;
+			avatarDescription?: string | null;
 		},
 	): Promise<SessionSnapshot | { id: string }> {
 		const currentPersona = await this.deps.stores.personas.getById(brandId<PersonaId>(personaId));
@@ -174,6 +177,12 @@ export class PersonaRuntime {
 			avatarAssetId: nextAvatarAssetId,
 			avatarFullAssetId: nextAvatarFullAssetId,
 			avatarCropJson: nextAvatarCropJson,
+			includeAvatarInPrompt: input.includeAvatarInPrompt !== undefined
+				? input.includeAvatarInPrompt
+				: currentPersona.includeAvatarInPrompt,
+			avatarDescription: input.avatarDescription !== undefined
+				? input.avatarDescription
+				: currentPersona.avatarDescription,
 		});
 
 		const preferredChat = input.chatId
