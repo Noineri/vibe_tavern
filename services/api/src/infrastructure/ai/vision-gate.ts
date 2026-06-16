@@ -21,7 +21,7 @@
 import type { Attachment } from "@vibe-tavern/domain";
 import type { ImagePart, TextPart } from "ai";
 import type { SdkMessage } from "./provider-executor-utils.js";
-import { compressForVision, isCompressibleImage } from "../../shared/image-compress.js";
+import { prepareImageForVision } from "../../shared/image-compress.js";
 import { resolveSystemPrompt } from "../../domain/ai-assistant/ai-assistant-prompts.js";
 import { splitReasoningFromText, type ReasoningSplitState } from "../../domain/ai-assistant/reasoning-split.js";
 
@@ -182,16 +182,12 @@ export async function resolveMultimodalContent(
       }
       let mimeType = att.mimeType;
 
-      // Compress large PNGs to JPEG for provider size limits
-      if (isCompressibleImage(mimeType)) {
-        try {
-          const compressed = compressForVision(buffer, mimeType);
-          buffer = compressed.buffer;
-          mimeType = compressed.mimeType;
-        } catch {
-          // If compression fails, send original — let the provider decide
-        }
-      }
+      // Compress large PNGs to JPEG for provider size limits. Centralized in
+      // prepareImageForVision so describeAttachments (gallery / non-vision
+      // fallback) stays in sync — a prior drift left it sending raw images.
+      const prepared = prepareImageForVision(buffer, mimeType);
+      buffer = prepared.buffer;
+      mimeType = prepared.mimeType;
 
       parts.push({
         type: "image",
@@ -251,8 +247,15 @@ export async function describeAttachments(
 
   for (const att of attachments) {
     if (att.type !== "image" && att.type !== "video") continue;
-    const buffer = await assetLoader(att.assetId);
-    if (!buffer) throw new Error(`Asset not found: ${att.name}`);
+    const loaded = await assetLoader(att.assetId);
+    if (!loaded) throw new Error(`Asset not found: ${att.name}`);
+
+    // Compress before sending — providers reject large uncompressed images as
+    // "too large". Gallery rows can be up to the 20MB upload cap, and this same
+    // path serves the chat non-vision fallback, so the shared
+    // prepareImageForVision seam (same one resolveMultimodalContent uses) is
+    // mandatory here. Never throws — falls back to original bytes on failure.
+    const { buffer, mimeType } = prepareImageForVision(loaded, att.mimeType);
 
     const response = await generateText({
       model,
@@ -261,7 +264,7 @@ export async function describeAttachments(
         role: "user",
         content: [
           { type: "text", text: "Describe this image." },
-          { type: "image", image: buffer, mediaType: att.mimeType },
+          { type: "image", image: buffer, mediaType: mimeType },
         ],
       }],
       maxOutputTokens: 1500,

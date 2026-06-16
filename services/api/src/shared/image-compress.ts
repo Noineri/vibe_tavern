@@ -106,3 +106,33 @@ function resizeRGBA(
 export function isCompressibleImage(mimeType: string): boolean {
   return mimeType === "image/png";
 }
+
+/**
+ * Prepare an image buffer for sending to a vision model: compress + resize
+ * when the format is supported (PNG → JPEG, capped at MAX_VISION_DIMENSION),
+ * otherwise pass the bytes through untouched.
+ *
+ * Centralized here so BOTH vision send paths stay in sync:
+ *  • `resolveMultimodalContent` — vision-primary chat (pixels to the model)
+ *  • `describeAttachments`    — fallback describe (gallery images + chat
+ *    non-vision fallback) — the path gallery Describe uses.
+ *
+ * A previous drift left `describeAttachments` sending raw images, so large
+ * gallery rows (up to the 20MB upload cap) were rejected by providers as
+ * "too large". Routing both through this seam prevents that recurring.
+ *
+ * Never throws: on decode/encode failure the original buffer is returned so
+ * the provider makes the final call (mirrors the original inline try/catch
+ * semantics in resolveMultimodalContent).
+ */
+export function prepareImageForVision(
+  buffer: Buffer,
+  mimeType: string,
+): { buffer: Buffer; mimeType: string } {
+  if (!isCompressibleImage(mimeType)) return { buffer, mimeType };
+  try {
+    return compressForVision(buffer, mimeType);
+  } catch {
+    return { buffer, mimeType };
+  }
+}
