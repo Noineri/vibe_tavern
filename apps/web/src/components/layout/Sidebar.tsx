@@ -135,7 +135,7 @@ export function Sidebar() {
   return (
     <div className={cn(
         sidebarCollapsed ? 'w-[54px] min-w-[54px]' : 'w-[var(--sw)] min-w-[var(--sw)]',
-        'shrink-0 overflow-hidden border-r border-border bg-surface flex flex-col transition-all duration-[180ms] ease-out'
+        'shrink-0 overflow-hidden border-r border-border bg-surface flex flex-col backdrop-blur-md transition-all duration-[180ms] ease-out'
       )}>
         {/* DYNAMIC: justifyContent and padding depend on sidebarCollapsed state */}
         <div className="flex h-[60px] shrink-0 items-center gap-2.5 border-b border-border" style={{ justifyContent: sidebarCollapsed ? 'center' : undefined, padding: sidebarCollapsed ? '0 6px' : '0 12px' }}>
@@ -208,7 +208,7 @@ export function Sidebar() {
             {/* Панель */}
             <div
               ref={flyoutRef}
-              className="fixed left-[54px] top-0 z-[301] flex h-screen w-[220px] flex-col border-r border-border bg-surface shadow-[4px_0_24px_rgba(0,0,0,0.4)]"
+              className="fixed left-[54px] top-0 z-[301] flex h-screen w-[220px] flex-col border-r border-border bg-surface shadow-[4px_0_24px_rgba(0,0,0,0.4)] backdrop-blur-md"
               style={{ animation: "flyoutIn 0.15s ease-out" }}
             >
               {/* Заголовок с именем персонажа */}
