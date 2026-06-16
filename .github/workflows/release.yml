@@ -224,7 +224,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v3
         with:
-          files: vibe-tavern-${{ needs.release.outputs.version }}-android.apk
+          files: Vibe-Tavern-${{ needs.release.outputs.version }}-android.apk
 
   build-linux:
     needs: release
