@@ -17,8 +17,8 @@ import { CustomTooltip } from "../shared/Tooltip.js";
 import { useBuildPanels } from "../../hooks/use-build-panels.js";
 
 /** Resolve a character tab's avatar URL (folder avatar when migrated). */
-const tabAvatarSrc = (tab: { id: string; avatarExt: string | null; avatarAssetId: string | null }) =>
-  resolveEntityAvatarUrl({ kind: "characters", id: tab.id, avatarExt: tab.avatarExt, avatarAssetId: tab.avatarAssetId });
+const tabAvatarSrc = (tab: { id: string; avatarExt: string | null; avatarAssetId: string | null; updatedAt?: string | null }) =>
+  resolveEntityAvatarUrl({ kind: "characters", id: tab.id, avatarExt: tab.avatarExt, avatarAssetId: tab.avatarAssetId, updatedAt: tab.updatedAt });
 
 export function Sidebar() {
   const { t } = useT();
@@ -69,7 +69,7 @@ export function Sidebar() {
     ? resolveEntityAvatarUrl({ kind: "personas", id: personaForAvatar.id, avatarExt: personaForAvatar.avatarExt, avatarAssetId: personaForAvatar.avatarAssetId })
     : null;
   const activeCharAvatarSrc = snapshot?.character
-    ? resolveEntityAvatarUrl({ kind: "characters", id: snapshot.character.id, avatarExt: snapshot.character.avatarExt, avatarAssetId: snapshot.character.avatarAssetId })
+    ? resolveEntityAvatarUrl({ kind: "characters", id: snapshot.character.id, avatarExt: snapshot.character.avatarExt, avatarAssetId: snapshot.character.avatarAssetId, updatedAt: snapshot.character.updatedAt })
     : null;
 
   const characterTabs = useMemo(

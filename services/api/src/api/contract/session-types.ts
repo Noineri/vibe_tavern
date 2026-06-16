@@ -46,7 +46,7 @@ export interface SessionSnapshot {
 	/** Sidebar: ordered list of chats with metadata. Absent when endpoint returns partial data. */
 	chats: ChatListItem[];
 	/** All known characters (sidebar, build mode). Absent when endpoint returns partial data. */
-	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null }>;
+	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null; updatedAt: string }>;
 	/** Active chat metadata (title, settings, greetingIndex, etc). */
 	activeChat: Chat;
 	/** Currently active branch. */
@@ -77,7 +77,7 @@ export interface BootstrapState {
 	initialChatId: ChatId | null;
 	snapshot: SessionSnapshot | null;
 	isFirstRun: boolean;
-	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null }>;
+	allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null; updatedAt: string }>;
 	promptPresets: PromptPresetDto[];
 	uiSettings: UiSettings;
 	isArmServer: boolean;

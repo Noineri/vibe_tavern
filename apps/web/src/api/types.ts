@@ -86,6 +86,8 @@ export interface AppCharacter {
   includeGalleryInPrompt: boolean;
   includeAvatarInPrompt: boolean;
   avatarDescription: string | null;
+  /** bumped on every avatar upload; used as ?v= cache-buster (immutable cache). */
+  updatedAt: string;
 }
 
 export interface AppPersona {
@@ -113,6 +115,8 @@ export interface AppCharacterEntry {
   avatarCropJson: string | null;
   avatarExt: string | null;
   avatarFullExt: string | null;
+  /** bumped on every avatar upload; used as ?v= cache-buster (immutable cache). */
+  updatedAt: string;
 }
 
 // ─── Snapshot ──────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import type { ChatId } from "@vibe-tavern/domain";
 import type { CharacterTab } from "../components/layout/app-shell-types.js";
 
 export function buildCharacterTabs(
-  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null }>,
+  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null; updatedAt: string }>,
   chats: Array<{ id: ChatId; characterId: string }>,
 ): CharacterTab[] {
   const chatByCharId = new Map<string, ChatId>();
@@ -20,5 +20,6 @@ export function buildCharacterTabs(
     avatarAssetId: char.avatarAssetId,
     avatarCropJson: char.avatarCropJson,
     avatarExt: char.avatarExt,
+    updatedAt: char.updatedAt,
   }));
 }

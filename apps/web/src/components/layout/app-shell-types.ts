@@ -46,4 +46,5 @@ export interface CharacterTab {
   avatarAssetId: string | null;
   avatarCropJson: string | null;
   avatarExt: string | null;
+  updatedAt: string;
 }

@@ -45,6 +45,7 @@ function makeCharacter(id: string, name = `Char ${id}`): AppCharacter {
     includeGalleryInPrompt: false,
     includeAvatarInPrompt: false,
     avatarDescription: null,
+    updatedAt: "2024-01-01T00:00:00.000Z",
   };
 }
 

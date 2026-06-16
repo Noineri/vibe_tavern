@@ -224,7 +224,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   // Folder avatar (avatarExt) wins; otherwise prefer the uncropped full asset
   // over the cropped one.
   const avatarSrc = activeCharacter
-    ? resolveEntityAvatarUrl({ kind: "characters", id: activeCharacter.id, avatarExt: activeCharacter.avatarExt, avatarAssetId: activeCharacter.avatarAssetId, avatarFullAssetId: activeCharacter.avatarFullAssetId, preferFull: true }) ?? undefined
+    ? resolveEntityAvatarUrl({ kind: "characters", id: activeCharacter.id, avatarExt: activeCharacter.avatarExt, avatarAssetId: activeCharacter.avatarAssetId, avatarFullAssetId: activeCharacter.avatarFullAssetId, updatedAt: activeCharacter.updatedAt, preferFull: true }) ?? undefined
     : undefined;
 
   const tweaksPanelSettings = {
