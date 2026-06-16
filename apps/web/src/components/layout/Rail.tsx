@@ -217,13 +217,13 @@ export function Rail({ hidden }: { hidden?: boolean }) {
       <>
         {/* Затемнение */}
         <div
-          className="fixed inset-0 z-[500] bg-black/50"
+          className="fixed inset-0 z-[500] bg-black/50 backdrop-blur-sm"
           style={{ animation: "fadeIn 0.15s ease-out" }}
           onClick={closeMenu}
         />
         {/* Sheet */}
         <div
-          className="fixed inset-x-0 bottom-0 z-[501] rounded-t-2xl border-t border-border2 bg-surface pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
+          className="fixed inset-x-0 bottom-0 z-[501] rounded-t-2xl border-t border-border2 bg-surface pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md"
           ref={menuRef}
           style={{ animation: "slideUp 0.2s ease-out" }}
           onTouchStart={onSheetTouchStart}
@@ -276,7 +276,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
       {/* ═══ COLLAPSED RAIL ═══ */}
       {!hidden && (
       <div
-        className="relative z-[200] flex w-[56px] min-w-[56px] shrink-0 flex-col items-center border-r border-border bg-surface"
+        className="relative z-[200] flex w-[56px] min-w-[56px] shrink-0 flex-col items-center border-r border-border bg-surface backdrop-blur-md"
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
@@ -383,14 +383,14 @@ export function Rail({ hidden }: { hidden?: boolean }) {
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 z-[299] bg-black/40"
+            className="fixed inset-0 z-[299] bg-black/40 backdrop-blur-sm"
             style={{ animation: closing ? "fadeOut 0.2s ease-in forwards" : "fadeIn 0.2s ease-out" }}
             onClick={close}
           />
 
           {/* Panel */}
           <div
-            className="fixed left-0 top-0 bottom-0 z-[300] flex w-[260px] flex-col border-r border-border bg-surface shadow-theme-xl"
+            className="fixed left-0 top-0 bottom-0 z-[300] flex w-[260px] flex-col border-r border-border bg-surface shadow-theme-xl backdrop-blur-md"
             style={{ animation: closing ? "slideOutLeft 0.2s ease-in forwards" : "slideInLeft 0.2s ease-out" }}
             onTouchStart={onPanelTouchStart}
             onTouchMove={onPanelTouchMove}
