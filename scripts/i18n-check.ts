@@ -24,6 +24,13 @@
  *                         t(identifier) can hide references — see resolution
  *                         notes below. Prefix-aware: a key whose only reference
  *                         is via a template-literal prefix is NOT flagged.
+ *   [hardcoded]   (WARN) raw user-facing string that bypasses i18n: JSX text,
+ *                         user-facing attributes (placeholder/title/aria-label/
+ *                         alt/label="…"), and toast.success()/alert()/confirm() calls
+ *                         with a string-literal first argument. Expression
+ *                         forms ({t(…)}, ternaries) are NOT flagged. Advisory:
+ *                         surfaced as candidates; a heuristic + allowlist skip
+ *                         symbols, URLs, enum/role words (system, user, …).
  *
  * What counts as a translation call:
  *   t(...)  where `t` is the conventional name bound by `const { t } = useT()`
@@ -67,6 +74,24 @@ const TRANSLATION_FN = "t";
 //   dev/    — throwaway dev tooling (ThemeTuner etc.); self-contained.
 const EXCLUDE_DIRS = ["i18n", "dev"];
 const EXCLUDE_SUFFIXES = [".test.ts", ".test.tsx", ".d.ts"];
+
+// Advisory Level 2 — hardcoded user-facing strings. These don't break parity
+// or leak raw keys, but they bypass i18n entirely (text ships in one language).
+// Tuned to surface candidates, not to be exhaustive. Advisory (exit 0).
+const HARDCODED_MIN_LEN = 4;
+// JSX attributes whose string-literal value is shown to users. (Expression
+// initializers like placeholder={t(…)} are ignored — only raw "…" literals.)
+const USER_FACING_ATTRS = new Set(["placeholder", "title", "aria-label", "alt", "label"]);
+// Bare words that look like English but are programmatic enum/role values, not
+// translatable copy (SegmentedControl options, role keywords, format names).
+// Matched against the trimmed string, case-insensitively, as a whole token.
+const HARDCODED_ALLOWLIST = new Set([
+  "system", "user", "assistant", "always", "once", "depth", "disabled",
+  "none", "all", "both", "smart", "auto", "manual", "on", "off", "yes", "no",
+  "true", "false", "json", "csv", "html", "text", "code", "name", "value",
+  "key", "type", "role", "url", "email", "token",
+  "sillytavern",  // external product name, not translated (like "Vibe Tavern")
+]);
 
 interface Violation {
   kind: string;
@@ -126,7 +151,10 @@ function collectSources(): string[] {
   const out: string[] = [];
   for (const path of new Bun.Glob("**/*.{ts,tsx}").scanSync({ cwd: SRC_DIR, absolute: true })) {
     const norm = path.replace(/\\/g, "/");
-    if (EXCLUDE_DIRS.some((d) => norm.includes(`/src/${d}/`))) continue;
+    // Match by PATH SEGMENT, not substring: "/src/dev/" would miss
+    // "/src/components/dev/" (the real location). Segment match catches both.
+    const segs = norm.split("/");
+    if (segs.some((s) => EXCLUDE_DIRS.includes(s))) continue;
     if (EXCLUDE_SUFFIXES.some((s) => norm.endsWith(s))) continue;
     out.push(path);
   }
@@ -351,6 +379,100 @@ function warnUnresolvable(refs: KeyReferences): void {
   }
 }
 
+// ─── 6. Hardcoded string detection (advisory) ─────────────────────────────
+// Finds raw user-facing strings that bypass i18n: JSX text, user-facing JSX
+// attributes (placeholder/title/aria-label/alt/label) with a string-literal
+// value, and toast.*/alert/confirm calls whose first argument is a string
+// literal. Expression forms ({t(…)}, ternaries, variables) are NOT flagged —
+// only literal "…" arguments, which can't reach t() at all.
+
+/** Extract a callee name for toast/dialog detection: "toast", "toast.error", "alert". */
+function callCalleeName(e: ts.Expression): string | null {
+  if (ts.isIdentifier(e)) return e.text;
+  if (ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.expression)) {
+    return `${e.expression.text}.${e.name.text}`;
+  }
+  return null;
+}
+
+function isToastOrDialog(name: string): boolean {
+  return name === "toast" || name.startsWith("toast.") || name === "alert" || name === "confirm";
+}
+
+/** Collapse whitespace + cap length for compact report lines. */
+function truncate(s: string): string {
+  const oneLine = s.replace(/\s+/g, " ").trim();
+  return oneLine.length > 60 ? oneLine.slice(0, 57) + "…" : oneLine;
+}
+
+/** Does this string look like code/URL/path rather than translatable copy? */
+function looksLikeCode(s: string): boolean {
+  if (/^([/\\]|https?:|mailto:|tel:|data:|#)/i.test(s)) return true; // URLs, paths, fragments
+  if (/&[a-zA-Z]+;/.test(s)) return true;                            // HTML entity: &ldquo; &hellip;
+  if (/\.[a-z0-9]{1,4}$/i.test(s) && !/\s/.test(s)) return true;     // file.ext
+  if (/[$`<>{}]/.test(s)) return true;                              // template/markup
+  if (s.length <= 6 && /^[A-Z0-9._-]+$/.test(s)) return true;       // short code: API, JSON, V3
+  if (/\([^)]*\)/.test(s) && /\./.test(s)) return true;             // code call: foo.bar(baz)
+  if (/^[a-z_]+\.[a-z_]+\./i.test(s)) return true;                  // dotted chain: context.chat.x
+  if (/\//.test(s) && !/\s/.test(s) && s.length > 4) return true;    // path with slashes, no spaces
+  return false;
+}
+
+/** Is this a candidate for translation (i.e. likely natural-language copy)? */
+function isTranslatableCandidate(s: string): boolean {
+  const t = s.trim();
+  if (t.length < HARDCODED_MIN_LEN) return false;            // "+", "Alt", "N/A"
+  if (!/[A-Za-zА-Яа-я]/.test(t)) return false;               // pure symbols: ✕, …, →
+  if (looksLikeCode(t)) return false;
+  if (HARDCODED_ALLOWLIST.has(t.toLowerCase())) return false; // enum/role words
+  // has a space (multi-word) OR a recognisable word (≥4 latin / ≥3 cyrillic letters)
+  if (/\s/.test(t)) return true;
+  if (/[A-Za-z]{4,}/.test(t) || /[А-Яа-я]{3,}/.test(t)) return true;
+  return false;
+}
+
+function checkHardcodedStrings(sources: string[]): void {
+  for (const src of sources) {
+    const isTsx = src.endsWith(".tsx");
+    const text = fs.readFileSync(src, "utf8");
+    const scriptKind = isTsx ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+    const sf = ts.createSourceFile(src, text, ts.ScriptTarget.Latest, true, scriptKind);
+    const lineOf = (pos: number) => sf.getLineAndCharacterOfPosition(pos).line + 1;
+    const visit = (node: ts.Node): void => {
+      // 1. JSX text content: <button>Save</button>
+      if (isTsx && ts.isJsxText(node)) {
+        const t = node.getText(sf);
+        if (t && isTranslatableCandidate(t)) {
+          warnings.push({ kind: "hardcoded", file: rel(src), line: lineOf(node.getStart()), message: `JSX text "${truncate(t)}" is a raw string — wrap with {t("…")} for translation` });
+        }
+      }
+      // 2. user-facing JSX attributes: placeholder/title/aria-label/alt/label="…"
+      if (isTsx && ts.isJsxAttribute(node)) {
+        const nameNode = node.name;
+        const name = ts.isIdentifier(nameNode) ? nameNode.text : null;
+        if (name && USER_FACING_ATTRS.has(name)) {
+          const init = node.initializer;
+          if (init && ts.isStringLiteral(init) && isTranslatableCandidate(init.text)) {
+            warnings.push({ kind: "hardcoded", file: rel(src), line: lineOf(node.getStart()), message: `${name}="${truncate(init.text)}" is a raw string — use ${name}={t("…")} for translation` });
+          }
+        }
+      }
+      // 3. toast.*/toast/alert/confirm with a string-literal first argument
+      if (ts.isCallExpression(node)) {
+        const callee = callCalleeName(node.expression);
+        if (callee && isToastOrDialog(callee)) {
+          const arg0 = node.arguments[0];
+          if (arg0 && ts.isStringLiteral(arg0) && isTranslatableCandidate(arg0.text)) {
+            warnings.push({ kind: "hardcoded", file: rel(src), line: lineOf(arg0.getStart()), message: `${callee}("${truncate(arg0.text)}") uses a raw string — pass t("…") for translation` });
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+  }
+}
+
 // ─── 5. Report ─────────────────────────────────────────────────────────────
 
 function printGroup(title: string, items: Violation[]): void {
@@ -391,8 +513,10 @@ function main(): void {
   checkMissingKeys(locales, refs);
   checkUnused(locales, refs);
   warnUnresolvable(refs);
+  checkHardcodedStrings(sources);
 
-  console.log(`i18n check — ${locales.length} locale(s), ${sources.length} source file(s), ${refs.literals.size} literal + ${refs.loose.size} loose key reference(s)`);
+  const hardcodedCount = warnings.filter((w) => w.kind === "hardcoded").length;
+  console.log(`i18n check — ${locales.length} locale(s), ${sources.length} source file(s), ${refs.literals.size} literal + ${refs.loose.size} loose key reference(s), ${hardcodedCount} hardcoded-string candidate(s)`);
   printGroup("ERRORS", errors);
   printGroup("WARNINGS", warnings);
 
