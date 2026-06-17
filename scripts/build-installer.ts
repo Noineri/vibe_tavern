@@ -18,6 +18,7 @@
  */
 
 import { join, resolve } from "node:path";
+import { VERSION } from "./_version.js";
 
 const ROOT = resolve(import.meta.dir, "..");
 const STANDALONE_OUT = join(ROOT, "out", "standalone");
@@ -86,15 +87,13 @@ async function main() {
 
 	console.log("\n🔨 Step 2: Building installer with Inno Setup...\n");
 
-	const packageJson = await Bun.file(join(ROOT, "package.json")).json();
-	const version = packageJson.version as string;
-	console.log(`   Version: ${version}`);
+	console.log(`   Version: ${VERSION}`);
 
 	const isccPath = await findIscc();
 	console.log(`   ISCC: ${isccPath}`);
 
 	const isccProc = Bun.spawn(
-		[isccPath, `/DProjectRoot=${ROOT}`, `/DAppVersion=${version}`, ISS_FILE],
+		[isccPath, `/DProjectRoot=${ROOT}`, `/DAppVersion=${VERSION}`, ISS_FILE],
 		{ cwd: ROOT, stdout: "inherit", stderr: "inherit", stdin: "inherit" },
 	);
 
