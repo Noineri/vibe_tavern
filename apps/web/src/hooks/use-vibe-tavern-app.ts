@@ -124,6 +124,15 @@ export function useRpPlatformApp() {
     persistTweaks(tweaksSettings);
     applyThemeClass(root, theme);
     persistTheme(theme);
+    // The pre-React splash in index.html paints by setting theme tokens
+    // (--bg, --accent, --accent-mid) as inline styles on <html>. Those inline
+    // values beat the theme CSS class in the cascade, so without clearing them
+    // a live theme switch mixes colors (the old theme's tokens persist via
+    // inline while the new theme only takes effect through its class). Remove
+    // them once the real theme effect has run so the class is the sole source.
+    root.style.removeProperty('--bg');
+    root.style.removeProperty('--accent');
+    root.style.removeProperty('--accent-mid');
   }, [tweaksSettings, theme]);
 
   const promptTraceId = promptTrace?.id ?? null;
