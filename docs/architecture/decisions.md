@@ -445,3 +445,64 @@ Dependencies flow strictly downward: `api/` → `runtime/` → `domain/` → `in
 **Implementation:** See [Backend Architecture](./backend.md) for the per-slice contents and the migration map in `CODE_REVIEW_REFACTOR_PLAN.md` §5.2.
 
 **Related:** AD-006 (Monorepo with Strict Package Boundaries) — same strict-dependency principle, applied at the folder level within `services/api`. AD-019 (Protocol Registry) — the registry/generation split between `domain/providers/` and `infrastructure/ai/` is a direct instance of this layout.
+
+---
+
+## AD-021: Locale Registry over Scattered Type Literals for i18n
+
+**Context:** The `Locale` type was a hardcoded `"en" | "ru"` literal union defined in `i18n/context.tsx` and re-stated — as the same literal, as an inline `as 'en' | 'ru'` cast, or as an inline options array — across seven consumer files: the type definition, the module-level helpers, `detectLocale()` in `main.tsx`, the `setLocale` cast in `AppShell.tsx`, both language selectors (`TweaksPanel`, `MobileSettings`), and the `lang` default in `local-storage.ts`. Adding a language meant finding and editing all seven by hand, and the duplication made it easy to forget a site (a selector that doesn't list the new language, a cast that rejects its value, a detection branch that never selects it). This was the exact problem the theme system had before `themes/registry.ts` consolidated it.
+
+**Options considered:**
+
+| Approach | Description | Problem |
+|----------|-------------|--------|
+| **Status quo** | Keep the scattered `"en" \| "ru"` literals; edit 7 files per language | Lock-step edits; silent drift; a forgotten site ships a half-working language |
+| **Enum / config object per concern** | Separate config for selectors, detection, defaults | Three configs to keep in sync — same problem, relocated |
+| **One `LOCALES` registry array** | A single array of `{ id, label, match? }` entries; `Locale` type derived from it; detection + normalization + selectors all read from it | One edit site; everything else derives automatically |
+
+**Decision:** Create `apps/web/src/i18n/registry.ts` as the single source of truth, mirroring `themes/registry.ts`. It exports a `LOCALES: readonly LocaleDef[]` array and derives `Locale`, `DEFAULT_LOCALE`, `isLocale()`, `normalizeLocale()`, and `detectBrowserLocale()` from it. `LocaleProvider` loads the matching JSON dynamically (`import(`./locales/${locale}.json`)`), so it needs no change — the registry is purely a compile-time + UI concern, the strings are still loaded on demand at runtime. All seven consumer sites now import from the registry instead of restating the literal.
+
+**Rationale:**
+- **One-site edits** — adding a language is one JSON file + one `LOCALES` entry, parallel to how themes work; no consumer file needs editing because selectors iterate `LOCALES`, detection uses `detectBrowserLocale`, and casts go through `normalizeLocale`
+- **Type derived, not declared** — `Locale = (typeof LOCALES)[number]["id"]`, so the union tracks the array; a language in the array without a JSON file is a runtime load error, not a silent type gap
+- **Breaks an import cycle** — `locale-helpers.ts` previously imported `Locale` from `context.tsx` (a React module); it now imports from the plain `registry.ts`, removing a type-only dependency on a Fast Refresh boundary
+- **Mirrors a proven pattern** — the theme registry solved the identical shape of problem and has held up across four themes; reusing it keeps the codebase's "how do I add a thing" answer uniform
+
+**Trade-off:** Pre-React and pre-SPA surfaces (the server boot placeholder in `loading-placeholder.ts`, the first-paint splash in `index.html`) cannot read the registry — they run before the bundle parses, and the i18n JSON is loaded by React at runtime, not available as a static string. This means any user-visible text on those surfaces would need to be duplicated inline and hand-synced per language. The chosen resolution is to ship **no text** on those surfaces (logo only) so there is nothing to sync — see the loading placeholder's doc comment. This is the one place where adding a language does not "just work" automatically, and it is documented as such in the adding-a-language guide rather than papered over.
+
+**Implementation:** See [Adding a new language](../guides/adding-a-language.md). The registry lives at `apps/web/src/i18n/registry.ts`; translations at `apps/web/src/i18n/locales/<id>.json`.
+
+**Related:** AD-021's theme counterpart is implicit — there is no ADR for the theme registry (it predates the decisions log), but `themes/registry.ts` is the direct template. AD-022 (Flexible Layouts over Fixed Widths) covers the layout half of i18n.
+
+---
+
+## AD-022: Flexible Layouts over Fixed Widths for Translated Text
+
+**Context:** The UI ships in English and Russian, with Russian text running roughly 20–30% longer than English for the same meaning — compound words, longer affixes, and unabbreviable grammatical forms (e.g. "настройки" vs "settings", "продолжить историю" vs "continue the story"). Any container sized to the English string — a fixed `w-[110px]` dropdown, a `min-w` button, a two-word-per-line segment control — clips, wraps ugly, or overflows in Russian. This is not a translation problem; it is a layout problem that every language addition will surface in a different shape (German compounds, French articles, etc.). Before this decision it was addressed ad hoc, container by container, which meant each new string was a latent layout bug waiting for a non-English locale.
+
+**Options considered:**
+
+| Approach | Description | Problem |
+|----------|-------------|--------|
+| **Fixed widths sized to the longest locale** | Measure Russian, hardcode that width | Brittle; re-breaks on the next language; widths balloon for short strings |
+| **Truncation / ellipsis everywhere** | `truncate` on all text containers | Hides meaning; unacceptable for labels, buttons, settings |
+| **Flexible, content-driven sizing** | Let text define the width; reserve space with `min-w` only where a control needs a hit target, not to fit copy | Containers grow with content; works for any language without per-locale tuning |
+
+**Decision:** Layout must be **content-driven, not copy-driven**. The rules, enforced by review (there is no linter for this):
+- No fixed pixel/`ch` widths on elements whose text comes from i18n keys — let `w-auto` / `flex` / `inline-flex` size to content.
+- `min-w` is allowed only to guarantee a click/tap target (e.g. a 40px button height/width), never to fit a specific string.
+- `max-w` with `truncate` is allowed only for genuinely unbounded content (user input, message bodies, entity names), never for fixed UI labels.
+- Flex/grid gaps and `justify-between` must not assume a label's rendered width — pair a label with a control via `flex` + `gap`, not by pixel-padding the label.
+
+**Rationale:**
+- **Scales to N languages, not just the current two** — a flexible layout that survives Russian (the longest current locale) also survives German compounds or French expanded forms without re-measuring every container
+- **Catches at write time, not translate time** — if a layout depends on a fixed width, the bug only appears when a translator fills in a longer string, often after the feature ships; content-driven sizing makes the layout locale-agnostic from the first commit
+- **Consistent with the theme strategy** — themes declare tokens and let consumers consume them without hardcoding values; i18n declares strings and lets layouts consume them without hardcoding widths; same principle (AD-021, AD-019)
+
+**Trade-off:** Content-driven sizing can produce minor visual jitter when switching languages (a button that's 110px in English becomes 140px in Russian). This is accepted and preferable to clipping. Where visual stability matters (e.g. a row of equal-width segment controls), size all siblings to the widest via `flex-1` so they grow together, rather than pinning one to a fixed width.
+
+**Verification requirement:** Any change touching UI text containers must be checked at mobile width in both `en` and `ru` before merge — Russian's 20–30% length delta surfaces most reliably in the narrow viewport. Use the Playwright MCP server (`browser_resize` to mobile, then `browser_snapshot`) for this, or `bun run dev:web` with the viewport toggled.
+
+**Implementation:** See [Adding a new language — Layout & text length](../guides/adding-a-language.md#layout--text-length). The concrete do/don't examples live there.
+
+**Related:** AD-021 (Locale Registry) — the architecture half of i18n; this is the layout half. Together they are the full "add a language" story.
