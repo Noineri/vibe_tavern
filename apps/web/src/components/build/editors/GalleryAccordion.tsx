@@ -1,12 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Icons } from "../../shared/icons.js";
-import { Toggle } from "../../shared/Toggle.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { useGalleryStore } from "../../../stores/gallery-store.js";
 import { GalleryGrid } from "./GalleryGrid.js";
-import { updateCharacter, updateCharacterAvatar } from "../../../api/character-api.js";
 import { serveCharacterAssetUrl } from "../../../api/gallery-api.js";
-import { useSnapshotStore, useActiveCharacter } from "../../../stores/snapshot-store.js";
 import { useTokenCount } from "../../../hooks/use-token-count.js";
 import { useT } from "../../../i18n/context.js";
 import { toast } from "sonner";
@@ -34,17 +31,18 @@ export function GalleryAccordion({ characterId, onSetAvatarPreview }: GalleryAcc
     }
   });
 
-  const activeCharacter = useActiveCharacter();
-  const includeGalleryInPrompt = activeCharacter?.includeGalleryInPrompt ?? false;
-
   const load = useGalleryStore((s) => s.load);
   const upload = useGalleryStore((s) => s.upload);
   const describe = useGalleryStore((s) => s.describe);
+  const cancelDescribe = useGalleryStore((s) => s.cancelDescribe);
   const remove = useGalleryStore((s) => s.remove);
-  
+  const setIncludeInPrompt = useGalleryStore((s) => s.setIncludeInPrompt);
+
   const loading = useGalleryStore((s) => s.loading[characterId]);
   const error = useGalleryStore((s) => s.error[characterId]);
   const assets = useGalleryStore((s) => s.byCharacter[characterId] ?? EMPTY_ASSETS);
+  const describingSet = useGalleryStore((s) => s.describing[characterId]);
+  const isDescribing = describingSet !== undefined && describingSet.size > 0;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -60,10 +58,10 @@ export function GalleryAccordion({ characterId, onSetAvatarPreview }: GalleryAcc
   }, [isOpen, characterId, load, storageKey]);
 
   // Token estimate — only rows that will actually be injected into the prompt.
-  // The backend (prompt-assembly-service) AND-gates on BOTH the character-level
-  // master switch (includeGalleryInPrompt) AND the per-image includeInPrompt
-  // flag, plus requires a non-empty description. This filter mirrors that so
-  // the token badge never overstates what reaches the model.
+  // Per-image includeInPrompt is the sole gate now (no character-level master
+  // switch); the backend injects iff includeInPrompt AND a non-empty description.
+  // This filter mirrors that so the token badge never overstates what reaches
+  // the model. The badge doubles as the de-facto "gallery is active" indicator.
   const includedAssets = assets.filter((a) => a.description && a.includeInPrompt);
   const describedCount = assets.filter((a) => a.description).length;
   const injectedImagesText = includedAssets
@@ -105,12 +103,19 @@ export function GalleryAccordion({ characterId, onSetAvatarPreview }: GalleryAcc
     }
   };
 
-  const handleToggleInclude = async () => {
-    try {
-      const snapshot = await updateCharacter(characterId, { includeGalleryInPrompt: !includeGalleryInPrompt });
-      useSnapshotStore.getState().ingestSnapshot(snapshot);
-    } catch (err) {
-      toast.error(String(err));
+  const handleDisableAll = async () => {
+    for (const asset of assets.filter((a) => a.includeInPrompt)) {
+      await setIncludeInPrompt(characterId, asset.id as string, false).catch(() => {});
+    }
+  };
+
+  // Bulk-include the prompt: enable includeInPrompt on every row that has a
+  // description (inclusion is meaningless without one — the backend AND-gates
+  // on description). Only surfaced once all tiles are described, so the button
+  // never offers a no-op bulk enable over undescribed images.
+  const handleIncludeAll = async () => {
+    for (const asset of assets.filter((a) => a.description && !a.includeInPrompt)) {
+      await setIncludeInPrompt(characterId, asset.id as string, true).catch(() => {});
     }
   };
 
@@ -121,20 +126,6 @@ export function GalleryAccordion({ characterId, onSetAvatarPreview }: GalleryAcc
       else next.add(id);
       return next;
     });
-  };
-
-  const handleSetAvatar = async (asset: CharacterAsset) => {
-    try {
-      const chatId = useSnapshotStore.getState().activeChat?.id || "_";
-      const snapshot = await updateCharacterAvatar(characterId, chatId, asset.id as string, asset.id as string, null);
-      useSnapshotStore.getState().ingestSnapshot(snapshot);
-      if (onSetAvatarPreview) {
-        onSetAvatarPreview(serveCharacterAssetUrl(characterId, asset.id as string));
-      }
-      toast.success(t("avatar_updated"));
-    } catch (err) {
-      toast.error(String(err));
-    }
   };
 
   return (
@@ -178,8 +169,6 @@ export function GalleryAccordion({ characterId, onSetAvatarPreview }: GalleryAcc
               assets={assets}
               selectedIds={selectedIds}
               onToggleSelection={handleToggleSelection}
-              onSetAvatar={handleSetAvatar}
-              masterIncludeEnabled={includeGalleryInPrompt}
             />
           )}
 
@@ -220,29 +209,50 @@ export function GalleryAccordion({ characterId, onSetAvatarPreview }: GalleryAcc
               >
                 {t("gallery_describe_all")}
               </button>
-            </div>
 
-            <div className="flex items-center gap-3">
-              <label className="flex cursor-pointer items-center gap-2 font-ui text-sm text-t2">
-                <Toggle
-                  checked={includeGalleryInPrompt}
-                  onChange={() => { void handleToggleInclude(); }}
-                />
-                {t("gallery_include_in_prompt")}
-              </label>
+              {isDescribing && (
+                <button
+                  type="button"
+                  className="cursor-pointer rounded bg-danger/10 px-3 py-1.5 font-ui text-sm text-danger transition-colors hover:bg-danger/20"
+                  onClick={() => cancelDescribe(characterId)}
+                >
+                  {t("gallery_describe_cancel")}
+                </button>
+              )}
 
-              {includeGalleryInPrompt && (
-                includedAssets.length === 0 && describedCount > 0 ? (
-                  <span className="flex items-center gap-1 font-ui text-[11px] italic text-t3">
-                    <Icons.ellipsis className="h-3 w-3" />{t("gallery_select_via_menu")}
-                  </span>
-                ) : (
-                  <span className="flex justify-end font-ui text-[11px] tabular-nums text-t3">
-                    {tokenCount.toLocaleString()} {t("tokens_label")}
-                  </span>
-                )
+              {includedAssets.length > 0 && (
+                <button
+                  type="button"
+                  className="cursor-pointer rounded border border-border bg-s2 px-3 py-1.5 font-ui text-sm text-t2 transition-colors hover:bg-s3"
+                  onClick={() => { void handleDisableAll(); }}
+                >
+                  {t("gallery_disable_all")}
+                </button>
+              )}
+
+              {/* Mirror of "Disable all": bulk-enable inclusion. Only shown once
+                  every tile is described (so there's something worth including
+                  on each) and at least one described row is still opted out —
+                  otherwise the button would be a no-op. */}
+              {assets.length > 0
+                && assets.every((a) => a.description)
+                && assets.some((a) => a.description && !a.includeInPrompt) && (
+                <button
+                  type="button"
+                  className="cursor-pointer rounded border border-accent/40 bg-accent/10 px-3 py-1.5 font-ui text-sm text-accent-t transition-colors hover:bg-accent/20"
+                  onClick={() => { void handleIncludeAll(); }}
+                >
+                  {t("gallery_include_all")}
+                </button>
               )}
             </div>
+
+            {/* Token badge — the de-facto "gallery is active" indicator. With
+                the master toggle gone, this counts exactly the rows that will
+                reach the model (description && includeInPrompt). */}
+            <span className="flex justify-end font-ui text-[11px] tabular-nums text-t3">
+              {includedAssets.length} · {tokenCount.toLocaleString()} {t("tokens_label")}
+            </span>
           </div>
         </div>
       )}

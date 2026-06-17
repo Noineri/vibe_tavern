@@ -348,12 +348,19 @@ describe("PromptAssemblyService gallery includeInPrompt filter (D7)", () => {
     expect(result.prompt.layers.find((l) => l.id === "character_gallery")).toBeUndefined();
   });
 
-  it("suppresses the gallery layer when the master includeGalleryInPrompt toggle is off", async () => {
-    const service = makeFilterService(
-      [{ id: "row_a", description: "A black battle dress.", includeInPrompt: true }],
-      { includeGalleryInPrompt: false },
-    );
-    const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "test-model" });
-    expect(result.prompt.layers.find((l) => l.id === "character_gallery")).toBeUndefined();
+  it("injects regardless of the deprecated master includeGalleryInPrompt toggle", async () => {
+    // Per-image includeInPrompt is the sole gate now; the character-level
+    // master toggle is no longer read by the assembly service.
+    for (const includeGalleryInPrompt of [false, true] as const) {
+      const service = makeFilterService(
+        [{ id: "row_a", description: "A black battle dress.", includeInPrompt: true }],
+        { includeGalleryInPrompt },
+      );
+      const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "test-model" });
+      expect(
+        result.prompt.layers.find((l) => l.id === "character_gallery"),
+        `includeGalleryInPrompt=${includeGalleryInPrompt}`,
+      ).toBeDefined();
+    }
   });
 });

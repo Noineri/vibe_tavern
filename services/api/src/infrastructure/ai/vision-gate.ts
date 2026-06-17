@@ -235,6 +235,7 @@ export async function describeAttachments(
   profile: { providerPreset: string; endpoint: string; apiKey: string | null },
   assetLoader: (assetId: string) => Promise<Buffer | null>,
   systemPrompt?: string,
+  signal?: AbortSignal,
 ): Promise<Map<string, string>> {
   const results = new Map<string, string>();
 
@@ -257,6 +258,11 @@ export async function describeAttachments(
     // mandatory here. Never throws — falls back to original bytes on failure.
     const { buffer, mimeType } = prepareImageForVision(loaded, att.mimeType);
 
+    // Abort early if a cancellation arrived between images. generateText
+    // itself takes abortSignal, but checking here avoids the per-image load
+    // + compression work for images queued after the user cancelled.
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
     const response = await generateText({
       model,
       system: resolvedPrompt,
@@ -268,6 +274,7 @@ export async function describeAttachments(
         ],
       }],
       maxOutputTokens: 1500,
+      abortSignal: signal,
     });
 
     // Strip reasoning (<think>…, markers) so chain-of-thought never leaks into

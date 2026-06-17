@@ -47,6 +47,8 @@ export interface GalleryActions {
   upload(characterId: string, file: File): Promise<void>;
   /** Optimistically edit a caption; rolls back on error. */
   updateCaption(characterId: string, rowId: string, caption: string): Promise<void>;
+  /** Optimistically edit an AI description (lightbox manual override); rolls back on error. */
+  updateDescription(characterId: string, rowId: string, description: string): Promise<void>;
   /** Optimistically toggle a row's per-image prompt inclusion (D7); rolls back on error. */
   setIncludeInPrompt(characterId: string, rowId: string, includeInPrompt: boolean): Promise<void>;
   /** Optimistically reorder; rolls back on error. `orderedIds` is the FULL new order. */
@@ -57,14 +59,22 @@ export interface GalleryActions {
    * Vision-describe images. NOT optimistic: marks each target row in
    * `describing`, reloads the list on resolve. `rowIds` omitted ⇒ all
    * undescribed images. Partial failures are reported via toast; the list is
-   * still reloaded so successful descriptions show.
+   * still reloaded so successful descriptions show. Cancellable via
+   * {@link cancelDescribe}.
    */
   describe(characterId: string, rowIds?: string[]): Promise<void>;
+  /** Abort any in-flight describe for this character and clear the spinner set. */
+  cancelDescribe(characterId: string): void;
   /** Drop the cached list for a character (call on character switch / unmount). */
   reset(characterId: string): void;
 }
 
 export type GalleryStore = GalleryState & GalleryActions;
+
+/** In-flight AbortControllers per character, keyed by characterId. Kept at
+ *  module scope (not in the store state) because controllers are mutable and
+ *  must NOT trigger re-renders. Used by {@link describe}/{@link cancelDescribe}. */
+const describeControllers = new Map<string, AbortController>();
 
 export const useGalleryStore = create<GalleryStore>((set, get) => ({
   byCharacter: {},
@@ -119,6 +129,31 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
     }));
     try {
       const updated = await updateCharacterAsset(characterId, rowId, { caption });
+      set((s) => ({
+        byCharacter: {
+          ...s.byCharacter,
+          [characterId]: (s.byCharacter[characterId] ?? []).map((a) => (a.id === rowId ? updated : a)),
+        },
+      }));
+    } catch (err) {
+      // Rollback to the pre-edit list.
+      set((s) => ({ byCharacter: { ...s.byCharacter, [characterId]: prev } }));
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(message);
+    }
+  },
+
+  async updateDescription(characterId, rowId, description) {
+    const prev = get().byCharacter[characterId] ?? [];
+    // Optimistic: patch the description locally.
+    set((s) => ({
+      byCharacter: {
+        ...s.byCharacter,
+        [characterId]: prev.map((a) => (a.id === rowId ? { ...a, description } : a)),
+      },
+    }));
+    try {
+      const updated = await updateCharacterAsset(characterId, rowId, { description });
       set((s) => ({
         byCharacter: {
           ...s.byCharacter,
@@ -194,24 +229,42 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
     // Default: all undescribed rows.
     const targets = rowIds ?? list.filter((a) => a.description == null).map((a) => a.id);
     if (targets.length === 0) return;
+    // If a previous describe is still in flight for this character, abort it
+    // (single in-flight batch per character — matches the per-character spinner
+    // set semantics and avoids overlapping reloads).
+    describeControllers.get(characterId)?.abort();
+    const controller = new AbortController();
+    describeControllers.set(characterId, controller);
     set((s) => ({ describing: { ...s.describing, [characterId]: new Set(targets) } }));
     try {
-      const { failed } = await describeCharacterAssets(characterId, targets);
-      if (failed.length > 0) {
+      const { failed } = await describeCharacterAssets(characterId, targets, controller.signal);
+      if (!controller.signal.aborted && failed.length > 0) {
         toast.error(`${failed.length} image(s) failed to describe.`);
       }
-      // Reload so successful descriptions (persisted server-side) show.
-      await get().reload(characterId);
+      // Reload so successful descriptions (persisted server-side) show. Skip
+      // on abort — the caller (cancelDescribe) handles spinner teardown, and
+      // a reload would clobber any partial UI state needlessly.
+      if (!controller.signal.aborted) {
+        await get().reload(characterId);
+      }
     } catch (err) {
+      if (controller.signal.aborted) return; // user cancelled — silent
       const message = err instanceof Error ? err.message : String(err);
       toast.error(message);
     } finally {
+      describeControllers.delete(characterId);
       set((s) => {
         const next = new Set(s.describing[characterId] ?? []);
         for (const id of targets) next.delete(id);
         return { describing: { ...s.describing, [characterId]: next } };
       });
     }
+  },
+
+  cancelDescribe(characterId) {
+    describeControllers.get(characterId)?.abort();
+    describeControllers.delete(characterId);
+    set((s) => ({ describing: { ...s.describing, [characterId]: new Set() } }));
   },
 
   reset(characterId) {

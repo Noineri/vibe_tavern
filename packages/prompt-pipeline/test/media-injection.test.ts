@@ -93,11 +93,15 @@ describe("A7 media injection", () => {
 			expect(result.layers.filter((l) => l.id === "character_gallery")).toHaveLength(1);
 		});
 
-		it("is suppressed when includeGalleryInPrompt is false", () => {
-			const result = assemblePrompt(baseContext({
-				character: mediaCharacter({ includeGalleryInPrompt: false }),
-			}));
-			expect(result.layers.find((l) => l.id === "character_gallery")).toBeUndefined();
+		it("injects regardless of the deprecated includeGalleryInPrompt flag", () => {
+			// Per-image includeInPrompt is the sole gate now; the character-level
+			// includeGalleryInPrompt field is no longer read by the assembler.
+			for (const includeGalleryInPrompt of [false, true] as const) {
+				const result = assemblePrompt(baseContext({
+					character: mediaCharacter({ includeGalleryInPrompt }),
+				}));
+				expect(result.layers.find((l) => l.id === "character_gallery"), `includeGalleryInPrompt=${includeGalleryInPrompt}`).toBeDefined();
+			}
 		});
 
 		it("is suppressed when gallery is empty or null", () => {
@@ -107,14 +111,6 @@ describe("A7 media injection", () => {
 				}));
 				expect(result.layers.find((l) => l.id === "character_gallery"), `gallery=${JSON.stringify(gallery)}`).toBeUndefined();
 			}
-		});
-
-		it("is suppressed when includeGalleryInPrompt is true but gallery is null", () => {
-			// caller pre-filters to described rows; an empty result yields null
-			const result = assemblePrompt(baseContext({
-				character: mediaCharacter({ gallery: null }),
-			}));
-			expect(result.layers.find((l) => l.id === "character_gallery")).toBeUndefined();
 		});
 	});
 
