@@ -278,3 +278,63 @@ describe("Character gallery routes (A5)", () => {
 		expect(ok.status).toBe(204);
 	});
 });
+
+// ─── D1/R5: promote a gallery image into the general asset store ─────────
+
+describe("Character gallery promote-to-attachment (R5/D1)", () => {
+	test("adapter copies gallery bytes into the general store and returns the attachment descriptor", async () => {
+		const { stores, assetService, characters } = await setup();
+		const char = await stores.characters.create({ name: "Aria" });
+		const a = await characters.uploadCharacterAsset(char.id, new File([PNG], "a.png", { type: "image/png" }));
+
+		const result = await characters.promoteGalleryAssetToAttachment(char.id, a.id);
+		expect(result.assetId).toMatch(/^asset_/);
+		expect(result.mimeType).toBe("image/png");
+		expect(result.sizeBytes).toBe(PNG.byteLength);
+		// name falls back to `media-{rowId}.{ext}` when no caption
+		expect(result.name).toBe(`media-${a.id}.png`);
+
+		// the promoted assetId serves the SAME bytes via the general store
+		const served = await assetService.serve(result.assetId);
+		expect(served).not.toBeNull();
+		expect(served!.headers.get("Content-Type")).toBe("image/png");
+		expect(new Uint8Array(await served!.arrayBuffer())).toEqual(PNG);
+	});
+
+	test("adapter derives name from the row's caption when present", async () => {
+		const { stores, characters } = await setup();
+		const char = await stores.characters.create({ name: "Aria" });
+		const a = await characters.uploadCharacterAsset(char.id, new File([PNG], "a.png", { type: "image/png" }));
+		await characters.updateCharacterAsset(char.id, a.id, { caption: "sunrise" });
+
+		const result = await characters.promoteGalleryAssetToAttachment(char.id, a.id);
+		expect(result.name).toBe("sunrise.png");
+	});
+
+	test("adapter rejects unknown row and cross-character row (no leakage)", async () => {
+		const { stores, characters } = await setup();
+		const charA = await stores.characters.create({ name: "Aria" });
+		const charB = await stores.characters.create({ name: "Bea" });
+		const a = await characters.uploadCharacterAsset(charA.id, new File([PNG], "a.png", { type: "image/png" }));
+
+		await expect(characters.promoteGalleryAssetToAttachment(charA.id, "row_nope")).rejects.toThrow(/not found/);
+		// row belongs to charA, requested via charB → throws (no leak)
+		await expect(characters.promoteGalleryAssetToAttachment(charB.id, a.id)).rejects.toThrow(/not found/);
+	});
+
+	test("route: promote → 201 with descriptor; unknown row → 404", async () => {
+		const { stores, characters } = await setup();
+		const char = await stores.characters.create({ name: "Aria" });
+		const a = await characters.uploadCharacterAsset(char.id, new File([PNG], "a.png", { type: "image/png" }));
+		const app = createCharacterRoutes(characters);
+
+		const ok = await app.request(`/api/characters/${char.id}/assets/${a.id}/promote-to-attachment`, { method: "POST" });
+		expect(ok.status).toBe(201);
+		const body = (await ok.json()) as { assetId: string; name: string; mimeType: string; sizeBytes: number };
+		expect(body.assetId).toMatch(/^asset_/);
+		expect(body.mimeType).toBe("image/png");
+
+		const notFound = await app.request(`/api/characters/${char.id}/assets/row_nope/promote-to-attachment`, { method: "POST" });
+		expect(notFound.status).toBe(404);
+	});
+});

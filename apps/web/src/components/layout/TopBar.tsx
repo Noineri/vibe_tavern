@@ -11,7 +11,7 @@ import { useActiveTrace, useChatMeta } from "../../stores/chat-selectors.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
-import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { MediaMenu } from "../chat/MediaMenu.js";
 
 export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onShowRail?: () => void }) {
   const { t } = useT();
@@ -34,7 +34,7 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
 
   // --- Derived ---
   const characterName = chatMeta?.character.name ?? "";
-  const characterSubtitle = chatMeta?.character.subtitle ?? "";
+  const characterId = chatMeta?.character.id ?? null;
   const characterAvatar = chatMeta?.character
     ? resolveEntityAvatarUrl({ kind: "characters", id: chatMeta.character.id, avatarExt: chatMeta.character.avatarExt, avatarAssetId: chatMeta.character.avatarAssetId, updatedAt: chatMeta.character.updatedAt }) ?? undefined
     : undefined;
@@ -84,6 +84,7 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
         <div className="min-w-0 flex-1 overflow-hidden">
           <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[length:var(--ui-fs)] font-medium leading-[1.2] text-t1">{characterName}</div>
         </div>
+        {characterId && <MediaMenu characterId={characterId} characterName={characterName} />}
         <div className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-accent-t transition-colors duration-150 hover:bg-accent-hover"
           onClick={() => setMode(mode === 'play' ? 'build' : 'play')}>
           {mode === 'play' ? t("topbar_build_mode") : t("topbar_play_mode")}
@@ -102,29 +103,13 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
             ? <img src={characterAvatar} alt={characterName} className="h-full w-full object-cover"/>
             : <>{initials(characterName)}</>}
         </div>
-        <div className="min-w-0 overflow-hidden">
+        <div className="min-w-0">
           <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[length:var(--ui-fs)] font-medium leading-[1.2] text-t1">{characterName}</div>
-          <div className="mt-px max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] text-t3">{characterSubtitle}</div>
+          {characterId && <MediaMenu characterId={characterId} characterName={characterName} />}
         </div>
       </div>
       <div className="flex min-w-0 shrink items-center gap-[5px] flex-1 overflow-visible">
-          {mode === 'play' && (
-            <>
-              <MemBadge label={t("topbar_memory")} onClick={() => useModalStore.getState().setContextMemoryOpen(true)} />
-              <CustomTooltip content={t("gallery_title") || "Media Gallery"}>
-                <div className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                  onClick={() => {
-                    const charId = useSnapshotStore.getState().character?.id;
-                    if (charId) {
-                      localStorage.setItem(`gallery:open:${charId}`, "true");
-                    }
-                    useNavigationStore.getState().setMode("build");
-                  }}>
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="5" cy="5" r="1.5"/><polyline points="2 10 6 6 14 14"/></svg>
-                </div>
-              </CustomTooltip>
-            </>
-          )}
+          {mode === 'play' && <MemBadge label={t("topbar_memory")} onClick={() => useModalStore.getState().setContextMemoryOpen(true)} />}
 
           <CustomTooltip content={t("provider_settings_title")}>
             <div className="flex min-h-8 min-w-0 max-w-[min(520px,60vw)] flex-[0_1_auto] cursor-pointer items-center gap-1.5 overflow-hidden whitespace-nowrap rounded border border-transparent bg-transparent px-2 py-[3px] font-ui text-[calc(var(--ui-fs)-4px)] leading-tight text-t2 transition-colors duration-150 hover:border-border hover:bg-s2 hover:text-t1"
@@ -152,7 +137,7 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
               >
                 <span className="max-w-[120px] overflow-hidden text-ellipsis whitespace-nowrap">{activePresetName}</span>
                 {canSwitchPresets && (
-                  <span className={cn("text-t3 transition-transform", presetDropOpen && "rotate-90")}><Icons.Caret direction="d" /></span>
+                  <span className={cn("text-t3 transition-transform", presetDropOpen && "rotate-90")}><Icons.Caret direction="r" /></span>
                 )}
               </div>
             </CustomTooltip>

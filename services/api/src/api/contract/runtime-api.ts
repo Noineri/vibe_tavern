@@ -195,6 +195,14 @@ export interface CharacterAssetRuntimeApi {
 	// character for future restore. Returns the new avatar state + the salvaged
 	// row id (null when there was no prior avatar to salvage).
 	setAvatarFromGallery: (characterId: string, sourceAssetId: string, crop: File, cropJson: string) => Promise<{ avatarExt: string; avatarFullExt: string | null; avatarCropJson: string; updatedAt: string; salvagedAssetId: string | null }>;
+
+	// D1/R5: promote a gallery image into the general asset store so it can be
+	// attached to a chat message draft without a client re-upload. Copies the
+	// gallery bytes (server-side) into `data/assets/{assetId}` and returns the
+	// flat-attachment descriptor the chat draft expects. `name` is derived from
+	// the row's caption (falling back to `media-{rowId}.{ext}`). Same philosophy
+	// as the D8 salvage: bytes move server-side, no round-trip to the client.
+	promoteGalleryAssetToAttachment: (characterId: string, assetRowId: string) => Promise<{ assetId: string; name: string; mimeType: string; sizeBytes: number }>;
 }
 
 // ─── Persona ─────────────────────────────────────────────────────────
