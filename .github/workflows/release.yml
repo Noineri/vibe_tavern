@@ -1,8 +1,9 @@
 name: Release
 
-# Atomic 5-job release pipeline (Pattern A: needs-chain).
+# Atomic 6-job release pipeline (Pattern A: needs-chain).
 # 4 build jobs run in parallel on tag push; `publish` runs ONLY if all 4 succeed.
-# Zero master mutation: no git push/commit/config anywhere.
+# `sync-version` bumps package.json on master — but ONLY after publish succeeds,
+# so if any build fails, master is never touched.
 # Release is created in a single softprops/action-gh-release call with
 # fail_on_unmatched_files: true — if any expected artifact is missing, the
 # release step fails and no half-baked release goes public.
@@ -201,3 +202,58 @@ jobs:
           fail_on_unmatched_files: true
           draft: false
           name: v${{ env.VERSION }}
+
+  sync-version:
+    # Post-release housekeeping: sync the released version back into the
+    # package.json files on master. Runs ONLY after publish succeeds, so
+    # if any build fails, master is never touched.
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: master
+          fetch-depth: 0
+      - name: Set VERSION from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - name: Bump package.json versions
+        run: |
+          find . -name package.json -not -path '*/node_modules/*' | while read pkg; do
+            tmp="${pkg}.tmp"
+            jq --arg v "$VERSION" '
+              .version = $v |
+              if .dependencies then
+                .dependencies |= (
+                  to_entries | map(
+                    if .key | startswith("@vibe-tavern/") then .value = $v else . end
+                  ) | from_entries
+                )
+              else . end |
+              if .devDependencies then
+                .devDependencies |= (
+                  to_entries | map(
+                    if .key | startswith("@vibe-tavern/") then .value = $v else . end
+                  ) | from_entries
+                )
+              else . end
+            ' "$pkg" > "$tmp"
+            mv "$tmp" "$pkg"
+          done
+      - run: bun install
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json '**/package.json' bun.lock
+          if git diff --cached --quiet; then
+            echo "Version already up to date"
+            exit 0
+          fi
+          git commit -m "chore: release v${VERSION}"
+          git pull --rebase origin master
+          git push
