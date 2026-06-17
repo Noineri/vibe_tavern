@@ -119,7 +119,7 @@ export function MasterDetailModal({
           <div className={cn("font-body font-semibold text-t1", isMobile ? "text-[calc(var(--ui-fs)+2px)]" : "text-[18px] mb-1")}>
             {title}
             {dirty && (
-              <CustomTooltip content={t("unsaved_changes_title") || "Unsaved changes"}>
+              <CustomTooltip content={t("unsaved_changes_title")}>
                 <span className="ml-1.5 inline-block h-[7px] w-[7px] shrink-0 rounded-full bg-accent align-middle" />
               </CustomTooltip>
             )}
