@@ -1056,5 +1056,9 @@
   "edit_caption": "Edit caption",
   "add_caption": "Add caption",
   "gallery_no_caption": "No caption",
-  "caption_placeholder": "Enter caption…"
+  "caption_placeholder": "Enter caption…",
+  "media_button": "Media",
+  "media_send_to_chat": "Send to chat",
+  "media_open_build": "Open Build",
+  "media_empty": "No media yet"
 }

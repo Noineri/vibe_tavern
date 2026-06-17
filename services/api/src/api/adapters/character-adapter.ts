@@ -281,6 +281,32 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 		};
 	};
 
+
+	// ─── D1/R5: promote a gallery image to a flat chat attachment ─────────
+	// Server-side copy: load the gallery bytes, synthesize a File, and hand it
+	// to `assetService.upload` (same gates as any client upload: ALLOWED_MIMES /
+	// MAX_IMAGE_SIZE). The returned `assetId` lives in `data/assets/` and is
+	// what the chat draft's Attachment points at — decoupled from the gallery
+	// row so later edits/deletes of the source never break the sent message.
+	promoteGalleryAssetToAttachment = async (
+		characterId: string,
+		assetRowId: string,
+	): Promise<{ assetId: string; name: string; mimeType: string; sizeBytes: number }> => {
+		// Source row must exist and belong to this character.
+		const row = await this.stores.characterAssets.getById(assetRowId);
+		if (!row || row.characterId !== characterId) {
+			throw new Error("Character asset not found");
+		}
+		const buffer = await this.assetService.loadGalleryImageBuffer(characterId, assetRowId, row.ext);
+		if (!buffer) {
+			throw new Error("Character asset not found");
+		}
+		const baseName = row.caption.trim() || `media-${row.id}`;
+		const file = new File([new Uint8Array(buffer)], `${baseName}.${row.ext}`, { type: row.mimeType });
+		const { assetId } = await this.assetService.upload(file);
+		return { assetId, name: file.name, mimeType: row.mimeType, sizeBytes: file.size };
+	};
+
 	// ─── Vision describe (A6) ───────────────────────────────────────
 	// Reuses the SAME vision resolution path as chat attachment describe:
 	// active profile's visionModel + the `vision_describe` system prompt (preset

@@ -1058,5 +1058,9 @@
   "edit_caption": "Изменить подпись",
   "add_caption": "Добавить подпись",
   "gallery_no_caption": "Без подписи",
-  "caption_placeholder": "Введите подпись…"
+  "caption_placeholder": "Введите подпись…",
+  "media_button": "Медиа",
+  "media_send_to_chat": "Отправить в чат",
+  "media_open_build": "Открыть редактор",
+  "media_empty": "Пока нет медиа"
 }

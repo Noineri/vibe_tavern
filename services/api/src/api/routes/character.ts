@@ -196,5 +196,18 @@ export function createCharacterRoutes(runtime: CharacterRuntimeApi & CharacterAs
         return c.json({ error: message }, status);
       }
     })
+    // D1/R5: promote a gallery image into the general asset store (server-side
+    // copy) so it can be attached to a chat draft without a client re-upload.
+    // Placed AFTER the generic `:assetRowId` routes so it matches before them.
+    .post("/api/characters/:characterId/assets/:assetRowId/promote-to-attachment", async (c) => {
+      try {
+        const result = await runtime.promoteGalleryAssetToAttachment(c.req.param("characterId"), c.req.param("assetRowId"));
+        return c.json(result, 201);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const status = message.includes("not found") ? 404 : message.includes("too large") ? 413 : message.includes("Unsupported") ? 415 : 400;
+        return c.json({ error: message }, status);
+      }
+    })
   ;
 }
