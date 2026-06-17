@@ -56,6 +56,7 @@ function makeAsset(id: string, caption = "", description: string | null = null):
     caption,
     description,
     includeInPrompt: false,
+    avatarCropJson: null,
     order: 0,
     createdAt: "2026-01-01T00:00:00Z" as never,
   };

@@ -465,7 +465,7 @@ export function CharacterForm({
       )}
 
       {/* Gallery Accordion */}
-      <GalleryAccordion characterId={characterId} onSetAvatarPreview={setAvatarPreview} />
+      <GalleryAccordion characterId={characterId} />
 
       {/* Description */}
       <div className="mb-5">

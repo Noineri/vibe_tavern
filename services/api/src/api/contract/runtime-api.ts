@@ -79,6 +79,8 @@ interface CharacterAssetRecord {
 	caption: string;
 	description: string | null;
 	includeInPrompt: boolean;
+	/** D8: crop geometry (percentages JSON) for a salvaged former-avatar row; null otherwise. */
+	avatarCropJson: string | null;
 	order: number;
 	createdAt: string;
 }
@@ -185,6 +187,14 @@ export interface CharacterAssetRuntimeApi {
 
 	// Vision describe (A6) — uses the active provider profile's visionModel.
 	describeCharacterAssets: (characterId: string, assetRowIds?: string[], signal?: AbortSignal) => Promise<{ updated: string[]; failed: string[] }>;
+
+	// D8: set a gallery image as the character's avatar. Salvages the current
+	// avatar (full bytes + its cropJson) into a new gallery row before
+	// overwriting, so nothing is lost. `crop` is the cropped thumbnail File;
+	// `cropJson` is the crop geometry (percentages JSON) to store on the
+	// character for future restore. Returns the new avatar state + the salvaged
+	// row id (null when there was no prior avatar to salvage).
+	setAvatarFromGallery: (characterId: string, sourceAssetId: string, crop: File, cropJson: string) => Promise<{ avatarExt: string; avatarFullExt: string | null; avatarCropJson: string; updatedAt: string; salvagedAssetId: string | null }>;
 }
 
 // ─── Persona ─────────────────────────────────────────────────────────

@@ -19,6 +19,8 @@ interface GalleryGridProps {
   assets: CharacterAsset[];
   selectedIds: Set<string>;
   onToggleSelection: (id: string) => void;
+  /** D8: open the avatar crop modal seeded with this gallery row. */
+  onSetAsAvatar: (asset: CharacterAsset) => void;
 }
 
 /** Justified-grid tile height (image area only; the one-line footer is extra).
@@ -118,6 +120,7 @@ function GalleryTile({
   onToggle,
   onOpenLightbox,
   onOpenPanel,
+  onSetAsAvatar,
   tileHeight,
 }: {
   characterId: string;
@@ -126,6 +129,8 @@ function GalleryTile({
   onToggle: () => void;
   onOpenLightbox: () => void;
   onOpenPanel: () => void;
+  /** D8: open the avatar crop modal for this tile. */
+  onSetAsAvatar: () => void;
   tileHeight: number;
 }) {
   const { t } = useT();
@@ -377,6 +382,19 @@ function GalleryTile({
 
           <div className="my-1 border-t border-border/60" />
 
+          {/* D8: set this gallery image as the avatar. Opens the crop modal
+              (seeded with this full image); the server salvages the current
+              avatar into the gallery first. */}
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-t2 transition-colors hover:bg-s2"
+            onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onSetAsAvatar(); }}
+          >
+            <Icons.user className="h-3.5 w-3.5" />{t("gallery_set_avatar")}
+          </button>
+
+          <div className="my-1 border-t border-border/60" />
+
           <button
             type="button"
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger transition-colors hover:bg-danger/10"
@@ -390,7 +408,7 @@ function GalleryTile({
   );
 }
 
-export function GalleryGrid({ characterId, assets, selectedIds, onToggleSelection }: GalleryGridProps) {
+export function GalleryGrid({ characterId, assets, selectedIds, onToggleSelection, onSetAsAvatar }: GalleryGridProps) {
   const tileHeight = useTileHeight();
   // Multiple floating panels may be open at once (original design intent):
   // each entry in the set renders its own independent GalleryViewer.
@@ -422,6 +440,7 @@ export function GalleryGrid({ characterId, assets, selectedIds, onToggleSelectio
             onToggle={() => onToggleSelection(asset.id as string)}
             onOpenLightbox={() => setLightboxIndex(idx)}
             onOpenPanel={() => togglePanel(idx)}
+            onSetAsAvatar={() => onSetAsAvatar(asset)}
             tileHeight={tileHeight}
           />
         ))}

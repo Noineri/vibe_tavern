@@ -98,6 +98,29 @@ export function createCharacterRoutes(runtime: CharacterRuntimeApi & CharacterAs
         throw err;
       }
     })
+    // D8: set a gallery image as the character's avatar. Salvages the current
+    // avatar into the gallery (full + crop metadata) before overwriting, so the
+    // prior avatar is preserved and restorable. Multipart: `sourceAssetId`
+    // (field) + `crop` (File, the cropped thumbnail) + `cropJson` (field, the
+    // crop geometry percentages JSON).
+    .post("/api/characters/:characterId/avatar/from-gallery", async (c) => {
+      const body = await c.req.parseBody();
+      const sourceAssetId = typeof body["sourceAssetId"] === "string" ? body["sourceAssetId"] : null;
+      const crop = body["crop"] instanceof File ? body["crop"] : null;
+      const cropJson = typeof body["cropJson"] === "string" ? body["cropJson"] : "";
+      if (!sourceAssetId || !crop) {
+        return c.json({ error: "Required: 'sourceAssetId' field + 'crop' File in multipart form." }, 400);
+      }
+      try {
+        const result = await runtime.setAvatarFromGallery(c.req.param("characterId"), sourceAssetId, crop, cropJson);
+        return c.json(result, 200);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("too large")) return c.json({ error: message }, 413);
+        if (message.includes("Unsupported")) return c.json({ error: message }, 415);
+        return c.json({ error: message }, 400);
+      }
+    })
     // ─── Character media gallery ────────────────────────────────────────
     .get("/api/characters/:characterId/assets", async (c) => {
       const list = await runtime.listCharacterAssets(c.req.param("characterId"));

@@ -3,6 +3,7 @@ import { brandId, type CharacterId, type ChatId } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { AssetService } from "../../domain/asset/asset-service.js";
+import { extToMime } from "../../domain/asset/asset-service.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import { validation } from "../../shared/errors.js";
 import { describeAttachments, resolveVisionDescribePrompt } from "../../infrastructure/ai/vision-gate.js";
@@ -206,6 +207,78 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 		if (result) {
 			await this.assetService.deleteGalleryImage(result.characterId, assetRowId, result.ext);
 		}
+	};
+
+	/** D8: Set a gallery image as the character's avatar. Before overwriting,
+	 *  the current avatar is salvaged into the gallery as a new row carrying
+	 *  its full bytes + its crop geometry, so nothing is ever lost and the prior
+	 *  avatar can be restored with its exact crop pre-filled. The gallery always
+	 *  shows full images; `avatarCropJson` is pure restore metadata.
+	 *
+	 *  Flow: salvage (if a prior avatar exists) → write new crop thumbnail →
+	 *  copy the source gallery image as the avatar full → store crop geometry
+	 *  on the character. */
+	setAvatarFromGallery = async (
+		characterId: string,
+		sourceAssetId: string,
+		crop: File,
+		cropJson: string,
+	): Promise<{ avatarExt: string; avatarFullExt: string | null; avatarCropJson: string; updatedAt: string; salvagedAssetId: string | null }> => {
+		const cid = brandId<CharacterId>(characterId);
+		// Source row must exist and belong to this character.
+		const sourceRow = await this.stores.characterAssets.getById(sourceAssetId);
+		if (!sourceRow || sourceRow.characterId !== characterId) {
+			throw new Error("Character asset not found");
+		}
+
+		// ── Salvage the current avatar (full bytes + its crop) into the gallery.
+		let salvagedAssetId: string | null = null;
+		const character = await this.stores.characters.getById(cid);
+		const priorCropJson = character?.avatarCropJson ?? null;
+		const priorFullExt = character?.avatarFullExt ?? null;
+		const priorThumbExt = character?.avatarExt ?? null;
+		// Prefer the dedicated full; fall back to the thumbnail (which IS the
+		// uncropped original when no separate full was ever stored).
+		const salvageExt = priorFullExt ?? priorThumbExt;
+		if (salvageExt) {
+			const salvageBuffer = priorFullExt
+				? await this.assetService.loadCharacterAvatarFullBuffer(characterId, priorFullExt)
+			: await this.assetService.loadCharacterAvatarBuffer(characterId, priorThumbExt!);
+			if (salvageBuffer) {
+				const rowId = this.stores.characterAssets.nextId();
+				const salvageFile = new File([new Uint8Array(salvageBuffer)], `salvage.${salvageExt}`, { type: extToMime(salvageExt) });
+				await this.assetService.writeGalleryImage(characterId, rowId, salvageFile);
+				const existing = await this.stores.characterAssets.listByCharacter(characterId);
+				const order = existing.length === 0 ? 0 : existing[existing.length - 1]!.order + 1;
+				await this.stores.characterAssets.create({ id: rowId, characterId, ext: salvageExt, mimeType: extToMime(salvageExt), order, avatarCropJson: priorCropJson });
+				salvagedAssetId = rowId;
+			}
+		}
+
+		// ── Write the new crop thumbnail + the source image as the avatar full.
+		const { ext: avatarExt } = await this.assetService.writeCharacterAvatar(characterId, crop);
+		await this.stores.characters.setFolderAvatar(cid, avatarExt);
+
+		const sourceBuffer = await this.assetService.loadGalleryImageBuffer(characterId, sourceAssetId, sourceRow.ext);
+		let avatarFullExt: string | null = null;
+		if (sourceBuffer) {
+			const fullFile = new File([new Uint8Array(sourceBuffer)], `avatar-full.${sourceRow.ext}`, { type: sourceRow.mimeType });
+			const f = await this.assetService.writeCharacterAvatarFull(characterId, fullFile);
+			await this.stores.characters.setFolderAvatarFull(cid, f.ext);
+			avatarFullExt = f.ext;
+		}
+
+		// ── Store the crop geometry on the character (for the next salvage/restore).
+		await this.stores.characters.setAvatarCropJson(cid, cropJson);
+
+		const refreshed = await this.stores.characters.getById(cid);
+		return {
+			avatarExt,
+			avatarFullExt,
+			avatarCropJson: cropJson,
+			updatedAt: refreshed?.updatedAt ?? new Date().toISOString(),
+			salvagedAssetId,
+		};
 	};
 
 	// ─── Vision describe (A6) ───────────────────────────────────────

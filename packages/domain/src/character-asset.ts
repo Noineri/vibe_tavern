@@ -25,6 +25,13 @@ export interface CharacterAsset {
   description: string | null;
   /** D7: per-image prompt inclusion. Only described rows with this flag are injected into the prompt (gated by the character's master includeGalleryInPrompt toggle). */
   includeInPrompt: boolean;
+  /** D8: crop geometry (percentages JSON, from react-easy-crop) carried by a
+   * gallery row that was salvaged from a previous character avatar. Null for
+   * ordinary gallery images. The gallery always displays the full
+   * (uncropped) image; this field is pure metadata used only to pre-fill the
+   * crop modal when restoring the former avatar, so the exact previous crop is
+   * recreated without re-cropping. */
+  avatarCropJson: string | null;
   /** Display order (drag-and-drop reorder). Lower = earlier. */
   order: number;
   /** Creation timestamp (ISO). */

@@ -90,6 +90,14 @@ export const characterAssets = sqliteTable('character_assets', {
   includeInPrompt: integer('include_in_prompt', { mode: 'boolean' }).notNull().default(false),
   order: integer('order').notNull().default(0),
   createdAt: text('created_at').notNull(),
+  // D8: crop geometry (percentages, JSON) carried by a gallery row that was
+  // salvaged from a previous character avatar. Null for ordinary gallery
+  // images. Enables one-click restore of a prior avatar: "Set as avatar" on
+  // such a row pre-fills the crop modal with this geometry, recreating the
+  // exact previous crop without re-cropping. The gallery itself always
+  // displays the full (uncropped) image — this field is pure metadata and is
+  // never applied as a visual crop in the gallery.
+  avatarCropJson: text('avatar_crop_json'),
 });
 
 // ─── chats ─────────────────────────────────────────────────────────────────────

@@ -22,6 +22,13 @@ const ALLOWED_MIMES = new Set(Object.keys(MIME_TO_EXT));
 /** Maximum upload size for images (20 MB — most providers cap at this). */
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 
+/** Resolve a stored image extension to its MIME type. Used when re-importing an
+ *  existing image buffer (avatar salvage) as a gallery row — the buffer's type
+ *  must be reconstructed from the stored ext since there is no upload header. */
+export function extToMime(ext: string): string {
+  return EXT_TO_MIME[ext.toLowerCase()] ?? "application/octet-stream";
+}
+
 export class AssetService {
   /**
    * Optional ContentStore for folder-resident avatars
@@ -221,6 +228,12 @@ export class AssetService {
   /** Load a folder-resident character avatar as a Buffer (for vision describe). */
   async loadCharacterAvatarBuffer(characterId: string, ext: string): Promise<Buffer | null> {
     return this.loadFolderImageBuffer(STORAGE_FOLDERS.characters, characterId, "avatar", ext);
+  }
+
+  /** D8: load the folder-resident FULL (uncropped) character avatar as a Buffer.
+   *  Used by avatar salvage to re-import the prior avatar's full into the gallery. */
+  async loadCharacterAvatarFullBuffer(characterId: string, ext: string): Promise<Buffer | null> {
+    return this.loadFolderImageBuffer(STORAGE_FOLDERS.characters, characterId, "avatar-full", ext);
   }
 
   /** Persona variant. */

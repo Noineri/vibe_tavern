@@ -1,9 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Icons } from "../../shared/icons.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
+import { AvatarCropModal } from "../../shared/AvatarCropModal.js";
+import type { AvatarCropResult } from "../../shared/AvatarCropModal.js";
 import { useGalleryStore } from "../../../stores/gallery-store.js";
 import { GalleryGrid } from "./GalleryGrid.js";
 import { serveCharacterAssetUrl } from "../../../api/gallery-api.js";
+import { setAvatarFromGallery } from "../../../api/character-api.js";
+import { fetchBootstrapAction } from "../../../stores/api-actions/bootstrap-actions.js";
 import { useTokenCount } from "../../../hooks/use-token-count.js";
 import { useT } from "../../../i18n/context.js";
 import { toast } from "sonner";
@@ -17,10 +21,9 @@ const EMPTY_ASSETS: readonly CharacterAsset[] = Object.freeze([]);
 
 interface GalleryAccordionProps {
   characterId: string;
-  onSetAvatarPreview?: (url: string | null) => void;
 }
 
-export function GalleryAccordion({ characterId, onSetAvatarPreview }: GalleryAccordionProps) {
+export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
   const { t } = useT();
   const storageKey = `gallery:open:${characterId}`;
   const [isOpen, setIsOpen] = useState(() => {
@@ -47,6 +50,12 @@ export function GalleryAccordion({ characterId, onSetAvatarPreview }: GalleryAcc
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  // D8: the gallery row currently being cropped to become the avatar. Null
+  // when the crop modal is closed. Seeded with the row's serve URL; its stored
+  // avatarCropJson (if it's a salvaged former avatar) pre-fills the crop so the
+  // exact prior crop is recreated.
+  const [avatarCropTarget, setAvatarCropTarget] = useState<CharacterAsset | null>(null);
+  const [savingAvatar, setSavingAvatar] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -128,6 +137,34 @@ export function GalleryAccordion({ characterId, onSetAvatarPreview }: GalleryAcc
     });
   };
 
+  // D8: apply a cropped gallery image as the character's avatar. Server-side
+  // salvages the current avatar into the gallery first, so we reload the list
+  // (to surface the salvaged "previous avatar" row) + the snapshot (so the new
+  // avatar propagates app-wide with a cache-busted URL).
+  const handleAvatarCropConfirm = async (result: AvatarCropResult) => {
+    const target = avatarCropTarget;
+    if (!target || !result.croppedFile) return;
+    setSavingAvatar(true);
+    try {
+      await setAvatarFromGallery(
+        characterId,
+        target.id as string,
+        result.croppedFile,
+        result.cropJson ?? "",
+      );
+      setAvatarCropTarget(null);
+      // Reload the gallery (salvaged row appears) + refresh the snapshot so the
+      // avatar swaps everywhere (cache-busted by the bumped updatedAt).
+      await Promise.all([load(characterId), fetchBootstrapAction({ silent: true })]);
+      toast.success(t("avatar_updated"));
+    } catch (err) {
+      console.error("Set avatar from gallery failed:", err);
+      toast.error(t("gallery_set_avatar_failed"));
+    } finally {
+      setSavingAvatar(false);
+    }
+  };
+
   return (
     <div className="mb-5 overflow-hidden rounded-lg border border-border bg-s2">
       <button
@@ -169,6 +206,7 @@ export function GalleryAccordion({ characterId, onSetAvatarPreview }: GalleryAcc
               assets={assets}
               selectedIds={selectedIds}
               onToggleSelection={handleToggleSelection}
+              onSetAsAvatar={(asset) => setAvatarCropTarget(asset)}
             />
           )}
 
@@ -264,6 +302,20 @@ export function GalleryAccordion({ characterId, onSetAvatarPreview }: GalleryAcc
           confirmLabel={t("delete")}
           onConfirm={() => { void confirmDeleteSelected(); }}
           onCancel={() => setConfirmDeleteOpen(false)}
+        />
+      )}
+
+      {/* D8: crop a gallery image into the avatar. The modal is seeded with the
+          row's full image (the gallery only ever shows fulls) and, when the
+          row is a salvaged former avatar, its stored crop geometry pre-fills
+          the cropper for an exact restore. */}
+      {avatarCropTarget && (
+        <AvatarCropModal
+          imageUrl={serveCharacterAssetUrl(characterId, avatarCropTarget.id as string)}
+          fileName={`avatar_${avatarCropTarget.id}.png`}
+          initialCropJson={avatarCropTarget.avatarCropJson}
+          onConfirm={(result) => { void handleAvatarCropConfirm(result); }}
+          onCancel={() => { if (!savingAvatar) setAvatarCropTarget(null); }}
         />
       )}
     </div>

@@ -1034,6 +1034,7 @@
   "gallery_describe_all": "Describe all",
   "gallery_include_in_prompt": "Include in prompt",
   "avatar_updated": "Avatar updated",
+  "gallery_set_avatar_failed": "Failed to set avatar",
   "gallery_expand": "Expand",
   "gallery_describe": "Describe",
   "gallery_description": "Description",
