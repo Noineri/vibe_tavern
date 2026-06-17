@@ -1,5 +1,6 @@
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
 import { normalizeTheme, type ThemeMode } from "../themes/registry.js";
+import { DEFAULT_LOCALE } from "../i18n/registry.js";
 
 const THEME_STORAGE_KEY = "vibe-tavern.theme";
 const TWEAKS_STORAGE_KEY = "vibe-tavern.tweaks";
@@ -15,7 +16,7 @@ export interface TweaksSettings {
 }
 
 export const MESSAGE_WIDTH_MAP: Record<string, string> = { narrow: "680px", medium: "820px", wide: "960px" };
-export const DEFAULT_TWEAKS: TweaksSettings = { fontSize: 17, uiFontSize: 17, messageWidth: "medium", lang: "en", showRail: false };
+export const DEFAULT_TWEAKS: TweaksSettings = { fontSize: 17, uiFontSize: 17, messageWidth: "medium", lang: DEFAULT_LOCALE, showRail: false };
 
 export function readSavedTheme(): ThemeMode {
   try {

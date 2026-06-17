@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 import { Toaster } from "sonner";
 import { useT } from "../../i18n/context.js";
+import { normalizeLocale } from "../../i18n/registry.js";
 import { Icons } from "../shared/icons.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { type ThemeMode } from "../../themes/registry.js";
@@ -241,7 +242,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     else if (key === 'showRail') updateTweak(key, value as boolean);
     else if (key === 'fontSize' || key === 'uiFontSize') updateTweak(key, value as number);
     else if (key === 'messageWidth') updateTweak(key, value as 'narrow' | 'medium' | 'wide');
-    else if (key === 'lang') { updateTweak(key, value as string); setLocale(value as 'en' | 'ru'); }
+    else if (key === 'lang') { updateTweak(key, value as string); setLocale(normalizeLocale(value as string)); }
   };
 
   // Root is intentionally transparent: the page background (solid --bg or a
