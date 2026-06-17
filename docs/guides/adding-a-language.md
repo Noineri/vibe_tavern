@@ -76,6 +76,26 @@ That's it. The language now appears in both pickers, persists across reloads, an
 
 ---
 
+## Validation: `bun run i18n:check`
+
+The two steps above are mechanical, but copying a JSON file by hand is exactly where drift creeps in — a key forgotten in the new locale, a key defined twice in one file (JSON.parse is last-wins, so the earlier copy silently dies), or a feature merged later that adds a key to `en.json` but not to yours. The locale validator in `scripts/i18n-check.ts` exists to catch all of that before a user sees a raw `tweaks_title` string where a label should be. It runs as part of `bun run check`; invoke it directly with `bun run i18n:check`.
+
+The check parses `apps/web/src` with the TypeScript AST (no type checker, so it's fast and independent of tsconfig) and audits every `t("…")` call against every locale file. It runs five checks — three hard errors (exit 1) and two advisory warnings (exit 0):
+
+| Check | Level | What it catches |
+|-------|-------|-----------------|
+| `[parity]` | **HARD** | a key present in one locale file but missing in another. `en.json` is the source of truth; every other file must have exactly the same key set. |
+| `[duplicate]` | **HARD** | a key defined twice in one file. JSON.parse keeps the last value, so an early duplicate is silently dead copy — this once shipped a double ✓ on `provider_active`. |
+| `[missing-key]` | **HARD** | a `t("key")` call in code with no matching entry in a locale file. The raw key string leaks into the UI. |
+| `[unused]` | WARN | a key defined but never referenced by any `t()` call. Prefix-aware (a key only reached via `t(\`pos_${x}\`)` or `t("trigger_" + x)` is not flagged), plus a loose scan that counts a key referenced as any string literal (catches registry patterns like `labelKey: "build_scripts"`). |
+| `[hardcoded]` | WARN | a raw user-facing string that bypasses i18n — JSX text (`<button>Cancel</button>`), user-facing attributes (`placeholder="…"`, `title=`, `aria-label=`, `alt=`, `label=`), and `toast.*()`/`alert()`/`confirm()` calls with a string-literal first argument. Heuristics skip symbols, URLs, HTML entities, code references, and an enum/role word allowlist. |
+
+When adding a language, your loop is: create the JSON, register it, run `bun run i18n:check`, and fix every `[parity]`, `[duplicate]`, and `[missing-key]` error until the script prints `✓ clean`. The two advisory levels (`[unused]`, `[hardcoded]`) never set exit 1 — they surface candidates for a translator pass but don't block. `[unused]` warnings against your new file almost always mean a key you forgot to delete that was already removed from `en.json`; `[hardcoded]` warnings are pre-existing and not your concern unless you introduced them.
+
+> **The `[dynamic]` warning** appears when a `t()` call uses a value the validator can't resolve statically — `t(panel.labelKey)`, `t(\`prefix${x}\`)`, `t("trigger_" + x)`. These are "verify by hand" notices, not defects; their target keys were sanity-checked at write time. If you add a new dynamically-keyed call site, expect a `[dynamic]` line and confirm the target keys exist.
+
+---
+
 ## Layout & text length
 
 **Read [AD-022](../architecture/decisions.md#ad-022-flexible-layouts-over-fixed-widths-for-translated-text) for the full rationale.** The short version: translated text is longer than English — Russian runs ~20–30% longer, and every language breaks the layout in its own way. A layout sized to the English string will clip or overflow the moment a translator fills in a real value.
@@ -133,6 +153,7 @@ These are **legitimate per-locale logic, not registration sites.** They do not n
 - [ ] `DEFAULT_LOCALE` left as `"en"` unless this is an intentional default change.
 - [ ] No fixed-width (`w-[…px]`, `w-[…ch]`) containers on i18n strings touched or added in the same change (AD-022).
 - [ ] No "Loading…" text added to `loading-placeholder.ts` or `index.html` (pre-React exception).
+- [ ] `bun run i18n:check` prints `✓ clean` for the new file — zero `[parity]`/`[duplicate]`/`[missing-key]` errors. (`[unused]`/`[hardcoded]` warnings are advisory and don't block.)
 - [ ] `bun run typecheck` green.
 - [ ] Verified in `bun run dev`: the new option appears in **both** the desktop Tweaks panel and mobile settings; it persists across reload; selecting it switches the UI text; with the browser language set to match `match[]`, a fresh profile auto-detects it.
 - [ ] Checked at mobile width (375px) in the new locale — no clipping, wrapping, or overflow in the areas the change touches.
