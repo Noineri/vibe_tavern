@@ -15,6 +15,7 @@
 import { chmod, copyFile, cp, mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { VERSION } from "./_version.js";
 
 const ROOT = resolve(import.meta.dir, "..");
 const OUT = join(ROOT, "out");
@@ -63,6 +64,7 @@ async function main() {
 	console.log(`   Root:    ${ROOT}`);
 	console.log(`   Output:  ${ANDROID_DIST}`);
 	console.log(`   Archive: ${ARCHIVE}`);
+	console.log(`   Version: ${VERSION}`);
 
 	await step("Cleaning Android output", async () => {
 		await rm(ANDROID_DIST, { recursive: true, force: true });
@@ -132,6 +134,8 @@ async function main() {
 			"--compile",
 			"--target=bun-linux-arm64",
 			"--minify",
+			"--define",
+			`VIBE_TAVERN_VERSION="${VERSION}"`,
 			entrypoint,
 			"--outfile",
 			outfile,
