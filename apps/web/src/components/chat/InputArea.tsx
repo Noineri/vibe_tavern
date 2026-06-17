@@ -65,15 +65,15 @@ export function InputArea() {
   const handleFileSelected = async (file: File) => {
     const validTypes = ["image/png", "image/jpeg", "image/webp", "image/gif"];
     if (!validTypes.includes(file.type)) {
-      toast.error(t("unsupported_image_format") || "Unsupported format. Use PNG, JPEG, WEBP, or GIF.");
+      toast.error(t("unsupported_image_format"));
       return;
     }
     if (file.size > 20 * 1024 * 1024) {
-      toast.error(t("file_too_large") || "File too large. Maximum size is 20 MB.");
+      toast.error(t("file_too_large"));
       return;
     }
     if (draftAttachments.length >= 5) {
-      toast.error(t("max_attachments") || "Maximum 5 attachments per message.");
+      toast.error(t("max_attachments"));
       return;
     }
 
@@ -332,7 +332,7 @@ export function InputArea() {
           {isDragOver && (
             <div className="pointer-events-none absolute inset-0 z-[100] flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-accent/5">
               <span className="flex items-center gap-2 font-ui text-[15px] font-medium text-accent">
-                <Icons.target /> Drop image here
+                <Icons.target /> {t("drop_image_here")}
               </span>
             </div>
           )}
@@ -374,7 +374,7 @@ export function InputArea() {
             )}
             <div className="mx-0.5 h-3.5 w-px shrink-0 bg-border" />
             
-            <CustomTooltip content={t("attach_image") || "Attach image"}>
+            <CustomTooltip content={t("attach_image")}>
               <button
                 type="button"
                 className="flex h-[26px] w-[26px] items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1 disabled:opacity-45"

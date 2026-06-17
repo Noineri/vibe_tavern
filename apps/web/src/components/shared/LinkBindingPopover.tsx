@@ -124,7 +124,7 @@ export function LinkBindingPopover({
     ? "h-7 text-[12px]"
     : "h-[22px] text-[11px]";
   const pillAvatarSize = isMobile ? 22 : 18;
-  const addLabel = tooltipLabel || t("lore_link_targets") || "Link to characters/personas";
+  const addLabel = tooltipLabel || t("lore_link_targets");
 
   const pill = (target: LinkTarget, type: LinkBindingTargetType) => (
     <div
@@ -211,7 +211,7 @@ export function LinkBindingPopover({
           {characters.length > 0 && (
             <div className="border-b border-border px-3 py-2.5">
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
-                {characterSectionLabel || t("scope_char") || "Characters"}
+                {characterSectionLabel || t("scope_char")}
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {characters.map((c) => chip(c, "character", charLinks.some((l) => l.targetId === c.id)))}
@@ -222,7 +222,7 @@ export function LinkBindingPopover({
           {personas.length > 0 && (
             <div className="border-b border-border px-3 py-2.5">
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
-                {personaSectionLabel || t("scope_persona") || "Personas"}
+                {personaSectionLabel || t("scope_persona")}
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {personas.map((p) => chip(p, "persona", personaLinks.some((l) => l.targetId === p.id)))}
@@ -233,7 +233,7 @@ export function LinkBindingPopover({
           {lorebooks.length > 0 && (
             <div className="px-3 py-2.5">
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
-                {lorebookSectionLabel || t("scope_lorebook") || "Lorebooks"}
+                {lorebookSectionLabel || t("scope_lorebook")}
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {lorebooks.map((lb) => chip(lb, "lorebook", lorebookLinks.some((l) => l.targetId === lb.id)))}
