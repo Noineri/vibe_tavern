@@ -266,9 +266,11 @@ LorebookEditor
 
 ## i18n
 
-Multi-language support (en, ru) via `i18n/context.tsx` — `useT()` hook returns translation function.
+Multi-language support is **registry-driven** via `i18n/registry.ts` (the `LOCALES` array) — currently `en`, `ru`. `LocaleProvider` (`i18n/context.tsx`) loads the active locale's JSON dynamically; the `useT()` hook returns the translation function. `getT()`/`getLocale()` (`i18n/locale-helpers.ts`) expose the last-known locale to non-React code.
 
-**Key consideration:** Russian text is 20-30% longer than English. UI components must use `whitespace-nowrap` on buttons with Russian text, and prefer generous horizontal padding (`px-4` over `px-2`).
+Adding a language is a two-step change (JSON + one registry entry) — see [Adding a new language](../guides/adding-a-language.md). The architecture and the pre-React placeholder exception are in [AD-021](./decisions.md#ad-021-locale-registry-over-scattered-type-literals-for-i18n); the layout strategy for translated text is in [AD-022](./decisions.md#ad-022-flexible-layouts-over-fixed-widths-for-translated-text).
+
+**Key consideration:** Russian text is 20–30% longer than English. Do **not** fix-width i18n strings (no `w-[…px]`/`w-[…ch]` on translated text); let containers size to content and use `min-w` only for tap targets. Prefer generous horizontal padding (`px-4` over `px-2`) and verify at mobile width. Full guidance in AD-022.
 
 ---
 
