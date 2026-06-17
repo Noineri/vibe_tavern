@@ -140,6 +140,9 @@ jobs:
     # only on its success (needs: chain enforces this).
     runs-on: ubuntu-latest
     permissions:
+      # NOTE: job-level permissions REPLACE workflow-level, they don't merge.
+      # Must re-declare contents: read for actions/checkout on private repos.
+      contents: read
       packages: write
     steps:
       - uses: actions/checkout@v5
