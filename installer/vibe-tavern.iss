@@ -65,6 +65,8 @@ Source: "{#ProjectRoot}\out\standalone\web\*"; DestDir: "{app}\web"; Flags: igno
 Source: "{#ProjectRoot}\out\standalone\tokenizers\*"; DestDir: "{app}\tokenizers"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; DB migration files
 Source: "{#ProjectRoot}\out\standalone\drizzle\*"; DestDir: "{app}\drizzle"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Prompt files
+Source: "{#ProjectRoot}\out\standalone\prompts\*"; DestDir: "{app}\prompts"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"

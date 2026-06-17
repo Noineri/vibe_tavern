@@ -21,6 +21,7 @@
 
 import { copyFile, cp, mkdir, rm, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { VERSION } from "./_version.js";
 
 const ROOT = resolve(import.meta.dir, "..");
 const OUT = join(ROOT, "out");
@@ -65,10 +66,8 @@ async function copyRequiredDir(source: string, target: string, label: string) {
 }
 
 async function main() {
-	const version = (await Bun.file(join(ROOT, "package.json")).json()).version as string;
-
 	console.log("📦 Vibe Tavern — Windows Distribution Build\n");
-	console.log(`   Version: ${version}`);
+	console.log(`   Version: ${VERSION}`);
 	console.log(`   Output:  ${DIST}`);
 	console.log(`   Archive: ${ARCHIVE}`);
 
@@ -141,7 +140,7 @@ async function main() {
 			throw new Error(`Launcher script not found: ${wrapperSource}`);
 		}
 		let content = await Bun.file(wrapperSource).text();
-		content = content.replaceAll("__VERSION__", version).replace(/\r?\n/g, "\r\n");
+		content = content.replaceAll("__VERSION__", VERSION).replace(/\r?\n/g, "\r\n");
 		await Bun.write(wrapperTarget, content);
 		console.log(`   → ${wrapperTarget}`);
 	});
@@ -164,7 +163,7 @@ async function main() {
 			minify: true,
 			bytecode: true,
 			define: {
-				VIBE_TAVERN_VERSION: `"${version}"`,
+				VIBE_TAVERN_VERSION: `"${VERSION}"`,
 			},
 			compile: {
 				outfile,
@@ -195,7 +194,7 @@ async function main() {
 
 	await step("Writing VERSION file", async () => {
 		const versionFile = join(DIST, "VERSION");
-		await Bun.write(versionFile, `${version}\n`);
+		await Bun.write(versionFile, `${VERSION}\n`);
 		console.log(`   → ${versionFile}`);
 	});
 
