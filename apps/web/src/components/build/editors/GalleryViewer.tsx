@@ -8,12 +8,18 @@ import type { CharacterAsset } from "@vibe-tavern/domain";
 
 interface GalleryViewerProps {
   characterId: string;
-  assets: CharacterAsset[];
-  index: number;
-  onIndexChange: (index: number) => void;
+  asset: CharacterAsset;
   onClose: () => void;
 }
 
+/**
+ * Floating frameless image viewer — one per open gallery tile (multiple may be
+ * on screen at once). A direct copy of the AvatarPanel floating-window pattern:
+ * bare image (no border/background), whole-frame zoom via CSS transform,
+ * attached next to the sidebar, drag to move, wheel to zoom, double-click to
+ * fit/100%, mobile pinch-zoom. This is the "quick inspect" surface; the fuller
+ * description-edit experience lives in GalleryLightbox.
+ */
 const MIN_ZOOM = 0.2;
 const TOPBAR_HEIGHT = 60;
 
@@ -31,32 +37,21 @@ function getAttachedPosition(): { x: number; y: number } {
   return { x: getSidebarWidth() + 22, y: TOPBAR_HEIGHT + 16 };
 }
 
-/** Fit-zoom for a gallery image. Gallery previews can be a bit larger than the
- *  avatar panel's footprint since they're the primary content here. */
 function getFitZoom(naturalWidth: number, naturalHeight: number): number {
   const maxVisualWidth = Math.min(560, Math.max(300, window.innerWidth - getSidebarWidth() - 56));
   const maxVisualHeight = Math.min(640, Math.max(300, window.innerHeight - TOPBAR_HEIGHT - 56));
   return Math.min(1, maxVisualWidth / naturalWidth, maxVisualHeight / naturalHeight);
 }
 
-export function GalleryViewer({ characterId, assets, index, onIndexChange, onClose }: GalleryViewerProps) {
+export function GalleryViewer({ characterId, asset, onClose }: GalleryViewerProps) {
   const isMobile = useIsMobile();
-  const asset = assets[index];
-  const hasPrev = assets.length > 1;
-  const hasNext = assets.length > 1;
-  const onPrev = useCallback(() => onIndexChange((index - 1 + assets.length) % assets.length), [onIndexChange, index, assets.length]);
-  const onNext = useCallback(() => onIndexChange((index + 1) % assets.length), [onIndexChange, index, assets.length]);
-
-  if (!asset) return null;
-
   const src = serveCharacterAssetUrl(characterId, asset.id as string);
   const alt = asset.caption || "Gallery image";
 
   if (isMobile) {
-    return <MobileLightbox src={src} alt={alt} hasPrev={hasPrev} hasNext={hasNext} onPrev={onPrev} onNext={onNext} onClose={onClose} />;
+    return <MobileLightbox src={src} alt={alt} onClose={onClose} />;
   }
-
-  return <DesktopGalleryPanel src={src} alt={alt} hasPrev={hasPrev} hasNext={hasNext} onPrev={onPrev} onNext={onNext} onClose={onClose} />;
+  return <DesktopGalleryPanel src={src} alt={alt} onClose={onClose} />;
 }
 
 // ── Desktop: draggable floating panel (copy of AvatarPanel's DesktopAvatarPanel) ──
@@ -64,18 +59,10 @@ export function GalleryViewer({ characterId, assets, index, onIndexChange, onClo
 function DesktopGalleryPanel({
   src,
   alt,
-  hasPrev,
-  hasNext,
-  onPrev,
-  onNext,
   onClose,
 }: {
   src: string;
   alt: string;
-  hasPrev: boolean;
-  hasNext: boolean;
-  onPrev: () => void;
-  onNext: () => void;
   onClose: () => void;
 }) {
   const { t } = useT();
@@ -123,7 +110,6 @@ function DesktopGalleryPanel({
       zoomRafRef.current = null;
       return;
     }
-
     zoomRef.current += diff * 0.16;
     setZoom(zoomRef.current);
     zoomRafRef.current = window.requestAnimationFrame(tick);
@@ -146,38 +132,25 @@ function DesktopGalleryPanel({
     setPos(clampFramePos(getAttachedPosition()));
   }, [clampFramePos, setZoomInstant]);
 
-  // Keyboard: Escape closes, arrows navigate between images.
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-      else if (event.key === "ArrowRight" && hasNext) onNext();
-      else if (event.key === "ArrowLeft" && hasPrev) onPrev();
-    };
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, onNext, onPrev, hasNext, hasPrev]);
+  }, [onClose]);
 
   useEffect(() => {
-    return () => {
-      if (zoomRafRef.current !== null) {
-        window.cancelAnimationFrame(zoomRafRef.current);
-      }
-    };
+    return () => { if (zoomRafRef.current !== null) window.cancelAnimationFrame(zoomRafRef.current); };
   }, []);
 
   useEffect(() => {
     const onResize = () => {
-      if (attachedRef.current) {
-        recomputeAttached();
-      } else {
-        setPos((current) => clampFramePos(current));
-      }
+      if (attachedRef.current) recomputeAttached();
+      else setPos((current) => clampFramePos(current));
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [clampFramePos, recomputeAttached]);
 
-  // Non-passive wheel listener to allow preventDefault (zoom)
   useEffect(() => {
     const el = wheelRef.current;
     if (!el) return;
@@ -203,10 +176,7 @@ function DesktopGalleryPanel({
     setPos(clampFramePos({ x: event.clientX - dragStart.current.x, y: event.clientY - dragStart.current.y }));
   }, [clampFramePos]);
 
-  const onMouseUp = useCallback(() => {
-    dragging.current = false;
-    setIsDragging(false);
-  }, []);
+  const onMouseUp = useCallback(() => { dragging.current = false; setIsDragging(false); }, []);
 
   useEffect(() => {
     window.addEventListener("mousemove", onMouseMove);
@@ -222,12 +192,12 @@ function DesktopGalleryPanel({
     setTargetZoom(Math.abs(targetZoomRef.current - 1) < 0.04 ? fit : 1);
   };
 
-  // Counter-scale + offset so the overlay buttons stay a fixed size and
-  // position regardless of the panel's zoom (the whole frame is scaled).
-  const btnStyle = (origin: "left" | "right"): React.CSSProperties => ({
+  // Counter-scale the overlay button so it stays a fixed size regardless of
+  // the panel's frame zoom (the whole frame is scaled via transform).
+  const closeBtnStyle: React.CSSProperties = {
     transform: `scale(${1 / zoom})`,
-    transformOrigin: origin === "left" ? "top left" : "top right",
-  });
+    transformOrigin: "top right",
+  };
 
   return (
     <div
@@ -261,60 +231,29 @@ function DesktopGalleryPanel({
         }}
       />
 
-      {/* Close (top-right) — same pattern as AvatarPanel. */}
       <CustomTooltip content={t("close")}>
         <button type="button"
           className="absolute right-2 top-2 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white opacity-0 shadow transition-opacity duration-150 hover:bg-black/75 group-hover:opacity-100 [&_svg]:h-4 [&_svg]:w-4"
-          style={btnStyle("right")}
+          style={closeBtnStyle}
           onMouseDown={(event) => event.stopPropagation()}
           onClick={onClose}
         >
           <Icons.close />
         </button>
       </CustomTooltip>
-
-      {/* Prev / next nav (mid-left / mid-right) — only when more than one image. */}
-      {hasPrev && (
-        <button type="button"
-          className="absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white opacity-0 shadow transition-opacity duration-150 hover:bg-black/75 group-hover:opacity-100 [&_svg]:h-4 [&_svg]:w-4"
-          style={btnStyle("left")}
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={onPrev}
-        >
-          <Icons.Caret direction="l" />
-        </button>
-      )}
-      {hasNext && (
-        <button type="button"
-          className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white opacity-0 shadow transition-opacity duration-150 hover:bg-black/75 group-hover:opacity-100 [&_svg]:h-4 [&_svg]:w-4"
-          style={btnStyle("right")}
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={onNext}
-        >
-          <Icons.Caret direction="r" />
-        </button>
-      )}
     </div>
   );
 }
 
-// ── Mobile fullscreen lightbox with pinch-to-zoom (copy of AvatarPanel's MobileLightbox) ──
+// ── Mobile: fullscreen pinch-zoom lightbox (copy of AvatarPanel's MobileLightbox) ──
 
 function MobileLightbox({
   src,
   alt,
-  hasPrev,
-  hasNext,
-  onPrev,
-  onNext,
   onClose,
 }: {
   src: string;
   alt: string;
-  hasPrev: boolean;
-  hasNext: boolean;
-  onPrev: () => void;
-  onNext: () => void;
   onClose: () => void;
 }) {
   const { t } = useT();
@@ -325,14 +264,10 @@ function MobileLightbox({
   const lastTapRef = useRef<number>(0);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-      else if (e.key === "ArrowRight" && hasNext) onNext();
-      else if (e.key === "ArrowLeft" && hasPrev) onPrev();
-    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, onNext, onPrev, hasNext, hasPrev]);
+  }, [onClose]);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 2) {
@@ -354,10 +289,8 @@ function MobileLightbox({
       const dist = Math.sqrt(dx * dx + dy * dy);
       const ratio = dist / lastTouchDist.current;
       lastTouchDist.current = dist;
-
       const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
       const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-
       setScale((prev) => clamp(prev * ratio, 0.5, 5));
       if (lastTouchCenter.current) {
         setTranslate((prev) => ({
@@ -378,10 +311,7 @@ function MobileLightbox({
     const now = Date.now();
     if (now - lastTapRef.current < 300) {
       setScale((prev) => {
-        if (Math.abs(prev - 1) < 0.1) {
-          setTranslate({ x: 0, y: 0 });
-          return 2.5;
-        }
+        if (Math.abs(prev - 1) < 0.1) { setTranslate({ x: 0, y: 0 }); return 2.5; }
         setTranslate({ x: 0, y: 0 });
         return 1;
       });
@@ -400,31 +330,14 @@ function MobileLightbox({
       <button type="button"
         className="absolute right-3 top-3 z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white active:bg-black/75"
         onClick={(e) => { e.stopPropagation(); onClose(); }}
+        title={t("close")}
       >
         <Icons.close />
       </button>
-
-      {hasPrev && (
-        <button type="button"
-          className="absolute left-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white active:bg-black/75"
-          onClick={(e) => { e.stopPropagation(); onPrev(); }}
-        >
-          <Icons.Caret direction="l" />
-        </button>
-      )}
-      {hasNext && (
-        <button type="button"
-          className="absolute right-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white active:bg-black/75"
-          onClick={(e) => { e.stopPropagation(); onNext(); }}
-        >
-          <Icons.Caret direction="r" />
-        </button>
-      )}
-
       <img
         src={src}
         alt={alt}
-        className="max-h-full max-w-full object-contain select-none"
+        className="max-h-full max-w-full select-none object-contain"
         style={{
           transform: `scale(${scale}) translate(${translate.x}px, ${translate.y}px)`,
           transition: lastTouchDist.current !== null ? "none" : "transform 0.15s ease-out",

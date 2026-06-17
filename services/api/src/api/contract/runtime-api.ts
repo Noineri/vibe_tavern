@@ -170,7 +170,7 @@ export interface CharacterRuntimeApi {
 	serveCharacterAvatarFull: (characterId: string) => Promise<Response | null>;
 
 	// Vision describe (A6) — uses the active provider profile's visionModel.
-	describeCharacterAvatar: (characterId: string) => Promise<{ description: string }>;
+	describeCharacterAvatar: (characterId: string, signal?: AbortSignal) => Promise<{ description: string }>;
 }
 
 // ─── Character media gallery ───────────────────────────────────────
@@ -184,7 +184,7 @@ export interface CharacterAssetRuntimeApi {
 	deleteCharacterAsset: (characterId: string, assetRowId: string) => Promise<void>;
 
 	// Vision describe (A6) — uses the active provider profile's visionModel.
-	describeCharacterAssets: (characterId: string, assetRowIds?: string[]) => Promise<{ updated: string[]; failed: string[] }>;
+	describeCharacterAssets: (characterId: string, assetRowIds?: string[], signal?: AbortSignal) => Promise<{ updated: string[]; failed: string[] }>;
 }
 
 // ─── Persona ─────────────────────────────────────────────────────────

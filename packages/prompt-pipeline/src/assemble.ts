@@ -567,10 +567,9 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
     );
   }
 
-  if (context.character.includeGalleryInPrompt && context.character.gallery?.length && resolver.enabled("characterGallery")) {
-    // Caller pre-filters to rows with a non-empty description, so every entry
-    // here contributes. Join as one combined reference block (one layer, not
-    // N) to keep the prompt compact and the trace readable.
+  if (context.character.gallery?.length && resolver.enabled("characterGallery")) {
+    // Per-image include is the sole gate now (no character-level master
+    // switch); the caller already pre-filters to described, opted-in rows.
     const galleryText = context.character.gallery
       .map((g) => `Image "${g.caption}": ${g.description}`)
       .join("\n");

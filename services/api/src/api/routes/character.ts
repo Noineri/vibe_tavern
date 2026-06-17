@@ -86,7 +86,17 @@ export function createCharacterRoutes(runtime: CharacterRuntimeApi & CharacterAs
       return result;
     })
     .post("/api/characters/:characterId/avatar/describe", async (c) => {
-      return c.json(await runtime.describeCharacterAvatar(c.req.param("characterId")));
+      try {
+        return c.json(await runtime.describeCharacterAvatar(c.req.param("characterId"), c.req.raw.signal));
+      } catch (err) {
+        // Client cancelled via AbortController — return an empty result instead
+        // of surfacing the AbortError as a 500. The frontend tracks cancellation
+        // by its own signal, so the response body is just a no-op.
+        if (err instanceof Error && (err.name === "AbortError" || c.req.raw.signal?.aborted)) {
+          return c.json({ description: "" });
+        }
+        throw err;
+      }
     })
     // ─── Character media gallery ────────────────────────────────────────
     .get("/api/characters/:characterId/assets", async (c) => {
@@ -119,7 +129,16 @@ export function createCharacterRoutes(runtime: CharacterRuntimeApi & CharacterAs
       const assetRowIds = Array.isArray(body.assetRowIds) && body.assetRowIds.every((v) => typeof v === "string")
         ? (body.assetRowIds as string[])
         : undefined;
-      return c.json(await runtime.describeCharacterAssets(c.req.param("characterId"), assetRowIds));
+        try {
+        return c.json(await runtime.describeCharacterAssets(c.req.param("characterId"), assetRowIds, c.req.raw.signal));
+      } catch (err) {
+        // Client cancelled mid-batch — whatever was already persisted stays.
+        // Return an empty result (200) rather than surfacing AbortError as 500.
+        if (err instanceof Error && (err.name === "AbortError" || c.req.raw.signal?.aborted)) {
+          return c.json({ updated: [], failed: [] });
+        }
+        throw err;
+      }
     })
     .patch("/api/characters/:characterId/assets/:assetRowId", async (c) => {
       const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;

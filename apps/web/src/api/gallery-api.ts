@@ -28,6 +28,7 @@ async function jsonRequest(
   method: string,
   path: string,
   body?: unknown,
+  signal?: AbortSignal,
 ): Promise<Response> {
   const response = await fetch(`${getGatewayBaseUrl()}${path}`, {
     method,
@@ -36,6 +37,7 @@ async function jsonRequest(
       "Content-Type": "application/json",
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal,
   });
   return response;
 }
@@ -102,12 +104,14 @@ export async function deleteCharacterAsset(characterId: string, rowId: string): 
 export async function describeCharacterAssets(
   characterId: string,
   assetRowIds?: string[],
+  signal?: AbortSignal,
 ): Promise<{ updated: string[]; failed: string[] }> {
   return unwrapJson<{ updated: string[]; failed: string[] }>(
     await jsonRequest(
       "POST",
       `/api/characters/${characterId}/assets/describe`,
       assetRowIds ? { assetRowIds } : {},
+      signal,
     ),
   );
 }
@@ -118,15 +122,15 @@ export async function describeCharacterAssets(
  * `setMediaFields`; the returned description is also handed to the snapshot
  * refresh (see `describeAndApplyCharacterAvatar`).
  */
-export async function describeCharacterAvatar(characterId: string): Promise<{ description: string }> {
+export async function describeCharacterAvatar(characterId: string, signal?: AbortSignal): Promise<{ description: string }> {
   return unwrapJson<{ description: string }>(
-    await jsonRequest("POST", `/api/characters/${characterId}/avatar/describe`),
+    await jsonRequest("POST", `/api/characters/${characterId}/avatar/describe`, undefined, signal),
   );
 }
 
 /** `POST /api/personas/:id/avatar/describe` — mirror of the character path. */
-export async function describePersonaAvatar(personaId: string): Promise<{ description: string }> {
+export async function describePersonaAvatar(personaId: string, signal?: AbortSignal): Promise<{ description: string }> {
   return unwrapJson<{ description: string }>(
-    await jsonRequest("POST", `/api/personas/${personaId}/avatar/describe`),
+    await jsonRequest("POST", `/api/personas/${personaId}/avatar/describe`, undefined, signal),
   );
 }

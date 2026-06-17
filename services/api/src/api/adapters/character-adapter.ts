@@ -221,6 +221,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 	describeCharacterAssets = async (
 		characterId: string,
 		assetRowIds?: string[],
+		signal?: AbortSignal,
 	): Promise<{ updated: string[]; failed: string[] }> => {
 		const all = await this.stores.characterAssets.listByCharacter(characterId);
 		const requested = assetRowIds && assetRowIds.length > 0 ? new Set(assetRowIds) : null;
@@ -263,6 +264,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			profile,
 			assetLoader,
 			prompt,
+			signal,
 		);
 		const updated: string[] = [];
 		for (const [id, text] of descriptions) {
@@ -276,7 +278,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 	 *  the same priority chain as the serve route: folder-resident avatar
 	 *  (`avatarExt`, which getById's B4 lazy migrator populates for legacy flat
 	 *  avatars). 400 if there's no avatar at all. */
-	describeCharacterAvatar = async (characterId: string): Promise<{ description: string }> => {
+	describeCharacterAvatar = async (characterId: string, signal?: AbortSignal): Promise<{ description: string }> => {
 		const character = await this.stores.characters.getById(brandId<CharacterId>(characterId));
 		if (!character) throw validation("Character not found.");
 		if (!character.avatarExt) {
@@ -298,6 +300,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			profile,
 			async () => buffer,
 			prompt,
+			signal,
 		);
 		const text = descriptions.get("avatar")?.trim() ?? "";
 		await this.stores.characters.setMediaFields(brandId<CharacterId>(characterId), { avatarDescription: text });
