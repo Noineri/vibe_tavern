@@ -1036,6 +1036,7 @@
   "gallery_describe_all": "Описать все",
   "gallery_include_in_prompt": "Включать в промпт",
   "avatar_updated": "Аватар обновлён",
+  "gallery_set_avatar_failed": "Не удалось установить аватар",
   "gallery_expand": "Развернуть",
   "gallery_describe": "Описать",
   "gallery_description": "Описание",

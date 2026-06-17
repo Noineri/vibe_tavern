@@ -121,3 +121,33 @@ export async function uploadCharacterAvatar(characterId: string, crop: File, ful
   }
   return response.json();
 }
+
+/** D8: Set a gallery image as the character's avatar.
+ * Server-side salvages the current avatar (full + its crop) into the gallery
+ * before overwriting, so nothing is lost. `crop` is the cropped thumbnail
+ * File; `cropJson` is the crop geometry (percentages JSON) for future restore.
+ * Returns the new avatar state + the salvaged gallery row id (null if there
+ * was no prior avatar). */
+export async function setAvatarFromGallery(
+  characterId: string,
+  sourceAssetId: string,
+  crop: File,
+  cropJson: string,
+): Promise<{ avatarExt: string; avatarFullExt: string | null; avatarCropJson: string; updatedAt: string; salvagedAssetId: string | null }> {
+  const formData = new FormData();
+  formData.append("sourceAssetId", sourceAssetId);
+  formData.append("crop", crop);
+  formData.append("cropJson", cropJson);
+  const baseUrl = getGatewayBaseUrl();
+  const token = getMobileToken();
+  const response = await fetch(`${baseUrl}/api/characters/${characterId}/avatar/from-gallery`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: formData,
+  });
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Set avatar from gallery failed (${response.status}): ${errorBody}`);
+  }
+  return response.json();
+}

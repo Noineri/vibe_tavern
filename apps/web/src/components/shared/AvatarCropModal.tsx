@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Cropper from "react-easy-crop";
 import type { Area, Point } from "react-easy-crop";
 import { Modal } from "./Modal.js";
@@ -7,12 +7,21 @@ import { useT } from "../../i18n/context.js";
 export interface AvatarCropResult {
   /** Cropped square image as a File (512×512 PNG) */
   croppedFile: File;
+  /** Crop geometry as percentages JSON (react-easy-crop `croppedArea`), for
+   *  storing as avatar metadata so a salvaged prior avatar can be restored
+   *  with its exact crop pre-filled. Omitted when the caller doesn't need it
+   *  (kept optional for backward compatibility with existing avatar flows). */
+  cropJson?: string;
 }
 
 interface AvatarCropModalProps {
   imageUrl: string;
   /** Name used for the cropped File's filename */
   fileName?: string;
+  /** Optional initial crop geometry (percentages JSON, as produced in a prior
+   *  `cropJson` result) to pre-fill the cropper — used when restoring a
+   *  salvaged former avatar so its exact crop is recreated without dragging. */
+  initialCropJson?: string | null;
   onConfirm: (result: AvatarCropResult) => void;
   onCancel: () => void;
 }
@@ -59,6 +68,7 @@ function cropImageToBlob(imageSrc: string, pixelCrop: Area): Promise<Blob> {
 export function AvatarCropModal({
   imageUrl,
   fileName = "avatar_cropped.png",
+  initialCropJson = null,
   onConfirm,
   onCancel,
 }: AvatarCropModalProps) {
@@ -66,10 +76,28 @@ export function AvatarCropModal({
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [croppedAreaPercent, setCroppedAreaPercent] = useState<Area | null>(null);
   const [confirming, setConfirming] = useState(false);
 
-  const onCropComplete = useCallback((_croppedPercentages: Area, croppedPixels: Area) => {
+  // Pre-fill: parse the supplied percentages geometry into the shape
+  // react-easy-crop's `initialCroppedAreaPercentages` expects so a restored
+  // avatar re-opens at its exact prior crop.
+  const initialCroppedAreaPercentages = useMemo<Area | undefined>(() => {
+    if (!initialCropJson) return undefined;
+    try {
+      const parsed = JSON.parse(initialCropJson) as Partial<Area>;
+      if (parsed && parsed.x != null && parsed.y != null && parsed.width != null && parsed.height != null) {
+        return { x: parsed.x, y: parsed.y, width: parsed.width, height: parsed.height };
+      }
+    } catch {
+      // Malformed crop json — ignore and let the user crop from scratch.
+    }
+    return undefined;
+  }, [initialCropJson]);
+
+  const onCropComplete = useCallback((croppedPercentages: Area, croppedPixels: Area) => {
     setCroppedAreaPixels(croppedPixels);
+    setCroppedAreaPercent(croppedPercentages);
   }, []);
 
   const handleConfirm = useCallback(async () => {
@@ -78,13 +106,16 @@ export function AvatarCropModal({
     try {
       const blob = await cropImageToBlob(imageUrl, croppedAreaPixels);
       const croppedFile = new File([blob], fileName, { type: "image/png" });
-      onConfirm({ croppedFile });
+      onConfirm({
+        croppedFile,
+        cropJson: croppedAreaPercent ? JSON.stringify(croppedAreaPercent) : undefined,
+      });
     } catch (err) {
       console.error("Crop failed:", err);
     } finally {
       setConfirming(false);
     }
-  }, [imageUrl, croppedAreaPixels, fileName, onConfirm]);
+  }, [imageUrl, croppedAreaPixels, croppedAreaPercent, fileName, onConfirm]);
 
   return (
     <Modal open={true} onClose={onCancel}>
@@ -116,6 +147,7 @@ export function AvatarCropModal({
                 aspect={1}
                 cropShape="round"
                 cropSize={{ width: 320, height: 320 }}
+                initialCroppedAreaPercentages={initialCroppedAreaPercentages}
                 onCropChange={setCrop}
                 onZoomChange={setZoom}
                 onCropComplete={onCropComplete}

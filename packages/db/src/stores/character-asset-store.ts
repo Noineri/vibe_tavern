@@ -15,6 +15,9 @@ export interface CreateCharacterAssetData {
   caption?: string;
   /** Display order (lower = earlier). Caller computes next position. */
   order: number;
+  /** D8: crop geometry (percentages JSON) when this row is a salvaged former
+   * avatar. Null/omitted for ordinary gallery images. */
+  avatarCropJson?: string | null;
 }
 
 export interface UpdateCharacterAssetData {
@@ -23,6 +26,9 @@ export interface UpdateCharacterAssetData {
   description?: string | null;
   /** D7: per-image prompt inclusion toggle. */
   includeInPrompt?: boolean;
+  /** D8: crop geometry (percentages JSON) for a salvaged former-avatar row.
+   * Pass null to clear. */
+  avatarCropJson?: string | null;
 }
 
 /**
@@ -40,6 +46,10 @@ export interface CharacterAsset {
   description: string | null;
   /** D7: per-image prompt inclusion (selected rows only are injected). */
   includeInPrompt: boolean;
+  /** D8: crop geometry (percentages JSON) carried by a salvaged former-avatar
+   * row; null for ordinary gallery images. Never rendered as a crop in the
+   * gallery — purely for avatar restore. */
+  avatarCropJson: string | null;
   order: number;
   createdAt: string;
 }
@@ -98,6 +108,7 @@ export class CharacterAssetStore {
         description: null,
         order: data.order,
         createdAt: now,
+        avatarCropJson: data.avatarCropJson ?? null,
       })
       .returning();
 
@@ -105,10 +116,11 @@ export class CharacterAssetStore {
   }
 
   async update(id: string, patch: UpdateCharacterAssetData): Promise<CharacterAsset | null> {
-    const values: { caption?: string; description?: string | null; includeInPrompt?: boolean } = {};
+    const values: { caption?: string; description?: string | null; includeInPrompt?: boolean; avatarCropJson?: string | null } = {};
     if (patch.caption !== undefined) values.caption = patch.caption;
     if (patch.description !== undefined) values.description = patch.description;
     if (patch.includeInPrompt !== undefined) values.includeInPrompt = patch.includeInPrompt;
+    if (patch.avatarCropJson !== undefined) values.avatarCropJson = patch.avatarCropJson;
 
     const [row] = await this.db
       .update(characterAssets)
@@ -168,6 +180,7 @@ export class CharacterAssetStore {
       caption: row.caption,
       description: row.description,
       includeInPrompt: row.includeInPrompt,
+      avatarCropJson: row.avatarCropJson ?? null,
       order: row.order,
       createdAt: row.createdAt,
     };

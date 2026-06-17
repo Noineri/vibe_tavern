@@ -424,6 +424,17 @@ export class CharacterStore {
       .run();
   }
 
+  /** D8: store the avatar crop geometry (percentages JSON from react-easy-crop).
+   *  Bumps updatedAt so cache-busted avatar URLs refresh. Used by the
+   *  set-avatar-from-gallery flow; null clears the remembered crop. */
+  async setAvatarCropJson(id: string, json: string | null): Promise<void> {
+    await this.db
+      .update(characters)
+      .set({ avatarCropJson: json, updatedAt: this.clock.now() })
+      .where(eq(characters.id, id))
+      .run();
+  }
+
   /**
    * Point-update for media prompt-injection fields (avatar description + the
    * gallery/avatar include toggles). Does NOT rewrite {id}/card.json (unlike
