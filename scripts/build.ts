@@ -6,6 +6,11 @@
  *
  * For dev, packages run .ts directly — no build needed.
  * This script is for production Docker / deployment.
+ *
+ * NOTE: Core production build does not embed version — version is injected at
+ * compile time by standalone-server.ts via the VIBE_TAVERN_VERSION define,
+ * which is set in the platform-specific build scripts (standalone, linux-dist,
+ * windows-dist, android-arm64).
  */
 
 import { join, relative, resolve } from "node:path";

@@ -18,6 +18,7 @@
 
 import { chmod, copyFile, cp, mkdir, rm, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { VERSION } from "./_version.js";
 
 const ROOT = resolve(import.meta.dir, "..");
 const OUT = join(ROOT, "out");
@@ -62,10 +63,8 @@ async function copyRequiredDir(source: string, target: string, label: string) {
 }
 
 async function main() {
-	const version = (await Bun.file(join(ROOT, "package.json")).json()).version as string;
-
 	console.log("📦 Vibe Tavern — Linux Distribution Build\n");
-	console.log(`   Version: ${version}`);
+	console.log(`   Version: ${VERSION}`);
 	console.log(`   Output:  ${DIST}`);
 	console.log(`   Archive: ${ARCHIVE}`);
 
@@ -159,7 +158,7 @@ async function main() {
 			"--compile",
 			"--minify",
 			"--define",
-			`VIBE_TAVERN_VERSION="${version}"`,
+			`VIBE_TAVERN_VERSION="${VERSION}"`,
 			entrypoint,
 			"--outfile",
 			outfile,
@@ -177,7 +176,7 @@ async function main() {
 
 	await step("Writing VERSION file", async () => {
 		const versionFile = join(DIST, "VERSION");
-		await Bun.write(versionFile, `${version}\n`);
+		await Bun.write(versionFile, `${VERSION}\n`);
 		console.log(`   → ${versionFile}`);
 	});
 

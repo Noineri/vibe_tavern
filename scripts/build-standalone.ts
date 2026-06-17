@@ -24,6 +24,7 @@
 
 import { join, resolve } from "node:path";
 import { copyFile, cp, rm, mkdir } from "node:fs/promises";
+import { VERSION } from "./_version.js";
 
 const ROOT = resolve(import.meta.dir, "..");
 const STANDALONE_OUT = join(ROOT, "out", "standalone");
@@ -45,12 +46,10 @@ async function step(label: string, fn: () => Promise<void>) {
 }
 
 async function main() {
-	const pkgVersion = ((await Bun.file(join(ROOT, "package.json")).json()).version as string) ?? "0.0.0";
-
 	console.log("📦 Vibe Tavern — Standalone Build\n");
 	console.log(`   Root: ${ROOT}`);
 	console.log(`   Output: ${STANDALONE_OUT}`);
-	console.log(`   Version: ${pkgVersion}`);
+	console.log(`   Version: ${VERSION}`);
 
 	// ── Step 1: Clean previous output ────────────────────────────────────
 
@@ -146,7 +145,7 @@ async function main() {
 			minify: true,
 			bytecode: true,
 			define: {
-				VIBE_TAVERN_VERSION: `"${pkgVersion}"`,
+				VIBE_TAVERN_VERSION: `"${VERSION}"`,
 			},
 			compile: {
 				outfile,
