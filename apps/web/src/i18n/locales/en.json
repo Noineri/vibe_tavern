@@ -1062,5 +1062,16 @@
   "media_button": "Media",
   "media_send_to_chat": "Send to chat",
   "media_open_build": "Open Build",
-  "media_empty": "No media yet"
+  "media_empty": "No media yet",
+  "first_message_label": "First Message",
+  "char_mes_example_label": "Example Messages",
+  "char_scenario_label": "Scenario",
+  "char_personality_summary_label": "Personality Summary",
+  "post_history_label": "Post-History Instructions",
+  "creator_notes_label": "Creator Notes",
+  "depth_prompt_label": "Depth Prompt",
+  "system_prompt_label": "System Prompt",
+  "provider_saved": "Provider saved",
+  "save_failed": "Failed to save",
+  "trace_sent_with_attachments": "Sent {n} attachment(s)"
 }
