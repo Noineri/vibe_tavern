@@ -59,13 +59,18 @@ export function GalleryAccordion({ characterId, onSetAvatarPreview }: GalleryAcc
     }
   }, [isOpen, characterId, load, storageKey]);
 
-  // Token estimate
-  const describedImagesText = assets
-    .filter((a) => a.description)
+  // Token estimate — only rows that will actually be injected into the prompt.
+  // The backend (prompt-assembly-service) AND-gates on BOTH the character-level
+  // master switch (includeGalleryInPrompt) AND the per-image includeInPrompt
+  // flag, plus requires a non-empty description. This filter mirrors that so
+  // the token badge never overstates what reaches the model.
+  const includedAssets = assets.filter((a) => a.description && a.includeInPrompt);
+  const describedCount = assets.filter((a) => a.description).length;
+  const injectedImagesText = includedAssets
     .map((a) => `Image "${a.caption || a.ext}": ${a.description}`)
     .join("\n");
   
-  const tokenCount = useTokenCount(describedImagesText);
+  const tokenCount = useTokenCount(injectedImagesText);
 
   const handleToggleOpen = () => setIsOpen((o) => !o);
 
@@ -174,6 +179,7 @@ export function GalleryAccordion({ characterId, onSetAvatarPreview }: GalleryAcc
               selectedIds={selectedIds}
               onToggleSelection={handleToggleSelection}
               onSetAvatar={handleSetAvatar}
+              masterIncludeEnabled={includeGalleryInPrompt}
             />
           )}
 
@@ -226,9 +232,15 @@ export function GalleryAccordion({ characterId, onSetAvatarPreview }: GalleryAcc
               </label>
 
               {includeGalleryInPrompt && (
-                <span className="flex justify-end font-ui text-[11px] tabular-nums text-t3">
-                  {tokenCount.toLocaleString()} {t("tokens_label")}
-                </span>
+                includedAssets.length === 0 && describedCount > 0 ? (
+                  <span className="flex items-center gap-1 font-ui text-[11px] italic text-t3">
+                    <Icons.ellipsis className="h-3 w-3" />{t("gallery_select_via_menu")}
+                  </span>
+                ) : (
+                  <span className="flex justify-end font-ui text-[11px] tabular-nums text-t3">
+                    {tokenCount.toLocaleString()} {t("tokens_label")}
+                  </span>
+                )
               )}
             </div>
           </div>
