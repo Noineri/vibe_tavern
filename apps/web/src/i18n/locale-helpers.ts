@@ -1,9 +1,9 @@
-import type { Locale } from "./context.js";
+import { DEFAULT_LOCALE, type Locale } from "./registry.js";
 
 type TranslationMap = Record<string, string>;
 
 let _lastStrings: TranslationMap = {};
-let _lastLocale: Locale = "en";
+let _lastLocale: Locale = DEFAULT_LOCALE;
 
 /** Returns the last-known `t` function. Falls back to key-as-value. */
 export function getT(): (key: string) => string {

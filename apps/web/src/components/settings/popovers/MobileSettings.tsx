@@ -1,5 +1,6 @@
 import { Toggle } from "../../shared/Toggle.js";
 import { useT } from "../../../i18n/context.js";
+import { LOCALES } from "../../../i18n/registry.js";
 import { Icons } from "../../shared/icons.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { THEMES, type ThemeMode } from "../../../themes/registry.js";
@@ -165,18 +166,15 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_language")}</span>
 					</div>
 					<div className="flex rounded-lg border border-border bg-s2 p-0.5">
-						{([
-							{ value: "en", label: "English" },
-							{ value: "ru", label: "Русский" },
-						] as const).map((l) => (
+						{LOCALES.map((l) => (
 							<button type="button"
-								key={l.value}
+								key={l.id}
 								className={`flex flex-1 cursor-pointer items-center justify-center rounded-md py-2.5 font-ui text-[calc(var(--ui-fs)-3px)] transition-colors min-h-[40px] ${
-									settings.lang === l.value
+									settings.lang === l.id
 										? "bg-surface text-t1 font-medium shadow-sm"
 										: "text-t3 active:text-t2"
 								}`}
-								onClick={() => setSetting("lang", l.value)}
+								onClick={() => setSetting("lang", l.id)}
 							>
 								{l.label}
 							</button>

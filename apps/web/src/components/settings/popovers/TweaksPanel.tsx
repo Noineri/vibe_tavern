@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { useT } from '../../../i18n/context.js';
+import { LOCALES } from '../../../i18n/registry.js';
 import { Icons } from '../../shared/icons.js';
 import { useIsMobile } from '../../../hooks/use-mobile.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
@@ -66,10 +67,7 @@ export function TweaksPanel({ settings, setSetting, onOpenMobileAccess, onClose 
     { value: 'wide', label: <Icons.widthWide /> },
   ];
 
-  const langOptions = [
-    { id: 'en', label: 'English' },
-    { id: 'ru', label: 'Русский' },
-  ];
+  const langOptions = LOCALES.map((l) => ({ id: l.id, label: l.label }));
 
   return (
     <div ref={panelRef} className="fixed right-4 top-[68px] z-[300] w-[280px] rounded-lg border border-border2 bg-surface shadow-[0_12px_28px_rgba(0,0,0,0.45)] p-3">

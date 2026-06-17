@@ -3,7 +3,8 @@ import { useState, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./app.js";
 import "./lib/register-core-panels.jsx";
-import { LocaleProvider, type Locale } from "./i18n/context.js";
+import { LocaleProvider } from "./i18n/context.js";
+import { isLocale, detectBrowserLocale, type Locale } from "./i18n/registry.js";
 import { ThemeTuner } from "./components/dev/ThemeTuner.js";
 import "./styles.css";
 
@@ -13,16 +14,13 @@ function detectLocale(): Locale {
     const raw = localStorage.getItem("vibe-tavern.tweaks");
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed.lang === "ru" || parsed.lang === "en") return parsed.lang;
+      if (isLocale(parsed.lang)) return parsed.lang;
     }
   } catch { /* ignore */ }
 
-  // 2. Auto-detect from browser language
-  const nav = navigator.language ?? "";
-  if (nav.startsWith("ru")) return "ru";
-
-  // 3. Default
-  return "en";
+  // 2. Auto-detect from browser language, falling back to the default locale
+  //    inside detectBrowserLocale when nothing matches.
+  return detectBrowserLocale(navigator.language ?? "");
 }
 
 const initialLocale = detectLocale();

@@ -1,6 +1,10 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { DEFAULT_LOCALE, type Locale } from "./registry.js";
 
-export type Locale = "en" | "ru";
+// `Locale` originates in registry.ts (the single source of truth) and should be
+// imported from there directly at call sites — do NOT re-export it (or any
+// runtime value) from this file: context.tsx is a React module and
+// re-exporting breaks Fast Refresh boundary isolation.
 type TranslationMap = Record<string, string>;
 
 interface LocaleContextValue {
@@ -11,7 +15,7 @@ interface LocaleContextValue {
 }
 
 const LocaleContext = createContext<LocaleContextValue>({
-  locale: "en",
+  locale: DEFAULT_LOCALE,
   t: (key) => key,
   setLocale: () => {},
   ready: false,
@@ -26,7 +30,7 @@ export function LocaleProvider({ children, initialLocale }: {
   children: ReactNode;
   initialLocale?: Locale;
 }) {
-  const [locale, setLocale] = useState<Locale>(initialLocale ?? "en");
+  const [locale, setLocale] = useState<Locale>(initialLocale ?? DEFAULT_LOCALE);
   const [strings, setStrings] = useState<TranslationMap>({});
   const [ready, setReady] = useState(false);
 

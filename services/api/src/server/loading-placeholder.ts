@@ -119,10 +119,6 @@ const LOADING_HTML = `<!DOCTYPE html>
   }
   .logo{width:220px;height:220px;}
   .logo svg{width:100%;height:100%;overflow:visible;display:block;}
-  h1{
-    font-family:'Alegreya',Georgia,serif;
-    font-size:1.05rem;font-weight:500;line-height:1.55;opacity:.85;
-  }
 </style>
 </head>
 <body>
@@ -135,7 +131,6 @@ const LOADING_HTML = `<!DOCTYPE html>
         <g id="s2" transform="translate(111.59 13.97)"><path class="star" d="M110.472 0.778726C110.86 -0.259575 112.329 -0.259575 112.717 0.778726L115.842 9.1381C115.945 9.41208 116.144 9.63943 116.402 9.77677L122.297 12.912C123.145 13.3628 123.145 14.5775 122.297 15.0282L116.402 18.164C116.144 18.3013 115.945 18.5282 115.842 18.8022L112.717 27.1615C112.329 28.1998 110.86 28.1998 110.472 27.1615L107.347 18.8022C107.244 18.5282 107.045 18.3013 106.787 18.164L100.891 15.0282C100.044 14.5775 100.044 13.3628 100.891 12.912L106.787 9.77677C107.045 9.63942 107.244 9.41209 107.347 9.1381L110.472 0.778726Z" transform="translate(-111.59 -13.97)" style="fill:var(--accent)"/></g>
       </svg>
     </div>
-    <h1>Vibe Tavern is loading, please wait</h1>
   </div>
   <script>
     // Theme-aware first paint: read the stored theme id and set the CSS tokens.
