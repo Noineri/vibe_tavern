@@ -1062,5 +1062,16 @@
   "media_button": "Медиа",
   "media_send_to_chat": "Отправить в чат",
   "media_open_build": "Открыть редактор",
-  "media_empty": "Пока нет медиа"
+  "media_empty": "Пока нет медиа",
+  "first_message_label": "Первое сообщение",
+  "char_mes_example_label": "Примеры сообщений",
+  "char_scenario_label": "Сценарий",
+  "char_personality_summary_label": "Описание личности",
+  "post_history_label": "Инструкции после истории",
+  "creator_notes_label": "Заметки создателя",
+  "depth_prompt_label": "Depth-промпт",
+  "system_prompt_label": "Системный промпт",
+  "provider_saved": "Провайдер сохранён",
+  "save_failed": "Не удалось сохранить",
+  "trace_sent_with_attachments": "Отправлено вложений: {n}"
 }
