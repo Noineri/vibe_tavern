@@ -33,6 +33,7 @@
   --accent-t:     oklch(0.78 0.12 75);          /* accent text */
   --accent-dim:   oklch(0.752 0.1381 87.1 / 10%);   /* selected row bg */
   --accent-hover: oklch(0.752 0.1381 87.1 / 18%);   /* hover on accent bg */
+  --accent-mid:   oklch(0.55 0.105 75);          /* mid-lightness accent — logo book, subordinate art */
 
   /* ─── User message background ─── */
   --user-bg:   oklch(0.211 0.0050 67.6);  /* #1a1816 — user msg bg */

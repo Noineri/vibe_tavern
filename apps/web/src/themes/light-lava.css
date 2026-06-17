@@ -43,6 +43,7 @@
   --accent-t:     oklch(0.55 0.22 35);           
   --accent-dim:   oklch(0.68 0.22 35 / 12%);     
   --accent-hover: oklch(0.60 0.22 35);     
+  --accent-mid:   oklch(0.55 0.165 35);          /* mid-lightness accent — logo book, subordinate art */
 
   /* ─── User message background ─── */
   --user-bg:   oklch(0.95 0.015 35 / 80%);     /* Полупрозрачный теплый персик */

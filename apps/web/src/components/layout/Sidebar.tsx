@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { ChatId } from "@vibe-tavern/domain";
 import { initials } from "./app-shell-helpers.js";
 import { Icons } from "../shared/icons.js";
+import { Logo } from "../shared/Logo.js";
 import { cn } from "../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { CharacterImportModal, ChatImportModal } from "../modals/ImportModals.js";
@@ -138,22 +139,42 @@ export function Sidebar() {
         'shrink-0 overflow-hidden border-r border-border bg-surface flex flex-col backdrop-blur-md transition-all duration-[180ms] ease-out'
       )}>
         {/* DYNAMIC: justifyContent and padding depend on sidebarCollapsed state */}
-        <div className="flex h-[60px] shrink-0 items-center gap-2.5 border-b border-border" style={{ justifyContent: sidebarCollapsed ? 'center' : undefined, padding: sidebarCollapsed ? '0 6px' : '0 12px' }}>
-          {!sidebarCollapsed && (
-            <img src="/logo.svg" alt="Vibe Tavern" className="flex h-[30px] w-[30px] shrink-0 rounded-[5px] object-contain" />
+        <div
+          className={`flex h-[60px] shrink-0 items-center border-b border-border ${sidebarCollapsed ? "justify-center px-1.5" : "gap-2.5 px-3"}`}
+        >
+          {sidebarCollapsed ? (
+            // Collapsed: the logo doubles as the brand mark and the expand
+            // trigger (click to expand). Standard collapsed-sidebar pattern.
+            <CustomTooltip content={t("sidebar_expand")} side="right">
+              <button type="button"
+                className="flex items-center rounded-md p-1 cursor-pointer text-t3 transition-[background,color] duration-100 hover:bg-s2 hover:text-t1"
+                aria-label={t("sidebar_expand")}
+                onClick={() => setSidebarCollapsed(false)}
+              >
+                <Logo className="h-[34px] w-[34px] shrink-0" />
+              </button>
+            </CustomTooltip>
+          ) : (
+            <>
+              {/* Brand zone: fills everything left of the collapse button and
+                  centers its content within that zone — so the logo+text sit
+                  at the visual midpoint between the left edge and the button,
+                  not the geometric midpoint of the whole sidebar. */}
+              <div className="flex min-w-0 flex-1 items-center justify-center gap-2.5">
+                <Logo className="h-[34px] w-[34px] shrink-0" />
+                <span className="min-w-0 overflow-hidden whitespace-nowrap font-body text-[length:calc(var(--ui-fs)+1px)] font-medium tracking-[-0.01em] text-t1">{t("app_name")}</span>
+              </div>
+              <CustomTooltip content={t("sidebar_collapse")} side="right">
+                <button type="button"
+                  className="iBtn shrink-0"
+                  aria-label={t("sidebar_collapse")}
+                  onClick={() => setSidebarCollapsed(true)}
+                >
+                  <Icons.Caret direction="l" />
+                </button>
+              </CustomTooltip>
+            </>
           )}
-          {!sidebarCollapsed && (
-            <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap font-body text-[length:var(--ui-fs)] font-medium tracking-[-0.01em] text-t1">{t("app_name")}</span>
-          )}
-          <CustomTooltip content={sidebarCollapsed ? t("sidebar_expand") : t("sidebar_collapse")} side="right">
-            <button type="button"
-              className="iBtn"
-              aria-label={sidebarCollapsed ? t("sidebar_expand") : t("sidebar_collapse")}
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            >
-              <Icons.Caret direction={sidebarCollapsed ? "r" : "l"} />
-            </button>
-          </CustomTooltip>
         </div>
 
         {sidebarCollapsed && mode === 'play' && (
