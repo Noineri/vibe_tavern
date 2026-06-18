@@ -193,7 +193,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             </div>
             <div className="p-5 text-[13px] text-t2">{t("delete_script_msg")}</div>
             <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
-              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => setConfirmDeleteId(null)}>{t("cancel")}</button>
               <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all" onClick={() => handleDeleteScript(confirmDeleteId)}>{t("delete_script_confirm")}</button>
             </div>
           </div>
@@ -224,7 +224,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
               </div>
             </div>
             <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
-              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => { setImportOpen(false); setImportCode(""); }}>Cancel</button>
+              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => { setImportOpen(false); setImportCode(""); }}>{t("cancel")}</button>
               <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={() => handleImportScript(importCode)} disabled={!importCode.trim()}>{t("script_import_import")}</button>
             </div>
           </div>
@@ -410,7 +410,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             )}
           </div>
         )}
-        {testingScript && <div className="mt-3 text-center font-ui text-[12px] text-t3">Running...</div>}
+        {testingScript && <div className="mt-3 text-center font-ui text-[12px] text-t3">{t("script_running")}</div>}
       </div>
     </div>
   ) : (

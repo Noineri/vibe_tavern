@@ -227,11 +227,11 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
               {/* Category pills */}
               <div className="flex flex-wrap items-center gap-2">
                 {counts.system > 0 && <span className={cn("rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)]", TARGET_BADGE.system.cls)}>{counts.system} system</span>}
-                {counts.post > 0 && <span className={cn("rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)]", TARGET_BADGE.post.cls)}>{counts.post} post</span>}
-                {counts.authors > 0 && <span className={cn("rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)]", TARGET_BADGE.authors.cls)}>{counts.authors} author</span>}
+                {counts.post > 0 && <span className={cn("rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)]", TARGET_BADGE.post.cls)}>{counts.post} {t("preset_cat_post")}</span>}
+                {counts.authors > 0 && <span className={cn("rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)]", TARGET_BADGE.authors.cls)}>{counts.authors} {t("preset_cat_author")}</span>}
                 {counts.nsfw > 0 && <span className={cn("rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)]", TARGET_BADGE.nsfw.cls)}>{counts.nsfw} nsfw</span>}
-                {counts.enhanceDefinitions > 0 && <span className={cn("rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)]", TARGET_BADGE.enhanceDefinitions.cls)}>{counts.enhanceDefinitions} enhance</span>}
-                {counts.injection > 0 && <span className={cn("rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)]", TARGET_BADGE.injection.cls)}>{counts.injection} injection</span>}
+                {counts.enhanceDefinitions > 0 && <span className={cn("rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)]", TARGET_BADGE.enhanceDefinitions.cls)}>{counts.enhanceDefinitions} {t("preset_cat_enhance")}</span>}
+                {counts.injection > 0 && <span className={cn("rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)]", TARGET_BADGE.injection.cls)}>{counts.injection} {t("preset_cat_injection")}</span>}
               </div>
             </div>
 

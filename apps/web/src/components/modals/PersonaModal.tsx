@@ -56,8 +56,9 @@ type PersonaFormData = {
 
 
 function PersonaTokenBadge({ text }: { text: string }) {
+  const { t } = useT();
   const count = useTokenCount(text);
-  return <span className="font-ui text-[11px] tabular-nums text-t3">{count.toLocaleString()} tokens</span>;
+  return <span className="font-ui text-[11px] tabular-nums text-t3">{count.toLocaleString()} {t("tokens_label")}</span>;
 }
 
 export function PersonaModal(input: PersonaModalProps) {

@@ -11,6 +11,7 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
+import { useT } from "../../i18n/context.js";
 
 // ── Special character rendering ────────────────────────────────────
 
@@ -107,6 +108,7 @@ export function ChipInput({
   presetsLabel,
   className,
 }: ChipInputProps) {
+  const { t } = useT();
   const [inputValue, setInputValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -235,7 +237,7 @@ export function ChipInput({
                 type="button"
                 onClick={(e) => { e.stopPropagation(); removeChip(i); }}
                 className="ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-inherit"
-                aria-label="Remove"
+                aria-label={t("remove_aria")}
               >
                 <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <line x1="2.5" y1="2.5" x2="9.5" y2="9.5" />

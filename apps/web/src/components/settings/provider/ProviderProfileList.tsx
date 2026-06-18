@@ -35,7 +35,7 @@ export function ProviderProfileList({
       <div
         className="mb-1.5 px-4 font-ui text-[12px] font-medium uppercase tracking-[0.05em] text-t3"
       >
-        Profiles
+        {t("profiles_label")}
       </div>
 
       <div

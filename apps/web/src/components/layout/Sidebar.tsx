@@ -270,7 +270,7 @@ export function Sidebar() {
                           <Icons.Chat className="h-4 w-4 shrink-0 text-t3" />
                           <div className="min-w-0 flex-1">
                             <div className={cn('truncate text-[calc(var(--ui-fs)-1px)]', isActive ? 'text-accent-t font-medium' : 'text-t1')}>{chatItem.title}</div>
-                            <div className="truncate text-[calc(var(--ui-fs)-3px)] text-t3">{chatItem.messageCount} msgs</div>
+                            <div className="truncate text-[calc(var(--ui-fs)-3px)] text-t3">{chatItem.messageCount} {t("msgs_short")}</div>
                           </div>
                         </div>
                       </div>
@@ -550,7 +550,7 @@ export function Sidebar() {
                         )}
                         <div className="mt-px flex items-center gap-1.5">
                           <div className="text-[calc(var(--ui-fs)-3px)] text-t3">
-                            {chatItem.characterName} · {chatItem.messageCount} msgs
+                            {chatItem.characterName} · {chatItem.messageCount} {t("msgs_short")}
                           </div>
                           {isActive && branchCount > 0 && (
                             <CustomTooltip content={t("sidebar_chat_branches")}>
@@ -672,7 +672,7 @@ export function Sidebar() {
                                     <SidebarBranchRename branchId={branch.id} initialLabel={branch.label || ""} onRename={(label) => void chat.handleRenameBranch(branch.id, label)} />
                                   </div>
                                   <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] text-t3">
-                                    {branch.messageCount ?? 0} msgs · {formatShortDate(branch.createdAt)}
+                                    {branch.messageCount ?? 0} {t("msgs_short")} · {formatShortDate(branch.createdAt)}
                                   </div>
                                 </div>
                               );

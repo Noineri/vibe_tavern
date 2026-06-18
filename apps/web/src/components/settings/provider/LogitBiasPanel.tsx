@@ -51,6 +51,7 @@ function BiasRow({
   disabled?: boolean;
   stale?: boolean;
 }) {
+  const { t } = useT();
   const biasColor = entry.bias === 0
     ? "text-t3"
     : entry.bias < 0
@@ -67,7 +68,7 @@ function BiasRow({
           </span>
         ) : null}
         <span className="font-mono text-[10px] text-t3">#{entry.tokenId}</span>
-        {stale && <span className="rounded bg-warning/10 px-1 py-0.5 font-ui text-[9px] uppercase tracking-wide text-warning">stale</span>}
+        {stale && <span className="rounded bg-warning/10 px-1 py-0.5 font-ui text-[9px] uppercase tracking-wide text-warning">{t("stale_badge")}</span>}
       </div>
 
       {/* Bias slider */}

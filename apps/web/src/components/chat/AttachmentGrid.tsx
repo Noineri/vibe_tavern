@@ -4,6 +4,7 @@ import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useT } from "../../i18n/context.js";
 
 interface Attachment {
   id?: string;
@@ -66,6 +67,7 @@ export function AttachmentGrid({ attachments, messageId }: { attachments?: Attac
 }
 
 function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachments: Attachment[]; messageId?: string; initialIndex: number; onClose: () => void }) {
+  const { t } = useT();
   const [index, setIndex] = useState(initialIndex);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
@@ -176,7 +178,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
                 <button
                   className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-danger/80 text-on-danger transition-colors hover:bg-danger active:scale-95"
                   onClick={cancelRegenerate}
-                  title="Cancel regeneration"
+                  title={t("cancel_regenerate_title")}
                 >
                   <Icons.Close className="h-4 w-4" />
                 </button>
@@ -184,7 +186,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
                 <button
                   className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 active:scale-95"
                   onClick={regenerateDescription}
-                  title="Regenerate description with vision model"
+                  title={t("regenerate_description_title")}
                 >
                   <Icons.regen />
                 </button>
@@ -231,7 +233,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
         {/* Description area */}
         {regenerating && (
           <div className="w-full rounded-lg bg-white/10 px-4 py-2.5 text-center text-sm text-white/50">
-            Regenerating description…
+            {t("regenerating_description")}
           </div>
         )}
         {currentDescription && !editing && !regenerating && (
@@ -241,7 +243,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
         )}
         {!currentDescription && !editing && !regenerating && messageId && att.id && (
           <div className="w-full text-center text-xs text-white/30">
-            No description — use edit or regenerate to add one.
+            {t("no_attachment_description_hint")}
           </div>
         )}
 
@@ -254,7 +256,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
               className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm leading-relaxed text-white outline-none ring-1 ring-white/20 focus:ring-accent"
               style={{}}
               maxHeight={400}
-              placeholder="Describe this attachment…"
+              placeholder={t("describe_attachment_placeholder")}
               autoFocus
               onClick={(e) => e.stopPropagation()}
             />
@@ -263,7 +265,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
                 className="cursor-pointer rounded-md bg-white/10 px-3 py-1.5 text-sm text-white/70 transition-colors hover:bg-white/20"
                 onClick={() => setEditing(false)}
               >
-                Cancel
+                {t("cancel")}
               </button>
               <button
                 className="cursor-pointer rounded-md bg-accent px-3 py-1.5 text-sm text-on-accent transition-colors hover:bg-accent/80 disabled:opacity-50"

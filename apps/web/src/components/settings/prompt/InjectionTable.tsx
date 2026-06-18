@@ -9,6 +9,7 @@ const DragHandleContext = createContext<{
 
 function DragHandle({ disabled }: { disabled?: boolean }) {
   const ctx = useContext(DragHandleContext);
+  const { t } = useT();
   if (!ctx) return null;
   return (
     <button
@@ -20,7 +21,7 @@ function DragHandle({ disabled }: { disabled?: boolean }) {
           ? "opacity-30 cursor-not-allowed text-t4" 
           : "cursor-grab touch-none text-t4 hover:bg-s2 hover:text-t2 active:cursor-grabbing"
       )}
-      aria-label="Drag prompt item"
+      aria-label={t("drag_prompt_item_aria")}
       {...(disabled ? {} : ctx.attributes)}
       {...(disabled ? {} : ctx.listeners)}
     >
@@ -495,7 +496,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
               <div className="absolute right-3 flex items-center gap-3">
 
                 <span className="rounded bg-background/40 px-1.5 py-0.5 font-mono text-[10px] text-accent-t">
-                  {zonesToRender.depth4.length + zonesToRender.depth3.length + zonesToRender.depth2.length + zonesToRender.depth1.length} items
+                  {zonesToRender.depth4.length + zonesToRender.depth3.length + zonesToRender.depth2.length + zonesToRender.depth1.length} {t("injection_items_label")}
                 </span>
                 <span className={cn("shrink-0 text-[11px] text-accent-t/70 transition-transform", accordionOpen && "rotate-90")}>
                   ▶
@@ -505,7 +506,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
             
             {accordionOpen && (
               <div className="flex flex-col gap-1 p-2 border-t border-accent/20 bg-surface rounded-b-md">
-                <DroppableDepthContainer id="depth-4" depth={4} label="Depth 4+">
+                <DroppableDepthContainer id="depth-4" depth={4} label={t("depth_zone_4plus")}>
                   <SortableContext items={zonesToRender.depth4.map(i => i.key)} strategy={verticalListSortingStrategy}>
                     {zonesToRender.depth4.map((item) => (
                       <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
@@ -517,7 +518,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
 
                 <div className="mx-2 h-px bg-border/60" />
 
-                <DroppableDepthContainer id="depth-3" depth={3} label="Depth 3">
+                <DroppableDepthContainer id="depth-3" depth={3} label={t("depth_zone_3")}>
                   <SortableContext items={zonesToRender.depth3.map(i => i.key)} strategy={verticalListSortingStrategy}>
                     {zonesToRender.depth3.map((item) => (
                       <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
@@ -529,7 +530,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
 
                 <div className="mx-2 h-px bg-border/60" />
 
-                <DroppableDepthContainer id="depth-2" depth={2} label="Depth 2">
+                <DroppableDepthContainer id="depth-2" depth={2} label={t("depth_zone_2")}>
                   <SortableContext items={zonesToRender.depth2.map(i => i.key)} strategy={verticalListSortingStrategy}>
                     {zonesToRender.depth2.map((item) => (
                       <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
@@ -541,7 +542,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
 
                 <div className="mx-2 h-px bg-border/60" />
 
-                <DroppableDepthContainer id="depth-1" depth={1} label="Depth 1">
+                <DroppableDepthContainer id="depth-1" depth={1} label={t("depth_zone_1")}>
                   <SortableContext items={zonesToRender.depth1.map(i => i.key)} strategy={verticalListSortingStrategy}>
                     {zonesToRender.depth1.map((item) => (
                       <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
@@ -699,7 +700,7 @@ function EditablePromptCard({ identifier, enabled = true, onToggle, label, role,
         <TokenCounter text={value} />
         <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{role}</span>
         {slotLabel && <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3 tabular-nums">{slotLabel}</span>}
-        <span className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] text-accent">editable</span>
+        <span className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] text-accent">{t("editable_badge")}</span>
         <span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
       </div>
       {expanded && (
@@ -773,7 +774,7 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
         <TokenCounter text={draft?.authorsNote ?? ""} />
         <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{role}</span>
         {slotLabel && <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3 tabular-nums">{slotLabel}</span>}
-        <span className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] text-accent">editable</span>
+        <span className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] text-accent">{t("editable_badge")}</span>
         <span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
       </div>
       {expanded && (
@@ -860,7 +861,7 @@ function CharacterFieldCard({ identifier, enabled = true, onToggle, label, role,
         <TokenCounter text={value} />
         <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{role}</span>
         {slotLabel && <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3 tabular-nums">{slotLabel}</span>}
-        <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] text-amber-400">char</span>
+        <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] text-amber-400">{t("char_badge")}</span>
         <span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
       </div>
       {expanded && (
@@ -988,7 +989,7 @@ function InjectionRowView({ injection, index, isMobile, enabled, slot, onUpdate,
           </span>
         ) : slotZone === "after_chat" ? (
           <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3">
-            after
+            {t("after_badge")}
           </span>
         ) : null}
 
