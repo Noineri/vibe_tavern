@@ -3,8 +3,10 @@ import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
+import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useT } from "../../i18n/context.js";
+import { toast } from "sonner";
 
 interface Attachment {
   id?: string;
@@ -73,6 +75,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
   const [editText, setEditText] = useState("");
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const [localDescription, setLocalDescription] = useState<Record<number, string>>({});
   const att = attachments[index];
@@ -155,6 +158,39 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
     abortRef.current?.abort();
   }, []);
 
+  const confirmDelete = useCallback(async () => {
+    if (!messageId || !att?.id) return;
+    setConfirmDeleteOpen(false);
+    // Optimistic: drop the attachment from canonical message data so the grid
+    // re-renders without it at once. Each attachment owns a unique assetId, so
+    // there's no cross-message ref to preserve.
+    const remaining = attachments.filter((a) => a.id !== att.id);
+    const updateMessage = useSnapshotStore.getState().updateMessage;
+    updateMessage(messageId, {
+      attachments: remaining.map((a) => ({
+        id: a.id!,
+        assetId: a.assetId,
+        type: a.type,
+        name: a.name,
+        mimeType: a.mimeType,
+        sizeBytes: a.sizeBytes,
+        description: a.description,
+      })),
+    });
+    // If we just removed the last one, close the lightbox (the grid hides itself).
+    if (remaining.length === 0) { onClose(); return; }
+    // Otherwise clamp the index if we deleted the tail item.
+    if (index > remaining.length - 1) setIndex(remaining.length - 1);
+    try {
+      const { deleteAttachment } = await import("../../app-client.js");
+      await deleteAttachment("_", messageId, att.id);
+      toast.success(t("attachment_deleted"));
+    } catch (err) {
+      console.error("Failed to delete attachment:", err);
+      toast.error(t("attachment_delete_failed"));
+    }
+  }, [messageId, att?.id, attachments, index, onClose, t]);
+
   if (!att) return null;
 
   return (
@@ -192,6 +228,13 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
                 </button>
               )
             )}
+            <button
+              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-danger active:scale-95"
+              onClick={() => setConfirmDeleteOpen(true)}
+              title={t("delete_attachment_title")}
+            >
+              <Icons.del className="h-4 w-4" />
+            </button>
           </>
         )}
         <button
@@ -283,6 +326,16 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
           <span className="text-xs text-white/40">{att.name}</span>
         )}
       </div>
+
+      {confirmDeleteOpen && (
+        <DestructiveConfirmModal
+          title={t("attachment_delete_title")}
+          body={t("attachment_delete_msg")}
+          confirmLabel={t("delete")}
+          onConfirm={() => { void confirmDelete(); }}
+          onCancel={() => setConfirmDeleteOpen(false)}
+        />
+      )}
     </div>
   );
 }

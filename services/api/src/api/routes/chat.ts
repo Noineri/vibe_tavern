@@ -161,6 +161,13 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
         body.description ?? "",
       ));
     })
+    .delete("/api/chats/:chatId/messages/:messageId/attachments/:attachmentId", async (c) => {
+      return c.json(await runtime.deleteAttachment(
+        c.req.param("chatId"),
+        c.req.param("messageId"),
+        c.req.param("attachmentId"),
+      ));
+    })
     .post("/api/chats/:chatId/messages/:messageId/attachments/:attachmentId/regenerate-description", async (c) => {
       return c.json(await runtime.regenerateAttachmentDescription(
         c.req.param("chatId"),

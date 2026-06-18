@@ -143,6 +143,20 @@ export async function updateAttachmentDescription(
   return response.json();
 }
 
+export async function deleteAttachment(
+  chatId: string,
+  messageId: string,
+  attachmentId: string,
+): Promise<{ ok: boolean }> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/chats/${chatId}/messages/${messageId}/attachments/${attachmentId}`),
+    { method: "DELETE" },
+  );
+  if (!response.ok) throw new Error(`Failed to delete attachment: ${response.status}`);
+  return response.json();
+}
+
 export async function regenerateAttachmentDescription(
   chatId: string,
   messageId: string,
