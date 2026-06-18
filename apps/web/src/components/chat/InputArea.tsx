@@ -232,7 +232,7 @@ export function InputArea() {
                 <Icons.Caret direction="d" />
               </button>
               {mobilePersonaOpen && (
-                <div className="absolute bottom-[calc(100%+4px)] left-0 z-[220] w-[240px] rounded-lg border border-border2 bg-surface py-2 shadow-theme-md">
+                <div className="glass-blur absolute bottom-[calc(100%+4px)] left-0 z-[220] w-[240px] rounded-lg border border-border2 bg-glass-bg py-2 shadow-theme-md">
                   <div className="px-4 pb-2 text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1">{t("persona_selection")}</div>
                   {personas.map(p => (
                     <button type="button" key={p.id} className="flex w-full min-h-[44px] cursor-pointer items-center gap-2 px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2" onClick={() => { void character.handleSetChatPersona(p.id); setMobilePersonaOpen(false); }}>
@@ -271,7 +271,7 @@ export function InputArea() {
                 <Icons.StarFilled />
               </button>
               {modelDropOpen && (
-                <div className="absolute bottom-[calc(100%+4px)] right-0 z-[220] w-[240px] rounded-lg border border-border2 bg-surface py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
+                <div className="glass-blur absolute bottom-[calc(100%+4px)] right-0 z-[220] w-[240px] rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
                   <div className="px-4 pb-2 text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1">{t("starred_models")}</div>
                   {favoriteModels.length > 0 ? (
                     favoriteModels.map(model => (
@@ -397,7 +397,7 @@ export function InputArea() {
               </span>
               {tokenPopOpen && (
                 <div
-                  className="absolute bottom-[calc(100%+8px)] left-1/2 z-[220] w-[240px] -translate-x-1/2 rounded-lg border border-border2 bg-surface px-3.5 py-2.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)]"
+                  className="glass-blur absolute bottom-[calc(100%+8px)] left-1/2 z-[220] w-[240px] -translate-x-1/2 rounded-lg border border-border2 bg-glass-bg px-3.5 py-2.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)]"
                 >
                   <div className="mb-1.5 border-b border-border pb-1.5 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("context_breakdown")}</div>
                   <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_permanent")}</div>
@@ -446,7 +446,7 @@ export function InputArea() {
                     </button>
                   </CustomTooltip>
                   {modelDropOpen && (
-                    <div className="absolute bottom-[calc(100%+8px)] right-0 z-[220] w-[260px] rounded-lg border border-border2 bg-surface py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
+                    <div className="glass-blur absolute bottom-[calc(100%+8px)] right-0 z-[220] w-[260px] rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
                       <div className="mb-1 border-b border-border px-4 pb-2 pt-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("starred_models")}</div>
                       {favoriteModels.length > 0 ? (
                         favoriteModels.map((model) => (
