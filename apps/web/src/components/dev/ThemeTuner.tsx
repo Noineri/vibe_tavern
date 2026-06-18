@@ -29,12 +29,17 @@ import {
   GROUPS,
   SCRATCH_VALUES,
   parseThemeCss,
+  parsePageBgBlobs,
+  extractTokenValue,
+  serializePageBg,
+  upsertPageBgInCss,
   serialize,
   oklchToHex,
   hexToOklch,
   applyOverridesToCss,
   buildScratchCss,
   type OkColor,
+  type Blob,
 } from "./color-math.js";
 
 const THEME_RAW: Record<ThemeId, string> = {
@@ -51,6 +56,7 @@ const TOKEN_HINTS: Record<string, string> = {
   "--surface": "Панели, модалки, топбар",
   "--s2": "Инпуты, ячейки, код-блоки",
   "--s3": "Аватары, статус-бар",
+  "--input-bg": "Фон поля ввода чата (recessed)",
   "--user-bg": "Фон сообщения пользователя",
   "--page-bg": "Градиент страницы (если есть)",
   "--border": "Основные границы",
@@ -100,6 +106,9 @@ export function ThemeTuner() {
   const [values, setValues] = useState<Map<string, OkColor>>(() => new Map());
   const [originals, setOriginals] = useState<Map<string, OkColor>>(() => new Map());
   const [selected, setSelected] = useState<string | null>(null);
+  const [blobs, setBlobs] = useState<Blob[]>([]);
+  const [blobOriginals, setBlobOriginals] = useState<Blob[]>([]);
+  const [selectedBlob, setSelectedBlob] = useState<number | null>(null);
   const [exportText, setExportText] = useState<string | null>(null);
 
   // Initialize values when mode/theme changes.
@@ -121,8 +130,15 @@ export function ThemeTuner() {
       }
       setValues(v);
       setOriginals(o);
+      // Parse lava-style blobs from --page-bg (empty for vignette/opaque themes;
+      // the blob editor stays hidden for those).
+      const pageBg = extractTokenValue(THEME_RAW[editId], "--page-bg");
+      const parsed = pageBg ? parsePageBgBlobs(pageBg) : [];
+      setBlobs(parsed);
+      setBlobOriginals(parsed.map((b) => ({ ...b, color: { ...b.color } })));
     }
     setSelected(null);
+    setSelectedBlob(null);
   }, [mode, editId]);
 
   // Apply current values to <html> as inline overrides; clean up on unmount.
@@ -138,6 +154,18 @@ export function ThemeTuner() {
       for (const p of names) root.style.removeProperty(p);
     };
   }, [values, mode, editId]);
+
+  // Apply the edited blob stack as an inline --page-bg override (live preview).
+  // When a theme has no blobs we clear any stale override so its own --page-bg
+  // (or the var(--bg) fallback) shows through.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (blobs.length > 0) {
+      root.style.setProperty("--page-bg", serializePageBg(blobs));
+    } else {
+      root.style.removeProperty("--page-bg");
+    }
+  }, [blobs]);
 
   const selectedCol = selected ? values.get(selected) ?? null : null;
 
@@ -157,6 +185,52 @@ export function ThemeTuner() {
     setValues(next);
   }
 
+  function updateBlobColor(patch: Partial<OkColor>) {
+    if (selectedBlob == null) return;
+    setBlobs((prev) =>
+      prev.map((b, i) => (i === selectedBlob ? { ...b, color: { ...b.color, ...patch } } : b)),
+    );
+  }
+
+  function updateBlobPos(key: "x" | "y" | "size", v: number) {
+    if (selectedBlob == null) return;
+    setBlobs((prev) => prev.map((b, i) => (i === selectedBlob ? { ...b, [key]: v } : b)));
+  }
+
+  function resetBlob() {
+    if (selectedBlob == null) return;
+    const orig = blobOriginals[selectedBlob];
+    if (!orig) return;
+    setBlobs((prev) =>
+      prev.map((b, i) => (i === selectedBlob ? { ...orig, color: { ...orig.color } } : b)),
+    );
+  }
+
+  /** Append a new blob at a free-ish center point, cloned from the last blob's
+   *  color (or a neutral accent-tinted swatch for themes that had none). Selects
+   *  it so the editor opens immediately. */
+  function addBlob() {
+    const last = blobs[blobs.length - 1];
+    const color: OkColor = last
+      ? { ...last.color, a: last.color.a ?? 0.5 }
+      : { l: 0.6, c: 0.15, h: 290, a: 0.5 };
+    const next = [...blobs, { x: 50, y: 50, color, size: 50 }];
+    setBlobs(next);
+    setSelectedBlob(next.length - 1);
+    setSelected(null);
+  }
+
+  /** Remove a blob; clamp selection to a neighbor so the editor doesn't go
+   *  blank mid-edit. */
+  function removeBlob(i: number) {
+    setBlobs((prev) => prev.filter((_, idx) => idx !== i));
+    setSelectedBlob((cur) => {
+      if (cur == null) return null;
+      if (cur === i) return blobs.length > 1 ? Math.max(0, i - 1) : null;
+      return cur > i ? cur - 1 : cur;
+    });
+  }
+
   function handleExport() {
     if (mode === "scratch") {
       setExportText(buildScratchCss(scratchName.trim() || "my-theme", values));
@@ -169,7 +243,19 @@ export function ThemeTuner() {
         overrides.set(name, serialize(col));
       }
     }
-    setExportText(applyOverridesToCss(THEME_RAW[editId], overrides));
+    let css = applyOverridesToCss(THEME_RAW[editId], overrides);
+    // Re-serialize the blob stack into --page-bg if the user moved/recolored/
+    // added/removed any blob. upsert handles both themes that already declare
+    // --page-bg and those (coffee/milk-coffee) that gain one for the first time.
+    if (serializePageBg(blobs) !== serializePageBg(blobOriginals)) {
+      if (blobs.length > 0) {
+        css = upsertPageBgInCss(css, serializePageBg(blobs));
+      }
+      // When the user deleted ALL blobs of a theme that originally had some, we
+      // leave the original --page-bg in place (the blobs array just can't
+      // represent "empty" — and an empty --page-bg would break the fallback).
+    }
+    setExportText(css);
   }
 
   return (
@@ -221,6 +307,28 @@ export function ThemeTuner() {
         )}
 
         <div className="tt-scroll">
+          <div className="tt-group">
+            <div className="tt-group-head">
+              <span className="tt-group-title">Градиентные пятна (--page-bg)</span>
+              <button type="button" className="tt-group-add" onClick={addBlob} title="Добавить пятно">+</button>
+            </div>
+            {blobs.length === 0 ? (
+              <div className="tt-blob-empty">Нет пятен. Нажмите + чтобы добавить.</div>
+            ) : (
+              blobs.map((b, i) => (
+                <BlobRow
+                  key={i}
+                  index={i}
+                  color={b.color}
+                  x={b.x}
+                  y={b.y}
+                  active={selectedBlob === i}
+                  onClick={() => { setSelectedBlob(i); setSelected(null); }}
+                  onRemove={() => removeBlob(i)}
+                />
+              ))
+            )}
+          </div>
           {GROUPS.map((g) => {
             const present = g.tokens.filter((t) => values.has(t));
             if (present.length === 0) return null;
@@ -261,7 +369,19 @@ export function ThemeTuner() {
 
       {/* ─── Right: editor ─── */}
       <aside className="tt-editor">
-        {selectedCol ? (
+        {selectedBlob != null && blobs[selectedBlob] ? (
+          <BlobEditor
+            index={selectedBlob}
+            blob={blobs[selectedBlob]}
+            canReset={
+              serializePageBg([blobs[selectedBlob]]) !==
+              serializePageBg([blobOriginals[selectedBlob]])
+            }
+            onColorChange={updateBlobColor}
+            onPosChange={updateBlobPos}
+            onReset={resetBlob}
+          />
+        ) : selectedCol ? (
           <Editor
             name={selected!}
             color={selectedCol}
@@ -308,6 +428,29 @@ function SwatchRow({
   );
 }
 
+function BlobRow({
+  index, color, x, y, active, onClick, onRemove,
+}: {
+  index: number;
+  color: OkColor;
+  x: number;
+  y: number;
+  active: boolean;
+  onClick: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className={active ? "tt-swatch-row active" : "tt-swatch-row"}>
+      <button type="button" className="tt-swatch-row-main" onClick={onClick}>
+        <span className="tt-swatch" style={{ background: serialize(color) }} />
+        <span className="tt-swatch-name">Пятно {index + 1}</span>
+        <span className="tt-swatch-val">{Math.round(x)}% · {Math.round(y)}%</span>
+      </button>
+      <button type="button" className="tt-swatch-del" onClick={onRemove} title="Удалить пятно" aria-label={`Удалить пятно ${index + 1}`}>×</button>
+    </div>
+  );
+}
+
 // ─── Editor (right) ─────────────────────────────────────────────────────
 
 function Editor({
@@ -320,6 +463,23 @@ function Editor({
   onChange: (patch: Partial<OkColor>) => void;
   onReset: () => void;
 }) {
+  return (
+    <div className="tt-editor-inner">
+      <div className="tt-ed-name">{name}</div>
+      <div className="tt-ed-hint">{hint}</div>
+      <ColorFields color={color} onChange={onChange} />
+      {canReset && (
+        <button type="button" className="tt-ed-reset" onClick={onReset}>Сбросить к оригиналу</button>
+      )}
+    </div>
+  );
+}
+
+/** Shared color controls (preview + native picker + L/C/H/A sliders), reused by
+ *  both the token Editor and the BlobEditor. */
+function ColorFields({
+  color, onChange,
+}: { color: OkColor; onChange: (patch: Partial<OkColor>) => void }) {
   const hex = oklchToHex(color.l, color.c, color.h);
   const hasAlpha = color.a != null;
 
@@ -341,10 +501,7 @@ function Editor({
   }, [color.l, color.c]);
 
   return (
-    <div className="tt-editor-inner">
-      <div className="tt-ed-name">{name}</div>
-      <div className="tt-ed-hint">{hint}</div>
-
+    <>
       <div className="tt-ed-preview" style={{ background: serialize(color) }} />
 
       {/* Native OS color picker + hex */}
@@ -386,7 +543,35 @@ function Editor({
       )}
 
       <div className="tt-ed-string">{serialize(color)}</div>
+    </>
+  );
+}
 
+/** Editor for a single --page-bg blob: full color controls (incl. alpha for
+ *  layering) plus x/y anchor position and transparent-falloff size. */
+function BlobEditor({
+  index, blob, canReset, onColorChange, onPosChange, onReset,
+}: {
+  index: number;
+  blob: Blob;
+  canReset: boolean;
+  onColorChange: (patch: Partial<OkColor>) => void;
+  onPosChange: (key: "x" | "y" | "size", v: number) => void;
+  onReset: () => void;
+}) {
+  const posTrack = "linear-gradient(to right, var(--border), var(--accent))";
+  return (
+    <div className="tt-editor-inner">
+      <div className="tt-ed-name">Пятно {index + 1}</div>
+      <div className="tt-ed-hint">Цветовое пятно фона страницы: цвет, прозрачность и позиция</div>
+      <ColorFields color={blob.color} onChange={onColorChange} />
+      <div className="tt-ed-sep" />
+      <Slider label="X — позиция" min={0} max={100} step={1} value={blob.x} track={posTrack}
+        onChange={(v) => onPosChange("x", v)} />
+      <Slider label="Y — позиция" min={0} max={100} step={1} value={blob.y} track={posTrack}
+        onChange={(v) => onPosChange("y", v)} />
+      <Slider label="Размер — радиус" min={10} max={100} step={1} value={blob.size} track={posTrack}
+        onChange={(v) => onPosChange("size", v)} />
       {canReset && (
         <button type="button" className="tt-ed-reset" onClick={onReset}>Сбросить к оригиналу</button>
       )}
@@ -658,7 +843,15 @@ const TT_CSS = `
 .tt-scroll{overflow-y:auto;flex:1;padding:8px 12px 14px}
 .tt-group{margin-bottom:14px}
 .tt-group-title{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#8a6a3a;margin:6px 4px 6px;padding-bottom:4px;border-bottom:1px solid #2a2620}
-.tt-swatch-row{display:flex;align-items:center;gap:9px;width:100%;padding:5px 6px;border-radius:6px;cursor:pointer;background:transparent;border:1px solid transparent;text-align:left;font-family:inherit}
+.tt-group-head{display:flex;align-items:center;justify-content:space-between;margin:6px 4px 6px;padding-bottom:4px;border-bottom:1px solid #2a2620}
+.tt-group-head .tt-group-title{margin:0;padding:0;border:none}
+.tt-group-add{background:#25221c;border:1px solid #4a443c;color:#c8bca8;width:20px;height:20px;border-radius:5px;font-size:14px;line-height:1;cursor:pointer;font-family:inherit;padding:0;display:flex;align-items:center;justify-content:center;transition:all .12s}
+.tt-group-add:hover{background:#b8763e;color:#1a1712;border-color:#b8763e}
+.tt-blob-empty{font-size:11px;color:#5e544a;padding:6px 4px;font-style:italic}
+.tt-swatch-row{display:flex;align-items:center;gap:4px;width:100%;padding:5px 4px 5px 6px;border-radius:6px;background:transparent;border:1px solid transparent;text-align:left;font-family:inherit}
+.tt-swatch-row-main{display:flex;align-items:center;gap:9px;flex:1;min-width:0;background:transparent;border:none;cursor:pointer;font-family:inherit;text-align:left;padding:0}
+.tt-swatch-del{flex-shrink:0;background:transparent;border:none;color:#5e544a;font-size:15px;line-height:1;cursor:pointer;padding:2px 4px;border-radius:4px;font-family:inherit}
+.tt-swatch-del:hover{color:#c84545;background:#3a2018}
 .tt-swatch-row:hover{background:#25221c}
 .tt-swatch-row.active{background:#2a2620;border-color:#4a443c}
 .tt-swatch{width:22px;height:22px;border-radius:5px;border:1px solid #00000040;flex-shrink:0;box-shadow:inset 0 0 0 1px #ffffff14}
@@ -678,7 +871,7 @@ const TT_CSS = `
 .tt-demos-label{margin-top:26px}
 
 /* preview window (themed by tokens) */
-.tt-window{display:flex;height:660px;border-radius:10px;overflow:hidden;border:1px solid var(--border);box-shadow:0 24px 60px #00000066;background:var(--bg)}
+.tt-window{display:flex;height:660px;border-radius:10px;overflow:hidden;border:1px solid var(--border);box-shadow:0 24px 60px #00000066;background:var(--page-bg, var(--bg))}
 .tt-win-sidebar{width:188px;min-width:188px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column}
 .tt-win-brand{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border)}
 .tt-win-logo{width:22px;height:22px;border-radius:5px;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
@@ -760,6 +953,7 @@ const TT_CSS = `
 .tt-slider::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid #3a352e;box-shadow:0 1px 4px #00000066;cursor:pointer}
 .tt-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #3a352e;cursor:pointer}
 .tt-ed-string{margin-top:6px;padding:8px 10px;background:#100f0b;border:1px solid #2a2620;border-radius:5px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#c89a60;word-break:break-all}
+.tt-ed-sep{height:1px;background:#2a2620;margin:14px 0}
 .tt-ed-reset{margin-top:12px;width:100%;padding:7px;background:transparent;color:#8a7e70;border:1px solid #3a352e;border-radius:5px;font-size:12px;cursor:pointer;font-family:inherit}
 .tt-ed-reset:hover{color:#c8bca8;border-color:#4a443c}
 .tt-editor-empty{padding:40px 24px;text-align:center;color:#5e544a}

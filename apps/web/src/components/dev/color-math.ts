@@ -147,14 +147,27 @@ export function serialize(col: OkColor): string {
 export function parseColor(raw: string): OkColor | null {
   const s = raw.trim();
 
+  // Accepts oklch() with optional `%` on L and C (CSS Color 4 permits it:
+  // L 100% = 1.0, C 100% = 0.4) and alpha as either a 0–1 fraction or a `%`.
+  // Hue is always an angle (never %). This matters because dark-lava is
+  // authored in %-lightness form (e.g. oklch(29.039% 0.15 291)) which the
+  // previous anchored regex silently rejected, making the whole theme
+  // uneditable in the tuner.
   let m = s.match(
-    /^oklch\(\s*(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*(?:\/\s*([\d.]+)\s*%)?\s*\)$/i,
+    /^oklch\(\s*(-?[\d.]+)(%)?\s+(-?[\d.]+)(%)?\s+(-?[\d.]+)(?:\s*\/\s*([\d.]+)\s*(%)?)?\s*\)$/i,
   );
   if (m) {
-    const aRaw = m[4];
-    // When the `%` suffix is present the number is 0–100; otherwise a 0–1 fraction.
-    const a = aRaw != null ? (aRaw.includes(".") && parseFloat(aRaw) <= 1 ? parseFloat(aRaw) : parseFloat(aRaw) / 100) : null;
-    return { l: parseFloat(m[1]), c: parseFloat(m[2]), h: parseFloat(m[3]), a };
+    let l = parseFloat(m[1]);
+    if (m[2] === "%") l = l / 100;
+    let c = parseFloat(m[3]);
+    if (m[4] === "%") c = (c / 100) * 0.4;
+    const h = parseFloat(m[5]);
+    let a: number | null = null;
+    if (m[6] != null) {
+      const aNum = parseFloat(m[6]);
+      a = m[7] === "%" ? aNum / 100 : aNum <= 1 ? aNum : aNum / 100;
+    }
+    return { l, c, h, a };
   }
 
   m = s.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
@@ -164,6 +177,78 @@ export function parseColor(raw: string): OkColor | null {
   }
 
   return null;
+}
+
+// ─── Page-background blobs (lava themes) ───────────────────────────────
+
+/**
+ * A single radial-gradient "blob" from a lava theme's `--page-bg`.
+ * `x`/`y` are 0–100 percent anchor positions, `size` is the transparent-falloff %.
+ */
+export interface Blob {
+  x: number;
+  y: number;
+  color: OkColor;
+  size: number;
+}
+
+const BLOB_RE =
+  /radial-gradient\(\s*circle\s+at\s+([\d.]+)%\s+([\d.]+)%\s*,\s*(oklch\([^)]*\)|#[0-9a-fA-F]{3,6})\s*,\s*transparent\s+([\d.]+)%\s*\)/g;
+
+/**
+ * Parse the blob stack out of a `--page-bg` value. Returns an empty array when
+ * the value isn't a lava-style `transparent`-falloff blob stack (e.g. mystic's
+ * 2-stop vignette, or themes with no page-bg), so the tuner can hide the blob
+ * editor gracefully.
+ */
+export function parsePageBgBlobs(value: string): Blob[] {
+  const out: Blob[] = [];
+  BLOB_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = BLOB_RE.exec(value))) {
+    const color = parseColor(m[3]);
+    if (!color) continue;
+    out.push({ x: parseFloat(m[1]), y: parseFloat(m[2]), color, size: parseFloat(m[4]) });
+  }
+  return out;
+}
+
+/** Find the raw value of a CSS custom property in theme source (multi-line safe). */
+export function extractTokenValue(raw: string, name: string): string | null {
+  const re = new RegExp(`${escapeRe(name)}\\s*:\\s*([\\s\\S]*?);`);
+  const m = raw.match(re);
+  return m ? m[1].trim() : null;
+}
+
+/** Serialize a blob stack back into a `--page-bg` value (indented, multiline). */
+export function serializePageBg(blobs: Blob[]): string {
+  const layers = blobs.map(
+    (b) =>
+      `radial-gradient(circle at ${round(b.x, 1)}% ${round(b.y, 1)}%, ${serialize(
+        b.color,
+      )}, transparent ${round(b.size, 1)}%)`,
+  );
+  return "\n    " + layers.join(",\n    ") + ",\n    var(--bg)";
+}
+
+/** Replace the `--page-bg` declaration value in theme CSS (preserves the rest). */
+export function replacePageBgInCss(raw: string, newValue: string): string {
+  return raw.replace(/(--page-bg\s*:\s*)[\s\S]*?(;)/, `$1${newValue}$2`);
+}
+
+/**
+ * Upsert `--page-bg` in theme CSS: replace the existing declaration, or insert a
+ * new one right after `--bg` when the theme has no page background yet (so the
+ * user can add blobs to any theme, not just the lava ones). Falls back to
+ * appending at the top of the block if `--bg` is absent.
+ */
+export function upsertPageBgInCss(raw: string, newValue: string): string {
+  if (/--page-bg\s*:/.test(raw)) return replacePageBgInCss(raw, newValue);
+  const inserted = `\n  --page-bg:${newValue};`;
+  if (/(--bg\s*:\s*[^;]+;)/.test(raw)) {
+    return raw.replace(/(--bg\s*:\s*[^;]+;)/, `$1${inserted}`);
+  }
+  return raw.replace(/(:root[\w.-]*\s*\{)/, `$1${inserted}`);
 }
 
 /** Parse an entire theme CSS source into an ordered list of tokens. */
@@ -209,7 +294,7 @@ export interface TokenGroup {
 }
 
 export const GROUPS: readonly TokenGroup[] = [
-  { title: "Фоны", tokens: ["--bg", "--surface", "--s2", "--s3", "--user-bg", "--page-bg"] },
+  { title: "Фоны", tokens: ["--bg", "--surface", "--s2", "--s3", "--user-bg", "--input-bg", "--page-bg"] },
   { title: "Границы", tokens: ["--border", "--border2"] },
   { title: "Текст UI", tokens: ["--t1", "--t2", "--t3", "--t4"] },
   { title: "Текст сообщений", tokens: ["--msg-t1", "--msg-t2"] },
