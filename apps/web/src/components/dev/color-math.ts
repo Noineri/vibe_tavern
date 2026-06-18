@@ -220,7 +220,11 @@ export function extractTokenValue(raw: string, name: string): string | null {
   return m ? m[1].trim() : null;
 }
 
-/** Serialize a blob stack back into a `--page-bg` value (indented, multiline). */
+/** Serialize a blob stack back into a `--page-bg` value (indented, multiline).
+ *  No leading indent: replacePageBgInCss keeps the `--page-bg:\n    ` prefix from
+ *  the original declaration, so the first layer lands on its own line right
+ *  under the colon and subsequent lines indent consistently. A leading "\n    "
+ *  here would leave a blank line after the colon. */
 export function serializePageBg(blobs: Blob[]): string {
   const layers = blobs.map(
     (b) =>
@@ -228,7 +232,7 @@ export function serializePageBg(blobs: Blob[]): string {
         b.color,
       )}, transparent ${round(b.size, 1)}%)`,
   );
-  return "\n    " + layers.join(",\n    ") + ",\n    var(--bg)";
+  return layers.join(",\n    ") + ",\n    var(--bg)";
 }
 
 /** Replace the `--page-bg` declaration value in theme CSS (preserves the rest). */
