@@ -432,6 +432,24 @@ export function GalleryGrid({ characterId, assets, selectedIds, onToggleSelectio
   // The lightbox is a single focused surface (separate from the panels).
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
+  // Cap the grid at two visible rows; anything taller scrolls (the build
+  // panel has room to the right for a scrollbar). Row height is invariant
+  // here — the image area is a fixed `tileHeight` and the footer is
+  // `truncate`d to one line — so an image's aspect ratio only changes a
+  // tile's WIDTH, never its row height. That makes "two rows" a stable
+  // measurement with no feedback loop when aspect ratios resolve late:
+  // we read the first tile's offsetHeight once (captures the exact
+  // footer/line-height instead of guessing it), then two rows =
+  // 2 × tile height + the single gap-3 between them.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [maxHeight, setMaxHeight] = useState<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    const first = gridRef.current?.firstElementChild as HTMLElement | null;
+    if (!first) { setMaxHeight(undefined); return; }
+    const ROW_GAP = 12; // matches `gap-3` on the grid below
+    setMaxHeight(2 * first.offsetHeight + ROW_GAP);
+  }, [tileHeight, assets.length]);
+
   const togglePanel = (idx: number) => {
     setOpenPanels((prev) => {
       const next = new Set(prev);
@@ -445,8 +463,13 @@ export function GalleryGrid({ characterId, assets, selectedIds, onToggleSelectio
     <>
       {/* Justified grid: fixed-height image area, width follows each image's
           aspect ratio. Portrait tiles are tall+narrow, landscape are
-          tall+wide, wrapping left→right like a Google-Photos row. */}
-      <div className="flex flex-wrap gap-3">
+          tall+wide, wrapping left→right like a Google-Photos row. Capped at
+          two rows (see maxHeight above); taller galleries scroll. */}
+      <div
+        ref={gridRef}
+        className="flex flex-wrap gap-3 overflow-y-auto overflow-x-hidden pr-2"
+        style={maxHeight ? { maxHeight } : undefined}
+      >
         {assets.map((asset, idx) => (
           <GalleryTile
             key={asset.id as string}

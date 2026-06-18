@@ -35,6 +35,7 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
   });
 
   const load = useGalleryStore((s) => s.load);
+  const reload = useGalleryStore((s) => s.reload);
   const upload = useGalleryStore((s) => s.upload);
   const describe = useGalleryStore((s) => s.describe);
   const cancelDescribe = useGalleryStore((s) => s.cancelDescribe);
@@ -57,14 +58,16 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
   const [avatarCropTarget, setAvatarCropTarget] = useState<CharacterAsset | null>(null);
   const [savingAvatar, setSavingAvatar] = useState(false);
 
+  // Populate the gallery cache even while the accordion is collapsed so the
+  // count badge reflects server-side changes (salvage on an avatar swap, an
+  // upload from elsewhere) without the user having to open it first (Bug #5).
+  // load() is idempotent — it only fetches the first time; reload() forces a
+  // fresh fetch on open so the user always sees the latest when interacting.
   useEffect(() => {
-    if (isOpen) {
-      localStorage.setItem(storageKey, "true");
-      void load(characterId);
-    } else {
-      localStorage.setItem(storageKey, "false");
-    }
-  }, [isOpen, characterId, load, storageKey]);
+    localStorage.setItem(storageKey, isOpen ? "true" : "false");
+    if (isOpen) void reload(characterId);
+    else void load(characterId);
+  }, [isOpen, characterId, load, reload, storageKey]);
 
   // Token estimate — only rows that will actually be injected into the prompt.
   // Per-image includeInPrompt is the sole gate now (no character-level master
@@ -153,9 +156,12 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
         result.cropJson ?? "",
       );
       setAvatarCropTarget(null);
-      // Reload the gallery (salvaged row appears) + refresh the snapshot so the
-      // avatar swaps everywhere (cache-busted by the bumped updatedAt).
-      await Promise.all([load(characterId), fetchBootstrapAction({ silent: true })]);
+      // Reload (not load): the list is already cached from when the accordion
+      // opened, so idempotent load() would no-op and never surface the salvaged
+      // row / new state. Force-refresh so the gallery reflects the swap at once
+      // (Bug #5), and refresh the snapshot so the cache-busted avatar URL
+      // propagates app-wide.
+      await Promise.all([reload(characterId), fetchBootstrapAction({ silent: true })]);
       toast.success(t("avatar_updated"));
     } catch (err) {
       console.error("Set avatar from gallery failed:", err);
