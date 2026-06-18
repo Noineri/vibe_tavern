@@ -39,6 +39,9 @@ export interface ParsedToken {
   color: OkColor | null;
   /** The raw value text exactly as authored (trimmed). */
   raw: string;
+  /** Inline trailing /* ... *‍/ comment from the declaration, delimiters
+   *  stripped and trimmed. "" when the line has no comment. */
+  comment: string;
 }
 
 // ─── Forward: OKLCH → sRGB hex ──────────────────────────────────────────
@@ -179,6 +182,57 @@ export function parseColor(raw: string): OkColor | null {
   return null;
 }
 
+// ─── Descriptive naming (OKLCH → Russian color word) ───────────────────
+// No dataset: derives a human label purely from L/C/H so every color gets a
+// stable, editable suggestion ("глубокий индиго", "приглушённый янтарный").
+// Used to prefill the comment field on new blobs and to power a "regenerate"
+// button on existing ones — never overwrites text the user authored.
+
+/** Map an OKLCH hue (0–360) to a Russian color name. 13 sectors chosen to line
+ *  up with the names already used in the theme comments (аметистовый ≈ 290,
+ *  янтарный ≈ 60, индиго ≈ 270). */
+function hueName(h: number): string {
+  h = ((h % 360) + 360) % 360;
+  if (h < 15) return "красный";
+  if (h < 40) return "коралловый";
+  if (h < 62) return "янтарный";
+  if (h < 88) return "жёлтый";
+  if (h < 140) return "зелёный";
+  if (h < 175) return "бирюзовый";
+  if (h < 200) return "циановый";
+  if (h < 235) return "голубой";
+  if (h < 265) return "синий";
+  if (h < 290) return "аметистовый";
+  if (h < 320) return "фиолетовый";
+  if (h < 345) return "пурпурный";
+  return "розовый";
+}
+
+/** A descriptive Russian name for a color, derived from OKLCH: an optional
+ *  lightness word ("тёмный"/"светлый"), an optional chroma word
+ *  ("приглушённый"/"насыщенный"), then the hue name. Greyscale (very low
+ *  chroma) collapses to a neutral word ("чёрный", "тёмно-серый", "белый").
+ *  Never reads alpha — that lives in the value string, not the comment. */
+export function describeColor(col: OkColor): string {
+  const { l, c, h } = col;
+  if (c < 0.02) {
+    if (l < 0.12) return "чёрный";
+    if (l < 0.3) return "тёмно-серый";
+    if (l < 0.55) return "серый";
+    if (l < 0.8) return "светло-серый";
+    return "белый";
+  }
+  const parts: string[] = [];
+  if (l < 0.25) parts.push("тёмный");
+  else if (l < 0.45) parts.push("глубокий");
+  else if (l >= 0.82) parts.push("бледный");
+  else if (l >= 0.65) parts.push("светлый");
+  if (c < 0.06) parts.push("приглушённый");
+  else if (c >= 0.16) parts.push("насыщенный");
+  parts.push(hueName(h));
+  return parts.join(" ");
+}
+
 // ─── Page-background blobs (lava themes) ───────────────────────────────
 
 /**
@@ -190,10 +244,13 @@ export interface Blob {
   y: number;
   color: OkColor;
   size: number;
+  /** Human label serialized as `/* ... *‍/` after this layer. Undefined/empty
+   *  means no comment on this layer. */
+  comment?: string;
 }
 
 const BLOB_RE =
-  /radial-gradient\(\s*circle\s+at\s+([\d.]+)%\s+([\d.]+)%\s*,\s*(oklch\([^)]*\)|#[0-9a-fA-F]{3,6})\s*,\s*transparent\s+([\d.]+)%\s*\)/g;
+  /radial-gradient\(\s*circle\s+at\s+([\d.]+)%\s+([\d.]+)%\s*,\s*(oklch\([^)]*\)|#[0-9a-fA-F]{3,6})\s*,\s*transparent\s+([\d.]+)%\s*\)\s*,\s*(?:\/\*([\s\S]*?)\*\/)?/g;
 
 /**
  * Parse the blob stack out of a `--page-bg` value. Returns an empty array when
@@ -208,7 +265,8 @@ export function parsePageBgBlobs(value: string): Blob[] {
   while ((m = BLOB_RE.exec(value))) {
     const color = parseColor(m[3]);
     if (!color) continue;
-    out.push({ x: parseFloat(m[1]), y: parseFloat(m[2]), color, size: parseFloat(m[4]) });
+    const comment = m[5] != null ? m[5].trim() : undefined;
+    out.push({ x: parseFloat(m[1]), y: parseFloat(m[2]), color, size: parseFloat(m[4]), comment });
   }
   return out;
 }
@@ -224,15 +282,17 @@ export function extractTokenValue(raw: string, name: string): string | null {
  *  No leading indent: replacePageBgInCss keeps the `--page-bg:\n    ` prefix from
  *  the original declaration, so the first layer lands on its own line right
  *  under the colon and subsequent lines indent consistently. A leading "\n    "
- *  here would leave a blank line after the colon. */
+ *  here would leave a blank line after the colon. Each layer keeps its trailing
+ *  `/* ... *‍/` comment (between the comma and the line break) when set. */
 export function serializePageBg(blobs: Blob[]): string {
-  const layers = blobs.map(
-    (b) =>
-      `radial-gradient(circle at ${round(b.x, 1)}% ${round(b.y, 1)}%, ${serialize(
-        b.color,
-      )}, transparent ${round(b.size, 1)}%)`,
-  );
-  return layers.join(",\n    ") + ",\n    var(--bg)";
+  const layers = blobs.map((b) => {
+    const grad = `radial-gradient(circle at ${round(b.x, 1)}% ${round(b.y, 1)}%, ${serialize(
+      b.color,
+    )}, transparent ${round(b.size, 1)}%)`;
+    const c = b.comment?.trim();
+    return c ? `${grad},  /* ${c} */` : `${grad},`;
+  });
+  return layers.join("\n    ") + "\n    var(--bg)";
 }
 
 /** Replace the `--page-bg` declaration value in theme CSS (preserves the rest). */
@@ -257,13 +317,17 @@ export function upsertPageBgInCss(raw: string, newValue: string): string {
 
 /** Parse an entire theme CSS source into an ordered list of tokens. */
 export function parseThemeCss(raw: string): ParsedToken[] {
-  const re = /(--[\w-]+)\s*:\s*([^;]+);/g;
+  // Group 3 captures an inline /* comment */ that trails the declaration
+  // AFTER the semicolon — that's how themes author it
+  // (`--bg: oklch(...);    /* liquid */`), not inside the value span.
+  const re = /(--[\w-]+)\s*:\s*([^;]+);[ \t]*(?:\/\*([\s\S]*?)\*\/)?/g;
   const out: ParsedToken[] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(raw))) {
     const name = m[1];
     const valRaw = m[2].trim();
-    out.push({ name, color: parseColor(valRaw), raw: valRaw });
+    const comment = m[3] != null ? m[3].trim() : "";
+    out.push({ name, color: parseColor(valRaw), raw: valRaw, comment });
   }
   return out;
 }
@@ -274,14 +338,39 @@ export function parseThemeCss(raw: string): ParsedToken[] {
  * For "edit existing" mode: take the original CSS source and replace only the
  * tokens the user changed, preserving every comment and untouched line.
  *
- * The replacement targets `<name>:` … `;` and rewrites only the value span,
- * so inline comments after the value survive untouched.
+ * The replacement targets `<name>:` … `;` and rewrites only the value span.
+ * A trailing `/* comment *‍/` is pulled out of the original span and re-emitted
+ * after the new value, unless an explicit entry for this token exists in
+ * `comments` (an empty-string entry clears the comment).
  */
-export function applyOverridesToCss(raw: string, overrides: Map<string, string>): string {
+export function applyOverridesToCss(
+  raw: string,
+  overrides: Map<string, string>,
+  comments?: Map<string, string>,
+): string {
   let out = raw;
-  for (const [name, value] of overrides) {
-    const re = new RegExp(`(${escapeRe(name)}\\s*:\\s*)([^;]+)(;)`);
-    out = out.replace(re, `$1${value}$3`);
+  // Union: a token may have a changed color, a changed comment, or both.
+  // Comment-only edits are common (prefill/⟳ then tweak), so we must patch even
+  // tokens whose color the user never touched.
+  const names = new Set([...overrides.keys(), ...(comments?.keys() ?? [])]);
+  for (const name of names) {
+    // Captures the trailing /* comment */ AFTER the semicolon (theme
+    // convention). `[ \t]*` won't eat the newline, so untouched lines keep
+    // their formatting; the optional `(?:...)` lets comment-less tokens match.
+    const re = new RegExp(`(${escapeRe(name)}\\s*:\\s*)([^;]+)(;[ \\t]*)(\\/\\*[\\s\\S]*?\\*\\/)?`);
+    out = out.replace(re, (_full, prefix: string, oldValue: string, _semi: string, oldBlock?: string) => {
+      // Keep the original value span verbatim (incl. %-form OKLCH) when the
+      // color itself didn't change — only swap the comment.
+      const value = overrides.has(name) ? overrides.get(name)! : oldValue.trim();
+      const originalComment = oldBlock ? oldBlock.slice(2, -2).trim() : null;
+      let comment = originalComment;
+      if (comments && comments.has(name)) {
+        const c = comments.get(name)!.trim();
+        comment = c || null;
+      }
+      const suffix = comment ? `  /* ${comment} */` : "";
+      return `${prefix}${value};${suffix}`;
+    });
   }
   return out;
 }
