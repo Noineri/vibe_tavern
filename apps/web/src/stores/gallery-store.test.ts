@@ -24,7 +24,8 @@ const updateCharacterAsset = mock(
 const reorderCharacterAssets = mock((_cid: string, _ids: string[]) => Promise.resolve());
 const deleteCharacterAsset = mock((_cid: string, _rowId: string) => Promise.resolve());
 const describeCharacterAssets = mock(
-  (_cid: string, _ids?: string[]) => Promise.resolve({ updated: [] as string[], failed: [] as string[] }),
+  (_cid: string, _ids?: string[], _signal?: AbortSignal) =>
+    Promise.resolve({ updated: [] as string[], failed: [] as string[] }),
 );
 
 await mock.module("../api/gallery-api.js", () => ({
@@ -191,5 +192,7 @@ test("describe defaults to all undescribed rows when rowIds omitted", async () =
 
   await useGalleryStore.getState().describe("cid");
 
-  expect(describeCharacterAssets).toHaveBeenCalledWith("cid", ["a2"]);
+  // describe() forwards an AbortController.signal so cancelDescribe can abort
+  // an in-flight batch — assert the third arg is an AbortSignal instance.
+  expect(describeCharacterAssets).toHaveBeenCalledWith("cid", ["a2"], expect.any(AbortSignal));
 });
