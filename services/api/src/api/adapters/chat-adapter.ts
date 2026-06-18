@@ -225,8 +225,27 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return { description };
 	};
 
-	deleteMessage = (chatId: string, messageId: string) =>
-		this.sessionRuntime.chatRuntime.deleteMessage(brandId<ChatId>(chatId), messageId);
+	/** Delete a single attachment from a message. Removes it from the
+	 *  message's attachments JSON and cleans up the underlying stored asset
+	 *  file (each attachment owns a unique assetId — promote-from-gallery and
+	 *  upload both create a fresh copy — so deleting the file is safe and avoids
+	 *  orphaning it on disk). Idempotent: no-op if the attachment id is gone. */
+	deleteAttachment = async (chatId: string, messageId: string, attachmentId: string) => {
+		const removed = await this.sessionRuntime.chatApp.removeAttachment(messageId, attachmentId);
+		if (removed) this.assetService.cleanup(removed.assetId);
+		return { ok: true };
+	};
+
+	deleteMessage = async (chatId: string, messageId: string) => {
+		// Clean up attachment asset files so they aren't orphaned on disk. Each
+		// attachment owns a unique assetId (see deleteAttachment), so the files
+		// are safe to remove. Read before deleting — the row is gone afterwards.
+		const message = await this.stores.chats.getMessageById(messageId);
+		const attachments = parseStoredAttachments(message?.attachmentsJson) ?? [];
+		const result = await this.sessionRuntime.chatRuntime.deleteMessage(brandId<ChatId>(chatId), messageId);
+		for (const att of attachments) this.assetService.cleanup(att.assetId);
+		return result;
+	};
 
 	// ─── Export ─────────────────────────────────────────────────────────
 

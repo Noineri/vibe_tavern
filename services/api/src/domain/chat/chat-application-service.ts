@@ -138,6 +138,24 @@ export class ChatApplicationService {
     await this.updateAttachmentDescriptions(messageId, attachmentIdOrAttachments, [{ attachmentId: descriptionOrAttachmentId!, description: description! }]);
   }
 
+  /**
+   * Remove a single attachment from a message by its id. Persists the remaining
+   * attachments (or null when none are left so the column stays empty) and
+   * returns the removed attachment so the caller can clean up its stored asset
+   * file. Idempotent: returns null if the message or the attachment id is not
+   * found (so optimistic UI retries are safe and DELETE is idempotent).
+   */
+  async removeAttachment(messageId: string, attachmentId: string): Promise<Attachment | null> {
+    const message = await this.chatStore.getMessageById(messageId);
+    if (!message) return null;
+    const current: Attachment[] = parseStoredAttachments(message.attachmentsJson) ?? [];
+    const removed = current.find((a) => a.id === attachmentId) ?? null;
+    if (!removed) return null;
+    const remaining = current.filter((a) => a.id !== attachmentId);
+    await this.chatStore.updateMessageAttachments(messageId, remaining.length > 0 ? JSON.stringify(remaining) : null);
+    return removed;
+  }
+
   async editMessage(messageId: string, content: string): Promise<Message> {
     const message = await this.chatStore.editMessage(messageId, content);
     return mapDbMessage(message);
