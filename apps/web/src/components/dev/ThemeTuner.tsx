@@ -341,7 +341,7 @@ export function ThemeTuner() {
                     name={tok}
                     color={values.get(tok)!}
                     active={selected === tok}
-                    onClick={() => setSelected(tok)}
+                    onClick={() => { setSelected(tok); setSelectedBlob(null); }}
                   />
                 ))}
               </div>
