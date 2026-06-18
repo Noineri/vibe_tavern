@@ -92,7 +92,13 @@ function encodeText(keyword: string, text: string): Uint8Array {
  *
  *  Each entry maps a V3 `data` key → the V2 top-level key name. Note the one
  *  rename: V3 `creator_notes` is exposed as V2 `creatorcomment`. Source of
- *  truth: the `v1CharData` typedef in SillyTavern/public/scripts/char-data.js. */
+ *  truth: the `v1CharData` typedef in SillyTavern/public/scripts/char-data.js.
+ *
+ *  CANONICAL COPY: packages/import-export/src/cards/chara-card-v3.ts exports
+ *  the same mapping as `V2_TOPLEVEL_FIELDS` + a `flattenV2CompatFields`
+ *  helper used by `exportCharacter` (JSON export). This self-contained copy
+ *  exists only because apps/web cannot import that package (dep graph). Keep
+ *  both in sync when editing. */
 const V2_TOPLEVEL_FIELDS: ReadonlyArray<readonly [dataKey: string, v2Key: string]> = [
   ["name", "name"],
   ["description", "description"],

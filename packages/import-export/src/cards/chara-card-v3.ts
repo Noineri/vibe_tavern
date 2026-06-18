@@ -53,6 +53,69 @@ export interface ImportCharacterCardOptions {
   characterStatus?: Character["status"];
 }
 
+/**
+ * V2-era ("v1CharData") content fields SillyTavern keeps at the top level
+ * alongside the V3 `data` block, for backward compat with V2-only parsers.
+ * Strict V2 parsers (janitor.ai and similar) read name / description /
+ * first_mes etc. from the TOP level — without these duplicates the card reads
+ * as empty even though `data` is fully populated.
+ *
+ * Each entry maps a V3 `data` key → the V2 top-level key name. Note the one
+ * rename: V3 `creator_notes` is exposed as V2 `creatorcomment`. Source of
+ * truth: the `v1CharData` typedef in SillyTavern/public/scripts/char-data.js.
+ *
+ * NOTE: apps/web/src/lib/png-writer.ts keeps a self-contained copy of this
+ * mapping because apps/web cannot import this package (dep graph). Keep both
+ * in sync when editing.
+ */
+export const V2_TOPLEVEL_FIELDS: ReadonlyArray<readonly [dataKey: string, v2Key: string]> = [
+  ["name", "name"],
+  ["description", "description"],
+  ["personality", "personality"],
+  ["scenario", "scenario"],
+  ["first_mes", "first_mes"],
+  ["mes_example", "mes_example"],
+  ["tags", "tags"],
+  ["creator_notes", "creatorcomment"],
+];
+
+/**
+ * Return a hybrid V2+V3 character card: the canonical V3 block stays under
+ * `data`, and the V2-era field set is flattened to the top level (mirroring
+ * SillyTavern's export shape) so strict V2 parsers can find the character
+ * data. Also stamps ST meta fields (fav, avatar, talkativeness, create_date)
+ * at the top level when absent.
+ *
+ * The `data` block is the source of truth — top-level copies are always
+ * re-synced from it, so a re-export of an already-hybrid card is stable and
+ * never drifts. Pure: returns a new object, does not mutate the input.
+ */
+export function flattenV2CompatFields(input: Record<string, unknown>): Record<string, unknown> {
+  const card: Record<string, unknown> = { ...input };
+  card.spec = "chara_card_v3";
+  card.spec_version = "3.0";
+
+  const data = card.data;
+  if (isRecord(data)) {
+    for (const [dataKey, v2Key] of V2_TOPLEVEL_FIELDS) {
+      if (dataKey in data) card[v2Key] = data[dataKey];
+    }
+  }
+
+  // ST stamps these v1CharData meta fields at the top level on every export.
+  // Only set when absent so a re-export of an already-ST-shaped card is stable.
+  // talkativeness also lives under data.extensions in ST; prefer that if present.
+  const ext = isRecord(data) ? data.extensions : undefined;
+  const extTalkativeness = isRecord(ext) ? ext.talkativeness : undefined;
+  if (card.create_date == null) card.create_date = new Date().toISOString();
+  if (card.fav == null) card.fav = false;
+  if (card.creatorcomment == null) card.creatorcomment = "";
+  if (card.avatar == null) card.avatar = "none";
+  if (card.talkativeness == null) card.talkativeness = extTalkativeness ?? "0.5";
+
+  return card;
+}
+
 function getCardData(root: Record<string, unknown>): Record<string, unknown> {
   if (isRecord(root.data)) {
     return root.data;

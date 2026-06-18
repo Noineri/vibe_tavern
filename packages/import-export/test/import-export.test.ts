@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { importCharacterCardV3Json } from "../src/cards/chara-card-v3.js";
+import { importCharacterCardV3Json, flattenV2CompatFields, V2_TOPLEVEL_FIELDS } from "../src/cards/chara-card-v3.js";
 import { parseSillyTavernChat, serializeSillyTavernChat } from "../src/chats/st-chat.js";
 import { importStLorebookJson } from "../src/lorebooks/st-lorebook.js";
 
@@ -474,5 +474,108 @@ describe("importStLorebookJson", () => {
     };
     const result = importStLorebookJson(lorebook);
     expect(result.entries[0].enabled).toBe(false);
+  });
+});
+
+// ─── flattenV2CompatFields (export shape: janitor.ai / V2-parser compat) ────
+
+describe("flattenV2CompatFields", () => {
+  // Bare V3 payload — what `exportCharacter` produces before flattening.
+  const bareV3 = {
+    spec: "chara_card_v3",
+    spec_version: "3.0",
+    data: {
+      name: "Kieran Sullivan",
+      description: "A quiet, overprotective roommate.",
+      personality: "attentive",
+      scenario: "sharing an apartment",
+      first_mes: "The apartment was almost painfully quiet.",
+      mes_example: "<START>\n{{char}}: hi",
+      creator_notes: "Original character.",
+      tags: ["romance", "yandere"],
+      extensions: {},
+    },
+  };
+
+  it("flattens the full v1CharData field set to the top level", () => {
+    // Regression: bare-V3 emission made strict V2 parsers (janitor.ai) see an
+    // empty card. The top level must now carry every V2-era field, sourced
+    // from `data` (the canonical block).
+    const card = flattenV2CompatFields(bareV3);
+    expect(card.name).toBe("Kieran Sullivan");
+    expect(card.description).toBe(bareV3.data.description);
+    expect(card.personality).toBe("attentive");
+    expect(card.scenario).toBe("sharing an apartment");
+    expect(card.first_mes).toBe(bareV3.data.first_mes);
+    expect(card.mes_example).toBe(bareV3.data.mes_example);
+    expect(card.tags).toEqual(["romance", "yandere"]);
+    // V3 `creator_notes` is renamed to V2 `creatorcomment` at the top level.
+    expect(card.creatorcomment).toBe("Original character.");
+    // `data` remains intact and canonical.
+    expect((card.data as Record<string, unknown>).creator_notes).toBe("Original character.");
+  });
+
+  it("stamps ST meta fields at the top level when absent", () => {
+    const card = flattenV2CompatFields(bareV3);
+    expect(card.fav).toBe(false);
+    expect(card.avatar).toBe("none");
+    expect(card.talkativeness).toBe("0.5");
+    expect(typeof card.create_date).toBe("string");
+    expect(card.create_date).not.toBe("");
+  });
+
+  it("prefers data.extensions.talkativeness over the 0.5 default", () => {
+    const withExt = JSON.parse(JSON.stringify(bareV3));
+    withExt.data.extensions = { talkativeness: "0.9" };
+    const card = flattenV2CompatFields(withExt);
+    expect(card.talkativeness).toBe("0.9");
+  });
+
+  it("keeps existing top-level ST meta fields instead of overwriting", () => {
+    // A re-export of an already-hybrid card must be stable: don't clobber fav /
+    // create_date / avatar that were already there. (Content fields, however,
+    // are always re-synced from `data` — see next test.)
+    const hybrid = JSON.parse(JSON.stringify(bareV3));
+    hybrid.fav = true;
+    hybrid.avatar = "kieran.png";
+    hybrid.create_date = "2020-01-01T00:00:00.000Z";
+    const card = flattenV2CompatFields(hybrid);
+    expect(card.fav).toBe(true);
+    expect(card.avatar).toBe("kieran.png");
+    expect(card.create_date).toBe("2020-01-01T00:00:00.000Z");
+  });
+
+  it("always re-syncs top-level content fields from `data` (no drift)", () => {
+    // If a caller passes a card that already has stale top-level content
+    // fields, flatten must overwrite them from the canonical `data` block.
+    const stale = JSON.parse(JSON.stringify(bareV3));
+    stale.name = "STALE NAME";
+    stale.first_mes = "STALE FIRST MES";
+    const card = flattenV2CompatFields(stale);
+    expect(card.name).toBe("Kieran Sullivan");
+    expect(card.first_mes).toBe(bareV3.data.first_mes);
+  });
+
+  it("does not mutate the input", () => {
+    const snapshot = JSON.parse(JSON.stringify(bareV3));
+    flattenV2CompatFields(bareV3);
+    expect(bareV3).toEqual(snapshot);
+  });
+
+  it("exposes V2_TOPLEVEL_FIELDS including the creator_notes→creatorcomment rename", () => {
+    const pairs = V2_TOPLEVEL_FIELDS.map(([d, v]) => `${d}->${v}`);
+    expect(pairs).toContain("creator_notes->creatorcomment");
+    expect(pairs).toContain("first_mes->first_mes");
+    expect(pairs).toContain("mes_example->mes_example");
+  });
+
+  it("round-trips through importCharacterCardV3Json (hybrid re-importable)", () => {
+    // The flattened card is still a valid V3 card the importer accepts, and
+    // the imported character matches the canonical `data` block.
+    const card = flattenV2CompatFields(bareV3);
+    const imported = importCharacterCardV3Json(card);
+    expect(imported.character.name).toBe("Kieran Sullivan");
+    expect(imported.character.firstMessage).toBe(bareV3.data.first_mes);
+    expect(imported.character.creatorNotes).toBe("Original character.");
   });
 });
