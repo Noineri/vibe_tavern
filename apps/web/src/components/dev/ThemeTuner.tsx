@@ -109,6 +109,7 @@ export function ThemeTuner() {
   const [blobs, setBlobs] = useState<Blob[]>([]);
   const [blobOriginals, setBlobOriginals] = useState<Blob[]>([]);
   const [selectedBlob, setSelectedBlob] = useState<number | null>(null);
+  const [drifting, setDrifting] = useState(true);
   const [exportText, setExportText] = useState<string | null>(null);
 
   // Initialize values when mode/theme changes.
@@ -359,9 +360,18 @@ export function ThemeTuner() {
       {/* ─── Center: live preview ─── */}
       <main className="tt-stage">
         <div className="tt-stage-label">
-          ПРЕВЬЮ {mode === "edit" ? `— ${editId}.css` : `— с нуля («${scratchName || "my-theme"}»)`}
+          <span>ПРЕВЬЮ {mode === "edit" ? `— ${editId}.css` : `— с нуля («${scratchName || "my-theme"}»)`}</span>
+          <button
+            type="button"
+            className="tt-drift-toggle"
+            disabled={blobs.length === 0}
+            onClick={() => setDrifting((d) => !d)}
+            title={drifting ? "Остановить дрейф пятен" : "Запустить дрейф пятен"}
+          >
+            {drifting ? "⏸ Стоп" : "▶ Дрейф"}
+          </button>
         </div>
-        <Preview />
+        <Preview drifting={drifting && blobs.length > 0} />
 
         <div className="tt-demos-label">ДОПОЛНИТЕЛЬНО: код, семантика, матовое стекло</div>
         <DemoStrip />
@@ -623,9 +633,9 @@ function Slider({
 
 // ─── Preview (real components + chrome replica) ─────────────────────────
 
-function Preview() {
+function Preview({ drifting }: { drifting: boolean }) {
   return (
-    <div className="tt-window">
+    <div className={drifting ? "tt-window tt-window-drift" : "tt-window"}>
       {/* Sidebar replica */}
       <div className="tt-win-sidebar">
         <div className="tt-win-brand">
@@ -868,10 +878,20 @@ const TT_CSS = `
 /* stage */
 .tt-stage{flex:1;overflow-y:auto;background:#12110e;padding:20px 24px 32px}
 .tt-stage-label,.tt-demos-label{font-size:10px;color:#4a4038;letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px}
+.tt-stage-label{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.tt-drift-toggle{background:#25221c;border:1px solid #3a352e;color:#c8bca8;border-radius:5px;padding:4px 11px;font-size:11px;letter-spacing:0;text-transform:none;cursor:pointer;font-family:inherit;transition:all .12s}
+.tt-drift-toggle:hover:not(:disabled){border-color:#b8763e;color:#e2d6c2}
+.tt-drift-toggle:disabled{opacity:.4;cursor:default}
 .tt-demos-label{margin-top:26px}
 
 /* preview window (themed by tokens) */
 .tt-window{display:flex;height:660px;border-radius:10px;overflow:hidden;border:1px solid var(--border);box-shadow:0 24px 60px #00000066;background:var(--page-bg, var(--bg))}
+/* Drift replicates the live lava animation: oversized background (180%) panned
+   via background-position, so the blobs appear to float. Faithful to the
+   theme's own @keyframes (*-lava-drift on body) but applied to the preview
+   element with a generic name so it works for any theme that has blobs. */
+.tt-window-drift{background-size:180% 180%;animation:tt-drift 20s ease-in-out infinite}
+@keyframes tt-drift{0%,100%{background-position:0% 0%,100% 100%,50% 50%}50%{background-position:100% 50%,0% 50%,50% 0%}}
 .tt-win-sidebar{width:188px;min-width:188px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column}
 .tt-win-brand{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border)}
 .tt-win-logo{width:22px;height:22px;border-radius:5px;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
