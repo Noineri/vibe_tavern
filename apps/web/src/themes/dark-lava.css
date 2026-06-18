@@ -1,25 +1,23 @@
 /* ══════════════════════════════════════════════════════════════
    Midnight Lava Lamp (Dark Theme)
-   Deep amethyst liquid with neon pink, red, and amber wax blobs.
+   Deep crimson liquid with indigo, pink, and amber wax blobs.
    Black panels and bright amber accents for high contrast.
    ══════════════════════════════════════════════════════════════ */
 :root.dark-lava {
   /* ─── Backgrounds (Solid fallback for SVG fills and utilities) ─── */
-  --bg:        oklch(29.039% 0.15056 291.067);    /* Глубокий аметистовый фон (жидкость лампы) */
+  --bg:        oklch(0.125 0.26 14);    /* Глубокий малиновый фон (жидкость лампы) */
   
   /* ─── Animated Lava Lamp Background ─── */
   /* Множество плавающих цветовых пятен для сложного градиента */
   --page-bg:
-    radial-gradient(circle at 15% 25%, oklch(61.741% 0.12648 85.038 / 0.233), transparent 50%),  /* Желтый (верх лево) */
-    radial-gradient(circle at 35% 50%, oklch(0.28 0.12 340 / 55%), transparent 55%), /* Розовый (центр лево) */
-    radial-gradient(circle at 75% 20%, oklch(0.25 0.08 20 / 50%), transparent 45%),  /* Красный (верх право) */
-    radial-gradient(circle at 80% 55%, oklch(0.30 0.10 60 / 55%), transparent 50%),  /* Янтарный (центр право) */
-    radial-gradient(circle at 25% 85%, oklch(29.612% 0.11512 31.069 / 0.55), transparent 50%),  /* Насыщенный янтарный (низ лево) */
-    radial-gradient(circle at 85% 90%, oklch(57.745% 0.12885 65.656 / 0.37), transparent 55%),  /* Желтый свет (низ право) */
+    radial-gradient(circle at 15% 25%, oklch(0.47 0.205 233 / 23%), transparent 67%),  /* Индиго (верх лево) */
+    radial-gradient(circle at 35% 50%, oklch(0.28 0.12 340 / 55%), transparent 55%),  /* Розовый (центр лево) */
+    radial-gradient(circle at 25% 85%, oklch(0.296 0.115 31.1 / 55%), transparent 50%),  /* Насыщенный янтарный (низ лево) */
+    radial-gradient(circle at 85% 90%, oklch(0.74 0.185 65.7 / 37%), transparent 55%),  /* Янтарно-жёлтый свет (низ право) */
     var(--bg);
 
   /* ─── Surfaces (Black panels with slight translucency) ─── */
-  --surface:   oklch(0.12 0 0 / 85%);    /* Почти глухой черный для сайдбара и инпута */
+  --surface:   oklch(0.02 0.055 269 / 85%);    /* Глухой черный с синим отливом для сайдбара и инпута */
   --s2:        oklch(0.16 0 0 / 85%);    
   --s3:        oklch(0.20 0 0 / 85%);    
 
