@@ -113,6 +113,10 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			await this.stores.characters.setFolderAvatarFull(brandId<CharacterId>(characterId), f.ext);
 			avatarFullExt = f.ext;
 		}
+		// Direct upload: the avatar's bytes are NOT in the gallery, so clear
+		// avatarSourceAssetId. This ensures a later setAvatarFromGallery salvages
+		// this avatar (rather than skipping it as a gallery-derived duplicate).
+		await this.stores.characters.setAvatarSourceAssetId(brandId<CharacterId>(characterId), null);
 		return { avatarExt: ext, avatarFullExt };
 	};
 
@@ -211,13 +215,16 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 
 	/** D8: Set a gallery image as the character's avatar. Before overwriting,
 	 *  the current avatar is salvaged into the gallery as a new row carrying
-	 *  its full bytes + its crop geometry, so nothing is ever lost and the prior
-	 *  avatar can be restored with its exact crop pre-filled. The gallery always
-	 *  shows full images; `avatarCropJson` is pure restore metadata.
+	 *  its full bytes + its crop geometry — BUT only when the current avatar is
+	 *  a direct upload (avatarSourceAssetId === null). If the current avatar
+	 *  was itself set from a gallery image, its bytes already live in the
+	 *  gallery under avatarSourceAssetId, so salvaging would duplicate it
+	 *  (Bug #3). The gallery always shows full images; `avatarCropJson` is
+	 *  pure restore metadata.
 	 *
-	 *  Flow: salvage (if a prior avatar exists) → write new crop thumbnail →
-	 *  copy the source gallery image as the avatar full → store crop geometry
-	 *  on the character. */
+	 *  Flow: salvage (only if prior avatar is a direct upload) → write new
+	 *  crop thumbnail → copy the source gallery image as the avatar full →
+	 *  store crop geometry + record the source row id on the character. */
 	setAvatarFromGallery = async (
 		characterId: string,
 		sourceAssetId: string,
@@ -231,16 +238,20 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			throw new Error("Character asset not found");
 		}
 
-		// ── Salvage the current avatar (full bytes + its crop) into the gallery.
+		// ── Salvage the current avatar (full bytes + its crop) into the gallery —
+		// but ONLY when the current avatar is a direct upload. If it was itself
+		// set from a gallery image, its bytes already live in the gallery under
+		// avatarSourceAssetId and salvaging would create a duplicate (Bug #3).
 		let salvagedAssetId: string | null = null;
 		const character = await this.stores.characters.getById(cid);
+		const priorSourceAssetId = character?.avatarSourceAssetId ?? null;
 		const priorCropJson = character?.avatarCropJson ?? null;
 		const priorFullExt = character?.avatarFullExt ?? null;
 		const priorThumbExt = character?.avatarExt ?? null;
 		// Prefer the dedicated full; fall back to the thumbnail (which IS the
 		// uncropped original when no separate full was ever stored).
 		const salvageExt = priorFullExt ?? priorThumbExt;
-		if (salvageExt) {
+		if (salvageExt && priorSourceAssetId === null) {
 			const salvageBuffer = priorFullExt
 				? await this.assetService.loadCharacterAvatarFullBuffer(characterId, priorFullExt)
 			: await this.assetService.loadCharacterAvatarBuffer(characterId, priorThumbExt!);
@@ -268,8 +279,11 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			avatarFullExt = f.ext;
 		}
 
-		// ── Store the crop geometry on the character (for the next salvage/restore).
+		// ── Store the crop geometry + record the source row on the character.
+		// avatarSourceAssetId = sourceAssetId marks this avatar as gallery-derived
+		// so the NEXT swap skips salvage (its bytes already live in the gallery).
 		await this.stores.characters.setAvatarCropJson(cid, cropJson);
+		await this.stores.characters.setAvatarSourceAssetId(cid, sourceAssetId);
 
 		const refreshed = await this.stores.characters.getById(cid);
 		return {

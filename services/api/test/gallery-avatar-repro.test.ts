@@ -102,22 +102,63 @@ describe("Bug #2/#3 adapter-level repro: gallery avatar swap + direct upload", (
 		expect(new Uint8Array(await s2!.arrayBuffer())).toEqual(IMG_B);
 	});
 
-	test("Bug #3: gallery A→B grows the gallery by a salvaged duplicate (current buggy behavior)", async () => {
-		// This test PINS the current (buggy) behavior so the fix in Bug #3 can flip
-		// it to "count stays 3". Salvage currently fires unconditionally.
+	test("Bug #3 FIXED: gallery A→B does NOT duplicate A (salvage skipped, prior is gallery-derived)", async () => {
+		// The current avatar (A) was set from the gallery, so its bytes already
+		// live in the gallery under row idA. Salvaging it on the A→B swap would
+		// create a duplicate of A. With the avatarSourceAssetId gate, salvage is
+		// skipped and the gallery count stays at 2 (A + B), not 3.
 		const { dataRoot, stores, assetService, characters } = await setup();
 		const char = await stores.characters.create({ name: "Kiran" });
 		const cid = char.id;
 		const idA = await addGalleryImage(stores, assetService, cid, IMG_A, 0);
 		const idB = await addGalleryImage(stores, assetService, cid, IMG_B, 1);
 
-		await characters.setAvatarFromGallery(cid, idA, new File([CROP_A], "c.png", { type: "image/png" }), "{}");
+		const r1 = await characters.setAvatarFromGallery(cid, idA, new File([CROP_A], "c.png", { type: "image/png" }), "{}");
 		expect((await stores.characterAssets.listByCharacter(cid)).length).toBe(2); // salvage skipped: no prior avatar yet
+		expect(r1.salvagedAssetId).toBeNull();
+		// The character now records that its avatar came from idA.
+		expect((await stores.characters.getById(cid))?.avatarSourceAssetId).toBe(idA);
 
-		await characters.setAvatarFromGallery(cid, idB, new File([CROP_B], "c.png", { type: "image/png" }), "{}");
-		// CURRENT BUG: salvage rescues the prior (gallery-derived) avatar A as a NEW row → 3.
-		// AFTER the avatarSourceAssetId fix, this should be 2 (no salvage when prior came from gallery).
-		expect((await stores.characterAssets.listByCharacter(cid)).length).toBe(3);
+		const r2 = await characters.setAvatarFromGallery(cid, idB, new File([CROP_B], "c.png", { type: "image/png" }), "{}");
+		// FIXED: salvage is skipped because the prior avatar (A) is gallery-derived
+		// (avatarSourceAssetId === idA !== null). No duplicate of A is created.
+		expect((await stores.characterAssets.listByCharacter(cid)).length).toBe(2);
+		expect(r2.salvagedAssetId).toBeNull();
+		// avatarSourceAssetId now points at the new source row idB.
+		expect((await stores.characters.getById(cid))?.avatarSourceAssetId).toBe(idB);
+		expect(new Uint8Array(await diskFull(dataRoot, cid))).toEqual(IMG_B);
+	});
+
+	test("Bug #3 salvage still fires for a DIRECT-upload avatar (gating preserves this path)", async () => {
+		// The gate must NOT disable salvage entirely: a direct-upload avatar's
+		// bytes are NOT in the gallery, so the first gallery swap MUST salvage it
+		// (otherwise the user loses their uploaded avatar with no recovery).
+		const { dataRoot, stores, assetService, characters } = await setup();
+		const char = await stores.characters.create({ name: "Kiran" });
+		const cid = char.id;
+		const idB = await addGalleryImage(stores, assetService, cid, IMG_B, 0);
+
+		// Direct upload first: avatarSourceAssetId cleared to null.
+		await characters.uploadCharacterAvatar(
+			cid,
+			new File([DIRECT_X], "crop.png", { type: "image/png" }),
+			new File([DIRECT_X_FULL], "full.png", { type: "image/png" }),
+		);
+		expect((await stores.characters.getById(cid))?.avatarSourceAssetId).toBeNull();
+		expect((await stores.characterAssets.listByCharacter(cid)).length).toBe(1); // only gallery B
+
+		// Swap to gallery B: the direct-upload avatar (DIRECT_X_FULL) MUST be
+		// salvaged into the gallery because it's not there yet.
+		const r = await characters.setAvatarFromGallery(cid, idB, new File([CROP_B], "c.png", { type: "image/png" }), "{}");
+		expect(r.salvagedAssetId).not.toBeNull();
+		const rows = await stores.characterAssets.listByCharacter(cid);
+		expect(rows.length).toBe(2); // gallery B + salvaged direct-upload
+		// The salvaged row carries the direct-upload full bytes.
+		const salvagedRow = rows.find((row) => row.id === r.salvagedAssetId)!;
+		const salvagedBytes = await assetService.loadGalleryImageBuffer(cid, salvagedRow.id, salvagedRow.ext);
+		expect(new Uint8Array(salvagedBytes!)).toEqual(DIRECT_X_FULL);
+		// avatarSourceAssetId now points at idB.
+		expect((await stores.characters.getById(cid))?.avatarSourceAssetId).toBe(idB);
 		expect(new Uint8Array(await diskFull(dataRoot, cid))).toEqual(IMG_B);
 	});
 
