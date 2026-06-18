@@ -88,6 +88,8 @@ export interface Character {
   avatarExt: string | null;
   /** Extension of the folder-resident *full* (uncropped) avatar at data/characters/{id}/avatar-full.{avatarFullExt}. Null = no separate full (the thumbnail avatar is itself uncropped, or none). Backed by the avatar-full folder migration. */
   avatarFullExt: string | null;
+  /** Gallery row id the avatar was last set from (setAvatarFromGallery). Null when the avatar came from a direct upload or was never set from a gallery image. Used by the next avatar switch to skip salvage when the prior avatar's bytes already live in the gallery under this id (prevents gallery duplication). */
+  avatarSourceAssetId: string | null;
   /** When true, the character's described gallery images are injected as a text prompt layer. */
   includeGalleryInPrompt: boolean;
   /** When true, the avatar appearance description is injected as a text prompt layer. */

@@ -31,6 +31,7 @@ export interface CreateCharacterData {
   avatarCropJson?: string | null;
   avatarExt?: string | null;
   avatarFullExt?: string | null;
+  avatarSourceAssetId?: string | null;
   includeGalleryInPrompt?: boolean;
   includeAvatarInPrompt?: boolean;
   avatarDescription?: string | null;
@@ -71,6 +72,8 @@ export interface Character {
   avatarExt: string | null;
   /** Extension of the folder-resident FULL (uncropped) avatar at {id}/avatar-full.{avatarFullExt}. Null = no separate full image (the thumbnail avatar is itself uncropped, or none). */
   avatarFullExt: string | null;
+  /** Gallery row id the avatar was last set from (setAvatarFromGallery). Null = avatar came from a direct upload or was never set from a gallery image. */
+  avatarSourceAssetId: string | null;
   // Media gallery / avatar-appearance prompt injection (MEDIA_GALLERY_BACKEND_PLAN).
   includeGalleryInPrompt: boolean;
   includeAvatarInPrompt: boolean;
@@ -230,6 +233,7 @@ export class CharacterStore {
         avatarCropJson: data.avatarCropJson ?? null,
         avatarExt: data.avatarExt ?? null,
         avatarFullExt: data.avatarFullExt ?? null,
+        avatarSourceAssetId: data.avatarSourceAssetId ?? null,
         includeGalleryInPrompt: data.includeGalleryInPrompt ?? false,
         includeAvatarInPrompt: data.includeAvatarInPrompt ?? false,
         avatarDescription: data.avatarDescription ?? null,
@@ -362,6 +366,7 @@ export class CharacterStore {
         avatarFullAssetId: original.avatarFullAssetId,
         avatarCropJson: original.avatarCropJson,
         avatarExt: original.avatarExt,
+        avatarSourceAssetId: original.avatarSourceAssetId,
         status: 'active',
         createdAt: now,
         updatedAt: now,
@@ -546,6 +551,7 @@ export class CharacterStore {
       avatarCropJson: row.avatarCropJson ?? null,
       avatarExt: row.avatarExt ?? null,
       avatarFullExt: row.avatarFullExt ?? null,
+      avatarSourceAssetId: row.avatarSourceAssetId ?? null,
       includeGalleryInPrompt: row.includeGalleryInPrompt,
       includeAvatarInPrompt: row.includeAvatarInPrompt,
       avatarDescription: row.avatarDescription ?? null,

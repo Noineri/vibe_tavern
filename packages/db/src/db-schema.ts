@@ -34,6 +34,14 @@ export const characters = sqliteTable('characters', {
   // editor). Null = no separate full image; the thumbnail avatar.{avatarExt} is
   // itself uncropped (no crop was made) and serves both sizes. See AVATAR_FULL_PLAN.
   avatarFullExt: text('avatar_full_ext'),
+  // When the avatar was set from a gallery image (setAvatarFromGallery), this
+  // holds that gallery row's id. It lets the NEXT avatar switch skip salvage —
+  // the prior avatar's full bytes already live in the gallery under this id, so
+  // salvaging would only create a (cropped) duplicate. Null = avatar came from
+  // a direct upload (uploadCharacterAvatar) and is NOT otherwise in the gallery,
+  // so the next switch must salvage it or it's lost. See D8 / salvage logic in
+  // character-adapter.
+  avatarSourceAssetId: text('avatar_source_asset_id'),
   // Media gallery / avatar-appearance prompt injection (MEDIA_GALLERY_BACKEND_PLAN).
   includeGalleryInPrompt: integer('include_gallery_in_prompt', { mode: 'boolean' }).notNull().default(false),
   includeAvatarInPrompt: integer('include_avatar_in_prompt', { mode: 'boolean' }).notNull().default(false),
