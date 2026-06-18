@@ -84,10 +84,38 @@ function encodeText(keyword: string, text: string): Uint8Array {
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
+/** V2-era ("v1CharData") content fields SillyTavern keeps at the top level
+ *  alongside the V3 `data` block, for backward compat with V2-only parsers.
+ *  Strict V2 parsers (janitor.ai and similar) read `name` / `description` /
+ *  `first_mes` etc. from the TOP level — without these duplicates the card
+ *  reads as empty even though `data` is fully populated.
+ *
+ *  Each entry maps a V3 `data` key → the V2 top-level key name. Note the one
+ *  rename: V3 `creator_notes` is exposed as V2 `creatorcomment`. Source of
+ *  truth: the `v1CharData` typedef in SillyTavern/public/scripts/char-data.js. */
+const V2_TOPLEVEL_FIELDS: ReadonlyArray<readonly [dataKey: string, v2Key: string]> = [
+  ["name", "name"],
+  ["description", "description"],
+  ["personality", "personality"],
+  ["scenario", "scenario"],
+  ["first_mes", "first_mes"],
+  ["mes_example", "mes_example"],
+  ["tags", "tags"],
+  ["creator_notes", "creatorcomment"],
+];
+
 /**
- * Embed character card JSON into a PNG buffer.
- * Inserts "chara" (v2) + "ccv3" (v3) tEXt chunks before IEND.
- * Removes existing chara/ccv3 chunks first.
+ * Embed character card JSON into a PNG buffer as SillyTavern-compatible
+ * `chara` (v2) + `ccv3` (v3) tEXt chunks before IEND. Removes existing
+ * chara/ccv3 chunks first.
+ *
+ * The written payload mirrors what SillyTavern itself produces on export: the
+ * canonical V3 structure stays under `data`, and the V2-era fields are
+ * duplicated at the top level (plus ST-stamped metadata: `create_date`,
+ * `fav`, `creatorcomment`, `avatar`, `talkativeness`). The SAME base64 payload
+ * goes into both chunks. This dual shape is what lets strict V2 parsers find
+ * the character data where they expect it; emitting only `{spec, spec_version,
+ * data}` makes such parsers see an empty card.
  */
 export function embedCharaMetadata(pngBytes: Uint8Array, json: string): Uint8Array {
   const chunks = extractChunks(pngBytes);
@@ -97,13 +125,42 @@ export function embedCharaMetadata(pngBytes: Uint8Array, json: string): Uint8Arr
       chunks.splice(i, 1);
     }
   }
-  // ccv3 first (v3 spec), then chara (v2 compat)
-  try {
-    const v3 = JSON.parse(json);
-    v3.spec = "chara_card_v3"; v3.spec_version = "3.0";
-    chunks.splice(-1, 0, { name: "tEXt", data: encodeText("ccv3", utf8ToBase64(JSON.stringify(v3))) });
-  } catch { /* skip ccv3 */ }
-  chunks.splice(-1, 0, { name: "tEXt", data: encodeText("chara", utf8ToBase64(json)) });
+
+  const card = JSON.parse(json) as Record<string, unknown>;
+  card.spec = "chara_card_v3";
+  card.spec_version = "3.0";
+
+  // Flatten the full v1CharData field set to the top level (mirrors ST's
+  // export shape). `data` stays canonical; the top-level copies are the V2
+  // compat surface. We always overwrite from `data` so the two never drift —
+  // the V3 block under `data` is the source of truth.
+  const data = card.data;
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const d = data as Record<string, unknown>;
+    for (const [dataKey, v2Key] of V2_TOPLEVEL_FIELDS) {
+      if (dataKey in d) card[v2Key] = d[dataKey];
+    }
+  }
+
+  // ST stamps these v1CharData meta fields at the top level on every export.
+  // Only set when absent so a re-embed of an already-ST-shaped card is stable.
+  // `talkativeness` also lives under data.extensions in ST; prefer that if present.
+  const ext = data && typeof data === "object" && !Array.isArray(data)
+    ? (data as Record<string, unknown>).extensions
+    : undefined;
+  const extTalkativeness = ext && typeof ext === "object" && !Array.isArray(ext)
+    ? (ext as Record<string, unknown>).talkativeness
+    : undefined;
+  if (card.create_date == null) card.create_date = new Date().toISOString();
+  if (card.fav == null) card.fav = false;
+  if (card.creatorcomment == null) card.creatorcomment = "";
+  if (card.avatar == null) card.avatar = "none";
+  if (card.talkativeness == null) card.talkativeness = extTalkativeness ?? "0.5";
+
+  const payload = utf8ToBase64(JSON.stringify(card));
+  // ST writes `chara` first, then `ccv3`, both carrying the identical payload.
+  chunks.splice(-1, 0, { name: "tEXt", data: encodeText("chara", payload) });
+  chunks.splice(-1, 0, { name: "tEXt", data: encodeText("ccv3", payload) });
   return encodeChunks(chunks);
 }
 
