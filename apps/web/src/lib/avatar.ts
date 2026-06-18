@@ -47,9 +47,29 @@ export function resolveEntityAvatarUrl(args: {
 		//
 		// Append ?v={ms} from updatedAt so a re-upload (same extension → same
 		// path) busts the browser's 1-year immutable cache. Without it the stale
-		// thumbnail shows until a hard reload.
+		// thumbnail shows until a hard reload. See the else-branch below for the
+		// defensive fallback when updatedAt is absent.
 		const ms = updatedAt ? Date.parse(updatedAt) : NaN;
-		const v = Number.isFinite(ms) ? `?v=${ms}` : "";
+		let v: string;
+		if (Number.isFinite(ms)) {
+			v = `?v=${ms}`;
+		} else {
+			// Defense in depth: if updatedAt is missing/invalid (a DTO regression),
+			// fall back to Date.now() so the URL still changes per render and the
+			// avatar updates (with visible flicker as a signal) rather than being
+			// pinned behind the 1-year cache. The backend always provides updatedAt
+			// (CharacterRecord.updatedAt), so this branch is unreachable in normal
+			// operation — a dev warning surfaces any future DTO that drops it.
+			if (import.meta.env.DEV) {
+				console.warn(
+					"[avatar] resolveEntityAvatarUrl: missing/invalid updatedAt for",
+					kind,
+					id,
+					"— folder avatar will bust on every render (DTO regression)",
+				);
+			}
+			v = `?v=${Date.now()}`;
+		}
 		return preferFull
 			? `${getGatewayBaseUrl()}/api/${kind}/${id}/avatar/full${v}`
 			: `${getGatewayBaseUrl()}/api/${kind}/${id}/avatar${v}`;

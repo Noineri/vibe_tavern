@@ -36,6 +36,8 @@ export type CharacterRecord = {
   avatarExt: string | null;
   /** Extension of the folder-resident FULL (uncropped) avatar at {id}/avatar-full.{avatarFullExt}. Null = no separate full (the thumbnail avatar is itself uncropped, or none). */
   avatarFullExt: string | null;
+  /** Wall-clock timestamp of the last avatar/field change (ISO string). Drives the frontend avatar URL cache-bust (`?v={ms}`). MUST be present on every serialized character DTO; without it the 1-year Cache-Control on avatar serve keeps stale bytes forever. */
+  updatedAt: string;
   // ─── Media injection (A7) ────────────────────────────────────────────
   /** Vision-generated appearance description of the avatar. Null = undescribed. */
   avatarDescription: string | null;
@@ -90,6 +92,7 @@ export function toCharacterRecord(
     avatarCropJson: character.avatarCropJson,
     avatarExt: character.avatarExt,
     avatarFullExt: character.avatarFullExt,
+    updatedAt: character.updatedAt,
     avatarDescription: character.avatarDescription,
     includeAvatarInPrompt: character.includeAvatarInPrompt,
     includeGalleryInPrompt: character.includeGalleryInPrompt,

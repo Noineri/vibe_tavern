@@ -19,8 +19,10 @@ installer/output/
 *.zip
 *.7z
 
-# Local runtime data
+# Local runtime data (including isolated agent test instances, e.g. data-agent/)
 data/
+data-agent/
+data-*/
 *.sqlite
 *.sqlite-*
 *.db
