@@ -55,7 +55,7 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 								<span className="ml-auto font-ui text-[calc(var(--ui-fs)-5px)] text-t3">12:45</span>
 							</div>
 							<div className="font-body text-[length:var(--mfs)] leading-[1.55] text-t1 opacity-90">
-								"The door groans as a tall figure steps from the shadows, silver eyes catching what little light remains."
+								{t("preview_char_message")}
 							</div>
 							<div className="mt-1.5 flex gap-3">
 								<Icons.Regen />
@@ -69,14 +69,14 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 							</div>
 							<div className="my-0.5 rounded-md bg-user-bg px-3 py-2.5">
 								<div className="font-body text-[length:var(--mfs)] leading-[1.55] text-t1 opacity-90">
-									Hello? Are you... are you hurt?
+									{t("preview_user_message")}
 								</div>
 							</div>
 						</div>
 						<div className="border-t border-border px-3 py-2.5">
 							<div className="flex items-center gap-2">
 								<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-s3 text-t3"><Icons.User /></div>
-								<div className="flex-1 rounded-md border border-border bg-s2 px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">Type a message...</div>
+								<div className="flex-1 rounded-md border border-border bg-s2 px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("preview_input_placeholder")}</div>
 								<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent"><Icons.Caret direction="r" /></div>
 							</div>
 						</div>

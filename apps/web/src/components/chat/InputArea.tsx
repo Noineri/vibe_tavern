@@ -532,7 +532,7 @@ function ChatImpersonateAiPill({
     const modelName = settings.modelName || bootstrapUiSettings?.aiAssistantModelName || "";
     if (!activeChatId) return;
     if (!providerId) {
-      toast.error("Select an AI provider in the gear settings first.");
+      toast.error(t("select_provider_first"));
       return;
     }
     setLoading(true);

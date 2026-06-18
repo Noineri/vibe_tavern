@@ -710,7 +710,7 @@ export function AiAssistantModal({
                   {/* Raw model output debug */}
                   {streamedOutput && (
                     <details className="rounded-md border border-border bg-bg" style={{ padding: 12, marginBottom: 16 }} open={Object.keys(parsedFields).length === 0}>
-                      <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">Raw model output</summary>
+                      <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("raw_model_output")}</summary>
                       <pre className="mt-2 max-h-[240px] overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-[1.45] text-t2">{streamedOutput}{streaming && <span className="animate-pulse text-accent">▌</span>}</pre>
                     </details>
                   )}
@@ -752,7 +752,7 @@ export function AiAssistantModal({
                                           setFieldTargets(prev => ({ ...prev, [itemKey]: nextValue as keyof MdImportResult }));
                                         }}
                                         searchable={false}
-                                        placeholder="Map to…"
+                                        placeholder={t("map_to_placeholder")}
                                         className="h-8 px-3 py-0 text-[12px]"
                                       />
                                     </div>
@@ -787,7 +787,7 @@ export function AiAssistantModal({
                                       setFieldTargets(prev => ({ ...prev, [key]: nextValue as keyof MdImportResult }));
                                     }}
                                     searchable={false}
-                                    placeholder="Map to…"
+                                    placeholder={t("map_to_placeholder")}
                                     className="h-8 px-3 py-0 text-[12px]"
                                   />
                                 </div>

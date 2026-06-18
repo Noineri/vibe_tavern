@@ -297,7 +297,7 @@ export function LorebookAccordion({
                           onToggleActionMenu();
                         }}
                       >
-                        <Ic.edit /> Edit
+                        <Ic.edit /> {t("edit")}
                       </div>
                       <div
                         className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-danger transition-colors hover:bg-s2 active:bg-s3"

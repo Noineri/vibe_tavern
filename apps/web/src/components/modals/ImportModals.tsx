@@ -653,7 +653,7 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
             <div className="mb-3 flex items-center justify-between rounded-lg border border-border bg-s2 px-4 py-3">
               <div>
                 <div className="font-ui text-sm font-medium text-t1">{t("parsed_preview")}</div>
-                <div className="font-ui text-xs text-t3">{preview.fileName} · {preview.messageCount} messages · Character: {preview.characterName}</div>
+                <div className="font-ui text-xs text-t3">{preview.fileName} · {preview.messageCount} {t("import_messages_label")} · {t("import_character_label")} {preview.characterName}</div>
               </div>
               <div className="rounded-full bg-success-dim px-2.5 py-0.5 font-ui text-xs font-medium text-success-text">{t("ready")}</div>
             </div>

@@ -91,6 +91,8 @@ const HARDCODED_ALLOWLIST = new Set([
   "true", "false", "json", "csv", "html", "text", "code", "name", "value",
   "key", "type", "role", "url", "email", "token",
   "sillytavern",  // external product name, not translated (like "Vibe Tavern")
+  "nsfw",         // international term, used as-is across locales
+  "silvius",      // proper name in the mobile-settings mock preview
 ]);
 
 interface Violation {

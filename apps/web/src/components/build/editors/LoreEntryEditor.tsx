@@ -262,8 +262,8 @@ export function LoreEntryEditor({
         )}
         {testMutData && (
           <div className="flex items-center gap-2 rounded-md border border-success bg-success-dim px-3 py-2 text-[12px] font-medium text-success-text">
-            <Ic.check /> Activated: {testMutData.activatedIds.length} /{" "}
-            {testMutData.totalEntries} entries
+            <Ic.check /> {t("activated_label")} {testMutData.activatedIds.length} /{" "}
+            {testMutData.totalEntries} {t("entries_label")}
           </div>
         )}
 
@@ -861,7 +861,7 @@ function LoreKeysAiPill({
     const modelName = settings.modelName || bootstrapUiSettings?.aiAssistantModelName || "";
     if (!entry.content.trim()) return;
     if (!providerId) {
-      toast.error("Select an AI provider in the gear settings first.");
+      toast.error(t("select_provider_first"));
       return;
     }
     setLoading(true);

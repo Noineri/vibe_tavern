@@ -589,7 +589,7 @@ export function CharacterForm({
 
       {/* Advanced separator */}
       <div className="border-b border-border font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t3 mt-6 mb-3 pb-1.5">
-        Advanced Fields (V3)
+        {t("advanced_fields_v3")}
       </div>
 
       {/* Post-History Instructions */}

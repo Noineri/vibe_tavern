@@ -503,7 +503,7 @@ export function ProviderModal({
       {confirmDelete && (
         <DestructiveConfirmModal
           title={t("delete_provider_title")}
-          body={<>Delete profile <b>{form?.name}</b>? {t("delete_provider_body")}</>}
+          body={<>{t("delete_profile_inline")} <b>{form?.name}</b>? {t("delete_provider_body")}</>}
           confirmLabel={t("delete_btn")}
           onConfirm={() => void confirmDeleteAction()}
           onCancel={() => setConfirmDelete(false)}
@@ -615,7 +615,7 @@ export function ProviderModal({
                   {/* Hint when no models are loaded yet but provider is selected */}
                   {!fetching && models.length === 0 && selectedPreset && !showVisionFallback && (
                     <div className="mt-2 text-[12px] text-t3 italic">
-                      Refresh models to see vision-capable options
+                      {t("refresh_models_vision_hint")}
                     </div>
                   )}
 
