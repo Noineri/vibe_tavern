@@ -34,6 +34,7 @@ import {
   serializePageBg,
   upsertPageBgInCss,
   serialize,
+  describeColor,
   oklchToHex,
   hexToOklch,
   applyOverridesToCss,
@@ -109,6 +110,8 @@ export function ThemeTuner() {
   const [blobs, setBlobs] = useState<Blob[]>([]);
   const [blobOriginals, setBlobOriginals] = useState<Blob[]>([]);
   const [selectedBlob, setSelectedBlob] = useState<number | null>(null);
+  const [tokenComments, setTokenComments] = useState<Map<string, string>>(() => new Map());
+  const [tokenCommentOriginals, setTokenCommentOriginals] = useState<Map<string, string>>(() => new Map());
   const [drifting, setDrifting] = useState(true);
   const [exportText, setExportText] = useState<string | null>(null);
 
@@ -131,6 +134,16 @@ export function ThemeTuner() {
       }
       setValues(v);
       setOriginals(o);
+      // Seed the per-token comment fields from the parsed trailing /* ... */
+      // labels ("" for tokens that have none).
+      const tc = new Map<string, string>();
+      const tco = new Map<string, string>();
+      for (const t of tokens) {
+        tc.set(t.name, t.comment);
+        tco.set(t.name, t.comment);
+      }
+      setTokenComments(tc);
+      setTokenCommentOriginals(tco);
       // Parse lava-style blobs from --page-bg (empty for vignette/opaque themes;
       // the blob editor stays hidden for those).
       const pageBg = extractTokenValue(THEME_RAW[editId], "--page-bg");
@@ -198,6 +211,15 @@ export function ThemeTuner() {
     setBlobs((prev) => prev.map((b, i) => (i === selectedBlob ? { ...b, [key]: v } : b)));
   }
 
+  function updateBlobComment(v: string) {
+    if (selectedBlob == null) return;
+    setBlobs((prev) => prev.map((b, i) => (i === selectedBlob ? { ...b, comment: v } : b)));
+  }
+
+  function updateTokenComment(name: string, v: string) {
+    setTokenComments((prev) => new Map(prev).set(name, v));
+  }
+
   function resetBlob() {
     if (selectedBlob == null) return;
     const orig = blobOriginals[selectedBlob];
@@ -215,7 +237,9 @@ export function ThemeTuner() {
     const color: OkColor = last
       ? { ...last.color, a: last.color.a ?? 0.5 }
       : { l: 0.6, c: 0.15, h: 290, a: 0.5 };
-    const next = [...blobs, { x: 50, y: 50, color, size: 50 }];
+    // Prefill the comment from the color so the new layer is labeled the
+    // moment it's added; the user can edit or clear it in the editor.
+    const next = [...blobs, { x: 50, y: 50, color, size: 50, comment: describeColor(color) }];
     setBlobs(next);
     setSelectedBlob(next.length - 1);
     setSelected(null);
@@ -244,7 +268,15 @@ export function ThemeTuner() {
         overrides.set(name, serialize(col));
       }
     }
-    let css = applyOverridesToCss(THEME_RAW[editId], overrides);
+    // Collect changed comments (diff vs the parsed originals) so comment-only
+    // edits export even when the color itself wasn't touched.
+    const comments = new Map<string, string>();
+    for (const name of new Set([...tokenComments.keys(), ...tokenCommentOriginals.keys()])) {
+      const cur = tokenComments.get(name) ?? "";
+      const orig = tokenCommentOriginals.get(name) ?? "";
+      if (cur !== orig) comments.set(name, cur);
+    }
+    let css = applyOverridesToCss(THEME_RAW[editId], overrides, comments);
     // Re-serialize the blob stack into --page-bg if the user moved/recolored/
     // added/removed any blob. upsert handles both themes that already declare
     // --page-bg and those (coffee/milk-coffee) that gain one for the first time.
@@ -383,6 +415,7 @@ export function ThemeTuner() {
           <BlobEditor
             index={selectedBlob}
             blob={blobs[selectedBlob]}
+            comment={blobs[selectedBlob].comment ?? ""}
             canReset={
               blobOriginals[selectedBlob] != null &&
               serializePageBg([blobs[selectedBlob]]) !==
@@ -390,16 +423,19 @@ export function ThemeTuner() {
             }
             onColorChange={updateBlobColor}
             onPosChange={updateBlobPos}
+            onCommentChange={updateBlobComment}
             onReset={resetBlob}
           />
         ) : selectedCol ? (
           <Editor
             name={selected!}
             color={selectedCol}
+            comment={tokenComments.get(selected!) ?? ""}
             hint={TOKEN_HINTS[selected!] ?? selected}
             canReset={mode === "edit" && originals.has(selected!) &&
               serialize(originals.get(selected!)!) !== serialize(selectedCol)}
             onChange={updateSelected}
+            onCommentChange={(v) => selected && updateTokenComment(selected, v)}
             onReset={resetSelected}
           />
         ) : (
@@ -465,13 +501,15 @@ function BlobRow({
 // ─── Editor (right) ─────────────────────────────────────────────────────
 
 function Editor({
-  name, color, hint, canReset, onChange, onReset,
+  name, color, comment, hint, canReset, onChange, onCommentChange, onReset,
 }: {
   name: string;
   color: OkColor;
+  comment: string;
   hint: string;
   canReset: boolean;
   onChange: (patch: Partial<OkColor>) => void;
+  onCommentChange: (v: string) => void;
   onReset: () => void;
 }) {
   return (
@@ -479,6 +517,11 @@ function Editor({
       <div className="tt-ed-name">{name}</div>
       <div className="tt-ed-hint">{hint}</div>
       <ColorFields color={color} onChange={onChange} />
+      <CommentField
+        value={comment}
+        suggest={describeColor(color)}
+        onChange={onCommentChange}
+      />
       {canReset && (
         <button type="button" className="tt-ed-reset" onClick={onReset}>Сбросить к оригиналу</button>
       )}
@@ -561,13 +604,15 @@ function ColorFields({
 /** Editor for a single --page-bg blob: full color controls (incl. alpha for
  *  layering) plus x/y anchor position and transparent-falloff size. */
 function BlobEditor({
-  index, blob, canReset, onColorChange, onPosChange, onReset,
+  index, blob, comment, canReset, onColorChange, onPosChange, onCommentChange, onReset,
 }: {
   index: number;
   blob: Blob;
+  comment: string;
   canReset: boolean;
   onColorChange: (patch: Partial<OkColor>) => void;
   onPosChange: (key: "x" | "y" | "size", v: number) => void;
+  onCommentChange: (v: string) => void;
   onReset: () => void;
 }) {
   const posTrack = "linear-gradient(to right, var(--border), var(--accent))";
@@ -576,6 +621,11 @@ function BlobEditor({
       <div className="tt-ed-name">Пятно {index + 1}</div>
       <div className="tt-ed-hint">Цветовое пятно фона страницы: цвет, прозрачность и позиция</div>
       <ColorFields color={blob.color} onChange={onColorChange} />
+      <CommentField
+        value={comment}
+        suggest={describeColor(blob.color)}
+        onChange={onCommentChange}
+      />
       <div className="tt-ed-sep" />
       <Slider label="X — позиция" min={0} max={100} step={1} value={blob.x} track={posTrack}
         onChange={(v) => onPosChange("x", v)} />
@@ -627,6 +677,41 @@ function Slider({
         value={value}
         style={{ background: track }}
         onChange={(e) => onChange(parseFloat(e.target.value))}
+      />
+    </div>
+  );
+}
+
+/** Editable CSS comment for a token or blob. Placeholder shows the
+ *  describeColor() suggestion so an empty field still hints at a label; the
+ *  «⟳ авто» button fills the field with that suggestion (overwrites whatever's
+ *  there — meant as a starting point, not live re-derivation, so user edits
+ *  survive color tweaks). */
+function CommentField({
+  value, suggest, onChange,
+}: {
+  value: string;
+  suggest: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="tt-comment">
+      <div className="tt-slider-head">
+        <span>Подпись в CSS</span>
+        <button
+          type="button"
+          className="tt-comment-regen"
+          onClick={() => onChange(suggest)}
+          title={`Подставить: ${suggest}`}
+        >⟳ авто</button>
+      </div>
+      <input
+        className="tt-comment-input"
+        type="text"
+        value={value}
+        placeholder={suggest}
+        onChange={(e) => onChange(e.target.value)}
+        spellCheck={false}
       />
     </div>
   );
@@ -977,6 +1062,12 @@ const TT_CSS = `
 .tt-ed-sep{height:1px;background:#2a2620;margin:14px 0}
 .tt-ed-reset{margin-top:12px;width:100%;padding:7px;background:transparent;color:#8a7e70;border:1px solid #3a352e;border-radius:5px;font-size:12px;cursor:pointer;font-family:inherit}
 .tt-ed-reset:hover{color:#c8bca8;border-color:#4a443c}
+.tt-comment{margin-top:12px}
+.tt-comment-regen{background:transparent;border:1px solid #3a352e;color:#8a7e70;border-radius:4px;padding:2px 7px;font-size:10.5px;cursor:pointer;font-family:inherit}
+.tt-comment-regen:hover{color:#c8bca8;border-color:#4a443c}
+.tt-comment-input{width:100%;background:#25221c;border:1px solid #3a352e;color:#e2d6c2;font-size:12.5px;border-radius:5px;padding:8px 10px;outline:none;margin-top:5px}
+.tt-comment-input:focus{border-color:#b8763e}
+.tt-comment-input::placeholder{color:#5e544a;font-style:italic}
 .tt-editor-empty{padding:40px 24px;text-align:center;color:#5e544a}
 .tt-editor-empty-icon{font-size:30px;margin-bottom:14px;color:#3a352e}
 .tt-editor-empty p{font-size:12.5px;color:#8a7e70;margin-bottom:10px}
