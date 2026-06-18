@@ -112,6 +112,50 @@ describe("AssetService folder-resident avatars (B3)", () => {
 	});
 });
 
+describe("AssetService full-avatar overwrite (Bug #2 characterization)", () => {
+	// Repro: the user reports that swapping/updating a character avatar changes
+	// the thumbnail (avatar.{ext}) but NOT the full (avatar-full.{ext}) — and the
+	// stale full survives a page reload AND a server restart. Restart-resilience
+	// rules out in-memory state, so the question is whether the backend actually
+	// overwrites {id}/avatar-full.{ext} on the second write. These tests pin the
+	// backend write+serve path in isolation (no gallery, no salvage, no UI).
+	const FULL_A = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xaa, 0xaa, 0xaa, 0xaa]);
+	const FULL_B = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb]);
+
+	test("writeCharacterAvatarFull overwrites the prior full on a second write", async () => {
+		const { dataRoot, service } = await setup();
+		await service.writeCharacterAvatarFull("char_1", new File([FULL_A], "a.png", { type: "image/png" }));
+		let onDisk = await readFile(join(dataRoot, CHARS, "char_1", "avatar-full.png"));
+		expect(onDisk).toEqual(Buffer.from(FULL_A));
+
+		// Second write with different bytes + different length — must overwrite, not append/no-op.
+		await service.writeCharacterAvatarFull("char_1", new File([FULL_B], "b.png", { type: "image/png" }));
+		onDisk = await readFile(join(dataRoot, CHARS, "char_1", "avatar-full.png"));
+		expect(onDisk).toEqual(Buffer.from(FULL_B));
+		expect(onDisk.length).toBe(FULL_B.length);
+	});
+
+	test("serveCharacterAvatarFull returns the SECOND bytes after overwrite", async () => {
+		const { service } = await setup();
+		await service.writeCharacterAvatarFull("char_1", new File([FULL_A], "a.png", { type: "image/png" }));
+		await service.writeCharacterAvatarFull("char_1", new File([FULL_B], "b.png", { type: "image/png" }));
+		const res = await service.serveCharacterAvatarFull("char_1", "png");
+		expect(res).not.toBeNull();
+		expect(new Uint8Array(await res!.arrayBuffer())).toEqual(FULL_B);
+	});
+
+	test("writeCharacterAvatarFull and writeCharacterAvatar are independent leaves", async () => {
+		// The crop (avatar.png) and full (avatar-full.png) must not alias each other.
+		const { dataRoot, service } = await setup();
+		await service.writeCharacterAvatar("char_1", new File([PNG_BYTES], "crop.png", { type: "image/png" }));
+		await service.writeCharacterAvatarFull("char_1", new File([FULL_B], "full.png", { type: "image/png" }));
+		const crop = await readFile(join(dataRoot, CHARS, "char_1", "avatar.png"));
+		const full = await readFile(join(dataRoot, CHARS, "char_1", "avatar-full.png"));
+		expect(crop).toEqual(Buffer.from(PNG_BYTES));
+		expect(full).toEqual(Buffer.from(FULL_B));
+	});
+});
+
 describe("AssetService character media gallery (A4)", () => {
 	test("writeGalleryImage writes {charId}/gallery/{rowId}.{ext} and returns {ext, mimeType}", async () => {
 		const { dataRoot, service } = await setup();
