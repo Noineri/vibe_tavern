@@ -849,6 +849,8 @@
   "gallery_import": "Импорт",
   "gallery_confirm_delete_title": "Удалить выбранные изображения",
   "gallery_confirm_delete_msg": "Удалить выбранные изображения ({n})? Это действие нельзя отменить.",
+  "gallery_confirm_delete_single_title": "Удалить изображение",
+  "gallery_confirm_delete_single_msg": "Удалить это изображение из галереи? Это действие нельзя отменить.",
   "gallery_described_badge": "ИИ",
   "gallery_footer_empty": "Без подписи",
   "gallery_include_all": "Включить всё в промпт",

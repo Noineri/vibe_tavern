@@ -849,6 +849,8 @@
   "gallery_import": "Import",
   "gallery_confirm_delete_title": "Delete selected images",
   "gallery_confirm_delete_msg": "Delete {n} selected image(s)? This cannot be undone.",
+  "gallery_confirm_delete_single_title": "Delete image",
+  "gallery_confirm_delete_single_msg": "Delete this image from the gallery? This cannot be undone.",
   "gallery_described_badge": "AI",
   "gallery_footer_empty": "No caption",
   "gallery_include_all": "Include all in prompt",

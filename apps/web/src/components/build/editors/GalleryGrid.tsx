@@ -13,6 +13,7 @@ import { useT } from "../../../i18n/context.js";
 import { useGalleryStore } from "../../../stores/gallery-store.js";
 import { GalleryViewer } from "./GalleryViewer.js";
 import { GalleryLightbox } from "./GalleryLightbox.js";
+import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 
 interface GalleryGridProps {
   characterId: string;
@@ -149,6 +150,11 @@ function GalleryTile({
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuRect, setMenuRect] = useState<DOMRect | null>(null);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
+  // Pending single-image delete — the overflow menu's Delete action opens a
+  // DestructiveConfirmModal (matching the bulk-delete path) instead of
+  // removing immediately. Gallery rows are easy to hit by accident and the
+  // delete is irreversible (file + row both gone).
+  const [pendingDelete, setPendingDelete] = useState(false);
 
   // Orientation-aware width (justified layout): derive the tile width from
   // the fixed image height × aspect ratio. The ratio is seeded from the
@@ -398,11 +404,21 @@ function GalleryTile({
           <button
             type="button"
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger transition-colors hover:bg-danger/10"
-            onClick={(e) => { e.stopPropagation(); setMenuOpen(false); void remove(characterId, id); }}
+            onClick={(e) => { e.stopPropagation(); setMenuOpen(false); setPendingDelete(true); }}
           >
             <Icons.del className="h-3.5 w-3.5" />{t("delete")}
           </button>
         </OverflowMenu>
+      )}
+
+      {pendingDelete && (
+        <DestructiveConfirmModal
+          title={t("gallery_confirm_delete_single_title")}
+          body={t("gallery_confirm_delete_single_msg")}
+          confirmLabel={t("delete")}
+          onConfirm={() => { setPendingDelete(false); void remove(characterId, id); }}
+          onCancel={() => setPendingDelete(false)}
+        />
       )}
     </div>
   );
