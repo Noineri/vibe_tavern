@@ -97,7 +97,7 @@
 
   /* ─── Markdown inline colors (Light for dark background) ─── */
   --md-italic:       oklch(0.64 0.15 90);   /* Темно-золотой / горчичный */
-  --md-bold:         oklch(0.96 0.01 230);  /* Морозный белый */
+  --md-bold:         oklch(0.695 0.115 230);  /* Морозный белый */
   --md-bold-italic:  oklch(0.545 0.17 31);  /* Темно-коралловый / магма */
   --md-quoted:       oklch(0.75 0.08 250);  /* Приглушенный светлый индиго */
 
