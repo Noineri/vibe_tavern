@@ -57,6 +57,15 @@
      it still harmonises with the blobs; the border (0.24→0.30) frames it. */
   --input-bg:  oklch(0.13 0.05 290);
 
+  /* ─── Стеклянный фон + блюр для плавающих поповеров/дропдаунов ─── */
+  /* --surface (L 0.12 / alpha 85%) слишком тяжёл для стекла: с блюром он
+     превращает лаву в плоское тёмное пятно. Отдельный --glass-bg — легче
+     (alpha 45%) и светлее (L 0.25, тот же оттенок 290), чтобы матовый отсвет
+     выжил после блюра. saturate/brightness в .glass-blur не дают стеклу
+     стать "грязным". */
+  --glass-bg:   oklch(0.25 0.02 290 / 45%);
+  --glass-blur: 14px;
+
   /* ─── Danger / Success / Info / Warning ─── */
   --danger:      oklch(0.435 0.18 18);    
   --danger-dim:  oklch(0.60 0.18 18 / 15%);    

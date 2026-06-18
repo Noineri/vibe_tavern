@@ -70,7 +70,7 @@ export function TweaksPanel({ settings, setSetting, onOpenMobileAccess, onClose 
   const langOptions = LOCALES.map((l) => ({ id: l.id, label: l.label }));
 
   return (
-    <div ref={panelRef} className="fixed right-4 top-[68px] z-[300] w-[280px] rounded-lg border border-border2 bg-surface shadow-[0_12px_28px_rgba(0,0,0,0.45)] p-3">
+    <div ref={panelRef} className="glass-blur fixed right-4 top-[68px] z-[300] w-[280px] rounded-lg border border-border2 bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] p-3">
       <div className="mb-3 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t1">{t("tweaks_title")}</div>
 
       {/* Theme */}

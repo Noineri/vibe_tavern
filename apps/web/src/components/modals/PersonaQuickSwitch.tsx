@@ -70,7 +70,7 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
         <Icons.Caret direction={isOpen ? "u" : "d"} />
       </button>
       {isOpen && (
-        <div className="absolute bottom-[calc(100%+8px)] z-[220] left-0 w-[220px] rounded-lg border border-border2 bg-surface py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
+        <div className="glass-blur absolute bottom-[calc(100%+8px)] z-[220] left-0 w-[220px] rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
           <div className="mb-1 border-b border-border px-4 pt-1 pb-2 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("persona_selection")}</div>
           {personas.map(p => (
             <button type="button"

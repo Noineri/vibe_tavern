@@ -142,7 +142,7 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
               </div>
             </CustomTooltip>
             {presetDropOpen && (
-              <div className="absolute left-0 top-full z-50 mt-1 min-w-[180px] overflow-hidden rounded-lg border border-border bg-surface shadow-[0_12px_36px_rgba(0,0,0,.45)]">
+              <div className="glass-blur absolute left-0 top-full z-50 mt-1 min-w-[180px] overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_12px_36px_rgba(0,0,0,.45)]">
                 {promptPresets.map((p) => (
                   <div
                     key={p.id}

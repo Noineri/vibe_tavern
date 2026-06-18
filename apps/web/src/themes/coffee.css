@@ -41,6 +41,13 @@
   /* ─── Chat input field background (desktop composer) ─── */
   --input-bg:  var(--bg);            /* defaults to --bg; override per-theme if --bg is tuned for a gradient */
 
+  /* ─── Glass blur strength for floating popovers/dropdowns ─── */
+  /* Opaque theme: --surface has no alpha, so --glass-bg == --surface and the
+     blur filter has nothing to show through (and --glass-blur is 0, so no GPU
+     cost). Glass themes override both tokens. */
+  --glass-bg:   var(--surface);
+  --glass-blur: 0px;
+
   /* ─── Danger (red) ─── */
   --danger:      oklch(0.62 0.20 25);    /* buttons */
   --danger-dim:  oklch(0.22 0.06 25);    /* confirm bg */

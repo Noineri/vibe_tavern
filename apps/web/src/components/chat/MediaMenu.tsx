@@ -133,7 +133,7 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
         </button>
 
         {open && (
-          <div className="absolute left-0 top-full z-50 mt-1 rounded-lg border border-border bg-surface p-2 shadow-[0_12px_36px_rgba(0,0,0,.45)]">
+          <div className="glass-blur absolute left-0 top-full z-50 mt-1 rounded-lg border border-border bg-glass-bg p-2 shadow-[0_12px_36px_rgba(0,0,0,.45)]">
             {loading && list.length === 0 ? (
               <div className="flex h-20 w-[360px] items-center justify-center text-xs text-t3">…</div>
             ) : list.length === 0 ? (

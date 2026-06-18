@@ -205,7 +205,7 @@ export function LinkBindingPopover({
 
       {open && (
         <div
-          className="absolute left-0 z-[200] mt-2 min-w-[240px] max-w-[340px] rounded-lg border border-border bg-surface shadow-theme-lg"
+          className="glass-blur absolute left-0 z-[200] mt-2 min-w-[240px] max-w-[340px] rounded-lg border border-border bg-glass-bg shadow-theme-lg"
           onClick={(e) => e.stopPropagation()}
         >
           {characters.length > 0 && (

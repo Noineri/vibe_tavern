@@ -98,7 +98,7 @@ export function DropdownSelect({
         <Select.Content
           position="popper"
           sideOffset={4}
-          className="z-[400] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
+          className="glass-blur z-[400] overflow-hidden rounded-md border border-border bg-glass-bg shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
           data-dropdown-select-content="true"
           style={{ width: "var(--radix-select-trigger-width)", maxHeight: 260 }}
         >
