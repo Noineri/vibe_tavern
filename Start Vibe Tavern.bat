@@ -10,7 +10,17 @@ if errorlevel 1 (
     exit /b 1
 )
 
-set "VITE_RP_API_URL=http://127.0.0.1:8787"
+rem ── Server port ──
+rem Default 8787; override by setting RP_PLATFORM_PORT before launching.
+rem The Dev bat sets 8788 so a dev/playtest server never collides with
+rem (and can't be killed by) another instance on the default port.
+if not defined RP_PLATFORM_PORT set "RP_PLATFORM_PORT=8787"
+
+rem The frontend resolves its API base to window.location.origin at runtime
+rem (apps/web/src/gateway-client.ts), so the prod server (frontend + API on one
+rem origin) does NOT need VITE_RP_API_URL pinned. Leaving it unset keeps the
+rem built out/ port-agnostic, so two instances on different ports can share
+rem the same build output without one breaking the other's API calls.
 
 if exist "..\mcp\.env" (
     for /f "usebackq tokens=1,* delims==" %%A in ("..\mcp\.env") do (
@@ -28,7 +38,7 @@ echo ============================================
 echo  Vibe Tavern
 echo ============================================
 echo.
-echo Server: http://127.0.0.1:8787
+echo Server: http://127.0.0.1:%RP_PLATFORM_PORT%
 if /i "%LOG_LEVEL%"=="debug" echo Log level: debug
 echo.
 
@@ -66,9 +76,9 @@ echo Starting server...
 echo Press Ctrl+C to stop.
 echo.
 
-powershell.exe -NoProfile -Command "$conn = Get-NetTCPConnection -LocalPort 8787 -ErrorAction SilentlyContinue; if ($conn) { $pid = $conn[0].OwningProcess; Write-Host ''; Write-Host 'Port 8787 is already in use by PID' $pid; exit 10 } else { exit 0 }"
+powershell.exe -NoProfile -Command "$conn = Get-NetTCPConnection -LocalPort %RP_PLATFORM_PORT% -ErrorAction SilentlyContinue; if ($conn) { $pid = $conn[0].OwningProcess; Write-Host ''; Write-Host 'Port %RP_PLATFORM_PORT% is already in use by PID' $pid; exit 10 } else { exit 0 }"
 if %ERRORLEVEL%==10 (
-    powershell.exe -NoProfile -Command "$pid = (Get-NetTCPConnection -LocalPort 8787 -ErrorAction SilentlyContinue)[0].OwningProcess; Write-Host 'Kill PID' $pid '? [Y/n]'; $a = Read-Host; if ($a -eq '' -or $a -eq 'Y' -or $a -eq 'y') { Stop-Process -Id $pid -Force; Write-Host 'Killed.'; exit 0 } else { Write-Host 'Cancelled.'; exit 1 }"
+    powershell.exe -NoProfile -Command "$pid = (Get-NetTCPConnection -LocalPort %RP_PLATFORM_PORT% -ErrorAction SilentlyContinue)[0].OwningProcess; Write-Host 'Kill PID' $pid '? [Y/n]'; $a = Read-Host; if ($a -eq '' -or $a -eq 'Y' -or $a -eq 'y') { Stop-Process -Id $pid -Force; Write-Host 'Killed.'; exit 0 } else { Write-Host 'Cancelled.'; exit 1 }"
     if errorlevel 1 (
         pause
         exit /b 1
