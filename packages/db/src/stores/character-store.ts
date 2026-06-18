@@ -440,6 +440,21 @@ export class CharacterStore {
       .run();
   }
 
+  /** D8/Bug #3: record which gallery row the current avatar was set from.
+   *  Set to the source row id by setAvatarFromGallery; cleared to null by
+   *  uploadCharacterAvatar. Drives salvage gating: when non-null, the current
+   *  avatar's bytes already live in the gallery under this id, so the NEXT
+   *  setAvatarFromGallery skips salvage (prevents gallery duplication — Bug #3).
+   *  When null, the avatar is a direct upload whose bytes are NOT in the
+   *  gallery, so the next gallery swap salvages it. Bumps updatedAt. */
+  async setAvatarSourceAssetId(id: string, assetId: string | null): Promise<void> {
+    await this.db
+      .update(characters)
+      .set({ avatarSourceAssetId: assetId, updatedAt: this.clock.now() })
+      .where(eq(characters.id, id))
+      .run();
+  }
+
   /**
    * Point-update for media prompt-injection fields (avatar description + the
    * gallery/avatar include toggles). Does NOT rewrite {id}/card.json (unlike
