@@ -9,6 +9,7 @@ import type {
 import { brandId, type CharacterId } from "@vibe-tavern/domain";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
 import {
+	flattenV2CompatFields,
 	importCharacterCardV3Json,
 	parseSillyTavernChat,
 	serializeSillyTavernChat,
@@ -91,14 +92,13 @@ export async function exportCharacter(
 		// Original wins for unknown fields, current data wins for known fields
 		const origData = (original as Record<string, unknown>).data as Record<string, unknown> | undefined;
 		const mergedData = { ...(origData ?? {}), ...data };
-		return { ...(original as Record<string, unknown>), data: mergedData };
+		const merged = { ...(original as Record<string, unknown>), data: mergedData };
+		// Flatten V2 compat fields to the top level so strict V2 parsers
+		// (janitor.ai et al.) can read the card. `data` stays canonical.
+		return flattenV2CompatFields(merged);
 	}
 
-	return {
-		spec: "chara_card_v3",
-		spec_version: "3.0",
-		data,
-	};
+	return flattenV2CompatFields({ data });
 }
 
 export async function exportChatJsonl(
