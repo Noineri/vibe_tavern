@@ -384,8 +384,9 @@ export function ThemeTuner() {
             index={selectedBlob}
             blob={blobs[selectedBlob]}
             canReset={
+              blobOriginals[selectedBlob] != null &&
               serializePageBg([blobs[selectedBlob]]) !==
-              serializePageBg([blobOriginals[selectedBlob]])
+                serializePageBg([blobOriginals[selectedBlob]])
             }
             onColorChange={updateBlobColor}
             onPosChange={updateBlobPos}
