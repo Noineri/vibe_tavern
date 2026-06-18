@@ -10,12 +10,12 @@
  * theme segmented control options — derives from this array, so no other file
  * needs editing when a theme is added.
  *
- * ## The coffee/light class nuance
+ * ## The default-theme class nuance
  *
  * Themes are applied exclusively as a single CSS class on `<html>`:
  *   - The default theme (`coffee`) uses `className: ""` — it is the bare `:root`
  *     in coffee.css and needs no class.
- *   - Every other theme carries a className (e.g. `"light"`, `"mystic-night"`)
+ *   - Every other theme carries a className (e.g. `"milk-coffee"`, `"mystic-night"`)
  *     matching the `:root.<className>` selector in its CSS file.
  *
  * {@link applyThemeClass} strips ALL theme classes first, then adds only the
@@ -43,11 +43,14 @@ export interface ThemeDef {
  * control. Keep the default (`coffee`) here so it is selectable, not just the
  * implicit fallback.
  */
+// Icon convention: outlined icons mark LIGHT themes, filled icons mark DARK
+// themes (e.g. `coffee` outline vs `coffeeFilled`, `flame` vs `flameFilled`).
 export const THEMES: readonly ThemeDef[] = [
-	{ id: "light",        className: "light",        icon: "sun" },
-	{ id: "coffee",       className: "",             icon: "coffee" },
-	{ id: "mystic-night", className: "mystic-night", icon: "sparkles" },
-	{ id: "light-lava",   className: "light-lava",   icon: "flame" },
+	{ id: "milk-coffee",  className: "milk-coffee",  icon: "coffee" },        // light  → outlined cup
+	{ id: "coffee",       className: "",             icon: "coffeeFilled" },  // dark (default) → filled cup
+	{ id: "mystic-night", className: "mystic-night", icon: "sparklesFilled" }, // dark   → filled sparkles
+	{ id: "light-lava",   className: "light-lava",   icon: "flame" },         // light  → outlined flame
+	{ id: "dark-lava",    className: "dark-lava",    icon: "flameFilled" },   // dark   → filled flame
 ];
 
 /** Union of all theme ids. The canonical `ThemeMode` type. */

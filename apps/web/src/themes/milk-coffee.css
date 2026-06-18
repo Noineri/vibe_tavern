@@ -1,11 +1,11 @@
 /* ══════════════════════════════════════════════════════════════
-   Light theme
+   Milk-Coffee theme (light)
    All color custom properties — warm paper palette.
    Inspired by Claude Code Light: clean warm neutrals with
    terracotta accent (#CC785C) and high-contrast text.
    Every value is oklch for consistency and easy tweaking.
    ══════════════════════════════════════════════════════════════ */
-:root.light {
+:root.milk-coffee {
   /* ─── Backgrounds ─── */
   --bg:        oklch(0.975 0.003 80);    /* #FAF9F5 — clean paper base */
   --surface:   oklch(0.925 0.008 80);    /* #ECE9E0 — panels, modals, tool blocks */
@@ -39,6 +39,9 @@
 
   /* ─── User message background ─── */
   --user-bg:   oklch(0.94 0.009 75);     /* #EDE9DE — warm tint for user bubbles */
+
+  /* ─── Chat input field background (desktop composer) ─── */
+  --input-bg:  var(--bg);            /* defaults to --bg; override per-theme if --bg is tuned for a gradient */
 
   /* ─── Danger ─── */
   --danger:      oklch(0.52 0.16 18);    /* #A84B3A */

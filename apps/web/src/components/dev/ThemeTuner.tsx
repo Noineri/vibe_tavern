@@ -21,9 +21,10 @@ import { Markdown } from "../../lib/markdown.js";
 import { MessageReasoning } from "../chat/MessageReasoning.js";
 import { THEMES, applyThemeClass, type ThemeId } from "../../themes/registry.js";
 import coffeeRaw from "../../themes/coffee.css?raw";
-import lightRaw from "../../themes/light.css?raw";
+import milkCoffeeRaw from "../../themes/milk-coffee.css?raw";
 import mysticRaw from "../../themes/mystic-night.css?raw";
 import lavaRaw from "../../themes/light-lava.css?raw";
+import darkLavaRaw from "../../themes/dark-lava.css?raw";
 import {
   GROUPS,
   SCRATCH_VALUES,
@@ -38,9 +39,10 @@ import {
 
 const THEME_RAW: Record<ThemeId, string> = {
   coffee: coffeeRaw,
-  light: lightRaw,
+  "milk-coffee": milkCoffeeRaw,
   "mystic-night": mysticRaw,
   "light-lava": lavaRaw,
+  "dark-lava": darkLavaRaw,
 };
 
 /** Russian hints for token names, shown in the editor panel. */
@@ -93,7 +95,7 @@ const SAMPLE_USER = "*\"Привет!\"* — жизнерадостно сказ
 
 export function ThemeTuner() {
   const [mode, setMode] = useState<Mode>("edit");
-  const [editId, setEditId] = useState<ThemeId>("light");
+  const [editId, setEditId] = useState<ThemeId>("milk-coffee");
   const [scratchName, setScratchName] = useState("my-theme");
   const [values, setValues] = useState<Map<string, OkColor>>(() => new Map());
   const [originals, setOriginals] = useState<Map<string, OkColor>>(() => new Map());

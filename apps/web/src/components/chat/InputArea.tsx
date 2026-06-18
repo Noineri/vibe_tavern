@@ -328,7 +328,7 @@ export function InputArea() {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <div className="relative rounded-lg border border-border bg-bg transition-colors duration-150 focus-within:border-border2">
+        <div className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
           {isDragOver && (
             <div className="pointer-events-none absolute inset-0 z-[100] flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-accent/5">
               <span className="flex items-center gap-2 font-ui text-[15px] font-medium text-accent">

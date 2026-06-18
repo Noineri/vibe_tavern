@@ -47,7 +47,10 @@
   --accent-mid:   oklch(0.55 0.105 45);       /* mid-lightness accent — logo book, subordinate art */
 
   /* ─── User message background (Пыльно-розовый/персиковый подтон) ─── */
-  --user-bg:   oklch(0.23 0.025 330); 
+  --user-bg:   oklch(0.23 0.025 330);
+
+  /* ─── Chat input field background (desktop composer) ─── */
+  --input-bg:  var(--bg);            /* по умолчанию как --bg; переопределить, если --bg подобран под градиент */ 
 
   /* ─── Danger (Пыльная роза / мягкий красный) ─── */
   --danger:      oklch(0.65 0.15 15);    

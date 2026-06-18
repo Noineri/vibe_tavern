@@ -48,6 +48,9 @@
   /* ─── User message background ─── */
   --user-bg:   oklch(0.95 0.015 35 / 80%);     /* Полупрозрачный теплый персик */
 
+  /* ─── Chat input field background (desktop composer) ─── */
+  --input-bg:  var(--bg);            /* по умолчанию как --bg; переопределить, если --bg подобран под градиент */
+
   /* ─── Danger / Success / Info / Warning ─── */
   --danger:      oklch(0.52 0.16 18);    
   --danger-dim:  oklch(0.92 0.03 18 / 50%);    

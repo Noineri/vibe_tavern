@@ -1,0 +1,126 @@
+/* ══════════════════════════════════════════════════════════════
+   Midnight Lava Lamp (Dark Theme)
+   Deep amethyst liquid with neon pink, red, and amber wax blobs.
+   Black panels and bright amber accents for high contrast.
+   ══════════════════════════════════════════════════════════════ */
+:root.dark-lava {
+  /* ─── Backgrounds (Solid fallback for SVG fills and utilities) ─── */
+  --bg:        oklch(29.039% 0.15056 291.067);    /* Глубокий аметистовый фон (жидкость лампы) */
+  
+  /* ─── Animated Lava Lamp Background ─── */
+  /* Множество плавающих цветовых пятен для сложного градиента */
+  --page-bg:
+    radial-gradient(circle at 15% 25%, oklch(61.741% 0.12648 85.038 / 0.233), transparent 50%),  /* Желтый (верх лево) */
+    radial-gradient(circle at 35% 50%, oklch(0.28 0.12 340 / 55%), transparent 55%), /* Розовый (центр лево) */
+    radial-gradient(circle at 75% 20%, oklch(0.25 0.08 20 / 50%), transparent 45%),  /* Красный (верх право) */
+    radial-gradient(circle at 80% 55%, oklch(0.30 0.10 60 / 55%), transparent 50%),  /* Янтарный (центр право) */
+    radial-gradient(circle at 25% 85%, oklch(29.612% 0.11512 31.069 / 0.55), transparent 50%),  /* Насыщенный янтарный (низ лево) */
+    radial-gradient(circle at 85% 90%, oklch(57.745% 0.12885 65.656 / 0.37), transparent 55%),  /* Желтый свет (низ право) */
+    var(--bg);
+
+  /* ─── Surfaces (Black panels with slight translucency) ─── */
+  --surface:   oklch(0.12 0 0 / 85%);    /* Почти глухой черный для сайдбара и инпута */
+  --s2:        oklch(0.16 0 0 / 85%);    
+  --s3:        oklch(0.20 0 0 / 85%);    
+
+  /* ─── Borders ─── */
+  --border:    oklch(0.24 0.01 230);      /* Очень темный серо-голубой */
+  --border2:   oklch(0.30 0.01 230);     
+
+  /* ─── Interface Text (Light for black panels) ─── */
+  --t1:        oklch(0.92 0.01 40);      /* Основной текст интерфейса */
+  --t2:        oklch(0.82 0.01 40);     
+  --t3:        oklch(0.65 0.03 230);     
+  --t4:        oklch(0.55 0.03 230);     
+
+  /* ─── Message text (Light for dark muted background) ─── */
+  --msg-t1:    oklch(89.371% 0.0893 125.287 / 0.801);  /* Приглушенный мятно-пепельный */
+  --msg-t2:    oklch(0.75 0.02 230);    
+
+  /* ─── Text selection ─── */
+  --sel-bg:    oklch(0.6 0.285 207 / 30%);  /* Выделение текста синим/цианом */
+  --sel-text:  oklch(0.98 0.005 80);        
+
+  /* ─── Accent (Bright Amber) ─── */
+  --accent:       oklch(0.75 0.18 80);           
+  --accent-t:     oklch(0.65 0.18 80);           
+  --accent-dim:   oklch(0.75 0.18 80 / 15%);     
+  --accent-hover: oklch(0.80 0.18 80);     
+  --accent-mid:   oklch(0.60 0.18 80);          
+
+  /* ─── User message background ─── */
+  --user-bg:   oklch(0.30 0.08 290 / 40%);     /* Полупрозрачный глубокий фиолетовый */
+
+  /* ─── Chat input field background (desktop composer) ─── */
+  /* --bg here (oklch 0.18) is tuned for the lava page gradient and reads too
+     bright inside the recessed input field. Darker amethyst, same hue (290) so
+     it still harmonises with the blobs; the border (0.24→0.30) frames it. */
+  --input-bg:  oklch(0.13 0.05 290);
+
+  /* ─── Danger / Success / Info / Warning ─── */
+  --danger:      oklch(0.435 0.18 18);    
+  --danger-dim:  oklch(0.60 0.18 18 / 15%);    
+  --danger-text: oklch(0.85 0.08 18);    
+
+  --success:      oklch(0.65 0.12 155);  
+  --success-dim:  oklch(0.64 0.08 173 / 15%);  
+  --success-text: oklch(0.85 0.08 155);  
+
+  --info:      oklch(0.65 0.15 250);     
+  --info-dim:  oklch(0.65 0.15 250 / 15%);     
+  --info-text: oklch(0.85 0.08 250);     
+
+  --warning:      oklch(0.70 0.15 65);   
+  --warning-dim:  oklch(0.70 0.15 65 / 15%);   
+  --warning-text: oklch(0.90 0.10 65);   
+
+  /* ─── On-color text ─── */
+  --on-accent: oklch(0.15 0.02 290);    /* Темный фиолетово-черный текст на янтарных кнопках */
+  --on-danger: oklch(0.98 0.005 80);    
+  
+  /* ─── Shadows ─── */
+  --shadow-sm: 0 4px 16px oklch(0 0 0 / 40%);
+  --shadow-md: 0 12px 28px oklch(0 0 0 / 50%);
+  --shadow-lg: 0 24px 60px oklch(0 0 0 / 60%);
+  --shadow-xl: 0 8px 40px oklch(0 0 0 / 50%);
+
+  /* ─── Markdown inline sizes ─── */
+  --md-fs-italic:       calc(var(--mfs) + 1px);    
+  --md-fs-bold-italic:  calc(var(--mfs) + 1px);    
+
+  /* ─── Markdown inline colors (Light for dark background) ─── */
+  --md-italic:       oklch(0.64 0.15 90);   /* Темно-золотой / горчичный */
+  --md-bold:         oklch(0.96 0.01 230);  /* Морозный белый */
+  --md-bold-italic:  oklch(0.545 0.17 31);  /* Темно-коралловый / магма */
+  --md-quoted:       oklch(0.75 0.08 250);  /* Приглушенный светлый индиго */
+
+  /* ─── Syntax highlighting (Adapted for Dark Lava) ─── */
+  --syn-bg:          transparent;
+  --syn-keyword:     oklch(0.70 0.15 300);  /* Светло-аметистовый */
+  --syn-string:      oklch(0.75 0.12 160);  /* Мятный */
+  --syn-number:      oklch(0.60 0.25 340);  /* Хот-пинк (как воск) */
+  --syn-comment:     var(--t3);             /* Серо-голубой из основной палитры */
+  --syn-variable:    var(--t1);
+  --syn-property:    oklch(0.75 0.18 80);   /* Ярко-янтарный */
+  --syn-operator:    oklch(0.65 0.18 20);   /* Красный */
+  --syn-punctuation: var(--t2);
+  --syn-bool:        oklch(0.75 0.18 80);   /* Ярко-янтарный */
+  --syn-null:        oklch(0.75 0.18 80);   
+  --syn-function:    oklch(0.75 0.12 250);  /* Светло-голубой */
+}
+
+/* ─── Lava Drift Animation ─── */
+/* Анимация вешается на body только для этой темы */
+:root.dark-lava body {
+  background-size: 180% 180%;
+  animation: dark-lava-drift 20s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root.dark-lava body { animation: none; }
+}
+
+@keyframes dark-lava-drift {
+  0%, 100% { background-position:   0% 0%, 100% 100%, 50% 50%; }
+  50%      { background-position: 100% 50%,   0% 50%, 50% 0%; }
+}
