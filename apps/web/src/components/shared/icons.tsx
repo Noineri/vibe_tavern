@@ -7,6 +7,12 @@ export const Ic = {
   // "coffee" icon (ISC), rescaled from its 24×24 grid onto our 16×16 grid
   // (arc flags preserved, geometry scaled ×2/3) to match the rest of the set.
   coffee:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6.67 1.33v1.33"/><path d="M9.33 1.33v1.33"/><path d="M4 1.33v1.33"/><path d="M10.67 5.33a0.67 0.67 0 0 1 0.67 0.67v5.33a2.67 2.67 0 0 1-2.67 2.67H4.67a2.67 2.67 0 0 1-2.67-2.67V6a0.67 0.67 0 0 1 0.67-0.67h9.33a2.67 2.67 0 1 1 0 5.33h-0.67"/></svg>,
+  // Filled coffee cup — same Lucide geometry as `coffee` (contour) but the cup
+  // body + handle are filled, and the handle loop is hollowed out via a second
+  // subpath + fillRule="evenodd" (an ellipse seated inside the handle's D-loop,
+ // centered ~12.8,8 — between the implicit-close diagonal and the outer arc).
+  // Steam wisps stay stroked. Icon convention: outlined = light, filled = dark.
+  coffeeFilled:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6.67 1.33v1.33"/><path d="M9.33 1.33v1.33"/><path d="M4 1.33v1.33"/><path fill="currentColor" fillRule="evenodd" stroke="none" d="M10.67 5.33a0.67 0.67 0 0 1 0.67 0.67v5.33a2.67 2.67 0 0 1-2.67 2.67H4.67a2.67 2.67 0 0 1-2.67-2.67V6a0.67 0.67 0 0 1 0.67-0.67h9.33a2.67 2.67 0 1 1 0 5.33h-0.67ZM12.8 6a1.1 2 0 1 0 0 4a1.1 2 0 1 0 0-4"/></svg>,
   copy:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v6.5A1.5 1.5 0 0 0 3 11h2"/></svg>,
   edit:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M11.5 2.5l2 2L5 13l-2.5.5L3 11z"/></svg>,
   branch:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><path d="M4 6v4"/><path d="M12 6v2.5A1.5 1.5 0 0 1 10.5 10H4"/></svg>,
@@ -34,6 +40,8 @@ export const Ic = {
   download:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"><path d="M8 2v9M4 7l4 4 4-4M2 14h12"/></svg>,
   brain:()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/></svg>,
   sparkles:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 1.5l.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7z"/><path d="M12 6l.4 1.4 1.4.4-1.4.4-.4 1.4-.4-1.4-1.4-.4 1.4-.4z"/><path d="M3.5 9.5l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z"/></svg>,
+  // Filled sparkles — same three 4-point stars as `sparkles`, solid fill.
+  sparklesFilled:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" stroke="none"><path d="M6.5 1.5l.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7z"/><path d="M12 6l.4 1.4 1.4.4-1.4.4-.4 1.4-.4-1.4-1.4-.4 1.4-.4z"/><path d="M3.5 9.5l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z"/></svg>,
   star:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1.5l2 4.1 4.5.65-3.25 3.17.77 4.48L8 11.78 3.98 13.9l.77-4.48L1.5 6.25 6 5.6 8 1.5z"/></svg>,
   starFilled:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5l2 4.1 4.5.65-3.25 3.17.77 4.48L8 11.78 3.98 13.9l.77-4.48L1.5 6.25 6 5.6 8 1.5z"/></svg>,
   help:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M6 6a2 2 0 0 1 3.5 1.3c0 1.2-1.5 1.5-1.5 2.2"/><circle cx="8" cy="12" r=".5" fill="currentColor"/></svg>,
@@ -51,6 +59,9 @@ export const Ic = {
   paperclip:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 7.5l-6 6a3.5 3.5 0 1 1-5-5l6-6a2 2 0 1 1 3 3l-6 6a.75.75 0 1 1-1-1l6-6"/></svg>,
   // Lucide "flame", native 24×24 (like `brain`), stroke 2 for picker legibility at 13px.
   flame:()=><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>,
+  // Filled flame — same Lucide geometry as `flame` (contour), solid fill.
+  // Icon convention: outlined = light theme, filled = dark theme.
+  flameFilled:()=><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>,
   // Lucide "images" (gallery stack). Used by the TopBar "Media" button (R5/D1).
   images:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="1.5" y="3" width="9.5" height="9.5" rx="1.5"/><circle cx="4.5" cy="6" r="1"/><polyline points="1.5 10.5 5 7.5 8 10"/><path d="M11 3.5l1.5-1.5h2a1 1 0 0 1 1 1v2L14 6.5"/></svg>,
   // Lucide "send" (paper-plane). Used by the Media send-to-chat action (R5/D1).

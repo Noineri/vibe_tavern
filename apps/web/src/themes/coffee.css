@@ -38,6 +38,9 @@
   /* ─── User message background ─── */
   --user-bg:   oklch(0.211 0.0050 67.6);  /* #1a1816 — user msg bg */
 
+  /* ─── Chat input field background (desktop composer) ─── */
+  --input-bg:  var(--bg);            /* defaults to --bg; override per-theme if --bg is tuned for a gradient */
+
   /* ─── Danger (red) ─── */
   --danger:      oklch(0.62 0.20 25);    /* buttons */
   --danger-dim:  oklch(0.22 0.06 25);    /* confirm bg */

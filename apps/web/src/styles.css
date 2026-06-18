@@ -1,8 +1,9 @@
 @import "tailwindcss";
 @import "./themes/coffee.css";
-@import "./themes/light.css";
+@import "./themes/milk-coffee.css";
 @import "./themes/mystic-night.css";
 @import "./themes/light-lava.css";
+@import "./themes/dark-lava.css";
 
 /* ─── Font faces ─── */
 @font-face {
@@ -82,6 +83,7 @@
   --color-info-dim: var(--info-dim);
   --color-info-text: var(--info-text);
   --color-user-bg: var(--user-bg);
+  --color-input-bg: var(--input-bg);   /* chat composer field (desktop InputArea) */
   --font-ui: 'Inter', system-ui, sans-serif;
   --font-body: 'Alegreya', Georgia, serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
