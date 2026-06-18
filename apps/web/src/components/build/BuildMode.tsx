@@ -371,7 +371,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
                       </div>
                     </button>
                     {expanded && (
-                      <div className="border-t border-border bg-bg p-3 whitespace-pre-wrap font-mono text-[11px] leading-[1.55] text-t1">
+                      <div className="border-t border-border bg-input-bg p-3 whitespace-pre-wrap font-mono text-[11px] leading-[1.55] text-t1">
                         {layer.text}
                       </div>
                     )}
@@ -527,7 +527,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
                 </div>
                 {/* DYNAMIC: display toggled by JS click handler above */}
                 <div
-                  className="border-t border-border bg-bg p-3 whitespace-pre-wrap font-mono text-[11px] text-t1"
+                  className="border-t border-border bg-input-bg p-3 whitespace-pre-wrap font-mono text-[11px] text-t1"
                   style={{ display: "none" }}
                 >
                   {layer.text}

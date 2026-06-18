@@ -445,7 +445,7 @@ export function ContextMemoryModal({
       {/* ── Range ── */}
       <section>
         <div className={labelCls}>{t("summary_range_label")}</div>
-        <div className="rounded-lg border border-border bg-bg p-4">
+        <div className="rounded-lg border border-border bg-input-bg p-4">
           <DualRangeSlider min={1} max={maxMessage} from={rangeFrom} to={rangeTo} disabled={generating} onChange={handleRangeChange} />
           <div className="flex items-center justify-between font-ui text-[11px] text-t4">
             <span>{t("summary_msg_label").replace("{n}", String(rangeFrom))}</span>
@@ -508,7 +508,7 @@ export function ContextMemoryModal({
       </section>
 
       {/* ── Token estimate ── */}
-      <section className="mt-3 rounded-lg border border-border bg-bg p-4">
+      <section className="mt-3 rounded-lg border border-border bg-input-bg p-4">
         <div className="mb-2 font-ui text-[12px] text-t3">
           {t("summary_token_line")
             .replace("{summary}", String(tokenEstimate.summaryTokens))
@@ -583,7 +583,7 @@ export function ContextMemoryModal({
       </section>
 
       {/* ── Auto-summary ── */}
-      <section className="mt-4 rounded-lg border border-border bg-bg p-4">
+      <section className="mt-4 rounded-lg border border-border bg-input-bg p-4">
         <label className="flex items-center gap-2 font-ui text-[13px] text-t2">
           <Toggle
             checked={autoConfig.enabled}
@@ -616,7 +616,7 @@ export function ContextMemoryModal({
 
       {/* ── Messages in prompt (mobile: moved here from footer) ── */}
       {isMobile && (
-        <section className="mt-4 rounded-lg border border-border bg-bg p-4">
+        <section className="mt-4 rounded-lg border border-border bg-input-bg p-4">
           <div className={labelCls}>{t("summary_messages_in_prompt")}</div>
           <div className="flex items-center gap-3">
             <input

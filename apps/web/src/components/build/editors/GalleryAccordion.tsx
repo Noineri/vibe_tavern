@@ -188,7 +188,7 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
       </button>
 
       {isOpen && (
-        <div className="flex flex-col border-t border-border bg-bg p-4">
+        <div className="flex flex-col border-t border-border bg-input-bg p-4">
           {error && (
             <div className="mb-4 rounded-md border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
               {error}
