@@ -39,6 +39,11 @@ export const updateLorebookMetaSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
+const characterFilterEntrySchema = z.object({
+  id: z.string().nullable(),
+  name: z.string(),
+});
+
 const loreEntryCoreSchema = z.object({
   title: z.string().optional().default(""),
   content: z.string().optional().default(""),
@@ -63,7 +68,7 @@ const loreEntryCoreSchema = z.object({
   scanDepthOverride: z.number().nullable().optional().default(null),
   caseSensitive: z.boolean().optional().default(false),
   matchWholeWords: z.boolean().optional().default(false),
-  characterFilter: z.array(z.string()).optional().default([]),
+  characterFilter: z.array(characterFilterEntrySchema).optional().default([]),
   characterFilterExclude: z.boolean().optional().default(false),
   triggers: z.array(z.string()).optional().default([]),
   matchSources: z.array(z.string()).optional().default([]),
@@ -100,7 +105,7 @@ const loreEntryUpdateSchema = z.object({
   scanDepthOverride: z.number().nullable().optional(),
   caseSensitive: z.boolean().optional(),
   matchWholeWords: z.boolean().optional(),
-  characterFilter: z.array(z.string()).optional(),
+  characterFilter: z.array(characterFilterEntrySchema).optional(),
   characterFilterExclude: z.boolean().optional(),
   triggers: z.array(z.string()).optional(),
   matchSources: z.array(z.string()).optional(),

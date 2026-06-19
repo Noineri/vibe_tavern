@@ -2,15 +2,14 @@ import { describe, expect, it } from "bun:test";
 import { resolveActivatedEntries, type ActivationInput } from "../src/domain/prompt/lore-activation-engine.js";
 
 /**
- * Characterization tests for the characterFilter matching path of the LIVE
- * activation engine (`lore-activation-engine.ts`).
+ * Tests for the characterFilter matching path of the LIVE activation engine
+ * (`lore-activation-engine.ts`), after the id-based migration
+ * (CHARACTER_FILTER_ID_MIGRATION_PLAN.md, Option B: name fallback for ghosts).
  *
- * The live engine had ZERO characterFilter coverage before this file (the
- * sibling `packages/prompt-pipeline/test/lore-activation.test.ts` covers a
- * DEAD orphan copy with a different API). These tests pin the CURRENT name-based
- * behavior at `tryActivateEntry` step 2 so the id-based migration (see
- * CHARACTER_FILTER_ID_MIGRATION_PLAN.md) can prove it preserves/changes
- * behavior deliberately.
+ * Option B semantics under test: a filter entry matches the active character if
+ * EITHER its bound `id` equals the active `characterId` (rename-resilient), OR
+ * it is a ghost (`id === null`) whose `name` equals the active `characterName`
+ * (legacy / imported data keeps working by name until bound in the UI).
  *
  * Isolation strategy: every entry is `constant: true` + `ignoreBudget: true`.
  * Constant entries activate at step 4 (after the characterFilter gate at step 2),
@@ -47,7 +46,7 @@ function makeEntry(overrides: Record<string, unknown> = {}) {
 		scanDepthOverride: null,
 		caseSensitive: false,
 		matchWholeWords: false,
-		characterFilter: [] as string[],
+		characterFilter: [] as Array<{ id: string | null; name: string }>,
 		characterFilterExclude: false,
 		triggers: [] as string[],
 		matchSources: [] as string[],
@@ -57,7 +56,10 @@ function makeEntry(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-function makeInput(entries: ReturnType<typeof makeEntry>[], characterName: string): ActivationInput {
+function makeInput(
+	entries: ReturnType<typeof makeEntry>[],
+	character: { id: string; name: string },
+): ActivationInput {
 	return {
 		lorebooks: [
 			{
@@ -75,7 +77,8 @@ function makeInput(entries: ReturnType<typeof makeEntry>[], characterName: strin
 		messages: [],
 		mode: "normal",
 		macroMap: {},
-		characterName,
+		characterId: character.id,
+		characterName: character.name,
 		activationState: {},
 		currentTurn: 1,
 	};
@@ -85,47 +88,78 @@ function activatedIds(result: ReturnType<typeof resolveActivatedEntries>): strin
 	return result.activatedEntries.map((e) => e.id);
 }
 
-describe("characterFilter — current name-based matching (characterization)", () => {
-	it("include mode (exclude=false): activates when characterName is in the filter", () => {
-		const entry = makeEntry({ characterFilter: ["Alice"] });
-		const result = resolveActivatedEntries(makeInput([entry], "Alice"));
-		expect(activatedIds(result)).toEqual([entry.id]);
+describe("characterFilter — id-based matching (Option B)", () => {
+	describe("include mode (exclude=false)", () => {
+		it("activates when an id-bound entry matches the active characterId", () => {
+			const entry = makeEntry({ characterFilter: [{ id: "c_alice", name: "Alice" }] });
+			const result = resolveActivatedEntries(makeInput([entry], { id: "c_alice", name: "Alice" }));
+			expect(activatedIds(result)).toEqual([entry.id]);
+		});
+
+		it("skips when no id-bound entry matches the active characterId", () => {
+			const entry = makeEntry({ characterFilter: [{ id: "c_alice", name: "Alice" }] });
+			const result = resolveActivatedEntries(makeInput([entry], { id: "c_bob", name: "Bob" }));
+			expect(activatedIds(result)).toEqual([]);
+		});
+
+		it("still matches by id after the character is renamed (the whole point of the migration)", () => {
+			// Filter bound to Alice's id; the active character has that id but a new name.
+			const entry = makeEntry({ characterFilter: [{ id: "c_alice", name: "Alice" }] });
+			const result = resolveActivatedEntries(makeInput([entry], { id: "c_alice", name: "Alice Renamed" }));
+			expect(activatedIds(result)).toEqual([entry.id]);
+		});
+
+		it("ghost (id=null) matches by name fallback — legacy data keeps working", () => {
+			const entry = makeEntry({ characterFilter: [{ id: null, name: "Alice" }] });
+			const result = resolveActivatedEntries(makeInput([entry], { id: "c_alice", name: "Alice" }));
+			expect(activatedIds(result)).toEqual([entry.id]);
+		});
+
+		it("ghost (id=null) does NOT match when the active name differs", () => {
+			const entry = makeEntry({ characterFilter: [{ id: null, name: "Alice" }] });
+			const result = resolveActivatedEntries(makeInput([entry], { id: "c_bob", name: "Bob" }));
+			expect(activatedIds(result)).toEqual([]);
+		});
+
+		it("bound id wins: an entry bound to a different id does not match by name", () => {
+			// Entry is bound to c_alice but still named "Alice"; active char is c_bob named "Alice".
+			// The name matches but the bound id belongs to someone else → no match (no name fallback
+			// for id-bound entries — that's what makes binding a permanent upgrade).
+			const entry = makeEntry({ characterFilter: [{ id: "c_alice", name: "Alice" }] });
+			const result = resolveActivatedEntries(makeInput([entry], { id: "c_bob", name: "Alice" }));
+			expect(activatedIds(result)).toEqual([]);
+		});
+
+		it("empty filter = no gate (activates for anyone)", () => {
+			const entry = makeEntry({ characterFilter: [] });
+			const result = resolveActivatedEntries(makeInput([entry], { id: "c_anyone", name: "Anyone" }));
+			expect(activatedIds(result)).toEqual([entry.id]);
+		});
 	});
 
-	it("include mode (exclude=false): skips when characterName is NOT in the filter", () => {
-		const entry = makeEntry({ characterFilter: ["Alice"] });
-		const result = resolveActivatedEntries(makeInput([entry], "Bob"));
-		expect(activatedIds(result)).toEqual([]);
-	});
+	describe("exclude mode (exclude=true)", () => {
+		it("skips when an id-bound entry matches the active characterId", () => {
+			const entry = makeEntry({ characterFilter: [{ id: "c_alice", name: "Alice" }], characterFilterExclude: true });
+			const result = resolveActivatedEntries(makeInput([entry], { id: "c_alice", name: "Alice" }));
+			expect(activatedIds(result)).toEqual([]);
+		});
 
-	it("include mode (exclude=false): empty filter = no gate (activates for anyone)", () => {
-		const entry = makeEntry({ characterFilter: [] });
-		const result = resolveActivatedEntries(makeInput([entry], "Anyone"));
-		expect(activatedIds(result)).toEqual([entry.id]);
-	});
+		it("activates when the active characterId is NOT in the filter", () => {
+			const entry = makeEntry({ characterFilter: [{ id: "c_alice", name: "Alice" }], characterFilterExclude: true });
+			const result = resolveActivatedEntries(makeInput([entry], { id: "c_bob", name: "Bob" }));
+			expect(activatedIds(result)).toEqual([entry.id]);
+		});
 
-	it("include mode (exclude=false): matches by exact name (case-sensitive)", () => {
-		const entry = makeEntry({ characterFilter: ["Alice"] });
-		// Different case does NOT match — current behavior is a plain `.includes()`.
-		const result = resolveActivatedEntries(makeInput([entry], "alice"));
-		expect(activatedIds(result)).toEqual([]);
-	});
+		it("ghost (id=null) excludes by name fallback", () => {
+			const entry = makeEntry({ characterFilter: [{ id: null, name: "Alice" }], characterFilterExclude: true });
+			const result = resolveActivatedEntries(makeInput([entry], { id: "c_alice", name: "Alice" }));
+			expect(activatedIds(result)).toEqual([]);
+		});
 
-	it("exclude mode (exclude=true): skips when characterName IS in the filter", () => {
-		const entry = makeEntry({ characterFilter: ["Alice"], characterFilterExclude: true });
-		const result = resolveActivatedEntries(makeInput([entry], "Alice"));
-		expect(activatedIds(result)).toEqual([]);
-	});
-
-	it("exclude mode (exclude=true): activates when characterName is NOT in the filter", () => {
-		const entry = makeEntry({ characterFilter: ["Alice"], characterFilterExclude: true });
-		const result = resolveActivatedEntries(makeInput([entry], "Bob"));
-		expect(activatedIds(result)).toEqual([entry.id]);
-	});
-
-	it("exclude mode (exclude=true): empty filter = no gate (activates for anyone)", () => {
-		const entry = makeEntry({ characterFilter: [], characterFilterExclude: true });
-		const result = resolveActivatedEntries(makeInput([entry], "Anyone"));
-		expect(activatedIds(result)).toEqual([entry.id]);
+		it("ghost (id=null) does not exclude a differently-named character", () => {
+			const entry = makeEntry({ characterFilter: [{ id: null, name: "Alice" }], characterFilterExclude: true });
+			const result = resolveActivatedEntries(makeInput([entry], { id: "c_bob", name: "Bob" }));
+			expect(activatedIds(result)).toEqual([entry.id]);
+		});
 	});
 });

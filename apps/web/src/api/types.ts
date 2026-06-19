@@ -333,7 +333,7 @@ export interface LoreEntryRecord {
   scanDepthOverride: number | null;
   caseSensitive: boolean;
   matchWholeWords: boolean;
-  characterFilter: string[];
+  characterFilter: Array<{ id: string | null; name: string }>;
   characterFilterExclude: boolean;
   triggers: string[];
   matchSources: string[];

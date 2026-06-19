@@ -670,6 +670,8 @@
   "lore_role_label": "Роль",
   "lore_char_filter_exclude": "Исключение (не включение)",
   "lore_char_filter_placeholder": "Добавить персонажа...",
+  "lore_char_filter_bind": "Не привязан (только имя) — нажмите, чтобы связать с персонажем",
+  "lore_char_filter_empty": "Больше нет персонажей для добавления",
   "lore_scan_depth_override": "Глубина сканирования",
   "lore_recursion_label": "Уровень рекурсии",
   "lore_prioritize_inclusion": "Приоритет в группе",

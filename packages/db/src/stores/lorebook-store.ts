@@ -4,6 +4,34 @@ import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import type { ContentStore } from '../content-store.js';
 import { STORAGE_FOLDERS } from '../file-store.js';
+import type { CharacterFilterEntry } from '@vibe-tavern/domain';
+
+/**
+ * Parse a raw `characterFilterJson` value into the canonical `CharacterFilterEntry[]`
+ * shape, lazily migrating legacy data at the read boundary:
+ *   - legacy `string[]` (raw character names) → `[{ id: null, name }]` ghosts;
+ *   - already-migrated `{id,name}[]` → normalized (id coerced to string|null);
+ *   - anything else → `[]`.
+ *
+ * Pure shape coercion only — NO name→id resolution (this store has no character
+ * table access). Ghosts stay ghosts until bound in the UI; the activation engine
+ * matches ghosts by name (see `lore-activation-engine.ts`).
+ */
+function parseCharacterFilter(raw: unknown): CharacterFilterEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const out: CharacterFilterEntry[] = [];
+  for (const item of raw) {
+    if (typeof item === 'string') {
+      if (item.length > 0) out.push({ id: null, name: item });
+      continue;
+    }
+    if (item && typeof item === 'object' && typeof (item as { name?: unknown }).name === 'string') {
+      const obj = item as { id?: unknown; name: string };
+      out.push({ id: typeof obj.id === 'string' ? obj.id : null, name: obj.name });
+    }
+  }
+  return out;
+}
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -59,7 +87,7 @@ export interface CreateLoreEntryData {
   scanDepthOverride?: number | null;
   caseSensitive?: boolean;
   matchWholeWords?: boolean;
-  characterFilter?: string[];
+  characterFilter?: CharacterFilterEntry[];
   characterFilterExclude?: boolean;
   triggers?: string[];
   matchSources?: string[];
@@ -133,7 +161,7 @@ export interface LoreEntry {
   scanDepthOverride: number | null;
   caseSensitive: boolean;
   matchWholeWords: boolean;
-  characterFilter: string[];
+  characterFilter: CharacterFilterEntry[];
   characterFilterExclude: boolean;
   triggers: string[];
   matchSources: string[];
@@ -803,6 +831,11 @@ export class LorebookStore {
         scanDepth: e.scanDepthOverride,
         caseSensitive: e.caseSensitive,
         matchWholeWords: e.matchWholeWords,
+        // characterFilter: strip the bound id (ST has no notion of it) and emit
+        // the name list. Ghosts (id=null) round-trip as plain names. The exclude
+        // flag is a VT extension; emitted so VT-origin cards lossless round-trip.
+        character_filter: e.characterFilter.map((c) => c.name),
+        character_filter_exclude: e.characterFilterExclude,
         automationId: e.automationId,
         excludeRecursion: e.excludeRecursion,
         preventRecursion: e.preventRecursion,
@@ -898,7 +931,7 @@ export class LorebookStore {
         scanDepthOverride: e.scanDepthOverride,
         caseSensitive: e.caseSensitive === 1,
         matchWholeWords: e.matchWholeWords === 1,
-        characterFilter: JSON.parse(e.characterFilterJson),
+        characterFilter: parseCharacterFilter(JSON.parse(e.characterFilterJson)),
         characterFilterExclude: e.characterFilterExclude === 1,
         triggers: JSON.parse(e.triggersJson),
         matchSources: JSON.parse(e.matchSourcesJson),
@@ -1001,7 +1034,7 @@ export class LorebookStore {
       scanDepthOverride: row.scanDepthOverride,
       caseSensitive: row.caseSensitive === 1,
       matchWholeWords: row.matchWholeWords === 1,
-      characterFilter: JSON.parse(row.characterFilterJson),
+      characterFilter: parseCharacterFilter(JSON.parse(row.characterFilterJson)),
       characterFilterExclude: row.characterFilterExclude === 1,
       triggers: JSON.parse(row.triggersJson),
       matchSources: JSON.parse(row.matchSourcesJson),
@@ -1095,7 +1128,20 @@ export class LorebookStore {
         scanDepthOverride: typeof (entry.scan_depth_override ?? entry.scanDepthOverride) === 'number' ? (entry.scan_depth_override ?? entry.scanDepthOverride) as number : null,
         caseSensitive: typeof (entry.case_sensitive ?? entry.caseSensitive) === 'boolean' ? !!(entry.case_sensitive ?? entry.caseSensitive) : false,
         matchWholeWords: typeof (entry.match_whole_words ?? entry.matchWholeWords) === 'boolean' ? !!(entry.match_whole_words ?? entry.matchWholeWords) : false,
-        characterFilter: (() => { const v = entry.character_filter ?? entry.characterFilter; return Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : []; })(),
+        characterFilter: (() => {
+          const v = entry.character_filter ?? entry.characterFilter;
+          // Legacy ST cards store raw names (string[]); VT rows store {id,name}[].
+          // Both become CharacterFilterEntry[] — names without a known id are ghosts.
+          if (!Array.isArray(v)) return [];
+          return v.map((item): CharacterFilterEntry | null => {
+            if (typeof item === 'string') return item.length > 0 ? { id: null, name: item } : null;
+            if (item && typeof item === 'object' && typeof (item as { name?: unknown }).name === 'string') {
+              const obj = item as { id?: unknown; name: string };
+              return { id: typeof obj.id === 'string' ? obj.id : null, name: obj.name };
+            }
+            return null;
+          }).filter((x): x is CharacterFilterEntry => x !== null);
+        })(),
         characterFilterExclude: typeof (entry.character_filter_exclude ?? entry.characterFilterExclude) === 'boolean' ? !!(entry.character_filter_exclude ?? entry.characterFilterExclude) : false,
         triggers: Array.isArray(entry.triggers) ? entry.triggers.filter((k): k is string => typeof k === 'string') : [],
         matchSources: (() => { const v = entry.match_sources ?? entry.matchSources; return Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : []; })(),
