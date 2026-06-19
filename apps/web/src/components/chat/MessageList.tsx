@@ -142,6 +142,16 @@ export function MessageList() {
     return lastMessageId ? s.messagesById[lastMessageId] : null;
   });
 
+  // Hoisted from MessageBlock (was an O(n²) useMemo over messageOrder inside
+  // every mounted block). Computed once here, passed as a prop.
+  const firstAssistantMsgId = useMemo(() => {
+    const state = useSnapshotStore.getState();
+    for (const id of messageOrder) {
+      if (state.messagesById[id]?.role === "assistant") return id;
+    }
+    return null;
+  }, [messageOrder]);
+
   const displayMessageIds = useMemo(() => {
     const ids = [...messageOrder];
 
@@ -195,14 +205,27 @@ export function MessageList() {
   const itemContent = useCallback((index: number) => {
     const messageId = displayMessageIds[index];
     if (!messageId) return null;
+    // Derivations hoisted from MessageBlock so individual blocks no longer
+    // subscribe to the full messageOrder array. Pending ids (__pending-*)
+    // short-circuit inside MessageBlock, so these values are unused for them.
+    const state = useSnapshotStore.getState();
+    const isFirstAssistant = messageId === firstAssistantMsgId;
+    const isLast = index === messageOrder.length - 1;
+    const prevRole =
+      index > 0 && messageOrder[index - 1]
+        ? (state.messagesById[messageOrder[index - 1]]?.role ?? null)
+        : null;
     return (
       <MessageBlock
         key={messageId}
         messageId={messageId}
         index={index}
+        isFirstAssistant={isFirstAssistant}
+        isLast={isLast}
+        prevRole={prevRole}
       />
     );
-  }, [displayMessageIds]);
+  }, [displayMessageIds, firstAssistantMsgId, messageOrder]);
 
   const Header = useCallback(() => <div style={{ height: 28 }} />, []);
 

@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useAnimationControls, type PanInfo } from "fra
 import { cn } from "../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { Markdown } from "../../lib/markdown.js";
-import { useDisplayMessage, useChatMeta, useMessageOrder, useMacroContext } from "../../stores/chat-selectors.js";
+import { useDisplayMessage, useChatMeta, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
 import { useChatStore, useActiveGeneration, useIsSending } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import type { MessageBlockProps } from "../play/play-mode-types.js";
@@ -38,27 +38,25 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   // Read ALL display data from memoized selector — re-renders only when THIS message changes
   const msg = useDisplayMessage(input.messageId);
-  const chatMeta = useChatMeta();
-  const messageOrder = useMessageOrder();
+  const authorInfo = useMessageAuthor();
   const macroContext = useMacroContext();
 
   const editingMessageId = useChatStore(s => s.editingMessageId);
   const editingDraft = useChatStore(s => s.editingDraft);
   const isSending = useIsSending();
   const messageActionId = useChatStore(s => s.messageActionId);
-  const activeGen = useActiveGeneration();
-  const pendingUserMessageContent = activeGen?.pendingUserMessageContent ?? null;
+  // Narrow primitive selector — only the active chat's pending user content.
+  // Replaces reading it off the whole activeGen object (which mutated every tick).
+  const pendingUserMessageContent = useChatStore(s => {
+    if (!s.activeChatId) return null;
+    return s.generations[s.activeChatId]?.pendingUserMessageContent ?? null;
+  });
+  // Source-agnostic streaming identity: reads streamingMessageId, so non-target
+  // blocks get `false` / EMPTY and never re-render on a streaming tick.
+  const isStreamingTarget = useIsStreamingTarget(input.messageId);
+  const streamingReveal = useStreamingRevealedFor(input.messageId);
 
   // ── ALL hooks must be called before any early return (React Rules of Hooks) ──
-
-  // Find first assistant message ID for greeting logic
-  const firstAssistantMsgId = useMemo(() => {
-    const state = useSnapshotStore.getState();
-    for (const id of messageOrder) {
-      if (state.messagesById[id]?.role === "assistant") return id;
-    }
-    return null;
-  }, [messageOrder]);
 
   // Macros for variants — use safe defaults when msg is null
   const variants = useMemo(() => {
@@ -82,7 +80,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const variantCount = variants.length;
 
   // Greeting logic
-  const isGreeting = !!msg && input.messageId === firstAssistantMsgId;
+  const isGreeting = !!msg && input.isFirstAssistant;
   const isUser = msg?.role === "user";
 
   // -- Variant slide: direction derived locally to prevent phantom renders --
@@ -102,20 +100,19 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     };
   }, []);
 
-  // Streaming text for regeneration
-  const globalStreamingText = activeGen?.streamingText ?? "";
-  const globalStreamingRevealedText = activeGen?.streamingRevealedText ?? "";
-  const globalStreamingReasoning = activeGen?.streamingReasoningText ?? "";
+  // Streaming text — only populated for the streaming-target block (see
+  // useStreamingRevealedFor). Non-target blocks receive the stable EMPTY
+  // sentinel, so these are "" and never trigger downstream re-renders.
+  const globalStreamingText = streamingReveal.streamingText;
+  const globalStreamingRevealedText = streamingReveal.revealedText;
+  const globalStreamingReasoning = streamingReveal.reasoningText;
 
-  // Separator logic
+  // Separator logic — uses the hoisted prevRole prop instead of subscribing
+  // to the full messageOrder array.
   const showSeparator = useMemo(() => {
-    if (input.index === 0) return false;
-    const state = useSnapshotStore.getState();
-    const prevId = messageOrder[input.index - 1];
-    const prev = state.messagesById[prevId];
-    if (!prev || !msg) return false;
-    return !isBreakoutRole(prev.role) && !isBreakoutRole(msg.role);
-  }, [input.index, messageOrder, msg?.role]);
+    if (input.index === 0 || !input.prevRole || !msg) return false;
+    return !isBreakoutRole(input.prevRole) && !isBreakoutRole(msg.role);
+  }, [input.index, input.prevRole, msg?.role]);
 
   // ── EARLY RETURN — after all hooks ──
   const isMobile = useIsMobile();
@@ -127,20 +124,20 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     return <PendingAssistantMessage />;
   }
 
-  if (!msg || !chatMeta) return null;
+  if (!msg || !authorInfo) return null;
 
   // ── Derived values (non-hook, safe to be after return) ──
 
   // Author info
   const author: MessageShellAuthorInfo = isUser
-    ? { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null, avatarCropJson: chatMeta.persona?.avatarCropJson ?? null, avatarSrc: chatMeta.persona ? resolveEntityAvatarUrl({ kind: "personas", id: chatMeta.persona.id, avatarExt: chatMeta.persona.avatarExt, avatarAssetId: chatMeta.persona.avatarAssetId }) : null }
-    : { name: chatMeta.character.name, avatarAssetId: chatMeta.character.avatarAssetId, avatarCropJson: chatMeta.character.avatarCropJson, avatarSrc: resolveEntityAvatarUrl({ kind: "characters", id: chatMeta.character.id, avatarExt: chatMeta.character.avatarExt, avatarAssetId: chatMeta.character.avatarAssetId, updatedAt: chatMeta.character.updatedAt }) };
+    ? { name: authorInfo.persona?.name ?? "", avatarAssetId: authorInfo.persona?.avatarAssetId ?? null, avatarCropJson: authorInfo.persona?.avatarCropJson ?? null, avatarSrc: authorInfo.persona ? resolveEntityAvatarUrl({ kind: "personas", id: authorInfo.persona.id, avatarExt: authorInfo.persona.avatarExt, avatarAssetId: authorInfo.persona.avatarAssetId }) : null }
+    : { name: authorInfo.character.name, avatarAssetId: authorInfo.character.avatarAssetId, avatarCropJson: authorInfo.character.avatarCropJson, avatarSrc: resolveEntityAvatarUrl({ kind: "characters", id: authorInfo.character.id, avatarExt: authorInfo.character.avatarExt, avatarAssetId: authorInfo.character.avatarAssetId, updatedAt: authorInfo.character.updatedAt }) };
 
   // UI State
   const isEditing = editingMessageId === input.messageId;
   const isBusy = isSending || messageActionId === input.messageId;
 
-  const isLast = input.index === messageOrder.length - 1;
+  const isLast = input.isLast;
   const isLastAssistant = isLast && msg.role === "assistant";
 
   const isGenerating =
@@ -165,7 +162,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const renderContent = activeContent;
   const greetingActive = isGreeting && !isUser && variantCount > 1;
 
-  const isStreamingHere = !isUser && messageActionId === input.messageId && (globalStreamingText || globalStreamingReasoning);
+  const isStreamingHere = !isUser && isStreamingTarget && (globalStreamingText || globalStreamingReasoning);
   const activeStreamingText = isStreamingHere ? globalStreamingText : null;
   const activeStreamingRevealedText = isStreamingHere ? globalStreamingRevealedText : "";
   const activeStreamingReasoning = isStreamingHere ? globalStreamingReasoning : null;
@@ -359,7 +356,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     )}
     <MessageShell
       messageId={msg.id}
-      chatId={chatMeta.activeChat?.id ?? ""}
+      chatId={authorInfo.activeChatId}
       role={msg.role}
       showSeparator={showSeparator}
       author={author}

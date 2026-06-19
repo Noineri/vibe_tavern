@@ -129,9 +129,15 @@ export function useChatController(): ChatControllerActions {
       onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
     }) => Promise<{ finishReason: string; usage?: Record<string, number> }>,
     pendingUserContent?: string | null,
-    pendingAttachments?: import("@vibe-tavern/domain").Attachment[]
+    pendingAttachments?: import("@vibe-tavern/domain").Attachment[],
+    /**
+     * Identity of an EXISTING message this stream targets (regenerate path).
+     * Omit/null for fresh sends that stream into __pending-assistant. See
+     * ChatGenerationState.streamingMessageId.
+     */
+    streamingMessageId?: string | null,
   ): Promise<void> {
-    const controller = useChatStore.getState().startGeneration(chatId, pendingUserContent, pendingAttachments);
+    const controller = useChatStore.getState().startGeneration(chatId, pendingUserContent, pendingAttachments, streamingMessageId);
     const store = useChatStore.getState();
     store.setDraft("");
 
@@ -419,9 +425,12 @@ export function useChatController(): ChatControllerActions {
       await executeStreamAction(
         activeChatId,
         (opts) => regenerateChatMessageStream(activeChatId, messageId, opts),
+        undefined,
+        undefined,
+        messageId,
       );
     } else {
-      const controller = useChatStore.getState().startGeneration(activeChatId);
+      const controller = useChatStore.getState().startGeneration(activeChatId, undefined, undefined, messageId);
       try {
         await regenerateMessageAction(activeChatId, messageId, controller.signal);
         const snapshot = useSnapshotStore.getState();
