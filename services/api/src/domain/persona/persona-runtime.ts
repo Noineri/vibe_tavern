@@ -17,9 +17,12 @@ import type { IChatOrder } from "../../runtime/session/session-runtime-chat-orde
 import type { SessionSnapshot } from "../../api/contract/session-types.js";
 
 /**
- * Persona shape returned by list/create/duplicate. The contract's own
- * `PersonaRecord` (in runtime-api.ts) is a wire-type duplicate of this —
- * see audit §6.1 / refactor plan for dedup.
+ * Canonical persona shape — the single source of truth for the backend.
+ * Returned by `PersonaRuntime.list/create/duplicate`, used as
+ * `SessionSnapshot.persona`, and returned by `StaticPromptResolver.getPersona`.
+ * The contract re-exports this type (see `runtime-api.ts`); the frontend
+ * mirrors it in `apps/web/src/api/types.ts` (`PersonaRecord` / `AppPersona`).
+ * Every field exists on the persona DB row (`persona-store.ts` `Persona`).
  */
 export type PersonaRecord = {
 	id: string;
@@ -30,11 +33,15 @@ export type PersonaRecord = {
 	avatarFullAssetId: string | null;
 	avatarCropJson: string | null;
 	avatarExt: string | null;
+	avatarFullExt: string | null;
+	defaultForNewChats: boolean;
 	// ─── Media injection (A7) ────────────────────────────────────────────
 	/** Vision-generated appearance description of the avatar. Null = undescribed. */
 	avatarDescription: string | null;
 	/** Whether the avatar appearance is injected into the prompt. */
 	includeAvatarInPrompt: boolean;
+	/** ISO timestamp of the last row update; avatar cache-bust key (symmetric with `CharacterRecord.updatedAt`). */
+	updatedAt: string;
 };
 
 export interface PersonaRuntimeDeps {
@@ -50,18 +57,7 @@ export class PersonaRuntime {
 		this.deps = deps;
 	}
 
-	async list(): Promise<Array<{
-		id: string;
-		name: string;
-		description: string;
-		pronouns: string | null;
-		avatarAssetId: string | null;
-		avatarFullAssetId: string | null;
-		avatarCropJson: string | null;
-		avatarExt: string | null;
-		avatarFullExt: string | null;
-		defaultForNewChats: boolean;
-	}>> {
+	async list(): Promise<PersonaRecord[]> {
 		const personas = await this.deps.stores.personas.listAll();
 		return personas.map((p) => ({
 			id: p.id,
@@ -74,6 +70,9 @@ export class PersonaRuntime {
 			avatarExt: p.avatarExt,
 			avatarFullExt: p.avatarFullExt,
 			defaultForNewChats: p.defaultForNewChats,
+			avatarDescription: p.avatarDescription,
+			includeAvatarInPrompt: p.includeAvatarInPrompt,
+			updatedAt: p.updatedAt,
 		}));
 	}
 
@@ -82,18 +81,7 @@ export class PersonaRuntime {
 		description: string;
 		pronouns?: string | null;
 		defaultForNewChats?: boolean;
-	}): Promise<{
-		id: string;
-		name: string;
-		description: string;
-		pronouns: string | null;
-		avatarAssetId: string | null;
-		avatarFullAssetId: string | null;
-		avatarCropJson: string | null;
-		avatarExt: string | null;
-		avatarFullExt: string | null;
-		defaultForNewChats: boolean;
-	}> {
+	}): Promise<PersonaRecord> {
 		const trimmedName = (input.name ?? "").trim();
 		const trimmedDescription = (input.description ?? "").trim();
 		if (!trimmedName) {
@@ -116,6 +104,9 @@ export class PersonaRuntime {
 			avatarExt: persona.avatarExt,
 			avatarFullExt: persona.avatarFullExt,
 			defaultForNewChats: persona.defaultForNewChats,
+			avatarDescription: persona.avatarDescription,
+			includeAvatarInPrompt: persona.includeAvatarInPrompt,
+			updatedAt: persona.updatedAt,
 		};
 	}
 
@@ -244,17 +235,7 @@ export class PersonaRuntime {
 		return defaultPersona.id as PersonaId;
 	}
 
-	async duplicate(personaId: string): Promise<{
-		id: string;
-		name: string;
-		description: string;
-		pronouns: string | null;
-		avatarAssetId: string | null;
-		avatarFullAssetId: string | null;
-		avatarExt: string | null;
-		avatarFullExt: string | null;
-		defaultForNewChats: boolean;
-	}> {
+	async duplicate(personaId: string): Promise<PersonaRecord> {
 		const source = await this.deps.stores.personas.getById(brandId<PersonaId>(personaId));
 		if (!source) {
 			throw notFound("Persona", `Persona '${personaId}' was not found.`);
@@ -266,8 +247,11 @@ export class PersonaRuntime {
 			pronouns: source.pronouns,
 			avatarAssetId: source.avatarAssetId,
 			avatarFullAssetId: source.avatarFullAssetId,
+			avatarCropJson: source.avatarCropJson,
 			avatarExt: source.avatarExt,
 			avatarFullExt: source.avatarFullExt,
+			avatarDescription: source.avatarDescription,
+			includeAvatarInPrompt: source.includeAvatarInPrompt,
 		});
 
 		// Copy the folder-resident avatar (if any) into the duplicate's own folder.
@@ -346,9 +330,13 @@ export class PersonaRuntime {
 			pronouns: persona.pronouns,
 			avatarAssetId: persona.avatarAssetId,
 			avatarFullAssetId: persona.avatarFullAssetId,
+			avatarCropJson: persona.avatarCropJson,
 			avatarExt: persona.avatarExt,
 			avatarFullExt: persona.avatarFullExt,
 			defaultForNewChats: persona.defaultForNewChats,
+			avatarDescription: persona.avatarDescription,
+			includeAvatarInPrompt: persona.includeAvatarInPrompt,
+			updatedAt: persona.updatedAt,
 		};
 	}
 }
