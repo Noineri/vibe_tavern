@@ -1,27 +1,15 @@
 import { Hono } from "hono";
-import type { SettingsRuntimeApi, MobileAccessRuntimeApi } from "../contract/runtime-api.js";
+import type { SettingsRuntimeApi } from "../contract/runtime-api.js";
 
-export function createSettingsRoutes(runtime: SettingsRuntimeApi & MobileAccessRuntimeApi) {
+export function createSettingsRoutes(settings: SettingsRuntimeApi) {
   return new Hono()
     .get("/api/settings/ui", async (c) => {
-      const settings = await runtime.getUiSettings();
-      return c.json(settings);
+      const settings_value = await settings.getUiSettings();
+      return c.json(settings_value);
     })
     .patch("/api/settings/ui", async (c) => {
       const body = await c.req.json().catch(() => ({}));
-      const settings = await runtime.updateUiSettings(body);
-      return c.json(settings);
-    })
-    .get("/api/settings/mobile-access", async (c) => {
-      const info = await runtime.getMobileAccessInfo();
-      return c.json(info);
-    })
-    .post("/api/settings/mobile-access/regenerate", async (c) => {
-      const result = await runtime.regenerateMobileAccessToken();
-      return c.json(result);
-    })
-    .delete("/api/settings/mobile-access", async (c) => {
-      const result = await runtime.revokeMobileAccess();
-      return c.json(result);
+      const settings_value = await settings.updateUiSettings(body);
+      return c.json(settings_value);
     });
 }
