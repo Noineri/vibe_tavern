@@ -11,6 +11,7 @@ import { createPresetRoutes } from "./preset.js";
 import { createImportRoutes } from "./import.js";
 import { createAssetRoutes } from "./asset.js";
 import { createSettingsRoutes } from "./settings.js";
+import { createMobileAccessRoutes } from "./mobile-access.js";
 
 export type { RuntimeApi } from "../contract/runtime-api.js";
 
@@ -26,7 +27,8 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createPresetRoutes(runtime.preset))
     .route("/", createImportRoutes(runtime.importExport))
     .route("/", createAssetRoutes(runtime.asset))
-    .route("/", createSettingsRoutes({ ...runtime.settings, ...runtime.mobileAccess }))
+    .route("/", createSettingsRoutes(runtime.settings))
+    .route("/", createMobileAccessRoutes(runtime.mobileAccess))
   ;
 }
 
