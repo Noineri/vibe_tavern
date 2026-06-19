@@ -1,5 +1,6 @@
 import type { AiAssistantStreamChunk } from "../../domain/ai-assistant/reasoning-split.js";
 import type { AiAssistantStreamRequest } from "../../domain/ai-assistant/ai-assistant-stream.js";
+import type { PersonaRecord } from "../../domain/persona/persona-runtime.js";
 import type { ClientProviderProfileRecord } from "../../runtime/session/session-runtime-dto.js";
 import type {
 	BootstrapState,
@@ -43,32 +44,11 @@ type Lorebook = LorebookRow;
 type LoreEntry = LoreEntryRow;
 type Script = ScriptRow;
 
-/** Persona shape returned by list/create/duplicate in domain/persona. */
-interface PersonaRecord {
-	id: string;
-	name: string;
-	description: string;
-	pronouns: string | null;
-	avatarAssetId: string | null;
-	avatarFullAssetId: string | null;
-	avatarCropJson: string | null;
-	avatarExt: string | null;
-	avatarFullExt: string | null;
-	defaultForNewChats: boolean;
-}
-
-/** Persona shape returned by duplicate (missing avatarCropJson — known inconsistency). */
-interface PersonaDuplicateRecord {
-	id: string;
-	name: string;
-	description: string;
-	pronouns: string | null;
-	avatarAssetId: string | null;
-	avatarFullAssetId: string | null;
-	avatarExt: string | null;
-	avatarFullExt: string | null;
-	defaultForNewChats: boolean;
-}
+// `PersonaRecord` is imported from domain/persona/persona-runtime.js (canonical
+// shape — see PERSONA_DTO_CONSOLIDATION_PLAN.md). The contract previously
+// redeclared it as a wire-type duplicate; that and `PersonaDuplicateRecord`
+// (the duplicate path that missed `avatarCropJson`) are removed — duplicate
+// now returns the canonical `PersonaRecord`.
 
 /** A single image in a character's media gallery (plain-string DTO for the API layer). */
 interface CharacterAssetRecord {
@@ -213,7 +193,7 @@ export interface PersonaRuntimeApi {
 	createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) => Promise<PersonaRecord>;
 	updatePersona: (personaId: string, body: Record<string, unknown>) => Promise<SessionSnapshot | { id: string }>;
 	deletePersona: (personaId: string) => Promise<void>;
-	duplicatePersona: (personaId: string) => Promise<PersonaDuplicateRecord>;
+	duplicatePersona: (personaId: string) => Promise<PersonaRecord>;
 	setDefaultPersona: (personaId: string) => Promise<void>;
 	uploadPersonaAvatar: (personaId: string, crop: File, full?: File) => Promise<{ avatarExt: string; avatarFullExt: string | null }>;
 	servePersonaAvatar: (personaId: string) => Promise<Response | null>;
