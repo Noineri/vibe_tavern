@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "./Tooltip.js";
+import { resolveEntityAvatarUrl, avatarUrl } from "../../lib/avatar.js";
 
 export type LinkBindingTargetType = "character" | "persona" | "lorebook";
 
@@ -16,6 +17,16 @@ export interface LinkTarget {
   id: string;
   name: string;
   avatarAssetId: string | null;
+  /**
+   * Entity kind for folder-resident avatar resolution
+   * (resolveEntityAvatarUrl). Omitted for targets without a folder avatar
+   * (e.g. lorebooks) — falls back to legacy flat-asset URL.
+   */
+  kind?: "characters" | "personas";
+  avatarExt?: string | null;
+  avatarFullExt?: string | null;
+  avatarFullAssetId?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface LinkBindingRecord {
@@ -38,19 +49,32 @@ interface LinkBindingPopoverProps {
   lorebookSectionLabel?: string;
 }
 
-function avatarUrl(assetId: string | null): string | undefined {
-  return assetId ? `/api/assets/${assetId}` : undefined;
+function resolveTargetAvatarUrl(target: LinkTarget): string | null {
+  if (target.kind) {
+    return resolveEntityAvatarUrl({
+      kind: target.kind,
+      id: target.id,
+      avatarExt: target.avatarExt ?? null,
+      avatarAssetId: target.avatarAssetId,
+      avatarFullExt: target.avatarFullExt,
+      avatarFullAssetId: target.avatarFullAssetId,
+      updatedAt: target.updatedAt,
+    });
+  }
+  // No folder-kind (e.g. lorebook) — legacy flat-asset fallback.
+  return target.avatarAssetId ? avatarUrl(target.avatarAssetId) : null;
 }
 
 function AvatarDot({ target, size = 18 }: { target: LinkTarget; size?: number }) {
+  const url = resolveTargetAvatarUrl(target);
   return (
     <div
       className="shrink-0 overflow-hidden rounded-full bg-s3"
       style={{ height: size, width: size }}
     >
-      {target.avatarAssetId ? (
+      {url ? (
         <img
-          src={avatarUrl(target.avatarAssetId)}
+          src={url}
           alt=""
           className="h-full w-full object-cover"
         />

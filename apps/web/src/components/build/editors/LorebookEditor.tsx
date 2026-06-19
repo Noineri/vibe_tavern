@@ -279,11 +279,19 @@ export function LorebookEditor({
     id: c.id,
     name: c.name,
     avatarAssetId: c.avatarAssetId,
+    kind: "characters",
+    avatarExt: c.avatarExt,
+    avatarFullExt: c.avatarFullExt,
+    avatarFullAssetId: c.avatarFullAssetId,
+    updatedAt: c.updatedAt,
   }));
   const linkPersonas: LinkTarget[] = personas.map((p) => ({
     id: p.id,
     name: p.name,
     avatarAssetId: p.avatarAssetId,
+    kind: "personas",
+    avatarExt: p.avatarExt,
+    avatarFullExt: p.avatarFullExt,
   }));
 
   // Load links when lorebooks change

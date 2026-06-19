@@ -7,7 +7,7 @@
  * В режиме редактирования — inline-форма для имени + scope.
  * На мобильных — контекстное меню (⋮) вместо набора кнопок.
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 
 import { Ic, Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
@@ -24,6 +24,16 @@ import {
 } from "../../../app-client.js";
 import { LoreEntryList } from "./LoreEntryList.js";
 import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
+import { countTokens } from "../../../utils/tokenizer.js";
+
+// ── Helpers ────────────────────────────────────────────────────────────
+
+/** Compact token count: 999 → "999", 1200 → "1.2k", 1500000 → "1.5M". */
+function formatTokenCount(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -98,11 +108,11 @@ export function LorebookAccordion({
   personas,
   isRu,
 }: LorebookAccordionProps) {
-  // ── Entries: загружаются при раскрытии аккордеона ──
+  // ── Entries: загружаются сразу (для счётчика и токенов в шапке),
+  //    и остаются доступными при раскрытии.
   const [entries, setEntries] = useState<LoreEntryRecord[]>([]);
 
   useEffect(() => {
-    if (!expanded) return;
     let cancelled = false;
     listLoreEntries(lorebook.id).then((data) => {
       if (!cancelled) setEntries(data);
@@ -110,7 +120,16 @@ export function LorebookAccordion({
     return () => {
       cancelled = true;
     };
-  }, [expanded, lorebook.id]);
+  }, [lorebook.id]);
+
+  // Суммарная оценка токенов всех записей (по content).
+  const totalTokens = useMemo(
+    () =>
+      entries.length === 0
+        ? 0
+        : countTokens(entries.map((e) => e.content).join("\n")),
+    [entries],
+  );
 
   const handleReorderEntries = async (
     updates: Array<{ id: string; sortOrder: number; position?: string }>
@@ -228,9 +247,17 @@ export function LorebookAccordion({
               />
             </div>
 
-            {/* Счётчик записей */}
-            <span className="shrink-0 rounded-full bg-s3 px-2 py-0.5 font-ui text-[11px] text-t3">
+            {/* Счётчик записей + оценка токенов */}
+            <span
+              className="shrink-0 rounded-full bg-s3 px-2 py-0.5 font-ui text-[11px] text-t3 tabular-nums"
+              title={`${entries.length} · ${totalTokens.toLocaleString()} ${t("tokens_label")}`}
+            >
               {entries.length}
+              {totalTokens > 0 && (
+                <span className="ml-1 text-t3/70">
+                  · {formatTokenCount(totalTokens)}
+                </span>
+              )}
             </span>
 
             {/* ── Мобильное контекстное меню (⋮) ── */}
