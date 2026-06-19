@@ -337,6 +337,7 @@ export function AiAssistantModal({
     kind: "personas",
     avatarExt: activePersona?.id === scopeContext.personaId ? activePersona.avatarExt ?? null : allPersonaContext?.avatarExt ?? null,
     avatarFullExt: activePersona?.id === scopeContext.personaId ? activePersona.avatarFullExt ?? null : allPersonaContext?.avatarFullExt ?? null,
+    updatedAt: activePersona?.id === scopeContext.personaId ? activePersona.updatedAt ?? null : allPersonaContext?.updatedAt ?? null,
   } : null;
 
   const lorebookContextTargets: LinkTarget[] = aiLorebooks

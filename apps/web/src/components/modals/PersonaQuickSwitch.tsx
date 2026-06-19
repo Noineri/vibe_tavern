@@ -27,7 +27,7 @@ function PersonaAvatar({ src, size }: { src: string | null; size: number }) {
 }
 
 interface Props {
-  personas: Array<{ id: string; name: string; description: string; avatarAssetId: string | null; avatarExt: string | null }>;
+  personas: Array<{ id: string; name: string; description: string; avatarAssetId: string | null; avatarExt: string | null; updatedAt: string }>;
   activePersonaId: string | null;
   onSelect: (personaId: string) => void;
 }
@@ -65,7 +65,7 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
         className="flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim px-[9px] py-[3px] text-xs font-medium text-accent-t"
         onClick={() => setIsOpen(!isOpen)}
       >
-        <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: activePersona.id, avatarExt: activePersona.avatarExt, avatarAssetId: activePersona.avatarAssetId })} size={18} />
+        <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: activePersona.id, avatarExt: activePersona.avatarExt, avatarAssetId: activePersona.avatarAssetId, updatedAt: activePersona.updatedAt })} size={18} />
         <span>{activePersona.name.split(' ')[0]}</span>
         <Icons.Caret direction={isOpen ? "u" : "d"} />
       </button>
@@ -80,7 +80,7 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
               onClick={() => { onSelect(p.id); setIsOpen(false); }}
             >
               <div className="w-4 shrink-0 flex justify-center text-accent-t">{p.id === activePersonaId && <Icons.Check />}</div>
-              <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId })} size={22} />
+              <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId, updatedAt: p.updatedAt })} size={22} />
               <div className="overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</div>
             </button>
           ))}

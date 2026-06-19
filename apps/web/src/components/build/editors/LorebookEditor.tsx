@@ -292,6 +292,7 @@ export function LorebookEditor({
     kind: "personas",
     avatarExt: p.avatarExt,
     avatarFullExt: p.avatarFullExt,
+    updatedAt: p.updatedAt,
   }));
 
   // Load links when lorebooks change

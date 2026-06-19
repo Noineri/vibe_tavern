@@ -130,7 +130,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   // Author info
   const author: MessageShellAuthorInfo = isUser
-    ? { name: authorInfo.persona?.name ?? "", avatarAssetId: authorInfo.persona?.avatarAssetId ?? null, avatarCropJson: authorInfo.persona?.avatarCropJson ?? null, avatarSrc: authorInfo.persona ? resolveEntityAvatarUrl({ kind: "personas", id: authorInfo.persona.id, avatarExt: authorInfo.persona.avatarExt, avatarAssetId: authorInfo.persona.avatarAssetId }) : null }
+    ? { name: authorInfo.persona?.name ?? "", avatarAssetId: authorInfo.persona?.avatarAssetId ?? null, avatarCropJson: authorInfo.persona?.avatarCropJson ?? null, avatarSrc: authorInfo.persona ? resolveEntityAvatarUrl({ kind: "personas", id: authorInfo.persona.id, avatarExt: authorInfo.persona.avatarExt, avatarAssetId: authorInfo.persona.avatarAssetId, updatedAt: authorInfo.persona.updatedAt }) : null }
     : { name: authorInfo.character.name, avatarAssetId: authorInfo.character.avatarAssetId, avatarCropJson: authorInfo.character.avatarCropJson, avatarSrc: resolveEntityAvatarUrl({ kind: "characters", id: authorInfo.character.id, avatarExt: authorInfo.character.avatarExt, avatarAssetId: authorInfo.character.avatarAssetId, updatedAt: authorInfo.character.updatedAt }) };
 
   // UI State
@@ -673,7 +673,7 @@ function PendingUserMessage() {
   const content = activeGen.pendingUserMessageContent ?? "";
   const pendingAttachments = activeGen.pendingUserMessageAttachments ?? [];
   const displayContent = macroContext ? replaceUiMacros(content, macroContext) : content;
-  const author = { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null, avatarCropJson: chatMeta.persona?.avatarCropJson ?? null, avatarSrc: chatMeta.persona ? resolveEntityAvatarUrl({ kind: "personas", id: chatMeta.persona.id, avatarExt: chatMeta.persona.avatarExt, avatarAssetId: chatMeta.persona.avatarAssetId }) : null };
+  const author = { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null, avatarCropJson: chatMeta.persona?.avatarCropJson ?? null, avatarSrc: chatMeta.persona ? resolveEntityAvatarUrl({ kind: "personas", id: chatMeta.persona.id, avatarExt: chatMeta.persona.avatarExt, avatarAssetId: chatMeta.persona.avatarAssetId, updatedAt: chatMeta.persona.updatedAt }) : null };
 
   return (
     <MessageShell

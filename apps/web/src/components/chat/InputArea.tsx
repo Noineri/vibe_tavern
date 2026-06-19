@@ -224,7 +224,7 @@ export function InputArea() {
             <div className="relative" ref={mobilePersonaRef}>
               <button type="button" onClick={() => setMobilePersonaOpen(o => !o)} className="flex h-9 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2">
                 {activePersonaId ? (
-                  <PersonaAvatar src={(() => { const p = personas.find(p => p.id === activePersonaId); return p ? resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId }) : null; })()}  size={20} />
+                  <PersonaAvatar src={(() => { const p = personas.find(p => p.id === activePersonaId); return p ? resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId, updatedAt: p.updatedAt }) : null; })()}  size={20} />
                 ) : (
                   <Icons.User />
                 )}
@@ -238,7 +238,7 @@ export function InputArea() {
                     {personas.map(p => (
                       <button type="button" key={p.id} className="flex w-full min-h-[44px] cursor-pointer items-center gap-2 px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2" onClick={() => { void character.handleSetChatPersona(p.id); setMobilePersonaOpen(false); }}>
                         <div className="w-4 shrink-0 flex justify-center text-accent-t">{activePersonaId === p.id && <Icons.Check/>}</div>
-                        <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId })}  size={22} />
+                        <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId, updatedAt: p.updatedAt })}  size={22} />
                         <div className="min-w-0 truncate">{p.name}</div>
                       </button>
                     ))}
