@@ -491,7 +491,7 @@ export function PersonaModal(input: PersonaModalProps) {
               {menuOpenId === persona.id && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setMenuOpenId(null); }} />
-                  <div className="absolute right-0 top-full z-20 mt-1 min-w-[160px] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg" onClick={(e) => e.stopPropagation()}>
+                  <div className="glass-blur absolute right-0 top-full z-20 mt-1 min-w-[160px] overflow-hidden rounded-lg border border-border bg-glass-bg py-1 shadow-lg" onClick={(e) => e.stopPropagation()}>
                     {!persona.defaultForNewChats && (
                       <>
                         <div

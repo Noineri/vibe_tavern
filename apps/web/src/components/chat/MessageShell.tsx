@@ -245,13 +245,13 @@ export function MessageShell(props: MessageShellProps) {
                         top: ((mobileMenuRef.current?.getBoundingClientRect()?.bottom ?? 0) + 4) + 'px',
                         right: (window.innerWidth - (mobileMenuRef.current?.getBoundingClientRect()?.right ?? 0)) + 'px',
                         minWidth: 160,
-                        background: 'var(--surface)',
+                        background: 'var(--glass-bg)',
                         borderRadius: 8,
                         border: '1px solid var(--border)',
                         boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
                         overflow: 'hidden',
                       } as React.CSSProperties}
-                      className="bg-surface"
+                      className="glass-blur"
                       onClick={e => e.stopPropagation()}
                     >
                       <div className="flex items-center gap-2.5 min-h-[44px] px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2 cursor-pointer" onClick={() => { setMobileMenuOpen(false); actions.onCopy(); }}>

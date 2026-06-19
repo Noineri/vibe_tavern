@@ -72,7 +72,8 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
       {isOpen && (
         <div className="glass-blur absolute bottom-[calc(100%+8px)] z-[220] left-0 w-[220px] rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
           <div className="mb-1 border-b border-border px-4 pt-1 pb-2 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("persona_selection")}</div>
-          {personas.map(p => (
+          <div className="max-h-[204px] overflow-y-auto">
+            {personas.map(p => (
             <button type="button"
               key={p.id}
               className={cn("flex w-full cursor-pointer items-center gap-2 text-left text-[13px] text-t1 hover:bg-s2 px-4 py-1.5", p.id === activePersonaId && "bg-accent-dim")}
@@ -83,6 +84,7 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
               <div className="overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</div>
             </button>
           ))}
+          </div>
           <div className="mt-1 border-t border-border px-4 pt-2 pb-0">
             <button type="button"
               className="flex cursor-pointer items-center gap-1 rounded p-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"

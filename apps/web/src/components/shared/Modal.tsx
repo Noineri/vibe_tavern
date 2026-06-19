@@ -57,7 +57,16 @@ export function Modal({
         >
           <Dialog.Title className="sr-only">{title}</Dialog.Title>
           <Dialog.Description className="sr-only">{description}</Dialog.Description>
-          <div className={cn("pointer-events-auto", compact && "max-w-sm")}>{children}</div>
+          <div className={cn(
+            "pointer-events-auto",
+            compact && "max-w-sm",
+            // On mobile fullscreen (non-compact), stretch the wrapper to fill
+            // Dialog.Content so children using `h-full` resolve against the
+            // viewport instead of collapsing to content height (which broke
+            // inner `overflow-y-auto` scrolling). Centering is preserved so
+            // small fixed-size panels (e.g. MobileAccessModal) still center.
+            !compact && isMobile && "flex h-full w-full items-center justify-center",
+          )}>{children}</div>
             {/* Portal anchor for nested Radix components (Select, Popover).
                 It must be inside Dialog.Content for Radix focus trapping, but Dialog.Content
                 must not use CSS transforms or fixed dropdown coordinates become wrong. */}
