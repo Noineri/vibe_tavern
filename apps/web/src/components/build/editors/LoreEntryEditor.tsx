@@ -391,6 +391,7 @@ export function LoreEntryEditor({
                   selected={entry.matchSources}
                   options={(
                     [
+                      "chat_messages",
                       "character_desc",
                       "character_personality",
                       "character_note",

@@ -323,12 +323,20 @@ export function AiAssistantModal({
     id: scopeContext.characterId,
     name: activeCharacter?.id === scopeContext.characterId ? activeCharacter.name : allCharacterContext?.name ?? "Character",
     avatarAssetId: activeCharacter?.id === scopeContext.characterId ? activeCharacter.avatarAssetId ?? null : allCharacterContext?.avatarAssetId ?? null,
+    kind: "characters",
+    avatarExt: activeCharacter?.id === scopeContext.characterId ? activeCharacter.avatarExt ?? null : allCharacterContext?.avatarExt ?? null,
+    avatarFullExt: activeCharacter?.id === scopeContext.characterId ? activeCharacter.avatarFullExt ?? null : allCharacterContext?.avatarFullExt ?? null,
+    avatarFullAssetId: activeCharacter?.id === scopeContext.characterId ? activeCharacter.avatarFullAssetId ?? null : allCharacterContext?.avatarFullAssetId ?? null,
+    updatedAt: activeCharacter?.id === scopeContext.characterId ? activeCharacter.updatedAt ?? null : allCharacterContext?.updatedAt ?? null,
   } : null;
 
   const persTarget: LinkTarget | null = scopeContext?.personaId ? {
     id: scopeContext.personaId,
     name: activePersona?.id === scopeContext.personaId ? activePersona.name : allPersonaContext?.name ?? "Persona",
     avatarAssetId: activePersona?.id === scopeContext.personaId ? activePersona.avatarAssetId ?? null : allPersonaContext?.avatarAssetId ?? null,
+    kind: "personas",
+    avatarExt: activePersona?.id === scopeContext.personaId ? activePersona.avatarExt ?? null : allPersonaContext?.avatarExt ?? null,
+    avatarFullExt: activePersona?.id === scopeContext.personaId ? activePersona.avatarFullExt ?? null : allPersonaContext?.avatarFullExt ?? null,
   } : null;
 
   const lorebookContextTargets: LinkTarget[] = aiLorebooks
