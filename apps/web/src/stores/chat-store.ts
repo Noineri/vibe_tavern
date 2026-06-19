@@ -6,6 +6,20 @@ import type { ChatGenerationStatus } from "../app-client.js";
 
 export interface ChatGenerationState {
   isSending: boolean;
+  /**
+   * Explicit identity of the message currently being streamed into (the
+   * streaming-target seam). Set only when a generation streams into an
+   * EXISTING message (regenerate); null for fresh sends (which stream into
+   * the __pending-assistant singleton) and whenever no generation is active.
+   *
+   * Single source of truth for "which message is streaming right now". Read
+   * via useIsStreamingTarget / useStreamingRevealedFor (chat-selectors),
+   * NOT by overloading messageActionId (which tracks action spinners:
+   * edit/delete/regenerate pending). The two concerns are deliberately
+   * separate so a future sequential queue can hold long-lived streaming
+   * state without it rendering as a transient action spinner.
+   */
+  streamingMessageId: string | null;
   streamingText: string;
   streamingRevealedText: string;
   streamingReasoningText: string;
@@ -18,6 +32,7 @@ export interface ChatGenerationState {
 function defaultGenState(): ChatGenerationState {
   return {
     isSending: false,
+    streamingMessageId: null,
     streamingText: "",
     streamingRevealedText: "",
     streamingReasoningText: "",
@@ -63,8 +78,13 @@ export interface ChatActions {
   /** Initialize (or get) generation state for a chat. */
   getOrCreateGen: (chatId: string) => ChatGenerationState;
 
-  /** Start generation: creates AbortController, sets isSending. Returns the controller. */
-  startGeneration: (chatId: string, pendingUserContent?: string | null, pendingAttachments?: Attachment[]) => AbortController;
+  /**
+   * Start generation: creates AbortController, sets isSending. Returns the controller.
+   * `streamingMessageId` (optional) identifies an EXISTING message the stream
+   * targets (regenerate path); omit/null for fresh sends that stream into the
+   * __pending-assistant singleton. See ChatGenerationState.streamingMessageId.
+   */
+  startGeneration: (chatId: string, pendingUserContent?: string | null, pendingAttachments?: Attachment[], streamingMessageId?: string | null) => AbortController;
 
   /** Set the revealed streaming text (throttled by StreamingReveal). Also updates streamingText. */
   setStreamingRevealed: (chatId: string, revealedText: string) => void;
@@ -128,7 +148,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
     return newGen;
   },
 
-  startGeneration: (chatId, pendingContent, pendingAttachments) => {
+  startGeneration: (chatId, pendingContent, pendingAttachments, streamingMessageId = null) => {
     const controller = new AbortController();
     set((s) => ({
       generations: {
@@ -136,6 +156,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
         [chatId]: {
           ...defaultGenState(),
           isSending: true,
+          streamingMessageId,
           pendingUserMessageContent: pendingContent ?? null,
           pendingUserMessageAttachments: pendingAttachments ?? [],
           abortController: controller,
@@ -202,6 +223,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
           [chatId]: {
             ...gen,
             isSending: false,
+            streamingMessageId: null,
             streamingText: "",
             streamingRevealedText: "",
             streamingReasoningText: "",
@@ -228,6 +250,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
           [chatId]: {
             ...g,
             isSending: false,
+            streamingMessageId: null,
             streamingText: "",
             streamingRevealedText: "",
             streamingReasoningText: "",
