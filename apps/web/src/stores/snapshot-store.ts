@@ -136,9 +136,56 @@ function toIso(ts: string): string {
   return isNaN(Number(ts)) ? ts : new Date(Number(ts)).toISOString();
 }
 
-function sameJson<T>(a: T, b: T): boolean {
+/**
+ * Structural deep equality for JSON-compatible data — the dedup comparator
+ * used by ingestSnapshot to decide whether a wire object differs from the
+ * stored copy. Skipping the assignment preserves the store's object
+ * reference, which is what keeps subscribers (MessageBlock, chat list) from
+ * re-rendering on unchanged data — the Wave A render-isolation invariant
+ * leans on this.
+ *
+ * Reproduces `JSON.stringify(a) === JSON.stringify(b)` decisions exactly for
+ * JSON-compatible data, but WITHOUT allocating any string (Wave B2): a
+ * double `JSON.stringify` of a 100-message chat per ingest was the hot
+ * path, and the allocation dominated. This recurses structurally and exits
+ * on the first differing field.
+ *
+ * Matches JSON.stringify semantics for the cases that occur on the wire:
+ *  - `undefined` values are treated as absent (stringify omits them), so
+ *    `{a:1,b:undefined}` and `{a:1}` compare equal.
+ *  - object key order is irrelevant (compared by key set), as two parses of
+ *    structurally-equal JSON may differ in insertion order.
+ *  - arrays are order-sensitive (as stringify is).
+ * ingestSnapshot data is always parsed-from-JSON, so non-JSON edge cases
+ * (NaN, functions, symbols, Date objects) never reach here.
+ */
+function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
-  return JSON.stringify(a) === JSON.stringify(b);
+  // After the === check: if either side is a primitive (or null/undefined),
+  // they cannot be equal unless both were the same primitive (handled).
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") {
+    return false;
+  }
+  const aIsArray = Array.isArray(a);
+  const bIsArray = Array.isArray(b);
+  if (aIsArray || bIsArray) {
+    // Arrays are order-sensitive; a non-array vs array is a mismatch.
+    if (!aIsArray || !bIsArray || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!deepEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  // Plain objects: compare defined keys (undefined treated as absent).
+  const aRec = a as Record<string, unknown>;
+  const bRec = b as Record<string, unknown>;
+  const aKeys = Object.keys(aRec).filter((k) => aRec[k] !== undefined);
+  const bKeys = Object.keys(bRec).filter((k) => bRec[k] !== undefined);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const k of aKeys) {
+    if (!deepEqual(aRec[k], bRec[k])) return false;
+  }
+  return true;
 }
 
 function sameStringArray(a: string[], b: string[]): boolean {
@@ -170,7 +217,7 @@ export const useSnapshotStore = create<SnapshotStore>()(
             if (!nextChatIds.has(id)) delete draft.chatsById[id];
           }
           for (const chat of snapshot.chats) {
-            if (!sameJson(draft.chatsById[chat.id], chat)) {
+            if (!deepEqual(draft.chatsById[chat.id], chat)) {
               draft.chatsById[chat.id] = chat;
             }
           }
@@ -195,7 +242,7 @@ export const useSnapshotStore = create<SnapshotStore>()(
             if (!nextMessageIds.has(id)) delete draft.messagesById[id];
           }
           for (const msg of snapshot.messages) {
-            if (!sameJson(draft.messagesById[msg.id], msg)) {
+            if (!deepEqual(draft.messagesById[msg.id], msg)) {
               draft.messagesById[msg.id] = msg;
             }
           }
@@ -210,47 +257,47 @@ export const useSnapshotStore = create<SnapshotStore>()(
         // writes the value (persona may be an explicit null when unset).
         if ("character" in snapshot) {
           const next = snapshot.character ?? null;
-          if (!sameJson(draft.character, next)) draft.character = next;
+          if (!deepEqual(draft.character, next)) draft.character = next;
         }
         if ("persona" in snapshot) {
           const next = snapshot.persona ?? null;
-          if (!sameJson(draft.persona, next)) draft.persona = next;
+          if (!deepEqual(draft.persona, next)) draft.persona = next;
         }
         if ("activeChat" in snapshot) {
           const next = snapshot.activeChat ?? null;
-          if (!sameJson(draft.activeChat, next)) draft.activeChat = next;
+          if (!deepEqual(draft.activeChat, next)) draft.activeChat = next;
         }
         if ("activeBranch" in snapshot) {
           const next = snapshot.activeBranch ?? null;
-          if (!sameJson(draft.activeBranch, next)) draft.activeBranch = next;
+          if (!deepEqual(draft.activeBranch, next)) draft.activeBranch = next;
         }
 
         // ── Arrays: replace only when present; absence preserves ──
         if (Array.isArray(snapshot.branches)) {
-          if (!sameJson(draft.branches, snapshot.branches)) draft.branches = snapshot.branches;
+          if (!deepEqual(draft.branches, snapshot.branches)) draft.branches = snapshot.branches;
         }
         if (Array.isArray(snapshot.summaries)) {
-          if (!sameJson(draft.summaries, snapshot.summaries)) draft.summaries = snapshot.summaries;
+          if (!deepEqual(draft.summaries, snapshot.summaries)) draft.summaries = snapshot.summaries;
         }
 
         // ── Traces / preview ──
         if ("promptTrace" in snapshot) {
           const next = snapshot.promptTrace ?? null;
-          if (!sameJson(draft.promptTrace, next)) draft.promptTrace = next;
+          if (!deepEqual(draft.promptTrace, next)) draft.promptTrace = next;
         }
         if (Array.isArray(snapshot.promptTraceHistory)) {
-          if (!sameJson(draft.promptTraceHistory, snapshot.promptTraceHistory)) {
+          if (!deepEqual(draft.promptTraceHistory, snapshot.promptTraceHistory)) {
             draft.promptTraceHistory = snapshot.promptTraceHistory;
           }
         }
         if ("contextPreview" in snapshot) {
           const next = snapshot.contextPreview ?? null;
-          if (!sameJson(draft.contextPreview, next)) draft.contextPreview = next;
+          if (!deepEqual(draft.contextPreview, next)) draft.contextPreview = next;
         }
 
         // ── All characters (global list) ──
         if (Array.isArray(snapshot.allCharacters)) {
-          if (!sameJson(draft.allCharacters, snapshot.allCharacters)) {
+          if (!deepEqual(draft.allCharacters, snapshot.allCharacters)) {
             draft.allCharacters = snapshot.allCharacters;
           }
         }

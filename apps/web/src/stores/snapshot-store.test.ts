@@ -148,3 +148,105 @@ describe("ingestSnapshot — absence pipeline (Phase 3.4.1)", () => {
     expect(after.chatsById["chat-1"]?.title).toBe("Chat 1");
   });
 });
+
+/**
+ * Wave B2 — dedup / reference-stability spec.
+ *
+ * ingestSnapshot must keep the SAME store object reference when re-ingesting
+ * an unchanged wire object (so MessageBlock / chat-list subscribers don't
+ * re-render — the Wave A isolation invariant leans on this), and yield a NEW
+ * reference when content actually changed. The dedup comparator must
+ * reproduce `JSON.stringify(a) === JSON.stringify(b)` decisions exactly for
+ * JSON-compatible data, but WITHOUT the double string allocation that
+ * sameJson does today (the B2 optimization). These cases must be green
+ * BEFORE the comparator change AND after — they are its characterization
+ * guard.
+ */
+describe("ingestSnapshot — dedup / reference stability (Wave B2)", () => {
+  test("re-ingesting identical messages keeps the same store references", () => {
+    useSnapshotStore.getState().ingestSnapshot(fullSeed());
+    const m1Before = useSnapshotStore.getState().messagesById["m1"];
+    const m2Before = useSnapshotStore.getState().messagesById["m2"];
+    expect(m1Before).toBeDefined();
+
+    // Simulate a full-snapshot re-send (another mutation returned all
+    // messages): fresh parsed objects, identical content.
+    useSnapshotStore.getState().ingestSnapshot({
+      messages: [makeMessage("m1"), makeMessage("m2")],
+    } as AppSnapshot);
+
+    const s = useSnapshotStore.getState();
+    expect(s.messagesById["m1"]).toBe(m1Before); // SAME ref → no re-render
+    expect(s.messagesById["m2"]).toBe(m2Before);
+  });
+
+  test("a changed message yields a new reference; an unchanged sibling keeps its ref", () => {
+    useSnapshotStore.getState().ingestSnapshot(fullSeed());
+    const m1Before = useSnapshotStore.getState().messagesById["m1"];
+    const m2Before = useSnapshotStore.getState().messagesById["m2"];
+
+    useSnapshotStore.getState().ingestSnapshot({
+      messages: [makeMessage("m1", "edited content"), makeMessage("m2")],
+    } as AppSnapshot);
+
+    const s = useSnapshotStore.getState();
+    expect(s.messagesById["m1"]).not.toBe(m1Before); // changed → NEW ref
+    expect(s.messagesById["m1"]?.content).toBe("edited content");
+    expect(s.messagesById["m2"]).toBe(m2Before); // unchanged → SAME ref
+  });
+
+  test("reordered messages update order but keep per-message references", () => {
+    useSnapshotStore.getState().ingestSnapshot(fullSeed()); // [m1, m2]
+    const m1Before = useSnapshotStore.getState().messagesById["m1"];
+    const m2Before = useSnapshotStore.getState().messagesById["m2"];
+
+    useSnapshotStore.getState().ingestSnapshot({
+      messages: [makeMessage("m2"), makeMessage("m1")], // reversed
+    } as AppSnapshot);
+
+    const s = useSnapshotStore.getState();
+    expect(s.messageOrder).toEqual(["m2", "m1"]);
+    expect(s.messagesById["m1"]).toBe(m1Before); // content unchanged → same ref
+    expect(s.messagesById["m2"]).toBe(m2Before);
+  });
+
+  test("a nested change (object field + array content) yields a new reference", () => {
+    type Rich = AppMessage & { meta: { note: string; tags: string[] } };
+    const rich = (note: string, tags: string[]): Rich =>
+      ({ ...makeMessage("r1"), content: "same", meta: { note, tags } }) as unknown as Rich;
+
+    useSnapshotStore.getState().ingestSnapshot({ messages: [rich("a", ["x"])] } as AppSnapshot);
+    const before = useSnapshotStore.getState().messagesById["r1"];
+
+    // change a nested primitive
+    useSnapshotStore.getState().ingestSnapshot({ messages: [rich("b", ["x"])] } as AppSnapshot);
+    expect(useSnapshotStore.getState().messagesById["r1"]).not.toBe(before);
+
+    // change a nested array (same length, different content)
+    const ref2 = useSnapshotStore.getState().messagesById["r1"];
+    useSnapshotStore.getState().ingestSnapshot({ messages: [rich("b", ["x", "y"])] } as AppSnapshot);
+    expect(useSnapshotStore.getState().messagesById["r1"]).not.toBe(ref2);
+
+    // truly identical nested → SAME ref (the regression guard)
+    const ref3 = useSnapshotStore.getState().messagesById["r1"];
+    useSnapshotStore.getState().ingestSnapshot({ messages: [rich("b", ["x", "y"])] } as AppSnapshot);
+    expect(useSnapshotStore.getState().messagesById["r1"]).toBe(ref3);
+  });
+
+  test("re-ingesting identical chats keeps the same store reference; a renamed chat yields a new one", () => {
+    useSnapshotStore.getState().ingestSnapshot(fullSeed());
+    const chatBefore = useSnapshotStore.getState().chatsById["chat-1"];
+
+    const sameChat = {
+      id: "chat-1", title: "Chat 1", characterId: "c1", characterName: "Char c1",
+      subtitle: "", activeBranchLabel: "main", messageCount: 2, updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    useSnapshotStore.getState().ingestSnapshot({ chats: [sameChat] } as AppSnapshot);
+    expect(useSnapshotStore.getState().chatsById["chat-1"]).toBe(chatBefore); // SAME ref
+
+    const renamedChat = { ...sameChat, title: "Chat 1 (renamed)" };
+    useSnapshotStore.getState().ingestSnapshot({ chats: [renamedChat] } as AppSnapshot);
+    expect(useSnapshotStore.getState().chatsById["chat-1"]).not.toBe(chatBefore); // NEW ref
+    expect(useSnapshotStore.getState().chatsById["chat-1"]?.title).toBe("Chat 1 (renamed)");
+  });
+});
