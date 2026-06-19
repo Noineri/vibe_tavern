@@ -9,7 +9,6 @@ on:
 permissions:
   contents: read
 
-# Cancel superseded runs (e.g. force-push or rapid PR updates)
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -24,12 +23,8 @@ jobs:
         with:
           bun-version: "1.3.14"
 
-      # Fail fast if lockfile is stale (catches "forgot to commit bun.lock")
       - run: bun install --frozen-lockfile
 
-      # Workaround for Bun issue #16696: --frozen-lockfile skips native optional
-      # deps (e.g. @rolldown/binding-linux-x64-gnu needed by Vite 8). Without
-      # this, `bun run build` fails with "Cannot find native binding".
       - run: bun scripts/install-platform-optionals.ts
 
       - run: bun run typecheck
