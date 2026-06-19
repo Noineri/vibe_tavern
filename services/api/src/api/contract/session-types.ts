@@ -95,3 +95,113 @@ export interface ImportResult {
 		attachedToCharacterName?: string;
 	};
 }
+
+// ─── Per-endpoint response builders (Wave B1) ────────────────────────
+//
+// Narrowed response shapes — one per mutation family. Each is a strict
+// subset of {@link SessionSnapshot}: fields a mutation does not touch are
+// simply OMITTED (not sent null), so the frontend's `ingestSnapshot`
+// (absent → preserve) updates only the regions that actually changed.
+//
+// Field membership follows the field-ownership table in
+// `CHAT_FRONTEND_REFACTOR_PLAN.md` (Wave B1). Required fields are always
+// returned by every mutation in the family; optional (`?`) fields are
+// returned only by the mutations in the family that touch them.
+//
+// `contextPreview` inclusion is driven solely by the "did conversation text
+// change" rule — it is NOT coupled to prompt-trace presence (that coupling
+// was the Phase-3.1 "trace shadows preview" bug, and is intentionally left
+// behind). Builders compute the preview via `assembleContextPreview` directly.
+//
+// Every field type is indexed off `SessionSnapshot[...]` so these contracts
+// track the canonical shape without drift.
+
+/** Message-path mutations: send, regenerate, edit, delete, create-variant. */
+export interface MessageResponse {
+	messages: SessionSnapshot["messages"];
+	contextPreview: SessionSnapshot["contextPreview"];
+	/** send / delete-message move summary markers; edit / create-variant do not. */
+	summaries?: SessionSnapshot["summaries"];
+}
+
+/** Variant-path mutations: select-variant, delete-variant, set-greeting. */
+export interface VariantResponse {
+	messages: SessionSnapshot["messages"];
+	contextPreview: SessionSnapshot["contextPreview"];
+	/** set-greeting writes the chat row (greetingIndex); variant ops do not. */
+	activeChat?: SessionSnapshot["activeChat"];
+}
+
+/** Branch-mutating ops: fork, activate, delete-branch (conversation text moves). */
+export interface BranchResponse {
+	messages: SessionSnapshot["messages"];
+	activeBranch: SessionSnapshot["activeBranch"];
+	branches: SessionSnapshot["branches"];
+	summaries: SessionSnapshot["summaries"];
+	contextPreview: SessionSnapshot["contextPreview"];
+}
+
+/** Branch-metadata-only op: rename-branch (no text change → no contextPreview). */
+export interface BranchMetaResponse {
+	branches: SessionSnapshot["branches"];
+}
+
+/** Chat-list-only op: rename-chat (sidebar label changes, nothing else). */
+export interface ChatListResponse {
+	chats: SessionSnapshot["chats"];
+}
+
+/** Chat switch / clone — full reload of the active chat's view state. */
+export interface ChatSwitchResponse {
+	messages: SessionSnapshot["messages"];
+	activeChat: SessionSnapshot["activeChat"];
+	activeBranch: SessionSnapshot["activeBranch"];
+	branches: SessionSnapshot["branches"];
+	summaries: SessionSnapshot["summaries"];
+	contextPreview: SessionSnapshot["contextPreview"];
+	character: SessionSnapshot["character"];
+	/** switch sends the chat's persona; clone omits it (inherits from source). */
+	persona?: SessionSnapshot["persona"];
+	/** clone adds a row to the sidebar; switch does not move the list. */
+	chats?: SessionSnapshot["chats"];
+}
+
+/** Chat create / clear — new chat appears in the sidebar, fresh view state. */
+export interface ChatCreateResponse {
+	chats: SessionSnapshot["chats"];
+	messages: SessionSnapshot["messages"];
+	activeChat: SessionSnapshot["activeChat"];
+	activeBranch: SessionSnapshot["activeBranch"];
+	branches: SessionSnapshot["branches"];
+	summaries: SessionSnapshot["summaries"];
+	contextPreview: SessionSnapshot["contextPreview"];
+	character: SessionSnapshot["character"];
+}
+
+/** Config-patch ops: set-persona, set-preset, character-patch, memory-settings. */
+export interface ConfigPatchResponse {
+	contextPreview: SessionSnapshot["contextPreview"];
+	/** set-persona. */
+	persona?: SessionSnapshot["persona"];
+	/** character-patch. */
+	character?: SessionSnapshot["character"];
+	/** memory-settings writes the chat row. */
+	activeChat?: SessionSnapshot["activeChat"];
+}
+
+/** Summary CRUD: create / update / delete ranged summary. */
+export interface SummaryResponse {
+	summaries: SessionSnapshot["summaries"];
+}
+
+/** Union of all per-endpoint builder responses (used to type route returns in B1.2+). */
+export type SessionPartialResponse =
+	| MessageResponse
+	| VariantResponse
+	| BranchResponse
+	| BranchMetaResponse
+	| ChatListResponse
+	| ChatSwitchResponse
+	| ChatCreateResponse
+	| ConfigPatchResponse
+	| SummaryResponse;
