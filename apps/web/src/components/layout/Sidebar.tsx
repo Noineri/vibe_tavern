@@ -15,6 +15,7 @@ import { useChatMeta } from "../../stores/chat-selectors.js";
 import { useNavigationStore, useChatStore, useCharacterStore, useModalStore } from "../../stores/index.js";
 import { buildCharacterTabs } from "../../lib/character-tabs.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
+import { OverflowTooltip } from "../shared/OverflowTooltip.js";
 import { useBuildPanels } from "../../hooks/use-build-panels.js";
 
 /** Resolve a character tab's avatar URL (folder avatar when migrated). */
@@ -269,7 +270,10 @@ export function Sidebar() {
                         >
                           <Icons.Chat className="h-4 w-4 shrink-0 text-t3" />
                           <div className="min-w-0 flex-1">
-                            <div className={cn('truncate text-[calc(var(--ui-fs)-1px)]', isActive ? 'text-accent-t font-medium' : 'text-t1')}>{chatItem.title}</div>
+                            <OverflowTooltip
+                            text={chatItem.title}
+                            className={cn('text-[calc(var(--ui-fs)-1px)]', isActive ? 'text-accent-t font-medium' : 'text-t1')}
+                          />
                             <div className="truncate text-[calc(var(--ui-fs)-3px)] text-t3">{chatItem.messageCount} {t("msgs_short")}</div>
                           </div>
                         </div>
@@ -421,7 +425,7 @@ export function Sidebar() {
 
                       {menuOpen && charMenuPos && createPortal(
                         <div
-                          className="absolute z-[200] w-[190px] rounded-md border border-border2 bg-surface py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
+                          className="glass-blur absolute z-[200] w-[190px] rounded-md border border-border2 bg-glass-bg py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
                           ref={charMenuRef}
                           onClick={(event) => event.stopPropagation()}
                           style={{ top: charMenuPos.top, right: charMenuPos.right }}
@@ -543,10 +547,10 @@ export function Sidebar() {
                             }}
                           />
                         ) : (
-                          <div className={cn(
-                            'overflow-hidden text-ellipsis whitespace-nowrap pr-4 text-[calc(var(--ui-fs)-1px)] text-t1',
-                            isActive && 'text-accent-t'
-                          )}>{chatItem.title}</div>
+                          <OverflowTooltip
+                            text={chatItem.title}
+                            className={cn('pr-4 text-[calc(var(--ui-fs)-1px)] text-t1', isActive && 'text-accent-t')}
+                          />
                         )}
                         <div className="mt-px flex items-center gap-1.5">
                           <div className="text-[calc(var(--ui-fs)-3px)] text-t3">
@@ -594,7 +598,7 @@ export function Sidebar() {
 
                       {chatMenuOpen && chatMenuPos && createPortal(
                         <div
-                          className="absolute z-[200] w-[190px] rounded-md border border-border2 bg-surface py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
+                          className="glass-blur absolute z-[200] w-[190px] rounded-md border border-border2 bg-glass-bg py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
                           ref={chatMenuRef}
                           onClick={(event) => event.stopPropagation()}
                           style={{ top: chatMenuPos.top, right: chatMenuPos.right }}

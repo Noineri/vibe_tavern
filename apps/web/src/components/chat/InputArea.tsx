@@ -234,13 +234,15 @@ export function InputArea() {
               {mobilePersonaOpen && (
                 <div className="glass-blur absolute bottom-[calc(100%+4px)] left-0 z-[220] w-[240px] rounded-lg border border-border2 bg-glass-bg py-2 shadow-theme-md">
                   <div className="px-4 pb-2 text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1">{t("persona_selection")}</div>
-                  {personas.map(p => (
-                    <button type="button" key={p.id} className="flex w-full min-h-[44px] cursor-pointer items-center gap-2 px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2" onClick={() => { void character.handleSetChatPersona(p.id); setMobilePersonaOpen(false); }}>
-                      <div className="w-4 shrink-0 flex justify-center text-accent-t">{activePersonaId === p.id && <Icons.Check/>}</div>
-                      <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId })}  size={22} />
-                      <div className="min-w-0 truncate">{p.name}</div>
-                    </button>
-                  ))}
+                  <div className="max-h-[264px] overflow-y-auto">
+                    {personas.map(p => (
+                      <button type="button" key={p.id} className="flex w-full min-h-[44px] cursor-pointer items-center gap-2 px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2" onClick={() => { void character.handleSetChatPersona(p.id); setMobilePersonaOpen(false); }}>
+                        <div className="w-4 shrink-0 flex justify-center text-accent-t">{activePersonaId === p.id && <Icons.Check/>}</div>
+                        <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId })}  size={22} />
+                        <div className="min-w-0 truncate">{p.name}</div>
+                      </button>
+                    ))}
+                  </div>
                   <div className="pt-1 px-2 mt-1 border-t border-border">
                     <button type="button" className="flex w-full min-h-[44px] cursor-pointer items-center gap-1.5 rounded-md px-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 active:bg-s2" onClick={() => { setMobilePersonaOpen(false); useModalStore.getState().setIsPersonaModalOpen(true); }}><Icons.Edit/> {t("manage_personas")}</button>
                   </div>
@@ -274,15 +276,17 @@ export function InputArea() {
                 <div className="glass-blur absolute bottom-[calc(100%+4px)] right-0 z-[220] w-[240px] rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
                   <div className="px-4 pb-2 text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1">{t("starred_models")}</div>
                   {favoriteModels.length > 0 ? (
-                    favoriteModels.map(model => (
-                      <div key={model.modelId} className="flex min-h-[44px] cursor-pointer items-center gap-2 px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2" onClick={() => {
-                        if (provider.activeProviderProfile) void provider.handleSelectFavoriteProviderModel(provider.activeProviderProfile.id, model.modelId);
-                        setModelDropOpen(false);
-                      }}>
-                        <div className="w-4 shrink-0 flex justify-center text-accent-t">{activeModelId === model.modelId && <Icons.Check/>}</div>
-                        <div className="min-w-0 truncate">{model.label || model.modelId}</div>
-                      </div>
-                    ))
+                    <div className="max-h-[264px] overflow-y-auto">
+                      {favoriteModels.map(model => (
+                        <div key={model.modelId} className="flex min-h-[44px] cursor-pointer items-center gap-2 px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2" onClick={() => {
+                          if (provider.activeProviderProfile) void provider.handleSelectFavoriteProviderModel(provider.activeProviderProfile.id, model.modelId);
+                          setModelDropOpen(false);
+                        }}>
+                          <div className="w-4 shrink-0 flex justify-center text-accent-t">{activeModelId === model.modelId && <Icons.Check/>}</div>
+                          <div className="min-w-0 truncate">{model.label || model.modelId}</div>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
                     <div className="px-4 py-3 text-[calc(var(--ui-fs)-2px)] text-t3">{t("no_starred_models")}</div>
                   )}
@@ -449,19 +453,21 @@ export function InputArea() {
                     <div className="glass-blur absolute bottom-[calc(100%+8px)] right-0 z-[220] w-[260px] rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
                       <div className="mb-1 border-b border-border px-4 pb-2 pt-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("starred_models")}</div>
                       {favoriteModels.length > 0 ? (
-                        favoriteModels.map((model) => (
-                          <div
-                            key={model.modelId}
-                            className="flex cursor-pointer items-center gap-2 px-4 py-1.5 font-ui text-[13px] text-t1 hover:bg-s2"
-                            onClick={() => {
-                              if (provider.activeProviderProfile) void provider.handleSelectFavoriteProviderModel(provider.activeProviderProfile.id, model.modelId);
-                              setModelDropOpen(false);
-                            }}
-                          >
-                            <div className="flex w-4 shrink-0 justify-center text-accent-t">{activeModelId === model.modelId && <Icons.Check />}</div>
-                            <div className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{model.label || model.modelId}</div>
-                          </div>
-                        ))
+                        <div className="max-h-[180px] overflow-y-auto">
+                          {favoriteModels.map((model) => (
+                            <div
+                              key={model.modelId}
+                              className="flex cursor-pointer items-center gap-2 px-4 py-1.5 font-ui text-[13px] text-t1 hover:bg-s2"
+                              onClick={() => {
+                                if (provider.activeProviderProfile) void provider.handleSelectFavoriteProviderModel(provider.activeProviderProfile.id, model.modelId);
+                                setModelDropOpen(false);
+                              }}
+                            >
+                              <div className="flex w-4 shrink-0 justify-center text-accent-t">{activeModelId === model.modelId && <Icons.Check />}</div>
+                              <div className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{model.label || model.modelId}</div>
+                            </div>
+                          ))}
+                        </div>
                       ) : (
                         <div className="px-4 py-2 font-ui text-[12px] text-t3">{t("no_starred_models")}</div>
                       )}

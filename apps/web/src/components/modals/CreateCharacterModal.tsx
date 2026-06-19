@@ -8,7 +8,7 @@ import { Modal } from "../shared/Modal.js";
 import { useIsMobile } from '../../hooks/use-mobile.js';
 import { CustomTooltip } from '../shared/Tooltip.js';
 import { useT } from '../../i18n/context.js';
-import { SegmentedControl } from '../shared/SegmentedControl.js';
+import { DropdownSelect } from '../shared/DropdownSelect.js';
 import { AutoTextarea } from '../shared/auto-textarea.js';
 import { MobileExpandTextarea } from '../shared/MobileExpandTextarea.js';
 import { NumberInput } from '../shared/NumberInput.js';
@@ -402,25 +402,27 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
 
           {/* Depth Prompt */}
           <div className="mb-5">
-            <div className="mb-1.5 flex items-center justify-between">
+            <div className="mb-1.5 flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between">
               <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("depth_prompt")}</label>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1">
-                  <SegmentedControl
+              <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-4">
+                <div className="flex items-center gap-2">
+                  <span className="font-ui text-[11px] font-medium uppercase tracking-wider text-t3">{t("role")}</span>
+                  <DropdownSelect
+                    className="w-[120px]"
+                    searchable={false}
                     value={depthPromptRole}
                     options={[
-                      { value: "system", label: "system" },
-                      { value: "user", label: "user" },
-                      { value: "assistant", label: "assistant" },
+                      { id: "system", label: "system" },
+                      { id: "user", label: "user" },
+                      { id: "assistant", label: "assistant" },
                     ]}
                     onChange={v => setValue('depthPromptRole', v, { shouldDirty: true })}
-                    compact
                   />
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-ui text-[11px] font-medium uppercase tracking-wider text-t3">{t("depth")}</span>
                   <NumberInput
-                    className="h-6 w-[90px]"
+                    className="w-[90px]"
                     min={0}
                     max={999}
                     value={depthPromptDepth}
