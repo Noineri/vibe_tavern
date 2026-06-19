@@ -35,12 +35,30 @@ import type {
 	SessionSnapshot,
 	BootstrapState,
 	ImportResult,
+	MessageResponse,
+	VariantResponse,
+	BranchResponse,
+	BranchMetaResponse,
+	ChatListResponse,
+	ChatSwitchResponse,
+	ChatCreateResponse,
+	ConfigPatchResponse,
+	SummaryResponse,
 } from "../../api/contract/session-types.js";
 export type {
 	ChatListItem,
 	SessionSnapshot,
 	BootstrapState,
 	ImportResult,
+	MessageResponse,
+	VariantResponse,
+	BranchResponse,
+	BranchMetaResponse,
+	ChatListResponse,
+	ChatSwitchResponse,
+	ChatCreateResponse,
+	ConfigPatchResponse,
+	SummaryResponse,
 };
 
 import {
@@ -174,46 +192,43 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 		/*
 		 * Monolithic snapshot — returns EVERY field on every call.
 		 *
-		 * This will be replaced by per-endpoint response builders (Phase 3.4,
-		 * CODE_REVIEW_REFACTOR_PLAN.md). For now, every mutation returns the
-		 * full snapshot, which is correct but wasteful: renaming a chat
-		 * re-computes contextPreview and re-reads every character.
+		 * Being replaced by per-endpoint response builders (Wave B1,
+		 * CHAT_FRONTEND_REFACTOR_PLAN.md). Until B1.2–B1.5 wire the builders
+		 * into routes, every mutation still returns this full snapshot —
+		 * correct but wasteful (renaming a chat re-computes contextPreview).
 		 *
 		 * Known behaviour: `contextPreview` is nulled when any prompt trace
-		 * exists (the trace "shadows" the live preview). This is intentional
-		 * for the current UI but couples two unrelated concepts.
+		 * exists (the trace "shadows" the live preview). The per-endpoint
+		 * builders do NOT inherit this coupling — they compute the preview
+		 * via `assembleContextPreview` directly.
 		 */
 		const { chat, branch, messages: branchMessages } = await this.chatApp.getChatState(chatId);
-		const branches = await this.stores.chats.getBranches(chat.id);
-		const branchMsgCounts = await this.stores.chats.getBranchMessageCounts(chat.id);
-		const branchesWithCounts = branches.map((b) => ({ ...b, messageCount: branchMsgCounts.get(b.id) ?? 0 }));
-		const character = await this.resolver.getCharacter(chat.characterId);
-		const persona = await this.resolver.getPersona(
-			chat.personaId ?? await this.persona.resolveDefaultId(),
-		);
 		const promptTraceHistory = await this.getPromptTraceHistory(
 			chat.id as ChatId,
 			branch.id as ChatBranchId,
 		);
 
-		const branchSummaries = await this.stores.chatSummaries.listByChatBranch(chat.id, branch.id);
-		const variantsByMessage = await this.stores.chats.getVariantsByBranch(branch.id);
-		const messagesWithVariants = branchMessages.map((message) =>
-			mapMessageDto(message, variantsByMessage.get(message.id) ?? []),
-		);
+		const [messagesWithVariants, branches, summaries, character, persona, chats, allCharacters] =
+			await Promise.all([
+				this.buildMessagesWithVariants(branchMessages, branch.id as ChatBranchId),
+				this.fetchBranchesWithCounts(chat.id as ChatId),
+				this.fetchSummaries(chat.id as ChatId, branch.id as ChatBranchId),
+				this.resolver.getCharacter(chat.characterId),
+				this.resolver.getPersona(
+					chat.personaId ?? await this.persona.resolveDefaultId(),
+				),
+				Promise.all(this.chatOrder.items.map((id) => this.mapChatToListItem(id))),
+				this.getAllCharacterEntries(),
+			]);
 
 		return {
-			chats: await Promise.all(this.chatOrder.items.map((id) => this.mapChatToListItem(id))),
-			allCharacters: await this.getAllCharacterEntries(),
+			chats,
+			allCharacters,
 			activeChat: chat,
 			activeBranch: branch,
-			branches: branchesWithCounts,
+			branches,
 			messages: messagesWithVariants,
-			summaries: branchSummaries.map((summary) => ({
-				id: summary.id,
-				kind: summary.source,
-				summary: summary.content,
-			})),
+			summaries,
 			promptTrace: promptTraceHistory[0] ?? null,
 			promptTraceHistory,
 			contextPreview: promptTraceHistory[0]
@@ -243,6 +258,208 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 		} catch {
 			return null;
 		}
+	}
+
+	// ─── Per-endpoint response builders (Wave B1) ───────────────────────
+	//
+	// Narrowed alternatives to {@link getSnapshot}: each returns ONLY the
+	// fields a given mutation touches, so the frontend re-renders just the
+	// affected region. `contextPreview` is computed via `assembleContextPreview`
+	// directly — NOT nulled when a trace exists (the Phase-3.1 "trace shadows
+	// preview" coupling is deliberately left behind). See the field-ownership
+	// table in `CHAT_FRONTEND_REFACTOR_PLAN.md` (Wave B1).
+	//
+	// B1.1: ADDITIVE ONLY. No mutation path is wired to these yet;
+	// `getSnapshot` still serves every route. Wiring lands in B1.2–B1.5.
+
+	/** Message-path mutations: send, regenerate, edit, delete, create-variant. */
+	async buildMessageResponse(
+		chatId: ChatId,
+		opts?: { summaries?: boolean },
+	): Promise<MessageResponse> {
+		const { branch, messages } = await this.chatApp.getChatState(chatId);
+		const branchId = branch.id as ChatBranchId;
+		const response: MessageResponse = {
+			messages: await this.buildMessagesWithVariants(messages, branchId),
+			contextPreview: await this.assembleContextPreview(chatId, branchId),
+		};
+		if (opts?.summaries) {
+			response.summaries = await this.fetchSummaries(chatId, branchId);
+		}
+		return response;
+	}
+
+	/** Variant-path mutations: select-variant, delete-variant, set-greeting. */
+	async buildVariantResponse(
+		chatId: ChatId,
+		opts?: { activeChat?: boolean },
+	): Promise<VariantResponse> {
+		const { chat, branch, messages } = await this.chatApp.getChatState(chatId);
+		const branchId = branch.id as ChatBranchId;
+		const response: VariantResponse = {
+			messages: await this.buildMessagesWithVariants(messages, branchId),
+			contextPreview: await this.assembleContextPreview(chatId, branchId),
+		};
+		if (opts?.activeChat) {
+			response.activeChat = chat;
+		}
+		return response;
+	}
+
+	/** Branch-mutating ops: fork, activate, delete-branch (conversation text moves). */
+	async buildBranchResponse(chatId: ChatId): Promise<BranchResponse> {
+		const { branch, messages } = await this.chatApp.getChatState(chatId);
+		const branchId = branch.id as ChatBranchId;
+		const [messagesWithVariants, branches, summaries, contextPreview] = await Promise.all([
+			this.buildMessagesWithVariants(messages, branchId),
+			this.fetchBranchesWithCounts(chatId),
+			this.fetchSummaries(chatId, branchId),
+			this.assembleContextPreview(chatId, branchId),
+		]);
+		return {
+			messages: messagesWithVariants,
+			activeBranch: branch,
+			branches,
+			summaries,
+			contextPreview,
+		};
+	}
+
+	/** Branch-metadata-only op: rename-branch (no text change → no contextPreview). */
+	async buildBranchMetaResponse(chatId: ChatId): Promise<BranchMetaResponse> {
+		return { branches: await this.fetchBranchesWithCounts(chatId) };
+	}
+
+	/** Chat-list-only op: rename-chat (sidebar label changes, nothing else). */
+	async buildChatListResponse(): Promise<ChatListResponse> {
+		return { chats: await this.fetchChatList() };
+	}
+
+	/** Chat switch / clone — full reload of the active chat's view state. */
+	async buildChatSwitchResponse(
+		chatId: ChatId,
+		opts?: { persona?: boolean; chats?: boolean },
+	): Promise<ChatSwitchResponse> {
+		const { chat, branch, messages } = await this.chatApp.getChatState(chatId);
+		const branchId = branch.id as ChatBranchId;
+		const [messagesWithVariants, branches, summaries, contextPreview, character] = await Promise.all([
+			this.buildMessagesWithVariants(messages, branchId),
+			this.fetchBranchesWithCounts(chatId),
+			this.fetchSummaries(chatId, branchId),
+			this.assembleContextPreview(chatId, branchId),
+			this.resolver.getCharacter(chat.characterId),
+		]);
+		const response: ChatSwitchResponse = {
+			messages: messagesWithVariants,
+			activeChat: chat,
+			activeBranch: branch,
+			branches,
+			summaries,
+			contextPreview,
+			character,
+		};
+		if (opts?.persona) {
+			response.persona = await this.resolver.getPersona(
+				chat.personaId ?? await this.persona.resolveDefaultId(),
+			);
+		}
+		if (opts?.chats) {
+			response.chats = await this.fetchChatList();
+		}
+		return response;
+	}
+
+	/** Chat create / clear — new chat appears in the sidebar, fresh view state. */
+	async buildChatCreateResponse(chatId: ChatId): Promise<ChatCreateResponse> {
+		const { chat, branch, messages } = await this.chatApp.getChatState(chatId);
+		const branchId = branch.id as ChatBranchId;
+		const [messagesWithVariants, branches, summaries, contextPreview, character, chats] =
+			await Promise.all([
+				this.buildMessagesWithVariants(messages, branchId),
+				this.fetchBranchesWithCounts(chatId),
+				this.fetchSummaries(chatId, branchId),
+				this.assembleContextPreview(chatId, branchId),
+				this.resolver.getCharacter(chat.characterId),
+				this.fetchChatList(),
+			]);
+		return {
+			chats,
+			messages: messagesWithVariants,
+			activeChat: chat,
+			activeBranch: branch,
+			branches,
+			summaries,
+			contextPreview,
+			character,
+		};
+	}
+
+	/** Config-patch ops: set-persona, set-preset, character-patch, memory-settings. */
+	async buildConfigPatchResponse(
+		chatId: ChatId,
+		opts?: { persona?: boolean; character?: boolean; activeChat?: boolean },
+	): Promise<ConfigPatchResponse> {
+		const { chat, branch } = await this.chatApp.getChatState(chatId);
+		const branchId = branch.id as ChatBranchId;
+		const response: ConfigPatchResponse = {
+			contextPreview: await this.assembleContextPreview(chatId, branchId),
+		};
+		if (opts?.persona) {
+			response.persona = await this.resolver.getPersona(
+				chat.personaId ?? await this.persona.resolveDefaultId(),
+			);
+		}
+		if (opts?.character) {
+			response.character = await this.resolver.getCharacter(chat.characterId);
+		}
+		if (opts?.activeChat) {
+			response.activeChat = chat;
+		}
+		return response;
+	}
+
+	/** Summary CRUD: create / update / delete ranged summary. */
+	async buildSummaryResponse(chatId: ChatId): Promise<SummaryResponse> {
+		const { branch } = await this.chatApp.getChatState(chatId);
+		return { summaries: await this.fetchSummaries(chatId, branch.id as ChatBranchId) };
+	}
+
+	// ─── Private: shared fetch primitives (used by getSnapshot + builders) ──
+
+	/** Maps branch messages with their variant swipes. Fetches variants for the branch. */
+	private async buildMessagesWithVariants(
+		messages: import("@vibe-tavern/db").Message[],
+		branchId: ChatBranchId,
+	): Promise<SessionSnapshot["messages"]> {
+		const variantsByMessage = await this.stores.chats.getVariantsByBranch(branchId);
+		return messages.map((message) =>
+			mapMessageDto(message, variantsByMessage.get(message.id) ?? []),
+		);
+	}
+
+	/** All branches for a chat, each annotated with its message count. */
+	private async fetchBranchesWithCounts(chatId: ChatId): Promise<SessionSnapshot["branches"]> {
+		const branches = await this.stores.chats.getBranches(chatId);
+		const counts = await this.stores.chats.getBranchMessageCounts(chatId);
+		return branches.map((b) => ({ ...b, messageCount: counts.get(b.id) ?? 0 }));
+	}
+
+	/** Ranged summaries for a branch, mapped to the wire shape. */
+	private async fetchSummaries(
+		chatId: ChatId,
+		branchId: ChatBranchId,
+	): Promise<SessionSnapshot["summaries"]> {
+		const rows = await this.stores.chatSummaries.listByChatBranch(chatId, branchId);
+		return rows.map((summary) => ({
+			id: summary.id,
+			kind: summary.source,
+			summary: summary.content,
+		}));
+	}
+
+	/** Ordered sidebar chat list (derived from the in-memory chat order). */
+	private async fetchChatList(): Promise<SessionSnapshot["chats"]> {
+		return Promise.all(this.chatOrder.items.map((id) => this.mapChatToListItem(id)));
 	}
 
 	async getPromptTraceHistory(
