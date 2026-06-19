@@ -85,6 +85,26 @@ export function LoreEntryEditor({
   // number = binding the ghost at that index to a real character.
   const allCharacters = useAllCharacters();
   const [charFilterPicker, setCharFilterPicker] = useState<"add" | number | null>(null);
+  const charFilterRef = useRef<HTMLDivElement>(null);
+
+  // Close the character-filter picker on click-outside / Escape (same pattern as
+  // LinkBindingPopover.tsx — the dashed "+" popover this picker mirrors).
+  useEffect(() => {
+    const onMouseDown = (e: MouseEvent) => {
+      if (charFilterRef.current && !charFilterRef.current.contains(e.target as Node)) {
+        setCharFilterPicker(null);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setCharFilterPicker(null);
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
 
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
   const activeCharacter = useActiveCharacter();
@@ -414,7 +434,7 @@ export function LoreEntryEditor({
               </div>
 
               {/* Фильтр по персонажам — id-bound picker с ghost-binding */}
-              <div>
+              <div ref={charFilterRef}>
                 <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
                   {t("lore_charfilter_section")}
                 </label>
