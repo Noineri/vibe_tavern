@@ -143,6 +143,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			messages: recentMessages,
 			mode: 'normal',
 			macroMap,
+			characterId: character.id,
 			characterName: character.name,
 			characterDescription: character.description,
 			personaDescription: persona?.description,

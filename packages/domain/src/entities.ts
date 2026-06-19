@@ -163,6 +163,21 @@ export interface Lorebook {
 }
 
 /**
+ * One element of a lorebook entry's `characterFilter`.
+ *
+ * `id` is a stable `CharacterId` when the filter is bound to a known character
+ * (survives renames), or `null` for a *ghost* — a name-only reference (legacy
+ * `string[]` data, or a name imported from a SillyTavern card whose character
+ * isn't in this database). Ghosts match the activation engine by name only
+ * (see `lore-activation-engine.ts`); binding a ghost to a real character in
+ * the UI upgrades it to an id-bound entry.
+ */
+export interface CharacterFilterEntry {
+	id: string | null;
+	name: string;
+}
+
+/**
  * A single lorebook entry.
  *
  * `keys` are activation triggers; `secondaryKeys` provide additional conditions
@@ -204,7 +219,7 @@ export interface LoreEntry {
   // Matching
   caseSensitive: boolean;
   matchWholeWords: boolean;
-  characterFilter: string[];
+  characterFilter: CharacterFilterEntry[];
   characterFilterExclude: boolean;
   triggers: LoreTriggerType[];
   matchSources: LoreMatchSource[];

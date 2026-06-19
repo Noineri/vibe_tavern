@@ -65,7 +65,7 @@ export interface ActivationInput {
       scanDepthOverride: number | null;
       caseSensitive: boolean;
       matchWholeWords: boolean;
-      characterFilter: string[];
+      characterFilter: Array<{ id: string | null; name: string }>;
       characterFilterExclude: boolean;
       triggers: string[];
       matchSources: string[];
@@ -78,7 +78,9 @@ export interface ActivationInput {
   mode: string;
   /** Macro substitution map, e.g. { "{{user}}": "Alice", "{{char}}": "Bob" } */
   macroMap: Record<string, string>;
-  /** Character name for characterFilter matching */
+  /** Character id for characterFilter matching (id-bound entries). */
+  characterId: string;
+  /** Character name for characterFilter matching (ghost name-fallback). */
   characterName: string;
   /** Optional: character description for matchSources */
   characterDescription?: string;
@@ -147,7 +149,7 @@ interface FlatEntry {
   scanDepthOverride: number | null;
   caseSensitive: boolean;
   matchWholeWords: boolean;
-  characterFilter: string[];
+  characterFilter: Array<{ id: string | null; name: string }>;
   characterFilterExclude: boolean;
   triggers: string[];
   matchSources: string[];
@@ -162,7 +164,7 @@ interface FlatEntry {
 // ─── Main function ───────────────────────────────────────────────────────────
 
 export function resolveActivatedEntries(input: ActivationInput): ActivationResult {
-  const { macroMap, characterName, mode, currentTurn, activationState } = input;
+  const { macroMap, characterId, characterName, mode, currentTurn, activationState } = input;
   const updatedState: LoreActivationState = { ...activationState };
 
   // Flatten all entries from all lorebooks
@@ -211,7 +213,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       if (activatedIds.has(entry.id) || failedProbabilityIds.has(entry.id)) continue;
 
       const result = tryActivateEntry({
-      entry, macroMap, characterName, mode, currentTurn,
+      entry, macroMap, characterId, characterName, mode, currentTurn,
       scanText: buildScanText(entry, input.messages, scanDepths, input),
       scanState: "normal",
       currentRecursionLevel: 0,
@@ -260,7 +262,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         if (activatedIds.has(entry.id) || failedProbabilityIds.has(entry.id)) continue;
 
         const result = tryActivateEntry({
-          entry, macroMap, characterName, mode, currentTurn,
+          entry, macroMap, characterId, characterName, mode, currentTurn,
           // Recursion scan: combine original scan text with recurse buffer
           scanText: buildScanText(entry, input.messages, scanDepths, input) + "\n" + recurseBuffer,
           scanState: "recursion",
@@ -335,6 +337,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
 function tryActivateEntry(ctx: {
   entry: FlatEntry;
   macroMap: Record<string, string>;
+  characterId: string;
   characterName: string;
   mode: string;
   currentTurn: number;
@@ -345,7 +348,7 @@ function tryActivateEntry(ctx: {
   activatedIds: Set<string>;
   failedProbabilityIds: Set<string>;
 }): "activated" | "failed_probability" | "skipped" {
-  const { entry, macroMap, characterName, mode, currentTurn, scanText, scanState, currentRecursionLevel, updatedState, activatedIds } = ctx;
+  const { entry, macroMap, characterId, characterName, mode, currentTurn, scanText, scanState, currentRecursionLevel, updatedState, activatedIds } = ctx;
   const reason = (msg: string): "skipped" => { console.debug("[lore]   skip %s: %s | title=%s", entry.id, msg, entry.title); return "skipped"; };
 
   if (!entry.enabled) return reason("disabled");
@@ -355,8 +358,14 @@ function tryActivateEntry(ctx: {
   if (entry.triggers.length > 0 && !entry.triggers.includes(mode)) return reason("trigger filter");
 
   // 2. Character filter
+  // Option B semantics: a filter entry matches the active character if EITHER
+  // its bound `id` equals the active `characterId` (rename-resilient), OR it is
+  // a ghost (`id === null`) whose `name` equals the active `characterName`
+  // (legacy / imported data keeps working by name until bound in the UI).
   if (entry.characterFilter.length > 0) {
-    const matches = entry.characterFilter.includes(characterName);
+    const matches = entry.characterFilter.some(
+      (f) => (f.id !== null && f.id === characterId) || (f.id === null && f.name === characterName),
+    );
     if (entry.characterFilterExclude ? matches : !matches) return reason("character filter");
   }
 

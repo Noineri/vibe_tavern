@@ -670,6 +670,8 @@
   "lore_role_label": "Role",
   "lore_char_filter_exclude": "Exclude (not Include)",
   "lore_char_filter_placeholder": "Add character...",
+  "lore_char_filter_bind": "Unbound (name only) — click to link to a character",
+  "lore_char_filter_empty": "No more characters to add",
   "lore_scan_depth_override": "Scan Depth Override",
   "lore_recursion_label": "Recursion Level",
   "lore_prioritize_inclusion": "Prioritize in Group",

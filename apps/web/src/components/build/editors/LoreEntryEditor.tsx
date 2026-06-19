@@ -16,9 +16,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
-import { useActiveCharacter, useActivePersona } from "../../../stores/snapshot-store.js";
+import { useActiveCharacter, useActivePersona, useAllCharacters } from "../../../stores/snapshot-store.js";
 import { Ic, Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
+import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
@@ -79,6 +80,11 @@ export function LoreEntryEditor({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [confirmDeleteEntry, setConfirmDeleteEntry] = useState(false);
   const [deletingEntry, setDeletingEntry] = useState(false);
+
+  // characterFilter picker: null = closed; "add" = adding a new entry;
+  // number = binding the ghost at that index to a real character.
+  const allCharacters = useAllCharacters();
+  const [charFilterPicker, setCharFilterPicker] = useState<"add" | number | null>(null);
 
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
   const activeCharacter = useActiveCharacter();
@@ -407,7 +413,7 @@ export function LoreEntryEditor({
                 />
               </div>
 
-              {/* Фильтр по персонажам */}
+              {/* Фильтр по персонажам — id-bound picker с ghost-binding */}
               <div>
                 <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
                   {t("lore_charfilter_section")}
@@ -416,38 +422,120 @@ export function LoreEntryEditor({
                   className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
                   style={{ minHeight: 38 }}
                 >
-                  {entry.characterFilter.map((c) => (
-                    <span
-                      key={c}
-                      className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
-                      onClick={() =>
-                        updateAct(
-                          "characterFilter",
-                          entry.characterFilter.filter((x) => x !== c)
-                        )
-                      }
-                    >
-                      {c} ✕
-                    </span>
-                  ))}
-                  <input
-                    className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none placeholder:text-t3/70"
-                    placeholder={t("lore_char_filter_placeholder")}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        const v = (e.target as HTMLInputElement).value.trim();
-                        if (v && !entry.characterFilter.includes(v)) {
-                          updateAct("characterFilter", [
-                            ...entry.characterFilter,
-                            v,
-                          ]);
-                        }
-                        (e.target as HTMLInputElement).value = "";
-                      }
-                    }}
-                  />
+                  {entry.characterFilter.map((f, idx) => {
+                    const isGhost = f.id === null;
+                    const ch = f.id ? allCharacters.find((c) => c.id === f.id) : undefined;
+                    const avatarUrl = ch
+                      ? resolveEntityAvatarUrl({
+                          kind: "characters",
+                          id: ch.id,
+                          avatarExt: ch.avatarExt,
+                          avatarAssetId: ch.avatarAssetId,
+                          avatarFullExt: ch.avatarFullExt,
+                          avatarFullAssetId: ch.avatarFullAssetId,
+                          updatedAt: ch.updatedAt,
+                        })
+                      : null;
+                    return (
+                      <span
+                        key={`${f.id ?? "ghost"}-${idx}`}
+                        className={cn(
+                          "flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] transition-all",
+                          isGhost
+                            ? "cursor-pointer border border-dashed border-amber-500/60 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+                            : "bg-accent-dim text-accent-t hover:bg-border2 hover:text-t1",
+                        )}
+                        title={isGhost ? t("lore_char_filter_bind") : undefined}
+                        onClick={isGhost ? () => setCharFilterPicker(idx) : undefined}
+                      >
+                        <span className="h-4 w-4 shrink-0 overflow-hidden rounded-full bg-s3">
+                          {avatarUrl ? (
+                            <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <span className="flex h-full w-full items-center justify-center text-[8px] font-bold text-t3">
+                              {f.name.charAt(0).toUpperCase()}
+                            </span>
+                          )}
+                        </span>
+                        <span className="max-w-[120px] truncate">{f.name}</span>
+                        {!isGhost && (
+                          <button
+                            type="button"
+                            className="ml-0.5 cursor-pointer text-t3 hover:text-t1"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              updateAct(
+                                "characterFilter",
+                                entry.characterFilter.filter((_, i) => i !== idx),
+                              );
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </span>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    className="cursor-pointer rounded px-2 py-0.5 text-[12px] text-t3 transition-all hover:bg-s3 hover:text-t1"
+                    onClick={() => setCharFilterPicker("add")}
+                  >
+                    + {t("lore_char_filter_placeholder")}
+                  </button>
                 </div>
+                {charFilterPicker !== null && (
+                  <div className="relative mt-1">
+                    <div className="glass-blur absolute left-0 top-0 z-[200] max-h-[220px] w-full overflow-y-auto rounded-lg border border-border2 bg-glass-bg py-1 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
+                      {allCharacters.filter((c) => !entry.characterFilter.some((f) => f.id === c.id)).length === 0 ? (
+                        <div className="px-3 py-2 text-[12px] text-t3">{t("lore_char_filter_empty")}</div>
+                      ) : (
+                        allCharacters
+                          .filter((c) => !entry.characterFilter.some((f) => f.id === c.id))
+                          .map((c) => {
+                            const url = resolveEntityAvatarUrl({
+                              kind: "characters",
+                              id: c.id,
+                              avatarExt: c.avatarExt,
+                              avatarAssetId: c.avatarAssetId,
+                              avatarFullExt: c.avatarFullExt,
+                              avatarFullAssetId: c.avatarFullAssetId,
+                              updatedAt: c.updatedAt,
+                            });
+                            return (
+                              <button
+                                type="button"
+                                key={c.id}
+                                className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[13px] text-t1 hover:bg-s2"
+                                onClick={() => {
+                                  const next = [...entry.characterFilter];
+                                  if (charFilterPicker === "add") {
+                                    next.push({ id: c.id, name: c.name });
+                                  } else {
+                                    // Bind the ghost at this index to the chosen character.
+                                    next[charFilterPicker] = { id: c.id, name: c.name };
+                                  }
+                                  updateAct("characterFilter", next);
+                                  setCharFilterPicker(null);
+                                }}
+                              >
+                                <span className="h-5 w-5 shrink-0 overflow-hidden rounded-full bg-s3">
+                                  {url ? (
+                                    <img src={url} alt="" className="h-full w-full object-cover" />
+                                  ) : (
+                                    <span className="flex h-full w-full items-center justify-center text-[10px] font-bold text-t3">
+                                      {c.name.charAt(0).toUpperCase()}
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="truncate">{c.name}</span>
+                              </button>
+                            );
+                          })
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div className="mt-2">
                   <Checkbox
                     checked={entry.characterFilterExclude}
