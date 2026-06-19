@@ -90,21 +90,13 @@ export interface AppCharacter {
   updatedAt: string;
 }
 
-export interface AppPersona {
-  id: string;
-  name: string;
-  description: string;
-  pronouns: string | null;
-  avatarAssetId: string | null;
-  avatarFullAssetId: string | null;
-  avatarCropJson: string | null;
-  avatarExt: string | null;
-  avatarFullExt: string | null;
-  // Avatar-appearance prompt injection (MEDIA_GALLERY). Personas have no gallery,
-  // only the avatar toggle + description.
-  includeAvatarInPrompt: boolean;
-  avatarDescription: string | null;
-}
+/**
+ * Alias of `PersonaRecord` (defined in the Persona section below) — the
+ * canonical persona shape on the frontend. Kept as a named alias for import
+ * stability across snapshot/consumer sites (AppSnapshot.persona, selectors,
+ * hooks). See `resolveEntityAvatarUrl` for the `updatedAt` cache-bust use.
+ */
+export type AppPersona = PersonaRecord;
 
 export interface AppCharacterEntry {
   id: string;
@@ -173,12 +165,17 @@ export interface AppSnapshot {
 
 // ─── Persona ───────────────────────────────────────────────────────────
 
+/** Canonical persona shape — frontend mirror of the backend domain `PersonaRecord`
+ *  (services/api/src/domain/persona/persona-runtime.ts). Single source of truth
+ *  for persona on the frontend. `updatedAt` is the avatar cache-bust key
+ *  (?v= in resolveEntityAvatarUrl), symmetric with CharacterRecord.updatedAt. */
 export interface PersonaRecord {
   id: string;
   name: string;
   description: string;
   pronouns: string | null;
   avatarAssetId: string | null;
+  avatarFullAssetId: string | null;
   avatarCropJson: string | null;
   avatarExt: string | null;
   avatarFullExt: string | null;
@@ -186,6 +183,8 @@ export interface PersonaRecord {
   // Avatar-appearance prompt injection (MEDIA_GALLERY).
   includeAvatarInPrompt: boolean;
   avatarDescription: string | null;
+  /** bumped on every persona update; used as ?v= cache-buster (immutable cache). */
+  updatedAt: string;
 }
 
 // ─── Settings ──────────────────────────────────────────────────────────

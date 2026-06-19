@@ -68,7 +68,7 @@ export function Sidebar() {
   const personaName = snapshot?.persona?.name ?? activePersona?.name ?? t("no_persona");
   const personaForAvatar = snapshot?.persona ?? activePersona ?? null;
   const personaAvatarSrc = personaForAvatar
-    ? resolveEntityAvatarUrl({ kind: "personas", id: personaForAvatar.id, avatarExt: personaForAvatar.avatarExt, avatarAssetId: personaForAvatar.avatarAssetId })
+    ? resolveEntityAvatarUrl({ kind: "personas", id: personaForAvatar.id, avatarExt: personaForAvatar.avatarExt, avatarAssetId: personaForAvatar.avatarAssetId, updatedAt: personaForAvatar.updatedAt })
     : null;
   const activeCharAvatarSrc = snapshot?.character
     ? resolveEntityAvatarUrl({ kind: "characters", id: snapshot.character.id, avatarExt: snapshot.character.avatarExt, avatarAssetId: snapshot.character.avatarAssetId, updatedAt: snapshot.character.updatedAt })

@@ -91,8 +91,10 @@ function snapshot(id: string, personaName = "Persona"): AppSnapshot {
       avatarAssetId: null,
       avatarFullAssetId: null,
       avatarCropJson: null,
+      defaultForNewChats: false,
       includeAvatarInPrompt: false,
       avatarDescription: null,
+      updatedAt: "2024-01-01T00:00:00.000Z",
     },
   };
 }

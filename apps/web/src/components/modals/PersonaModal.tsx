@@ -29,6 +29,7 @@ interface PersonaListItem {
   avatarExt: string | null;
   avatarCropJson: string | null;
   defaultForNewChats: boolean;
+  updatedAt: string;
 }
 
 interface PersonaModalProps {
@@ -302,7 +303,7 @@ export function PersonaModal(input: PersonaModalProps) {
 
   const editingPersona = input.personas.find(p => p.id === editingId) ?? null;
   const editDisplayAvatar = editAvatarPreview
-    ?? (editingId ? resolveEntityAvatarUrl({ kind: "personas", id: editingId, avatarExt: editingPersona?.avatarExt ?? null, avatarAssetId: editAvatarAssetId }) : null);
+    ?? (editingId ? resolveEntityAvatarUrl({ kind: "personas", id: editingId, avatarExt: editingPersona?.avatarExt ?? null, avatarAssetId: editAvatarAssetId, updatedAt: editingPersona?.updatedAt ?? null }) : null);
   const editAvatarCropJson = form.watch("avatarCropJson");
 
   const PRONOUN_OPTIONS: { v: string; l: string }[] = [
@@ -318,7 +319,7 @@ export function PersonaModal(input: PersonaModalProps) {
   const renderCard = (persona: PersonaListItem) => {
     const isActive = input.activePersonaId === persona.id;
     const editingThis = editingId === persona.id;
-    const avatar = resolveEntityAvatarUrl({ kind: "personas", id: persona.id, avatarExt: persona.avatarExt, avatarAssetId: persona.avatarAssetId });
+    const avatar = resolveEntityAvatarUrl({ kind: "personas", id: persona.id, avatarExt: persona.avatarExt, avatarAssetId: persona.avatarAssetId, updatedAt: persona.updatedAt });
 
     return (
       <div
