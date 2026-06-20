@@ -158,7 +158,7 @@ export function ContextMemoryModal({
   const [pinnedModel, setPinnedModel] = useState<string | null>(null);
   const [providerModels, setProviderModels] = useState<Array<{ id: string; label: string; contextLength?: number }>>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
-  const [historyLimit, setHistoryLimit] = useState(messageHistoryLimit || messageCount || 1);
+  const [historyLimit, setHistoryLimit] = useState(Math.min(messageHistoryLimit || messageCount || 1, Math.max(1, messageCount)));
   const [autoConfig, setAutoConfig] = useState<AutoSummaryConfig>({ ...DEFAULT_AUTO_CONFIG, ...autoSummaryConfig });
   const abortRef = useRef<AbortController | null>(null);
   const [textareaRef, autoResize] = useAutoResize();
@@ -230,7 +230,14 @@ export function ContextMemoryModal({
     if (!isOpen) return;
     setRangeFrom((prev) => clamp(prev, 1, maxMessage));
     setRangeTo((prev) => clamp(Math.max(prev, 1), 1, maxMessage));
-    setHistoryLimit(messageHistoryLimit || messageCount || 1);
+    // Clamp the persisted messageHistoryLimit against the actual message count:
+    // a fork (or any shrinkage of the branch) can leave the persisted limit
+    // larger than the real message count (e.g. fork 68-msg chat → 2-msg branch
+    // still carries the old limit). Cap at messageCount so the slider/NumberInput
+    // never shows a value larger than reality. The persisted value itself is
+    // left untouched — lowering the branch's limit is the user's call, not ours.
+    const cappedLimit = Math.min(messageHistoryLimit || messageCount || 1, Math.max(1, messageCount));
+    setHistoryLimit(cappedLimit);
     setAutoConfig({ ...DEFAULT_AUTO_CONFIG, ...autoSummaryConfig });
   }, [autoSummaryConfig, isOpen, maxMessage, messageCount, messageHistoryLimit]);
 

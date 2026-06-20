@@ -83,10 +83,24 @@ export function useActiveTrace(
 ): import("@vibe-tavern/domain").PromptTraceRecordDto | import("@vibe-tavern/domain").AssemblePromptResponse | null {
   return useSnapshotStore(
     useShallow((state) => {
+      // Traces are branch-scoped. After a fork / activate-branch switch the
+      // store still holds the previous branch's `promptTrace` + history (they
+      // are only re-fetched lazily), so filter them against the ACTIVE branch
+      // to avoid showing the old branch's token count / layers. `contextPreview`
+      // is always assembled fresh for the active branch, so it is the safe
+      // fallback when no trace exists for this branch yet.
+      const activeBranchId = state.activeBranch?.id ?? null;
+      const historyForBranch = activeBranchId
+        ? state.promptTraceHistory.filter((trace) => trace.branchId === activeBranchId)
+        : state.promptTraceHistory;
+      const latestForBranch =
+        state.promptTrace && state.promptTrace.branchId === activeBranchId
+          ? state.promptTrace
+          : null;
       const fromHistory =
-        state.promptTraceHistory.find((trace) => trace.id === selectedTraceId) ??
-        state.promptTrace ??
-        state.promptTraceHistory[0];
+        historyForBranch.find((trace) => trace.id === selectedTraceId) ??
+        latestForBranch ??
+        historyForBranch[0];
       if (fromHistory) return fromHistory;
       if (state.contextPreview) return state.contextPreview;
       return null;
