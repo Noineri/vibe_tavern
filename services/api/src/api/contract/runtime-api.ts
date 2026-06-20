@@ -5,7 +5,9 @@ import type { ClientProviderProfileRecord } from "../../runtime/session/session-
 import type {
 	BootstrapState,
 	ImportResult,
+	MessageResponse,
 	SessionSnapshot,
+	VariantResponse,
 } from "./session-types.js";
 import type { PromptTraceRecordDto, PromptPresetDto } from "@vibe-tavern/domain";
 import type {
@@ -80,7 +82,7 @@ export interface ChatRuntimeApi {
 	deleteChat: (chatId: string) => Promise<void>;
 	clearChat: (chatId: string) => Promise<SessionSnapshot>;
 	renameChat: (chatId: string, title: string) => Promise<{ chatId: string; title: string }>;
-	setGreetingIndex: (chatId: string, greetingIndex: number) => Promise<SessionSnapshot>;
+	setGreetingIndex: (chatId: string, greetingIndex: number) => Promise<VariantResponse>;
 	setChatPersona: (chatId: string, personaId: string) => Promise<SessionSnapshot>;
 	setChatPromptPreset: (chatId: string, promptPresetId: string) => Promise<SessionSnapshot>;
 
@@ -92,16 +94,16 @@ export interface ChatRuntimeApi {
 	renameBranch: (chatId: string, branchId: string, label: string) => Promise<SessionSnapshot>;
 
 	// Messages
-	sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<SessionSnapshot>;
+	sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<MessageResponse>;
 	sendMessageStream: (chatId: string, body: { content: string }, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
-	regenerateMessage: (chatId: string, messageId: string, body: Record<string, unknown>, signal?: AbortSignal) => Promise<SessionSnapshot>;
+	regenerateMessage: (chatId: string, messageId: string, body: Record<string, unknown>, signal?: AbortSignal) => Promise<MessageResponse>;
 	regenerateMessageStream: (chatId: string, messageId: string, body: Record<string, unknown>, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
-	generateReply: (chatId: string, signal?: AbortSignal) => Promise<SessionSnapshot>;
+	generateReply: (chatId: string, signal?: AbortSignal) => Promise<MessageResponse>;
 	generateReplyStream: (chatId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
-	selectVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<SessionSnapshot>;
-	deleteVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<SessionSnapshot>;
-	editMessage: (chatId: string, messageId: string, content: string) => Promise<SessionSnapshot>;
-	deleteMessage: (chatId: string, messageId: string) => Promise<SessionSnapshot>;
+	selectVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<VariantResponse>;
+	deleteVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<MessageResponse>;
+	editMessage: (chatId: string, messageId: string, content: string) => Promise<MessageResponse>;
+	deleteMessage: (chatId: string, messageId: string) => Promise<MessageResponse>;
 	updateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string, description: string) => Promise<{ ok: boolean }>;
 	deleteAttachment: (chatId: string, messageId: string, attachmentId: string) => Promise<{ ok: boolean }>;
 	regenerateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string) => Promise<{ description: string }>;
