@@ -197,10 +197,12 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 		 * into routes, every mutation still returns this full snapshot —
 		 * correct but wasteful (renaming a chat re-computes contextPreview).
 		 *
-		 * Known behaviour: `contextPreview` is nulled when any prompt trace
-		 * exists (the trace "shadows" the live preview). The per-endpoint
-		 * builders do NOT inherit this coupling — they compute the preview
-		 * via `assembleContextPreview` directly.
+		 * `contextPreview` is always live: it reflects the current chat,
+		 * character, persona, and preset state on every call. Traces do NOT
+		 * shadow it — the trace is a historical record of a past assembly,
+		 * while `contextPreview` is the live "what would be sent right now".
+		 * The per-endpoint builders share this invariant (they compute the
+		 * preview via `assembleContextPreview` directly).
 		 */
 		const { chat, branch, messages: branchMessages } = await this.chatApp.getChatState(chatId);
 		const promptTraceHistory = await this.getPromptTraceHistory(
@@ -231,9 +233,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			summaries,
 			promptTrace: promptTraceHistory[0] ?? null,
 			promptTraceHistory,
-			contextPreview: promptTraceHistory[0]
-				? null
-				: await this.assembleContextPreview(chatId, branch.id as ChatBranchId),
+			contextPreview: await this.assembleContextPreview(chatId, branch.id as ChatBranchId),
 			character,
 			persona,
 		};
@@ -265,9 +265,8 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 	// Narrowed alternatives to {@link getSnapshot}: each returns ONLY the
 	// fields a given mutation touches, so the frontend re-renders just the
 	// affected region. `contextPreview` is computed via `assembleContextPreview`
-	// directly — NOT nulled when a trace exists (the Phase-3.1 "trace shadows
-	// preview" coupling is deliberately left behind). See the field-ownership
-	// table in `CHAT_FRONTEND_REFACTOR_PLAN.md` (Wave B1).
+	// directly and is always live. See the field-ownership table in
+	// `CHAT_FRONTEND_REFACTOR_PLAN.md` (Wave B1).
 	//
 	// B1.1: ADDITIVE ONLY. No mutation path is wired to these yet;
 	// `getSnapshot` still serves every route. Wiring lands in B1.2–B1.5.
