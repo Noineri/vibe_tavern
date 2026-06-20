@@ -508,4 +508,85 @@ describe("assemblePrompt", () => {
       expect(result.droppedLayers.length).toBe(0);
     });
   });
+
+  // ─── Wave B: same-depth inject ordering + jailbreak label ────────────
+  //
+  // Two custom injections sharing a depth must emit in canvas (ascending
+  // `order`) order. Historically the same-depth tiebreaker sorted DESCENDING
+  // to compensate for a (wrongly assumed) fixed splice index — but the
+  // index is recomputed as history grows, so the compensation inverted the
+  // payload. The jailbreak layer was also labeled with the preset's name
+  // instead of the honest "Post-History Instructions".
+  describe("same-depth inject order + jailbreak label (Wave B)", () => {
+    function twoInjectionContext(zone: "after_chat" | "in_chat", depth: number | null) {
+      return {
+        identity: { chatId: "chat_1" },
+        chat: {
+          recentMessages: [
+            { id: "m1", role: "user", content: "first" },
+            { id: "m2", role: "assistant", content: "second" },
+          ],
+        },
+        character: { id: "char_1", name: "Aria", description: "mage", scenario: "tower", systemPrompt: null },
+        preset: {
+          id: "preset_1",
+          name: "Charming",
+          text: "sys",
+          advancedMode: true,
+          customInjections: [
+            { identifier: "injA", name: "Inject A", content: "AAA_MARKER", role: "system" },
+            { identifier: "injB", name: "Inject B", content: "BBB_MARKER", role: "system" },
+          ],
+          promptOrder: [
+            { identifier: "injA", enabled: true, zone, depth, order: 10, kind: "custom" as const },
+            { identifier: "injB", enabled: true, zone, depth, order: 20, kind: "custom" as const },
+          ],
+        },
+      };
+    }
+
+    it("emits same-depth after_chat injects in ascending canvas order", () => {
+      const result = assemblePrompt(twoInjectionContext("after_chat", null));
+      const order = result.finalPayload.messages
+        .map((m) => m.layerId)
+        .filter((id) => id === "preset_injection_injA" || id === "preset_injection_injB");
+      // Fixed: canvas order injA(10) → injB(20) is preserved in the payload.
+      expect(order).toEqual(["preset_injection_injA", "preset_injection_injB"]);
+    });
+
+    it("emits same-depth in_chat injects in ascending canvas order", () => {
+      const result = assemblePrompt(twoInjectionContext("in_chat", 1));
+      const order = result.finalPayload.messages
+        .map((m) => m.layerId)
+        .filter((id) => id === "preset_injection_injA" || id === "preset_injection_injB");
+      // Fixed: canvas order injA(10) → injB(20) is preserved in the payload.
+      expect(order).toEqual(["preset_injection_injA", "preset_injection_injB"]);
+    });
+
+    it("labels a preset-sourced jailbreak as 'Post-History Instructions'", () => {
+      const result = assemblePrompt({
+        identity: { chatId: "chat_1" },
+        chat: { recentMessages: [{ id: "m1", role: "user", content: "x" }] },
+        character: { id: "char_1", name: "Aria", description: "mage", scenario: "tower", systemPrompt: null, postHistoryInstructions: null },
+        preset: { id: "preset_1", name: "Charming", text: "sys", jailbreak: "JB_CONTENT", advancedMode: false },
+      });
+      const jailbreak = result.layers.find((l) => l.id === "prompt_preset_jailbreak");
+      expect(jailbreak).toBeTruthy();
+      // Fixed: honest field name, not the preset's display name.
+      expect(jailbreak!.sourceName).toBe("Post-History Instructions");
+    });
+
+    it("still labels a character-override jailbreak with the character name", () => {
+      const result = assemblePrompt({
+        identity: { chatId: "chat_1" },
+        chat: { recentMessages: [{ id: "m1", role: "user", content: "x" }] },
+        character: { id: "char_1", name: "Aria", description: "mage", scenario: "tower", systemPrompt: null, postHistoryInstructions: "CHAR_OVERRIDE_JB" },
+        preset: { id: "preset_1", name: "Charming", text: "sys", advancedMode: false },
+      });
+      const jailbreak = result.layers.find((l) => l.id === "prompt_preset_jailbreak");
+      expect(jailbreak).toBeTruthy();
+      // Override branch is unchanged: labeled with the character's name.
+      expect(jailbreak!.sourceName).toBe("Aria (Post-History Override)");
+    });
+  });
 });
