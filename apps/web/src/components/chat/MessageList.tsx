@@ -137,6 +137,15 @@ export function MessageList() {
 
   const messageOrder = useMessageOrder();
   const macroContext = useMacroContext();
+  // Active chat+branch for the switch-scope key. The message list's content is
+  // branch-scoped (switching branches within the same chat swaps the entire
+  // message set), so BOTH levels must be part of the scope. See
+  // ContextMemoryModal for the same chatId|branchId lesson.
+  const activeScope = useSnapshotStore((s) => {
+    const cid = s.activeChat?.id ?? null;
+    const bid = s.activeBranch?.id ?? null;
+    return cid && bid ? `${cid}|${bid}` : null;
+  });
   const lastPersistedMessage = useSnapshotStore((s) => {
     const lastMessageId = s.messageOrder[s.messageOrder.length - 1];
     return lastMessageId ? s.messagesById[lastMessageId] : null;
@@ -173,6 +182,33 @@ export function MessageList() {
   }, [messageOrder, pendingUserMessageContent, lastPersistedMessage, isSending]);
 
   const bottomPinCleanupRef = useRef<(() => void) | null>(null);
+  // Tracks the previous chat+branch scope so we can detect a switch and
+  // pin-to-bottom instantly (no animation). Without this, Virtuoso's
+  // followOutput="smooth" animates on the message-count change and chokes on
+  // large dynamic-height chats (lands mid-way). The previous "seamless"
+  // behavior was an accidental consequence of the heavier pre-refactor
+  // payload slowing the fetch enough that Virtuoso saw a 0→N (fresh-load)
+  // transition; the narrowed B1.4 response made it a 2→N smooth-follow.
+  // Pinning explicitly makes the behavior correct AND independent of timing.
+  const prevScopeRef = useRef<string | null | undefined>(undefined);
+
+  useLayoutEffect(() => {
+    if (prevScopeRef.current === activeScope) return;
+    const isFirstRender = prevScopeRef.current === undefined;
+    prevScopeRef.current = activeScope;
+    // Skip the very first render — initialTopMostItemIndex already places us
+    // at the bottom on mount. Only react to subsequent chat/branch switches.
+    if (isFirstRender || !activeScope) return;
+    // Cancel any in-flight streaming pin so the switch pin owns the window.
+    bottomPinCleanupRef.current?.();
+    // Pin to bottom for ~700ms via the rAF loop (the same ADR-blessed mechanism
+    // used for variant-switch pinning). This overrides Virtuoso's smooth
+    // followOutput and covers its re-measurement of the new dynamic-height
+    // message set — a single scrollTop set gets undone by Virtuoso's
+    // measurement cycle (per the bottom-pinning ADR), hence the rAF loop.
+    userScrolledUpRef.current = false;
+    bottomPinCleanupRef.current = pinToBottomForMs(scrollerElRef.current, 700);
+  }, [activeScope]);
 
   useLayoutEffect(() => {
     if (isSending) {
