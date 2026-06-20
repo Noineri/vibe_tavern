@@ -233,9 +233,12 @@ export class ChatLifecycleRuntime {
 			throw notFound("PromptPreset", `Prompt preset '${promptPresetId}' was not found.`);
 		}
 		await this.deps.stores.chats.setPromptPreset(chatId, promptPresetId);
-		// Preset id lives on the chat row; the client re-reads the preset body
-		// from its own preset store, so only contextPreview needs to refresh.
-		return this.deps.buildConfigPatchResponse(chatId);
+		// activeChat MUST be returned: promptPresetId lives on the chat row and
+		// is read from activeChat by TopBar (activeChat.promptPresetId) to show
+		// the currently-selected preset in BOTH the topbar quick-switcher and
+		// the preset modal. The preset BODY is re-read from the preset store,
+		// but the ID round-trips through activeChat.
+		return this.deps.buildConfigPatchResponse(chatId, { activeChat: true });
 	}
 
 	/**
