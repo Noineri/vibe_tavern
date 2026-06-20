@@ -243,24 +243,26 @@ export function ContextMemoryModal({
   // because each branch has its own independent message set. See prevScopeRef.
   const scope = activeChatId && activeBranchId ? `${activeChatId}|${activeBranchId}` : null;
 
-  // useLayoutEffect (not useEffect): this runs synchronously before paint so
-  // the range never flashes the stale useState initializer (both thumbs at 1,
-  // captured at app-load mount when messageCount was 0). The modal is always-
-  // mounted, so a plain useEffect would paint 1..1 for one frame before the
-  // reset. Safe in a layout effect: no DOM measurement, only state setters.
+  // useLayoutEffect (not useEffect): runs synchronously before paint.
+  // NOTE: this effect is NOT the thing that makes the range show the right
+  // value on open — that is loadSummaries → selectSummary(rows[0]) (or
+  // startNewSummary when no summaries exist), which sets the range to the
+  // first summary's span or 1..maxMessage. This effect only prevents a
+  // one-frame flash of the stale useState initializer (rangeTo captured at
+  // mount time, when messageCount was 0 because the modal is always-mounted)
+  // during the brief window before loadSummaries' async fetch resolves and
+  // overwrites the range. It is cosmetic; removing it would only reintroduce
+  // a flash of 1..1 before the correct value lands. The scope-change reset
+  // path (computeRangeAfterChange with scopeChanged=true) is still load-
+  // bearing for the branch-switch-during-open case, where loadSummaries does
+  // re-run but the range otherwise carries over from the previous scope.
   useLayoutEffect(() => {
     if (!isOpen) {
       // Clear the scope ref while closed so the NEXT open is treated as a
-      // scope change → computeRangeAfterChange resets the range to the full
-      // span (1..maxMessage). Without this, the modal is always-mounted, so
-      // this effect runs from app load with isOpen=false and the
-      // `prevScopeRef.current = scope` line below primes the ref to the
-      // current scope BEFORE the first open — making scopeChanged=false on
-      // open, so the range never resets and stays stuck at the useState
-      // initializer values (both thumbs at 1, because messageCount is 0 at
-      // app-load mount time). Reset-on-open is the desired default anyway:
-      // the range selector is ephemeral UI, and "New summary" itself defaults
-      // to 1..maxMessage (see startNewSummary).
+      // scope change → the range reset path runs and avoids flashing the
+      // stale useState initializer. (The reset value itself is immediately
+      // overwritten by loadSummaries → selectSummary on open; this only
+      // governs the pre-fetch paint.)
       prevScopeRef.current = null;
       return;
     }
