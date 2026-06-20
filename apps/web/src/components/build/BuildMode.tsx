@@ -9,6 +9,7 @@ import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { CharacterForm } from "./editors/CharacterForm.js";
+import { TracePayloadView } from "./trace-payload-view.js";
 import { formatTraceTimestamp } from "../layout/app-shell-helpers.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { useT } from "../../i18n/context.js";
@@ -161,7 +162,6 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
 
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [traceSearch, setTraceSearch] = useState("");
-  const [expandedTraceLayerIds, setExpandedTraceLayerIds] = useState<Set<string>>(() => new Set());
 
   const prevCharIdRef = useRef(character.id);
   useEffect(() => {
@@ -275,21 +275,6 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
     };
 
     if (isMobile) {
-      const q = traceSearch.trim().toLowerCase();
-      const visibleLayers = trace?.layers.filter((layer) => {
-        if (!q) return true;
-        return [layer.sourceName, layer.sourceType, layer.sourceId, layer.text]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(q));
-      }) ?? [];
-      const toggleLayer = (layerId: string) => {
-        setExpandedTraceLayerIds((prev) => {
-          const next = new Set(prev);
-          if (next.has(layerId)) next.delete(layerId);
-          else next.add(layerId);
-          return next;
-        });
-      };
       return (
         <div className="pb-4">
           <h1 className="mb-4 font-body text-[22px] font-semibold leading-tight text-t1">{t("build_prompt_trace")}</h1>
@@ -344,43 +329,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
 
           {trace ? (
             <div className="flex flex-col gap-2">
-              {visibleLayers.map((layer, index) => {
-                const isPreset = layer.sourceType === "prompt_preset";
-                const isRetrieval = layer.sourceType.includes("memory") || layer.sourceType === "lore_entry";
-                const expanded = expandedTraceLayerIds.has(layer.id);
-                return (
-                  <div key={layer.id} className={cn(
-                    "overflow-hidden rounded-md border border-border bg-s2 font-ui",
-                    isPreset && "border-l-2 border-l-info",
-                    isRetrieval && "border-l-2 border-l-success",
-                    !isPreset && !isRetrieval && "border-l-2 border-l-danger",
-                  )}>
-                    <button
-                      type="button"
-                      className="flex w-full cursor-pointer flex-col px-3.5 py-3 text-left active:bg-s3"
-                      onClick={() => toggleLayer(layer.id)}
-                      aria-expanded={expanded}
-                    >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <div className="min-w-0 flex-1 font-semibold text-t2">{index + 1}. {layer.sourceName ?? layer.sourceType}</div>
-                        <span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
-                      </div>
-                      <div className="mt-1 flex min-w-0 items-center gap-2 text-[12px] text-t3">
-                        <span className="min-w-0 flex-1 truncate">{layer.sourceId || layer.sourceType}</span>
-                        <span className="shrink-0 tabular-nums">{formatTokenCount(layer.tokenCount)}</span>
-                      </div>
-                    </button>
-                    {expanded && (
-                      <div className="border-t border-border bg-input-bg p-3 whitespace-pre-wrap font-mono text-[11px] leading-[1.55] text-t1">
-                        {layer.text}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {visibleLayers.length === 0 && (
-                <div className="rounded-md border border-dashed border-border2 bg-s2 px-3 py-6 text-center font-ui text-[13px] text-t3">{t("trace_no_active")}</div>
-              )}
+              <TracePayloadView trace={trace} searchQuery={traceSearch} formatTokens={formatTokenCount} compact={!isMobile} />
 
               <div className="mt-4 flex flex-col gap-3">
                 {imageAttachmentsCount > 0 && (
@@ -501,39 +450,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
 
         {trace ? (
           <div className="flex flex-col gap-2">
-            {trace.layers.map((layer, index) => (
-              <div key={layer.id} className="overflow-hidden rounded-md border border-border bg-s2">
-                <div
-                  className={cn(
-                    "flex cursor-pointer items-center justify-between bg-surface px-3.5 py-2.5 font-ui text-xs text-t2 transition-colors hover:bg-s2 hover:text-t1",
-                    layer.sourceType === "prompt_preset" && "border-l-2 border-l-info",
-                    (layer.sourceType.includes("memory") || layer.sourceType === "lore_entry") && "border-l-2 border-l-success",
-                    !layer.sourceType.includes("memory") && layer.sourceType !== "lore_entry" && layer.sourceType !== "prompt_preset" && "border-l-2 border-l-danger",
-                  )}
-                  onClick={(e) => {
-                    const next = e.currentTarget.nextElementSibling as HTMLElement;
-                    if (next) next.style.display = next.style.display === "none" ? "block" : "none";
-                  }}
-                >
-                  <div>
-                    <strong>
-                      {index + 1}. {layer.sourceName ?? layer.sourceType}
-                    </strong>
-                    <span className="ml-1.5 text-t3">{layer.sourceId}</span>
-                  </div>
-                  <div className="flex gap-2 text-t3">
-                    <span className="text-xs text-t2">{layer.tokenCount} {t("tokens_label")}</span>
-                  </div>
-                </div>
-                {/* DYNAMIC: display toggled by JS click handler above */}
-                <div
-                  className="border-t border-border bg-input-bg p-3 whitespace-pre-wrap font-mono text-[11px] text-t1"
-                  style={{ display: "none" }}
-                >
-                  {layer.text}
-                </div>
-              </div>
-            ))}
+            <TracePayloadView trace={trace} searchQuery={traceSearch} formatTokens={formatTokenCount} compact={!isMobile} />
 
             <div className="mt-5">
               <button type="button"
