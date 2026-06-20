@@ -137,6 +137,7 @@ export function ContextMemoryModal({
   const activeProvider = providers.find((p) => p.isActive) ?? providers[0] ?? null;
   const messagesById = useSnapshotStore((s) => s.messagesById);
   const messageOrder = useSnapshotStore((s) => s.messageOrder);
+  const activeBranchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
   const messages = useMemo(() => messageOrder.map((id) => messagesById[id]).filter(Boolean), [messageOrder, messagesById]);
 
   /* ─── state ─── */
@@ -161,13 +162,18 @@ export function ContextMemoryModal({
   const [historyLimit, setHistoryLimit] = useState(Math.min(messageHistoryLimit || messageCount || 1, Math.max(1, messageCount)));
   const [autoConfig, setAutoConfig] = useState<AutoSummaryConfig>({ ...DEFAULT_AUTO_CONFIG, ...autoSummaryConfig });
   const abortRef = useRef<AbortController | null>(null);
-  // Tracks the active chat across renders so the range effect can detect a
-  // chat switch and RESET the range (1..maxMessage) instead of just clamping.
-  // clamp-only is wrong because switchChat briefly nulls messageOrder
-  // (clearMessages) before the new chat loads — messageCount dips to 0, the
-  // range gets clamped to 1, and when the real (larger) count arrives clamp
-  // cannot extend back, leaving the range stuck at 1 for the new chat.
-  const prevActiveChatIdRef = useRef<ChatId | null>(activeChatId);
+  // Tracks the active chat+branch across renders so the range effect can
+  // RESET the range (1..maxMessage) on any branch/chat switch instead of
+  // just clamping. clamp-only is wrong twice over:
+  //  1. switchChat briefly nulls messageOrder (clearMessages) → messageCount
+  //     dips to 0 → range collapses to 1 → when the real count arrives clamp
+  //     cannot extend back.
+  //  2. switching BRANCHES within the same chat keeps the same activeChatId
+  //     but completely changes the message set (68-msg branch → 2-msg branch).
+  //     clamp from a large branch to a small one shrinks fine, but small →
+  //     large can't extend, so the range freezes near the small branch's value.
+  // Keying on chatId|branchId resets on BOTH chat and branch switches.
+  const prevScopeRef = useRef<string | null>(null);
   const [textareaRef, autoResize] = useAutoResize();
 
   const maxMessage = Math.max(1, messageCount - 1);
@@ -233,22 +239,25 @@ export function ContextMemoryModal({
 
   useEffect(() => { if (isOpen) void loadSummaries(); }, [isOpen, loadSummaries]);
 
+  // Composite scope key: any chat OR branch switch must reset the range,
+  // because each branch has its own independent message set. See prevScopeRef.
+  const scope = activeChatId && activeBranchId ? `${activeChatId}|${activeBranchId}` : null;
+
   useEffect(() => {
+    const scopeChanged = prevScopeRef.current !== scope;
+    prevScopeRef.current = scope;
     if (!isOpen) return;
-    // On a chat switch reset the range to the full new-chat span; within the
-    // same chat just clamp to the new bounds. See computeRangeAfterChange for
-    // why clamp-only is wrong (the clearMessages() dip during switchChat).
-    const chatChanged = prevActiveChatIdRef.current !== activeChatId;
+    // On a chat/branch switch reset the range to the full span (1..maxMessage);
+    // within the same scope just clamp to the new bounds (messages added /
+    // removed keep the user's selection in bounds). See computeRangeAfterChange.
     const next = computeRangeAfterChange(
       rangeFrom,
       rangeTo,
-      prevActiveChatIdRef.current,
-      activeChatId,
+      scopeChanged,
       maxMessage,
     );
-    prevActiveChatIdRef.current = activeChatId;
-    if (chatChanged || next.from !== rangeFrom) setRangeFrom(next.from);
-    if (chatChanged || next.to !== rangeTo) setRangeTo(next.to);
+    if (scopeChanged || next.from !== rangeFrom) setRangeFrom(next.from);
+    if (scopeChanged || next.to !== rangeTo) setRangeTo(next.to);
     // Clamp the persisted messageHistoryLimit against the actual message count:
     // a fork (or any shrinkage of the branch) can leave the persisted limit
     // larger than the real message count (e.g. fork 68-msg chat → 2-msg branch
@@ -259,7 +268,7 @@ export function ContextMemoryModal({
     setHistoryLimit(cappedLimit);
     setAutoConfig({ ...DEFAULT_AUTO_CONFIG, ...autoSummaryConfig });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rangeFrom/rangeTo are intentionally read for the diff check above
-  }, [activeChatId, autoSummaryConfig, isOpen, maxMessage, messageCount, messageHistoryLimit]);
+  }, [activeChatId, activeBranchId, autoSummaryConfig, isOpen, maxMessage, messageCount, messageHistoryLimit]);
 
   useEffect(() => {
     if (!selectedProviderId) {
@@ -752,28 +761,32 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Compute the message-range (from, to) for the memory modal after a chat or
+ * Compute the message-range (from, to) for the memory modal after a scope or
  * message-count change. Exported (pure) so the branch-switch regression is
  * unit-testable without rendering the full modal.
  *
- * On a CHAT SWITCH (prevChatId !== nextChatId) the range resets to the full
- * span (1..maxMessage). clamp-only is wrong here: switchChat briefly nulls
- * messageOrder via clearMessages() before the new chat loads, so messageCount
- * dips to 0, the range gets clamped to 1, and when the real (larger) count
- * arrives clamp cannot extend back — leaving the range stuck at 1 for the new
- * chat (the "always shows 1" bug).
+ * `scopeChanged` means the active chat OR branch changed. The range is
+ * branch-scoped — each branch has its own independent message set — so any
+ * scope change RESETS the range to the full span (1..maxMessage). clamp-only
+ * is wrong twice over:
+ *  - switchChat briefly nulls messageOrder (clearMessages) → messageCount dips
+ *    to 0 → range collapses to 1 → clamp cannot extend back.
+ *  - switching BRANCHES within the same chat keeps the same activeChatId but
+ *    swaps the whole message set (68-msg branch → 2-msg branch). clamp from a
+ *    large branch to a small one shrinks, but small → large can't extend, so
+ *    the range freezes near the small branch's value (the reported
+ *    "shows 12 where there are 2 / 2 where there are 12" jumble).
  *
- * Within the SAME chat (just messageCount moved) clamp is correct: keep the
- * user's selection but keep it in-bounds.
+ * Within the SAME scope (just messageCount moved via add/delete) clamp is
+ * correct: keep the user's selection but keep it in-bounds.
  */
 export function computeRangeAfterChange(
   prevFrom: number,
   prevTo: number,
-  prevChatId: string | null,
-  nextChatId: string | null,
+  scopeChanged: boolean,
   maxMessage: number,
 ): { from: number; to: number } {
-  if (prevChatId !== nextChatId) {
+  if (scopeChanged) {
     return { from: 1, to: maxMessage };
   }
   return {
