@@ -161,6 +161,13 @@ export function ContextMemoryModal({
   const [historyLimit, setHistoryLimit] = useState(Math.min(messageHistoryLimit || messageCount || 1, Math.max(1, messageCount)));
   const [autoConfig, setAutoConfig] = useState<AutoSummaryConfig>({ ...DEFAULT_AUTO_CONFIG, ...autoSummaryConfig });
   const abortRef = useRef<AbortController | null>(null);
+  // Tracks the active chat across renders so the range effect can detect a
+  // chat switch and RESET the range (1..maxMessage) instead of just clamping.
+  // clamp-only is wrong because switchChat briefly nulls messageOrder
+  // (clearMessages) before the new chat loads — messageCount dips to 0, the
+  // range gets clamped to 1, and when the real (larger) count arrives clamp
+  // cannot extend back, leaving the range stuck at 1 for the new chat.
+  const prevActiveChatIdRef = useRef<ChatId | null>(activeChatId);
   const [textareaRef, autoResize] = useAutoResize();
 
   const maxMessage = Math.max(1, messageCount - 1);
@@ -228,8 +235,20 @@ export function ContextMemoryModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    setRangeFrom((prev) => clamp(prev, 1, maxMessage));
-    setRangeTo((prev) => clamp(Math.max(prev, 1), 1, maxMessage));
+    // On a chat switch reset the range to the full new-chat span; within the
+    // same chat just clamp to the new bounds. See computeRangeAfterChange for
+    // why clamp-only is wrong (the clearMessages() dip during switchChat).
+    const chatChanged = prevActiveChatIdRef.current !== activeChatId;
+    const next = computeRangeAfterChange(
+      rangeFrom,
+      rangeTo,
+      prevActiveChatIdRef.current,
+      activeChatId,
+      maxMessage,
+    );
+    prevActiveChatIdRef.current = activeChatId;
+    if (chatChanged || next.from !== rangeFrom) setRangeFrom(next.from);
+    if (chatChanged || next.to !== rangeTo) setRangeTo(next.to);
     // Clamp the persisted messageHistoryLimit against the actual message count:
     // a fork (or any shrinkage of the branch) can leave the persisted limit
     // larger than the real message count (e.g. fork 68-msg chat → 2-msg branch
@@ -239,7 +258,8 @@ export function ContextMemoryModal({
     const cappedLimit = Math.min(messageHistoryLimit || messageCount || 1, Math.max(1, messageCount));
     setHistoryLimit(cappedLimit);
     setAutoConfig({ ...DEFAULT_AUTO_CONFIG, ...autoSummaryConfig });
-  }, [autoSummaryConfig, isOpen, maxMessage, messageCount, messageHistoryLimit]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rangeFrom/rangeTo are intentionally read for the diff check above
+  }, [activeChatId, autoSummaryConfig, isOpen, maxMessage, messageCount, messageHistoryLimit]);
 
   useEffect(() => {
     if (!selectedProviderId) {
@@ -729,6 +749,37 @@ export function ContextMemoryModal({
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
+/**
+ * Compute the message-range (from, to) for the memory modal after a chat or
+ * message-count change. Exported (pure) so the branch-switch regression is
+ * unit-testable without rendering the full modal.
+ *
+ * On a CHAT SWITCH (prevChatId !== nextChatId) the range resets to the full
+ * span (1..maxMessage). clamp-only is wrong here: switchChat briefly nulls
+ * messageOrder via clearMessages() before the new chat loads, so messageCount
+ * dips to 0, the range gets clamped to 1, and when the real (larger) count
+ * arrives clamp cannot extend back — leaving the range stuck at 1 for the new
+ * chat (the "always shows 1" bug).
+ *
+ * Within the SAME chat (just messageCount moved) clamp is correct: keep the
+ * user's selection but keep it in-bounds.
+ */
+export function computeRangeAfterChange(
+  prevFrom: number,
+  prevTo: number,
+  prevChatId: string | null,
+  nextChatId: string | null,
+  maxMessage: number,
+): { from: number; to: number } {
+  if (prevChatId !== nextChatId) {
+    return { from: 1, to: maxMessage };
+  }
+  return {
+    from: clamp(prevFrom, 1, maxMessage),
+    to: clamp(Math.max(prevTo, 1), 1, maxMessage),
+  };
 }
 
 function upsertSummary(list: ChatSummaryRecord[], summary: ChatSummaryRecord): ChatSummaryRecord[] {
