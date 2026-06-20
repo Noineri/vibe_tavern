@@ -5,7 +5,7 @@ import type { StoreContainer } from "@vibe-tavern/db";
 import { validation, notFound } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
-import type { SessionSnapshot } from "../contract/session-types.js";
+import type { SessionSnapshot, VariantResponse } from "../contract/session-types.js";
 import type { LiveChatOrchestrator } from "../../domain/chat/live-chat-orchestrator.js";
 import type { ChatSummaryService } from "../../domain/chat/chat-summary-service.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
@@ -44,7 +44,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	renameChat = (chatId: string, title: string) =>
 		this.sessionRuntime.chatRuntime.renameChat(chatId, title);
 
-	setGreetingIndex = async (chatId: string, greetingIndex: number): Promise<SessionSnapshot> => {
+	setGreetingIndex = async (chatId: string, greetingIndex: number): Promise<VariantResponse> => {
 		return this.sessionRuntime.setGreetingIndex(brandId<ChatId>(chatId), greetingIndex);
 	};
 

@@ -119,6 +119,8 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			assemblePrompt: (chatId, branchId, opts) =>
 				this.assemblePrompt(chatId, branchId, opts),
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
+			buildMessageResponse: (chatId, opts) => this.buildMessageResponse(chatId, opts),
+			buildVariantResponse: (chatId, opts) => this.buildVariantResponse(chatId, opts),
 			chatOrder: this.chatOrder,
 		});
 		this.chatOrder.seed();
@@ -268,8 +270,12 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 	// directly and is always live. See the field-ownership table in
 	// `CHAT_FRONTEND_REFACTOR_PLAN.md` (Wave B1).
 	//
-	// B1.1: ADDITIVE ONLY. No mutation path is wired to these yet;
-	// `getSnapshot` still serves every route. Wiring lands in B1.2–B1.5.
+	// B1.1: ADDITIVE ONLY — the builder methods + shared fetch primitives landed
+	// here, behavior-pinned by `session-runtime-builders.test.ts`.
+	// B1.2: message + variant paths WIRED — appendAssistantReply, appendMessageVariant,
+	// select/deleteMessageVariant, editMessage, deleteMessage, setGreetingIndex now
+	// return these narrowed shapes (not getSnapshot). Remaining paths (branch /
+	// navigation / config+summary) still serve `getSnapshot` until B1.3–B1.5.
 
 	/** Message-path mutations: send, regenerate, edit, delete, create-variant. */
 	async buildMessageResponse(
@@ -278,9 +284,16 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 	): Promise<MessageResponse> {
 		const { branch, messages } = await this.chatApp.getChatState(chatId);
 		const branchId = branch.id as ChatBranchId;
+		const [messagesWithVariants, contextPreview, latestTrace] = await Promise.all([
+			this.buildMessagesWithVariants(messages, branchId),
+			this.assembleContextPreview(chatId, branchId),
+			// Latest single trace only — the full history is lazy-loaded (TRACE_LAZY_LOADING).
+			this.getPromptTraceHistory(chatId, branchId, 1),
+		]);
 		const response: MessageResponse = {
-			messages: await this.buildMessagesWithVariants(messages, branchId),
-			contextPreview: await this.assembleContextPreview(chatId, branchId),
+			messages: messagesWithVariants,
+			contextPreview,
+			promptTrace: latestTrace[0] ?? null,
 		};
 		if (opts?.summaries) {
 			response.summaries = await this.fetchSummaries(chatId, branchId);
@@ -635,7 +648,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 		}));
 	}
 
-	async setGreetingIndex(chatId: ChatId, greetingIndex: number): Promise<SessionSnapshot> {
+	async setGreetingIndex(chatId: ChatId, greetingIndex: number): Promise<VariantResponse> {
 		// Deprecated compatibility endpoint: greeting selection now lives on the
 		// first assistant message's selected variant, not on the chat row.
 		const { messages } = await this.chatApp.getChatState(chatId);
@@ -647,6 +660,6 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			}
 		}
 		await this.stores.chats.setSelectedGreetingIndex(chatId, 0);
-		return this.getSnapshot(chatId);
+		return this.buildVariantResponse(chatId, { activeChat: true });
 	}
 }

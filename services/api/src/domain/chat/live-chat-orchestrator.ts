@@ -1,7 +1,7 @@
 import { brandId, EventBus } from "@vibe-tavern/domain";
 import type { ChatId, MessageId } from "@vibe-tavern/domain";
 import type { ChatRuntime } from "../../runtime/session/session-runtime-chat.js";
-import type { SessionSnapshot } from "../../api/contract/session-types.js";
+import type { SessionSnapshot, MessageResponse } from "../../api/contract/session-types.js";
 import type { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ProviderExecutionInput, ProviderStreamResult } from "../../infrastructure/ai/provider-execution-types.js";
@@ -45,7 +45,7 @@ export class LiveChatOrchestrator {
     preparedMessageCount: number;
     promptMessageCount: number;
     reply: string;
-    snapshot: SessionSnapshot;
+    snapshot: MessageResponse;
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send.prepare.start", { chatId: input.chatId, model: provider.model });
@@ -120,7 +120,7 @@ export class LiveChatOrchestrator {
   }): Promise<{
     promptMessageCount: number;
     reply: string;
-    snapshot: SessionSnapshot;
+    snapshot: MessageResponse;
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.generateReply.start", { chatId: input.chatId, model: provider.model });
@@ -180,7 +180,7 @@ export class LiveChatOrchestrator {
   }): Promise<{
     promptMessageCount: number;
     reply: string;
-    snapshot: SessionSnapshot;
+    snapshot: MessageResponse;
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.regenerate.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
@@ -461,7 +461,7 @@ export class LiveChatOrchestrator {
     omitMessageCountInFinish?: boolean;
     prefill?: string;
     onAbort: (text: string, reasoning: string, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<void>;
-    onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<SessionSnapshot>;
+    onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<MessageResponse>;
   }): AsyncGenerator<{ event: string; data: string }> {
     const { streamResult, signal, startedAt, debugLabel, onAbort, onFinal, omitMessageCountInFinish, prefill } = input;
 

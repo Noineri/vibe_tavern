@@ -122,6 +122,14 @@ export interface MessageResponse {
 	contextPreview: SessionSnapshot["contextPreview"];
 	/** send / delete-message move summary markers; edit / create-variant do not. */
 	summaries?: SessionSnapshot["summaries"];
+	/**
+	 * Latest single prompt trace for the active branch. The full history is
+	 * NOT shipped (lazy-loaded separately — see TRACE_LAZY_LOADING_PLAN).
+	 * Including just the latest keeps the post-generation trace badge fresh
+	 * without paying the full-history payload cost. Absent on responses only
+	 * when no trace exists for the branch (then `null`).
+	 */
+	promptTrace: SessionSnapshot["promptTrace"];
 }
 
 /** Variant-path mutations: select-variant, delete-variant, set-greeting. */

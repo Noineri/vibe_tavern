@@ -2,7 +2,7 @@ import type { AssemblePromptResponse, Message, PromptTrace } from "@vibe-tavern/
 import { brandId, type ChatBranchId, type ChatId, type MessageId } from "@vibe-tavern/domain";
 import type { ChatStore } from "@vibe-tavern/db";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
-import type { SessionSnapshot } from "./session-runtime.js";
+import type { SessionSnapshot, MessageResponse, VariantResponse } from "./session-runtime.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
@@ -33,6 +33,10 @@ export interface ChatRuntimeDeps {
     promptTraceDraft: Omit<PromptTrace, "id" | "messageId" | "createdAt">;
   }>;
   getSnapshot: (chatId: ChatId) => Promise<SessionSnapshot>;
+  /** Narrowed message-path response (messages + contextPreview + latest trace; summaries optional). */
+  buildMessageResponse: (chatId: ChatId, opts?: { summaries?: boolean }) => Promise<MessageResponse>;
+  /** Narrowed variant-path response (messages + contextPreview; activeChat optional). */
+  buildVariantResponse: (chatId: ChatId, opts?: { activeChat?: boolean }) => Promise<VariantResponse>;
   chatOrder: IChatOrder;
 }
 
@@ -115,8 +119,8 @@ export class ChatRuntime {
     content: string,
     latencyMs: number,
     reasoningData?: { reasoning?: string; reasoningDurationMs?: number },
-  ): Promise<SessionSnapshot> {
-    const { chats, assemblePrompt, getSnapshot } = this.deps;
+  ): Promise<MessageResponse> {
+    const { chats, buildMessageResponse } = this.deps;
     const chat = (await chats.getById(chatId))!;
 
     const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId as ChatBranchId);
@@ -152,28 +156,29 @@ export class ChatRuntime {
       });
     }
 
-    const snapshot = await getSnapshot(chatId);
+    // Narrowed response: messages + contextPreview + latest trace + summaries.
+    // The full history is NOT shipped (lazy-loaded — see TRACE_LAZY_LOADING).
+    const response = await buildMessageResponse(chatId, { summaries: true });
     logSendDebug("prompt.trace.afterAppend", {
       chatId,
       messageId: assistantMessage.id,
-      traceCount: snapshot.promptTraceHistory.length,
-      latestTraceId: snapshot.promptTraceHistory[0]?.id ?? null,
-      latestTraceCreatedAt: snapshot.promptTraceHistory[0]?.createdAt ?? null,
-      latestTraceLayers: snapshot.promptTraceHistory[0]?.layers?.length ?? 0,
-      personaLayerSourceId: snapshot.promptTraceHistory[0]?.layers?.find((l: { sourceType: string }) => l.sourceType === "persona")?.sourceId ?? null,
+      latestTraceId: response.promptTrace?.id ?? null,
+      latestTraceCreatedAt: response.promptTrace?.createdAt ?? null,
+      latestTraceLayers: response.promptTrace?.layers?.length ?? 0,
+      personaLayerSourceId: response.promptTrace?.layers?.find((l: { sourceType: string }) => l.sourceType === "persona")?.sourceId ?? null,
     });
-    return snapshot;
+    return response;
   }
 
   async appendMessageVariant(
     chatId: ChatId,
     messageId: MessageId,
     input: { content: string; finishReason?: string | null; latencyMs: number; reasoning?: string; reasoningDurationMs?: number },
-  ): Promise<SessionSnapshot> {
-    const { chats, getSnapshot } = this.deps;
+  ): Promise<MessageResponse> {
+    const { chats, buildMessageResponse } = this.deps;
     const trimmed = input.content.trim();
     if (!trimmed) {
-      return await getSnapshot(chatId);
+      return await buildMessageResponse(chatId);
     }
 
     const chat = (await chats.getById(chatId))!;
@@ -207,22 +212,22 @@ export class ChatRuntime {
         sentConfig: (pending.draft as Record<string, unknown>).sentConfig as AssemblePromptResponse["sentConfig"],
       });
     }
-    return await getSnapshot(chatId);
+    return await buildMessageResponse(chatId);
   }
 
-  async selectMessageVariant(chatId: ChatId, messageId: MessageId, variantIndex: number): Promise<SessionSnapshot> {
+  async selectMessageVariant(chatId: ChatId, messageId: MessageId, variantIndex: number): Promise<VariantResponse> {
     await this.deps.chats.selectVariant(messageId, variantIndex);
-    return await this.deps.getSnapshot(chatId);
+    return await this.deps.buildVariantResponse(chatId);
   }
 
-  async deleteMessageVariant(chatId: ChatId, messageId: MessageId, variantIndex: number): Promise<SessionSnapshot> {
+  async deleteMessageVariant(chatId: ChatId, messageId: MessageId, variantIndex: number): Promise<MessageResponse> {
     await this.deps.chats.deleteVariant(messageId, variantIndex);
-    return await this.deps.getSnapshot(chatId);
+    return await this.deps.buildMessageResponse(chatId);
   }
 
-  async editMessage(chatId: ChatId, messageId: string, content: string): Promise<SessionSnapshot> {
+  async editMessage(chatId: ChatId, messageId: string, content: string): Promise<MessageResponse> {
     await this.deps.chatApp.editMessage(messageId, content);
-    return await this.deps.getSnapshot(chatId);
+    return await this.deps.buildMessageResponse(chatId);
   }
 
   async renameBranch(chatId: ChatId, branchId: string, label: string): Promise<SessionSnapshot> {
@@ -230,9 +235,9 @@ export class ChatRuntime {
     return await this.deps.getSnapshot(chatId);
   }
 
-  async deleteMessage(chatId: ChatId, messageId: string): Promise<SessionSnapshot> {
+  async deleteMessage(chatId: ChatId, messageId: string): Promise<MessageResponse> {
     await this.deps.chatApp.deleteMessage(messageId);
-    return await this.deps.getSnapshot(chatId);
+    return await this.deps.buildMessageResponse(chatId, { summaries: true });
   }
 
   async forkBranch(chatId: ChatId, fromMessageId?: string): Promise<SessionSnapshot> {

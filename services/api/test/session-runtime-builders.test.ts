@@ -17,7 +17,7 @@ import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
-import type { ChatId } from "@vibe-tavern/domain";
+import type { ChatId, MessageId } from "@vibe-tavern/domain";
 
 /** Spins up a real SessionRuntime against an isolated temp DB and seeds one chat. */
 async function createTestRuntime(): Promise<{
@@ -90,15 +90,15 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 
 	// ─── Message path ───────────────────────────────────────────────────
 
-	it("buildMessageResponse: edit-shape = {messages, contextPreview}", async () => {
+	it("buildMessageResponse: edit-shape = {messages, contextPreview, promptTrace}", async () => {
 		const r = await runtime.buildMessageResponse(chatId);
-		expect(sortedKeys(r)).toEqual(["contextPreview", "messages"]);
+		expect(sortedKeys(r)).toEqual(["contextPreview", "messages", "promptTrace"]);
 		expect(r.messages.length).toBeGreaterThan(0);
 	});
 
 	it("buildMessageResponse: send/delete-shape adds summaries", async () => {
 		const r = await runtime.buildMessageResponse(chatId, { summaries: true });
-		expect(sortedKeys(r)).toEqual(["contextPreview", "messages", "summaries"]);
+		expect(sortedKeys(r)).toEqual(["contextPreview", "messages", "promptTrace", "summaries"]);
 	});
 
 	// ─── Variant path ───────────────────────────────────────────────────
@@ -187,5 +187,29 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		const r = await runtime.buildMessageResponse(chatId);
 		expect(r.contextPreview).not.toBeNull();
 		expect(r.contextPreview?.layers).toBeDefined();
+	});
+
+	// ─── Wave B1.2 wiring: mutation methods return the narrowed shapes ───
+	//
+	// Pins that each migrated method returns ONLY its field-ownership row,
+	// not the full SessionSnapshot. A regression here means a method silently
+	// went back to `getSnapshot()` (re-introducing the monolithic payload).
+
+	it("B1.2: editMessage returns MessageResponse (not SessionSnapshot)", async () => {
+		const msg = (await runtime.getSnapshot(chatId)).messages[0];
+		const r = await runtime.chatRuntime.editMessage(chatId, msg.id, "edited content");
+		expect(sortedKeys(r)).toEqual(["contextPreview", "messages", "promptTrace"]);
+	});
+
+	it("B1.2: selectMessageVariant returns VariantResponse (not SessionSnapshot)", async () => {
+		const msg = (await runtime.getSnapshot(chatId)).messages[0];
+		// index 0 is always safe (the seeded greeting lands as variant 0).
+		const r = await runtime.chatRuntime.selectMessageVariant(chatId, msg.id as MessageId, 0);
+		expect(sortedKeys(r)).toEqual(["contextPreview", "messages"]);
+	});
+
+	it("B1.2: setGreetingIndex returns VariantResponse with activeChat", async () => {
+		const r = await runtime.setGreetingIndex(chatId, 0);
+		expect(sortedKeys(r)).toEqual(["activeChat", "contextPreview", "messages"]);
 	});
 });
