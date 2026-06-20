@@ -8,6 +8,7 @@ import type {
   VariantResponse,
   BranchResponse,
   BranchMetaResponse,
+  ChatListResponse,
 } from "./session-runtime.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
@@ -47,6 +48,8 @@ export interface ChatRuntimeDeps {
   buildBranchResponse: (chatId: ChatId) => Promise<BranchResponse>;
   /** Narrowed branch-meta response: rename-branch only (no text change → no contextPreview). */
   buildBranchMetaResponse: (chatId: ChatId) => Promise<BranchMetaResponse>;
+  /** Narrowed chat-list response: rename-chat only (sidebar label changes, nothing else). */
+  buildChatListResponse: () => Promise<ChatListResponse>;
   chatOrder: IChatOrder;
 }
 
@@ -288,9 +291,13 @@ export class ChatRuntime {
     return await this.deps.buildBranchResponse(typedChatId);
   }
 
-  async renameChat(chatId: string, title: string): Promise<{ chatId: string; title: string }> {
+  async renameChat(chatId: string, title: string): Promise<ChatListResponse> {
     await this.deps.chats.updateTitle(chatId, title);
-    return { chatId, title };
+    // Only the sidebar label moved → return the refreshed chats list. No
+    // contextPreview (conversation text unchanged), no messages/branches.
+    // The UI renders chat titles from the chats list (Sidebar.tsx / Rail.tsx),
+    // not from activeChat.title, so a chats-only refresh updates every title.
+    return this.deps.buildChatListResponse();
   }
 
   async cloneChat(chatId: string): Promise<SessionSnapshot> {

@@ -123,6 +123,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			buildVariantResponse: (chatId, opts) => this.buildVariantResponse(chatId, opts),
 			buildBranchResponse: (chatId) => this.buildBranchResponse(chatId),
 			buildBranchMetaResponse: (chatId) => this.buildBranchMetaResponse(chatId),
+			buildChatListResponse: () => this.buildChatListResponse(),
 			chatOrder: this.chatOrder,
 		});
 		this.chatOrder.seed();
@@ -138,6 +139,8 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			persona: this.persona,
 			resolveDefaultPromptPresetId: () => this.ensureDefaultPresetId(),
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
+			buildChatSwitchResponse: (chatId, opts) => this.buildChatSwitchResponse(chatId, opts),
+			buildChatCreateResponse: (chatId) => this.buildChatCreateResponse(chatId),
 			seedImportedOpening: (chatId, firstMessage, alternateGreetings) =>
 				this.chatLifecycle.seedImportedOpening(chatId, firstMessage, alternateGreetings),
 			assemblePrompt: (chatId, branchId, opts) =>

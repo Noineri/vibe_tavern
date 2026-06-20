@@ -105,7 +105,15 @@ export async function clearChatAction(chatId: ChatId): Promise<AppSnapshot> {
 }
 
 export async function renameChatAction(chatId: ChatId, title: string): Promise<void> {
-  await renameChat(chatId, title);
+  const snapshot = await renameChat(chatId, title);
+  // The backend returns { chats } (ChatListResponse). The sidebar renders chat
+  // titles from the chats list (Sidebar.tsx / Rail.tsx), so syncing chats alone
+  // updates every visible title immediately. A silent bootstrap refresh is
+  // kept as a fire-and-forget guard for fields the chats list doesn't carry —
+  // notably activeChat.title, which handleExportChatJsonl reads for the export
+  // filename. Dropping the bootstrap would leave that one read stale until the
+  // next chat switch; keeping it preserves store consistency at no UX cost.
+  syncSnapshot(snapshot);
   void fetchBootstrapAction({ silent: true });
 }
 
