@@ -1,7 +1,7 @@
 import { brandId, normalizeProviderType, PROVIDER_TYPE, type ChatId } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
-import type { SessionSnapshot } from "../../api/contract/session-types.js";
+import type { ConfigPatchResponse, SummaryResponse } from "../../api/contract/session-types.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import { notFound, validation } from "../../shared/errors.js";
@@ -33,11 +33,13 @@ export interface GenerateChatSummaryInput {
 
 export interface SummarizeChatResult {
   summary: string;
-  snapshot: SessionSnapshot;
+  snapshot: ConfigPatchResponse;
 }
 
-export interface GenerateChatSummaryResult extends SummarizeChatResult {
+export interface GenerateChatSummaryResult {
+  summary: string;
   chatSummary: Awaited<ReturnType<StoreContainer['chatSummaries']['getById']>>;
+  snapshot: SummaryResponse;
 }
 
 export class ChatSummaryService {
@@ -179,7 +181,7 @@ export class ChatSummaryService {
           excludeSummarized: input.excludeSummarized ?? true,
           source: input.source ?? 'manual',
         });
-    const snapshot = await this.sessionRuntime.getSnapshot(chatId);
+    const snapshot = await this.sessionRuntime.buildSummaryResponse(chatId);
     logSendDebug("summary.range.generate.done", {
       chatId: input.chatId,
       summaryId: chatSummary.id,

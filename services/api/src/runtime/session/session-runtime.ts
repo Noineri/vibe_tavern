@@ -131,6 +131,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			stores,
 			chatOrder: this.chatOrder,
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
+			buildConfigPatchResponse: (chatId, opts) => this.buildConfigPatchResponse(chatId, opts),
 		});
 		this.chatLifecycle = new ChatLifecycleRuntime({
 			stores,
@@ -141,6 +142,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
 			buildChatSwitchResponse: (chatId, opts) => this.buildChatSwitchResponse(chatId, opts),
 			buildChatCreateResponse: (chatId) => this.buildChatCreateResponse(chatId),
+			buildConfigPatchResponse: (chatId, opts) => this.buildConfigPatchResponse(chatId, opts),
 			seedImportedOpening: (chatId, firstMessage, alternateGreetings) =>
 				this.chatLifecycle.seedImportedOpening(chatId, firstMessage, alternateGreetings),
 			assemblePrompt: (chatId, branchId, opts) =>
@@ -151,6 +153,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			chatApp: this.chatApp,
 			chatOrder: this.chatOrder,
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
+			buildConfigPatchResponse: (chatId, opts) => this.buildConfigPatchResponse(chatId, opts),
 			resolveDefaultPersonaId: () => this.persona.resolveDefaultId(),
 			resolveDefaultPromptPresetId: () => this.ensureDefaultPresetId(),
 			seedImportedOpening: (chatId, firstMessage, alternateGreetings) =>
