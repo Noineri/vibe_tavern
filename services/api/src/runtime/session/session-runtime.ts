@@ -327,11 +327,15 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 	async buildBranchResponse(chatId: ChatId): Promise<BranchResponse> {
 		const { branch, messages } = await this.chatApp.getChatState(chatId);
 		const branchId = branch.id as ChatBranchId;
-		const [messagesWithVariants, branches, summaries, contextPreview] = await Promise.all([
+		// `chats` (sidebar list) is included because fork / activate change the
+		// chat's active branch, and each ChatListItem.messageCount is the active
+		// branch's count — the sidebar number must refresh on every branch switch.
+		const [messagesWithVariants, branches, summaries, contextPreview, chats] = await Promise.all([
 			this.buildMessagesWithVariants(messages, branchId),
 			this.fetchBranchesWithCounts(chatId),
 			this.fetchSummaries(chatId, branchId),
 			this.assembleContextPreview(chatId, branchId),
+			this.fetchChatList(),
 		]);
 		return {
 			messages: messagesWithVariants,
@@ -339,6 +343,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			branches,
 			summaries,
 			contextPreview,
+			chats,
 		};
 	}
 

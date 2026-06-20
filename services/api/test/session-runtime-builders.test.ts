@@ -118,7 +118,7 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 	it("buildBranchResponse: fork/activate/delete-shape", async () => {
 		const r = await runtime.buildBranchResponse(chatId);
 		expect(sortedKeys(r)).toEqual([
-			"activeBranch", "branches", "contextPreview", "messages", "summaries",
+			"activeBranch", "branches", "chats", "contextPreview", "messages", "summaries",
 		]);
 	});
 
@@ -222,11 +222,14 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		expect(sortedKeys(r)).toEqual(["branches"]);
 	});
 
-	it("B1.3: forkBranch returns BranchResponse (messages + branches + activeBranch + summaries + contextPreview)", async () => {
+	it("B1.3: forkBranch returns BranchResponse (messages + branches + activeBranch + summaries + contextPreview + chats)", async () => {
 		const r = await runtime.chatRuntime.forkBranch(chatId);
 		expect(sortedKeys(r)).toEqual([
-			"activeBranch", "branches", "contextPreview", "messages", "summaries",
+			"activeBranch", "branches", "chats", "contextPreview", "messages", "summaries",
 		]);
 		expect(r.branches.length).toBeGreaterThanOrEqual(2);
+		// chats (sidebar list) refresh on branch switch because the chat's active
+		// branch changed, and ChatListItem.messageCount is the active branch's count.
+		expect(r.chats.length).toBeGreaterThanOrEqual(1);
 	});
 });
