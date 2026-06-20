@@ -65,7 +65,7 @@ export interface SessionSnapshot {
 	promptTrace: PromptTraceRecordDto | null;
 	/** Last N prompt traces for the active branch. */
 	promptTraceHistory: PromptTraceRecordDto[];
-	/** Live context preview (null when traces exist — known bug, see Phase 3.1). */
+	/** Live context preview — always reflects current chat/character/persona/preset state. Never nulled by trace presence (traces are historical; this is the live view). */
 	contextPreview: AssemblePromptResponse | null;
 	/** Active character record. */
 	character: CharacterRecord;
@@ -109,9 +109,9 @@ export interface ImportResult {
 // returned only by the mutations in the family that touch them.
 //
 // `contextPreview` inclusion is driven solely by the "did conversation text
-// change" rule — it is NOT coupled to prompt-trace presence (that coupling
-// was the Phase-3.1 "trace shadows preview" bug, and is intentionally left
-// behind). Builders compute the preview via `assembleContextPreview` directly.
+// change" rule — it is never coupled to prompt-trace presence. Both the
+// builders and `getSnapshot` compute the preview via `assembleContextPreview`
+// directly (the Phase-3.1 "trace shadows preview" coupling was removed).
 //
 // Every field type is indexed off `SessionSnapshot[...]` so these contracts
 // track the canonical shape without drift.
