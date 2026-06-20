@@ -374,16 +374,19 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		expect(r.character?.id).toBe(characterId);
 	});
 
-	it("B1.5: setChatPromptPreset returns ConfigPatchResponse = {contextPreview} only", async () => {
-		// The preset id lives on the chat row; the client re-reads the preset
-		// body from its own preset store, so only contextPreview needs to refresh.
+	it("B1.5: setChatPromptPreset returns ConfigPatchResponse with activeChat (promptPresetId round-trips)", async () => {
+		// activeChat MUST be returned: promptPresetId lives on the chat row and
+		// is read by TopBar (chatMeta.activeChat.promptPresetId) + AppShell for
+		// both the topbar quick-switcher and the preset modal. The preset BODY
+		// is re-read from the preset store, but the ID round-trips via activeChat.
 		const fresh = await runtime.character.createFromScratch({
 			name: "PresetBot", description: "d", firstMessage: "hi",
 		});
 		const snap = await runtime.getSnapshot(fresh.activeChatId);
 		const presetId = snap.activeChat!.promptPresetId!;
 		const r = await runtime.chatLifecycle.setChatPromptPreset(fresh.activeChatId, presetId);
-		expect(sortedKeys(r)).toEqual(["contextPreview"]);
+		expect(sortedKeys(r)).toEqual(["activeChat", "contextPreview"]);
+		expect(r.activeChat?.promptPresetId).toBe(presetId);
 	});
 
 	it("B1.5: updateChatSummary (chat.summary field) returns ConfigPatchResponse with activeChat", async () => {
