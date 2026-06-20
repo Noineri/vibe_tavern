@@ -10,6 +10,9 @@ import type {
 	VariantResponse,
 	BranchResponse,
 	BranchMetaResponse,
+	ChatSwitchResponse,
+	ChatCreateResponse,
+	ChatListResponse,
 } from "./session-types.js";
 import type { PromptTraceRecordDto, PromptPresetDto } from "@vibe-tavern/domain";
 import type {
@@ -78,12 +81,12 @@ export interface BootstrapRuntimeApi {
 // ─── Chat ────────────────────────────────────────────────────────────
 
 export interface ChatRuntimeApi {
-	getChatSnapshot: (chatId: string) => Promise<SessionSnapshot>;
-	createChatForCharacter: (characterId: string) => Promise<SessionSnapshot>;
+	getChatSnapshot: (chatId: string) => Promise<ChatSwitchResponse>;
+	createChatForCharacter: (characterId: string) => Promise<ChatCreateResponse>;
 	cloneChat: (chatId: string) => Promise<SessionSnapshot>;
 	deleteChat: (chatId: string) => Promise<void>;
-	clearChat: (chatId: string) => Promise<SessionSnapshot>;
-	renameChat: (chatId: string, title: string) => Promise<{ chatId: string; title: string }>;
+	clearChat: (chatId: string) => Promise<ChatCreateResponse>;
+	renameChat: (chatId: string, title: string) => Promise<ChatListResponse>;
 	setGreetingIndex: (chatId: string, greetingIndex: number) => Promise<VariantResponse>;
 	setChatPersona: (chatId: string, personaId: string) => Promise<SessionSnapshot>;
 	setChatPromptPreset: (chatId: string, promptPresetId: string) => Promise<SessionSnapshot>;

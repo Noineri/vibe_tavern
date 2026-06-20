@@ -5,7 +5,7 @@ import type { StoreContainer } from "@vibe-tavern/db";
 import { validation, notFound } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
-import type { SessionSnapshot, VariantResponse } from "../contract/session-types.js";
+import type { VariantResponse, ChatSwitchResponse, ChatCreateResponse, ChatListResponse } from "../contract/session-types.js";
 import type { LiveChatOrchestrator } from "../../domain/chat/live-chat-orchestrator.js";
 import type { ChatSummaryService } from "../../domain/chat/chat-summary-service.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
@@ -25,11 +25,11 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	// ─── Lifecycle ──────────────────────────────────────────────────────
 
-	getChatSnapshot = async (chatId: string) => {
+	getChatSnapshot = async (chatId: string): Promise<ChatSwitchResponse> => {
 		return this.sessionRuntime.chatLifecycle.switchChat(brandId<ChatId>(chatId));
 	};
 
-	createChatForCharacter = (characterId: string) =>
+	createChatForCharacter = (characterId: string): Promise<ChatCreateResponse> =>
 		this.sessionRuntime.chatLifecycle.createChatForCharacter(characterId);
 
 	cloneChat = (chatId: string) =>
@@ -38,10 +38,10 @@ export class ChatAdapter implements ChatRuntimeApi {
 	deleteChat = (chatId: string) =>
 		this.sessionRuntime.chatRuntime.deleteChat(chatId);
 
-	clearChat = (chatId: string): Promise<SessionSnapshot> =>
+	clearChat = (chatId: string): Promise<ChatCreateResponse> =>
 		this.sessionRuntime.chatLifecycle.clearChat(brandId<ChatId>(chatId));
 
-	renameChat = (chatId: string, title: string) =>
+	renameChat = (chatId: string, title: string): Promise<ChatListResponse> =>
 		this.sessionRuntime.chatRuntime.renameChat(chatId, title);
 
 	setGreetingIndex = async (chatId: string, greetingIndex: number): Promise<VariantResponse> => {

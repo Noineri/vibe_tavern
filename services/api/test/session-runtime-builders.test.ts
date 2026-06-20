@@ -232,4 +232,92 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		// branch changed, and ChatListItem.messageCount is the active branch's count.
 		expect(r.chats.length).toBeGreaterThanOrEqual(1);
 	});
+
+	// ─── Wave B1.4 wiring: navigation methods return narrowed shapes ───
+
+	it("B1.4: switchChat returns ChatSwitchResponse (incl persona; no chats — switch does not move the list)", async () => {
+		const r = await runtime.chatLifecycle.switchChat(chatId);
+		expect(sortedKeys(r)).toEqual([
+			"activeBranch", "activeChat", "branches", "character",
+			"contextPreview", "messages", "persona", "summaries",
+		]);
+		// persona is the switched-to chat's persona (switch loads it with the view).
+		expect(r.persona).toBeTruthy();
+		// chats is deliberately omitted: the sidebar list lives in the store from
+		// bootstrap and switch does no move-to-front.
+		expect((r as Record<string, unknown>).chats).toBeUndefined();
+		// ── chat→branch hierarchy invariant ──
+		// branchId is a CHILD of chatId: every returned branch must belong to the
+		// switched-to chat, and the active branch must be one of them. Switching
+		// chats must never leak another chat's branches or leave a dangling
+		// activeBranch from the previously-viewed chat.
+		expect(r.activeBranch.chatId).toBe(chatId);
+		expect(r.branches.every((b) => b.chatId === chatId)).toBe(true);
+		expect(r.branches.some((b) => b.id === r.activeBranch.id)).toBe(true);
+	});
+
+	it("B1.4: renameChat returns ChatListResponse = {chats}", async () => {
+		const r = await runtime.chatRuntime.renameChat(chatId, "renamed chat");
+		expect(sortedKeys(r)).toEqual(["chats"]);
+		// The renamed chat's new title must appear in the refreshed list — this is
+		// what the sidebar renders titles from (Sidebar.tsx / Rail.tsx).
+		const renamed = r.chats.find((c) => c.id === chatId);
+		expect(renamed?.title).toBe("renamed chat");
+	});
+
+	it("B1.4: createChatForCharacter returns ChatCreateResponse (8 keys)", async () => {
+		const snap = await runtime.getSnapshot(chatId);
+		const characterId = snap.character!.id;
+		const r = await runtime.chatLifecycle.createChatForCharacter(characterId);
+		expect(sortedKeys(r)).toEqual([
+			"activeBranch", "activeChat", "branches", "character",
+			"chats", "contextPreview", "messages", "summaries",
+		]);
+		// The new chat is added at the front of the list (chatOrder.unshift);
+		// createChatAction (frontend) reads snapshot.chats[0].id as the new chat.
+		expect(r.chats[0].id).toBeTruthy();
+		expect(r.chats[0].id).not.toBe(chatId);
+		expect(r.activeChat.id).toBe(r.chats[0].id);
+		// ── chat→branch hierarchy invariant ──
+		// A brand-new chat gets a brand-new default branch as its ONLY child.
+		// Every returned branch must belong to the new chatId, and the active
+		// branch must be that child. The new chat's branch must NOT collide with
+		// any branch of the previously-seeded chat.
+		const newChatId = r.activeChat.id;
+		expect(r.activeBranch.chatId).toBe(newChatId);
+		expect(r.branches.every((b) => b.chatId === newChatId)).toBe(true);
+		expect(r.branches.length).toBe(1);
+		expect(r.activeChat.activeBranchId).toBe(r.activeBranch.id);
+	});
+
+	it("B1.4: clearChat returns ChatCreateResponse and the new chat differs from the cleared one", async () => {
+		const oldChatId = chatId;
+		// Capture the old chat's branch id so we can assert the cleared chat's
+		// fresh branch is a different child (clear deletes the old chat AND its
+		// branches, then creates a new chat with a new default branch).
+		const oldSnap = await runtime.getSnapshot(chatId);
+		const oldBranchId = oldSnap.activeBranch!.id;
+		const r = await runtime.chatLifecycle.clearChat(chatId);
+		expect(sortedKeys(r)).toEqual([
+			"activeBranch", "activeChat", "branches", "character",
+			"chats", "contextPreview", "messages", "summaries",
+		]);
+		// clearChat deletes the old chat and creates a fresh one — the new
+		// activeChat must NOT be the cleared chatId.
+		expect(r.activeChat.id).not.toBe(oldChatId);
+		// The old chat is gone from the sidebar list (cascade-deleted).
+		expect(r.chats.find((c) => c.id === oldChatId)).toBeUndefined();
+		// The new chat is at the front (chatOrder.unshift on create).
+		expect(r.chats[0].id).toBe(r.activeChat.id);
+		// ── chat→branch hierarchy invariant ──
+		// The cascade-delete removed the old chat's branches; the new chat has a
+		// fresh default branch. Assert the new branch is a child of the NEW
+		// chatId (not the cleared one) and is NOT the old branch id (clear
+		// must not resurrect the cleared chat's branch under a new chat).
+		const newChatId = r.activeChat.id;
+		expect(r.activeBranch.chatId).toBe(newChatId);
+		expect(r.activeBranch.id).not.toBe(oldBranchId);
+		expect(r.branches.every((b) => b.chatId === newChatId)).toBe(true);
+		expect(r.activeChat.activeBranchId).toBe(r.activeBranch.id);
+	});
 });

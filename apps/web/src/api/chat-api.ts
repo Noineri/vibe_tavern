@@ -29,9 +29,10 @@ export async function clearChat(chatId: ChatId): Promise<AppSnapshot> {
   return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
 }
 
-export async function renameChat(chatId: ChatId, title: string): Promise<{ chatId: string; title: string }> {
+export async function renameChat(chatId: ChatId, title: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].title.$patch({ param: { chatId }, json: { title } });
-  return unwrapRpc<{ chatId: string; title: string }>(response);
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
 }
 
 export async function setGreetingIndex(chatId: ChatId, greetingIndex: number): Promise<AppSnapshot> {

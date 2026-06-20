@@ -12,7 +12,11 @@ import { notFound } from "../../shared/errors.js";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
 import type { PersonaRuntime } from "../../domain/persona/persona-runtime.js";
-import type { SessionSnapshot } from "./session-runtime.js";
+import type {
+	SessionSnapshot,
+	ChatSwitchResponse,
+	ChatCreateResponse,
+} from "./session-runtime.js";
 
 function buildGreetingVariants(firstMessage: string | null | undefined, alternateGreetings: string[] = []): string[] {
 	// Preserve the imported/card ordering exactly: first_mes is variant 0 when
@@ -28,6 +32,13 @@ export interface ChatLifecycleRuntimeDeps {
 	persona: PersonaRuntime;
 	resolveDefaultPromptPresetId: () => Promise<PromptPresetId>;
 	getSnapshot: (chatId: ChatId) => Promise<SessionSnapshot>;
+	/** Narrowed chat-switch response: switch / clone (full reload of the active chat's view). */
+	buildChatSwitchResponse: (
+		chatId: ChatId,
+		opts?: { persona?: boolean; chats?: boolean },
+	) => Promise<ChatSwitchResponse>;
+	/** Narrowed chat-create response: create / clear (new chat appears in the sidebar). */
+	buildChatCreateResponse: (chatId: ChatId) => Promise<ChatCreateResponse>;
 	seedImportedOpening: (chatId: ChatId, firstMessage: string, alternateGreetings?: string[]) => Promise<void>;
 	assemblePrompt: (
 		chatId: ChatId,
@@ -58,7 +69,7 @@ export class ChatLifecycleRuntime {
 		this.deps = deps;
 	}
 
-	async createChatForCharacter(characterId: string): Promise<SessionSnapshot> {
+	async createChatForCharacter(characterId: string): Promise<ChatCreateResponse> {
 		const typedCharacterId = brandId<CharacterId>(characterId);
 		const character = await this.deps.stores.characters.getById(typedCharacterId);
 		if (!character) {
@@ -90,14 +101,15 @@ export class ChatLifecycleRuntime {
 			}
 		}
 
-		return this.deps.getSnapshot(createdChatId);
+		return this.deps.buildChatCreateResponse(createdChatId);
 	}
 
 	/**
 	 * Clear a chat: delete it and create a fresh one for the same character
-	 * with the first greeting message. Returns the new session snapshot.
+	 * with the first greeting message. Returns the create-scoped response
+	 * (new chat appears in the sidebar, fresh view state for the new chat).
 	 */
-	async clearChat(chatId: ChatId): Promise<SessionSnapshot> {
+	async clearChat(chatId: ChatId): Promise<ChatCreateResponse> {
 		const oldChat = await this.deps.stores.chats.getById(chatId);
 		if (!oldChat) throw notFound("Chat", `Chat '${chatId}' not found.`);
 
@@ -135,7 +147,7 @@ export class ChatLifecycleRuntime {
 		this.deps.chatOrder.remove(chatId);
 		await this.deps.stores.chats.delete(chatId);
 
-		return this.deps.getSnapshot(created.id);
+		return this.deps.buildChatCreateResponse(created.id);
 	}
 
 	async assembleSummaryPrompt(input: {
@@ -191,10 +203,13 @@ export class ChatLifecycleRuntime {
 		return this.deps.getSnapshot(chatId);
 	}
 
-	async switchChat(chatId: ChatId): Promise<SessionSnapshot> {
+	async switchChat(chatId: ChatId): Promise<ChatSwitchResponse> {
 		// Chat order is managed server-side (updatedAt DESC).
 		// No touch/move-to-front on selection — prevents chat list jumping.
-		return this.deps.getSnapshot(chatId);
+		// persona is included so the switched-to chat's persona loads with the
+		// view (the sidebar chat list is NOT re-sent here — it lives in the
+		// store from bootstrap; switch explicitly does no move-to-front).
+		return this.deps.buildChatSwitchResponse(chatId, { persona: true });
 	}
 
 	async setChatPromptPreset(chatId: ChatId, promptPresetId: string): Promise<SessionSnapshot> {
