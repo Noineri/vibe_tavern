@@ -16,6 +16,14 @@ const msgWrapM = "w-full px-3";
 const sepWrap = msgWrap + " my-[6px] mt-2";
 const sepWrapM = msgWrapM + " my-[6px] mt-2";
 
+// atBottomThreshold for Virtuoso's followOutput: how close to the bottom (in px)
+// counts as "at bottom". Tuned to 30 by spike 2026-06-20 (see
+// vibe_tavern_plan/reports/scroll-bottom-pinning-verification.md); the library
+// default of 4 was too tight for dynamic-height chat content. Do not lower it
+// without re-testing long streaming replies — too tight re-introduces the
+// follow flap that the spike documented.
+const AT_BOTTOM_THRESHOLD = 30;
+
 function scrollToBottom(el: HTMLElement | null) {
   if (el) el.scrollTop = el.scrollHeight;
 }
@@ -49,6 +57,21 @@ export function MessageList() {
 
   const [atBottom, setAtBottom] = useState(true);
   const isMobile = useIsMobile();
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // ⚠️  FRAGILE — Streaming Follow Safety Net
+  // ⚠️  The refs and effects in this block (userScrolledUpRef, wasSendingRef,
+  // ⚠️  the streaming-text scrollToBottom effect, the isSending setTimeout effect,
+  // ⚠️  the wheel/touch listeners, and the useLayoutEffect 900ms pin below) are
+  // ⚠️  LOAD-BEARING. They run ALONGSIDE Virtuoso's native followOutput (see the
+  // ⚠️  <Virtuoso> props). Native followOutput ALONE is not sufficient on
+  // ⚠️  dynamic-height streaming content — it flaps ("follows, then doesn't"),
+  // ⚠️  especially when the window loses focus. Spikes on 2026-06-20 proved this:
+  // ⚠️  disabling these effects broke streaming follow, and adding increaseViewportBy
+  // ⚠️  made it worse. DO NOT REMOVE OR "SIMPLIFY" without a verified replacement
+  // ⚠️  that holds streaming follow on its own. See scroll-bottom-pinning-verification.md
+  // ⚠️  (the isScrolling-gate fallback is the next untried option).
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const userScrolledUpRef = useRef(false);
   const wasSendingRef = useRef(false);
   const settledRef = useRef(false);
@@ -182,34 +205,6 @@ export function MessageList() {
   }, [messageOrder, pendingUserMessageContent, lastPersistedMessage, isSending]);
 
   const bottomPinCleanupRef = useRef<(() => void) | null>(null);
-  // Tracks the previous chat+branch scope so we can detect a switch and
-  // pin-to-bottom instantly (no animation). Without this, Virtuoso's
-  // followOutput="smooth" animates on the message-count change and chokes on
-  // large dynamic-height chats (lands mid-way). The previous "seamless"
-  // behavior was an accidental consequence of the heavier pre-refactor
-  // payload slowing the fetch enough that Virtuoso saw a 0→N (fresh-load)
-  // transition; the narrowed B1.4 response made it a 2→N smooth-follow.
-  // Pinning explicitly makes the behavior correct AND independent of timing.
-  const prevScopeRef = useRef<string | null | undefined>(undefined);
-
-  useLayoutEffect(() => {
-    if (prevScopeRef.current === activeScope) return;
-    const isFirstRender = prevScopeRef.current === undefined;
-    prevScopeRef.current = activeScope;
-    // Skip the very first render — initialTopMostItemIndex already places us
-    // at the bottom on mount. Only react to subsequent chat/branch switches.
-    if (isFirstRender || !activeScope) return;
-    // Cancel any in-flight streaming pin so the switch pin owns the window.
-    bottomPinCleanupRef.current?.();
-    // Pin to bottom for ~700ms via the rAF loop (the same ADR-blessed mechanism
-    // used for variant-switch pinning). This overrides Virtuoso's smooth
-    // followOutput and covers its re-measurement of the new dynamic-height
-    // message set — a single scrollTop set gets undone by Virtuoso's
-    // measurement cycle (per the bottom-pinning ADR), hence the rAF loop.
-    userScrolledUpRef.current = false;
-    bottomPinCleanupRef.current = pinToBottomForMs(scrollerElRef.current, 700);
-  }, [activeScope]);
-
   useLayoutEffect(() => {
     if (isSending) {
       wasSendingRef.current = true;
@@ -276,7 +271,13 @@ export function MessageList() {
             computeItemKey={(index) => displayMessageIds[index]}
             totalCount={displayMessageIds.length}
             initialTopMostItemIndex={{ index: Math.max(0, displayMessageIds.length - 1), align: "end" }}
-            followOutput={isSending ? "auto" : "smooth"}
+            // Native follow. Runs ALONGSIDE the ⚠️ FRAGILE streaming safety-net
+            // effects above. Neither is sufficient alone; together they produce
+            // stable streaming follow + a clean "stop following when the user
+            // scrolls up". Returning false when !atBottom is what fixes the old
+            // "can't scroll up during streaming" bug.
+            followOutput={(atBottom) => atBottom ? "smooth" : false}
+            atBottomThreshold={AT_BOTTOM_THRESHOLD}
             overscan={{ main: 4000, reverse: 4000 }}
             itemContent={itemContent}
             components={{ Header, Footer }}
