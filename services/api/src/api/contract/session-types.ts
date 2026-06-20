@@ -147,6 +147,13 @@ export interface BranchResponse {
 	branches: SessionSnapshot["branches"];
 	summaries: SessionSnapshot["summaries"];
 	contextPreview: SessionSnapshot["contextPreview"];
+	/**
+	 * Sidebar chat list. fork / activate change WHICH branch is active for the
+	 * chat, and {@link ChatListItem.messageCount} is the active branch's message
+	 * count — so the sidebar number must refresh on every branch switch.
+	 * Without this, the chat item keeps showing the previous branch's count.
+	 */
+	chats: SessionSnapshot["chats"];
 }
 
 /** Branch-metadata-only op: rename-branch (no text change → no contextPreview). */
