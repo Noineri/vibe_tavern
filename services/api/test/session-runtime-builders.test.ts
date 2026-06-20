@@ -17,7 +17,12 @@ import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
+import type { ChatRuntimeApi } from "../src/api/contract/runtime-api.js";
 import type { ChatId, MessageId } from "@vibe-tavern/domain";
+
+/** Unused-dep stub for ChatAdapter construction in narrow wiring tests. Mirror of attachment-delete.test.ts. */
+const noop = {} as never;
 
 /** Spins up a real SessionRuntime against an isolated temp DB and seeds one chat. */
 async function createTestRuntime(): Promise<{
@@ -400,6 +405,32 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		const r = await runtime.chatLifecycle.updateChatSummary(fresh.activeChatId, "A tldr of the chat");
 		expect(sortedKeys(r)).toEqual(["activeChat", "contextPreview"]);
 		expect(r.activeChat?.summary).toBe("A tldr of the chat");
+	});
+
+	it("B3: updateMemorySettings returns ConfigPatchResponse with activeChat (memory fields round-trip)", async () => {
+		// B3 consumer-field audit: updateMemorySettingsAction has NO
+		// fetchBootstrapAction safety net (unlike setChatPersonaAction), so the
+		// response itself MUST carry activeChat for AppShell to refresh
+		// messageHistoryLimit (AppShell.tsx:304) + autoSummaryConfig (:305) in
+		// the ContextMemoryModal. Same preset-class concern as setChatPromptPreset
+		// (c8089c1d): a narrow response that drops activeChat leaves the modal
+		// silently stale because unwrapRpc<AppSnapshot> makes the field optional
+		// and ingestSnapshot preserves absent fields. Tested at the ADAPTER level
+		// (the route's actual path) so an adapter regression flipping
+		// {activeChat:true} → {} is caught — the builder level is already covered
+		// by the buildConfigPatchResponse patches test above.
+		const fresh = await runtime.character.createFromScratch({
+			name: "MemBot", description: "d", firstMessage: "hi",
+		});
+		const adapter = new ChatAdapter(stores, runtime, noop, noop, noop, noop) as unknown as ChatRuntimeApi;
+		const r = await adapter.updateMemorySettings(fresh.activeChatId, {
+			messageHistoryLimit: 42,
+			autoSummaryConfig: { enabled: true, everyN: 5 },
+		});
+		expect(sortedKeys(r)).toEqual(["activeChat", "contextPreview"]);
+		expect(r.activeChat?.messageHistoryLimit).toBe(42);
+		expect(r.activeChat?.autoSummaryConfig?.enabled).toBe(true);
+		expect(r.activeChat?.autoSummaryConfig?.everyN).toBe(5);
 	});
 
 	it("B1.5: buildSummaryResponse returns ONLY the active branch's summaries (chat→branch hierarchy)", async () => {
