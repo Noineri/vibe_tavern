@@ -331,7 +331,7 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
       id: PROMPT_LAYER_ID.promptPresetJailbreak,
       sourceType: isOverride ? PROMPT_LAYER_SOURCE_TYPE.character : PROMPT_LAYER_SOURCE_TYPE.promptPreset,
       sourceId: isOverride ? context.character.id : context.preset!.id,
-      sourceName: isOverride ? `${context.character.name} (Post-History Override)` : (context.preset?.name ?? "Post-History Instructions"),
+      sourceName: isOverride ? `${context.character.name} (Post-History Override)` : "Post-History Instructions",
       position: "in_chat",
       priority: PROMPT_LAYER_PRIORITY.promptPresetJailbreak,
       text: effectiveJailbreak,
@@ -989,13 +989,17 @@ function finalizeAssembly(
     .sort((a, b) => {
       const depthDiff = b.injectionDepth! - a.injectionDepth!;
       if (depthDiff !== 0) return depthDiff;
-      const subDiff = (b.subPosition ?? b.priority) - (a.subPosition ?? a.priority);
+      // Same depth: resolve in ascending canvas (subPosition) order. The
+      // splice index below RECOMPUTES as history grows, so a forward sort
+      // yields forward payload order. (A prior DESC tiebreaker assumed a
+      // fixed splice index and inverted same-depth injects.)
+      const subDiff = (a.subPosition ?? a.priority) - (b.subPosition ?? b.priority);
       if (subDiff !== 0) return subDiff;
       if (a.insertionOrder != null && b.insertionOrder != null && a.insertionOrder !== b.insertionOrder) {
-        return b.insertionOrder - a.insertionOrder;
+        return a.insertionOrder - b.insertionOrder;
       }
       return a.priority - b.priority;
-    }); // deepest first; same-depth reverse order because splice inserts at a fixed index
+    }); // deepest first; same-depth ties resolve in ascending canvas order
   // in_chat layers WITHOUT a depth are collected into a single block placed before history.
   const inChatBlock = inChat.filter((l) => typeof l.injectionDepth !== "number");
 
