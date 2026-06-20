@@ -5,19 +5,18 @@
    ══════════════════════════════════════════════════════════════ */
 :root.dark-lava {
   /* ─── Backgrounds (Solid fallback for SVG fills and utilities) ─── */
-  --bg:        oklch(0.125 0.26 14);    /* Глубокий малиновый фон (жидкость лампы) */
+  --bg:        oklch(0 0 0);  /* тёмно-серый */
   
   /* ─── Animated Lava Lamp Background ─── */
   /* Множество плавающих цветовых пятен для сложного градиента */
   --page-bg:
-    radial-gradient(circle at 15% 25%, oklch(0.47 0.205 233 / 23%), transparent 67%),  /* Индиго (верх лево) */
-    radial-gradient(circle at 35% 50%, oklch(0.28 0.12 340 / 55%), transparent 55%),  /* Розовый (центр лево) */
-    radial-gradient(circle at 25% 85%, oklch(0.296 0.115 31.1 / 55%), transparent 50%),  /* Насыщенный янтарный (низ лево) */
-    radial-gradient(circle at 85% 90%, oklch(0.74 0.185 65.7 / 37%), transparent 55%),  /* Янтарно-жёлтый свет (низ право) */
+    radial-gradient(circle at 25% 85%, oklch(0.296 0.115 8 / 55%), transparent 50%),  /* Насыщенный янтарный (низ лево) */
+    radial-gradient(circle at 86% 25%, oklch(0.74 0.15 65.7 / 34%), transparent 55%),  /* Янтарно-жёлтый свет (низ право) */
+    radial-gradient(circle at 50% 50%, oklch(0.47 0.145 14.3 / 36%), transparent 50%),  /* светлый жёлтый */
     var(--bg);
 
   /* ─── Surfaces (Black panels with slight translucency) ─── */
-  --surface:   oklch(0.02 0.055 269 / 85%);    /* Глухой черный с синим отливом для сайдбара и инпута */
+  --surface:   oklch(0.13 0.06 212 / 68%);  /* тёмный приглушённый аметистовый */
   --s2:        oklch(0.16 0 0 / 85%);    
   --s3:        oklch(0.20 0 0 / 85%);    
 
@@ -26,7 +25,7 @@
   --border2:   oklch(0.30 0.01 230);     
 
   /* ─── Interface Text (Light for black panels) ─── */
-  --t1:        oklch(0.92 0.01 40);      /* Основной текст интерфейса */
+  --t1:        oklch(0.835 0.03 117);  /* Основной текст интерфейса */
   --t2:        oklch(0.82 0.01 40);     
   --t3:        oklch(0.65 0.03 230);     
   --t4:        oklch(0.55 0.03 230);     
@@ -43,7 +42,7 @@
   --accent:       oklch(0.75 0.18 80);           
   --accent-t:     oklch(0.65 0.18 80);           
   --accent-dim:   oklch(0.75 0.18 80 / 15%);     
-  --accent-hover: oklch(0.80 0.18 80);     
+  --accent-hover: oklch(0.995 0.125 80);  /* бледный жёлтый */
   --accent-mid:   oklch(0.60 0.18 80);          
 
   /* ─── User message background ─── */
@@ -53,7 +52,7 @@
   /* --bg here (oklch 0.18) is tuned for the lava page gradient and reads too
      bright inside the recessed input field. Darker amethyst, same hue (290) so
      it still harmonises with the blobs; the border (0.24→0.30) frames it. */
-  --input-bg:  oklch(0.13 0.05 290);
+  --input-bg:  oklch(0.13 0.01 290);  /* тёмно-серый */
 
   /* ─── Стеклянный фон + блюр для плавающих поповеров/дропдаунов ─── */
   /* --surface (L 0.12 / alpha 85%) слишком тяжёл для стекла: с блюром он
@@ -65,13 +64,13 @@
   --glass-blur: 14px;
 
   /* ─── Danger / Success / Info / Warning ─── */
-  --danger:      oklch(0.435 0.18 18);    
+  --danger:      oklch(0.435 0.4 18);
   --danger-dim:  oklch(0.60 0.18 18 / 15%);    
   --danger-text: oklch(0.85 0.08 18);    
 
-  --success:      oklch(0.65 0.12 155);  
-  --success-dim:  oklch(0.64 0.08 173 / 15%);  
-  --success-text: oklch(0.85 0.08 155);  
+  --success:      oklch(83.673% 0.17206 166.753);
+  --success-dim:  oklch(77.47% 0.15885 166.986 / 0.15);
+  --success-text: oklch(0.85 0.035 155);
 
   --info:      oklch(0.65 0.15 250);     
   --info-dim:  oklch(0.65 0.15 250 / 15%);     

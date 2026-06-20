@@ -40,7 +40,7 @@
 
   /* ─── Accent (Solid Magma Orange, NO GRADIENTS HERE) ─── */
   --accent:       oklch(0.65 0.22 35);           
-  --accent-t:     oklch(0.55 0.22 35);           
+  --accent-t:     oklch(0.095 0.22 35);    
   --accent-dim:   oklch(0.68 0.22 35 / 12%);     
   --accent-hover: oklch(0.60 0.22 35);     
   --accent-mid:   oklch(0.55 0.165 35);          /* mid-lightness accent — logo book, subordinate art */
