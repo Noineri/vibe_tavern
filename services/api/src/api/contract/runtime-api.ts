@@ -8,6 +8,8 @@ import type {
 	MessageResponse,
 	SessionSnapshot,
 	VariantResponse,
+	BranchResponse,
+	BranchMetaResponse,
 } from "./session-types.js";
 import type { PromptTraceRecordDto, PromptPresetDto } from "@vibe-tavern/domain";
 import type {
@@ -87,11 +89,11 @@ export interface ChatRuntimeApi {
 	setChatPromptPreset: (chatId: string, promptPresetId: string) => Promise<SessionSnapshot>;
 
 	// Branches
-	branchChat: (chatId: string, messageId: string) => Promise<SessionSnapshot>;
-	forkBranch: (chatId: string, fromMessageId?: string) => Promise<SessionSnapshot>;
-	activateBranch: (chatId: string, branchId: string) => Promise<SessionSnapshot>;
-	deleteBranch: (chatId: string, branchId: string) => Promise<SessionSnapshot>;
-	renameBranch: (chatId: string, branchId: string, label: string) => Promise<SessionSnapshot>;
+	branchChat: (chatId: string, messageId: string) => Promise<BranchResponse>;
+	forkBranch: (chatId: string, fromMessageId?: string) => Promise<BranchResponse>;
+	activateBranch: (chatId: string, branchId: string) => Promise<BranchResponse>;
+	deleteBranch: (chatId: string, branchId: string) => Promise<BranchResponse>;
+	renameBranch: (chatId: string, branchId: string, label: string) => Promise<BranchMetaResponse>;
 
 	// Messages
 	sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<MessageResponse>;
