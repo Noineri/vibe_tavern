@@ -2,7 +2,13 @@ import type { AssemblePromptResponse, Message, PromptTrace } from "@vibe-tavern/
 import { brandId, type ChatBranchId, type ChatId, type MessageId } from "@vibe-tavern/domain";
 import type { ChatStore } from "@vibe-tavern/db";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
-import type { SessionSnapshot, MessageResponse, VariantResponse } from "./session-runtime.js";
+import type {
+  SessionSnapshot,
+  MessageResponse,
+  VariantResponse,
+  BranchResponse,
+  BranchMetaResponse,
+} from "./session-runtime.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
@@ -37,6 +43,10 @@ export interface ChatRuntimeDeps {
   buildMessageResponse: (chatId: ChatId, opts?: { summaries?: boolean }) => Promise<MessageResponse>;
   /** Narrowed variant-path response (messages + contextPreview; activeChat optional). */
   buildVariantResponse: (chatId: ChatId, opts?: { activeChat?: boolean }) => Promise<VariantResponse>;
+  /** Narrowed branch-mutation response: fork / activate / delete (conversation text moves). */
+  buildBranchResponse: (chatId: ChatId) => Promise<BranchResponse>;
+  /** Narrowed branch-meta response: rename-branch only (no text change → no contextPreview). */
+  buildBranchMetaResponse: (chatId: ChatId) => Promise<BranchMetaResponse>;
   chatOrder: IChatOrder;
 }
 
@@ -230,9 +240,10 @@ export class ChatRuntime {
     return await this.deps.buildMessageResponse(chatId);
   }
 
-  async renameBranch(chatId: ChatId, branchId: string, label: string): Promise<SessionSnapshot> {
+  async renameBranch(chatId: ChatId, branchId: string, label: string): Promise<BranchMetaResponse> {
     await this.deps.chats.renameBranch(branchId, label);
-    return await this.deps.getSnapshot(chatId);
+    // Text unchanged → no contextPreview needed (only the branches list moves).
+    return await this.deps.buildBranchMetaResponse(chatId);
   }
 
   async deleteMessage(chatId: ChatId, messageId: string): Promise<MessageResponse> {
@@ -240,8 +251,8 @@ export class ChatRuntime {
     return await this.deps.buildMessageResponse(chatId, { summaries: true });
   }
 
-  async forkBranch(chatId: ChatId, fromMessageId?: string): Promise<SessionSnapshot> {
-    const { chatApp, chats, getSnapshot } = this.deps;
+  async forkBranch(chatId: ChatId, fromMessageId?: string): Promise<BranchResponse> {
+    const { chatApp, chats, buildBranchResponse } = this.deps;
     const chatState = await chatApp.getChatState(chatId);
     let forkedFromId: string;
     if (fromMessageId) {
@@ -260,21 +271,21 @@ export class ChatRuntime {
     });
 
     this.pendingPromptTraceByChat.delete(chatId);
-    return await getSnapshot(chatId);
+    return await buildBranchResponse(chatId);
   }
 
-  async activateBranch(chatId: ChatId, branchId: ChatBranchId): Promise<SessionSnapshot> {
+  async activateBranch(chatId: ChatId, branchId: ChatBranchId): Promise<BranchResponse> {
     await this.deps.chatApp.activateBranch(chatId, branchId);
     this.pendingPromptTraceByChat.delete(chatId);
-    return await this.deps.getSnapshot(chatId);
+    return await this.deps.buildBranchResponse(chatId);
   }
 
-  async deleteBranch(chatId: string, branchId: string): Promise<SessionSnapshot> {
+  async deleteBranch(chatId: string, branchId: string): Promise<BranchResponse> {
     const typedChatId = brandId<ChatId>(chatId);
     const typedBranchId = brandId<ChatBranchId>(branchId);
     await this.deps.chatApp.deleteBranch(typedChatId, typedBranchId);
     this.pendingPromptTraceByChat.delete(typedChatId);
-    return await this.deps.getSnapshot(typedChatId);
+    return await this.deps.buildBranchResponse(typedChatId);
   }
 
   async renameChat(chatId: string, title: string): Promise<{ chatId: string; title: string }> {

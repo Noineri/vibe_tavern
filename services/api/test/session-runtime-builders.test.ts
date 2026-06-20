@@ -212,4 +212,21 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		const r = await runtime.setGreetingIndex(chatId, 0);
 		expect(sortedKeys(r)).toEqual(["activeChat", "contextPreview", "messages"]);
 	});
+
+	// ─── Wave B1.3 wiring: branch mutation methods return narrowed shapes ───
+
+	it("B1.3: renameBranch returns BranchMetaResponse = {branches} (no contextPreview)", async () => {
+		const snap = await runtime.getSnapshot(chatId);
+		const branchId = snap.activeBranch!.id;
+		const r = await runtime.chatRuntime.renameBranch(chatId, branchId, "renamed");
+		expect(sortedKeys(r)).toEqual(["branches"]);
+	});
+
+	it("B1.3: forkBranch returns BranchResponse (messages + branches + activeBranch + summaries + contextPreview)", async () => {
+		const r = await runtime.chatRuntime.forkBranch(chatId);
+		expect(sortedKeys(r)).toEqual([
+			"activeBranch", "branches", "contextPreview", "messages", "summaries",
+		]);
+		expect(r.branches.length).toBeGreaterThanOrEqual(2);
+	});
 });

@@ -121,6 +121,8 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
 			buildMessageResponse: (chatId, opts) => this.buildMessageResponse(chatId, opts),
 			buildVariantResponse: (chatId, opts) => this.buildVariantResponse(chatId, opts),
+			buildBranchResponse: (chatId) => this.buildBranchResponse(chatId),
+			buildBranchMetaResponse: (chatId) => this.buildBranchMetaResponse(chatId),
 			chatOrder: this.chatOrder,
 		});
 		this.chatOrder.seed();
@@ -274,8 +276,11 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 	// here, behavior-pinned by `session-runtime-builders.test.ts`.
 	// B1.2: message + variant paths WIRED — appendAssistantReply, appendMessageVariant,
 	// select/deleteMessageVariant, editMessage, deleteMessage, setGreetingIndex now
-	// return these narrowed shapes (not getSnapshot). Remaining paths (branch /
-	// navigation / config+summary) still serve `getSnapshot` until B1.3–B1.5.
+	// return these narrowed shapes (not getSnapshot).
+	// B1.3: branch path WIRED — forkBranch, activateBranch, deleteBranch return
+	// BranchResponse; renameBranch returns BranchMetaResponse (no contextPreview —
+	// text unchanged). Remaining paths (navigation / config+summary) still serve
+	// `getSnapshot` until B1.4–B1.5.
 
 	/** Message-path mutations: send, regenerate, edit, delete, create-variant. */
 	async buildMessageResponse(
