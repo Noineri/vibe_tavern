@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import type { AutoSummaryConfig, ChatSummaryRecord } from "../../app-client.js";
@@ -243,13 +243,33 @@ export function ContextMemoryModal({
   // because each branch has its own independent message set. See prevScopeRef.
   const scope = activeChatId && activeBranchId ? `${activeChatId}|${activeBranchId}` : null;
 
-  useEffect(() => {
+  // useLayoutEffect (not useEffect): this runs synchronously before paint so
+  // the range never flashes the stale useState initializer (both thumbs at 1,
+  // captured at app-load mount when messageCount was 0). The modal is always-
+  // mounted, so a plain useEffect would paint 1..1 for one frame before the
+  // reset. Safe in a layout effect: no DOM measurement, only state setters.
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      // Clear the scope ref while closed so the NEXT open is treated as a
+      // scope change → computeRangeAfterChange resets the range to the full
+      // span (1..maxMessage). Without this, the modal is always-mounted, so
+      // this effect runs from app load with isOpen=false and the
+      // `prevScopeRef.current = scope` line below primes the ref to the
+      // current scope BEFORE the first open — making scopeChanged=false on
+      // open, so the range never resets and stays stuck at the useState
+      // initializer values (both thumbs at 1, because messageCount is 0 at
+      // app-load mount time). Reset-on-open is the desired default anyway:
+      // the range selector is ephemeral UI, and "New summary" itself defaults
+      // to 1..maxMessage (see startNewSummary).
+      prevScopeRef.current = null;
+      return;
+    }
     const scopeChanged = prevScopeRef.current !== scope;
     prevScopeRef.current = scope;
-    if (!isOpen) return;
-    // On a chat/branch switch reset the range to the full span (1..maxMessage);
-    // within the same scope just clamp to the new bounds (messages added /
-    // removed keep the user's selection in bounds). See computeRangeAfterChange.
+    // On a chat/branch switch (or a fresh open) reset the range to the full
+    // span (1..maxMessage); within the same open session just clamp to the
+    // new bounds (messages added / removed keep the user's selection in
+    // bounds). See computeRangeAfterChange.
     const next = computeRangeAfterChange(
       rangeFrom,
       rangeTo,
