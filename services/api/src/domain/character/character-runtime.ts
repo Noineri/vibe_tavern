@@ -3,7 +3,7 @@ import type { ChatStore, CharacterStore, StoreContainer } from "@vibe-tavern/db"
 import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 import type { ChatApplicationService } from "../chat/chat-application-service.js";
 import type { IChatOrder } from "../../runtime/session/session-runtime-chat-order.js";
-import type { SessionSnapshot, ImportResult } from "../../api/contract/session-types.js";
+import type { SessionSnapshot, ImportResult, ConfigPatchResponse } from "../../api/contract/session-types.js";
 import { notFound, validation } from "../../shared/errors.js";
 import { brandId } from "@vibe-tavern/domain";
 
@@ -173,6 +173,11 @@ export interface CharacterRuntimeDeps {
   chatApp: ChatApplicationService;
   chatOrder: IChatOrder;
   getSnapshot: (chatId: ChatId) => Promise<SessionSnapshot>;
+  /** Narrowed config-patch response: character-update (CFR Wave B1.5). */
+  buildConfigPatchResponse: (
+    chatId: ChatId,
+    opts?: { persona?: boolean; character?: boolean; activeChat?: boolean },
+  ) => Promise<ConfigPatchResponse>;
   resolveDefaultPersonaId: () => Promise<PersonaId>;
   resolveDefaultPromptPresetId: () => Promise<PromptPresetId>;
   seedImportedOpening: (chatId: ChatId, firstMessage: string, alternateGreetings?: string[]) => Promise<void>;
@@ -320,7 +325,7 @@ export class CharacterRuntime {
     options?: {
       rebuildChatOrder: () => Promise<void>;
     },
-  ): Promise<SessionSnapshot> {
+  ): Promise<ConfigPatchResponse> {
     const currentCharacter = await this.deps.stores.characters.getById(characterId);
     if (!currentCharacter) {
       throw notFound("Character", `Character '${characterId}' was not found.`);
@@ -406,7 +411,7 @@ export class CharacterRuntime {
       throw notFound("Chat", "No chat is available for the updated character.");
     }
 
-    return this.deps.getSnapshot(targetChatId);
+    return this.deps.buildConfigPatchResponse(targetChatId, { character: true });
   }
 
   async duplicate(characterId: CharacterId): Promise<ImportResult> {

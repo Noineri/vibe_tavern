@@ -5,7 +5,7 @@ import type { StoreContainer } from "@vibe-tavern/db";
 import { validation, notFound } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
-import type { VariantResponse, ChatSwitchResponse, ChatCreateResponse, ChatListResponse } from "../contract/session-types.js";
+import type { VariantResponse, ChatSwitchResponse, ChatCreateResponse, ChatListResponse, ConfigPatchResponse } from "../contract/session-types.js";
 import type { LiveChatOrchestrator } from "../../domain/chat/live-chat-orchestrator.js";
 import type { ChatSummaryService } from "../../domain/chat/chat-summary-service.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
@@ -271,17 +271,17 @@ export class ChatAdapter implements ChatRuntimeApi {
 			branchId: chat.activeBranchId,
 			...body,
 		});
-		return { summary, snapshot: await this.sessionRuntime.getSnapshot(brandId<ChatId>(chatId)) };
+		return { summary, snapshot: await this.sessionRuntime.buildSummaryResponse(brandId<ChatId>(chatId)) };
 	};
 
 	updateChatSummaryRecord = async (_chatId: string, summaryId: string, body: { label?: string; content?: string; summarizedFrom?: number; summarizedTo?: number; includeInContext?: boolean; excludeSummarized?: boolean; sortOrder?: number }) => {
 		const summary = await this.stores.chatSummaries.update(summaryId, body);
-		return { summary, snapshot: await this.sessionRuntime.getSnapshot(brandId<ChatId>(summary.chatId)) };
+		return { summary, snapshot: await this.sessionRuntime.buildSummaryResponse(brandId<ChatId>(summary.chatId)) };
 	};
 
 	deleteChatSummaryRecord = async (chatId: string, summaryId: string) => {
 		await this.stores.chatSummaries.delete(summaryId);
-		return { ok: true, snapshot: await this.sessionRuntime.getSnapshot(brandId<ChatId>(chatId)) };
+		return { ok: true, snapshot: await this.sessionRuntime.buildSummaryResponse(brandId<ChatId>(chatId)) };
 	};
 
 	generateChatSummary = (
@@ -300,7 +300,10 @@ export class ChatAdapter implements ChatRuntimeApi {
 			messageHistoryLimit: body.messageHistoryLimit,
 			autoSummaryConfig,
 		});
-		return this.sessionRuntime.getSnapshot(brandId<ChatId>(chatId));
+		// messageHistoryLimit + autoSummaryConfig live on the chat row → return
+		// activeChat so the memory modal refreshes, plus contextPreview since
+		// messageHistoryLimit changes the assembled prompt.
+		return this.sessionRuntime.buildConfigPatchResponse(brandId<ChatId>(chatId), { activeChat: true });
 	};
 
 	summarizeChat = (

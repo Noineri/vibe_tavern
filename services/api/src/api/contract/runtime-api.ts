@@ -13,6 +13,8 @@ import type {
 	ChatSwitchResponse,
 	ChatCreateResponse,
 	ChatListResponse,
+	ConfigPatchResponse,
+	SummaryResponse,
 } from "./session-types.js";
 import type { PromptTraceRecordDto, PromptPresetDto } from "@vibe-tavern/domain";
 import type {
@@ -88,8 +90,8 @@ export interface ChatRuntimeApi {
 	clearChat: (chatId: string) => Promise<ChatCreateResponse>;
 	renameChat: (chatId: string, title: string) => Promise<ChatListResponse>;
 	setGreetingIndex: (chatId: string, greetingIndex: number) => Promise<VariantResponse>;
-	setChatPersona: (chatId: string, personaId: string) => Promise<SessionSnapshot>;
-	setChatPromptPreset: (chatId: string, promptPresetId: string) => Promise<SessionSnapshot>;
+	setChatPersona: (chatId: string, personaId: string) => Promise<ConfigPatchResponse>;
+	setChatPromptPreset: (chatId: string, promptPresetId: string) => Promise<ConfigPatchResponse>;
 
 	// Branches
 	branchChat: (chatId: string, messageId: string) => Promise<BranchResponse>;
@@ -119,11 +121,11 @@ export interface ChatRuntimeApi {
 
 	// Summaries & Memory
 	listChatSummaries: (chatId: string) => Promise<ChatSummary[]>;
-	createChatSummary: (chatId: string, body: { label?: string; content?: string; summarizedFrom: number; summarizedTo: number; includeInContext?: boolean; excludeSummarized?: boolean; source?: "manual" | "auto"; sortOrder?: number }) => Promise<{ summary: ChatSummary; snapshot: SessionSnapshot }>;
-	updateChatSummaryRecord: (chatId: string, summaryId: string, body: { label?: string; content?: string; summarizedFrom?: number; summarizedTo?: number; includeInContext?: boolean; excludeSummarized?: boolean; sortOrder?: number }) => Promise<{ summary: ChatSummary; snapshot: SessionSnapshot }>;
-	deleteChatSummaryRecord: (chatId: string, summaryId: string) => Promise<{ ok: boolean; snapshot: SessionSnapshot }>;
+	createChatSummary: (chatId: string, body: { label?: string; content?: string; summarizedFrom: number; summarizedTo: number; includeInContext?: boolean; excludeSummarized?: boolean; source?: "manual" | "auto"; sortOrder?: number }) => Promise<{ summary: ChatSummary; snapshot: SummaryResponse }>;
+	updateChatSummaryRecord: (chatId: string, summaryId: string, body: { label?: string; content?: string; summarizedFrom?: number; summarizedTo?: number; includeInContext?: boolean; excludeSummarized?: boolean; sortOrder?: number }) => Promise<{ summary: ChatSummary; snapshot: SummaryResponse }>;
+	deleteChatSummaryRecord: (chatId: string, summaryId: string) => Promise<{ ok: boolean; snapshot: SummaryResponse }>;
 	generateChatSummary: (chatId: string, body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean }, signal?: AbortSignal) => Promise<GenerateChatSummaryResult>;
-	updateMemorySettings: (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: { enabled?: boolean; everyN?: number; useChatModel?: boolean; providerProfileId?: string; model?: string } }) => Promise<SessionSnapshot>;
+	updateMemorySettings: (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: { enabled?: boolean; everyN?: number; useChatModel?: boolean; providerProfileId?: string; model?: string } }) => Promise<ConfigPatchResponse>;
 	summarizeChat: (chatId: string, body: { providerProfileId: string; model?: string; maxMessages: number }, signal?: AbortSignal) => Promise<SummarizeChatResult>;
 	saveChatSummary: (chatId: string, body: { summary: string }) => Promise<SummarizeChatResult>;
 }
@@ -149,7 +151,7 @@ export interface CharacterRuntimeApi {
 		depthPromptRole?: string;
 		tags?: string[];
 	}) => Promise<ImportResult>;
-	updateCharacter: (characterId: string, body: Record<string, unknown>) => Promise<SessionSnapshot>;
+	updateCharacter: (characterId: string, body: Record<string, unknown>) => Promise<ConfigPatchResponse>;
 	archiveCharacter: (characterId: string) => Promise<{ characterId: string; status: "archived" }>;
 	unarchiveCharacter: (characterId: string) => Promise<{ characterId: string; status: "active" }>;
 	deleteCharacter: (characterId: string) => Promise<void>;
@@ -198,7 +200,7 @@ export interface CharacterAssetRuntimeApi {
 export interface PersonaRuntimeApi {
 	listPersonas: () => Promise<PersonaRecord[]>;
 	createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) => Promise<PersonaRecord>;
-	updatePersona: (personaId: string, body: Record<string, unknown>) => Promise<SessionSnapshot | { id: string }>;
+	updatePersona: (personaId: string, body: Record<string, unknown>) => Promise<ConfigPatchResponse | { id: string }>;
 	deletePersona: (personaId: string) => Promise<void>;
 	duplicatePersona: (personaId: string) => Promise<PersonaRecord>;
 	setDefaultPersona: (personaId: string) => Promise<void>;

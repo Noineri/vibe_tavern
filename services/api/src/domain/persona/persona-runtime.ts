@@ -14,7 +14,7 @@ import {
 	validation,
 } from "../../shared/errors.js";
 import type { IChatOrder } from "../../runtime/session/session-runtime-chat-order.js";
-import type { SessionSnapshot } from "../../api/contract/session-types.js";
+import type { SessionSnapshot, ConfigPatchResponse } from "../../api/contract/session-types.js";
 
 /**
  * Canonical persona shape — the single source of truth for the backend.
@@ -48,6 +48,11 @@ export interface PersonaRuntimeDeps {
 	stores: StoreContainer;
 	chatOrder: IChatOrder;
 	getSnapshot: (chatId: ChatId) => Promise<SessionSnapshot>;
+	/** Narrowed config-patch response: set-persona / persona-update (CFR Wave B1.5). */
+	buildConfigPatchResponse: (
+		chatId: ChatId,
+		opts?: { persona?: boolean; character?: boolean; activeChat?: boolean },
+	) => Promise<ConfigPatchResponse>;
 }
 
 export class PersonaRuntime {
@@ -148,7 +153,7 @@ export class PersonaRuntime {
 			includeAvatarInPrompt?: boolean;
 			avatarDescription?: string | null;
 		},
-	): Promise<SessionSnapshot | { id: string }> {
+	): Promise<ConfigPatchResponse | { id: string }> {
 		const currentPersona = await this.deps.stores.personas.getById(brandId<PersonaId>(personaId));
 		if (!currentPersona) {
 			throw notFound("Persona", `Persona '${personaId}' was not found.`);
@@ -192,10 +197,10 @@ export class PersonaRuntime {
 			return { id: personaId };
 		}
 
-		return this.deps.getSnapshot(targetChatId);
+		return this.deps.buildConfigPatchResponse(targetChatId, { persona: true });
 	}
 
-	async setChatPersona(chatId: ChatId, personaId: string): Promise<SessionSnapshot> {
+	async setChatPersona(chatId: ChatId, personaId: string): Promise<ConfigPatchResponse> {
 		const [chat, persona] = await Promise.all([
 			this.deps.stores.chats.getById(chatId),
 			this.deps.stores.personas.getById(brandId<PersonaId>(personaId)),
@@ -207,7 +212,7 @@ export class PersonaRuntime {
 			throw notFound("Persona", `Persona '${personaId}' was not found.`);
 		}
 		await this.deps.stores.chats.setPersona(chatId, personaId);
-		return this.deps.getSnapshot(chatId);
+		return this.deps.buildConfigPatchResponse(chatId, { persona: true });
 	}
 
 	/**

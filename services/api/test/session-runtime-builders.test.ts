@@ -23,6 +23,7 @@ import type { ChatId, MessageId } from "@vibe-tavern/domain";
 async function createTestRuntime(): Promise<{
 	runtime: SessionRuntime;
 	chatId: ChatId;
+	stores: Awaited<ReturnType<typeof createRuntimeStore>>;
 	cleanup: () => Promise<void>;
 }> {
 	const tmpDir = resolve(tmpdir(), "vt-b11-" + crypto.randomUUID().slice(0, 8));
@@ -42,6 +43,7 @@ async function createTestRuntime(): Promise<{
 	return {
 		runtime,
 		chatId: created.activeChatId,
+		stores,
 		cleanup: async () => {
 			try { await rm(tmpDir, { recursive: true, force: true }); } catch {}
 		},
@@ -53,6 +55,7 @@ const sortedKeys = (o: object): string[] => Object.keys(o).sort();
 describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 	let runtime: SessionRuntime;
 	let chatId: ChatId;
+	let stores: Awaited<ReturnType<typeof createRuntimeStore>>;
 	let cleanup: () => Promise<void>;
 
 	afterAll(async () => { await cleanup(); });
@@ -61,6 +64,7 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		const ctx = await createTestRuntime();
 		runtime = ctx.runtime;
 		chatId = ctx.chatId;
+		stores = ctx.stores;
 		cleanup = ctx.cleanup;
 		expect(chatId).toBeTruthy();
 		const snap = await runtime.getSnapshot(chatId);
@@ -319,5 +323,125 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		expect(r.activeBranch.id).not.toBe(oldBranchId);
 		expect(r.branches.every((b) => b.chatId === newChatId)).toBe(true);
 		expect(r.activeChat.activeBranchId).toBe(r.activeBranch.id);
+	});
+
+	// ─── Wave B1.5 wiring: config-patch + summary methods return narrowed shapes ────
+	//
+	// B1.5 migrates 8 methods off getSnapshot across two response families:
+	// ConfigPatchResponse (set-persona, persona-update, character-update,
+	// set-preset, chat.summary-write, memory-settings) and SummaryResponse
+	// (ranged summary CRUD + range-summary-generate). These pin that each
+	// method returns ONLY its field-ownership row — a regression means a method
+	// silently went back to getSnapshot() (re-introducing the monolithic payload).
+	//
+	// NOTE: each test seeds its OWN fresh chat. The B1.4 clearChat test above
+	// deletes the original shared `chatId`, so by this point in the sequence it
+	// is stale. Seeding per-test also keeps the B1.5 cases independent of
+	// execution order.
+
+	it("B1.5: setChatPersona returns ConfigPatchResponse = {contextPreview, persona}", async () => {
+		const fresh = await runtime.character.createFromScratch({
+			name: "PersonaBot", description: "d", firstMessage: "hi",
+		});
+		const snap = await runtime.getSnapshot(fresh.activeChatId);
+		const personaId = snap.persona!.id;
+		const r = await runtime.persona.setChatPersona(fresh.activeChatId, personaId);
+		expect(sortedKeys(r)).toEqual(["contextPreview", "persona"]);
+		expect(r.persona?.id).toBe(personaId);
+	});
+
+	it("B1.5: PersonaRuntime.update returns ConfigPatchResponse with persona", async () => {
+		const fresh = await runtime.character.createFromScratch({
+			name: "PersonaBot2", description: "d", firstMessage: "hi",
+		});
+		const snap = await runtime.getSnapshot(fresh.activeChatId);
+		const personaId = snap.persona!.id;
+		const r = await runtime.persona.update(personaId, { chatId: fresh.activeChatId, name: "Renamed User" });
+		expect(sortedKeys(r)).toEqual(["contextPreview", "persona"]);
+		expect(r.persona?.name).toBe("Renamed User");
+	});
+
+	it("B1.5: CharacterRuntime.update returns ConfigPatchResponse with character", async () => {
+		const fresh = await runtime.character.createFromScratch({
+			name: "CharBot", description: "d", firstMessage: "hi" });
+		const characterId = fresh.snapshot.character!.id;
+		const r = await runtime.character.update(
+			characterId,
+			{ chatId: fresh.activeChatId, description: "updated description" },
+			{ rebuildChatOrder: () => runtime.rebuildChatOrder() },
+		);
+		expect(sortedKeys(r)).toEqual(["character", "contextPreview"]);
+		expect(r.character?.id).toBe(characterId);
+	});
+
+	it("B1.5: setChatPromptPreset returns ConfigPatchResponse = {contextPreview} only", async () => {
+		// The preset id lives on the chat row; the client re-reads the preset
+		// body from its own preset store, so only contextPreview needs to refresh.
+		const fresh = await runtime.character.createFromScratch({
+			name: "PresetBot", description: "d", firstMessage: "hi",
+		});
+		const snap = await runtime.getSnapshot(fresh.activeChatId);
+		const presetId = snap.activeChat!.promptPresetId!;
+		const r = await runtime.chatLifecycle.setChatPromptPreset(fresh.activeChatId, presetId);
+		expect(sortedKeys(r)).toEqual(["contextPreview"]);
+	});
+
+	it("B1.5: updateChatSummary (chat.summary field) returns ConfigPatchResponse with activeChat", async () => {
+		// Name-collision trap: this writes the chat row's `summary` TEXT field
+		// (stores.chats.updateSummary), NOT the ranged chatSummaries rows.
+		// activeChat carries the new summary text, which AppShell reads at
+		// currentSummary={activeChat?.summary ?? ""}.
+		const fresh = await runtime.character.createFromScratch({
+			name: "SummaryBot", description: "d", firstMessage: "hi",
+		});
+		const r = await runtime.chatLifecycle.updateChatSummary(fresh.activeChatId, "A tldr of the chat");
+		expect(sortedKeys(r)).toEqual(["activeChat", "contextPreview"]);
+		expect(r.activeChat?.summary).toBe("A tldr of the chat");
+	});
+
+	it("B1.5: buildSummaryResponse returns ONLY the active branch's summaries (chat→branch hierarchy)", async () => {
+		// The user-emphasized invariant: chatId has a CHILD branchId. Ranged
+		// summaries are scoped (chatId, branchId). buildSummaryResponse resolves
+		// the active branch via getChatState(chatId) and returns only its
+		// summaries — switching branches within the same chat must swap the
+		// summary set, matching the branch-scoped message-range lesson (ef73d00b).
+		const fresh = await runtime.character.createFromScratch({
+			name: "BranchBot", description: "d", firstMessage: "hi",
+		});
+		const localChatId = fresh.activeChatId;
+		const snap = await runtime.getSnapshot(localChatId);
+		const branchA = snap.activeBranch!;
+		// Fork to create a second branch (child of the same chat).
+		const forked = await runtime.chatRuntime.forkBranch(localChatId);
+		const branchB = forked.activeBranch;
+		expect(branchB.id).not.toBe(branchA.id);
+		expect(branchB.chatId).toBe(localChatId);
+
+		// Seed a summary ONLY on branch A (via the store, scoped to A).
+		await stores.chatSummaries.create({
+			chatId: localChatId,
+			branchId: branchA.id as import("@vibe-tavern/domain").ChatBranchId,
+			label: "A-summary",
+			content: "summary on branch A",
+			summarizedFrom: 1,
+			summarizedTo: 1,
+			includeInContext: true,
+			excludeSummarized: true,
+			source: "manual",
+		});
+
+		// Active branch is now B (forkBranch activates the fork). buildSummaryResponse
+		// must reflect B (empty), NOT A's summary — proving branch-scoping.
+		const rB = await runtime.buildSummaryResponse(localChatId);
+		expect(sortedKeys(rB)).toEqual(["summaries"]);
+		expect(rB.summaries.length).toBe(0);
+
+		// Activate A and verify its summary now appears.
+		await runtime.chatRuntime.activateBranch(localChatId, branchA.id);
+		const rA = await runtime.buildSummaryResponse(localChatId);
+		expect(rA.summaries.length).toBe(1);
+		// The store normalizes content with a trailing newline; compare trimmed
+		// so the assertion is robust to that normalization.
+		expect(rA.summaries[0]!.summary.trim()).toBe("summary on branch A");
 	});
 });

@@ -16,6 +16,7 @@ import type {
 	SessionSnapshot,
 	ChatSwitchResponse,
 	ChatCreateResponse,
+	ConfigPatchResponse,
 } from "./session-runtime.js";
 
 function buildGreetingVariants(firstMessage: string | null | undefined, alternateGreetings: string[] = []): string[] {
@@ -32,6 +33,11 @@ export interface ChatLifecycleRuntimeDeps {
 	persona: PersonaRuntime;
 	resolveDefaultPromptPresetId: () => Promise<PromptPresetId>;
 	getSnapshot: (chatId: ChatId) => Promise<SessionSnapshot>;
+	/** Narrowed config-patch response: set-preset / chat.summary-write (CFR Wave B1.5). */
+	buildConfigPatchResponse: (
+		chatId: ChatId,
+		opts?: { persona?: boolean; character?: boolean; activeChat?: boolean },
+	) => Promise<ConfigPatchResponse>;
 	/** Narrowed chat-switch response: switch / clone (full reload of the active chat's view). */
 	buildChatSwitchResponse: (
 		chatId: ChatId,
@@ -198,9 +204,12 @@ export class ChatLifecycleRuntime {
 		});
 	}
 
-	async updateChatSummary(chatId: ChatId, summary: string): Promise<SessionSnapshot> {
+	async updateChatSummary(chatId: ChatId, summary: string): Promise<ConfigPatchResponse> {
 		await this.deps.stores.chats.updateSummary(chatId, summary);
-		return this.deps.getSnapshot(chatId);
+		// chat.summary is a field on the chat row — return activeChat so the
+		// UI (AppShell currentSummary) refreshes, plus contextPreview since
+		// the summary text is injected into the prompt.
+		return this.deps.buildConfigPatchResponse(chatId, { activeChat: true });
 	}
 
 	async switchChat(chatId: ChatId): Promise<ChatSwitchResponse> {
@@ -212,7 +221,7 @@ export class ChatLifecycleRuntime {
 		return this.deps.buildChatSwitchResponse(chatId, { persona: true });
 	}
 
-	async setChatPromptPreset(chatId: ChatId, promptPresetId: string): Promise<SessionSnapshot> {
+	async setChatPromptPreset(chatId: ChatId, promptPresetId: string): Promise<ConfigPatchResponse> {
 		const [chat, preset] = await Promise.all([
 			this.deps.stores.chats.getById(chatId),
 			this.deps.stores.presets.getById(promptPresetId),
@@ -224,7 +233,9 @@ export class ChatLifecycleRuntime {
 			throw notFound("PromptPreset", `Prompt preset '${promptPresetId}' was not found.`);
 		}
 		await this.deps.stores.chats.setPromptPreset(chatId, promptPresetId);
-		return this.deps.getSnapshot(chatId);
+		// Preset id lives on the chat row; the client re-reads the preset body
+		// from its own preset store, so only contextPreview needs to refresh.
+		return this.deps.buildConfigPatchResponse(chatId);
 	}
 
 	/**
