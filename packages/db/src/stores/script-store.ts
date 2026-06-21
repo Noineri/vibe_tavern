@@ -1,4 +1,4 @@
-import { eq, and, or } from 'drizzle-orm';
+import { eq, and, or, asc } from 'drizzle-orm';
 import { scripts } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
@@ -95,6 +95,20 @@ export class ScriptStore {
       .select()
       .from(scripts)
       .where(and(eq(scripts.scopeType, scopeType), eq(fkCol, ownerId)))
+      .all();
+    return rows.map((r) => this.mapRow(r));
+  }
+
+  /**
+   * List ALL scripts across every scope, ordered for a stable overview view.
+   * Mirrors `LorebookStore.listAllLorebooks` — the read-only "All" tab needs
+   * the unfiltered set, ignoring ownerId.
+   */
+  async listAll(): Promise<Script[]> {
+    const rows = await this.db
+      .select()
+      .from(scripts)
+      .orderBy(asc(scripts.scopeType), asc(scripts.sortOrder), asc(scripts.name))
       .all();
     return rows.map((r) => this.mapRow(r));
   }

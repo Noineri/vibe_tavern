@@ -759,6 +759,7 @@
   "scope_chat": "Chat",
   "scope_global": "Global",
   "scope_all": "All Lorebooks",
+  "scope_all_scripts": "All Scripts",
   "scope_lorebook": "Lorebook",
   "scripts_card_title": "Scripts",
   "scripts_card_desc": "JavaScript logic that runs during generation",

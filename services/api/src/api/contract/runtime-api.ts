@@ -238,6 +238,7 @@ export interface LorebookRuntimeApi {
 // ─── Script ──────────────────────────────────────────────────────────
 
 export interface ScriptRuntimeApi {
+	listAllScripts: () => Promise<Script[]>;
 	listScripts: (scopeType: string, ownerId?: string) => Promise<Script[]>;
 	getScript: (scriptId: string) => Promise<Script | null>;
 	createScript: (body: { name: string; description?: string; code?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;

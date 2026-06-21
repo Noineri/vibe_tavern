@@ -5,6 +5,7 @@ import { testScript, parseScriptImport } from "../../domain/scripts-engine/scrip
 export class ScriptAdapter implements ScriptRuntimeApi {
 	constructor(private readonly stores: StoreContainer) {}
 
+	listAllScripts = () => this.stores.scripts.listAll();
 	listScripts = (scopeType: string, ownerId?: string) =>
 		this.stores.scripts.listByScope(scopeType, ownerId);
 
