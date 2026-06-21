@@ -306,7 +306,6 @@ export class PersonaRuntime {
 				scanDepthOverride: e.scanDepthOverride,
 				matchWholeWords: e.matchWholeWords,
 				matchSources: e.matchSources,
-				triggers: e.triggers,
 				characterFilter: e.characterFilter,
 				excludeRecursion: e.excludeRecursion,
 				preventRecursion: e.preventRecursion,

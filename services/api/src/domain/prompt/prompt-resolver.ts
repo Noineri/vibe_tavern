@@ -88,6 +88,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		chatId: ChatId;
 		branchId: ChatBranchId;
 		recentText: string;
+		maxContextTokens?: number;
 	}): Promise<LoreEntry[]> {
 		const chat = await this.stores.chats.getById(input.chatId);
 		if (!chat) return [];
@@ -133,6 +134,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				id: lb.lorebook.id,
 				scanDepth: lb.lorebook.scanDepth,
 				tokenBudget: lb.lorebook.tokenBudget,
+				tokenBudgetPercent: lb.lorebook.tokenBudgetPercent,
 				recursiveScanning: lb.lorebook.recursiveScanning,
 				maxRecursionSteps: lb.lorebook.maxRecursionSteps,
 				includeNames: lb.lorebook.includeNames,
@@ -141,7 +143,6 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				entries: lb.entries,
 			})),
 			messages: recentMessages,
-			mode: 'normal',
 			macroMap,
 			characterId: character.id,
 			characterName: character.name,
@@ -154,6 +155,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			activationState,
 			currentTurn,
 			estimateTokenCount: countTokens,
+			maxContextTokens: input.maxContextTokens,
 		});
 
 		// 8. Persist updated activation state
@@ -195,7 +197,6 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				matchWholeWords: e.matchWholeWords,
 				characterFilter: e.characterFilter as LoreEntry['characterFilter'],
 				characterFilterExclude: e.characterFilterExclude,
-				triggers: e.triggers as LoreEntry['triggers'],
 				matchSources: e.matchSources as LoreEntry['matchSources'],
 				enabled: e.enabled,
 				sortOrder: e.sortOrder,

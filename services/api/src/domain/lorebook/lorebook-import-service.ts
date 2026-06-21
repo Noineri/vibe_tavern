@@ -112,7 +112,6 @@ export async function importLorebook(
 		matchWholeWords: entry.matchWholeWords,
 		characterFilter: entry.characterFilter,
 		characterFilterExclude: entry.characterFilterExclude,
-		triggers: entry.triggers,
 		matchSources: entry.matchSources,
 		enabled: entry.enabled,
 		sortOrder: entry.sortOrder,

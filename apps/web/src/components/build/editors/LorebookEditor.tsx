@@ -481,7 +481,6 @@ export function LorebookEditor({
       matchWholeWords: false,
       characterFilter: [],
       characterFilterExclude: false,
-      triggers: ["normal", "continue", "swipe", "regenerate"],
       matchSources: [],
     };
     void createLoreEntry(lorebookId, newEntry).then((created) => {
