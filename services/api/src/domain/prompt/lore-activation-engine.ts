@@ -28,6 +28,10 @@ export interface ActivationInput {
     id: string;
     scanDepth: number;
     tokenBudget: number;
+    /** When non-null (0-100), override the fixed `tokenBudget` with a cap of
+     * round(maxContextTokens * percent / 100). Matches SillyTavern's Context%
+     * mode. See lorebook-st-parity-audit.md §1.4. */
+    tokenBudgetPercent: number | null;
     recursiveScanning: boolean;
     maxRecursionSteps: number;
     includeNames: boolean;
@@ -67,15 +71,12 @@ export interface ActivationInput {
       matchWholeWords: boolean;
       characterFilter: Array<{ id: string | null; name: string }>;
       characterFilterExclude: boolean;
-      triggers: string[];
       matchSources: string[];
       enabled: boolean;
       sortOrder: number;
     }>;
   }>;
   messages: Array<{ role: string; content: string }>;
-  /** Current assembly mode: "normal" | "continue" | "regenerate" | "summary" | "tool_call" */
-  mode: string;
   /** Macro substitution map, e.g. { "{{user}}": "Alice", "{{char}}": "Bob" } */
   macroMap: Record<string, string>;
   /** Character id for characterFilter matching (id-bound entries). */
@@ -100,6 +101,9 @@ export interface ActivationInput {
   currentTurn: number;
   /** Real token counter. Falls back to ceil(chars / 4) if not provided. */
   estimateTokenCount?: (text: string) => number;
+  /** Max context tokens of the active model. Used only when a lorebook has
+   * `tokenBudgetPercent` set (percent-of-context mode). */
+  maxContextTokens?: number;
 }
 
 export interface ActivationResult {
@@ -151,7 +155,6 @@ interface FlatEntry {
   matchWholeWords: boolean;
   characterFilter: Array<{ id: string | null; name: string }>;
   characterFilterExclude: boolean;
-  triggers: string[];
   matchSources: string[];
   enabled: boolean;
   sortOrder: number;
@@ -164,7 +167,7 @@ interface FlatEntry {
 // ─── Main function ───────────────────────────────────────────────────────────
 
 export function resolveActivatedEntries(input: ActivationInput): ActivationResult {
-  const { macroMap, characterId, characterName, mode, currentTurn, activationState } = input;
+  const { macroMap, characterId, characterName, currentTurn, activationState } = input;
   const updatedState: LoreActivationState = { ...activationState };
 
   // Flatten all entries from all lorebooks
@@ -213,7 +216,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       if (activatedIds.has(entry.id) || failedProbabilityIds.has(entry.id)) continue;
 
       const result = tryActivateEntry({
-      entry, macroMap, characterId, characterName, mode, currentTurn,
+      entry, macroMap, characterId, characterName, currentTurn,
       scanText: buildScanText(entry, input.messages, scanDepths, input),
       scanState: "normal",
       currentRecursionLevel: 0,
@@ -262,7 +265,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         if (activatedIds.has(entry.id) || failedProbabilityIds.has(entry.id)) continue;
 
         const result = tryActivateEntry({
-          entry, macroMap, characterId, characterName, mode, currentTurn,
+          entry, macroMap, characterId, characterName, currentTurn,
           // Recursion scan: combine original scan text with recurse buffer
           scanText: buildScanText(entry, input.messages, scanDepths, input) + "\n" + recurseBuffer,
           scanState: "recursion",
@@ -319,7 +322,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   activated.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
 
   // Token budget per lorebook
-  const budgeted = applyTokenBudget(activated, input.lorebooks, input.estimateTokenCount);
+  const budgeted = applyTokenBudget(activated, input.lorebooks, input.estimateTokenCount, input.maxContextTokens);
 
   console.debug("[lore] DONE: %d entries activated, %d after budget, %d after groups", activated.length, budgeted.length, budgeted.length);
 
@@ -344,7 +347,6 @@ function tryActivateEntry(ctx: {
   macroMap: Record<string, string>;
   characterId: string;
   characterName: string;
-  mode: string;
   currentTurn: number;
   scanText: string;
   scanState: ScanState;
@@ -353,16 +355,13 @@ function tryActivateEntry(ctx: {
   activatedIds: Set<string>;
   failedProbabilityIds: Set<string>;
 }): ActivationOutcome {
-  const { entry, macroMap, characterId, characterName, mode, currentTurn, scanText, scanState, currentRecursionLevel, updatedState, activatedIds } = ctx;
+  const { entry, macroMap, characterId, characterName, currentTurn, scanText, scanState, currentRecursionLevel, updatedState, activatedIds } = ctx;
   const reason = (msg: string): ActivationOutcome => { console.debug("[lore]   skip %s: %s | title=%s", entry.id, msg, entry.title); return { status: "skipped" }; };
 
   if (!entry.enabled) return reason("disabled");
   if (activatedIds.has(entry.id)) return { status: "skipped" };
 
-  // 1. Trigger filter
-  if (entry.triggers.length > 0 && !entry.triggers.includes(mode)) return reason("trigger filter");
-
-  // 2. Character filter
+  // 1. Character filter
   // Option B semantics: a filter entry matches the active character if EITHER
   // its bound `id` equals the active `characterId` (rename-resilient), OR it is
   // a ghost (`id === null`) whose `name` equals the active `characterName`
@@ -671,11 +670,17 @@ function applyTokenBudget(
   entries: ActivationResult["activatedEntries"],
   lorebooks: ActivationInput["lorebooks"],
   estimateTokenCount?: (text: string) => number,
+  maxContextTokens?: number,
 ): ActivationResult["activatedEntries"] {
   const count = estimateTokenCount ?? ((text: string) => Math.ceil(text.length / 4));
+  // Resolve each lorebook's effective budget: percent mode overrides fixed.
   const budgetPerLorebook = new Map<string, number>();
   for (const lb of lorebooks) {
-    budgetPerLorebook.set(lb.id, lb.tokenBudget);
+    if (lb.tokenBudgetPercent != null && typeof maxContextTokens === 'number' && maxContextTokens > 0) {
+      budgetPerLorebook.set(lb.id, Math.round(maxContextTokens * lb.tokenBudgetPercent / 100));
+    } else {
+      budgetPerLorebook.set(lb.id, lb.tokenBudget);
+    }
   }
   const used = new Map<string, number>();
   return entries.filter(e => {

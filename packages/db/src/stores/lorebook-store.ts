@@ -41,6 +41,7 @@ export interface CreateLorebookData {
   scopeType: string;
   scanDepth?: number;
   tokenBudget?: number;
+  tokenBudgetPercent?: number | null;
   recursiveScanning?: boolean;
   maxRecursionSteps?: number;
   includeNames?: boolean;
@@ -87,7 +88,6 @@ export interface CreateLoreEntryData {
   matchWholeWords?: boolean;
   characterFilter?: CharacterFilterEntry[];
   characterFilterExclude?: boolean;
-  triggers?: string[];
   matchSources?: string[];
   enabled?: boolean;
   sortOrder?: number;
@@ -110,6 +110,7 @@ export interface Lorebook {
   scopeType: string;
   scanDepth: number;
   tokenBudget: number;
+  tokenBudgetPercent: number | null;
   recursiveScanning: boolean;
   maxRecursionSteps: number;
   includeNames: boolean;
@@ -161,7 +162,6 @@ export interface LoreEntry {
   matchWholeWords: boolean;
   characterFilter: CharacterFilterEntry[];
   characterFilterExclude: boolean;
-  triggers: string[];
   matchSources: string[];
   enabled: boolean;
   sortOrder: number;
@@ -280,8 +280,9 @@ export class LorebookStore {
         name: data.name,
         description: data.description ?? '',
         scopeType: data.scopeType,
-        scanDepth: data.scanDepth ?? 50,
+        scanDepth: data.scanDepth ?? 10,
         tokenBudget: data.tokenBudget ?? 1000,
+        tokenBudgetPercent: data.tokenBudgetPercent ?? null,
         recursiveScanning: (data.recursiveScanning ?? false) ? 1 : 0,
         maxRecursionSteps: data.maxRecursionSteps ?? 5,
         includeNames: data.includeNames ? 1 : 0,
@@ -316,6 +317,7 @@ export class LorebookStore {
     if (data.scopeType !== undefined) values.scopeType = data.scopeType;
     if (data.scanDepth !== undefined) values.scanDepth = data.scanDepth;
     if (data.tokenBudget !== undefined) values.tokenBudget = data.tokenBudget;
+    if (data.tokenBudgetPercent !== undefined) values.tokenBudgetPercent = data.tokenBudgetPercent;
     if (data.recursiveScanning !== undefined) values.recursiveScanning = data.recursiveScanning ? 1 : 0;
     if (data.maxRecursionSteps !== undefined) values.maxRecursionSteps = data.maxRecursionSteps;
     if (data.includeNames !== undefined) values.includeNames = data.includeNames ? 1 : 0;
@@ -456,7 +458,6 @@ export class LorebookStore {
         matchWholeWords: (data.matchWholeWords ?? false) ? 1 : 0,
         characterFilterJson: JSON.stringify(data.characterFilter ?? []),
         characterFilterExclude: (data.characterFilterExclude ?? false) ? 1 : 0,
-        triggersJson: JSON.stringify(data.triggers ?? []),
         matchSourcesJson: JSON.stringify(data.matchSources ?? []),
         enabled: (data.enabled ?? true) ? 1 : 0,
         sortOrder: nextSortOrder,
@@ -506,7 +507,6 @@ export class LorebookStore {
     if (data.matchWholeWords !== undefined) values.matchWholeWords = data.matchWholeWords ? 1 : 0;
     if (data.characterFilter !== undefined) values.characterFilterJson = JSON.stringify(data.characterFilter);
     if (data.characterFilterExclude !== undefined) values.characterFilterExclude = data.characterFilterExclude ? 1 : 0;
-    if (data.triggers !== undefined) values.triggersJson = JSON.stringify(data.triggers);
     if (data.matchSources !== undefined) values.matchSourcesJson = JSON.stringify(data.matchSources);
     if (data.enabled !== undefined) values.enabled = data.enabled ? 1 : 0;
     if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
@@ -720,6 +720,7 @@ export class LorebookStore {
       personaId: overrides?.personaId ?? source.personaId,
       scanDepth: source.scanDepth,
       tokenBudget: source.tokenBudget,
+      tokenBudgetPercent: source.tokenBudgetPercent ?? null,
       recursiveScanning: source.recursiveScanning,
       maxRecursionSteps: source.maxRecursionSteps,
       includeNames: source.includeNames,
@@ -760,7 +761,6 @@ export class LorebookStore {
       matchWholeWords: e.matchWholeWords,
       characterFilter: e.characterFilter,
       characterFilterExclude: e.characterFilterExclude,
-      triggers: e.triggers,
       matchSources: e.matchSources,
       enabled: e.enabled,
       metadata: e.metadata,
@@ -847,6 +847,7 @@ export class LorebookStore {
       description: lorebook.description,
       scan_depth: lorebook.scanDepth,
       token_budget: lorebook.tokenBudget,
+      token_budget_percent: lorebook.tokenBudgetPercent,
       recursive_scanning: lorebook.recursiveScanning,
       extensions: {
         ...((lorebook.extensions as Record<string, unknown>) ?? {}),
@@ -888,6 +889,7 @@ export class LorebookStore {
       scopeType: row.scopeType,
       scanDepth: row.scanDepth,
       tokenBudget: row.tokenBudget,
+      tokenBudgetPercent: row.tokenBudgetPercent,
       recursiveScanning: row.recursiveScanning === 1,
       maxRecursionSteps: row.maxRecursionSteps,
       includeNames: row.includeNames === 1,
@@ -930,7 +932,6 @@ export class LorebookStore {
         matchWholeWords: e.matchWholeWords === 1,
         characterFilter: parseCharacterFilter(JSON.parse(e.characterFilterJson)),
         characterFilterExclude: e.characterFilterExclude === 1,
-        triggers: JSON.parse(e.triggersJson),
         matchSources: JSON.parse(e.matchSourcesJson),
         enabled: e.enabled === 1,
         sortOrder: e.sortOrder,
@@ -951,6 +952,7 @@ export class LorebookStore {
       scopeType: row.scopeType,
       scanDepth: row.scanDepth,
       tokenBudget: row.tokenBudget,
+      tokenBudgetPercent: row.tokenBudgetPercent,
       recursiveScanning: row.recursiveScanning === 1,
       maxRecursionSteps: row.maxRecursionSteps,
       includeNames: row.includeNames === 1,
@@ -1033,7 +1035,6 @@ export class LorebookStore {
       matchWholeWords: row.matchWholeWords === 1,
       characterFilter: parseCharacterFilter(JSON.parse(row.characterFilterJson)),
       characterFilterExclude: row.characterFilterExclude === 1,
-      triggers: JSON.parse(row.triggersJson),
       matchSources: JSON.parse(row.matchSourcesJson),
       enabled: row.enabled === 1,
       sortOrder: row.sortOrder,
@@ -1064,7 +1065,7 @@ export class LorebookStore {
     const name = typeof parsed.name === 'string' ? parsed.name : 'Character Lorebook';
     const description = typeof parsed.description === 'string' ? parsed.description : '';
     const scanDepth = typeof parsed.scan_depth === 'number' ? parsed.scan_depth :
-                      typeof parsed.ext_scan_depth === 'number' ? parsed.ext_scan_depth : 50;
+                      typeof parsed.ext_scan_depth === 'number' ? parsed.ext_scan_depth : 10;
     const tokenBudget = typeof parsed.token_budget === 'number' ? parsed.token_budget : 2048;
     const recursiveScanning = typeof parsed.recursive_scanning === 'boolean' ? parsed.recursive_scanning : false;
     const maxRecursionSteps = typeof parsed.ext_max_recursion_steps === 'number' ? parsed.ext_max_recursion_steps : 5;
@@ -1140,7 +1141,6 @@ export class LorebookStore {
           }).filter((x): x is CharacterFilterEntry => x !== null);
         })(),
         characterFilterExclude: typeof (entry.character_filter_exclude ?? entry.characterFilterExclude) === 'boolean' ? !!(entry.character_filter_exclude ?? entry.characterFilterExclude) : false,
-        triggers: Array.isArray(entry.triggers) ? entry.triggers.filter((k): k is string => typeof k === 'string') : [],
         matchSources: (() => { const v = entry.match_sources ?? entry.matchSources; return Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : []; })(),
         enabled: typeof (entry.enabled ?? entry.disable) === 'boolean' ? (entry.enabled ?? !entry.disable) as boolean : true,
         stickyWindow: typeof (entry.sticky_window ?? entry.stickyWindow) === 'number' ? (entry.sticky_window ?? entry.stickyWindow) as number : 0,

@@ -80,6 +80,7 @@ interface LorebookAccordionProps {
   onUpdateMeta: (body: {
     scanDepth?: number;
     tokenBudget?: number;
+    tokenBudgetPercent?: number | null;
     recursiveScanning?: boolean;
   }) => void;
   onReorderEntries: (updates: Array<{ id: string; sortOrder: number; position?: string }>) => Promise<LoreEntryRecord[]>;
@@ -466,13 +467,36 @@ export function LorebookAccordion({
                   <label className="mb-1 block text-[11px] font-medium uppercase leading-tight tracking-[0.05em] text-t3/70">
                     {t("lore_token_budget")}
                   </label>
-                  <NumberInput
-                    className="w-full"
-                    hideControls
-                    min={0}
-                    value={lorebook.tokenBudget}
-                    onChange={(v) => onUpdateMeta({ tokenBudget: v })}
-                  />
+                  <div className="flex items-center gap-1.5">
+                    {lorebook.tokenBudgetPercent == null ? (
+                      <NumberInput
+                        className="w-full"
+                        hideControls
+                        min={0}
+                        value={lorebook.tokenBudget}
+                        onChange={(v) => onUpdateMeta({ tokenBudget: v })}
+                      />
+                    ) : (
+                      <NumberInput
+                        className="w-full"
+                        hideControls
+                        min={0}
+                        max={100}
+                        value={lorebook.tokenBudgetPercent}
+                        onChange={(v) => onUpdateMeta({ tokenBudgetPercent: Math.max(0, Math.min(100, v)) })}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onUpdateMeta({
+                        tokenBudgetPercent: lorebook.tokenBudgetPercent == null ? 25 : null,
+                      })}
+                      className="shrink-0 cursor-pointer rounded border border-border bg-s3 px-2 py-1 text-[10px] font-medium text-t2 transition-all hover:border-t3 hover:text-t1"
+                      title={lorebook.tokenBudgetPercent == null ? t("lore_token_budget_switch_to_percent") : t("lore_token_budget_switch_to_fixed")}
+                    >
+                      {lorebook.tokenBudgetPercent == null ? "tok" : "%"}
+                    </button>
+                  </div>
                 </div>
               </CustomTooltip>
               <CustomTooltip content={t("lore_scan_depth_hint")}>

@@ -6,9 +6,8 @@ import type {
   LoreScopeType,
   Lorebook,
   LorebookId,
-  LoreTriggerType,
   LoreMatchSource,
-  PromptLayerPosition,
+  LoreEntryPosition,
 } from "@vibe-tavern/domain";
 import { brandId, ENTITY_ID_NAMESPACE } from "@vibe-tavern/domain";
 
@@ -58,6 +57,7 @@ export interface StLorebookNormalized {
   description: string;
   scanDepth: number;
   tokenBudget: number;
+  tokenBudgetPercent: number | null;
   recursiveScanning: boolean;
   maxRecursionSteps?: number;
   includeNames?: boolean;
@@ -93,24 +93,26 @@ function mapSelectiveLogic(value: unknown): LoreLogic {
   }
 }
 
-function mapPromptLayerPosition(value: unknown): PromptLayerPosition {
-  // SillyTavern World Info positions are more fine-grained than Vibe Tavern's
-  // canonical prompt layer positions. Preserve execution semantics by mapping
-  // normal prompt-area positions to in_prompt, depth injections to in_chat, and
-  // outlet entries to hidden_system.
+/**
+ * Map a SillyTavern World Info numeric position enum to VT's
+ * `LoreEntryPosition`. All 8 ST positions are preserved 1:1 so the user's
+ * before/after split survives import (see lorebook-st-parity-audit.md §2.1:
+ * previously this collapsed every prompt-area position to `in_prompt`, which
+ * made the `worldInfoBefore` prompt-order marker structurally unreachable).
+ * `assemble.ts` switches on these literals to route each entry to the right
+ * marker and fine-grained subPosition.
+ */
+function mapLoreEntryPosition(value: unknown): LoreEntryPosition {
   switch (value) {
-    case 4:
-      return "in_chat";
-    case 7:
-      return "hidden_system";
-    case 0:
-    case 1:
-    case 2:
-    case 3:
-    case 5:
-    case 6:
-    default:
-      return "in_prompt";
+    case 0: return "before_char";
+    case 1: return "after_char";
+    case 2: return "top_an";
+    case 3: return "bottom_an";
+    case 4: return "at_depth";
+    case 5: return "before_examples";
+    case 6: return "after_examples";
+    case 7: return "outlet";
+    default: return "before_char"; // ST's own default for new entries
   }
 }
 
@@ -142,6 +144,12 @@ export function importStLorebookJson(
     description: asString(root.description),
     scanDepth: asNumber(root.scan_depth, 50),
     tokenBudget: asNumber(root.token_budget, 1000),
+    // ST stores budget as either a percentage (extensions.token_budget_pct)
+    // or a fixed cap (token_budget). Preserve the percentage when present.
+    tokenBudgetPercent: (() => {
+      const pct = (root.extensions as Record<string, unknown>)?.token_budget_pct;
+      return typeof pct === 'number' && pct >= 0 && pct <= 100 ? pct : null;
+    })(),
     recursiveScanning: asBoolean(root.recursive_scanning, false),
     maxRecursionSteps: asNumber((root.extensions as Record<string, unknown>)?.max_recursion_steps, 5),
     extensions: isRecord(root.extensions) ? root.extensions : {},
@@ -159,6 +167,7 @@ export function importStLorebookJson(
     scopeType: options.scopeType ?? "character",
     scanDepth: normalized.scanDepth,
     tokenBudget: normalized.tokenBudget,
+    tokenBudgetPercent: normalized.tokenBudgetPercent,
     recursiveScanning: normalized.recursiveScanning,
     maxRecursionSteps: normalized.maxRecursionSteps ?? 5,
     includeNames: false,
@@ -203,7 +212,7 @@ export function importStLorebookJson(
       keys,
       secondaryKeys,
       logic,
-      position: mapPromptLayerPosition(entry.position),
+      position: mapLoreEntryPosition(entry.position),
       depth: asNumber(entry.depth, options.defaultDepth ?? 4),
       priority: asNumber(entry.order, 100),
       stickyWindow: asNumber(entry.sticky, 0),
@@ -226,7 +235,6 @@ export function importStLorebookJson(
       matchWholeWords: false,
       characterFilter: asStringArray(entry.character_filter).map((name) => ({ id: null, name })),
       characterFilterExclude: asBoolean(entry.character_filter_exclude, false),
-      triggers: [] as LoreTriggerType[],
       matchSources: [] as LoreMatchSource[],
       enabled: !asBoolean(entry.disable, false),
       sortOrder: asNumber(entry.order, 100),

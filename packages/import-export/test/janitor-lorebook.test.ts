@@ -100,7 +100,6 @@ describe("importJanitorLorebookJson", () => {
     expect(entry.position).toBe("in_prompt");
     expect(entry.ignoreBudget).toBe(false);
     expect(entry.stickyWindow).toBe(0);
-    expect(entry.triggers).toEqual([]);
     expect(entry.matchSources).toEqual([]);
     expect(entry.characterFilter).toEqual([]);
     expect(entry.scanDepthOverride).toBeNull();
@@ -138,20 +137,28 @@ describe("importJanitorLorebookJson", () => {
     expect(result.entries[0].logic).toBe("and_any");
   });
 
-  it("uses insertion_order for sortOrder and priority for priority", () => {
+  it("maps insertion_order to both sortOrder and priority (Janitor priority is metadata-only)", () => {
     const result = importJanitorLorebookJson(
       [janitorEntry({ insertion_order: 500, priority: 3 })],
       { fallbackName: "Order" },
     );
+    // VT `priority` is the overflow-resolution key (≡ ST `order` ≡ Janitor
+    // `insertion_order`). Janitor's own `priority` (1-5) is a coarser
+    // bucketing signal and must NOT be promoted here — it would invert
+    // overflow resolution. See lorebook-st-parity-audit.md §4.2.
     expect(result.entries[0].sortOrder).toBe(500);
-    expect(result.entries[0].priority).toBe(3);
+    expect(result.entries[0].priority).toBe(500);
+    // Janitor's priority is preserved in metadata for traceability.
+    expect(result.entries[0].metadata.janitorPriority).toBe(3);
   });
 
-  it("falls back to insertion_order when priority is missing", () => {
-    const { priority, ...withoutPriority } = janitorEntry({ insertion_order: 500 });
-    void priority;
-    const result = importJanitorLorebookJson([withoutPriority], { fallbackName: "FB" });
-    expect(result.entries[0].priority).toBe(500);
+  it("falls back to index-based order when insertion_order is missing", () => {
+    const { insertion_order, ...withoutOrder } = janitorEntry({ priority: 3 });
+    void insertion_order;
+    const result = importJanitorLorebookJson([withoutOrder], { fallbackName: "FB" });
+    // First entry → index 0 → fallback = 0 * 10 = 0.
+    expect(result.entries[0].priority).toBe(0);
+    expect(result.entries[0].metadata.janitorPriority).toBe(3);
   });
 
   it("warns on empty content and on keyless non-constant entries", () => {

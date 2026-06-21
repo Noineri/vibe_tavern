@@ -12,10 +12,10 @@ export class LorebookAdapter implements LorebookRuntimeApi {
 	listLorebooks = (scopeType: string, ownerId?: string) =>
 		this.stores.lorebooks.listLorebooksByScope(scopeType, ownerId);
 
-	createLorebook = (body: { name: string; description?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean }) =>
+	createLorebook = (body: { name: string; description?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; scanDepth?: number; tokenBudget?: number; tokenBudgetPercent?: number | null; recursiveScanning?: boolean }) =>
 		this.stores.lorebooks.createLorebook(body);
 
-	updateLorebookMeta = (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean; enabled?: boolean; scopeType?: string }) =>
+	updateLorebookMeta = (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; tokenBudgetPercent?: number | null; recursiveScanning?: boolean; enabled?: boolean; scopeType?: string }) =>
 		this.stores.lorebooks.updateLorebook(lorebookId, body);
 
 	deleteLorebook = async (lorebookId: string) => {

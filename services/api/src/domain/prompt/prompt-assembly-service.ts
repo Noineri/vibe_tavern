@@ -80,6 +80,10 @@ export interface PromptAssemblyResolver {
     chatId: ChatId;
     branchId: ChatBranchId;
     recentText: string;
+    /** Max context tokens of the active model. Needed for percent-of-context
+     * token-budget mode on lorebooks. Optional — when absent, percent-mode
+     * lorebooks silently fall back to their fixed `tokenBudget`. */
+    maxContextTokens?: number;
   }): Promise<LoreEntry[]>;
   listRetrievedMemories(input: {
     chatId: ChatId;
@@ -194,6 +198,7 @@ export class PromptAssemblyService {
       chatId: chat.id as ChatId,
       branchId,
       recentText,
+      maxContextTokens: input.contextBudget ?? undefined,
     });
     const retrievedMemories = await this.resolver.listRetrievedMemories({
       chatId: chat.id as ChatId,
