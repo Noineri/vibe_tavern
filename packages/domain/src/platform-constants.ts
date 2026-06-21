@@ -204,6 +204,39 @@ export const PROMPT_LAYER_POSITION = {
 
 export type PromptLayerPosition = typeof PROMPT_LAYER_POSITION[keyof typeof PROMPT_LAYER_POSITION];
 
+/**
+ * Lorebook entry position — the prompt slot where an activated entry's text
+ * is inserted. Wider than `PromptLayerPosition` because SillyTavern World
+ * Info defines 8 fine-grained positions that map onto the prompt-order
+ * canvas (before/after char, before/after example messages, before/after
+ * Author's Note, at-depth, outlet). VT preserves all 8 ST positions so
+ * imports do not lose the user's carefully-placed before/after split.
+ *
+ * The 4 pipeline-native positions (`before_prompt | in_prompt | in_chat |
+ * hidden_system`) cover VT-native lorebooks that don't map to ST's taxonomy.
+ *
+ * `assemble.ts` switches on these literals to route each entry to the right
+ * `worldInfoBefore` / `worldInfoAfter` marker and subPosition.
+ */
+export const LORE_ENTRY_POSITION = {
+  // SillyTavern World Info positions (8)
+  beforeChar: "before_char",
+  afterChar: "after_char",
+  beforeExamples: "before_examples",
+  afterExamples: "after_examples",
+  topAn: "top_an",
+  bottomAn: "bottom_an",
+  atDepth: "at_depth",
+  outlet: "outlet",
+  // Pipeline-native positions (4)
+  beforePrompt: "before_prompt",
+  inPrompt: "in_prompt",
+  inChat: "in_chat",
+  hiddenSystem: "hidden_system",
+} as const;
+
+export type LoreEntryPosition = typeof LORE_ENTRY_POSITION[keyof typeof LORE_ENTRY_POSITION];
+
 export const RETRIEVED_MEMORY_SOURCE_TYPE = {
   loreEntry: "lore_entry",
   characterSection: "character_section",
@@ -221,14 +254,14 @@ export const LORE_ENTRY_ROLE = {
 
 export type LoreEntryRole = typeof LORE_ENTRY_ROLE[keyof typeof LORE_ENTRY_ROLE];
 
-export const LORE_TRIGGER_TYPE = {
-  normal: "normal",
-  continue: "continue",
-  impersonate: "impersonate",
-  quiet: "quiet",
-} as const;
+// `LORE_TRIGGER_TYPE` / `LoreTriggerType` and mode-based lore-entry
+// activation were removed: the UI chips had already been deleted, and the
+// engine filter was unreachable because `mode` was hardcoded to "normal" on
+// every call site. The DB column `lore_entries.triggers_json` remains as an
+// orphan in existing user databases (removing it would require a
+// table-rebuild migration for no functional gain) but no code reads it. See
+// vibe_tavern_plan/reports/lorebook-st-parity-audit.md §3.5.
 
-export type LoreTriggerType = typeof LORE_TRIGGER_TYPE[keyof typeof LORE_TRIGGER_TYPE];
 
 export const LORE_MATCH_SOURCE = {
   chatMessages: "chat_messages",

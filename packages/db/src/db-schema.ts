@@ -139,8 +139,13 @@ export const lorebooks = sqliteTable('lorebooks', {
   name: text('name').notNull(),
   description: text('description').notNull().default(''),
   scopeType: text('scope_type').notNull(),
-  scanDepth: integer('scan_depth').notNull().default(50),
+  scanDepth: integer('scan_depth').notNull().default(10),
   tokenBudget: integer('token_budget').notNull().default(1000),
+  // Null = fixed token-budget mode (use `token_budget`).
+  // Non-null (0-100) = percent-of-context mode: cap = round(maxContextTokens * percent/100).
+  // Matches SillyTavern's dual Context% / Budget Cap modes. See
+  // lorebook-st-parity-audit.md §1.4.
+  tokenBudgetPercent: integer('token_budget_percent'),
   recursiveScanning: integer('recursive_scanning').notNull().default(0),
   maxRecursionSteps: integer('max_recursion_steps').notNull().default(5),
   includeNames: integer('include_names').notNull().default(0),

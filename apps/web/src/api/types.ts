@@ -335,7 +335,6 @@ export interface LoreEntryRecord {
   matchWholeWords: boolean;
   characterFilter: Array<{ id: string | null; name: string }>;
   characterFilterExclude: boolean;
-  triggers: string[];
   matchSources: string[];
   sortOrder: number;
 }
@@ -350,6 +349,7 @@ export interface LorebookRecord {
   chatId: string | null;
   scanDepth: number;
   tokenBudget: number;
+  tokenBudgetPercent: number | null;
   recursiveScanning: boolean;
   enabled: boolean;
 }

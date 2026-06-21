@@ -260,6 +260,20 @@
       "when": 1781751998945,
       "tag": "0036_nosy_skreet",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1782071335705,
+      "tag": "0037_cynical_black_bird",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1782072672040,
+      "tag": "0038_lying_nightshade",
+      "breakpoints": true
     }
   ]
 }
