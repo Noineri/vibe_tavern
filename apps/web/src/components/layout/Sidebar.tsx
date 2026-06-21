@@ -182,25 +182,24 @@ export function Sidebar() {
           <div className="flex min-h-0 flex-1 flex-col items-center">
             <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto py-2 px-[7px]">
               {characterTabs.map((tab) => {
-                const isActive = isCharacterTabActive(tab);
-                const isFlyout = flyoutCharId === tab.id;
+                const isMarked = tab.id === activeChatCharacterId || tab.chatId === activeChatId;
                 return (
                   <CustomTooltip key={tab.id} content={tab.name} side="right">
                     <div
                       className={cn(
                         'relative flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-150',
-                        (isActive || isFlyout) ? '' : 'hover:bg-s2',
+                        isMarked ? '' : 'hover:bg-s2',
                       )}
                       onClick={() => {
-                        useChatStore.getState().setSelectedCharacterId(tab.id);
+                        // Flyout toggle only — selectedCharacterId is synced after a real chat switch.
                         setFlyoutCharId(prev => prev === tab.id ? null : tab.id);
                       }}
                     >
                       {/* Pill-индикатор для активного персонажа */}
-                      {(isActive || isFlyout) && (
+                      {isMarked && (
                         <div className="absolute -left-[7px] top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-accent transition-all" />
                       )}
-                      <span className={cn('flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm', (isActive || isFlyout) ? 'bg-accent text-on-accent ring-1 ring-accent/50 ring-offset-2 ring-offset-surface' : 'bg-s3 text-t2')}>
+                      <span className={cn('flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm', isMarked ? 'bg-accent text-on-accent ring-1 ring-accent/50 ring-offset-2 ring-offset-surface' : 'bg-s3 text-t2')}>
                         {tabAvatarSrc(tab) ? <img src={tabAvatarSrc(tab)!} alt={tab.name} className="h-full w-full object-cover" /> : initials(tab.name)}
                       </span>
                     </div>
