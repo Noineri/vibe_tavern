@@ -30,6 +30,8 @@ export interface AiQuickPillProps {
   settings: AiQuickSettings;
   /** Whether to show Replace/Append toggle (for lore_keys). */
   showAppendToggle?: boolean;
+  /** Whether to show the key-target dropdown primary/secondary/both (for lore_keys). */
+  showKeyTarget?: boolean;
   /** Whether to show recentMessageCount input (for chat_impersonate). */
   showMessageCount?: boolean;
   /** Tooltip for the star button. */
@@ -45,6 +47,8 @@ export interface AiQuickSettings {
   modelName: string;
   /** lore_keys: replace vs append mode. */
   appendMode?: boolean;
+  /** lore_keys: which key set to generate. Default "both". */
+  keyTarget?: "primary" | "secondary" | "both";
   /** chat_impersonate: how many recent messages to send. */
   recentMessageCount?: number;
 }
@@ -59,6 +63,7 @@ export function AiQuickPill({
   onSettingsChange,
   settings,
   showAppendToggle,
+  showKeyTarget,
   showMessageCount,
   starTooltip,
   gearTooltip,
@@ -127,6 +132,7 @@ export function AiQuickPill({
           onSettingsChange?.(s);
         }}
         showAppendToggle={showAppendToggle}
+        showKeyTarget={showKeyTarget}
         showMessageCount={showMessageCount}
       />
     </>

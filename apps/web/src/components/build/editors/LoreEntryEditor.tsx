@@ -932,6 +932,7 @@ function LoreKeysAiPill({
   const [settings, setSettings] = useState<AiQuickSettings>({
     providerId: "",
     modelName: "",
+    keyTarget: "both",
   });
   const [loading, setLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -968,6 +969,7 @@ function LoreKeysAiPill({
         existingKeys: entry.keys,
         existingSecondaryKeys: entry.secondaryKeys,
         logic: entry.logic,
+        keyTarget: settings.keyTarget ?? "both",
       };
       let raw = "";
       for await (const chunk of streamAiAssistant(request, { signal: abortRef.current.signal })) {
@@ -978,14 +980,20 @@ function LoreKeysAiPill({
       // Parse JSON response
       const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
       const parsed = JSON.parse(cleaned) as { keys?: string[]; secondaryKeys?: string[] };
+      const target = settings.keyTarget ?? "both";
+      // Safety net: never touch the key set the user did NOT request, even if
+      // the model returned one. The backend prompt asks for the matching shape,
+      // but models are not fully reliable — gate on the client too.
+      const wantPrimary = target !== "secondary";
+      const wantSecondary = target !== "primary";
       if (settings.appendMode) {
-        const newKeys = (parsed.keys ?? []).filter((k) => !entry.keys.includes(k));
-        const newSec = (parsed.secondaryKeys ?? []).filter((k) => !entry.secondaryKeys.includes(k));
+        const newKeys = wantPrimary ? (parsed.keys ?? []).filter((k) => !entry.keys.includes(k)) : [];
+        const newSec = wantSecondary ? (parsed.secondaryKeys ?? []).filter((k) => !entry.secondaryKeys.includes(k)) : [];
         if (newKeys.length) updateAct("keys", [...entry.keys, ...newKeys]);
         if (newSec.length) updateAct("secondaryKeys", [...entry.secondaryKeys, ...newSec]);
       } else {
-        if (parsed.keys?.length) updateAct("keys", parsed.keys);
-        if (parsed.secondaryKeys?.length) updateAct("secondaryKeys", parsed.secondaryKeys);
+        if (wantPrimary && parsed.keys?.length) updateAct("keys", parsed.keys);
+        if (wantSecondary && parsed.secondaryKeys?.length) updateAct("secondaryKeys", parsed.secondaryKeys);
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
@@ -1013,6 +1021,7 @@ function LoreKeysAiPill({
       loading={loading}
       disabled={!entry.content.trim()}
       showAppendToggle
+      showKeyTarget
       starTooltip={t("ai_pill_generate_keys")}
       gearTooltip={t("ai_pill_generate_keys_settings")}
       size="md"
