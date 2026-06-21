@@ -181,14 +181,13 @@ Each entry is evaluated against:
 
 | Criterion | Description |
 |-----------|-------------|
-| **Keys** | Primary + secondary keyword matching. Logic: `AND_ALL`, `AND_ANY`, `NOT_ALL`, `NOT_ANY` |
+| **Keys** | Primary + secondary keyword matching. Secondary-key logic: `and_any` (≥1 matches), `and_all` (all match), `not_any` (none match), `not_all` (not all match). |
 | **Scan depth** | How many recent messages to scan (per-lorebook, per-entry override) |
 | **Probability** | Random chance check (0–100). Constant entries bypass this. |
 | **Cooldown/Delay/Sticky** | Turn-based timing windows. Cooldown prevents re-activation. Delay skips first N turns. Sticky keeps active for N turns. |
 | **Group weights** | Entries in same group compete by weight. |
 | **Character filters** | Activate only for specific characters (or exclude). |
-| **Match sources** | Where to look: `scanned_text`, `character_description`, `persona_description` |
-| **Triggers** | Events: `on_message`, `on_activate`, `on_character_change` |
+| **Match sources** | Where to look (entry-level, defaults to `chat_messages` only): `chat_messages`, `character_desc`, `character_personality`, `character_note` (author's note / depth prompt), `persona_desc`, `scenario`, `creator_notes`. |
 | **Recursion** | Entries can activate other entries via `recursiveScanning`. |
 | **Macro resolution** | Keys are resolved against `{{user}}`, `{{char}}`, etc. before matching. |
 
