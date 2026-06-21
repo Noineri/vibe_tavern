@@ -12,6 +12,7 @@
 
 import { resolveStandalonePaths } from "./standalone-paths.js";
 import { startServerRuntime } from "./server-runtime.js";
+import { embeddedWebFiles } from "./embedded-web-manifest.js";
 
 declare const VIBE_TAVERN_VERSION: string | undefined;
 const _version: string = typeof VIBE_TAVERN_VERSION !== "undefined" ? VIBE_TAVERN_VERSION : "dev";
@@ -28,6 +29,7 @@ async function main() {
 	assetsDir: paths.assetsDir,
 	staticDir: paths.webDir,
 	staticEnabled: paths.webEnabled,
+	embeddedWebFiles,
 	host,
 	port: paths.port,
 	logsDir: paths.logsDir,
