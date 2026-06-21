@@ -125,6 +125,7 @@ export {
 
 // ─── Scripts ────────────────────────────────────────────────────────────
 export {
+  listAllScripts,
   listScripts,
   getScript,
   createScript,

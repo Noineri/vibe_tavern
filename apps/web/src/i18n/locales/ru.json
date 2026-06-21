@@ -759,6 +759,7 @@
   "scope_chat": "Чат",
   "scope_global": "Глобальный",
   "scope_all": "Все лорбуки",
+  "scope_all_scripts": "Все скрипты",
   "scope_lorebook": "Лорбук",
   "scripts_card_title": "Скрипты",
   "scripts_card_desc": "JavaScript-логика, выполняемая при генерации",

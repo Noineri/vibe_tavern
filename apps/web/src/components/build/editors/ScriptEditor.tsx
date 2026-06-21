@@ -11,6 +11,7 @@ import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import {
+  listAllScripts,
   listScripts,
   createScript,
   updateScript,
@@ -21,13 +22,17 @@ import {
 } from "../../../app-client.js";
 // ── Types ──────────────────────────────────────────────────────────────
 
-type Scope = "global" | "character" | "persona" | "chat";
+import { LoreEntryList } from "./LoreEntryList.js";
+
+// ── Types ──────────────────────────────────────────────────────────────
+
+import type { Scope } from "./LorebookAccordion.js";
 
 interface ScriptPanelProps {
   characterId: string;
   chatId: string | null;
   personaId: string | null;
-  scope: string;
+  scope: Scope;
   onOpenEditor?: () => void;
   onBackToList?: () => void;
 }
@@ -76,7 +81,9 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
 
   const refreshScripts = useCallback(async () => {
-    setScripts(await listScripts(scope, scopeId));
+    // "all" — обзорный режим (только чтение), отдаёт все скрипты без фильтра
+    // по скоупу. Иначе — по скоупу + владельцу.
+    setScripts(scope === "all" ? await listAllScripts() : await listScripts(scope, scopeId));
   }, [scope, scopeId]);
 
   useEffect(() => { void refreshScripts(); }, [refreshScripts]);
@@ -138,11 +145,14 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   };
 
   // ── Scope-aware body helper ──────────────────────────────
+  // "all" — обзорный режим без конкретного владельца; создание/импорт скриптов
+  // в нём запрещены (CTA скрыты в LorebookEditor), fallback чисто оборонительный.
   const scopeBody = () => {
-    const base: Record<string, string | undefined> = { scopeType: scope };
-    if (scope === "character") base.characterId = characterId;
-    if (scope === "persona") base.personaId = personaId ?? undefined;
-    if (scope === "chat") base.chatId = chatId ?? undefined;
+    const effectiveScope: Exclude<Scope, "all"> = scope === "all" ? "character" : scope;
+    const base: Record<string, string | undefined> = { scopeType: effectiveScope };
+    if (effectiveScope === "character") base.characterId = characterId;
+    if (effectiveScope === "persona") base.personaId = personaId ?? undefined;
+    if (effectiveScope === "chat") base.chatId = chatId ?? undefined;
     return base;
   };
 

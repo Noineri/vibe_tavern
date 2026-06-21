@@ -7,6 +7,11 @@ export async function listScripts(scopeType: string, ownerId?: string): Promise<
   return unwrapRpc<ScriptRecord[]>(response);
 }
 
+export async function listAllScripts(): Promise<ScriptRecord[]> {
+  const response = await client.api.scripts.all.$get();
+  return unwrapRpc<ScriptRecord[]>(response);
+}
+
 export async function getScript(scriptId: string): Promise<ScriptRecord> {
   const response = await client.api.scripts[":scriptId"].$get({ param: { scriptId } });
   return unwrapRpc<ScriptRecord>(response);

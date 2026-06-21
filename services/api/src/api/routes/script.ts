@@ -5,6 +5,9 @@ import * as schemas from "@vibe-tavern/api-contracts";
 
 export function createScriptRoutes(runtime: ScriptRuntimeApi) {
   return new Hono()
+    .get("/api/scripts/all", async (c) => {
+      return c.json(await runtime.listAllScripts());
+    })
     .get("/api/scripts", async (c) => {
       const scopeType = c.req.query("scopeType") ?? "character";
       const ownerId = c.req.query("ownerId") ?? undefined;

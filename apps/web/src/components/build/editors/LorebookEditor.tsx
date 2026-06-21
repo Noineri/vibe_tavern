@@ -587,8 +587,11 @@ export function LorebookEditor({
   // ══════════════════════════════════════════════════════════════════════
 
   // ── Scope column (десктоп: вертикальный с иконками) ──
+  // Label для "all" зависит от активной вкладки — «Все лорбуки» / «Все скрипты».
+  // Остальные scope-имена (Глобальный/Персонаж/...) инвариантны к вкладке.
+  const allLabel = tab === "lorebooks" ? t("scope_all") : t("scope_all_scripts");
   const scopeItems: { id: Scope; icon: ReactNode; label: string }[] = [
-    { id: "all", icon: <Ic.stack />, label: t("scope_all") },
+    { id: "all", icon: <Ic.stack />, label: allLabel },
     { id: "global", icon: <Ic.globe />, label: t("scope_global") },
     { id: "character", icon: <Ic.book />, label: t("scope_char") },
     { id: "persona", icon: <Ic.user />, label: t("scope_persona") },
@@ -877,7 +880,7 @@ export function LorebookEditor({
             </CustomTooltip>
           </>
         )}
-        {tab === "scripts" && (
+        {tab === "scripts" && scope !== "all" && (
           <>
             <CustomTooltip content={t("new_script")}>
               <div
