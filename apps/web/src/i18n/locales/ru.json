@@ -643,6 +643,8 @@
   "lore_token_budget_hint": "Сколько токенов максимум может занять активированный лор из этого лорбука. Переключите на ‘%’ для режима доли контекста (лимит = размер контекста модели × %).",
   "lore_token_budget_switch_to_percent": "Переключить на режим доли контекста",
   "lore_token_budget_switch_to_fixed": "Переключить на фиксированный лимит токенов",
+  "lore_token_budget_mode_fixed": "Токены",
+  "lore_token_budget_mode_percent": "Доля контекста",
   "lore_scan_depth": "Глубина сканирования",
   "lore_scan_depth_hint": "Сколько сообщений чата назад проверять на ключевые слова.",
   "lore_recursive_scanning": "Рекурсивное сканирование",
