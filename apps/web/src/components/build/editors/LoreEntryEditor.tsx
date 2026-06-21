@@ -358,32 +358,30 @@ export function LoreEntryEditor({
                 <SegmentedControl
                   value={entry.logic}
                   options={[
-                    { value: "and_any", label: "AND ANY" },
-                    { value: "and_all", label: "AND ALL" },
-                    { value: "not_any", label: "NOT ANY" },
-                    { value: "not_all", label: "NOT ALL" },
+                    { value: "and_any", label: t("lore_logic_any"), tooltip: t("lore_logic_any_hint") },
+                    { value: "and_all", label: t("lore_logic_all"), tooltip: t("lore_logic_all_hint") },
+                    { value: "not_any", label: t("lore_logic_none"), tooltip: t("lore_logic_none_hint") },
+                    { value: "not_all", label: t("lore_logic_not_all"), tooltip: t("lore_logic_not_all_hint") },
                   ]}
                   onChange={(v) => updateAct("logic", v)}
                   compact
                 />
               </div>
-              <CustomTooltip content={t("role_hint")}>
-                <div>
-                  <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
-                    {t("lore_role_label")}
-                  </label>
+              <div>
+                <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                  {t("lore_role_label")}
+                </label>
                   <SegmentedControl
                     value={entry.role}
                     options={[
-                      { value: "system", label: "System" },
-                      { value: "user", label: "User" },
-                      { value: "assistant", label: "Assistant" },
+                      { value: "system", label: t("lore_role_system") },
+                      { value: "user", label: t("lore_role_user") },
+                      { value: "assistant", label: t("lore_role_assistant") },
                     ]}
                     onChange={(v) => updateAct("role", v)}
                     compact
                   />
                 </div>
-              </CustomTooltip>
             </div>
 
             {/* ── Вторичные ключевые слова ── */}

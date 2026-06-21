@@ -1,9 +1,12 @@
 import { type ReactNode } from 'react';
 import { cn } from "../../lib/cn.js";
+import { CustomTooltip } from "./Tooltip.js";
 
 interface SegmentedOption {
   value: string;
   label: ReactNode;
+  /** Optional tooltip shown on hover/focus over this segment. */
+  tooltip?: ReactNode;
 }
 
 interface SegmentedControlProps {
@@ -47,7 +50,7 @@ export function SegmentedControl({
     >
       {options.map((opt) => {
         const active = opt.value === value;
-        return (
+        const button = (
           <button key={opt.value}
             type="button"
             role="radio"
@@ -65,6 +68,13 @@ export function SegmentedControl({
           >
             <span className="min-w-0 truncate sm:overflow-visible sm:whitespace-normal sm:text-clip">{opt.label}</span>
           </button>
+        );
+        return opt.tooltip ? (
+          <CustomTooltip key={opt.value} content={opt.tooltip} align="start">
+            {button}
+          </CustomTooltip>
+        ) : (
+          button
         );
       })}
     </div>
