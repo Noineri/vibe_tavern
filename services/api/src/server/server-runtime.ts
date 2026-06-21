@@ -37,6 +37,10 @@ export interface ServerRuntimeConfig {
 	readonly checkPortBeforeListen?: boolean;
 	readonly shutdownSignals?: readonly NodeJS.Signals[];
 	readonly missingFrontendMessage: string;
+	/** Embedded frontend files baked into the standalone .exe. When non-empty,
+	 *  the SPA is served from the binary itself; no on-disk web/ folder is
+	 *  required. Sourced from embedded-web-manifest.ts. */
+	readonly embeddedWebFiles?: Record<string, string>;
 }
 
 export async function startServerRuntime(config: ServerRuntimeConfig): Promise<void> {
@@ -137,6 +141,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 			rootDir: config.rootDir,
 			dataDir: config.dataDir,
 			staticDir: config.staticDir,
+			embeddedWebFiles: config.embeddedWebFiles,
 		});
 
 		// Stores
@@ -194,10 +199,11 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 
 		features.register(createAiAssistantFeature(runtime.aiAssistant));
 
-		// Hono app — with static frontend if available
+		// Hono app — with static frontend if available (on disk or embedded)
 		const app = await createApp({
 			runtime,
 			staticDir: config.staticEnabled ? config.staticDir : undefined,
+			embeddedWebFiles: config.embeddedWebFiles,
 			mobileAccessToken: () => mobileAccessService.getToken(),
 			enforceMobileAuth: true,
 			configureFeatures: (router) => features.activateAll({ events, router }),

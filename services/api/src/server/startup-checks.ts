@@ -11,6 +11,9 @@ export interface StartupFileCheckOptions {
 	readonly dataDir?: string;
 	readonly staticDir?: string;
 	readonly requireStatic?: boolean;
+	/** When non-empty, the frontend is embedded in the .exe and the web/
+	 *  directory on disk is neither required nor checked. */
+	readonly embeddedWebFiles?: Record<string, string>;
 }
 
 function formatSize(bytes: number): string {
@@ -117,10 +120,32 @@ export async function runStartupFileChecks(options: StartupFileCheckOptions): Pr
 	const promptPath = await resolvePromptPathForMode("script");
 	ok = await checkFile("AI assistant script prompt", promptPath) && ok;
 
-	if (options.staticDir) {
+	if (options.embeddedWebFiles && Object.keys(options.embeddedWebFiles).length > 0) {
+		// Frontend is baked into the executable — no on-disk web/ folder needed.
+		const embeddedCount = Object.keys(options.embeddedWebFiles).length;
+		console.log(`[startup-check] ✅ web bundle: ${embeddedCount} file(s) embedded in the executable.`);
+	} else if (options.staticDir) {
 		const staticRequired = options.requireStatic ?? false;
 		ok = await checkDir("web bundle", options.staticDir, staticRequired) && ok;
 		ok = await checkFile("web index", join(options.staticDir, "index.html"), staticRequired) && ok;
+
+		// Verify the JS bundle is actually present. index.html references
+		// /assets/*.js, and if those files are missing (commonly quarantined
+		// by antivirus on end-user machines) the browser refuses to execute
+		// the SPA and shows a frozen splash screen forever. Without this
+		// check the web bundle passes ✅ while the app is unbootable.
+		const assetsDir = join(options.staticDir, "assets");
+		const assetFiles = await readdir(assetsDir).catch(() => [] as string[]);
+		const jsChunks = assetFiles.filter((f) => f.endsWith(".js"));
+		if (jsChunks.length === 0) {
+			console.log(
+				`[startup-check] ❌ web assets: no .js files in ${assetsDir} — frontend bundle missing ` +
+					"(quarantined by antivirus? re-extract the archive)",
+			);
+			ok = false;
+		} else {
+			console.log(`[startup-check] ✅ web assets: ${jsChunks.length} JS file(s) in assets/`);
+		}
 	}
 
 	if (!ok) {

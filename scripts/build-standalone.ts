@@ -24,7 +24,14 @@
 
 import { join, resolve } from "node:path";
 import { copyFile, cp, rm, mkdir } from "node:fs/promises";
+import { writeFileSync as writeFileSyncSync } from "node:fs";
 import { VERSION } from "./_version.js";
+import {
+	generateEmbeddedWebManifest,
+	writeEmbeddedWebStub,
+	MANIFEST_PATH,
+	STUB_CONTENT,
+} from "./generate-embedded-web-manifest.js";
 
 const ROOT = resolve(import.meta.dir, "..");
 const STANDALONE_OUT = join(ROOT, "out", "standalone");
@@ -125,7 +132,34 @@ async function main() {
 		console.log(`   → ${drizzleTarget}`);
 	});
 
-	// ── Step 4: Compile standalone server ────────────────────────────────
+	// ── Step 4: Generate embedded-web manifest ─────────────────────────
+	//
+	// Bake the entire frontend (out/apps/web/**) into the .exe via Bun's
+	// `import ... with { type: "file" }` mechanism. The generated manifest
+	// replaces the committed stub just for the duration of the compile step
+	// below; it's restored to the stub afterward so the working tree stays
+	// clean and dev/typecheck remains unaffected.
+	await step("Generating embedded web manifest", async () => {
+		const { fileCount } = await generateEmbeddedWebManifest();
+		console.log(`   → ${fileCount} file(s) will be embedded into the binary.`);
+	});
+
+	// Safety net: if anything below calls process.exit() (e.g. a failed `step`
+	// calls process.exit(1)), the finally below won't run. Restore the stub
+	// synchronously in an exit handler so the working tree is never left with
+	// a generated manifest referencing out/apps/web/** (which may be cleaned).
+	process.on("exit", () => {
+		// Heuristic: stub is ~1 KB, generated manifest is much larger. Only
+		// restore if the file is clearly the generated (non-stub) version.
+		try {
+			if (Bun.file(MANIFEST_PATH).size > 2000) {
+				writeFileSyncSync(MANIFEST_PATH, STUB_CONTENT, "utf-8");
+				console.log("[build-standalone] Restored embedded-web-manifest.ts stub (exit handler).");
+			}
+		} catch { /* best-effort */ }
+	});
+
+	// ── Step 5: Compile standalone server ────────────────────────
 
 	await step("Compiling standalone binary (Bun.build API)", async () => {
 		const entrypoint = join(ROOT, "services", "api", "src", "server", "standalone-server.ts");
@@ -171,6 +205,11 @@ async function main() {
 		}
 
 		console.log(`   → ${finalOutfile}`);
+	});
+
+	// ── Step 6: Restore embedded-web-manifest.ts stub ────────────────────
+	await step("Restoring embedded-web-manifest.ts stub", async () => {
+		await writeEmbeddedWebStub();
 	});
 
 	// ── Done ─────────────────────────────────────────────────────────────

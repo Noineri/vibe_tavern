@@ -18,6 +18,12 @@ export interface AppDeps {
 	enforceMobileAuth?: boolean;
 	/** Mount feature routes before static frontend fallback and final 404 catch-all. */
 	configureFeatures?: (app: Hono) => void;
+	/** Embedded frontend files baked into the standalone .exe via
+	 *  `import ... with { type: "file" }`. Map of URL pathname → embedded
+	 *  file path. When non-empty, the SPA is served from the binary itself
+	 *  and no on-disk web/ folder is required. Sourced from
+	 *  embedded-web-manifest.ts (regenerated at build time). */
+	embeddedWebFiles?: Record<string, string>;
 }
 
 /**
@@ -93,15 +99,56 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 	// Feature routes must be mounted before static fallback and the final 404.
 	deps.configureFeatures?.(app);
 
-	// ─── Static frontend (production only) ───────────────────────────────
+	// ─── Static frontend ─────────────────────────────────────────────────
+	// Two compatible modes:
+	//   1. Embedded (single-binary standalone): deps.embeddedWebFiles is a
+	//      non-empty map of URL → embedded-file path baked into the .exe via
+	//      `import ... with { type: "file" }`. No web/ folder on disk needed.
+	//   2. On-disk (classic standalone/installer): deps.staticDir points at a
+	//      web/ folder next to the binary; hono serveStatic serves it.
+	// Both can be active: serveStatic handles whatever it finds on disk first,
+	// the embedded map fills in any misses, then SPA fallback. This lets the
+	// build ship a self-contained .exe while still allowing a hot-swappable
+	// web/ folder for rapid frontend patches without recompiling.
 
-	if (deps.staticDir && await Bun.file(resolve(deps.staticDir, "index.html")).exists()) {
-		// Serve built assets: /assets/*, /fonts/*, etc.
-		app.use("/*", serveStatic({ root: deps.staticDir }));
+	const hasEmbedded = !!deps.embeddedWebFiles && Object.keys(deps.embeddedWebFiles).length > 0;
+	const hasDiskStatic = !!deps.staticDir
+		&& await Bun.file(resolve(deps.staticDir, "index.html")).exists();
 
-		// SPA fallback: any non-API, non-asset request → index.html
-		const indexHtml = await Bun.file(resolve(deps.staticDir, "index.html")).text();
-		app.get("*", (c) => c.html(indexHtml));
+	if (hasEmbedded || hasDiskStatic) {
+		if (hasDiskStatic) {
+			// Serve built assets from disk: /assets/*, /fonts/*, etc.
+			app.use("/*", serveStatic({ root: deps.staticDir }));
+		}
+
+		// Resolve index.html once: prefer disk (hot-patchable), fall back to embedded.
+		let indexHtml: string | null = null;
+		if (hasDiskStatic && deps.staticDir) {
+			indexHtml = await Bun.file(resolve(deps.staticDir, "index.html")).text();
+		} else if (deps.embeddedWebFiles?.["/index.html"]) {
+			indexHtml = await Bun.file(deps.embeddedWebFiles["/index.html"]).text();
+		}
+
+		// SPA fallback + embedded-file lookup + clear 404 for missing assets.
+		app.get("*", (c) => {
+			const { pathname } = new URL(c.req.url);
+			// Embedded lookup (serves files baked into the .exe). Wins only when
+			// serveStatic above didn't finalize — i.e. disk static is absent or
+			// the file isn't on disk.
+			const embedded = deps.embeddedWebFiles?.[pathname];
+			if (embedded) {
+				return new Response(Bun.file(embedded));
+			}
+			// Don't serve index.html for missing static assets — that returns
+			// HTML with MIME text/html, which the browser rejects as a module
+			// script ("Expected a JavaScript module ... got text/html"), masking
+			// a missing-bundle problem as a baffling frozen splash with no
+			// actionable console message.
+			if (pathname.startsWith("/assets/") || pathname.startsWith("/fonts/")) {
+				return c.text(`Asset not found: ${pathname}`, 404);
+			}
+			return indexHtml !== null ? c.html(indexHtml) : c.notFound();
+		});
 	}
 
 	app.all("*", (c) => {
