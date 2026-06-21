@@ -825,6 +825,22 @@ export function LorebookEditor({
           ? t("lorebooks_card_title")
           : t("scripts_card_title")}
       </span>
+      {/* Breadcrumb: активный scope из мини-сайдбара. Десктоп только — на
+          мобильном подписи scope и так видны в нижней чип-ленте. Работает для
+          обеих вкладок (Лорбуки и Скрипты), т.к. scope общий. */}
+      {!isMobile && (() => {
+        const activeScope = scopeItems.find((s) => s.id === scope);
+        if (!activeScope) return null;
+        return (
+          <>
+            <span className="text-t4">/</span>
+            <span className="flex min-w-0 items-center gap-1 font-ui text-[13px] font-medium text-t3">
+              <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">{activeScope.icon}</span>
+              <span className="truncate">{activeScope.label}</span>
+            </span>
+          </>
+        );
+      })()}
       <div className="ml-auto flex gap-1">
         <CustomTooltip
           content={tab === "lorebooks" ? t("scripts_card_title") : t("lorebooks_card_title")}
