@@ -21,6 +21,7 @@ import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import {
+  listAllLorebooks,
   listLorebooks,
   createLorebook,
   updateLorebookMeta,
@@ -259,7 +260,10 @@ export function LorebookEditor({
   const refreshLorebooks = useCallback(async () => {
     setLoadingLorebooks(true);
     try {
-      setLorebooks(await listLorebooks(scope, getOwnerId(scope)));
+      // "all" is a display filter, not a real scopeType — it lists every
+      // lorebook regardless of binding. The dedicated endpoint returns the
+      // unfiltered set; ownerId is irrelevant for it.
+      setLorebooks(scope === "all" ? await listAllLorebooks() : await listLorebooks(scope, getOwnerId(scope)));
     } finally {
       setLoadingLorebooks(false);
     }
@@ -551,6 +555,9 @@ export function LorebookEditor({
   // ═══ Помощники ═══
 
   const handleAddLorebook = () => {
+    // "all" is a read-only overview scope — creating a lorebook requires a
+    // concrete scopeType. No-op here; the header CTA is hidden in that mode.
+    if (scope === "all") return;
     const body: {
       name: string;
       scopeType: string;
@@ -581,7 +588,8 @@ export function LorebookEditor({
 
   // ── Scope column (десктоп: вертикальный с иконками) ──
   const scopeItems: { id: Scope; icon: ReactNode; label: string }[] = [
-    { id: "global", icon: <Ic.stack />, label: t("scope_global") },
+    { id: "all", icon: <Ic.stack />, label: t("scope_all") },
+    { id: "global", icon: <Ic.globe />, label: t("scope_global") },
     { id: "character", icon: <Ic.book />, label: t("scope_char") },
     { id: "persona", icon: <Ic.user />, label: t("scope_persona") },
     { id: "chat", icon: <Ic.chat />, label: t("scope_chat") },
@@ -833,7 +841,7 @@ export function LorebookEditor({
           </button>
         </CustomTooltip>
         <div className="mx-1 h-8 w-px bg-border" />
-        {tab === "lorebooks" && (
+        {tab === "lorebooks" && scope !== "all" && (
           <>
             <CustomTooltip content={t("new_lorebook")}>
               <div

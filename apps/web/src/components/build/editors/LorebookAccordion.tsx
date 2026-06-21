@@ -8,6 +8,7 @@
  * На мобильных — контекстное меню (⋮) вместо набора кнопок.
  */
 import { useState, useEffect, useMemo } from "react";
+import type { ReactNode } from "react";
 
 import { Ic, Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
@@ -35,9 +36,24 @@ function formatTokenCount(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
+/**
+ * Derive a single binding icon for a lorebook row, showing what it is bound to.
+ * Uses the primary-owner FK columns (not the multi-bind `lorebook_links` rows):
+ * precedence is chat → character → persona, since chat is the most specific
+ * scope. Global lorebooks return null (no binding icon — they are unbound by
+ * definition). Multi-bind surface is a follow-up.
+ */
+function lorebookBindingIcon(lb: LorebookRecord): { icon: ReactNode; tooltipKey: string } | null {
+  if (lb.scopeType === "global") return null;
+  if (lb.chatId) return { icon: <Ic.chat />, tooltipKey: "scope_chat" };
+  if (lb.characterId) return { icon: <Ic.book />, tooltipKey: "scope_char" };
+  if (lb.personaId) return { icon: <Ic.user />, tooltipKey: "scope_persona" };
+  return null;
+}
+
 // ── Types ──────────────────────────────────────────────────────────────
 
-export type Scope = "global" | "character" | "persona" | "chat";
+export type Scope = "global" | "character" | "persona" | "chat" | "all";
 
 interface LorebookAccordionProps {
   lorebook: LorebookRecord;
@@ -236,6 +252,15 @@ export function LorebookAccordion({
         ) : (
           /* ── Обычный режим: имя + тогл + счётчик + действия ── */
           <>
+            {(() => {
+              const binding = lorebookBindingIcon(lorebook);
+              if (!binding) return null;
+              return (
+                <CustomTooltip content={t(binding.tooltipKey)} key="binding">
+                  <span className="mr-1 flex h-4 w-4 shrink-0 items-center justify-center text-t4">{binding.icon}</span>
+                </CustomTooltip>
+              );
+            })()}
             <span
               className="flex-1 cursor-pointer truncate text-[13px] font-medium text-t1"
               onClick={onToggle}
