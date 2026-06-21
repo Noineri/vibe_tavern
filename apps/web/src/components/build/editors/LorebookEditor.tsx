@@ -392,6 +392,16 @@ export function LorebookEditor({
     return reorderLoreEntries(lorebookId, updates);
   };
 
+  // Entry-level enabled toggle, called from the entry list row switch.
+  // Returns the updated record so the accordion can patch its local list.
+  const handleToggleEntryEnabled = async (
+    lorebookId: string,
+    entryId: string,
+    enabled: boolean,
+  ): Promise<LoreEntryRecord> => {
+    return updateLoreEntry(lorebookId, entryId, { enabled });
+  };
+
   const handleDeleteLb = async (id: string) => {
     await deleteLorebook(id);
     if (createdDraftLorebookId === id) setCreatedDraftLorebookId(null);
@@ -759,6 +769,7 @@ export function LorebookEditor({
           }
           onUpdateMeta={(body) => handleUpdateLb(lb.id, body)}
           onReorderEntries={(updates) => handleReorderEntries(lb.id, updates)}
+          onToggleEntryEnabled={(entryId, enabled) => handleToggleEntryEnabled(lb.id, entryId, enabled)}
           onSetLinks={(links) => handleSetLinks(lb.id, links)}
           onDuplicate={() => handleDuplicateLb(lb.id)}
           onExport={() => handleExportLb(lb.id)}
