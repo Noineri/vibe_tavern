@@ -417,6 +417,7 @@ export interface AiAssistantRequestBody {
   existingKeys?: string[];
   existingSecondaryKeys?: string[];
   logic?: string;
+  keyTarget?: "primary" | "secondary" | "both";
   maxOutputTokens?: number;
   temperature?: number;
 }

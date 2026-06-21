@@ -70,6 +70,8 @@ export interface AiAssistantStreamRequest {
   existingSecondaryKeys?: string[];
   /** Entry's activation logic mode. */
   logic?: string;
+  /** Which key set to generate. Default `"both"`. */
+  keyTarget?: "primary" | "secondary" | "both";
 
   // MD import extras
   /** Max output tokens for structured generation (md_import). Default: 10000. */
@@ -804,6 +806,17 @@ function buildUserMessage(
     case "lore_keys": {
       const parts: string[] = [];
       parts.push(`Generate activation keys for this lorebook entry:\n\n${request.existingContent ?? ""}`);
+
+      // Per-request target directive — constrains the model to one key set so
+      // the output does not contradict the user's dropdown choice. The model is
+      // still asked to return the full {keys, secondaryKeys} shape (the unused
+      // array as []) so existing response parsing stays valid.
+      const target = request.keyTarget ?? "both";
+      if (target === "primary") {
+        parts.push("\nTarget: generate ONLY primary keys. Return secondaryKeys as an empty array.");
+      } else if (target === "secondary") {
+        parts.push("\nTarget: generate ONLY secondary keys. Return keys as an empty array.");
+      }
 
       if (request.existingKeys?.length) {
         parts.push(`\nExisting primary keys (do NOT duplicate): ${JSON.stringify(request.existingKeys)}`);

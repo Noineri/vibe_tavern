@@ -135,6 +135,7 @@ export interface AiAssistantModalProps {
   settings?: AiQuickSettings;
   onSettingsChange?: (settings: AiQuickSettings) => void;
   showAppendToggle?: boolean;
+  showKeyTarget?: boolean;
   showMessageCount?: boolean;
 }
 
@@ -151,6 +152,7 @@ export function AiAssistantModal({
   settings,
   onSettingsChange,
   showAppendToggle,
+  showKeyTarget,
   showMessageCount,
 }: AiAssistantModalProps) {
   const { t } = useT();
@@ -171,6 +173,7 @@ export function AiAssistantModal({
 
   // Quickpill specific
   const [appendMode, setAppendMode] = useState(false);
+  const [keyTarget, setKeyTarget] = useState<"primary" | "secondary" | "both">("both");
   const [recentMessageCount, setRecentMessageCount] = useState(20);
 
   // BottomSheet drag state
@@ -239,6 +242,7 @@ export function AiAssistantModal({
       setProviderId(settings.providerId || bootstrapUiSettings?.aiAssistantProviderId || "");
       setModelName(settings.modelName || bootstrapUiSettings?.aiAssistantModelName || "");
       setAppendMode(settings.appendMode ?? false);
+      setKeyTarget(settings.keyTarget ?? "both");
       setRecentMessageCount(settings.recentMessageCount ?? 20);
     } else if (mode === "full") {
       setProviderId(bootstrapUiSettings?.aiAssistantProviderId || "");
@@ -309,6 +313,7 @@ export function AiAssistantModal({
         providerId,
         modelName,
         appendMode,
+        keyTarget,
         recentMessageCount,
       });
     }
@@ -629,6 +634,21 @@ export function AiAssistantModal({
               </div>
 
               {/* QUICKPILL SPECIFIC */}
+              {!isFull && showKeyTarget && (
+                <div className="mb-3">
+                  <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_quickpill_key_target")}</label>
+                  <DropdownSelect
+                    value={keyTarget}
+                    searchable={false}
+                    options={[
+                      { id: "both", label: t("ai_quickpill_key_target_both") },
+                      { id: "primary", label: t("ai_quickpill_key_target_primary") },
+                      { id: "secondary", label: t("ai_quickpill_key_target_secondary") },
+                    ]}
+                    onChange={(v) => setKeyTarget(v as "primary" | "secondary" | "both")}
+                  />
+                </div>
+              )}
               {!isFull && showAppendToggle && (
                 <div className="flex items-center gap-2 mb-3">
                   <button type="button" className={cn("flex-1 rounded-md border px-3 py-1.5 text-[12px] font-medium transition-all", !appendMode ? "border-accent bg-accent-dim text-accent-t" : "border-border bg-s3 text-t2 hover:border-t3")} onClick={() => setAppendMode(false)}>{t("script_ai_replace")}</button>
