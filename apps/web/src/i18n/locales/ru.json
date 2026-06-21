@@ -591,6 +591,7 @@
   "import_step3_title": "Режим импорта",
   "import_step3_desc": "Выберите способ импорта записей.",
   "import_detected_format": "Лорбук SillyTavern",
+  "import_detected_format_janitor": "Лорбук Janitor AI",
   "import_entries_found": "записей найдено",
   "import_merge": "Объединить с текущими",
   "import_merge_desc": "Добавить импортированные записи к существующим.",

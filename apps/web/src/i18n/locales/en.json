@@ -591,6 +591,7 @@
   "import_step3_title": "Import Mode",
   "import_step3_desc": "Choose how to import entries.",
   "import_detected_format": "SillyTavern Lorebook",
+  "import_detected_format_janitor": "Janitor AI Lorebook",
   "import_entries_found": "entries found",
   "import_merge": "Merge with existing",
   "import_merge_desc": "Add imported entries alongside current ones.",

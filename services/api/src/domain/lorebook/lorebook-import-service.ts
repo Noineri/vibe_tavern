@@ -8,6 +8,40 @@ export interface LorebookImportResult {
 	warnings: string[];
 }
 
+/**
+ * Pick the right parser for `data`.
+ *
+ * Routing priority:
+ *   1. Explicit `format: "janitor"` → Janitor parser.
+ *   2. Explicit `format: "st"` → ST parser.
+ *   3. Shape-based auto-detect: a bare top-level array → Janitor; an object
+ *      (with or without `entries`) → ST (the ST parser handles missing
+ *      entries gracefully by returning an empty list).
+ * This safety net catches Janitor files uploaded while the format defaulted
+ * to "st" — the most common path since the frontend auto-detects too, but
+ * a direct API caller may not set it.
+ */
+async function parseLorebook(
+	format: string,
+	data: unknown,
+	options: { scopeType?: LoreScopeType; fallbackName?: string },
+) {
+	const { importStLorebookJson, importJanitorLorebookJson, isJanitorLorebookArray } = await import(
+		"@vibe-tavern/import-export"
+	);
+
+	if (format === "janitor" || isJanitorLorebookArray(data)) {
+		return importJanitorLorebookJson(Array.isArray(data) ? data : (data as unknown[]), {
+			scopeType: options.scopeType,
+			fallbackName: options.fallbackName,
+		});
+	}
+	return importStLorebookJson(data as Record<string, unknown>, {
+		scopeType: options.scopeType,
+		fallbackName: options.fallbackName,
+	});
+}
+
 export async function importLorebook(
 	stores: StoreContainer,
 	lorebookId: string | null,
@@ -22,8 +56,7 @@ export async function importLorebook(
 		fallbackName?: string;
 	},
 ): Promise<LorebookImportResult> {
-	const { importStLorebookJson } = await import("@vibe-tavern/import-export");
-	const parsed = importStLorebookJson(body.data as Record<string, unknown>, {
+	const parsed = await parseLorebook(body.format, body.data, {
 		scopeType: (body.scopeType as LoreScopeType | undefined) ?? "character",
 		fallbackName: body.fallbackName,
 	});
