@@ -643,6 +643,8 @@
   "lore_token_budget_hint": "Maximum tokens the activated lore from this lorebook may occupy. Toggle ‘%’ to switch to percent-of-context mode (cap = model's context size × %).",
   "lore_token_budget_switch_to_percent": "Switch to percent-of-context mode",
   "lore_token_budget_switch_to_fixed": "Switch to fixed token cap mode",
+  "lore_token_budget_mode_fixed": "Tokens",
+  "lore_token_budget_mode_percent": "Context %",
   "lore_scan_depth": "Scan Depth",
   "lore_scan_depth_hint": "How many chat messages back to scan for keywords.",
   "lore_recursive_scanning": "Recursive Scanning",

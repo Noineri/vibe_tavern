@@ -491,10 +491,10 @@ export function LorebookAccordion({
                       onClick={() => onUpdateMeta({
                         tokenBudgetPercent: lorebook.tokenBudgetPercent == null ? 25 : null,
                       })}
-                      className="shrink-0 cursor-pointer rounded border border-border bg-s3 px-2 py-1 text-[10px] font-medium text-t2 transition-all hover:border-t3 hover:text-t1"
+                      className="flex h-8 shrink-0 cursor-pointer items-center rounded-md border border-border bg-s3 px-3 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-t3 hover:text-t1"
                       title={lorebook.tokenBudgetPercent == null ? t("lore_token_budget_switch_to_percent") : t("lore_token_budget_switch_to_fixed")}
                     >
-                      {lorebook.tokenBudgetPercent == null ? "tok" : "%"}
+                      {lorebook.tokenBudgetPercent == null ? t("lore_token_budget_mode_fixed") : t("lore_token_budget_mode_percent")}
                     </button>
                   </div>
                 </div>
