@@ -213,7 +213,7 @@ export function importStLorebookJson(
       probability: asNumber(entry.probability, 100),
       ignoreBudget: asBoolean(entry.ignoreBudget, false),
       role: (asString(entry.role) || "system") as LoreEntryRole,
-      group: asString(entry.group),
+      groupName: asString(entry.group),
       groupWeight: 0,
       prioritizeInclusion: false,
       useGroupScoring: asBoolean(entry.useGroupScoring, false),

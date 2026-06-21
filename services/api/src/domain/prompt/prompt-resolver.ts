@@ -182,7 +182,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				probability: e.probability,
 				ignoreBudget: e.ignoreBudget,
 				role: e.role as LoreEntry['role'],
-				group: e.group,
+				groupName: e.groupName,
 				groupWeight: e.groupWeight,
 				prioritizeInclusion: e.prioritizeInclusion,
 				useGroupScoring: e.useGroupScoring,
