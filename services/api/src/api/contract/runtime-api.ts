@@ -217,8 +217,8 @@ export interface PersonaRuntimeApi {
 export interface LorebookRuntimeApi {
 	listAllLorebooks: () => Promise<Lorebook[]>;
 	listLorebooks: (scopeType: string, ownerId?: string) => Promise<Lorebook[]>;
-	createLorebook: (body: { name: string; description?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean }) => Promise<Lorebook>;
-	updateLorebookMeta: (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean; enabled?: boolean; scopeType?: string }) => Promise<Lorebook>;
+	createLorebook: (body: { name: string; description?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; scanDepth?: number; tokenBudget?: number; tokenBudgetPercent?: number | null; recursiveScanning?: boolean }) => Promise<Lorebook>;
+	updateLorebookMeta: (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; tokenBudgetPercent?: number | null; recursiveScanning?: boolean; enabled?: boolean; scopeType?: string }) => Promise<Lorebook>;
 	deleteLorebook: (lorebookId: string) => Promise<void>;
 	duplicateLorebook: (lorebookId: string, overrides?: { name?: string; scopeType?: string; characterId?: string | null; personaId?: string | null }) => Promise<{ lorebook: Lorebook; links: LorebookLink[] }>;
 	exportLorebook: (lorebookId: string) => Promise<Record<string, unknown>>;

@@ -131,8 +131,9 @@ export function importJanitorLorebookJson(
     name,
     description: "",
     scopeType: options.scopeType ?? "character",
-    scanDepth: 50,
+    scanDepth: 10,
     tokenBudget: 1000,
+    tokenBudgetPercent: null,
     recursiveScanning: false,
     maxRecursionSteps: 5,
     includeNames: false,
@@ -159,8 +160,16 @@ export function importJanitorLorebookJson(
     // selectiveLogic only applies when there are secondary keys to combine.
     const logic = secondaryKeys.length > 0 ? mapSelectiveLogic(entry.selectiveLogic) : "and_any";
     const groupName = asString(entry.inclusionGroupRaw);
+    // Janitor's `insertion_order` is the canonical prompt-position signal
+    // (higher = inserted first = survives token-budget overflow), exactly
+    // matching ST's `order` and VT's `priority`. Janitor's own `priority`
+    // (1-5 in Advanced scripts) is a coarser APPLY_LIMIT bucket used only
+    // inside Janitor's runtime — preserve it in metadata, do NOT promote it
+    // to VT `priority`, or it would invert overflow resolution.
+    // See vibe_tavern_plan/reports/lorebook-st-parity-audit.md §4.2.
     const insertionOrder = asNumber(entry.insertion_order, index * 10);
-    const priority = asNumber(entry.priority, insertionOrder);
+    const janitorPriorityRaw = asNumber(entry.priority, insertionOrder);
+    const priority = insertionOrder;
 
     if (!content) {
       warnings.push(`Lore entry ${externalId} (${title}) has empty content.`);
@@ -184,8 +193,13 @@ export function importJanitorLorebookJson(
       keys,
       secondaryKeys,
       logic,
-      // Janitor does not specify prompt-layer position; default to in_prompt.
-      // depth is preserved (Janitor entries carry a depth field, default 3 in exports).
+      // Basic Janitor format (single `content` slot, no `personality`/
+      // `scenario` split) carries no per-entry prompt-layer position — the
+      // "position" is implicit (content lands in the character-context
+      // block). VT's `in_prompt` approximates that. Janitor Advanced scripts
+      // (which DO have explicit personality/scenario targets) are out of
+      // scope here — they run as VT scripts via context.character.* , not
+      // as lorebook entries. See lorebook-st-parity-audit.md §4.1.
       position: "in_prompt",
       depth: asNumber(entry.depth, 4),
       priority,
@@ -210,7 +224,6 @@ export function importJanitorLorebookJson(
       matchWholeWords: asBoolean(entry.matchWholeWords, false),
       characterFilter: [],
       characterFilterExclude: false,
-      triggers: [],
       matchSources: [],
       enabled: asBoolean(entry.enabled, true),
       sortOrder: insertionOrder,
@@ -225,7 +238,7 @@ export function importJanitorLorebookJson(
         janitorMinMessages: asNumber(entry.minMessages, 0),
         janitorKeyMatchPriority: asBoolean(entry.keyMatchPriority, false),
         janitorInsertionOrder: insertionOrder,
-        janitorPriority: asNumber(entry.priority, insertionOrder),
+        janitorPriority: janitorPriorityRaw,
         janitorInclusionGroupRaw: groupName,
       },
     };

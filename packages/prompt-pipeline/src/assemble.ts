@@ -111,7 +111,7 @@ const phaseOneMacroEngine = createFullMacroEngine();
 function lorePromptSubPosition(
   resolver: PositionResolver,
   lorePosition: string | undefined,
-  worldInfoIdentifier: string,
+  worldInfoIdentifier: string | null,
   fallbackSubPosition: number | undefined,
 ): number | undefined {
   switch (lorePosition) {
@@ -124,6 +124,10 @@ function lorePromptSubPosition(
     case "after_examples":
       return resolver.rank("dialogueExamples") + 0.1;
     default:
+      // Only before_char/after_char carry a worldInfoIdentifier. For
+      // pipeline-native positions (in_prompt/in_chat/etc.) or anything else
+      // without a marker, fall back to the resolved subPosition.
+      if (!worldInfoIdentifier) return fallbackSubPosition;
       return resolver.rank(worldInfoIdentifier, DEFAULT_PROMPT_ORDER[worldInfoIdentifier] ?? fallbackSubPosition);
   }
 }
@@ -656,8 +660,16 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
       }
     })();
 
-    const worldInfoIdentifier = loreEntry.position === "before_char" ? "worldInfoBefore" : "worldInfoAfter";
-    if (!resolver.enabled(worldInfoIdentifier)) {
+    // Only `before_char` and `after_char` map onto the worldInfoBefore /
+    // worldInfoAfter prompt-order markers (matching ST: only position 0 →
+    // WIBeforeEntries, only position 1 → WIAfterEntries). Other ST positions
+    // (top_an, bottom_an, at_depth, before/after_examples, outlet) route to
+    // their own slots and must NOT be dropped when a WI marker is disabled.
+    // See lorebook-st-parity-audit.md §2.1.
+    const worldInfoIdentifier = loreEntry.position === "before_char"
+      ? "worldInfoBefore"
+      : loreEntry.position === "after_char" ? "worldInfoAfter" : null;
+    if (worldInfoIdentifier && !resolver.enabled(worldInfoIdentifier)) {
       droppedLayers.push({ id: loreEntry.id, reason: `skipped: ${worldInfoIdentifier} disabled by prompt order` });
       continue;
     }
@@ -679,25 +691,28 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
     // Determine lore placement from the worldInfo slot's canvas zone.
     // The canvas stores { zone, order, depth } on each promptOrder entry.
     // Zone is the authoritative source of truth for where lore entries land —
-    // but ONLY in advanced mode. Simple mode ignores the canvas and uses the
-    // default WI position (worldInfoAfter defaults to before chat; a user who
-    // reorders lore moves entries among themselves, not across the prompt).
-    const worldInfoOrderEntry = resolver.worldInfoEntry(worldInfoIdentifier);
-    if (worldInfoOrderEntry?.zone && layer.position !== "hidden_system") {
-      if (worldInfoOrderEntry.zone === "after_chat") {
-        layer.position = "in_chat";
-        layer.injectionDepth = 0;
-      } else if (worldInfoOrderEntry.zone === "in_chat") {
-        layer.position = "in_chat";
-        layer.injectionDepth = worldInfoOrderEntry.depth ?? 0;
-      }
-      // "before_chat" stays in_prompt (default from resolvedPosition)
-    } else {
-      // Legacy/simple fallback: no canvas zone — infer from defaults
-      const inferred = inferSlot({ defaultOrder: DEFAULT_PROMPT_ORDER[worldInfoIdentifier] });
-      if (inferred.zone === "after_chat" && layer.position !== "hidden_system") {
-        layer.position = "in_chat";
-        layer.injectionDepth = 0;
+    // but ONLY in advanced mode, and ONLY for before_char/after_char entries
+    // (the two positions that map onto a WI marker). Other positions already
+    // resolved to the right slot above and must not be overridden by the
+    // marker's zone. Simple mode ignores the canvas entirely.
+    if (worldInfoIdentifier) {
+      const worldInfoOrderEntry = resolver.worldInfoEntry(worldInfoIdentifier);
+      if (worldInfoOrderEntry?.zone && layer.position !== "hidden_system") {
+        if (worldInfoOrderEntry.zone === "after_chat") {
+          layer.position = "in_chat";
+          layer.injectionDepth = 0;
+        } else if (worldInfoOrderEntry.zone === "in_chat") {
+          layer.position = "in_chat";
+          layer.injectionDepth = worldInfoOrderEntry.depth ?? 0;
+        }
+        // "before_chat" stays in_prompt (default from resolvedPosition)
+      } else {
+        // Legacy/simple fallback: no canvas zone — infer from defaults
+        const inferred = inferSlot({ defaultOrder: DEFAULT_PROMPT_ORDER[worldInfoIdentifier] });
+        if (inferred.zone === "after_chat" && layer.position !== "hidden_system") {
+          layer.position = "in_chat";
+          layer.injectionDepth = 0;
+        }
       }
     }
 

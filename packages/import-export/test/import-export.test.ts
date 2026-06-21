@@ -410,11 +410,20 @@ describe("importStLorebookJson", () => {
     expect(result.entries[0].logic).toBe("and_any");
   });
 
-  it("maps position values to prompt layer positions", () => {
+  it("maps ST numeric positions 1:1 to LoreEntryPosition (no collapse)", () => {
+    // All 8 ST WI positions are preserved so the before/after split survives
+    // import — see lorebook-st-parity-audit.md §2.1. Previously this test
+    // asserted the collapsing behavior (0/1/2/3/5/6 → in_prompt, 4 → in_chat,
+    // 7 → hidden_system), which made the worldInfoBefore marker unreachable.
     const cases: Array<[number, string]> = [
-      [0, "in_prompt"],
-      [4, "in_chat"],
-      [7, "hidden_system"],
+      [0, "before_char"],
+      [1, "after_char"],
+      [2, "top_an"],
+      [3, "bottom_an"],
+      [4, "at_depth"],
+      [5, "before_examples"],
+      [6, "after_examples"],
+      [7, "outlet"],
     ];
     for (const [pos, expected] of cases) {
       const lorebook = {

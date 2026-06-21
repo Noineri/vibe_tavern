@@ -29,8 +29,8 @@ import type {
   ToolProfileMode,
   LoreLogic,
   LoreEntryRole,
-  LoreTriggerType,
   LoreMatchSource,
+  LoreEntryPosition,
   PromptLayerPosition,
 } from "./platform-constants.js";
 
@@ -48,8 +48,8 @@ export {
   ToolProfileMode,
   LoreLogic,
   LoreEntryRole,
-  LoreTriggerType,
   LoreMatchSource,
+  LoreEntryPosition,
   PromptLayerPosition,
 };
 
@@ -145,6 +145,8 @@ export interface Lorebook {
   scopeType: LoreScopeType;
   scanDepth: number;
   tokenBudget: number;
+  /** Null = fixed token-budget mode (use tokenBudget). 0-100 = percent of model context. See lorebook-st-parity-audit.md §1.4. */
+  tokenBudgetPercent: number | null;
   recursiveScanning: boolean;
   maxRecursionSteps: number;
   includeNames: boolean;
@@ -193,7 +195,7 @@ export interface LoreEntry {
   keys: string[];
   secondaryKeys: string[];
   logic: LoreLogic;
-  position: PromptLayerPosition;
+  position: LoreEntryPosition;
   depth: number;
   priority: number;
   // Time windows
@@ -221,7 +223,6 @@ export interface LoreEntry {
   matchWholeWords: boolean;
   characterFilter: CharacterFilterEntry[];
   characterFilterExclude: boolean;
-  triggers: LoreTriggerType[];
   matchSources: LoreMatchSource[];
   // Meta
   enabled: boolean;

@@ -24,7 +24,7 @@ export async function createLorebook(body: { name: string; description?: string;
   return unwrapRpc<LorebookRecord>(response);
 }
 
-export async function updateLorebookMeta(lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; recursiveScanning?: boolean; enabled?: boolean; scopeType?: string }): Promise<LorebookRecord> {
+export async function updateLorebookMeta(lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; tokenBudgetPercent?: number | null; recursiveScanning?: boolean; enabled?: boolean; scopeType?: string }): Promise<LorebookRecord> {
   const response = await client.api.lorebooks[":lorebookId"].$patch({ param: { lorebookId }, json: body });
   return unwrapRpc<LorebookRecord>(response);
 }

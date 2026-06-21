@@ -102,9 +102,9 @@ describe("createLorebookSchema", () => {
   });
 
   // Defaults actually materialize on the parsed output — pin them.
-  it("injects defaults for scanDepth (50) and enabled (true) when omitted", () => {
+  it("injects defaults for scanDepth (10) and enabled (true) when omitted", () => {
     const data = expectSuccessData(createLorebookSchema.safeParse(validCreateLorebook())) as Record<string, unknown>;
-    expect(data.scanDepth).toBe(50);
+    expect(data.scanDepth).toBe(10);
     expect(data.enabled).toBe(true);
     expect(data.tokenBudget).toBe(2048);
     expect(data.recursiveScanning).toBe(false);
