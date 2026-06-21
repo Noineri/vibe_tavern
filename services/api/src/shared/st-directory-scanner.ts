@@ -333,7 +333,7 @@ export async function importSillyTavernDirectory(
 					const variants = imported.variants.length > 0
 						? imported.variants
 						: [{ content: imported.content, isSelected: true }];
-					const message = await deps.stores.chats.addMessage({
+					const message = await deps.stores.messages.addMessage({
 						chatId: chat.id as ChatId,
 						branchId: chat.activeBranchId,
 						role: imported.role,
@@ -341,12 +341,12 @@ export async function importSillyTavernDirectory(
 						content: variants[0]?.content ?? imported.content,
 					});
 					for (const variant of variants.slice(1)) {
-						await deps.stores.chats.addVariant(message.id, variant.content, undefined, variant.reasoning);
+						await deps.stores.messages.addVariant(message.id, variant.content, undefined, variant.reasoning);
 					}
 					const selectedVariant = imported.variants.find((v) => v.isSelected) ?? imported.variants[0];
 					const selectedIndex = variants.findIndex((v) => v.content === selectedVariant?.content);
 					if (selectedIndex > 0) {
-						await deps.stores.chats.selectVariant(message.id, selectedIndex);
+						await deps.stores.messages.selectVariant(message.id, selectedIndex);
 					}
 				}
 

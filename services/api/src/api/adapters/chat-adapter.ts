@@ -201,7 +201,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	 * button so the auto-describe cache (skip-if-described) stays non-destructive.
 	 */
 	regenerateAttachmentDescription = async (chatId: string, messageId: string, attachmentId: string): Promise<{ description: string }> => {
-		const message = await this.stores.chats.getMessageById(messageId);
+		const message = await this.stores.messages.getMessageById(messageId);
 		if (!message?.attachmentsJson) throw validation("Message has no attachments.");
 		const attachments = parseStoredAttachments(message.attachmentsJson);
 		const att = attachments?.find((a) => a.id === attachmentId);
@@ -240,7 +240,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		// Clean up attachment asset files so they aren't orphaned on disk. Each
 		// attachment owns a unique assetId (see deleteAttachment), so the files
 		// are safe to remove. Read before deleting — the row is gone afterwards.
-		const message = await this.stores.chats.getMessageById(messageId);
+		const message = await this.stores.messages.getMessageById(messageId);
 		const attachments = parseStoredAttachments(message?.attachmentsJson) ?? [];
 		const result = await this.sessionRuntime.chatRuntime.deleteMessage(brandId<ChatId>(chatId), messageId);
 		for (const att of attachments) this.assetService.cleanup(att.assetId);

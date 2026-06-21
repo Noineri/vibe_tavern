@@ -24,7 +24,7 @@ async function setup() {
 	await mkdir(join(dataRoot, "assets"), { recursive: true });
 	const stores = await createStoreContainer(join(dataRoot, "test.db"), dataRoot);
 	const assetService = new AssetService(join(dataRoot, "assets"), stores.content);
-	const chatApp = new ChatApplicationService(stores.chats);
+	const chatApp = new ChatApplicationService(stores.chats, stores.messages);
 
 	// Minimal sessionRuntime: chatApp is real (so removeAttachment/deleteMessage
 	// hit the real store), chatRuntime.deleteMessage delegates to chatApp to
@@ -91,7 +91,7 @@ describe("Attachment delete (feature): removeAttachment + asset cleanup", () => 
 		const a1 = await makeAttachment(assetService, BYTES_A, 1);
 		const a2 = await makeAttachment(assetService, BYTES_B, 2);
 		const a3 = await makeAttachment(assetService, BYTES_C, 3);
-		const msg = await stores.chats.addMessage({
+		const msg = await stores.messages.addMessage({
 			chatId, branchId, role: "user", authorType: "user", content: "hi",
 			attachmentsJson: JSON.stringify([a1, a2, a3]),
 		});
@@ -102,7 +102,7 @@ describe("Attachment delete (feature): removeAttachment + asset cleanup", () => 
 		expect(removed?.id).toBe(a2.id);
 		expect(removed?.assetId).toBe(a2.assetId);
 		// Persisted array no longer contains a2; a1 + a3 survive in order.
-		const after = await stores.chats.getMessageById(msg.id);
+		const after = await stores.messages.getMessageById(msg.id);
 		const remaining = JSON.parse(after!.attachmentsJson!) as Attachment[];
 		expect(remaining.map((a) => a.id)).toEqual([a1.id, a3.id]);
 	});
@@ -111,7 +111,7 @@ describe("Attachment delete (feature): removeAttachment + asset cleanup", () => 
 		const { stores, chatApp, assetService } = await setup();
 		const { chatId, branchId } = await makeChat(stores);
 		const a1 = await makeAttachment(assetService, BYTES_A, 1);
-		const msg = await stores.chats.addMessage({
+		const msg = await stores.messages.addMessage({
 			chatId, branchId, role: "user", authorType: "user", content: "hi",
 			attachmentsJson: JSON.stringify([a1]),
 		});
@@ -119,7 +119,7 @@ describe("Attachment delete (feature): removeAttachment + asset cleanup", () => 
 		const removed = await chatApp.removeAttachment(msg.id, a1.id);
 		expect(removed?.id).toBe(a1.id);
 
-		const after = await stores.chats.getMessageById(msg.id);
+		const after = await stores.messages.getMessageById(msg.id);
 		// Empty → null (not "[]"), so the column stays clean and the grid hides.
 		expect(after!.attachmentsJson).toBeNull();
 	});
@@ -128,7 +128,7 @@ describe("Attachment delete (feature): removeAttachment + asset cleanup", () => 
 		const { stores, chatApp, assetService } = await setup();
 		const { chatId, branchId } = await makeChat(stores);
 		const a1 = await makeAttachment(assetService, BYTES_A, 1);
-		const msg = await stores.chats.addMessage({
+		const msg = await stores.messages.addMessage({
 			chatId, branchId, role: "user", authorType: "user", content: "hi",
 			attachmentsJson: JSON.stringify([a1]),
 		});
@@ -137,7 +137,7 @@ describe("Attachment delete (feature): removeAttachment + asset cleanup", () => 
 		// And for a missing message.
 		expect(await chatApp.removeAttachment("msg_does_not_exist", a1.id)).toBeNull();
 		// Original attachment untouched.
-		const after = await stores.chats.getMessageById(msg.id);
+		const after = await stores.messages.getMessageById(msg.id);
 		expect(JSON.parse(after!.attachmentsJson!).length).toBe(1);
 	});
 
@@ -146,7 +146,7 @@ describe("Attachment delete (feature): removeAttachment + asset cleanup", () => 
 		const { chatId, branchId } = await makeChat(stores);
 		const a1 = await makeAttachment(assetService, BYTES_A, 1);
 		const a2 = await makeAttachment(assetService, BYTES_B, 2);
-		const msg = await stores.chats.addMessage({
+		const msg = await stores.messages.addMessage({
 			chatId, branchId, role: "user", authorType: "user", content: "hi",
 			attachmentsJson: JSON.stringify([a1, a2]),
 		});
@@ -159,7 +159,7 @@ describe("Attachment delete (feature): removeAttachment + asset cleanup", () => 
 		expect(await assetOnDisk(dataRoot, a1.assetId)).toBe(false);
 		expect(await assetOnDisk(dataRoot, a2.assetId)).toBe(true);
 		// Message now holds only a2.
-		const after = await stores.chats.getMessageById(msg.id);
+		const after = await stores.messages.getMessageById(msg.id);
 		expect(JSON.parse(after!.attachmentsJson!).map((a: Attachment) => a.id)).toEqual([a2.id]);
 	});
 
@@ -167,7 +167,7 @@ describe("Attachment delete (feature): removeAttachment + asset cleanup", () => 
 		const { dataRoot, stores, assetService, chat } = await setup();
 		const { chatId, branchId } = await makeChat(stores);
 		const a1 = await makeAttachment(assetService, BYTES_A, 1);
-		const msg = await stores.chats.addMessage({
+		const msg = await stores.messages.addMessage({
 			chatId, branchId, role: "user", authorType: "user", content: "hi",
 			attachmentsJson: JSON.stringify([a1]),
 		});
@@ -181,7 +181,7 @@ describe("Attachment delete (feature): removeAttachment + asset cleanup", () => 
 		const { chatId, branchId } = await makeChat(stores);
 		const a1 = await makeAttachment(assetService, BYTES_A, 1);
 		const a2 = await makeAttachment(assetService, BYTES_B, 2);
-		const msg = await stores.chats.addMessage({
+		const msg = await stores.messages.addMessage({
 			chatId, branchId, role: "user", authorType: "user", content: "hi",
 			attachmentsJson: JSON.stringify([a1, a2]),
 		});
@@ -200,11 +200,11 @@ describe("Attachment delete (feature): removeAttachment + asset cleanup", () => 
 	test("adapter.deleteMessage: a message with no attachments still deletes cleanly", async () => {
 		const { stores, chat } = await setup();
 		const { chatId, branchId } = await makeChat(stores);
-		const msg = await stores.chats.addMessage({
+		const msg = await stores.messages.addMessage({
 			chatId, branchId, role: "user", authorType: "user", content: "hi",
 		});
 
 		await expect(chat.deleteMessage(chatId, msg.id)).resolves.toBeDefined();
-		expect(await stores.chats.getMessageById(msg.id)).toBeNull();
+		expect(await stores.messages.getMessageById(msg.id)).toBeNull();
 	});
 });

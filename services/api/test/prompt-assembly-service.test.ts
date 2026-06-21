@@ -281,6 +281,7 @@ function makeFilterService(
       getBranches: async () => [{ id: "branch_1", chatId: "chat_1", parentBranchId: null, label: "main" }],
       getMessages: async () => [],
     },
+    messages: { getMessages: async () => [] },
     personas: { listAll: async () => [] },
     presets: { listAll: async () => [] },
     chatSummaries: { listByChatBranch: async () => [] },

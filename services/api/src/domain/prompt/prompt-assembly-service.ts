@@ -142,7 +142,7 @@ export class PromptAssemblyService {
     if (!branch) {
       throw new Error(`Branch '${branchId}' was not found for chat '${chat.id}'.`);
     }
-    const branchMessages = await this.stores.chats.getMessages(branchId);
+    const branchMessages = await this.stores.messages.getMessages(branchId);
 
     const character = await this.resolver.getCharacter(chat.characterId);
     const allPersonas = await this.stores.personas.listAll();
@@ -375,7 +375,7 @@ export class PromptAssemblyService {
   }
 
   async exportTraceToFile(traceId: string): Promise<string> {
-    const trace = await this.stores.chats.getTrace(traceId);
+    const trace = await this.stores.traces.getTrace(traceId);
     if (!trace) {
       throw new Error(`Prompt trace '${traceId}' was not found.`);
     }

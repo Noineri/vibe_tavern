@@ -109,7 +109,7 @@ export async function exportChatJsonl(
 	if (!chat) {
 		throw notFound("Chat", `Chat '${chatId}' was not found.`);
 	}
-	const messages = await deps.stores.chats.getMessages(chat.activeBranchId);
+	const messages = await deps.stores.messages.getMessages(chat.activeBranchId);
 
 	const { characterName, userName } = await resolveChatNames(deps, chat.characterId, chat.personaId);
 
@@ -117,7 +117,7 @@ export async function exportChatJsonl(
 		userName,
 		characterName,
 		messages: await Promise.all(messages.map(async (message) => {
-			const variants = await deps.stores.chats.getVariants(message.id);
+			const variants = await deps.stores.messages.getVariants(message.id);
 			const swipes = variants.length > 1 ? variants.map((v) => v.content) : undefined;
 			const selectedVariant = variants.find((v) => v.isSelected);
 			const swipeId = selectedVariant?.variantIndex ?? 0;
@@ -138,7 +138,7 @@ export async function exportPromptTrace(
 	deps: ImportExportModuleDeps,
 	traceId: string,
 ): Promise<import("@vibe-tavern/domain").PromptTraceRecordDto> {
-	const trace = await deps.stores.chats.getTrace(traceId);
+	const trace = await deps.stores.traces.getTrace(traceId);
 	if (!trace) {
 		throw notFound("PromptTrace", `Prompt trace '${traceId}' was not found.`);
 	}
@@ -176,13 +176,13 @@ export async function mirrorChatTranscript(
 
 	const writtenPaths: string[] = [];
 	for (const branch of branches) {
-		const messages = await deps.stores.chats.getMessages(branch.id);
+		const messages = await deps.stores.messages.getMessages(branch.id);
 
 		const jsonl = serializeSillyTavernChat({
 			userName,
 			characterName,
 			messages: await Promise.all(messages.map(async (message) => {
-				const variants = await deps.stores.chats.getVariants(message.id);
+				const variants = await deps.stores.messages.getVariants(message.id);
 				const swipes = variants.length > 1 ? variants.map((v) => v.content) : undefined;
 				const selectedVariant = variants.find((v) => v.isSelected);
 				const swipeId = selectedVariant?.variantIndex ?? 0;
@@ -215,7 +215,7 @@ export async function mirrorPromptTrace(
 	deps: ImportExportModuleDeps,
 	traceId: string,
 ): Promise<string> {
-	const trace = await deps.stores.chats.getTrace(traceId);
+	const trace = await deps.stores.traces.getTrace(traceId);
 	if (!trace) {
 		throw notFound("PromptTrace", `Prompt trace '${traceId}' was not found.`);
 	}
@@ -411,7 +411,7 @@ async function importSillyTavernChat(
 	for (const imported of importedMessages) {
 		const selectedVariant = imported.variants.find((variant) => variant.isSelected) ?? imported.variants[0];
 		const variants = imported.variants.length > 0 ? imported.variants : [{ content: imported.content, isSelected: true }];
-		const message = await deps.stores.chats.addMessage({
+		const message = await deps.stores.messages.addMessage({
 			chatId: createdId,
 			branchId: chat.activeBranchId,
 			role: imported.role,
@@ -419,11 +419,11 @@ async function importSillyTavernChat(
 			content: variants[0]?.content ?? imported.content,
 		});
 		for (const variant of variants.slice(1)) {
-			await deps.stores.chats.addVariant(message.id, variant.content, undefined, variant.reasoning);
+			await deps.stores.messages.addVariant(message.id, variant.content, undefined, variant.reasoning);
 		}
 		const selectedIndex = variants.findIndex((variant) => variant.content === selectedVariant?.content);
 		if (selectedIndex > 0) {
-			await deps.stores.chats.selectVariant(message.id, selectedIndex);
+			await deps.stores.messages.selectVariant(message.id, selectedIndex);
 		}
 	}
 

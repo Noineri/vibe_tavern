@@ -81,7 +81,7 @@ export function createAiAssistantDeps(stores: StoreContainer) {
 		getChatMessages: async (chatId: string, count: number) => {
 			const chat = await stores.chats.getById(chatId);
 			if (!chat) return [];
-			const allMessages = await stores.chats.getMessages(chat.activeBranchId);
+			const allMessages = await stores.messages.getMessages(chat.activeBranchId);
 			const sliced = allMessages.slice(-count);
 			return sliced.map((m) => ({ id: m.id, role: m.role, content: m.content }));
 		},

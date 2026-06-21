@@ -108,13 +108,15 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 	) {
 		this.stores = stores;
 		this.resolver = new StaticPromptResolver(stores);
-		this.chatApp = new ChatApplicationService(stores.chats);
+		this.chatApp = new ChatApplicationService(stores.chats, stores.messages);
 		this.promptService = new PromptAssemblyService(stores, this.resolver, this.stores.content.fileStore);
 		this.getActiveProviderProfile =
 			options?.getActiveProviderProfile ?? (async () => null);
 		this.chatOrder = new ChatOrderService(stores.chats);
 		this.chatRuntime = new ChatRuntime({
 			chats: stores.chats,
+			messages: stores.messages,
+			traces: stores.traces,
 			chatApp: this.chatApp,
 			assemblePrompt: (chatId, branchId, opts) =>
 				this.assemblePrompt(chatId, branchId, opts),
@@ -459,7 +461,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 		messages: import("@vibe-tavern/db").Message[],
 		branchId: ChatBranchId,
 	): Promise<SessionSnapshot["messages"]> {
-		const variantsByMessage = await this.stores.chats.getVariantsByBranch(branchId);
+		const variantsByMessage = await this.stores.messages.getVariantsByBranch(branchId);
 		return messages.map((message) =>
 			mapMessageDto(message, variantsByMessage.get(message.id) ?? []),
 		);
@@ -495,7 +497,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 		branchId?: ChatBranchId,
 		limit = 12,
 	): Promise<PromptTraceRecordDto[]> {
-		const traces = await this.stores.chats.getTracesByChat(chatId, branchId);
+		const traces = await this.stores.traces.getTracesByChat(chatId, branchId);
 		return traces.slice(0, limit).map(mapPromptTraceRecord);
 	}
 
@@ -670,9 +672,9 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 		const { messages } = await this.chatApp.getChatState(chatId);
 		const firstAssistant = messages.find((message) => message.role === "assistant");
 		if (firstAssistant) {
-			const variants = await this.stores.chats.getVariants(firstAssistant.id);
+			const variants = await this.stores.messages.getVariants(firstAssistant.id);
 			if (variants.some((variant) => variant.variantIndex === greetingIndex)) {
-				await this.stores.chats.selectVariant(firstAssistant.id, greetingIndex);
+				await this.stores.messages.selectVariant(firstAssistant.id, greetingIndex);
 			}
 		}
 		await this.stores.chats.setSelectedGreetingIndex(chatId, 0);
