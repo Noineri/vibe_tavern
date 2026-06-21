@@ -24,11 +24,13 @@ export { ChatStore } from './chat-store.js';
 export type {
   Chat,
   ChatBranch,
-  Message,
-  MessageVariant,
-  PromptTrace,
-  SaveTraceData,
 } from './chat-store.js';
+
+export { MessageStore } from './message-store.js';
+export type { Message, MessageVariant } from './message-store.js';
+
+export { PromptTraceStore } from './prompt-trace-store.js';
+export type { PromptTrace, SaveTraceData } from './prompt-trace-store.js';
 
 export { ChatSummaryStore } from './chat-summary-store.js';
 export type {

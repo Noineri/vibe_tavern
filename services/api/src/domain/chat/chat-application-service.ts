@@ -17,7 +17,7 @@ import type {
   MessageId,
   SummaryMemorySnapshot,
 } from "@vibe-tavern/domain";
-import type { ChatStore, Message as DbMessage } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, Message as DbMessage } from "@vibe-tavern/db";
 import { notFound } from "../../shared/errors.js";
 
 /** Map a DB message row to a domain {@link Message} (brands IDs, narrows enum strings). */
@@ -37,7 +37,7 @@ function mapDbMessage(m: DbMessage): Message {
 }
 
 export class ChatApplicationService {
-  constructor(private readonly chatStore: ChatStore) {}
+  constructor(private readonly chatStore: ChatStore, private readonly messageStore: MessageStore) {}
 
   async createChat(input: CreateChatRequest): Promise<CreateChatResponse> {
     const chat = await this.chatStore.createChat({
@@ -84,7 +84,7 @@ export class ChatApplicationService {
     if (!branch) {
       throw notFound("Branch", `Branch '${resolvedBranchId}' was not found for chat '${chat.id}'.`);
     }
-    const messages = await this.chatStore.getMessages(branch.id);
+    const messages = await this.messageStore.getMessages(branch.id);
 
     return {
       chat,
@@ -104,7 +104,7 @@ export class ChatApplicationService {
     const chat = await this.requireChat(chatId);
     const targetBranchId = branchId ?? chat.activeBranchId;
 
-    const message = await this.chatStore.addMessage({
+    const message = await this.messageStore.addMessage({
       chatId,
       branchId: targetBranchId,
       role: "user",
@@ -122,13 +122,13 @@ export class ChatApplicationService {
       const desc = descMap.get(att.id);
       return desc !== undefined ? { ...att, description: desc } : att;
     });
-    await this.chatStore.updateMessageAttachments(messageId, JSON.stringify(updated));
+    await this.messageStore.updateMessageAttachments(messageId, JSON.stringify(updated));
   }
 
   async updateSingleAttachmentDescription(messageId: string, attachmentIdOrAttachments: string | Attachment[], descriptionOrAttachmentId?: string, description?: string): Promise<void> {
     // Overload: (messageId, attachmentId, description) — reads from DB
     if (typeof attachmentIdOrAttachments === 'string') {
-      const message = await this.chatStore.getMessageById(messageId);
+      const message = await this.messageStore.getMessageById(messageId);
       if (!message) return;
       const currentAttachments: Attachment[] = parseStoredAttachments(message.attachmentsJson) ?? [];
       await this.updateAttachmentDescriptions(messageId, currentAttachments, [{ attachmentId: attachmentIdOrAttachments, description: descriptionOrAttachmentId ?? '' }]);
@@ -146,23 +146,23 @@ export class ChatApplicationService {
    * found (so optimistic UI retries are safe and DELETE is idempotent).
    */
   async removeAttachment(messageId: string, attachmentId: string): Promise<Attachment | null> {
-    const message = await this.chatStore.getMessageById(messageId);
+    const message = await this.messageStore.getMessageById(messageId);
     if (!message) return null;
     const current: Attachment[] = parseStoredAttachments(message.attachmentsJson) ?? [];
     const removed = current.find((a) => a.id === attachmentId) ?? null;
     if (!removed) return null;
     const remaining = current.filter((a) => a.id !== attachmentId);
-    await this.chatStore.updateMessageAttachments(messageId, remaining.length > 0 ? JSON.stringify(remaining) : null);
+    await this.messageStore.updateMessageAttachments(messageId, remaining.length > 0 ? JSON.stringify(remaining) : null);
     return removed;
   }
 
   async editMessage(messageId: string, content: string): Promise<Message> {
-    const message = await this.chatStore.editMessage(messageId, content);
+    const message = await this.messageStore.editMessage(messageId, content);
     return mapDbMessage(message);
   }
 
   async deleteMessage(messageId: string): Promise<void> {
-    await this.chatStore.deleteMessage(messageId);
+    await this.messageStore.deleteMessage(messageId);
   }
 
   async createBranch(chatId: ChatId, input: CreateBranchRequest): Promise<CreateBranchResponse> {
@@ -177,7 +177,7 @@ export class ChatApplicationService {
     }
 
     // Count messages in the new branch for the response
-    const messages = await this.chatStore.getMessages(branch.id);
+    const messages = await this.messageStore.getMessages(branch.id);
     return {
       branchId: branch.id as ChatBranchId,
       copiedMessageCount: messages.length,

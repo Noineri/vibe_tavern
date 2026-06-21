@@ -1,6 +1,6 @@
 import type { AssemblePromptResponse, Message, PromptTrace } from "@vibe-tavern/domain";
 import { brandId, type ChatBranchId, type ChatId, type MessageId } from "@vibe-tavern/domain";
-import type { ChatStore } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, PromptTraceStore } from "@vibe-tavern/db";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import type {
   SessionSnapshot,
@@ -29,6 +29,8 @@ interface PendingPromptTraceTurn {
 
 export interface ChatRuntimeDeps {
   chats: ChatStore;
+  messages: MessageStore;
+  traces: PromptTraceStore;
   chatApp: ChatApplicationService;
   assemblePrompt: (
     chatId: ChatId,
@@ -133,12 +135,12 @@ export class ChatRuntime {
     latencyMs: number,
     reasoningData?: { reasoning?: string; reasoningDurationMs?: number },
   ): Promise<MessageResponse> {
-    const { chats, buildMessageResponse } = this.deps;
+    const { chats, messages, traces, buildMessageResponse } = this.deps;
     const chat = (await chats.getById(chatId))!;
 
     const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId as ChatBranchId);
 
-    const assistantMessage = await chats.addMessage({
+    const assistantMessage = await messages.addMessage({
       chatId,
       branchId: chat.activeBranchId,
       role: "assistant",
@@ -150,7 +152,7 @@ export class ChatRuntime {
     });
 
     if (pending) {
-      await chats.saveTrace({
+      await traces.saveTrace({
         chatId,
         branchId: pending.branchId,
         messageId: assistantMessage.id,
@@ -188,7 +190,7 @@ export class ChatRuntime {
     messageId: MessageId,
     input: { content: string; finishReason?: string | null; latencyMs: number; reasoning?: string; reasoningDurationMs?: number },
   ): Promise<MessageResponse> {
-    const { chats, buildMessageResponse } = this.deps;
+    const { chats, messages, traces, buildMessageResponse } = this.deps;
     const trimmed = input.content.trim();
     if (!trimmed) {
       return await buildMessageResponse(chatId);
@@ -197,7 +199,7 @@ export class ChatRuntime {
     const chat = (await chats.getById(chatId))!;
     const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId as ChatBranchId);
 
-    await chats.addVariant(
+    await messages.addVariant(
       messageId,
       trimmed,
       input.finishReason ?? undefined,
@@ -207,7 +209,7 @@ export class ChatRuntime {
     );
 
     if (pending) {
-      await chats.saveTrace({
+      await traces.saveTrace({
         chatId,
         branchId: pending.branchId,
         messageId,
@@ -229,12 +231,12 @@ export class ChatRuntime {
   }
 
   async selectMessageVariant(chatId: ChatId, messageId: MessageId, variantIndex: number): Promise<VariantResponse> {
-    await this.deps.chats.selectVariant(messageId, variantIndex);
+    await this.deps.messages.selectVariant(messageId, variantIndex);
     return await this.deps.buildVariantResponse(chatId);
   }
 
   async deleteMessageVariant(chatId: ChatId, messageId: MessageId, variantIndex: number): Promise<MessageResponse> {
-    await this.deps.chats.deleteVariant(messageId, variantIndex);
+    await this.deps.messages.deleteVariant(messageId, variantIndex);
     return await this.deps.buildMessageResponse(chatId);
   }
 

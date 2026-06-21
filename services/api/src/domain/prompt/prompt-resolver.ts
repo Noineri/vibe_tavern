@@ -102,7 +102,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		if (lorebookSets.length === 0) return [];
 
 		// 2. Load messages for scan depth
-		const messages = await this.stores.chats.getMessages(input.branchId);
+		const messages = await this.stores.messages.getMessages(input.branchId);
 		const recentMessages = messages.map(m => ({
 			role: m.role,
 			content: m.content,

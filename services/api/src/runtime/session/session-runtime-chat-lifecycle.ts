@@ -96,7 +96,7 @@ export class ChatLifecycleRuntime {
 		if (greetingVariants.length > 0) {
 			const chat = await this.deps.stores.chats.getById(createdChatId);
 			if (chat) {
-				await this.deps.stores.chats.addMessage({
+				await this.deps.stores.messages.addMessage({
 					chatId: createdChatId,
 					branchId: chat.activeBranchId,
 					role: "assistant",
@@ -138,7 +138,7 @@ export class ChatLifecycleRuntime {
 		if (greetingVariants.length > 0) {
 			const chat = await this.deps.stores.chats.getById(created.id);
 			if (chat) {
-				await this.deps.stores.chats.addMessage({
+				await this.deps.stores.messages.addMessage({
 					chatId: created.id,
 					branchId: chat.activeBranchId,
 					role: "assistant",
@@ -186,7 +186,7 @@ export class ChatLifecycleRuntime {
 			throw notFound("Chat", `Chat '${input.chatId}' was not found.`);
 		}
 		const branchId = chat.activeBranchId as ChatBranchId;
-		const messages = await this.deps.stores.chats.getMessages(branchId);
+		const messages = await this.deps.stores.messages.getMessages(branchId);
 		const from = Math.max(1, Math.floor(input.summarizedFrom));
 		const to = Math.max(from, Math.floor(input.summarizedTo));
 		const excludeMessageIds = messages
@@ -254,7 +254,7 @@ export class ChatLifecycleRuntime {
 
 		const chat = (await this.deps.stores.chats.getById(chatId))!;
 		const assembled = await this.deps.assemblePrompt(chatId, chat.activeBranchId as ChatBranchId);
-		const message = await this.deps.stores.chats.addMessage({
+		const message = await this.deps.stores.messages.addMessage({
 			chatId,
 			branchId: chat.activeBranchId,
 			role: "assistant",
@@ -262,7 +262,7 @@ export class ChatLifecycleRuntime {
 			content: greetingVariants[0],
 			variants: greetingVariants,
 		});
-		await this.deps.stores.chats.saveTrace({
+		await this.deps.stores.traces.saveTrace({
 			...assembled.promptTraceDraft,
 			messageId: message.id,
 		});

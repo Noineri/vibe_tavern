@@ -1,7 +1,7 @@
 import { createDb, type AppDb } from './db-connection.js';
 import { ContentStore } from './content-store.js';
 import { createFileStore } from './file-store.js';
-import { CharacterStore, PersonaStore, ProviderStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, CharacterAssetStore } from './stores/index.js';
+import { CharacterStore, PersonaStore, ProviderStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, CharacterAssetStore, MessageStore, PromptTraceStore } from './stores/index.js';
 
 export interface StoreContainer {
   db: AppDb;
@@ -10,6 +10,8 @@ export interface StoreContainer {
   personas: PersonaStore;
   providers: ProviderStore;
   chats: ChatStore;
+  messages: MessageStore;
+  traces: PromptTraceStore;
   chatSummaries: ChatSummaryStore;
   presets: PresetStore;
   uiSettings: UiSettingsStore;
@@ -32,6 +34,8 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     personas: new PersonaStore(db, { content }),
     providers: new ProviderStore(db),
     chats,
+    messages: new MessageStore(db),
+    traces: new PromptTraceStore(db),
     chatSummaries: new ChatSummaryStore(db, { content }),
     presets: new PresetStore(db, { content }),
     uiSettings: new UiSettingsStore(db),

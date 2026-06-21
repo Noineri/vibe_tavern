@@ -3,6 +3,7 @@ import { createDb } from "../src/db-connection.js";
 import { eq } from "drizzle-orm";
 import * as schema from "../src/db-schema.js";
 import { ChatStore } from "../src/stores/chat-store.js";
+import { MessageStore } from "../src/stores/message-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 
 // ─── Test helpers ───────────────────────────────────────────────────────────
@@ -251,9 +252,10 @@ function bootstrap(db: Awaited<ReturnType<typeof createTestDb>>) {
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-describe("ChatStore — variant (swipe) semantics", () => {
+describe("MessageStore — variant (swipe) semantics", () => {
   let db: Awaited<ReturnType<typeof createTestDb>>;
   let store: ChatStore;
+  let messageStore: MessageStore;
 
   beforeEach(async () => {
     db = await createTestDb();
@@ -261,10 +263,11 @@ describe("ChatStore — variant (swipe) semantics", () => {
     clockTick = 0;
     idCounters = new Map();
     store = new ChatStore(db, { clock: testClock, idGenerator: testIdGen });
+    messageStore = new MessageStore(db, { clock: testClock, idGenerator: testIdGen });
   });
 
   test("addMessage creates first variant as selected and syncs messages.content", async () => {
-    const msg = await store.addMessage({
+    const msg = await messageStore.addMessage({
       chatId: "chat_1",
       branchId: "brnch_1",
       role: "assistant",
@@ -273,7 +276,7 @@ describe("ChatStore — variant (swipe) semantics", () => {
     });
 
     // Variant should exist and be selected
-    const variants = await store.getVariants(msg.id);
+    const variants = await messageStore.getVariants(msg.id);
     expect(variants.length).toBe(1);
     expect(variants[0].content).toBe("Hello world");
     expect(variants[0].isSelected).toBe(true);
@@ -288,7 +291,7 @@ describe("ChatStore — variant (swipe) semantics", () => {
 
   test("addVariant selects the new variant, deselects old, syncs messages.content", async () => {
     // Create initial message
-    const msg = await store.addMessage({
+    const msg = await messageStore.addMessage({
       chatId: "chat_1",
       branchId: "brnch_1",
       role: "assistant",
@@ -297,7 +300,7 @@ describe("ChatStore — variant (swipe) semantics", () => {
     });
 
     // Regenerate → add variant
-    const newVariant = await store.addVariant(msg.id, "Second response (regen)");
+    const newVariant = await messageStore.addVariant(msg.id, "Second response (regen)");
 
     // New variant should be selected
     expect(newVariant.isSelected).toBe(true);
@@ -305,7 +308,7 @@ describe("ChatStore — variant (swipe) semantics", () => {
     expect(newVariant.content).toBe("Second response (regen)");
 
     // Old variant should be deselected
-    const variants = await store.getVariants(msg.id);
+    const variants = await messageStore.getVariants(msg.id);
     expect(variants.length).toBe(2);
     expect(variants[0].variantIndex).toBe(0);
     expect(variants[0].isSelected).toBe(false);
@@ -321,12 +324,12 @@ describe("ChatStore — variant (swipe) semantics", () => {
     expect(freshMsg!.content).toBe("Second response (regen)");
 
     // getSelectedVariant should resolve to index 1
-    const selected = await store.getSelectedVariant(msg.id);
+    const selected = await messageStore.getSelectedVariant(msg.id);
     expect(selected!.variantIndex).toBe(1);
   });
 
   test("multiple addVariant calls — latest always selected, messages.content in sync", async () => {
-    const msg = await store.addMessage({
+    const msg = await messageStore.addMessage({
       chatId: "chat_1",
       branchId: "brnch_1",
       role: "assistant",
@@ -334,11 +337,11 @@ describe("ChatStore — variant (swipe) semantics", () => {
       content: "V0",
     });
 
-    await store.addVariant(msg.id, "V1");
-    await store.addVariant(msg.id, "V2");
-    await store.addVariant(msg.id, "V3");
+    await messageStore.addVariant(msg.id, "V1");
+    await messageStore.addVariant(msg.id, "V2");
+    await messageStore.addVariant(msg.id, "V3");
 
-    const variants = await store.getVariants(msg.id);
+    const variants = await messageStore.getVariants(msg.id);
     expect(variants.length).toBe(4);
 
     // Only the last one should be selected
@@ -356,7 +359,7 @@ describe("ChatStore — variant (swipe) semantics", () => {
   });
 
   test("selectVariant switches selection and syncs messages.content", async () => {
-    const msg = await store.addMessage({
+    const msg = await messageStore.addMessage({
       chatId: "chat_1",
       branchId: "brnch_1",
       role: "assistant",
@@ -364,13 +367,13 @@ describe("ChatStore — variant (swipe) semantics", () => {
       content: "V0",
     });
 
-    await store.addVariant(msg.id, "V1");
-    await store.addVariant(msg.id, "V2");
+    await messageStore.addVariant(msg.id, "V1");
+    await messageStore.addVariant(msg.id, "V2");
 
     // V2 is selected (last addVariant). Now switch back to V0.
-    await store.selectVariant(msg.id, 0);
+    await messageStore.selectVariant(msg.id, 0);
 
-    const variants = await store.getVariants(msg.id);
+    const variants = await messageStore.getVariants(msg.id);
     expect(variants[0].isSelected).toBe(true);
     expect(variants[1].isSelected).toBe(false);
     expect(variants[2].isSelected).toBe(false);
@@ -383,7 +386,7 @@ describe("ChatStore — variant (swipe) semantics", () => {
   });
 
   test("forkBranch copies messages and variants with correct selection", async () => {
-    const msg = await store.addMessage({
+    const msg = await messageStore.addMessage({
       chatId: "chat_1",
       branchId: "brnch_1",
       role: "assistant",
@@ -391,17 +394,17 @@ describe("ChatStore — variant (swipe) semantics", () => {
       content: "V0",
     });
 
-    await store.addVariant(msg.id, "V1 (regen)");
+    await messageStore.addVariant(msg.id, "V1 (regen)");
 
     // Fork from this message
     const forkedBranch = await store.forkBranch("chat_1", msg.id, "fork test");
 
     // Get messages in the new branch
-    const forkedMessages = await store.getMessages(forkedBranch.id);
+    const forkedMessages = await messageStore.getMessages(forkedBranch.id);
     expect(forkedMessages.length).toBe(1);
 
     // Variants should be copied
-    const forkedVariants = await store.getVariants(forkedMessages[0].id);
+    const forkedVariants = await messageStore.getVariants(forkedMessages[0].id);
     expect(forkedVariants.length).toBe(2);
 
     // The selected variant in the fork should be V1 (the regen)
@@ -413,7 +416,7 @@ describe("ChatStore — variant (swipe) semantics", () => {
   test("addVariant does not duplicate content — regression for sentence cloning bug", async () => {
     const originalContent = "His nostrils flare again, a barely perceptible movement.\nThen he steps back.";
 
-    const msg = await store.addMessage({
+    const msg = await messageStore.addMessage({
       chatId: "chat_1",
       branchId: "brnch_1",
       role: "assistant",
@@ -423,11 +426,11 @@ describe("ChatStore — variant (swipe) semantics", () => {
 
     // Simulate 5 regenerations
     for (let i = 1; i <= 5; i++) {
-      await store.addVariant(msg.id, `Regen ${i}: new content here`);
+      await messageStore.addVariant(msg.id, `Regen ${i}: new content here`);
     }
 
     // Verify no content duplication
-    const variants = await store.getVariants(msg.id);
+    const variants = await messageStore.getVariants(msg.id);
     expect(variants.length).toBe(6); // 1 original + 5 regens
 
     // Each variant should have its own unique content
@@ -446,7 +449,7 @@ describe("ChatStore — variant (swipe) semantics", () => {
   });
 
   test("deleteVariant compacts indexes before the next swipe is added", async () => {
-    const msg = await store.addMessage({
+    const msg = await messageStore.addMessage({
       chatId: "chat_1",
       branchId: "brnch_1",
       role: "assistant",
@@ -455,20 +458,20 @@ describe("ChatStore — variant (swipe) semantics", () => {
     });
 
     for (let i = 1; i <= 5; i++) {
-      await store.addVariant(msg.id, `V${i}`);
+      await messageStore.addVariant(msg.id, `V${i}`);
     }
 
-    await store.deleteVariant(msg.id, 2);
+    await messageStore.deleteVariant(msg.id, 2);
 
-    let variants = await store.getVariants(msg.id);
+    let variants = await messageStore.getVariants(msg.id);
     expect(variants.map((variant) => variant.variantIndex)).toEqual([0, 1, 2, 3, 4]);
     expect(variants).toHaveLength(5);
     expect(variants.find((variant) => variant.isSelected)?.content).toBe("V5");
     expect(variants.find((variant) => variant.isSelected)?.variantIndex).toBe(4);
 
-    await store.addVariant(msg.id, "V6");
+    await messageStore.addVariant(msg.id, "V6");
 
-    variants = await store.getVariants(msg.id);
+    variants = await messageStore.getVariants(msg.id);
     expect(variants.map((variant) => variant.variantIndex)).toEqual([0, 1, 2, 3, 4, 5]);
     expect(variants).toHaveLength(6);
     expect(variants.find((variant) => variant.isSelected)?.content).toBe("V6");
@@ -477,7 +480,7 @@ describe("ChatStore — variant (swipe) semantics", () => {
 
   test("full scenario: regen → switch to old → re-read is consistent", async () => {
     // 1. Initial assistant message
-    const msg = await store.addMessage({
+    const msg = await messageStore.addMessage({
       chatId: "chat_1",
       branchId: "brnch_1",
       role: "assistant",
@@ -486,10 +489,10 @@ describe("ChatStore — variant (swipe) semantics", () => {
     });
 
     // 2. Regenerate
-    await store.addVariant(msg.id, "Regenerated answer");
+    await messageStore.addVariant(msg.id, "Regenerated answer");
 
     // 3. Verify regen is active
-    let selected = await store.getSelectedVariant(msg.id);
+    let selected = await messageStore.getSelectedVariant(msg.id);
     expect(selected!.content).toBe("Regenerated answer");
     expect(selected!.variantIndex).toBe(1);
 
@@ -499,10 +502,10 @@ describe("ChatStore — variant (swipe) semantics", () => {
     expect(freshMsg!.content).toBe("Regenerated answer");
 
     // 4. Switch back to original
-    await store.selectVariant(msg.id, 0);
+    await messageStore.selectVariant(msg.id, 0);
 
     // 5. Verify original is active
-    selected = await store.getSelectedVariant(msg.id);
+    selected = await messageStore.getSelectedVariant(msg.id);
     expect(selected!.content).toBe("Original answer");
     expect(selected!.variantIndex).toBe(0);
 
@@ -512,11 +515,11 @@ describe("ChatStore — variant (swipe) semantics", () => {
     expect(freshMsg!.content).toBe("Original answer");
 
     // 6. Simulate what getSnapshot does: read message + variants
-    const messages = await store.getMessages("brnch_1");
+    const messages = await messageStore.getMessages("brnch_1");
     expect(messages.length).toBe(1);
     expect(messages[0].content).toBe("Original answer");
 
-    const variants = await store.getVariants(messages[0].id);
+    const variants = await messageStore.getVariants(messages[0].id);
     const activeVariant = variants.find((v) => v.isSelected);
     expect(activeVariant!.content).toBe("Original answer");
     expect(activeVariant!.variantIndex).toBe(0);
