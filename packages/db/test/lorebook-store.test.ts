@@ -93,3 +93,53 @@ describe("LorebookStore.updateLorebook", () => {
     expect(updated?.scanDepth).toBe(30);
   });
 });
+
+describe("LorebookStore entry group field naming", () => {
+  // Characterization test for the `group` vs `groupName` field-naming bug.
+  // The DB column is `group_name` (camelCase `groupName`), the Zod contract
+  // and the frontend `LoreEntryRecord` type both use `groupName`, but the
+  // store return type + mapEntryRow historically aliased it to `group`. The
+  // GET /entries route returned the store object as-is, so the frontend
+  // reading `entry.groupName` got `undefined` — the group silently vanished
+  // on every reload. This test pins the canonical name `groupName` on the
+  // store output so the API boundary matches the contract.
+  test("listEntries returns the group under `groupName`, not the `group` alias", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+
+    await store.createEntry(lb.id, {
+      title: "Grouped entry",
+      content: "weather rain",
+      keys: ["rain"],
+      groupName: "weather",
+    });
+
+    const entries = await store.listEntries(lb.id);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].groupName).toBe("weather");
+    // The legacy `group` alias must NOT be present on the store output —
+    // callers (frontend, Zod contract) read `groupName` exclusively.
+    expect("group" in entries[0]).toBe(false);
+  });
+
+  test("exportToStFormat emits the SillyTavern `group` JSON key (format contract)", async () => {
+    // The ST JSON card format uses `group` as its key name — this is an
+    // EXTERNAL serialization contract and must not be renamed when the
+    // internal field is fixed. Export maps our `groupName` value onto the
+    // ST `group` key.
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+
+    await store.createEntry(lb.id, {
+      title: "Grouped entry",
+      content: "weather rain",
+      keys: ["rain"],
+      groupName: "weather",
+    });
+
+    const exported = await store.exportToStFormat(lb.id);
+    const entries = exported.entries as Record<string, { group?: string }>;
+    const firstEntry = entries["0"];
+    expect(firstEntry.group).toBe("weather");
+  });
+});

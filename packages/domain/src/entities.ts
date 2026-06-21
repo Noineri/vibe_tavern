@@ -206,7 +206,7 @@ export interface LoreEntry {
   ignoreBudget: boolean;
   role: LoreEntryRole;
   // Inclusion group
-  group: string;
+  groupName: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
   useGroupScoring: boolean;

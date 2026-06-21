@@ -74,8 +74,6 @@ export interface CreateLoreEntryData {
   probability?: number;
   ignoreBudget?: boolean;
   role?: string;
-  group?: string;
-  /** Alias accepted from API (Zod schema uses groupName) */
   groupName?: string;
   groupWeight?: number;
   prioritizeInclusion?: boolean;
@@ -150,7 +148,7 @@ export interface LoreEntry {
   probability: number;
   ignoreBudget: boolean;
   role: string;
-  group: string;
+  groupName: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
   useGroupScoring: boolean;
@@ -445,7 +443,7 @@ export class LorebookStore {
         probability: data.probability ?? 100,
         ignoreBudget: data.ignoreBudget ? 1 : 0,
         role: data.role ?? 'system',
-        groupName: data.group ?? '',
+        groupName: data.groupName ?? '',
         groupWeight: data.groupWeight ?? 100,
         prioritizeInclusion: (data.prioritizeInclusion ?? false) ? 1 : 0,
         useGroupScoring: (data.useGroupScoring ?? false) ? 1 : 0,
@@ -495,7 +493,6 @@ export class LorebookStore {
     if (data.probability !== undefined) values.probability = data.probability;
     if (data.ignoreBudget !== undefined) values.ignoreBudget = data.ignoreBudget ? 1 : 0;
     if (data.role !== undefined) values.role = data.role;
-    if (data.group !== undefined) values.groupName = data.group;
     if (data.groupName !== undefined) values.groupName = data.groupName;
     if (data.groupWeight !== undefined) values.groupWeight = data.groupWeight;
     if (data.prioritizeInclusion !== undefined) values.prioritizeInclusion = data.prioritizeInclusion ? 1 : 0;
@@ -751,7 +748,7 @@ export class LorebookStore {
       probability: e.probability,
       ignoreBudget: e.ignoreBudget,
       role: e.role,
-      groupName: e.group,
+      groupName: e.groupName,
       groupWeight: e.groupWeight,
       prioritizeInclusion: e.prioritizeInclusion,
       excludeRecursion: e.excludeRecursion,
@@ -826,7 +823,7 @@ export class LorebookStore {
         probability: e.probability,
         useProbability: true,
         role: e.role,
-        group: e.group,
+        group: e.groupName,
         groupWeight: e.groupWeight,
         scanDepth: e.scanDepthOverride,
         caseSensitive: e.caseSensitive,
@@ -1023,7 +1020,7 @@ export class LorebookStore {
       probability: row.probability,
       ignoreBudget: row.ignoreBudget === 1,
       role: row.role,
-      group: row.groupName,
+      groupName: row.groupName,
       groupWeight: row.groupWeight,
       prioritizeInclusion: row.prioritizeInclusion === 1,
       useGroupScoring: row.useGroupScoring === 1,
@@ -1118,7 +1115,7 @@ export class LorebookStore {
         probability: typeof entry.probability === 'number' ? entry.probability : 100,
         ignoreBudget: typeof entry.ignore_budget === 'boolean' ? entry.ignore_budget : false,
         role: typeof entry.role === 'number' ? this.mapRoleNumber(entry.role) : (typeof entry.role === 'string' ? entry.role : 'system'),
-        group: typeof entry.group === 'string' ? entry.group : (typeof entry.groupName === 'string' ? entry.groupName as string : ''),
+        groupName: typeof entry.group === 'string' ? entry.group : (typeof entry.groupName === 'string' ? entry.groupName as string : ''),
         groupWeight: typeof entry.group_weight === 'number' ? entry.group_weight : (typeof entry.groupWeight === 'number' ? entry.groupWeight : 1),
         prioritizeInclusion: typeof (entry.prioritize_inclusion ?? entry.prioritizeInclusion) === 'boolean' ? !!(entry.prioritize_inclusion ?? entry.prioritizeInclusion) : false,
         excludeRecursion: typeof (entry.exclude_recursion ?? entry.excludeRecursion) === 'boolean' ? !!(entry.exclude_recursion ?? entry.excludeRecursion) : false,

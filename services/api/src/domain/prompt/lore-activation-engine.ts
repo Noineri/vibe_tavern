@@ -50,7 +50,7 @@ export interface ActivationInput {
       probability: number;
       ignoreBudget: boolean;
       role: string;
-      group: string;
+      groupName: string;
       groupWeight: number;
       prioritizeInclusion: boolean;
       useGroupScoring: boolean;
@@ -155,7 +155,7 @@ interface FlatEntry {
   matchSources: string[];
   enabled: boolean;
   sortOrder: number;
-  group: string;
+  groupName: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
   useGroupScoring: boolean;
@@ -597,14 +597,14 @@ function applyInclusionGroups(
   allEntries: FlatEntry[],
 ): void {
   const entryMap = new Map(allEntries.map(e => [e.id, e]));
-  console.debug("[lore] Group filter — %d activated entries with groups", activated.filter(e => entryMap.get(e.id)?.group).length);
+  console.debug("[lore] Group filter — %d activated entries with groups", activated.filter(e => entryMap.get(e.id)?.groupName).length);
 
   // Group activated entries by group name
   const groups = new Map<string, ActivationResult["activatedEntries"]>();
   for (const entry of activated) {
     const flat = entryMap.get(entry.id);
-    if (!flat?.group) continue;
-    for (const groupName of flat.group.split(/,\s*/).filter(Boolean)) {
+    if (!flat?.groupName) continue;
+    for (const groupName of flat.groupName.split(/,\s*/).filter(Boolean)) {
       if (!groups.has(groupName)) groups.set(groupName, []);
       groups.get(groupName)!.push(entry);
     }

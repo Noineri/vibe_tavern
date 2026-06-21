@@ -298,7 +298,7 @@ export class PersonaRuntime {
 				probability: e.probability,
 				constant: e.constant,
 				enabled: e.enabled,
-				groupName: e.group,
+				groupName: e.groupName,
 				groupWeight: e.groupWeight,
 				cooldownWindow: e.cooldownWindow,
 				delayWindow: e.delayWindow,
