@@ -299,6 +299,22 @@ async function healPartialMigrations(sqlite: Database, migrationsFolder: string)
 
     if (stamped.has(hash)) continue; // Already applied
 
+    // Rebuild migrations (CREATE TABLE `__new_<x>` ... DROP ... RENAME) must
+    // NEVER run through this statement-by-statement path. It is not atomic,
+    // and a partial run leaves a stray `__new_<x>` table that, on the next
+    // heal attempt, makes the rebuild copy from / drop the wrong table and
+    // destroys row data (`lorebooks` was emptied this way in June 2026: the
+    // rebuild healed piecemeal, `lore_entries` survived only because a
+    // DROP TABLE does not fire FK cascade). Rebuilds are only safe via
+    // migrate()'s own (transactional) execution. If that failed, leave this
+    // migration unstamped and let the retry migrate() below surface a real
+    // error — a loud boot failure is strictly better than silent data loss.
+    const isRebuild = /CREATE\s+TABLE\s+[`"']?__new_/i.test(sqlContent);
+    if (isRebuild) {
+      console.warn(`[db] Heal: migration ${entry.tag} is a table-rebuild — not safely retryable piecemeal, skipping heal (letting migrate() handle it).`);
+      continue;
+    }
+
     // Split SQL into individual statements, stripping comments
     const statements = sqlContent
       .split(';')
