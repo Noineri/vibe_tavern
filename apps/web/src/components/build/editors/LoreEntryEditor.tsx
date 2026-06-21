@@ -51,6 +51,8 @@ interface LoreEntryEditorProps {
   onDeleted: () => void;
   isMobile: boolean;
   t: (key: string) => string;
+  /** Existing group names in the same lorebook, for the group-name autocomplete. */
+  existingGroups?: string[];
 }
 
 // ── Component ──────────────────────────────────────────────────────────
@@ -63,6 +65,7 @@ export function LoreEntryEditor({
   onDeleted,
   isMobile,
   t,
+  existingGroups,
 }: LoreEntryEditorProps) {
   // ── Локальная UI-state ──
   const [keyInput, setKeyInput] = useState("");
@@ -218,6 +221,38 @@ export function LoreEntryEditor({
           </div>
         </div>
 
+        {/* ── Флаги активации (всегда видны, не в расширенном режиме) ── */}
+        <div className="flex flex-wrap gap-x-5 gap-y-2.5">
+          <CustomTooltip content={t("constant_hint")} align="start">
+            <Checkbox
+              checked={entry.constant}
+              onChange={(v) => updateAct("constant", v)}
+              label={t("lore_constant")}
+            />
+          </CustomTooltip>
+          <CustomTooltip content={t("case_sensitive_hint")} align="start">
+            <Checkbox
+              checked={entry.caseSensitive}
+              onChange={(v) => updateAct("caseSensitive", v)}
+              label={t("lore_case_sensitive")}
+            />
+          </CustomTooltip>
+          <CustomTooltip content={t("match_whole_words_hint")} align="start">
+            <Checkbox
+              checked={entry.matchWholeWords}
+              onChange={(v) => updateAct("matchWholeWords", v)}
+              label={t("lore_match_whole_words")}
+            />
+          </CustomTooltip>
+          <CustomTooltip content={t("ignore_budget_hint")} align="start">
+            <Checkbox
+              checked={entry.ignoreBudget}
+              onChange={(v) => updateAct("ignoreBudget", v)}
+              label={t("lore_ignore_budget")}
+            />
+          </CustomTooltip>
+        </div>
+
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -314,260 +349,72 @@ export function LoreEntryEditor({
                 : undefined,
             }}
           >
-            {/* ═══ Группа 1: Триггеры и сопоставление ═══ */}
-            <div className="pb-7 border-b border-border/50">
-              <div className="mb-3 text-[13px] font-medium text-t1">
-                {t("lore_activation_section")}
-              </div>
-
-              {/* Вторичные ключевые слова */}
-              <div className="mb-4">
+            {/* ── Логика + Роль ── */}
+            <div className="flex flex-wrap gap-4 mb-6">
+              <div>
                 <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
-                  {t("lore_entry_secondary_keys")}
+                  {t("lore_logic_label")}
                 </label>
-                <div
-                  className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
-                  style={{ minHeight: 38 }}
-                >
-                  {entry.secondaryKeys.map((k) => (
-                    <span
-                      key={k}
-                      className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
-                      onClick={() => removeKey("secondaryKeys", k)}
-                    >
-                      {k} <Icons.Close />
-                    </span>
-                  ))}
-                  <input
-                    className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none"
-                    value={secKeyInput}
-                    onChange={(e) => setSecKeyInput(e.target.value)}
-                    onKeyDown={(e) => handleKeyAdd(e, "secondaryKeys")}
-                  />
-                </div>
+                <SegmentedControl
+                  value={entry.logic}
+                  options={[
+                    { value: "and_any", label: "AND ANY" },
+                    { value: "and_all", label: "AND ALL" },
+                    { value: "not_any", label: "NOT ANY" },
+                    { value: "not_all", label: "NOT ALL" },
+                  ]}
+                  onChange={(v) => updateAct("logic", v)}
+                  compact
+                />
               </div>
-
-              {/* Логика + Роль */}
-              <div className="flex flex-wrap gap-4 mb-4">
+              <CustomTooltip content={t("role_hint")}>
                 <div>
                   <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
-                    {t("lore_logic_label")}
+                    {t("lore_role_label")}
                   </label>
                   <SegmentedControl
-                    value={entry.logic}
+                    value={entry.role}
                     options={[
-                      { value: "AND_ANY", label: "AND ANY" },
-                      { value: "AND_ALL", label: "AND ALL" },
-                      { value: "NOT_ANY", label: "NOT ANY" },
-                      { value: "NOT_ALL", label: "NOT ALL" },
+                      { value: "system", label: "System" },
+                      { value: "user", label: "User" },
+                      { value: "assistant", label: "Assistant" },
                     ]}
-                    onChange={(v) => updateAct("logic", v)}
+                    onChange={(v) => updateAct("role", v)}
                     compact
                   />
                 </div>
-                <CustomTooltip content={t("role_hint")}>
-                  <div>
-                    <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
-                      {t("lore_role_label")}
-                    </label>
-                    <SegmentedControl
-                      value={entry.role}
-                      options={[
-                        { value: "system", label: "System" },
-                        { value: "user", label: "User" },
-                        { value: "assistant", label: "Assistant" },
-                      ]}
-                      onChange={(v) => updateAct("role", v)}
-                      compact
-                    />
-                  </div>
-                </CustomTooltip>
-              </div>
+              </CustomTooltip>
+            </div>
 
-              {/* Триггеры */}
-              <div className="mb-4">
-                <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
-                  {t("lore_triggers_section")}
-                </label>
-                <ToggleChips
-                  selected={entry.triggers}
-                  options={(
-                    [
-                      "normal",
-                      "continue",
-                      "impersonate",
-                      "swipe",
-                      "regenerate",
-                      "quiet",
-                    ] as const
-                  ).map((trig) => ({
-                    value: trig,
-                    label: t("trigger_" + trig),
-                  }))}
-                  onChange={(v) => updateAct("triggers", v)}
-                />
-              </div>
-
-              {/* Источники сопоставления */}
-              <div className="mb-4">
-                <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
-                  {t("lore_matchsources_section")}
-                </label>
-                <ToggleChips
-                  selected={entry.matchSources}
-                  options={(
-                    [
-                      "chat_messages",
-                      "character_desc",
-                      "character_personality",
-                      "character_note",
-                      "persona_desc",
-                      "scenario",
-                      "creator_notes",
-                    ] as const
-                  ).map((src) => ({
-                    value: src,
-                    label: t("match_src_" + src),
-                  }))}
-                  onChange={(v) => updateAct("matchSources", v)}
-                />
-              </div>
-
-              {/* Фильтр по персонажам — id-bound picker с ghost-binding */}
-              <div ref={charFilterRef}>
-                <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
-                  {t("lore_charfilter_section")}
-                </label>
-                <div
-                  className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
-                  style={{ minHeight: 38 }}
-                >
-                  {entry.characterFilter.map((f, idx) => {
-                    const isGhost = f.id === null;
-                    const ch = f.id ? allCharacters.find((c) => c.id === f.id) : undefined;
-                    const avatarUrl = ch
-                      ? resolveEntityAvatarUrl({
-                          kind: "characters",
-                          id: ch.id,
-                          avatarExt: ch.avatarExt,
-                          avatarAssetId: ch.avatarAssetId,
-                          avatarFullExt: ch.avatarFullExt,
-                          avatarFullAssetId: ch.avatarFullAssetId,
-                          updatedAt: ch.updatedAt,
-                        })
-                      : null;
-                    return (
-                      <span
-                        key={`${f.id ?? "ghost"}-${idx}`}
-                        className={cn(
-                          "flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] transition-all",
-                          isGhost
-                            ? "cursor-pointer border border-dashed border-amber-500/60 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
-                            : "bg-accent-dim text-accent-t hover:bg-border2 hover:text-t1",
-                        )}
-                        title={isGhost ? t("lore_char_filter_bind") : undefined}
-                        onClick={isGhost ? () => setCharFilterPicker(idx) : undefined}
-                      >
-                        <span className="h-4 w-4 shrink-0 overflow-hidden rounded-full bg-s3">
-                          {avatarUrl ? (
-                            <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
-                          ) : (
-                            <span className="flex h-full w-full items-center justify-center text-[8px] font-bold text-t3">
-                              {f.name.charAt(0).toUpperCase()}
-                            </span>
-                          )}
-                        </span>
-                        <span className="max-w-[120px] truncate">{f.name}</span>
-                        {!isGhost && (
-                          <button
-                            type="button"
-                            className="ml-0.5 cursor-pointer text-t3 hover:text-t1"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              updateAct(
-                                "characterFilter",
-                                entry.characterFilter.filter((_, i) => i !== idx),
-                              );
-                            }}
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </span>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    className="cursor-pointer rounded px-2 py-0.5 text-[12px] text-t3 transition-all hover:bg-s3 hover:text-t1"
-                    onClick={() => setCharFilterPicker("add")}
+            {/* ── Вторичные ключевые слова ── */}
+            <div className="mb-6">
+              <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                {t("lore_entry_secondary_keys")}
+              </label>
+              <div
+                className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
+                style={{ minHeight: 38 }}
+              >
+                {entry.secondaryKeys.map((k) => (
+                  <span
+                    key={k}
+                    className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
+                    onClick={() => removeKey("secondaryKeys", k)}
                   >
-                    + {t("lore_char_filter_placeholder")}
-                  </button>
-                </div>
-                {charFilterPicker !== null && (
-                  <div className="relative mt-1">
-                    <div className="glass-blur absolute left-0 top-0 z-[200] max-h-[220px] w-full overflow-y-auto rounded-lg border border-border2 bg-glass-bg py-1 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
-                      {allCharacters.filter((c) => !entry.characterFilter.some((f) => f.id === c.id)).length === 0 ? (
-                        <div className="px-3 py-2 text-[12px] text-t3">{t("lore_char_filter_empty")}</div>
-                      ) : (
-                        allCharacters
-                          .filter((c) => !entry.characterFilter.some((f) => f.id === c.id))
-                          .map((c) => {
-                            const url = resolveEntityAvatarUrl({
-                              kind: "characters",
-                              id: c.id,
-                              avatarExt: c.avatarExt,
-                              avatarAssetId: c.avatarAssetId,
-                              avatarFullExt: c.avatarFullExt,
-                              avatarFullAssetId: c.avatarFullAssetId,
-                              updatedAt: c.updatedAt,
-                            });
-                            return (
-                              <button
-                                type="button"
-                                key={c.id}
-                                className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[13px] text-t1 hover:bg-s2"
-                                onClick={() => {
-                                  const next = [...entry.characterFilter];
-                                  if (charFilterPicker === "add") {
-                                    next.push({ id: c.id, name: c.name });
-                                  } else {
-                                    // Bind the ghost at this index to the chosen character.
-                                    next[charFilterPicker] = { id: c.id, name: c.name };
-                                  }
-                                  updateAct("characterFilter", next);
-                                  setCharFilterPicker(null);
-                                }}
-                              >
-                                <span className="h-5 w-5 shrink-0 overflow-hidden rounded-full bg-s3">
-                                  {url ? (
-                                    <img src={url} alt="" className="h-full w-full object-cover" />
-                                  ) : (
-                                    <span className="flex h-full w-full items-center justify-center text-[10px] font-bold text-t3">
-                                      {c.name.charAt(0).toUpperCase()}
-                                    </span>
-                                  )}
-                                </span>
-                                <span className="truncate">{c.name}</span>
-                              </button>
-                            );
-                          })
-                      )}
-                    </div>
-                  </div>
-                )}
-                <div className="mt-2">
-                  <Checkbox
-                    checked={entry.characterFilterExclude}
-                    onChange={(v) => updateAct("characterFilterExclude", v)}
-                    label={t("lore_char_filter_exclude")}
-                  />
-                </div>
+                    {k} <Icons.Close />
+                  </span>
+                ))}
+                <input
+                  className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none"
+                  value={secKeyInput}
+                  onChange={(e) => setSecKeyInput(e.target.value)}
+                  onKeyDown={(e) => handleKeyAdd(e, "secondaryKeys")}
+                />
               </div>
             </div>
 
-            {/* ═══ Группа 2: Размещение и форматирование ═══ */}
-            <div className="py-7 border-b border-border/50">
+            {/* ── Позиция ── */}
+            <div className="mb-6 pb-6 border-b border-border/50">
               <CustomTooltip content={t("lore_position_hint")} side="right" align="start">
                 <div className="mb-3 inline-flex cursor-help items-center gap-1 text-[13px] font-medium text-t1">
                   {t("lore_position_label")}
@@ -575,7 +422,6 @@ export function LoreEntryEditor({
                 </div>
               </CustomTooltip>
 
-              {/* Позиция — сетка pill-кнопок (2 колонки на мобиле) */}
               <div
                 className={cn(
                   "grid gap-1.5 mb-4",
@@ -611,21 +457,10 @@ export function LoreEntryEditor({
                 ))}
               </div>
 
-              {/* Числовые поля — 1 колонка на мобиле */}
-              <div
-                className={cn(
-                  "grid gap-4",
-                  isMobile && "grid-cols-1"
-                )}
-                style={{
-                  gridTemplateColumns: isMobile
-                    ? undefined
-                    : "repeat(auto-fill, minmax(170px, 1fr))",
-                }}
-              >
-                {(entry.position === "at_depth" ||
-                  entry.position === "top_an" ||
-                  entry.position === "bottom_an") && (
+              {(entry.position === "at_depth" ||
+                entry.position === "top_an" ||
+                entry.position === "bottom_an") && (
+                <div className="max-w-[170px]">
                   <CustomTooltip content={t("lore_depth_hint")} side="top" align="start">
                     <div>
                       <label className="mb-1.5 block cursor-help text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
@@ -638,94 +473,291 @@ export function LoreEntryEditor({
                       />
                     </div>
                   </CustomTooltip>
-                )}
-                <CustomTooltip content={t("lore_priority_hint")} side="top" align="start">
-                  <div>
-                    <label className="mb-1.5 block cursor-help text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
-                      {t("lore_priority_label")}
-                    </label>
-                    <NumberInput
-                      min={0}
-                      value={entry.priority}
-                      onChange={(v) => updateAct("priority", v)}
-                    />
-                  </div>
-                </CustomTooltip>
+                </div>
+              )}
+            </div>
+
+            {/* ── Источники сопоставления ── */}
+            <div className="mb-6">
+              <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                {t("lore_matchsources_section")}
+              </label>
+              <ToggleChips
+                selected={entry.matchSources}
+                options={(
+                  [
+                    "chat_messages",
+                    "character_desc",
+                    "character_personality",
+                    "character_note",
+                    "persona_desc",
+                    "scenario",
+                    "creator_notes",
+                  ] as const
+                ).map((src) => ({
+                  value: src,
+                  label: t("match_src_" + src),
+                }))}
+                onChange={(v) => updateAct("matchSources", v)}
+              />
+            </div>
+
+            {/* ── Приоритет + Вероятность + Глубина скана ── */}
+            <div
+              className={cn(
+                "grid gap-4 mb-6 pb-6 border-b border-border/50",
+                isMobile && "grid-cols-1"
+              )}
+              style={{
+                gridTemplateColumns: isMobile
+                  ? undefined
+                  : "repeat(auto-fill, minmax(170px, 1fr))",
+              }}
+            >
+              <CustomTooltip content={t("lore_priority_hint")} side="top" align="start">
                 <div>
-                  <CustomTooltip content={t("probability_hint")}>
+                  <label className="mb-1.5 block cursor-help text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                    {t("lore_priority_label")}
+                  </label>
+                  <NumberInput
+                    min={0}
+                    value={entry.priority}
+                    onChange={(v) => updateAct("priority", v)}
+                  />
+                </div>
+              </CustomTooltip>
+              <div>
+                <CustomTooltip content={t("probability_hint")}>
+                  <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                    {t("lore_probability")}
+                  </label>
+                </CustomTooltip>
+                <NumberInput
+                  min={0}
+                  max={100}
+                  value={entry.probability}
+                  onChange={(v) => updateAct("probability", v)}
+                />
+              </div>
+              <div>
+                <CustomTooltip content={t("scan_depth_override_hint")}>
+                  <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                    {t("lore_scan_depth_override")}
+                  </label>
+                </CustomTooltip>
+                <NumberInput
+                  min={-1}
+                  value={entry.scanDepthOverride ?? -1}
+                  onChange={(v) => updateAct("scanDepthOverride", v)}
+                />
+              </div>
+            </div>
+
+            {/* ── Группа включения ── */}
+            <div className="mb-6 pb-6 border-b border-border/50">
+              <div
+                className={cn(
+                  "flex flex-wrap gap-4 items-end",
+                  isMobile && "flex-col items-stretch"
+                )}
+              >
+                <div className="min-w-[140px] flex-1 max-w-[200px]">
+                  <CustomTooltip content={t("group_hint")}>
                     <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
-                      {t("lore_probability")}
+                      {t("lore_group_name")}
+                    </label>
+                  </CustomTooltip>
+                  <input
+                    className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
+                    type="text"
+                    value={entry.groupName}
+                    onChange={(e) => updateAct("groupName", e.target.value)}
+                  />
+                </div>
+                <div className="min-w-[100px]">
+                  <CustomTooltip content={t("group_weight_hint")}>
+                    <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                      {t("lore_group_weight")}
                     </label>
                   </CustomTooltip>
                   <NumberInput
                     min={0}
-                    max={100}
-                    value={entry.probability}
-                    onChange={(v) => updateAct("probability", v)}
+                    value={entry.groupWeight}
+                    onChange={(v) => updateAct("groupWeight", v)}
                   />
                 </div>
-                <div>
-                  <CustomTooltip content={t("scan_depth_override_hint")}>
-                    <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
-                      {t("lore_scan_depth_override")}
-                    </label>
-                  </CustomTooltip>
-                  <NumberInput
-                    min={-1}
-                    value={entry.scanDepthOverride ?? -1}
-                    onChange={(v) => updateAct("scanDepthOverride", v)}
+                <CustomTooltip content={t("prioritize_inclusion_hint")} align="start">
+                  <Checkbox
+                    checked={entry.prioritizeInclusion}
+                    onChange={(v) => updateAct("prioritizeInclusion", v)}
+                    label={t("lore_prioritize_inclusion")}
                   />
-                </div>
+                </CustomTooltip>
+                <CustomTooltip content={t("group_scoring_hint")} align="start">
+                  <Checkbox
+                    checked={entry.useGroupScoring}
+                    onChange={(v) => updateAct("useGroupScoring", v)}
+                    label={t("lore_use_group_scoring")}
+                  />
+                </CustomTooltip>
               </div>
+              {existingGroups && existingGroups.filter((g) => g !== entry.groupName).length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {existingGroups
+                    .filter((g) => g !== entry.groupName)
+                    .map((g) => (
+                      <span
+                        key={g}
+                        className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
+                        onClick={() => updateAct("groupName", g)}
+                      >
+                        {g}
+                      </span>
+                    ))}
+                </div>
+              )}
+            </div>
 
-              {/* Стратегия — чекбоксы */}
+            {/* ── Фильтр по персонажам — id-bound picker с ghost-binding ── */}
+            <div ref={charFilterRef} className="mb-6 pb-6 border-b border-border/50">
+              <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                {t("lore_charfilter_section")}
+              </label>
               <div
-                className={cn(
-                  "mt-4 grid gap-3",
-                  isMobile ? "grid-cols-1" : "grid-cols-2"
-                )}
+                className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
+                style={{ minHeight: 38 }}
               >
-                <CustomTooltip content={t("constant_hint")}>
-                  <Checkbox
-                    checked={entry.constant}
-                    onChange={(v) => updateAct("constant", v)}
-                    label={t("lore_constant")}
-                  />
-                </CustomTooltip>
-                <CustomTooltip content={t("case_sensitive_hint")}>
-                  <Checkbox
-                    checked={entry.caseSensitive}
-                    onChange={(v) => updateAct("caseSensitive", v)}
-                    label={t("lore_case_sensitive")}
-                  />
-                </CustomTooltip>
-                <CustomTooltip content={t("match_whole_words_hint")}>
-                  <Checkbox
-                    checked={entry.matchWholeWords}
-                    onChange={(v) => updateAct("matchWholeWords", v)}
-                    label={t("lore_match_whole_words")}
-                  />
-                </CustomTooltip>
-                <CustomTooltip content={t("ignore_budget_hint")}>
-                  <Checkbox
-                    checked={entry.ignoreBudget}
-                    onChange={(v) => updateAct("ignoreBudget", v)}
-                    label={t("lore_ignore_budget")}
-                  />
-                </CustomTooltip>
+                {entry.characterFilter.map((f, idx) => {
+                  const isGhost = f.id === null;
+                  const ch = f.id ? allCharacters.find((c) => c.id === f.id) : undefined;
+                  const avatarUrl = ch
+                    ? resolveEntityAvatarUrl({
+                        kind: "characters",
+                        id: ch.id,
+                        avatarExt: ch.avatarExt,
+                        avatarAssetId: ch.avatarAssetId,
+                        avatarFullExt: ch.avatarFullExt,
+                        avatarFullAssetId: ch.avatarFullAssetId,
+                        updatedAt: ch.updatedAt,
+                      })
+                    : null;
+                  return (
+                    <span
+                      key={`${f.id ?? "ghost"}-${idx}`}
+                      className={cn(
+                        "flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] transition-all",
+                        isGhost
+                          ? "cursor-pointer border border-dashed border-amber-500/60 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+                          : "bg-accent-dim text-accent-t hover:bg-border2 hover:text-t1",
+                      )}
+                      title={isGhost ? t("lore_char_filter_bind") : undefined}
+                      onClick={isGhost ? () => setCharFilterPicker(idx) : undefined}
+                    >
+                      <span className="h-4 w-4 shrink-0 overflow-hidden rounded-full bg-s3">
+                        {avatarUrl ? (
+                          <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <span className="flex h-full w-full items-center justify-center text-[8px] font-bold text-t3">
+                            {f.name.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                      </span>
+                      <span className="max-w-[120px] truncate">{f.name}</span>
+                      {!isGhost && (
+                        <button
+                          type="button"
+                          className="ml-0.5 cursor-pointer text-t3 hover:text-t1"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateAct(
+                              "characterFilter",
+                              entry.characterFilter.filter((_, i) => i !== idx),
+                            );
+                          }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </span>
+                  );
+                })}
+                <button
+                  type="button"
+                  className="cursor-pointer rounded px-2 py-0.5 text-[12px] text-t3 transition-all hover:bg-s3 hover:text-t1"
+                  onClick={() => setCharFilterPicker("add")}
+                >
+                  + {t("lore_char_filter_placeholder")}
+                </button>
+              </div>
+              {charFilterPicker !== null && (
+                <div className="relative mt-1">
+                  <div className="glass-blur absolute left-0 top-0 z-[200] max-h-[220px] w-full overflow-y-auto rounded-lg border border-border2 bg-glass-bg py-1 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
+                    {allCharacters.filter((c) => !entry.characterFilter.some((f) => f.id === c.id)).length === 0 ? (
+                      <div className="px-3 py-2 text-[12px] text-t3">{t("lore_char_filter_empty")}</div>
+                    ) : (
+                      allCharacters
+                        .filter((c) => !entry.characterFilter.some((f) => f.id === c.id))
+                        .map((c) => {
+                          const url = resolveEntityAvatarUrl({
+                            kind: "characters",
+                            id: c.id,
+                            avatarExt: c.avatarExt,
+                            avatarAssetId: c.avatarAssetId,
+                            avatarFullExt: c.avatarFullExt,
+                            avatarFullAssetId: c.avatarFullAssetId,
+                            updatedAt: c.updatedAt,
+                          });
+                          return (
+                            <button
+                              type="button"
+                              key={c.id}
+                              className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[13px] text-t1 hover:bg-s2"
+                              onClick={() => {
+                                const next = [...entry.characterFilter];
+                                if (charFilterPicker === "add") {
+                                  next.push({ id: c.id, name: c.name });
+                                } else {
+                                  // Bind the ghost at this index to the chosen character.
+                                  next[charFilterPicker] = { id: c.id, name: c.name };
+                                }
+                                updateAct("characterFilter", next);
+                                setCharFilterPicker(null);
+                              }}
+                            >
+                              <span className="h-5 w-5 shrink-0 overflow-hidden rounded-full bg-s3">
+                                {url ? (
+                                  <img src={url} alt="" className="h-full w-full object-cover" />
+                                ) : (
+                                  <span className="flex h-full w-full items-center justify-center text-[10px] font-bold text-t3">
+                                    {c.name.charAt(0).toUpperCase()}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="truncate">{c.name}</span>
+                            </button>
+                          );
+                        })
+                    )}
+                  </div>
+                </div>
+              )}
+              <div className="mt-2">
+                <Checkbox
+                  checked={entry.characterFilterExclude}
+                  onChange={(v) => updateAct("characterFilterExclude", v)}
+                  label={t("lore_char_filter_exclude")}
+                />
               </div>
             </div>
 
-            {/* ═══ Группа 3: Продвинутая логика ═══ */}
-            <div className="py-7">
+            {/* ── Временные эффекты ── */}
+            <div className="mb-6 pb-6 border-b border-border/50">
               <div className="mb-3 text-[13px] font-medium text-t1">
                 {t("lore_timed_section")}
               </div>
-
-              {/* Тайминги — sticky/cooldown/delay */}
               <div
                 className={cn(
-                  "grid gap-4 mb-7",
+                  "grid gap-4",
                   isMobile && "grid-cols-1"
                 )}
                 style={{
@@ -771,101 +803,53 @@ export function LoreEntryEditor({
                   </div>
                 </CustomTooltip>
               </div>
+            </div>
 
-              {/* Рекурсия */}
-              <div className="mb-7 pb-7 border-b border-border/50">
-                <CustomTooltip content={t("lore_recursion_section_hint")} side="right" align="start">
-                  <div className="mb-3 inline-flex cursor-help items-center gap-1 text-[12px] font-semibold uppercase tracking-[0.07em] text-t3">
-                    {t("lore_recursion_section")}
-                    <span className="text-[11px] normal-case tracking-normal text-t3">?</span>
-                  </div>
-                </CustomTooltip>
-                <div className="flex flex-wrap gap-4">
-                  <CustomTooltip content={t("exclude_recursion_hint")}>
-                    <Checkbox
-                      checked={entry.excludeRecursion}
-                      onChange={(v) => updateAct("excludeRecursion", v)}
-                      label={t("lore_exclude_recursion")}
-                    />
-                  </CustomTooltip>
-                  <CustomTooltip content={t("prevent_recursion_hint")}>
-                    <Checkbox
-                      checked={entry.preventRecursion}
-                      onChange={(v) => updateAct("preventRecursion", v)}
-                      label={t("lore_prevent_recursion")}
-                    />
-                  </CustomTooltip>
-                  <CustomTooltip content={t("delay_until_recursion_hint")}>
-                    <Checkbox
-                      checked={entry.delayUntilRecursion}
-                      onChange={(v) => updateAct("delayUntilRecursion", v)}
-                      label={t("lore_delay_until_recursion")}
-                    />
-                  </CustomTooltip>
+            {/* ── Рекурсия ── */}
+            <div>
+              <CustomTooltip content={t("lore_recursion_section_hint")} side="right" align="start">
+                <div className="mb-3 inline-flex cursor-help items-center gap-1 text-[12px] font-semibold uppercase tracking-[0.07em] text-t3">
+                  {t("lore_recursion_section")}
+                  <span className="text-[11px] normal-case tracking-normal text-t3">?</span>
                 </div>
-                {entry.delayUntilRecursion && (
-                  <div className="mt-3 max-w-[160px]">
-                    <CustomTooltip content={t("recursion_level_hint")}>
-                      <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
-                        {t("lore_recursion_label")}
-                      </label>
-                    </CustomTooltip>
-                    <NumberInput
-                      min={0}
-                      value={entry.recursionLevel}
-                      onChange={(v) => updateAct("recursionLevel", v)}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Группа включения */}
-              <div
-                className={cn(
-                  "flex flex-wrap gap-4 items-end",
-                  isMobile && "flex-col items-stretch"
-                )}
-              >
-                <div className="min-w-[140px] flex-1 max-w-[200px]">
-                  <CustomTooltip content={t("group_hint")}>
-                    <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
-                      {t("lore_group_name")}
-                    </label>
-                  </CustomTooltip>
-                  <input
-                    className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
-                    type="text"
-                    value={entry.groupName}
-                    onChange={(e) => updateAct("groupName", e.target.value)}
+              </CustomTooltip>
+              <div className="flex flex-wrap gap-4">
+                <CustomTooltip content={t("exclude_recursion_hint")} align="start">
+                  <Checkbox
+                    checked={entry.excludeRecursion}
+                    onChange={(v) => updateAct("excludeRecursion", v)}
+                    label={t("lore_exclude_recursion")}
                   />
-                </div>
-                <div className="min-w-[100px]">
-                  <CustomTooltip content={t("group_weight_hint")}>
+                </CustomTooltip>
+                <CustomTooltip content={t("prevent_recursion_hint")} align="start">
+                  <Checkbox
+                    checked={entry.preventRecursion}
+                    onChange={(v) => updateAct("preventRecursion", v)}
+                    label={t("lore_prevent_recursion")}
+                  />
+                </CustomTooltip>
+                <CustomTooltip content={t("delay_until_recursion_hint")} align="start">
+                  <Checkbox
+                    checked={entry.delayUntilRecursion}
+                    onChange={(v) => updateAct("delayUntilRecursion", v)}
+                    label={t("lore_delay_until_recursion")}
+                  />
+                </CustomTooltip>
+              </div>
+              {entry.delayUntilRecursion && (
+                <div className="mt-3 max-w-[160px]">
+                  <CustomTooltip content={t("recursion_level_hint")}>
                     <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
-                      {t("lore_group_weight")}
+                      {t("lore_recursion_label")}
                     </label>
                   </CustomTooltip>
                   <NumberInput
                     min={0}
-                    value={entry.groupWeight}
-                    onChange={(v) => updateAct("groupWeight", v)}
+                    value={entry.recursionLevel}
+                    onChange={(v) => updateAct("recursionLevel", v)}
                   />
                 </div>
-                <CustomTooltip content={t("prioritize_inclusion_hint")}>
-                  <Checkbox
-                    checked={entry.prioritizeInclusion}
-                    onChange={(v) => updateAct("prioritizeInclusion", v)}
-                    label={t("lore_prioritize_inclusion")}
-                  />
-                </CustomTooltip>
-                <CustomTooltip content={t("group_scoring_hint")}>
-                  <Checkbox
-                    checked={entry.useGroupScoring}
-                    onChange={(v) => updateAct("useGroupScoring", v)}
-                    label={t("lore_use_group_scoring")}
-                  />
-                </CustomTooltip>
-              </div>
+              )}
             </div>
           </div>
         )}

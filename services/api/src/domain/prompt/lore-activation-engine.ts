@@ -219,15 +219,15 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       currentRecursionLevel: 0,
       updatedState, activatedIds, failedProbabilityIds,
     });
-    if (result === "activated") {
+    if (result.status === "activated") {
       normalActivated++;
       console.debug("[lore]   activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
       activatedIds.add(entry.id);
-      activated.push(toActivatedEntry(entry, [], 0));
+      activated.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount));
       if (!entry.preventRecursion) {
         recurseBuffer += entry.content + "\n";
       }
-    } else if (result === "failed_probability") {
+    } else if (result.status === "failed_probability") {
       failedProbabilityIds.add(entry.id);
     }
     }
@@ -269,15 +269,15 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
           currentRecursionLevel,
           updatedState, activatedIds, failedProbabilityIds,
         });
-        if (result === "activated") {
+        if (result.status === "activated") {
           console.debug("[lore]   [recursion] activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
           activatedIds.add(entry.id);
-          activated.push(toActivatedEntry(entry, [], 0));
+          activated.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount));
           newActivations++;
           if (!entry.preventRecursion) {
             newRecurseText += entry.content + "\n";
           }
-        } else if (result === "failed_probability") {
+        } else if (result.status === "failed_probability") {
           failedProbabilityIds.add(entry.id);
         }
       }
@@ -334,6 +334,11 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
  * - "failed_probability" — probability check failed (don't retry)
  * - "skipped" — entry was skipped for any other reason
  */
+type ActivationOutcome =
+  | { status: "activated"; matchCount: number; matchedKeys: string[] }
+  | { status: "failed_probability" }
+  | { status: "skipped" };
+
 function tryActivateEntry(ctx: {
   entry: FlatEntry;
   macroMap: Record<string, string>;
@@ -347,12 +352,12 @@ function tryActivateEntry(ctx: {
   updatedState: LoreActivationState;
   activatedIds: Set<string>;
   failedProbabilityIds: Set<string>;
-}): "activated" | "failed_probability" | "skipped" {
+}): ActivationOutcome {
   const { entry, macroMap, characterId, characterName, mode, currentTurn, scanText, scanState, currentRecursionLevel, updatedState, activatedIds } = ctx;
-  const reason = (msg: string): "skipped" => { console.debug("[lore]   skip %s: %s | title=%s", entry.id, msg, entry.title); return "skipped"; };
+  const reason = (msg: string): ActivationOutcome => { console.debug("[lore]   skip %s: %s | title=%s", entry.id, msg, entry.title); return { status: "skipped" }; };
 
   if (!entry.enabled) return reason("disabled");
-  if (activatedIds.has(entry.id)) return "skipped";
+  if (activatedIds.has(entry.id)) return { status: "skipped" };
 
   // 1. Trigger filter
   if (entry.triggers.length > 0 && !entry.triggers.includes(mode)) return reason("trigger filter");
@@ -407,7 +412,7 @@ function tryActivateEntry(ctx: {
     }
     console.debug("[lore]   actv %s: constant | title=%s", entry.id, entry.title);
     updatedState[entry.id] = { ...state, activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
-    return "activated";
+    return { status: "activated", matchCount: 0, matchedKeys: [] };
   }
 
   // 5. Time windows — sticky check
@@ -417,7 +422,7 @@ function tryActivateEntry(ctx: {
     if (turnsSinceActivation < entry.stickyWindow) {
       console.debug("[lore]   actv %s: sticky | title=%s", entry.id, entry.title);
       updatedState[entry.id] = { ...state, lastMatchedAtTurn: currentTurn };
-      return "activated";
+      return { status: "activated", matchCount: 0, matchedKeys: [] };
     }
   }
 
@@ -431,15 +436,16 @@ function tryActivateEntry(ctx: {
   if (entry.delayWindow > 0 && state?.pendingDelayUntilTurn != null) {
     if (currentTurn < state.pendingDelayUntilTurn) return reason("delay pending");
     updatedState[entry.id] = { activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
-    return "activated";
+    return { status: "activated", matchCount: 0, matchedKeys: [] };
   }
 
   // 8. Key matching (skip if @@activate decorator forces activation)
+  let matchedKeys: string[] = [];
   if (!decoratorActive) {
     const resolvedKeys = entry.keys.map(k => applyMacros(k, macroMap));
     const resolvedSecondaryKeys = entry.secondaryKeys.map(k => applyMacros(k, macroMap));
 
-    const matchedKeys = matchKeys(resolvedKeys, scanText, entry.caseSensitive, entry.matchWholeWords);
+    matchedKeys = matchKeys(resolvedKeys, scanText, entry.caseSensitive, entry.matchWholeWords);
     if (matchedKeys.length === 0) return reason("no key match");
 
     // 9. Secondary key logic
@@ -455,7 +461,7 @@ function tryActivateEntry(ctx: {
   if (entry.probability < 100) {
     if (Math.random() * 100 >= entry.probability) {
       console.debug("[lore]   fail %s: probability %d%% | title=%s", entry.id, entry.probability, entry.title);
-      return "failed_probability";
+      return { status: "failed_probability" };
     }
   }
 
@@ -468,7 +474,7 @@ function tryActivateEntry(ctx: {
   // 12. Activate
   console.debug("[lore]   actv %s: key match | title=%s", entry.id, entry.title);
   updatedState[entry.id] = { activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
-  return "activated";
+  return { status: "activated", matchCount: matchedKeys.length, matchedKeys };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -551,7 +557,9 @@ function matchKeys(keys: string[], text: string, caseSensitive: boolean, wholeWo
 }
 
 function checkLogic(logic: string, matchCount: number, totalCount: number): boolean {
-  switch (logic) {
+  // Normalize to lowercase: the DB default and import parser use lowercase,
+  // but legacy editor writes (pre-fix) stored UPPERCASE values. Treat both.
+  switch (logic.toLowerCase()) {
     case "and_any": return matchCount > 0;
     case "and_all": return matchCount === totalCount;
     case "not_any": return matchCount === 0;
@@ -619,15 +627,17 @@ function applyInclusionGroups(
       continue;
     }
 
-    // useGroupScoring — highest matchCount wins
+    // useGroupScoring — highest matchCount wins (NOT total keys.length;
+    // the previous implementation scored on the entry's total key count,
+    // which let a 10-key entry with zero matches beat a 2-key entry with both
+    // matched. matchCount is carried on the activated entry via toActivatedEntry.)
     const anyGroupScoring = groupEntries.some(e => entryMap.get(e.id)?.useGroupScoring);
     if (anyGroupScoring) {
-      const maxScore = Math.max(...groupEntries.map(e => entryMap.get(e.id)?.keys?.length ?? 0));
+      const maxScore = Math.max(...groupEntries.map(e => e.matchCount));
       console.debug("[lore]   group '%s': score-based, maxScore=%d", groupName, maxScore);
       let foundWinner = false;
       for (const e of groupEntries) {
-        const score = entryMap.get(e.id)?.keys?.length ?? 0;
-        if (!foundWinner && score >= maxScore) {
+        if (!foundWinner && e.matchCount >= maxScore) {
           foundWinner = true;
         } else {
           removeIds.add(e.id);

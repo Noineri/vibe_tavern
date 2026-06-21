@@ -836,14 +836,16 @@ function buildUserMessage(
 }
 
 function getLogicHint(logic: string): string {
-  switch (logic) {
-    case "AND_ANY":
+  // Normalize to lowercase — matches the canonical LoreLogic values and the
+  // editor's (post-fix) SegmentedControl. Also tolerates legacy uppercase.
+  switch (logic.toLowerCase()) {
+    case "and_any":
       return "(secondary keys provide additional activation signal — generate related terms)";
-    case "AND_ALL":
+    case "and_all":
       return "(ALL secondary keys must match — keep the set small and tightly related)";
-    case "NOT_ANY":
+    case "not_any":
       return "(secondary keys PREVENT activation when matched — generate terms indicating the conversation moved away from this topic)";
-    case "NOT_ALL":
+    case "not_all":
       return "(secondary keys prevent activation when ALL match — generate unrelated-topic indicators)";
     default:
       return "";

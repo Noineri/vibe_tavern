@@ -15,7 +15,7 @@
  *   - ScriptEditor (useScriptPanel) — редактор скриптов
  */
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
@@ -323,6 +323,12 @@ export function LorebookEditor({
   // ═══ Загрузка записей (для активного лорбука) ═══
   const [entries, setEntries] = useState<LoreEntryRecord[]>([]);
   const activeEntry = entries.find((e) => e.id === activeEntryId) ?? null;
+  // Distinct non-empty group names in the current lorebook — used by the
+  // entry editor's group-name input autocomplete (datalist).
+  const existingGroups = useMemo(
+    () => Array.from(new Set(entries.map((e) => e.groupName).filter((g): g is string => !!g))).sort(),
+    [entries],
+  );
 
   const refreshEntries = useCallback(async () => {
     if (!activeLorebookIdForEntry) return;
@@ -1030,6 +1036,7 @@ export function LorebookEditor({
                     entry={activeEntry}
                     entryId={activeEntry.id}
                     lorebookId={activeLorebookIdForEntry!}
+                    existingGroups={existingGroups}
                     updateAct={updateAct}
                     onDeleted={() => {
                       setActiveEntryId(null);
@@ -1075,6 +1082,7 @@ export function LorebookEditor({
                       entry={activeEntry}
                       entryId={activeEntry.id}
                       lorebookId={activeLorebookIdForEntry!}
+                      existingGroups={existingGroups}
                       updateAct={updateAct}
                       onDeleted={() => {
                         setActiveEntryId(null);

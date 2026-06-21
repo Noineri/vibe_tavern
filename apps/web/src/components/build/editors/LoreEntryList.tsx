@@ -700,8 +700,17 @@ export function LoreEntryList({
     const touchStart = touchStartPointRef.current;
     const touchCurrent = touchCurrentPointRef.current;
     const useTouchPoint = dragInputTypeRef.current === "touch" && touchStart && touchCurrent;
-    const x = Math.round(useTouchPoint ? touchCurrent.x - touchStart.x : event.delta.x - base.x);
-    const y = Math.round(useTouchPoint ? touchCurrent.y - touchStart.y : event.delta.y - base.y);
+    // Mouse wheel-scroll during a drag shifts the page/panel under the
+    // position:fixed overlay without moving the pointer — dnd-kit then reports
+    // the scroll as a content-space `event.delta` change, so feeding it into the
+    // fixed overlay makes the card visually detach from the cursor. Compensate
+    // by subtracting the accumulated scroll delta on the mouse path only.
+    // (Touch coordinates above are already viewport-relative, so they must NOT
+    // have scroll subtracted — that would re-introduce the lag the touchmove
+    // listener exists to fix.) Mirrors the hit-test compensation below.
+    const scrollDelta = getScrollDelta(dragScrollSnapshotsRef.current);
+    const x = Math.round(useTouchPoint ? touchCurrent.x - touchStart.x : event.delta.x - base.x - scrollDelta.x);
+    const y = Math.round(useTouchPoint ? touchCurrent.y - touchStart.y : event.delta.y - base.y - scrollDelta.y);
     const nextTransform = `translate3d(${x}px, ${y}px, 0)`;
     overlayTransformRef.current = nextTransform;
     node.style.transform = nextTransform;
@@ -710,7 +719,6 @@ export function LoreEntryList({
     const sourceIndex = dragSourceIndexRef.current;
     const sourceRect = sourceIndex === null ? null : items[sourceIndex]?.rect;
     if (sourceIndex !== null && sourceRect) {
-      const scrollDelta = getScrollDelta(dragScrollSnapshotsRef.current);
       const centerY = sourceRect.top - scrollDelta.y + sourceRect.height / 2 + y;
       let targetIndex = sourceIndex;
       let closestDistance = Number.POSITIVE_INFINITY;
