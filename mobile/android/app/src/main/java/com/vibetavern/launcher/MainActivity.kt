@@ -90,7 +90,7 @@ class MainActivity : AppCompatActivity() {
             echo '📦 Step 2/5: Installing Termux packages...'
             pkg update -y
             pkg install -y curl tar proot-distro procps
-            termux-setup-storage 2>/dev/null || true
+            printf '\n' | termux-setup-storage 2>/dev/null || true
             termux-wake-lock 2>/dev/null || true
 
             echo '📦 Step 3/5: Getting archive...'
