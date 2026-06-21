@@ -49,11 +49,12 @@ export function LorebookImportModal({
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
   // ── Данные файла ──
-  const [importData, setImportData] = useState<Record<string, unknown> | null>(
-    null
-  );
+  // `importData` хранит распарсенный JSON как есть (объект для ST, массив для Janitor).
+  const [importData, setImportData] = useState<unknown>(null);
   const [fileName, setFileName] = useState("");
   const [entryCount, setEntryCount] = useState(0);
+  // "st" (SillyTavern: { entries: ... }) или "janitor" (bare array of entries).
+  const [detectedFormat, setDetectedFormat] = useState<"st" | "janitor">("st");
   const [parseError, setParseError] = useState<string | null>(null);
 
   // ── Настройки импорта ──
@@ -72,6 +73,7 @@ export function LorebookImportModal({
     setImportData(null);
     setFileName("");
     setEntryCount(0);
+    setDetectedFormat("st");
     setParseError(null);
     setMode("new");
     setTargetLorebookId(null);
@@ -81,22 +83,37 @@ export function LorebookImportModal({
   };
 
   // ── Парсинг файла ──
+  // Формат определяется по форме JSON: голый массив → Janitor AI;
+  // объект с `entries` → SillyTavern. Бэкенд повторно проверяет форму,
+  // так что это лишь для подсчёта записей и подписи в UI.
   const parseFileContent = (text: string, name: string) => {
     try {
       const parsed = JSON.parse(text);
+      // Janitor: top-level array of entry objects.
+      if (Array.isArray(parsed)) {
+        setImportData(parsed);
+        setFileName(name);
+        setEntryCount(parsed.length);
+        setDetectedFormat("janitor");
+        setParseError(null);
+        setStep(2);
+        return;
+      }
       if (typeof parsed !== "object" || parsed === null) {
         setParseError(t("import_invalid_json"));
         return;
       }
-      const entries = parsed.entries;
+      // SillyTavern: object with `entries` (array or keyed object).
+      const entries = (parsed as Record<string, unknown>).entries;
       const count = Array.isArray(entries)
         ? entries.length
         : typeof entries === "object" && entries !== null
           ? Object.keys(entries).length
           : 0;
-      setImportData(parsed as Record<string, unknown>);
+      setImportData(parsed);
       setFileName(name);
       setEntryCount(count);
+      setDetectedFormat("st");
       setParseError(null);
       setStep(2);
     } catch {
@@ -141,7 +158,7 @@ export function LorebookImportModal({
     if (!lorebookId) return;
 
     const body: Parameters<typeof importLorebookEntries>[1] = {
-      format: "st",
+      format: detectedFormat,
       data: importData,
       mode,
     };
@@ -279,7 +296,9 @@ export function LorebookImportModal({
                   className="text-[13px] font-medium text-t1"
                   style={{ marginBottom: 4 }}
                 >
-                  {t("import_detected_format")}
+                  {detectedFormat === "janitor"
+                    ? t("import_detected_format_janitor")
+                    : t("import_detected_format")}
                 </div>
                 <div className="text-xs text-t3">
                   {entryCount} {t("import_entries_found")}
