@@ -35,6 +35,10 @@ export const Ic = {
   import:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M8 12V3M4 7l4-4 4 4M2 14h12"/></svg>,
   search:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="7" cy="7" r="4.5"/><line x1="10.5" y1="10.5" x2="14.5" y2="14.5"/></svg>,
   stack:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"><polygon points="8 2 2 5 8 8 14 5 8 2"/><polyline points="2 8 8 11 14 8"/><polyline points="2 11 8 14 14 11"/></svg>,
+  // Globe — adapted from the Lucide "globe" icon (ISC). Rescaled from its
+  // 24×24 grid onto our 16×16 grid (center 12,12 → 8,8, geometry ×2/3):
+  // outer circle r10→r6.67, meridian ellipse r14.5→9.67, equator spans 20→13.33.
+  globe:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.67"/><path d="M8 1.33a9.67 9.67 0 0 0 0 13.33a9.67 9.67 0 0 0 0-13.33"/><path d="M1.33 8h13.33"/></svg>,
   alert:()=><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2L1 14h14L8 2z"/><line x1="8" y1="6" x2="8" y2="10"/><circle cx="8" cy="12.5" r="0.5" fill="currentColor" stroke="none"/></svg>,
   ellipsis:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="8" cy="13" r="1.5"/></svg>,
   download:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"><path d="M8 2v9M4 7l4 4 4-4M2 14h12"/></svg>,

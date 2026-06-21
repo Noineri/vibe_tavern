@@ -16,10 +16,9 @@ import {
   importLorebookEntries,
   type LorebookRecord,
 } from "../../../app-client.js";
+import type { Scope } from "./LorebookAccordion.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
-
-type Scope = "global" | "character" | "persona" | "chat";
 
 interface LorebookImportModalProps {
   open: boolean;
@@ -148,10 +147,14 @@ export function LorebookImportModal({
     };
 
     if (mode === "new") {
-      body.scopeType = scope;
-      if (scope === "character") body.characterId = characterId;
-      if (scope === "persona" && personaId) body.personaId = personaId;
-      if (scope === "chat" && chatId) body.chatId = chatId;
+      // "all" is a read-only overview scope with no concrete owner; fall back
+      // to character scope (the import CTA is hidden in "all" mode anyway, so
+      // this is purely defensive against a stale importOpen state).
+      const effectiveScope: Exclude<Scope, "all"> = scope === "all" ? "character" : scope;
+      body.scopeType = effectiveScope;
+      if (effectiveScope === "character") body.characterId = characterId;
+      if (effectiveScope === "persona" && personaId) body.personaId = personaId;
+      if (effectiveScope === "chat" && chatId) body.chatId = chatId;
     }
     if (fileName) body.fallbackName = fileName.replace(/\.json$/i, "");
 
