@@ -32,6 +32,8 @@ import {
 
 import { cn } from "../../../lib/cn.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
+import { Toggle } from "../../shared/Toggle.js";
+import { CustomTooltip } from "../../shared/Tooltip.js";
 import type { LoreEntryRecord } from "../../../app-client.js";
 
 // ── Position config ──────────────────────────────────────────────────────
@@ -205,6 +207,7 @@ interface LoreEntryListProps {
   t: (key: string) => string;
   onEntryClick: (entryId: string) => void;
   onReorder: (updates: Array<{ id: string; sortOrder: number; position?: string }>) => void | Promise<unknown>;
+  onToggleEnabled?: (entryId: string, enabled: boolean) => void | Promise<void>;
 }
 
 interface EntryCardVisualProps {
@@ -220,6 +223,9 @@ interface EntryCardVisualProps {
   mobileHandleProps?: HTMLAttributes<HTMLDivElement>;
   draggingPlaceholder?: boolean;
   overlay?: boolean;
+  /** When provided, an enabled-toggle renders at the row's right edge.
+   *  Omitted in the drag-overlay copy (display-only, pointer-events-none). */
+  onToggleEnabled?: (entryId: string, enabled: boolean) => void;
 }
 
 function EntryCardVisual({
@@ -235,6 +241,7 @@ function EntryCardVisual({
   mobileHandleProps,
   draggingPlaceholder = false,
   overlay = false,
+  onToggleEnabled,
 }: EntryCardVisualProps) {
   return (
     <div
@@ -280,12 +287,6 @@ function EntryCardVisual({
       {/* Card content */}
       <div className="min-w-0 flex-1 px-3.5 pt-3 pb-2.5">
         <div className="flex items-center gap-2">
-          <div
-            className={cn(
-              "h-2 w-2 shrink-0 rounded-full",
-              entry.enabled ? "bg-success" : "bg-t3"
-            )}
-          />
           <span
             className={cn(
               "flex-1 truncate text-[13px] font-medium",
@@ -298,6 +299,39 @@ function EntryCardVisual({
           >
             {entry.title || t("lore_no_entries")}
           </span>
+
+          {/* ── Status badges (only the non-default flags) ── */}
+          {entry.constant && (
+            <CustomTooltip content={t("constant_hint")} align="start">
+              <span className="flex h-5 shrink-0 items-center rounded bg-accent-dim px-1.5 text-[10px] font-bold uppercase leading-none text-accent-t">C</span>
+            </CustomTooltip>
+          )}
+          {entry.ignoreBudget && (
+            <CustomTooltip content={t("ignore_budget_hint")} align="start">
+              <span className="flex h-5 shrink-0 items-center rounded bg-warning-dim px-1.5 text-[10px] font-bold leading-none text-warning-text">∞</span>
+            </CustomTooltip>
+          )}
+          {entry.groupName && (
+            <CustomTooltip content={`${t("lore_group_name")}: ${entry.groupName}`} align="start">
+              <span className="flex h-5 max-w-[80px] shrink-0 items-center truncate rounded bg-s3 px-1.5 text-[10px] leading-none text-t3">{entry.groupName}</span>
+            </CustomTooltip>
+          )}
+
+          {/* ── Enabled toggle ──
+              Stop pointerdown so dnd-kit's MouseSensor (whole-card activator on
+              desktop) never starts a drag from here; stop click so the card
+              doesn't navigate into the editor. The drag-overlay copy passes no
+              callback and is pointer-events-none anyway. */}
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            className="flex h-5 shrink-0 items-center"
+          >
+            <Toggle
+              checked={entry.enabled}
+              onChange={(v) => onToggleEnabled?.(entry.id, v)}
+            />
+          </div>
         </div>
 
         {/* Clickable content area below title */}
@@ -341,6 +375,7 @@ function DraggableEntryCard({
   t,
   onClick,
   hideSourceWhileDragging,
+  onToggleEnabled,
 }: {
   entry: LoreEntryRecord;
   isActive: boolean;
@@ -348,6 +383,7 @@ function DraggableEntryCard({
   t: (key: string) => string;
   onClick: () => void;
   hideSourceWhileDragging: boolean;
+  onToggleEnabled?: (entryId: string, enabled: boolean) => void;
 }) {
   const sourceNodeRef = useRef<HTMLElement | null>(null);
   const activatorNodeRef = useRef<HTMLElement | null>(null);
@@ -434,6 +470,7 @@ function DraggableEntryCard({
       isMobile={isMobile}
       t={t}
       onClick={onClick}
+      onToggleEnabled={onToggleEnabled}
       rootRef={handleRootRef}
       style={style}
       rootProps={!isMobile ? { ...attributes, ...listeners } : undefined}
@@ -454,6 +491,7 @@ export function LoreEntryList({
   t,
   onEntryClick,
   onReorder,
+  onToggleEnabled,
 }: LoreEntryListProps) {
   // DnD architecture note:
   // We intentionally use @dnd-kit/core only, not @dnd-kit/sortable. Sortable's
@@ -951,6 +989,7 @@ export function LoreEntryList({
                   isMobile={isMobile}
                   t={t}
                   onClick={() => onEntryClick(entry.id)}
+                  onToggleEnabled={onToggleEnabled}
                   hideSourceWhileDragging={entry.id === activeDragId && overlayHasMoved}
                 />
               ))}

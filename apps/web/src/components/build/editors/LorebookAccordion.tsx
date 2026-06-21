@@ -67,6 +67,7 @@ interface LorebookAccordionProps {
     recursiveScanning?: boolean;
   }) => void;
   onReorderEntries: (updates: Array<{ id: string; sortOrder: number; position?: string }>) => Promise<LoreEntryRecord[]>;
+  onToggleEntryEnabled: (entryId: string, enabled: boolean) => Promise<LoreEntryRecord>;
   onSetLinks: (links: Array<{ targetType: "character" | "persona"; targetId: string }>) => void;
   onDuplicate: () => void;
   onExport: () => void;
@@ -101,6 +102,7 @@ export function LorebookAccordion({
   onToggleEnabled,
   onUpdateMeta,
   onReorderEntries,
+  onToggleEntryEnabled,
   onSetLinks,
   onDuplicate,
   onExport,
@@ -136,6 +138,22 @@ export function LorebookAccordion({
   ) => {
     const nextEntries = await onReorderEntries(updates);
     setEntries(nextEntries);
+  };
+
+  // Toggle a single entry's enabled flag. Optimistically updates the local
+  // list so the switch flips immediately, then commits via the parent's
+  // updateLoreEntry call. On error we refetch to reconcile.
+  const handleToggleEntryEnabled = async (entryId: string, enabled: boolean) => {
+    const prev = entries;
+    setEntries((cur) => cur.map((e) => (e.id === entryId ? { ...e, enabled } : e)));
+    try {
+      const updated = await onToggleEntryEnabled(entryId, enabled);
+      setEntries((cur) => cur.map((e) => (e.id === entryId ? updated : e)));
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("Failed to toggle lore entry enabled", error);
+      setEntries(prev);
+    }
   };
 
   return (
@@ -489,6 +507,7 @@ export function LorebookAccordion({
             t={t}
             onEntryClick={onEntryClick}
             onReorder={handleReorderEntries}
+            onToggleEnabled={handleToggleEntryEnabled}
           />
 
           {/* Add entry button */}
