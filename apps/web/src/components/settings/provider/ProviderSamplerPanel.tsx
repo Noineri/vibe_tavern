@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { useT } from '../../../i18n/context.js';
 import type { FormState } from '../../modals/ProviderModal.js';
 import { ChipInput } from '../../shared/ChipInput.js';
@@ -9,6 +10,9 @@ import { CustomTooltip } from '../../shared/Tooltip.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import type { SamplerCapabilityFlags, SamplerFieldId } from '@vibe-tavern/domain';
 import { NumberInput } from '../../shared/NumberInput.js';
+import { samplerPresetPayloadSchema } from '@vibe-tavern/api-contracts';
+import { computeOverlayPatch } from '../../../hooks/save-provider-patch.js';
+import { applySamplerPresetFields } from '../../../lib/sampler-clipboard.js';
 
 /* ── SamplerField sub-component ────────────────────────────────────── */
 
@@ -199,6 +203,51 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
     }
   };
 
+  // ── Sampler preset clipboard (Wave 6) ──
+  // Copy: form → overlay payload → JSON → clipboard. Paste: clipboard → JSON →
+  // schema-safeParse → applySamplerPresetFields. Routing (overlay vs base) is
+  // automatic — updateForm (= lazyAutoSaveField in the modal) routes based on
+  // form.bindPerModel && editingModelId (Wave 4).
+  const handleCopySampler = async () => {
+    const payload = computeOverlayPatch(form);
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(payload));
+      toast.success(t("sampler_copy_done"));
+    } catch {
+      // clipboard.writeText can fail in non-secure contexts or when the
+      // clipboard API is unavailable. VT runs on localhost (secure) so this is
+      // rare — no fallback per plan §115.
+    }
+  };
+
+  const handlePasteSampler = async () => {
+    let text: string;
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      toast.error(t("sampler_paste_invalid"));
+      return;
+    }
+    if (!text.trim()) {
+      toast.error(t("sampler_paste_empty"));
+      return;
+    }
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(text);
+    } catch {
+      toast.error(t("sampler_paste_invalid"));
+      return;
+    }
+    const result = samplerPresetPayloadSchema.safeParse(parsedJson);
+    if (!result.success) {
+      toast.error(t("sampler_paste_invalid"));
+      return;
+    }
+    applySamplerPresetFields(result.data, updateForm);
+    toast.success(t("sampler_paste_done"));
+  };
+
   return (
     <div className="mb-4">
       {/* ── Basic settings ── */}
@@ -316,12 +365,35 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
             </span>
             {t("samplers_advanced")}
           </span>
-          {/* Toggle switch right in the accordion header */}
-          <div
-            className={cn("relative h-5 w-9 rounded-full transition-colors cursor-pointer shrink-0", form.customSamplers ? "bg-accent" : "bg-s3")}
-            onClick={(e) => { e.stopPropagation(); handleToggleCustomSamplers(!form.customSamplers); }}
-          >
-            <div className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform", form.customSamplers ? "translate-x-[18px]" : "translate-x-0.5")} />
+          {/* Copy/paste sampler preset (Wave 6) + toggle switch */}
+          <div className="flex items-center gap-1.5">
+            <CustomTooltip content={t("sampler_copy")}>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); void handleCopySampler(); }}
+                className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1"
+                aria-label={t("sampler_copy")}
+              >
+                <span className="[&_svg]:h-[13px] [&_svg]:w-[13px]"><Icons.Copy /></span>
+              </button>
+            </CustomTooltip>
+            <CustomTooltip content={t("sampler_paste")}>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); void handlePasteSampler(); }}
+                className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1"
+                aria-label={t("sampler_paste")}
+              >
+                <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Download /></span>
+              </button>
+            </CustomTooltip>
+            {/* Toggle switch right in the accordion header */}
+            <div
+              className={cn("relative h-5 w-9 rounded-full transition-colors cursor-pointer shrink-0", form.customSamplers ? "bg-accent" : "bg-s3")}
+              onClick={(e) => { e.stopPropagation(); handleToggleCustomSamplers(!form.customSamplers); }}
+            >
+              <div className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform", form.customSamplers ? "translate-x-[18px]" : "translate-x-0.5")} />
+            </div>
           </div>
         </div>
 
