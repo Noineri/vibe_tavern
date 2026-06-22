@@ -10,6 +10,7 @@ import { useModalStore } from "../../stores/modal-store.js";
 import { PresetList, PromptFields } from "../settings/prompt/index.js";
 import { PromptOrderCanvas, type CharacterCanvasDraft } from "../settings/prompt/InjectionTable.js";
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
+import { serializeStPreset } from "../../lib/st-preset-parser.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
@@ -232,6 +233,23 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     });
   };
 
+  const handleExportPreset = () => {
+    if (!activePreset) return;
+    // Export the SAVED preset (full DTO), not the possibly-dirty draft — a
+    // shareable file should represent persisted state. Users save first to
+    // export edits (Save sits right next to this action).
+    const json = serializeStPreset(activePreset);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(activePreset.name || "preset").replace(/[^a-zA-Z0-9_-]/g, "_")}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const handleAdd = (name: string) => {
     void input.onCreate({
       name,
@@ -446,6 +464,14 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               onClick={handleDuplicate}
             >
               <Icons.Copy /> {t("duplicate_preset_btn")}
+            </span>
+            )}
+            {activePreset && (
+            <span
+              className={cn("flex cursor-pointer items-center gap-1 font-ui text-t3 transition-all hover:text-t1", isMobile ? "text-[12px]" : "text-[calc(var(--ui-fs)-2px)]")}
+              onClick={handleExportPreset}
+            >
+              <Icons.Download /> {t("export_preset_btn")}
             </span>
             )}
             {activePreset && input.presets.length > 1 && (
