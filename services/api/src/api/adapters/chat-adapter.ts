@@ -1,5 +1,5 @@
 import type { ChatRuntimeApi } from "../contract/runtime-api.js";
-import { brandId, parseStoredAttachments, type ChatId, type ChatBranchId, type MessageId } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, resolveEffectiveSettings, type ChatId, type ChatBranchId, type MessageId } from "@vibe-tavern/domain";
 import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { validation, notFound } from "../../shared/errors.js";
@@ -75,7 +75,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	sendMessage = async (chatId: string, body: { content: string; attachments?: any[] }, signal?: AbortSignal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
-		const profile = await this.resolveActiveProfileOrThrow();
+		const profile = await this.resolveEffectiveProfileOrThrow();
 		logSendDebug("api.runtime.send.profile", {
 			chatId,
 			profileId: profile.id,
@@ -108,7 +108,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: any[] }, signal?: AbortSignal) {
-		const profile = await this.resolveActiveProfileOrThrow();
+		const profile = await this.resolveEffectiveProfileOrThrow();
 		try {
 			yield* this.liveChatOrchestrator.sendMessageStream({
 				chatId,
@@ -134,7 +134,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	regenerateMessage = async (chatId: string, messageId: string, _body: unknown, signal?: AbortSignal) => {
-		const profile = await this.resolveActiveProfileOrThrow();
+		const profile = await this.resolveEffectiveProfileOrThrow();
 		const result = await this.liveChatOrchestrator.regenerateMessage({
 			chatId,
 			messageId,
@@ -146,7 +146,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	regenerateMessageStream = async function* (this: ChatAdapter, chatId: string, messageId: string, _body: unknown, signal?: AbortSignal) {
-		const profile = await this.resolveActiveProfileOrThrow();
+		const profile = await this.resolveEffectiveProfileOrThrow();
 		yield* this.liveChatOrchestrator.regenerateMessageStream({
 			chatId,
 			messageId,
@@ -157,7 +157,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	generateReply = async (chatId: string, signal?: AbortSignal) => {
-		const profile = await this.resolveActiveProfileOrThrow();
+		const profile = await this.resolveEffectiveProfileOrThrow();
 		const result = await this.liveChatOrchestrator.generateReply({
 			chatId,
 			profile,
@@ -168,7 +168,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	generateReplyStream = async function* (this: ChatAdapter, chatId: string, signal?: AbortSignal) {
-		const profile = await this.resolveActiveProfileOrThrow();
+		const profile = await this.resolveEffectiveProfileOrThrow();
 		yield* this.liveChatOrchestrator.generateReplyStream({
 			chatId,
 			profile,
@@ -210,7 +210,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			throw validation("Only image or video attachments can be described.");
 		}
 
-		const profile = await this.resolveActiveProfileOrThrow();
+		const profile = await this.resolveEffectiveProfileOrThrow();
 		if (!profile.visionModel) {
 			throw validation("No vision model configured in the active provider profile. Set one in Provider settings.");
 		}
@@ -355,5 +355,32 @@ export class ChatAdapter implements ChatRuntimeApi {
 			throw validation("Active provider profile has no default model. Pick a model and save the profile.");
 		}
 		return { ...profile, defaultModel: profile.defaultModel as string };
+	}
+
+	/**
+	 * Resolve the EFFECTIVE provider profile for generation: the base profile
+	 * merged with the active model's per-model overlay (when binding is ON).
+	 *
+	 * This is the single generation-boundary chokepoint. All generation methods
+	 * (send/regenerate/generateReply + their stream variants + vision describe)
+	 * call this instead of {@link resolveActiveProfileOrThrow} so a bound model's
+	 * overlay (temperature, contextBudget, pinContextBudget, ...) actually
+	 * reaches the provider executor. Snapshot/DTO reads stay on the base profile
+	 * (configured view, not generation-derived).
+	 *
+	 * Identity fields (endpoint, apiKey, defaultModel, visionModel) come from the
+	 * base — the overlay cannot rename/rebind, only override sampler/context.
+	 */
+	private async resolveEffectiveProfileOrThrow() {
+		const profile = await this.resolveActiveProfileOrThrow();
+		if (!profile.bindPerModel) return profile;
+		const overlay = await this.providerProfileService.getProviderModelSettings(profile.id, profile.defaultModel);
+		// resolveEffectiveSettings returns StoredProviderProfileRecord (defaultModel:
+		// string | null), but the effective profile's defaultModel IS the base's
+		// (the overlay never touches identity) — already narrowed to `string` by
+		// resolveActiveProfileOrThrow. Re-pin the narrowing so callers keep their
+		// non-null model guarantee.
+		const effective = resolveEffectiveSettings(profile, overlay?.settings ?? null);
+		return { ...effective, defaultModel: profile.defaultModel };
 	}
 }
