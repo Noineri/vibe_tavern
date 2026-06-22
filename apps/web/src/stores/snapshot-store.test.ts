@@ -73,7 +73,6 @@ function fullSeed(): AppSnapshot {
     messages: [makeMessage("m1"), makeMessage("m2")],
     summaries: [],
     promptTrace: null,
-    promptTraceHistory: [],
     contextPreview: null,
     character: makeCharacter("c1"),
     persona: null,

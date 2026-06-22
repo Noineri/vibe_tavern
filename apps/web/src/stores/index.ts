@@ -37,6 +37,14 @@ export {
 } from "./modal-store.js";
 
 export {
+  useTraceHistoryStore,
+  useTraceHistory,
+  useTraceHistoryEntry,
+  type TraceHistoryStatus,
+  type TraceHistoryEntry,
+} from "./trace-history-store.js";
+
+export {
   useDisplayMessage,
   useMessageOrder,
   useChatMeta,

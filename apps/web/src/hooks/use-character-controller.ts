@@ -136,7 +136,6 @@ export function useCharacterController(): CharacterControllerActions {
         .filter((chat): chat is ChatListItem => Boolean(chat)),
       allCharacters: state.allCharacters,
       promptTrace: state.promptTrace,
-      promptTraceHistory: state.promptTraceHistory,
       contextPreview: state.contextPreview,
     } as StoreSnapshot;
   }

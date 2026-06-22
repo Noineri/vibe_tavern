@@ -16,6 +16,7 @@ import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { StreamingReveal } from "../lib/streaming-reveal.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
+import { useTraceHistoryStore } from "../stores/trace-history-store.js";
 import {
   fetchChatAction,
   sendChatMessageAction,
@@ -261,9 +262,12 @@ export function useChatController(): ChatControllerActions {
       try {
         await sendChatMessageAction(activeChatId, trimmed, attachments.length > 0 ? attachments : undefined, controller.signal);
         const snapshot = useSnapshotStore.getState();
-        csStore.setSelectedTraceId(
-          snapshot.promptTrace?.id ?? snapshot.promptTraceHistory[0]?.id ?? null,
-        );
+        csStore.setSelectedTraceId(snapshot.promptTrace?.id ?? null);
+        // Optimistically add the fresh trace to the branch-scoped cache so the
+        // Trace tab (if open) shows it without a refetch (TL-B2).
+        if (snapshot.promptTrace && snapshot.activeBranch?.id) {
+          useTraceHistoryStore.getState().upsertLatest(activeChatId, snapshot.activeBranch.id, snapshot.promptTrace);
+        }
         void logClientSendDebug("web.hook.handleSend.success", { activeChatId });
       } catch (error) {
         if (controller.signal.aborted) {
@@ -315,9 +319,10 @@ export function useChatController(): ChatControllerActions {
       try {
         await generateReplyAction(activeChatId, controller.signal);
         const snapshot = useSnapshotStore.getState();
-        useChatStore.getState().setSelectedTraceId(
-          snapshot.promptTrace?.id ?? snapshot.promptTraceHistory[0]?.id ?? null,
-        );
+        useChatStore.getState().setSelectedTraceId(snapshot.promptTrace?.id ?? null);
+        if (snapshot.promptTrace && snapshot.activeBranch?.id) {
+          useTraceHistoryStore.getState().upsertLatest(activeChatId, snapshot.activeBranch.id, snapshot.promptTrace);
+        }
         void logClientSendDebug("web.hook.handleResend.success", { activeChatId });
       } catch (error) {
         if (controller.signal.aborted) {
@@ -434,9 +439,10 @@ export function useChatController(): ChatControllerActions {
       try {
         await regenerateMessageAction(activeChatId, messageId, controller.signal);
         const snapshot = useSnapshotStore.getState();
-        useChatStore.getState().setSelectedTraceId(
-          snapshot.promptTrace?.id ?? snapshot.promptTraceHistory[0]?.id ?? null,
-        );
+        useChatStore.getState().setSelectedTraceId(snapshot.promptTrace?.id ?? null);
+        if (snapshot.promptTrace && snapshot.activeBranch?.id) {
+          useTraceHistoryStore.getState().upsertLatest(activeChatId, snapshot.activeBranch.id, snapshot.promptTrace);
+        }
       } catch (error) {
         if (controller.signal.aborted) {
           void logClientSendDebug("web.hook.handleRegenerate.cancelled", { activeChatId, messageId });

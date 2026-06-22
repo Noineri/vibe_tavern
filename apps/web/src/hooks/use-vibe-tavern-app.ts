@@ -100,7 +100,6 @@ export function useRpPlatformApp() {
   // Primitive snapshot facts for small idempotent sync effects.
   const messageOrder = useSnapshotStore((s) => s.messageOrder);
   const promptTrace = useSnapshotStore((s) => s.promptTrace);
-  const promptTraceHistory = useSnapshotStore((s) => s.promptTraceHistory);
 
   const editingMessageId = useChatStore((s) => s.editingMessageId);
 
@@ -136,11 +135,12 @@ export function useRpPlatformApp() {
   }, [tweaksSettings, theme]);
 
   const promptTraceId = promptTrace?.id ?? null;
-  const firstPromptTraceHistoryId = promptTraceHistory[0]?.id ?? null;
 
   // --- Keep selectedTraceId/editing state in sync with primitive snapshot facts ---
   useEffect(() => {
-    const nextSelectedTraceId = promptTraceId ?? firstPromptTraceHistoryId ?? null;
+    // promptTrace is the single latest trace (history is lazy-loaded now,
+    // TL-B2), so it is the only seed for selectedTraceId.
+    const nextSelectedTraceId = promptTraceId ?? null;
     const chatState = useChatStore.getState();
     if (chatState.selectedTraceId !== nextSelectedTraceId) {
       chatState.setSelectedTraceId(nextSelectedTraceId);
@@ -154,7 +154,7 @@ export function useRpPlatformApp() {
         chatState.setEditingDraft("");
       }
     }
-  }, [promptTraceId, firstPromptTraceHistoryId, editingMessageId, messageOrder]);
+  }, [promptTraceId, editingMessageId, messageOrder]);
 
   return {
     isLoading,
