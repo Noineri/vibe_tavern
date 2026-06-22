@@ -47,8 +47,6 @@ interface SnapshotState {
 
   /** Prompt trace from last generation. */
   promptTrace: PromptTraceRecordDto | null;
-  /** Prompt trace history. */
-  promptTraceHistory: PromptTraceRecordDto[];
   /** Context preview (shown when no traces exist). */
   contextPreview: AssemblePromptResponse | null;
 
@@ -121,7 +119,6 @@ const initialState: SnapshotState = {
   branches: [],
   summaries: [],
   promptTrace: null,
-  promptTraceHistory: [],
   contextPreview: null,
   swipeDirection: 1 as const,
   allCharacters: [],
@@ -285,11 +282,6 @@ export const useSnapshotStore = create<SnapshotStore>()(
           const next = snapshot.promptTrace ?? null;
           if (!deepEqual(draft.promptTrace, next)) draft.promptTrace = next;
         }
-        if (Array.isArray(snapshot.promptTraceHistory)) {
-          if (!deepEqual(draft.promptTraceHistory, snapshot.promptTraceHistory)) {
-            draft.promptTraceHistory = snapshot.promptTraceHistory;
-          }
-        }
         if ("contextPreview" in snapshot) {
           const next = snapshot.contextPreview ?? null;
           if (!deepEqual(draft.contextPreview, next)) draft.contextPreview = next;
@@ -423,7 +415,6 @@ export function usePromptTrace() {
   return useSnapshotStore(
     useShallow((s) => ({
       promptTrace: s.promptTrace,
-      promptTraceHistory: s.promptTraceHistory,
       contextPreview: s.contextPreview,
     })),
   );

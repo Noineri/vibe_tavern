@@ -20,8 +20,7 @@ import { useBuildPanels } from "../../hooks/use-build-panels.js";
 
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useChatMeta } from "../../stores/chat-selectors.js";
-import { useSnapshotStore } from "../../stores/snapshot-store.js";
-import { useChatStore } from "../../stores/index.js";
+import { useChatStore, useTraceHistory, type TraceHistoryStatus } from "../../stores/index.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 
 export type BuildTab = string;
@@ -38,12 +37,22 @@ export function BuildMode() {
   const bootstrapData = useBootstrapStore((s) => s.data);
   const activeChatId = useChatStore((s) => s.activeChatId);
   const chatMeta = useChatMeta();
-  const promptTraceHistory = useSnapshotStore((s) => s.promptTraceHistory);
   const charData = chatMeta?.character ?? null;
   const isSaving = useCharacterStore((s) => s.isSavingCharacter);
   const buildTab = useCharacterStore((s) => s.buildTab);
   const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
   const { t } = useT();
+
+  // Trace history is lazy-loaded + branch-scoped (TL-B2). Fetch only while the
+  // trace sub-tab is open; the cache survives a tab toggle without refetch.
+  const traceHistoryChatId = chatMeta?.activeChat?.id ?? null;
+  const traceHistoryBranchId = chatMeta?.activeBranch?.id ?? null;
+  const {
+    traces: promptTraceHistory,
+    status: traceFetchStatus,
+    error: traceFetchError,
+    refetch: refetchTraceHistory,
+  } = useTraceHistory(traceHistoryChatId, traceHistoryBranchId, buildTab === "trace");
 
   const activeTrace = useActiveTrace(useChatStore((s) => s.selectedTraceId));
   const setSelectedTraceId = useChatStore((s) => s.setSelectedTraceId);
@@ -83,6 +92,9 @@ export function BuildMode() {
     imageAttachmentsCount={imageAttachmentsCount}
     setSelectedTraceId={setSelectedTraceId}
     promptTraceHistory={promptTraceHistory}
+    traceFetchStatus={traceFetchStatus}
+    traceFetchError={traceFetchError}
+    onRefetchTraceHistory={refetchTraceHistory}
     onSave={character.handleSaveCharacter}
     onAvatarUpload={character.handleAvatarUpload}
     characterId={charData.id}
@@ -136,6 +148,9 @@ interface BuildModeInnerProps {
   imageAttachmentsCount: number;
   setSelectedTraceId: (id: string | null) => void;
   promptTraceHistory: PromptTraceRecordDto[];
+  traceFetchStatus: TraceHistoryStatus;
+  traceFetchError: string | null;
+  onRefetchTraceHistory: () => void;
   onSave: (draft: BuildCharacterDraft) => Promise<void> | void;
   onAvatarUpload: (file: File, originalFile?: File | null) => Promise<void> | void;
   characterId: string;
@@ -149,7 +164,7 @@ interface BuildModeInnerProps {
   hasAvatar: boolean;
 }
 
-function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, currentTraceIndex, imageAttachmentsCount, setSelectedTraceId, promptTraceHistory, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete, onCreateChat, hasAvatar }: BuildModeInnerProps) {
+function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, currentTraceIndex, imageAttachmentsCount, setSelectedTraceId, promptTraceHistory, traceFetchStatus, traceFetchError, onRefetchTraceHistory, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete, onCreateChat, hasAvatar }: BuildModeInnerProps) {
   const { t, locale } = useT();
   const isMobile = useIsMobile();
   const panels = useBuildPanels();
@@ -274,10 +289,37 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
       URL.revokeObjectURL(url);
     };
 
+    // Fetch-status banner for the lazy-loaded history (TL-B2). The main trace
+    // view still renders from `activeTrace` (latest/contextPreview) while the
+    // history list loads in the background; this banner surfaces errors + a
+    // retry, and a loading hint only when the history list is still empty.
+    const renderTraceFetchStatus = (): ReactNode => {
+      if (traceFetchStatus === "error") {
+        return (
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-error/40 bg-error/10 px-3 py-2 font-ui text-[13px] text-error-text">
+            <span>{traceFetchError ? `${t("trace_error")}: ${traceFetchError}` : t("trace_error")}</span>
+            <button type="button" className="shrink-0 rounded bg-error/20 px-2.5 py-1 text-[12px] font-medium text-error-text active:bg-error/30" onClick={onRefetchTraceHistory}>
+              {t("trace_retry")}
+            </button>
+          </div>
+        );
+      }
+      if (traceFetchStatus === "loading" && promptTraceHistory.length === 0) {
+        return (
+          <div className="mb-3 rounded-md border border-border bg-s2 px-3 py-2 font-ui text-[13px] text-t3">
+            {t("trace_loading")}
+          </div>
+        );
+      }
+      return null;
+    };
+
     if (isMobile) {
       return (
         <div className="pb-4">
           <h1 className="mb-4 font-body text-[22px] font-semibold leading-tight text-t1">{t("build_prompt_trace")}</h1>
+
+          {renderTraceFetchStatus()}
 
           <label className="mb-3 flex h-8 items-center gap-2 rounded-md border border-border bg-s2 px-2.5 font-ui text-[13px] text-t3">
             <span className="text-t4">⌕</span>
@@ -354,6 +396,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
 
     return (
       <div>
+        {renderTraceFetchStatus()}
         <div className="mb-1.5 flex items-center justify-between">
           <div className="mb-1.5 font-body text-[22px] font-medium text-t1">
             {t("build_prompt_trace")}

@@ -153,8 +153,6 @@ export interface AppSnapshot {
   summaries?: Array<{ id: string; kind: string; summary: string }>;
   /** Latest prompt trace for the active branch (null if no traces). Absent → preserve. */
   promptTrace?: PromptTraceRecordDto | null;
-  /** Last N prompt traces for the active branch. Absent → preserve. */
-  promptTraceHistory?: PromptTraceRecordDto[];
   /** Live context preview (Phase 3.1 decouples this from prompt trace). Absent → preserve. */
   contextPreview?: AssemblePromptResponse | null;
   /** Active character record. Absent → preserve. */

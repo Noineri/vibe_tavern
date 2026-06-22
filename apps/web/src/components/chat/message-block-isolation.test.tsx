@@ -203,7 +203,7 @@ function seed(messages: AppMessage[], persona: AppPersona | null = null): AppSna
     branches: [],
     messages,
     summaries: [],
-    promptTrace: null, promptTraceHistory: [], contextPreview: null,
+    promptTrace: null, contextPreview: null,
     character: makeCharacter("c1"),
     persona,
   } as unknown as AppSnapshot;

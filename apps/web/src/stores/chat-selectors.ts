@@ -6,6 +6,7 @@ import { countTokens } from "../utils/tokenizer.js";
 import type { MacroContext } from "./snapshot-store.js";
 import { useChatList, useSnapshotStore } from "./snapshot-store.js";
 import { useChatStore } from "./chat-store.js";
+import { useTraceHistoryEntry } from "./trace-history-store.js";
 
 // ---------------------------------------------------------------------------
 // Backward-compatible selectors — now delegate to snapshot-store
@@ -76,36 +77,33 @@ export function useMacroContext(): MacroContext | null {
 
 /**
  * Subscribe to the active prompt trace.
- * Derives from snapshot-store.
+ * Derives from snapshot-store (latest trace + context preview) and the
+ * branch-scoped trace-history cache (TL-B2).
  */
 export function useActiveTrace(
   selectedTraceId: string | null,
 ): import("@vibe-tavern/domain").PromptTraceRecordDto | import("@vibe-tavern/domain").AssemblePromptResponse | null {
-  return useSnapshotStore(
-    useShallow((state) => {
-      // Traces are branch-scoped. After a fork / activate-branch switch the
-      // store still holds the previous branch's `promptTrace` + history (they
-      // are only re-fetched lazily), so filter them against the ACTIVE branch
-      // to avoid showing the old branch's token count / layers. `contextPreview`
-      // is always assembled fresh for the active branch, so it is the safe
-      // fallback when no trace exists for this branch yet.
-      const activeBranchId = state.activeBranch?.id ?? null;
-      const historyForBranch = activeBranchId
-        ? state.promptTraceHistory.filter((trace) => trace.branchId === activeBranchId)
-        : state.promptTraceHistory;
-      const latestForBranch =
-        state.promptTrace && state.promptTrace.branchId === activeBranchId
-          ? state.promptTrace
-          : null;
-      const fromHistory =
-        historyForBranch.find((trace) => trace.id === selectedTraceId) ??
-        latestForBranch ??
-        historyForBranch[0];
-      if (fromHistory) return fromHistory;
-      if (state.contextPreview) return state.contextPreview;
-      return null;
-    }),
-  );
+  const promptTrace = useSnapshotStore((s) => s.promptTrace);
+  const contextPreview = useSnapshotStore((s) => s.contextPreview);
+  const activeBranchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
+  const activeChatId = useSnapshotStore((s) => s.activeChat?.id ?? null);
+  // Branch-scoped history from the lazy cache (already filtered to the
+  // active branch by its key). Empty before the Trace tab opens its first
+  // fetch — in that case we fall through to `promptTrace` (latest), which is
+  // the correct value for the context bar (TopBar/InputArea/AppShell).
+  const cachedHistory = useTraceHistoryEntry(activeChatId, activeBranchId);
+  return useMemo(() => {
+    const historyForBranch = cachedHistory?.traces ?? [];
+    const latestForBranch =
+      promptTrace && promptTrace.branchId === activeBranchId ? promptTrace : null;
+    const fromHistory =
+      historyForBranch.find((trace) => trace.id === selectedTraceId) ??
+      latestForBranch ??
+      historyForBranch[0];
+    if (fromHistory) return fromHistory;
+    if (contextPreview) return contextPreview;
+    return null;
+  }, [cachedHistory, promptTrace, activeBranchId, contextPreview, selectedTraceId]);
 }
 
 // ---------------------------------------------------------------------------
