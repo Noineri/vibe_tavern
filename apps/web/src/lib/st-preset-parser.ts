@@ -1,5 +1,11 @@
-import type { PromptOrderEntry } from "@vibe-tavern/domain";
-import { inferSlot } from "@vibe-tavern/domain";
+import type {
+  CustomInjection,
+  PromptOrderEntry,
+  PromptPresetDto,
+  PromptSlot,
+  PromptZone,
+} from "@vibe-tavern/domain";
+import { DEFAULT_PROMPT_ORDER, inferSlot, slotToStFields } from "@vibe-tavern/domain";
 
 export interface StPresetBlock {
   identifier: string;
@@ -72,6 +78,9 @@ export interface ParsedStPreset {
   name: string;
   blocks: StPresetBlock[];
   promptOrder: StPromptOrderBlock[];
+  /** Present when the file was exported by Vibe Tavern (the `_vibe_tavern`
+   *  extension key). Carries the full VT DTO for lossless VT→VT import. */
+  vibeTavern?: VibeTavernPresetExtension;
 }
 
 interface StPromptEntry {
@@ -107,6 +116,7 @@ interface StPresetJson {
   name?: string;
   prompts?: StPromptEntry[];
   prompt_order?: StPromptOrderSet[];
+  _vibe_tavern?: unknown;
 }
 
 export function parseStPreset(jsonText: string): ParsedStPreset {
@@ -144,7 +154,29 @@ export function parseStPreset(jsonText: string): ParsedStPreset {
   // XML wrapper reconstruction: merge -open / -close pairs
   const merged = mergeXmlWrappers(rawBlocks, orderMap);
 
-  return { name, blocks: merged, promptOrder: promptOrderResult?.entries ?? [] };
+  return {
+    name,
+    blocks: merged,
+    promptOrder: promptOrderResult?.entries ?? [],
+    vibeTavern: readVibeTavernExtension(data._vibe_tavern),
+  };
+}
+
+/**
+ * Defensively read the `_vibe_tavern` extension. Returns `undefined` when
+ * absent or malformed (non-object, or missing the structural arrays). A valid
+ * extension must at least carry `customInjections` and `promptOrder` arrays —
+ * the fields the import side consumes wholesale. The remaining scalar fields
+ * are read defensively by the import consumer (it falls back to ST-projected
+ * values per-field when an expected key is absent).
+ */
+function readVibeTavernExtension(raw: unknown): VibeTavernPresetExtension | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  if (!Array.isArray(obj.customInjections) || !Array.isArray(obj.promptOrder)) {
+    return undefined;
+  }
+  return obj as unknown as VibeTavernPresetExtension;
 }
 
 function mergeXmlWrappers(
@@ -317,4 +349,201 @@ function getOrderMeta(eIdentifier: string, orderMap: Map<string, StOrderInfo> | 
     ...(meta?.index != null ? { promptOrderIndex: meta.index } : {}),
     ...(meta?.placement ? { promptOrderPlacement: meta.placement } : {}),
   };
+}
+
+// ─── Export: VT PromptPresetDto → SillyTavern preset JSON ─────────────────────
+// The inverse of `parseStPreset`. Emits the ST projection (prompts[] +
+// prompt_order) that ST can import and VT can re-import, PLUS a `_vibe_tavern`
+// extension key carrying the full VT DTO (minus the dead `bindModel` and
+// VT-internal id/timestamps). ST ignores unknown top-level keys, so the
+// extension makes VT→VT round-trip lossless without breaking ST interop.
+//
+// `parseStPreset` detects `_vibe_tavern` and surfaces it (see ParsedStPreset),
+// letting the import side prefer it over the lossy ST projection.
+
+/** The VT-only fields embedded under `_vibe_tavern` for lossless VT→VT export. */
+export type VibeTavernPresetExtension = Omit<
+  PromptPresetDto,
+  "id" | "bindModel" | "createdAt" | "updatedAt"
+>;
+
+/** Sentinel `character_id` for the exported prompt_order set. Non-`100000` so
+ *  `parseStPreset`'s preferred-set selection picks it up directly. */
+const EXPORT_CHARACTER_ID = 100001;
+
+const BUILT_IN_BLOCK_NAMES: Record<string, string> = {
+  main: "Main Prompt",
+  jailbreak: "Jailbreak",
+  nsfw: "NSFW Prompt",
+  enhanceDefinitions: "Enhance Definitions",
+  authorsNote: "Author's Note",
+};
+
+interface StPromptEntryOut {
+  identifier: string;
+  name: string;
+  role: "system" | "user" | "assistant";
+  content: string;
+  injection_position: 0 | 1;
+  injection_depth: number;
+  injection_order: number;
+  enabled: boolean;
+}
+
+interface StPromptOrderEntryOut {
+  identifier: string;
+  enabled: boolean;
+  order: number;
+}
+
+export interface StPresetJsonOut {
+  name: string;
+  prompts: StPromptEntryOut[];
+  prompt_order: Array<{ character_id: number | string; order: StPromptOrderEntryOut[] }>;
+  _vibe_tavern: VibeTavernPresetExtension;
+}
+
+/**
+ * Resolve a PromptSlot for a named/canvas identifier. Prefers the explicit
+ * canvas entry; falls back to `DEFAULT_PROMPT_ORDER` so simple-mode presets
+ * (whose `promptOrder` is empty — see preset-store emptyDraft) still serialize
+ * a complete, valid ST prompt_order.
+ */
+function resolveSlot(identifier: string, canvas: Map<string, PromptOrderEntry>): PromptSlot {
+  const entry = canvas.get(identifier);
+  if (entry) return { zone: entry.zone, depth: entry.depth, order: entry.order };
+  const defaultOrder = DEFAULT_PROMPT_ORDER[identifier];
+  return inferSlot({ order: defaultOrder ?? 0, defaultOrder });
+}
+
+/** Authors-note slot: canvas entry wins, else derive from the DTO position fields. */
+function resolveAuthorsNoteSlot(dto: PromptPresetDto, canvas: Map<string, PromptOrderEntry>): PromptSlot {
+  const entry = canvas.get("authorsNote");
+  if (entry) return { zone: entry.zone, depth: entry.depth, order: entry.order };
+  if (dto.authorsNotePosition === "in_chat") {
+    return { zone: "in_chat", depth: dto.authorsNoteDepth || 4, order: 0 };
+  }
+  if (dto.authorsNotePosition === "after_chat") {
+    return { zone: "after_chat", depth: null, order: 0 };
+  }
+  return { zone: "before_chat", depth: null, order: DEFAULT_PROMPT_ORDER.authorsNote };
+}
+
+/**
+ * Build the globally-ordered canvas for the ST `prompt_order` array. Layout:
+ * before_chat (sorted) → after_chat (sorted) → in_chat (sorted). chatHistory
+ * (order 100) naturally lands at the tail of before_chat, acting as the
+ * before/after boundary the ST parser splits on. in_chat blocks are
+ * depth-driven (absolute), so their array position is cosmetic.
+ */
+function globalCanvasOrder(canvas: readonly PromptOrderEntry[]): PromptOrderEntry[] {
+  const byZone: Record<PromptZone, PromptOrderEntry[]> = {
+    before_chat: [],
+    in_chat: [],
+    after_chat: [],
+  };
+  for (const e of canvas) {
+    const bucket = byZone[e.zone];
+    if (bucket) bucket.push(e);
+  }
+  for (const zone of ["before_chat", "in_chat", "after_chat"] as const) {
+    byZone[zone].sort((a, b) => a.order - b.order);
+  }
+  return [...byZone.before_chat, ...byZone.after_chat, ...byZone.in_chat];
+}
+
+function buildContentBlock(
+  identifier: string,
+  content: string,
+  role: "system" | "user" | "assistant",
+  slot: PromptSlot,
+  enabled: boolean,
+): StPromptEntryOut {
+  const st = slotToStFields(slot);
+  return {
+    identifier,
+    name: BUILT_IN_BLOCK_NAMES[identifier] ?? identifier,
+    role,
+    content,
+    injection_position: st.injection_position,
+    injection_depth: st.injection_depth,
+    injection_order: st.injection_order,
+    enabled,
+  };
+}
+
+/**
+ * Serialize a VT prompt preset to a SillyTavern-format preset JSON string.
+ *
+ * The output is importable by ST directly and by VT (lossless via the
+ * `_vibe_tavern` extension). Emits a complete `prompt_order` even when the
+ * source preset's `advancedMode` is false (empty canvas) by falling back to
+ * `DEFAULT_PROMPT_ORDER`.
+ */
+export function serializeStPreset(dto: PromptPresetDto): string {
+  const canvasMap = new Map<string, PromptOrderEntry>();
+  for (const entry of dto.promptOrder) canvasMap.set(entry.identifier, entry);
+
+  // ── prompts[]: content-bearing blocks (named slots + custom injections) ──
+  // Empty blocks are skipped — `parseStPreset` filters them anyway, and their
+  // enabled state is conveyed via prompt_order, not prompts[].
+  const prompts: StPromptEntryOut[] = [];
+  if (dto.system.trim()) {
+    prompts.push(buildContentBlock("main", dto.system, "system", resolveSlot("main", canvasMap), canvasMap.get("main")?.enabled ?? true));
+  }
+  if (dto.jailbreak.trim()) {
+    prompts.push(buildContentBlock("jailbreak", dto.jailbreak, "system", resolveSlot("jailbreak", canvasMap), canvasMap.get("jailbreak")?.enabled ?? true));
+  }
+  if (dto.nsfw.trim()) {
+    prompts.push(buildContentBlock("nsfw", dto.nsfw, "system", resolveSlot("nsfw", canvasMap), canvasMap.get("nsfw")?.enabled ?? true));
+  }
+  if (dto.enhanceDefinitions.trim()) {
+    prompts.push(buildContentBlock("enhanceDefinitions", dto.enhanceDefinitions, "system", resolveSlot("enhanceDefinitions", canvasMap), canvasMap.get("enhanceDefinitions")?.enabled ?? true));
+  }
+  if (dto.authorsNote.trim()) {
+    prompts.push(buildContentBlock("authorsNote", dto.authorsNote, dto.authorsNoteRole, resolveAuthorsNoteSlot(dto, canvasMap), canvasMap.get("authorsNote")?.enabled ?? true));
+  }
+  for (const inj of dto.customInjections) {
+    if (!inj.content.trim()) continue;
+    prompts.push(buildContentBlock(inj.identifier, inj.content, inj.role, resolveSlot(inj.identifier, canvasMap), canvasMap.get(inj.identifier)?.enabled ?? true));
+    // Preserve the injection's display name over the generic fallback.
+    prompts[prompts.length - 1].name = inj.name || inj.identifier;
+  }
+
+  // ── prompt_order: complete, globally-ordered canvas ───────────────────────
+  // Simple mode (empty promptOrder) → synthesize the default canvas so export
+  // always yields a complete prompt_order (mirrors how simple-mode assembly
+  // ranks blocks via DEFAULT_PROMPT_ORDER).
+  let canvas: PromptOrderEntry[] = dto.promptOrder;
+  if (canvas.length === 0) {
+    canvas = Object.entries(DEFAULT_PROMPT_ORDER).map(([identifier, order]) => {
+      const slot = inferSlot({ order, defaultOrder: order });
+      return {
+        identifier,
+        enabled: true,
+        order,
+        zone: slot.zone,
+        depth: slot.depth,
+        kind: "built_in" as const,
+      };
+    });
+  }
+  const ordered = globalCanvasOrder(canvas);
+  const orderEntries: StPromptOrderEntryOut[] = ordered.map((entry, index) => ({
+    identifier: entry.identifier,
+    enabled: entry.enabled,
+    order: index,
+  }));
+
+  // ── _vibe_tavern: full DTO (minus dead bindModel + VT-internal fields) ────
+  const { id: _id, bindModel: _bindModel, createdAt: _ca, updatedAt: _ua, ...extension } = dto;
+  void _id; void _bindModel; void _ca; void _ua;
+
+  const out: StPresetJsonOut = {
+    name: dto.name,
+    prompts,
+    prompt_order: [{ character_id: EXPORT_CHARACTER_ID, order: orderEntries }],
+    _vibe_tavern: extension,
+  };
+  return JSON.stringify(out, null, 2);
 }
