@@ -56,6 +56,14 @@ export interface FormState {
   maxTokens: number;
   contextBudget: number;
   pinContextBudget: boolean;
+  /** Profile-level toggle: when true, the binding dropdown (Wave 5) is enabled
+   *  and saves route sampler writes to the selected model's overlay instead of
+   *  the profile base. Persisted on the profile (Wave 1 column). */
+  bindPerModel: boolean;
+  /** The model currently selected in the binding dropdown, or null when no
+   *  model is picked (or binding is OFF). Drives overlay save routing + the
+   *  "Editing: <model>" badge. Not persisted on the profile — UI-only state. */
+  editingModelId: string | null;
   stopSequences: string[];
   logitBias: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed: string | null;
@@ -119,6 +127,8 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     presencePenalty: p.presencePenalty,
     repetitionPenalty: p.repetitionPenalty,
     maxTokens: p.maxTokens, contextBudget: p.contextBudget ?? 16000, pinContextBudget: p.pinContextBudget ?? false,
+    bindPerModel: p.bindPerModel ?? false,
+    editingModelId: null,
     stopSequences: p.stopSequences,
     logitBias: p.logitBias ?? [],
     seed: p.seed ?? null, showReasoning: p.showReasoning,

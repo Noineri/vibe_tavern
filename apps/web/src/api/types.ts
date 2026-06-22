@@ -229,6 +229,7 @@ export interface ProviderProfileRecord {
   defaultModel: string | null;
   contextBudget: number | null;
   pinContextBudget: boolean;
+  bindPerModel: boolean;
   maxTokens: number;
   temperature: number;
   topP: number;

@@ -5,7 +5,9 @@ import {
   fetchModelsByEndpoint,
   fetchProviderProfile,
   fetchProviderProfileModels,
+  getProviderModelSettings,
   listFavoriteProviderModels,
+  listProviderModelSettings,
   listProviderProfiles,
   removeFavoriteProviderModel,
   saveProviderProfile,
@@ -14,11 +16,13 @@ import {
   testProviderDraft,
   testProviderProfile,
   updateProviderProfile,
+  upsertProviderModelSettings,
   type FavoriteProviderModelRecord,
+  type ProviderModelSettingsRecord,
   type ProviderProfileRecord,
   type TestChatResponse,
 } from "../../app-client.js";
-import type { ProviderProbeResponse } from "@vibe-tavern/domain";
+import type { ModelSettingsOverlay, ProviderProbeResponse } from "@vibe-tavern/domain";
 import { useProviderDataStore } from "../provider-data-store.js";
 
 // ---------------------------------------------------------------------------
@@ -83,6 +87,35 @@ export async function toggleFavoriteModelAction(
     await addFavoriteProviderModel(profileId, { modelId, label, contextLength });
   }
   void loadFavoriteModelsAction(profileId);
+}
+
+// ---------------------------------------------------------------------------
+// Per-model settings overlay (binding) Actions
+// ---------------------------------------------------------------------------
+
+/** Fetch every overlay row for a profile (for the binding dropdown's badges).
+ *  Thin wrapper around {@link listProviderModelSettings}; no store side-effect
+ *  yet (Wave 5 may cache into provider-data-store). */
+export async function listProviderModelSettingsAction(profileId: string): Promise<ProviderModelSettingsRecord[]> {
+  return await listProviderModelSettings(profileId);
+}
+
+/** Fetch a single model's overlay, or `null` when no overlay exists (base
+ *  passthrough). Used by Wave 5 to re-hydrate the form when the user picks a
+ *  binding target. */
+export async function getProviderModelSettingsAction(profileId: string, modelId: string): Promise<ProviderModelSettingsRecord | null> {
+  return await getProviderModelSettings(profileId, modelId);
+}
+
+/** Upsert (create-or-replace) a model's overlay. Called from the modal save
+ *  handler when the form is in overlay-edit mode
+ *  (`form.bindPerModel && form.editingModelId`). Returns the persisted record. */
+export async function upsertProviderModelSettingsAction(
+  profileId: string,
+  modelId: string,
+  settings: ModelSettingsOverlay,
+): Promise<ProviderModelSettingsRecord> {
+  return await upsertProviderModelSettings(profileId, modelId, settings);
 }
 
 // ---------------------------------------------------------------------------

@@ -15,7 +15,7 @@
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
 import type { FormState } from "../components/modals/ProviderModal.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
-import { PROVIDER_TYPE } from "@vibe-tavern/domain";
+import { PROVIDER_TYPE, type ModelSettingsOverlay } from "@vibe-tavern/domain";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -29,6 +29,7 @@ export interface ProviderSavePatch {
   visionModel: string | null;
   contextBudget: number | null;
   pinContextBudget: boolean;
+  bindPerModel: boolean;
   temperature: number;
   topP: number;
   minP: number;
@@ -78,6 +79,7 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     visionModel: form.visionModel.trim() || null,
     contextBudget: form.contextBudget || null,
     pinContextBudget: form.pinContextBudget,
+    bindPerModel: form.bindPerModel,
     temperature: form.temperature,
     topP: form.topP,
     minP: form.minP,
@@ -129,6 +131,61 @@ export function validateSavePatch(patch: ProviderSavePatch): string | null {
 }
 
 /**
+ * Build the per-model overlay payload from a form in overlay-edit mode.
+ *
+ * Emits a {@link ModelSettingsOverlay}: the sampler/context field set that a
+ * bound model may override. IDENTITY FIELDS (name, endpoint, apiKey,
+ * defaultModel, visionModel, providerPreset) are NEVER included — a model's
+ * overlay cannot rename or rebind the profile. The backend's
+ * `modelSettingsOverlaySchema` (Wave 2) also strips any identity fields that
+ * sneak through, but keeping them out at the source makes the intent explicit
+ * and keeps the payload small.
+ *
+ * Every field below maps 1:1 to the overlay's optional fields. An absent field
+ * on the overlay means "inherit the profile base" at generation time (see
+ * `resolveEffectiveSettings`). We always emit every field the form owns — the
+ * merge is field-wise, so this is a full snapshot of the bound model's sampler
+ * config, not a delta.
+ *
+ * Pure — no side effects. Caller persists via
+ * `upsertProviderModelSettingsAction(profileId, modelId, computeOverlayPatch(form))`.
+ */
+export function computeOverlayPatch(form: FormState): ModelSettingsOverlay {
+  const overlay: ModelSettingsOverlay = {
+    temperature: form.temperature,
+    topP: form.topP,
+    minP: form.minP,
+    topK: form.topK,
+    topA: form.topA,
+    typicalP: form.typicalP,
+    tfsZ: form.tfsZ,
+    repeatLastN: form.repeatLastN,
+    mirostat: form.mirostat,
+    mirostatTau: form.mirostatTau,
+    mirostatEta: form.mirostatEta,
+    dryMultiplier: form.dryMultiplier,
+    dryBase: form.dryBase,
+    dryAllowedLength: form.dryAllowedLength,
+    drySequenceBreakers: form.drySequenceBreakers,
+    xtcThreshold: form.xtcThreshold,
+    xtcProbability: form.xtcProbability,
+    frequencyPenalty: form.frequencyPenalty,
+    presencePenalty: form.presencePenalty,
+    repetitionPenalty: form.repetitionPenalty,
+    maxTokens: form.maxTokens,
+    contextBudget: form.contextBudget || null,
+    pinContextBudget: form.pinContextBudget,
+    stopSequences: form.stopSequences,
+    logitBias: form.logitBias,
+    seed: form.seed,
+    reasoningEffort: form.reasoningEffort,
+    showReasoning: form.showReasoning,
+    streamResponse: form.streamResponse,
+  };
+  return overlay;
+}
+
+/**
  * Convert a ConnectionState into the exact patch object sent to the API.
  * Used by handleConnect / handleSaveProviderProfile (legacy connection-based saves).
  *
@@ -147,6 +204,7 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
     visionModel: conn.visionModel.trim() || null,
     contextBudget: conn.maxTokens || null,
     pinContextBudget: false,  // not in ConnectionState yet
+    bindPerModel: false,  // not in ConnectionState yet
     temperature: conn.temperature,
     topP: conn.topP,
     minP: conn.minP,

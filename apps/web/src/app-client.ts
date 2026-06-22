@@ -25,6 +25,7 @@ export type {
   ImportJsonResponse,
   ProviderProfileRecord,
   FavoriteProviderModelRecord,
+  ProviderModelSettingsRecord,
   ProviderModelOption,
   TestChatResponse,
   LoreEntryRecord,
@@ -152,6 +153,10 @@ export {
   fetchModelsByEndpoint,
   testProviderChat,
   testProfileChat,
+  listProviderModelSettings,
+  getProviderModelSettings,
+  upsertProviderModelSettings,
+  deleteProviderModelSettings,
 } from "./api/provider-api.js";
 
 // ─── Presets ────────────────────────────────────────────────────────────
