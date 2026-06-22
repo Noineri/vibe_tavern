@@ -4,7 +4,7 @@ import { cn } from "../../lib/cn.js";
 import { Modal } from "../shared/Modal.js";
 import { Icons } from "../shared/icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
-import { parseStPreset, stBlockToCanvasEntry, synthesizeCanvasEntry, type ParsedStPreset, type StPresetBlock } from "../../lib/st-preset-parser.js";
+import { parseStPreset, stBlockToCanvasEntry, synthesizeCanvasEntry, type ParsedStPreset, type StPresetBlock, type VibeTavernPresetExtension } from "../../lib/st-preset-parser.js";
 import { inferSlot } from "@vibe-tavern/domain";
 import type { CustomInjection, PromptOrderEntry, PromptSlot } from "@vibe-tavern/domain";
 
@@ -28,6 +28,9 @@ export interface PresetImportResult {
   enhanceDefinitions: string[];
   injections: CustomInjection[];
   promptOrder: PromptOrderEntry[];
+  /** Present when the source file was exported by Vibe Tavern (carries the
+   *  full DTO under `_vibe_tavern`). The consumer imports losslessly from it. */
+  vibeTavern?: VibeTavernPresetExtension;
   target: 'current' | 'new';
   newPresetName?: string;
 }
@@ -119,7 +122,23 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
   }, [blockInfos]);
 
   function handleImport() {
-    if (!parsed || blockInfos.length === 0) return;
+    if (!parsed) return;
+
+    // Lossless path: VT exports carry the full DTO under _vibe_tavern. Forward
+    // it as-is; the consumer restores every field directly. Bypasses the ST
+    // block projection entirely (which is lossy for VT-only fields + built-in
+    // in_chat positions).
+    if (parsed.vibeTavern) {
+      onImport({
+        system: [], post: [], authors: [], nsfw: [], enhanceDefinitions: [],
+        injections: [], promptOrder: [],
+        vibeTavern: parsed.vibeTavern,
+        target: importTarget, newPresetName: newPresetName || undefined,
+      });
+      return;
+    }
+
+    if (blockInfos.length === 0) return;
 
     // Start canvas from ALL parsed ST prompt_order entries (complete PromptOrderEntry).
     // This preserves built-in markers (main, chatHistory, worldInfoBefore, etc.)
@@ -222,6 +241,9 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
                 <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t4">· {counts.total} {t("blocks")}</span>
                 {counts.disabled > 0 && (
                   <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t4">· {counts.enabled} on, {counts.disabled} off</span>
+                )}
+                {parsed.vibeTavern && (
+                  <span className={cn("rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)]", "bg-accent-dim text-accent-t")}>{t("preset_import_vt_badge")}</span>
                 )}
               </div>
               {/* Category pills */}

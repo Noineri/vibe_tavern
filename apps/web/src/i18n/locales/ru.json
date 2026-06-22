@@ -435,6 +435,7 @@
   "import_preset_btn": "Импорт пресета",
   "preset_import_title": "Импорт ST пресета",
   "preset_import_sub": "Импорт промпт-блоков из файла пресета SillyTavern в текущий пресет.",
+  "preset_import_vt_badge": "Vibe Tavern · без потерь",
   "preset_import_drop_title": "Нажмите или перетащите .json файл пресета",
   "preset_import_drop_sub": "Находится в папке OpenAI Settings/",
   "preset_import_target_system": "Системный промпт",
