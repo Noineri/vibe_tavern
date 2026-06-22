@@ -1,4 +1,4 @@
-import type { ChatId } from "@vibe-tavern/domain";
+import type { ChatId, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
@@ -306,6 +306,23 @@ export async function exportChatJsonl(chatId: ChatId): Promise<string> {
 export async function exportPromptTrace(traceId: string): Promise<Record<string, unknown>> {
   const response = await client.api["prompt-traces"][":traceId"].export.$get({ param: { traceId } });
   return unwrapRpc<Record<string, unknown>>(response);
+}
+
+/**
+ * Lazy-load the prompt-trace history for a chat, optionally scoped server-side
+ * to a branch and/or message. Replaces the old promptTraceHistory snapshot
+ * field (removed in TL-A2): the full history only crosses the wire when the
+ * Trace tab is opened, not on every snapshot.
+ */
+export async function fetchTraceHistory(
+  chatId: ChatId,
+  opts?: { messageId?: string; branchId?: string },
+): Promise<PromptTraceRecordDto[]> {
+  const response = await client.api.chats[":chatId"].traces.$get({
+    param: { chatId },
+    query: { messageId: opts?.messageId, branchId: opts?.branchId },
+  });
+  return unwrapRpc<PromptTraceRecordDto[]>(response);
 }
 
 // ─── Debug ──────────────────────────────────────────────────────────────
