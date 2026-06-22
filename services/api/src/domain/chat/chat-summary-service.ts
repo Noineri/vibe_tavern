@@ -1,4 +1,4 @@
-import { brandId, normalizeProviderType, PROVIDER_TYPE, type ChatId } from "@vibe-tavern/domain";
+import { brandId, normalizeProviderType, resolveEffectiveSettings, PROVIDER_TYPE, type ChatId } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ConfigPatchResponse, SummaryResponse } from "../../api/contract/session-types.js";
@@ -6,7 +6,7 @@ import type { ProviderProfileService } from "../providers/provider-profile-servi
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import { notFound, validation } from "../../shared/errors.js";
 import { BackgroundTaskLocks } from "../../shared/background-task-locks.js";
-import type { AssemblePromptResponse } from "@vibe-tavern/domain";
+import type { AssemblePromptResponse, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
 export interface SummarizeChatInput {
@@ -51,6 +51,18 @@ export class ChatSummaryService {
     private readonly providerProfiles: ProviderProfileService,
   ) {}
 
+  /**
+   * Resolve the EFFECTIVE profile for summarization: merge the active model's
+   * overlay (when binding is ON) so a bound model's per-model contextBudget /
+   * samplers reach the summary generation. Mirrors the chat-adapter generation
+   * boundary. `model` is the resolved summary model (input.model ?? defaultModel).
+   */
+  private async resolveEffectiveSummaryProfile(profile: StoredProviderProfileRecord, model: string) {
+    if (!profile.bindPerModel) return profile;
+    const overlay = await this.providerProfiles.getProviderModelSettings(profile.id, model);
+    return resolveEffectiveSettings(profile, overlay?.settings ?? null);
+  }
+
   async summarizeChat(input: SummarizeChatInput): Promise<SummarizeChatResult> {
     const providerProfileId = input.providerProfileId.trim();
     if (!providerProfileId) {
@@ -69,6 +81,7 @@ export class ChatSummaryService {
     if (!model) {
       throw validation("Select a model for summarization.");
     }
+    const effectiveProfile = await this.resolveEffectiveSummaryProfile(profile, model);
 
     const chatId = brandId<ChatId>(input.chatId);
     logSendDebug("summary.generate.start", { chatId: input.chatId, providerProfileId, model, maxMessages });
@@ -76,7 +89,7 @@ export class ChatSummaryService {
       chatId,
       model,
       recentMessageLimit: maxMessages,
-      contextBudget: profile.contextBudget ?? null,
+      contextBudget: effectiveProfile.contextBudget ?? null,
     });
 
     const prompt = withSummaryPromptAsFinalUserMessage(assembled.prompt);
@@ -90,7 +103,7 @@ export class ChatSummaryService {
 
     const startedAt = Date.now();
     const result = await nonstreamingProviderExecute({
-      profile,
+      profile: effectiveProfile,
       model,
       prompt,
       signal: input.signal,
@@ -130,6 +143,7 @@ export class ChatSummaryService {
     if (!model) {
       throw validation("Select a model for summarization.");
     }
+    const effectiveProfile = await this.resolveEffectiveSummaryProfile(profile, model);
 
     const chatId = brandId<ChatId>(input.chatId);
     const from = normalizeRangePoint(input.summarizedFrom, 1);
@@ -141,12 +155,12 @@ export class ChatSummaryService {
       model,
       summarizedFrom: from,
       summarizedTo: to,
-      contextBudget: profile.contextBudget ?? null,
+      contextBudget: effectiveProfile.contextBudget ?? null,
     });
     const prompt = withSummaryPromptAsFinalUserMessage(assembled.prompt);
     const startedAt = Date.now();
     const result = await nonstreamingProviderExecute({
-      profile,
+      profile: effectiveProfile,
       model,
       prompt,
       signal: input.signal,
