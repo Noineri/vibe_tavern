@@ -141,15 +141,15 @@ export class PromptTraceStore {
     return row ? this.mapRowTrace(row) : null;
   }
 
-  async getTracesByChat(chatId: string, branchId?: string): Promise<PromptTrace[]> {
-    const conditions = branchId
-      ? and(eq(promptTraces.chatId, chatId), eq(promptTraces.branchId, branchId))
-      : eq(promptTraces.chatId, chatId);
+  async getTracesByChat(chatId: string, branchId?: string, messageId?: string): Promise<PromptTrace[]> {
+    const conditions = [eq(promptTraces.chatId, chatId)];
+    if (branchId) conditions.push(eq(promptTraces.branchId, branchId));
+    if (messageId) conditions.push(eq(promptTraces.messageId, messageId));
 
     const rows = await this.db
       .select()
       .from(promptTraces)
-      .where(conditions)
+      .where(and(...conditions))
       .orderBy(desc(promptTraces.createdAt))
       .all();
     return rows.map((row) => this.mapRowTrace(row));
