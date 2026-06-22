@@ -3,6 +3,7 @@ import type {
   ChatId,
   MessageId,
 } from "./ids.js";
+import type { ActivatedLoreDetail } from "./entities.js";
 
 export interface PromptLayerDto {
   id: string;
@@ -24,6 +25,12 @@ export interface AssemblePromptResponse {
   layers: PromptLayerDto[];
   tokenAccounting: Record<string, number>;
   activatedLoreEntries: string[];
+  /**
+   * Per-entry activation detail for the trace UI (why each entry activated).
+   * Optional — older traces / partial responses omit it. Parallel to
+   * `activatedLoreEntries` (same ids, in activation order).
+   */
+  activatedLoreDetail?: ActivatedLoreDetail[];
   scriptInjections: Array<{
     scriptId: string;
     scriptName: string;

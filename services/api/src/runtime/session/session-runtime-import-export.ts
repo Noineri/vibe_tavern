@@ -154,6 +154,7 @@ export async function exportPromptTrace(
 		layers: trace.assembledLayers as import("@vibe-tavern/domain").PromptTraceRecordDto["layers"],
 		tokenAccounting: trace.tokenAccounting,
 		activatedLoreEntries: trace.activatedLoreEntries as string[],
+		activatedLoreDetail: trace.activatedLoreDetail ?? [],
 		scriptInjections: trace.scriptInjections as import("@vibe-tavern/domain").PromptTraceRecordDto["scriptInjections"],
 		retrievedMemories: trace.retrievedMemories as Array<Record<string, unknown>>,
 		finalPayload: trace.finalPayload,

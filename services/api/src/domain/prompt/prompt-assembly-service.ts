@@ -14,6 +14,8 @@ import type {
   PromptTrace,
   PromptTraceId,
   RetrievedMemoryHit,
+  ActiveLoreEntry,
+  ActivatedLoreDetail,
 } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { assemblePrompt, setModelHint } from "@vibe-tavern/prompt-pipeline";
@@ -84,7 +86,7 @@ export interface PromptAssemblyResolver {
      * token-budget mode on lorebooks. Optional — when absent, percent-mode
      * lorebooks silently fall back to their fixed `tokenBudget`. */
     maxContextTokens?: number;
-  }): Promise<LoreEntry[]>;
+  }): Promise<ActiveLoreEntry[]>;
   listRetrievedMemories(input: {
     chatId: ChatId;
     branchId: ChatBranchId;
@@ -334,6 +336,15 @@ export class PromptAssemblyService {
         }]
       : [];
 
+    // Per-entry activation reasons for the prompt trace (parallel to
+    // activatedLoreEntries; same ids in activation order). Built from the
+    // enriched resolver result so the trace UI can show WHY each fired.
+    const activatedLoreDetail: ActivatedLoreDetail[] = activeLoreEntries.map((entry) => ({
+      id: entry.id as string,
+      title: entry.title,
+      reason: entry.activationReason,
+    }));
+
     return {
       branchId,
       prompt: {
@@ -343,6 +354,7 @@ export class PromptAssemblyService {
           recentHistory: recentMessages.length,
         },
         activatedLoreEntries: result.activatedLoreEntries,
+        activatedLoreDetail,
         scriptInjections,
         retrievedMemories: retrievedMemories.map((memory) => ({
           id: memory.id,
@@ -363,6 +375,7 @@ export class PromptAssemblyService {
           total: result.totalTokenEstimate,
         },
         activatedLoreEntries: result.activatedLoreEntries.map((id) => brandId<LoreEntryId>(id)),
+        activatedLoreDetail,
         scriptInjections,
         retrievedMemories: retrievedMemories.map((memory) => ({
           id: memory.id,

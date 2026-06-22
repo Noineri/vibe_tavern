@@ -24,9 +24,51 @@
  */
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { AssemblePromptResponse, PromptLayerDto } from "@vibe-tavern/domain";
+import type { AssemblePromptResponse, PromptLayerDto, LoreActivationReason } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
+
+/**
+ * Render a structured lore-activation reason as a small color-coded badge.
+ * Shown next to the entry title in the trace so the user can see WHY each
+ * lore entry fired (constant / sticky / delay / @@activate / key match).
+ */
+function LoreReasonBadge({ reason }: { reason: LoreActivationReason }) {
+  const { t } = useT();
+  let label: string;
+  let cls: string;
+  switch (reason.kind) {
+    case "constant":
+      label = t("lore_reason_constant");
+      cls = "bg-s3 text-t3";
+      break;
+    case "sticky":
+      label = t("lore_reason_sticky").replace("{since}", String(reason.turnsSinceActivation)).replace("{window}", String(reason.window));
+      cls = "bg-warning-dim text-warning-text";
+      break;
+    case "delay_fulfilled":
+      label = t("lore_reason_delay_fulfilled");
+      cls = "bg-warning-dim text-warning-text";
+      break;
+    case "decorator":
+      label = t("lore_reason_decorator");
+      cls = "bg-accent-dim text-accent-t";
+      break;
+    case "key_match": {
+      const keys = reason.matchedKeys.join(", ");
+      label = reason.scanState === "recursion"
+        ? t("lore_reason_key_match_recursion").replace("{keys}", keys)
+        : t("lore_reason_key_match").replace("{keys}", keys);
+      cls = "bg-success-dim text-success-text";
+      break;
+    }
+  }
+  return (
+    <span className={cn("shrink-0 rounded px-1 py-0.5 font-ui text-[10px] font-medium", cls)} title={label}>
+      {label}
+    </span>
+  );
+}
 
 /** One entry of `finalPayload.messages`. Content may be a string or a vision part-array. */
 export interface PayloadMessage {
@@ -168,6 +210,17 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 	const matches = (...vals: Array<unknown>) =>
 		!q || vals.filter(Boolean).some((v) => String(v).toLowerCase().includes(q));
 
+	// Map lore-entry ids and layer ids → activation reason (parallel to
+	// `activatedLoreEntries`). Built from `activatedLoreDetail` (entry id keyed)
+	// plus a layer-id index so inject entries (which carry layerId, not entryId)
+	// can also resolve their reason.
+	const loreReasonByEntryId = new Map((trace.activatedLoreDetail ?? []).map((d) => [d.id, d.reason]));
+	const loreReasonByLayerId = new Map(
+		trace.layers
+			.filter((l) => l.sourceType === "lore_entry" && loreReasonByEntryId.has(l.sourceId))
+			.map((l) => [l.id, loreReasonByEntryId.get(l.sourceId)!]),
+	);
+
 	const messages = (trace.finalPayload as { messages?: PayloadMessage[] } | undefined)?.messages;
 	const grouping =
 		Array.isArray(messages) && messages.length > 0
@@ -221,6 +274,7 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 					onToggle={() => toggleInSet(setOpenLayers, layer.id)}
 					formatTokens={formatTokens}
 					compact={compact}
+					reason={layer.sourceType === "lore_entry" ? loreReasonByEntryId.get(layer.sourceId) : undefined}
 				/>
 			))}
 
@@ -256,6 +310,9 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 											>
 												<span className="h-px flex-none bg-border2" style={{ width: 12 }} />
 												<span className="min-w-0 truncate font-medium text-t2">{item.sourceName}</span>
+												{item.sourceType === "lore_entry" && loreReasonByLayerId.has(item.layerId) && (
+													<LoreReasonBadge reason={loreReasonByLayerId.get(item.layerId)!} />
+												)}
 												{item.depth != null && <span className="shrink-0 rounded bg-s3 px-1 text-t4">{t("trace_inject_depth").replace("{n}", String(item.depth))}</span>}
 												<span className="h-px flex-1 bg-border2" />
 												<span className="shrink-0 tabular-nums">{formatTokens(item.tokenCount)}</span>
@@ -323,12 +380,15 @@ function LayerCard({
 	onToggle,
 	formatTokens,
 	compact = false,
+	reason,
 }: {
 	layer: PromptLayerDto;
 	expanded: boolean;
 	onToggle: () => void;
 	formatTokens: (n: number) => string;
 	compact?: boolean;
+	/** Lore-activation reason badge (only for lore_entry layers). */
+	reason?: LoreActivationReason;
 }) {
 	const isPreset = layer.sourceType === "prompt_preset";
 	const isRetrieval = layer.sourceType.includes("memory") || layer.sourceType === "lore_entry";
@@ -350,6 +410,7 @@ function LayerCard({
 				>
 					<div className="flex min-w-0 items-baseline gap-1.5">
 						<span className="shrink-0 font-semibold text-t2">{layer.sourceName ?? layer.sourceType}</span>
+						{reason && <LoreReasonBadge reason={reason} />}
 						<span className="min-w-0 truncate text-t4">{layer.sourceId || layer.sourceType}</span>
 					</div>
 					<div className="flex shrink-0 items-center gap-1.5 text-t3">
@@ -366,6 +427,7 @@ function LayerCard({
 				>
 					<div className="flex min-w-0 items-center gap-2">
 						<div className="min-w-0 flex-1 font-semibold text-t2">{layer.sourceName ?? layer.sourceType}</div>
+						{reason && <LoreReasonBadge reason={reason} />}
 						<span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
 					</div>
 					<div className="mt-1 flex min-w-0 items-center gap-2 text-[12px] text-t3">

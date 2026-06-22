@@ -13,6 +13,8 @@
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
+import type { LoreActivationReason } from "@vibe-tavern/domain";
+
 export interface LoreActivationState {
   [entryId: string]: {
     activatedAtTurn?: number;
@@ -120,6 +122,8 @@ export interface ActivationResult {
     ignoreBudget: boolean;
     matchCount: number;
     matchedKeys: string[];
+    /** Structured reason this entry activated — surfaced in the prompt trace. */
+    reason: LoreActivationReason;
   }>;
   /** Updated activation state (to persist back to chat) */
   updatedState: LoreActivationState;
@@ -226,7 +230,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       normalActivated++;
       console.debug("[lore]   activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
       activatedIds.add(entry.id);
-      activated.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount));
+      activated.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount, result.reason));
       if (!entry.preventRecursion) {
         recurseBuffer += entry.content + "\n";
       }
@@ -275,7 +279,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         if (result.status === "activated") {
           console.debug("[lore]   [recursion] activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
           activatedIds.add(entry.id);
-          activated.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount));
+          activated.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount, result.reason));
           newActivations++;
           if (!entry.preventRecursion) {
             newRecurseText += entry.content + "\n";
@@ -338,7 +342,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
  * - "skipped" — entry was skipped for any other reason
  */
 type ActivationOutcome =
-  | { status: "activated"; matchCount: number; matchedKeys: string[] }
+  | { status: "activated"; matchCount: number; matchedKeys: string[]; reason: LoreActivationReason }
   | { status: "failed_probability" }
   | { status: "skipped" };
 
@@ -411,7 +415,7 @@ function tryActivateEntry(ctx: {
     }
     console.debug("[lore]   actv %s: constant | title=%s", entry.id, entry.title);
     updatedState[entry.id] = { ...state, activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
-    return { status: "activated", matchCount: 0, matchedKeys: [] };
+    return { status: "activated", matchCount: 0, matchedKeys: [], reason: { kind: "constant" } };
   }
 
   // 5. Time windows — sticky check
@@ -421,7 +425,12 @@ function tryActivateEntry(ctx: {
     if (turnsSinceActivation < entry.stickyWindow) {
       console.debug("[lore]   actv %s: sticky | title=%s", entry.id, entry.title);
       updatedState[entry.id] = { ...state, lastMatchedAtTurn: currentTurn };
-      return { status: "activated", matchCount: 0, matchedKeys: [] };
+      return {
+        status: "activated",
+        matchCount: 0,
+        matchedKeys: [],
+        reason: { kind: "sticky", turnsSinceActivation, window: entry.stickyWindow },
+      };
     }
   }
 
@@ -435,7 +444,7 @@ function tryActivateEntry(ctx: {
   if (entry.delayWindow > 0 && state?.pendingDelayUntilTurn != null) {
     if (currentTurn < state.pendingDelayUntilTurn) return reason("delay pending");
     updatedState[entry.id] = { activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
-    return { status: "activated", matchCount: 0, matchedKeys: [] };
+    return { status: "activated", matchCount: 0, matchedKeys: [], reason: { kind: "delay_fulfilled" } };
   }
 
   // 8. Key matching (skip if @@activate decorator forces activation)
@@ -473,7 +482,14 @@ function tryActivateEntry(ctx: {
   // 12. Activate
   console.debug("[lore]   actv %s: key match | title=%s", entry.id, entry.title);
   updatedState[entry.id] = { activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
-  return { status: "activated", matchCount: matchedKeys.length, matchedKeys };
+  return {
+    status: "activated",
+    matchCount: matchedKeys.length,
+    matchedKeys,
+    reason: decoratorActive
+      ? { kind: "decorator" }
+      : { kind: "key_match", matchedKeys, matchCount: matchedKeys.length, scanState },
+  };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -567,7 +583,12 @@ function checkLogic(logic: string, matchCount: number, totalCount: number): bool
   }
 }
 
-function toActivatedEntry(entry: FlatEntry, matchedKeys: string[], matchCount: number): ActivationResult["activatedEntries"][number] {
+function toActivatedEntry(
+  entry: FlatEntry,
+  matchedKeys: string[],
+  matchCount: number,
+  reason: LoreActivationReason,
+): ActivationResult["activatedEntries"][number] {
   return {
     id: entry.id,
     lorebookId: entry.lorebookId,
@@ -580,6 +601,7 @@ function toActivatedEntry(entry: FlatEntry, matchedKeys: string[], matchCount: n
     ignoreBudget: entry.ignoreBudget,
     matchCount,
     matchedKeys,
+    reason,
   };
 }
 
