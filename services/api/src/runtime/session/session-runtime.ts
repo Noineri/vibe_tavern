@@ -217,7 +217,9 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 		 * preview via `assembleContextPreview` directly).
 		 */
 		const { chat, branch, messages: branchMessages } = await this.chatApp.getChatState(chatId);
-		const promptTraceHistory = await this.getPromptTraceHistory(
+		// Only the single latest trace is embedded now (for the post-generation
+		// badge); the full history is lazy-loaded via GET /api/chats/:chatId/traces.
+		const latestTraces = await this.getPromptTraceHistory(
 			chat.id as ChatId,
 			branch.id as ChatBranchId,
 		);
@@ -243,8 +245,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			branches,
 			messages: messagesWithVariants,
 			summaries,
-			promptTrace: promptTraceHistory[0] ?? null,
-			promptTraceHistory,
+			promptTrace: latestTraces[0] ?? null,
 			contextPreview: await this.assembleContextPreview(chatId, branch.id as ChatBranchId),
 			character,
 			persona,

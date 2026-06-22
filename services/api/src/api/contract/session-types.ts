@@ -63,8 +63,6 @@ export interface SessionSnapshot {
 	}>;
 	/** Latest prompt trace for the active branch (null if no traces). */
 	promptTrace: PromptTraceRecordDto | null;
-	/** Last N prompt traces for the active branch. */
-	promptTraceHistory: PromptTraceRecordDto[];
 	/** Live context preview — always reflects current chat/character/persona/preset state. Never nulled by trace presence (traces are historical; this is the live view). */
 	contextPreview: AssemblePromptResponse | null;
 	/** Active character record. */

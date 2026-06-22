@@ -6,7 +6,7 @@
  * the exact key set of every builder so a future wiring step (B1.2–B1.5)
  * cannot silently drift a field in or out. They also characterization-pin
  * `getSnapshot` (its internals were refactored onto shared fetch primitives;
- * its full 12-key shape must be unchanged).
+ * its full 11-key shape must be unchanged).
  *
  * B1.1 is ADDITIVE: nothing is wired to the builders yet, so these are the
  * only exercise of the new code paths.
@@ -79,7 +79,7 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 
 	// ─── getSnapshot characterization (internals refactored; shape unchanged) ───
 
-	it("getSnapshot still returns the full 12-key shape", async () => {
+	it("getSnapshot still returns the full 11-key shape", async () => {
 		const snap = await runtime.getSnapshot(chatId);
 		expect(sortedKeys(snap)).toEqual([
 			"activeBranch",
@@ -92,7 +92,6 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 			"messages",
 			"persona",
 			"promptTrace",
-			"promptTraceHistory",
 			"summaries",
 		]);
 	});
