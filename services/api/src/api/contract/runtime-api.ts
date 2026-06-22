@@ -119,6 +119,9 @@ export interface ChatRuntimeApi {
 	exportChatJsonl: (chatId: string) => Promise<string>;
 	exportPromptTrace: (traceId: string) => Promise<PromptTraceRecordDto>;
 
+	// Prompt traces (lazy-loaded history)
+	listPromptTraces: (chatId: string, opts?: { messageId?: string; branchId?: string }) => Promise<PromptTraceRecordDto[]>;
+
 	// Summaries & Memory
 	listChatSummaries: (chatId: string) => Promise<ChatSummary[]>;
 	createChatSummary: (chatId: string, body: { label?: string; content?: string; summarizedFrom: number; summarizedTo: number; includeInContext?: boolean; excludeSummarized?: boolean; source?: "manual" | "auto"; sortOrder?: number }) => Promise<{ summary: ChatSummary; snapshot: SummaryResponse }>;

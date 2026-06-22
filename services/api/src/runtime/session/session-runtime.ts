@@ -501,6 +501,20 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 		return traces.slice(0, limit).map(mapPromptTraceRecord);
 	}
 
+	async listPromptTraces(
+		chatId: ChatId,
+		opts?: { messageId?: string; branchId?: string },
+	): Promise<PromptTraceRecordDto[]> {
+		// Server-side filtering only — the route's query params flow straight to
+		// the store so the frontend never receives traces outside its scope.
+		const traces = await this.stores.traces.getTracesByChat(
+			chatId,
+			opts?.branchId,
+			opts?.messageId,
+		);
+		return traces.map(mapPromptTraceRecord);
+	}
+
 	async rebuildChatOrder(): Promise<void> {
 		await this.chatOrder.refresh();
 	}

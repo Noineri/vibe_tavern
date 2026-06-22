@@ -255,6 +255,9 @@ export class ChatAdapter implements ChatRuntimeApi {
 	exportPromptTrace = (traceId: string) =>
 		this.sessionRuntime.exportPromptTrace(traceId);
 
+	listPromptTraces = (chatId: string, opts?: { messageId?: string; branchId?: string }) =>
+		this.sessionRuntime.listPromptTraces(brandId<ChatId>(chatId), opts);
+
 	// ─── Summaries & Memory ─────────────────────────────────────────────
 
 	listChatSummaries = async (chatId: string) => {

@@ -94,6 +94,14 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       c.header("Content-Disposition", `attachment; filename="${c.req.param("traceId")}.json"`);
       return c.json(data);
     })
+    .get("/api/chats/:chatId/traces", async (c) => {
+      // Lazy-loaded trace history. Server-side filters; the frontend never
+      // receives traces outside the requested scope (branchId / messageId).
+      const chatId = c.req.param("chatId");
+      const messageId = c.req.query("messageId") ?? undefined;
+      const branchId = c.req.query("branchId") ?? undefined;
+      return c.json(await runtime.listPromptTraces(chatId, { messageId, branchId }));
+    })
     .post("/api/chats/:chatId/messages/:messageId/branch", async (c) => {
       return c.json(await runtime.branchChat(c.req.param("chatId"), c.req.param("messageId")));
     })
