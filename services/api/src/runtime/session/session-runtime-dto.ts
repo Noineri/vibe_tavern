@@ -92,6 +92,7 @@ export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto
     layers: trace.assembledLayers as PromptTraceRecordDto["layers"],
     tokenAccounting: trace.tokenAccounting,
     activatedLoreEntries: (trace.activatedLoreEntries ?? []) as string[],
+    activatedLoreDetail: trace.activatedLoreDetail ?? [],
     scriptInjections: (trace.scriptInjections ?? []) as PromptTraceRecordDto["scriptInjections"],
     retrievedMemories: (trace.retrievedMemories ?? []) as Array<Record<string, unknown>>,
     finalPayload: trace.finalPayload,

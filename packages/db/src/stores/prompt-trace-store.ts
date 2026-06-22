@@ -1,5 +1,6 @@
 import { eq, and, desc } from 'drizzle-orm';
 import { promptTraces } from '../db-schema.js';
+import type { ActivatedLoreDetail } from '@vibe-tavern/domain';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 
@@ -20,6 +21,7 @@ export interface PromptTrace {
   tokenAccounting: Record<string, number>;
   finalPayload: Record<string, unknown>;
   activatedLoreEntries: string[];
+  activatedLoreDetail: ActivatedLoreDetail[];
   retrievedMemories: Array<Record<string, unknown>>;
   scriptInjections: Array<Record<string, unknown>>;
   latencyMs: number;
@@ -51,6 +53,7 @@ export interface SaveTraceData {
   tokenAccounting: Record<string, number>;
   finalPayload?: Record<string, unknown>;
   activatedLoreEntries: string[];
+  activatedLoreDetail: ActivatedLoreDetail[];
   retrievedMemories: Array<Record<string, unknown>>;
   scriptInjections: Array<Record<string, unknown>>;
   latencyMs: number;
@@ -110,6 +113,7 @@ export class PromptTraceStore {
         tokenAccountingJson: JSON.stringify(data.tokenAccounting),
         finalPayloadJson: JSON.stringify(data.finalPayload ?? {}),
         activatedLoreEntriesJson: JSON.stringify(data.activatedLoreEntries),
+        activatedLoreDetailJson: JSON.stringify(data.activatedLoreDetail ?? []),
         retrievedMemoriesJson: JSON.stringify(data.retrievedMemories),
         scriptInjectionsJson: JSON.stringify(data.scriptInjections),
         prefill: data.prefill ?? null,
@@ -165,6 +169,7 @@ export class PromptTraceStore {
       tokenAccounting: JSON.parse(row.tokenAccountingJson),
       finalPayload: JSON.parse(row.finalPayloadJson),
       activatedLoreEntries: JSON.parse(row.activatedLoreEntriesJson),
+      activatedLoreDetail: row.activatedLoreDetailJson ? JSON.parse(row.activatedLoreDetailJson) : [],
       retrievedMemories: JSON.parse(row.retrievedMemoriesJson),
       scriptInjections: JSON.parse(row.scriptInjectionsJson),
       latencyMs: row.latencyMs,

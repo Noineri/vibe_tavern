@@ -445,6 +445,8 @@ export const promptTraces = sqliteTable('prompt_traces', {
   tokenAccountingJson: text('token_accounting_json').notNull(),
   finalPayloadJson: text('final_payload_json').notNull().default('{}'),
   activatedLoreEntriesJson: text('activated_lore_entries_json').notNull().default('[]'),
+  /** Per-entry activation reasons (JSON ActivatedLoreDetail[]). Nullable for traces saved before this column existed. */
+  activatedLoreDetailJson: text('activated_lore_detail_json'),
   retrievedMemoriesJson: text('retrieved_memories_json').notNull().default('[]'),
   scriptInjectionsJson: text('script_injections_json').notNull().default('[]'),
   prefill: text('prefill'),

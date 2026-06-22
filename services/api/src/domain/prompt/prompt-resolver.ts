@@ -5,6 +5,7 @@ import {
 	type ChatId,
 	type CharacterId,
 	type LoreEntry,
+	type ActiveLoreEntry,
 	type RetrievedMemoryHit,
 	type CustomInjection,
 	type PromptOrderEntry,
@@ -89,7 +90,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		branchId: ChatBranchId;
 		recentText: string;
 		maxContextTokens?: number;
-	}): Promise<LoreEntry[]> {
+	}): Promise<ActiveLoreEntry[]> {
 		const chat = await this.stores.chats.getById(input.chatId);
 		if (!chat) return [];
 
@@ -161,17 +162,21 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		// 8. Persist updated activation state
 		await this.stores.chats.updateLoreActivationState(chat.id, result.updatedState);
 
-		// 9. Map activated entries back to domain LoreEntry type
+		// 9. Map activated entries back to domain LoreEntry type, carrying the
+		//    structured activation reason through for the prompt trace.
+		const reasonById = new Map(result.activatedEntries.map(e => [e.id, e]));
 		const activatedIds = new Set(result.activatedEntries.map(e => e.id));
 		return lorebookSets
 			.flatMap(lb => lb.entries)
 			.filter(e => activatedIds.has(e.id))
-			.map(e => ({
-				id: brandId<LoreEntry['id']>(e.id),
-				lorebookId: brandId<LoreEntry['lorebookId']>(e.lorebookId),
-				title: e.title,
-				content: e.content,
-				keys: e.keys,
+			.map(e => {
+				const detail = reasonById.get(e.id)!;
+				return {
+					id: brandId<LoreEntry['id']>(e.id),
+					lorebookId: brandId<LoreEntry['lorebookId']>(e.lorebookId),
+					title: e.title,
+					content: e.content,
+					keys: e.keys,
 				secondaryKeys: e.secondaryKeys,
 				logic: e.logic as LoreEntry['logic'],
 				position: e.position as LoreEntry['position'],
@@ -202,7 +207,11 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				sortOrder: e.sortOrder,
 				automationId: e.automationId,
 				metadata: e.metadata,
-			}));
+				activationReason: detail.reason,
+				matchedKeys: detail.matchedKeys,
+				matchCount: detail.matchCount,
+			};
+		});
 	}
 
 	async executeScripts(input: {

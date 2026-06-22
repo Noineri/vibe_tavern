@@ -231,6 +231,51 @@ export interface LoreEntry {
   metadata: Record<string, unknown>;
 }
 
+/**
+ * Why a lorebook entry activated on a given turn. Discriminated union so the
+ * trace UI can render each case distinctly. Surfaced in the prompt trace via
+ * `ActivatedLoreDetail` (reports/lorebook-trace-conditions.md).
+ *
+ * Scope is ACTIVATED entries only (per noineri 2026-06-21). Skip reasons
+ * (cooldown / no-key-match / character-filter / probability-failed / ...) are
+ * computed inside the engine for `console.debug` but deliberately NOT
+ * surfaced here — they would bloat every trace row.
+ */
+export type LoreActivationReason =
+  /** `constant: true` entry — always active (step 4 in the engine). */
+  | { kind: "constant" }
+  /** Previously activated, still inside its `stickyWindow` (step 5). */
+  | { kind: "sticky"; turnsSinceActivation: number; window: number }
+  /** `delayWindow` elapsed — first-match pending now fulfilled (step 7). */
+  | { kind: "delay_fulfilled" }
+  /** `@@activate` decorator forced activation without a key match (step 8/12). */
+  | { kind: "decorator" }
+  /** A primary key matched the scan text (step 12). */
+  | { kind: "key_match"; matchedKeys: string[]; matchCount: number; scanState: "normal" | "recursion" };
+
+/**
+ * Per-entry activation detail persisted on the prompt trace and rendered in
+ * the trace UI. `id` matches the LoreEntryId in `activatedLoreEntries`.
+ */
+export interface ActivatedLoreDetail {
+  id: string;
+  title: string;
+  reason: LoreActivationReason;
+}
+
+/**
+ * A `LoreEntry` annotated with the live activation result — what
+ * `listActiveLoreEntries` returns up the assembly pipeline. The extra fields
+ * carry the structured activation reason (for the prompt trace) alongside the
+ * already-computed key-match details. Consumers that only need the base
+ * `LoreEntry` shape (pipeline layers, script sandbox) ignore the extras.
+ */
+export type ActiveLoreEntry = LoreEntry & {
+  activationReason: LoreActivationReason;
+  matchedKeys: string[];
+  matchCount: number;
+};
+
 export interface Script {
   id: ScriptId;
   name: string;
@@ -392,6 +437,8 @@ export interface PromptTrace {
   }>;
   tokenAccounting: Record<string, number>;
   activatedLoreEntries: LoreEntryId[];
+  /** Per-entry activation reasons parallel to `activatedLoreEntries`. */
+  activatedLoreDetail: ActivatedLoreDetail[];
   scriptInjections: Array<{
     scriptId: string;
     scriptName: string;
