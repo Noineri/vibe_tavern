@@ -400,6 +400,7 @@
   "prompt_manager_sub": "System, post-history, and summary/tools instructions per preset.",
   "unsaved_changes_title": "Unsaved changes",
   "duplicate_preset_btn": "Copy",
+  "export_preset_btn": "Export",
   "delete_preset": "Delete preset",
   "preset_editor_mode": "Prompt editor mode",
   "preset_simple_mode": "Simple mode",

@@ -400,6 +400,7 @@
   "prompt_manager_sub": "Системные, пост-исторические и инструкции саммари/инструментов для каждого пресета.",
   "unsaved_changes_title": "Несохранённые изменения",
   "duplicate_preset_btn": "Копия",
+  "export_preset_btn": "Экспорт",
   "delete_preset": "Удалить пресет",
   "preset_editor_mode": "Режим редактора промпта",
   "preset_simple_mode": "Простой режим",
