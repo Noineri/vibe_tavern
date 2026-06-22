@@ -208,7 +208,7 @@ Lore entries use SillyTavern position strings that map to pipeline positions:
 
 | ST Position | Pipeline Position | SubPosition |
 |-------------|-------------------|-------------|
-| `before_char` | `before_prompt` | — |
+| `before_char` | `in_prompt` | — (maps onto `worldInfoBefore` marker) |
 | `after_char` | `in_prompt` | 10 |
 | `before_examples` | `in_prompt` | 30 |
 | `after_examples` | `in_prompt` | 50 |
@@ -216,6 +216,8 @@ Lore entries use SillyTavern position strings that map to pipeline positions:
 | `bottom_an` | `in_prompt` | 25 |
 | `at_depth` | `in_chat` | — (uses `depth` field) |
 | `outlet` | `hidden_system` | — |
+
+> For the full lorebook system — activation engine, budget & priority semantics, ST parity audit, and trace integration — see [Lorebooks](lorebooks.md).
 
 ---
 
