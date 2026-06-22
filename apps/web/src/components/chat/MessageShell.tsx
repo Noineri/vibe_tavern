@@ -511,7 +511,7 @@ function MobileMessageActions(props: {
         )}
       </div>
       <div className="flex min-w-0 justify-center">
-        {!isUser && !isGreeting && variantControls}
+        {!isUser && !isGreeting && canSwitchVariant && variantControls}
       </div>
       <div className="flex justify-end">
         {canResend && (
