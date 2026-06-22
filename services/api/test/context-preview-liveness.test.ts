@@ -58,7 +58,7 @@ describe("Wave A — context preview liveness", () => {
 			// branch always has >= 1 trace — the condition that used to null
 			// the preview (the bug).
 			const snap = await runtime.getSnapshot(chatId);
-			expect(snap.promptTraceHistory.length).toBeGreaterThanOrEqual(1);
+			expect(snap.promptTrace).not.toBeNull();
 
 			// Fixed: the preview stays live despite the trace existing.
 			expect(snap.contextPreview).not.toBeNull();
