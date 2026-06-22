@@ -4,7 +4,7 @@ import type { ProviderProbeResponse } from "@vibe-tavern/domain";
 import { PROVIDER_TYPE } from "@vibe-tavern/domain";
 import { getT } from "../i18n/locale-helpers.js";
 import { computeHydration } from "./hydrate-provider.js";
-import { computeSavePatch, connectionToSavePatch, validateSavePatch } from "./save-provider-patch.js";
+import { computeSavePatch, connectionToSavePatch, validateSavePatch, buildFavoriteModelSwitchPatch } from "./save-provider-patch.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import {
@@ -432,13 +432,21 @@ export function useProviderProfiles() {
   }
 
   async function handleSelectFavoriteProviderModel(providerProfileId: string, modelId: string): Promise<void> {
-    // Find the favorite model's contextLength to auto-update contextBudget
+    // Respect pinContextBudget: when the user has pinned a budget, switching
+    // the active model from the chat-input starred-models dropdown must NOT
+    // overwrite it (the three ProviderModelSelector sites gate on the pin;
+    // this fourth path — the chat dropdown — historically did not, which was
+    // the reported "pinned context size resets on model switch" bug).
+    // The patch logic is extracted into a pure helper so the invariant is
+    // unit-tested without rendering the React hook.
+    const profile = providerProfiles.find((p) => p.id === providerProfileId);
     const favList = useProviderDataStore.getState().favoritesByProfile[providerProfileId] ?? [];
     const fav = favList.find((f) => f.modelId === modelId);
-    const patch: Record<string, unknown> = { defaultModel: modelId };
-    if (fav?.contextLength != null && fav.contextLength > 0) {
-      patch.contextBudget = fav.contextLength;
-    }
+    const patch = buildFavoriteModelSwitchPatch({
+      modelId,
+      favorite: fav,
+      pinContextBudget: profile?.pinContextBudget ?? false,
+    });
     const saved = await updateProviderProfileAction(providerProfileId, patch);
     patchConnection({
       providerLabel: saved.name,

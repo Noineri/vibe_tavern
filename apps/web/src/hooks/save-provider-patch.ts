@@ -186,3 +186,44 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
 
   return patch;
 }
+
+/** Input for {@link buildFavoriteModelSwitchPatch}. */
+export interface FavoriteModelSwitchInput {
+  /** The model being selected as the profile's new `defaultModel`. */
+  modelId: string;
+  /** The matching favorite (carries the cached `contextLength`). `undefined` when the model is not favorited. */
+  favorite: { contextLength: number | null } | undefined;
+  /** Whether the profile has its context budget pinned. When `true`, `contextBudget` is never overwritten. */
+  pinContextBudget: boolean;
+}
+
+/** Result of a favorite-model switch: always a new `defaultModel`, plus an
+ *  optional `contextBudget` overwrite when the budget is not pinned. */
+export interface FavoriteModelSwitchPatch {
+  defaultModel: string;
+  contextBudget?: number;
+}
+
+/**
+ * Build the profile PATCH for switching the active model from the chat-input
+ * starred-models dropdown. Pure — the caller performs the actual save.
+ *
+ * Always sets `defaultModel`. Overwrites `contextBudget` from the favorite's
+ * cached `contextLength` ONLY when the profile has NOT pinned its context
+ * budget. When pinned, the user's saved budget is preserved across model
+ * switches — this is the pin-toggle contract (the three ProviderModelSelector
+ * sites gate on the pin via `&& !form.pinContextBudget`; this is the same rule
+ * for the chat-dropdown path, which historically did not gate and reset the
+ * budget on every switch — the reported "pinned context size" bug).
+ */
+export function buildFavoriteModelSwitchPatch(input: FavoriteModelSwitchInput): FavoriteModelSwitchPatch {
+  const patch: FavoriteModelSwitchPatch = { defaultModel: input.modelId };
+  if (
+    !input.pinContextBudget &&
+    input.favorite?.contextLength != null &&
+    input.favorite.contextLength > 0
+  ) {
+    patch.contextBudget = input.favorite.contextLength;
+  }
+  return patch;
+}
