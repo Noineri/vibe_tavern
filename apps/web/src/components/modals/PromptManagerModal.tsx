@@ -10,7 +10,7 @@ import { useModalStore } from "../../stores/modal-store.js";
 import { PresetList, PromptFields } from "../settings/prompt/index.js";
 import { PromptOrderCanvas, type CharacterCanvasDraft } from "../settings/prompt/InjectionTable.js";
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
-import { serializeStPreset } from "../../lib/st-preset-parser.js";
+import { serializeStPreset, type VibeTavernPresetExtension } from "../../lib/st-preset-parser.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
@@ -42,25 +42,7 @@ interface PromptManagerModalProps {
   presets: PromptPresetDto[];
   activePresetId: string | null;
   setActivePresetId: (id: string | null) => void;
-  onCreate: (input: {
-    name: string;
-    bindModel?: string;
-    system?: string;
-    jailbreak?: string;
-    prefill?: string;
-    authorsNote?: string;
-    authorsNoteDepth?: number;
-    authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat";
-    authorsNoteRole?: "system" | "user" | "assistant";
-    summary?: string;
-    tools?: string;
-    nsfw?: string;
-    enhanceDefinitions?: string;
-    scriptAiSystemPrompt?: string;
-    customInjections?: CustomInjection[];
-    promptOrder?: PromptOrderEntry[];
-    advancedMode?: boolean;
-  }) => Promise<{ id: string } | null>;
+  onCreate: (input: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">> & { name: string }) => Promise<{ id: string } | null>;
   onUpdate: (
     presetId: string,
     patch: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">>
@@ -228,7 +210,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   };
 
   const handleDuplicate = () => {
-    void input.onCreate({ ...draft, name: `${draft.name || t("presets")} (copy)` }).then((created) => {
+    // draft.aiAssistantPrompts is a parsed Record; onCreate expects the JSON
+    // string the DTO/API store (matches handleSave's stringification).
+    void input.onCreate({ ...draft, aiAssistantPrompts: JSON.stringify(draft.aiAssistantPrompts), name: `${draft.name || t("presets")} (copy)` }).then((created) => {
       if (created?.id) input.setActivePresetId(created.id);
     });
   };
@@ -292,6 +276,52 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   };
 
   const handleImportPreset = (result: PresetImportResult) => {
+    // Lossless path: the file was exported by Vibe Tavern and carries the full
+    // DTO under _vibe_tavern. Restore every field directly (no block projection,
+    // no merge) — this is the only path that preserves VT-only fields
+    // (aiAssistantPrompts, scriptAiSystemPrompt, tools, summary, prefill) and
+    // exact canvas positions for built-in slots.
+    if (result.vibeTavern) {
+      const ext = result.vibeTavern;
+      if (result.target === 'new') {
+        void input.onCreate({
+          ...ext,
+          name: result.newPresetName || ext.name,
+        }).then((created) => {
+          if (created?.id) input.setActivePresetId(created.id);
+        });
+      } else {
+        // Replace the current preset's editable fields wholesale (reviewed via
+        // the draft; user clicks Save to commit, so it is not immediately
+        // destructive). aiAssistantPrompts is a JSON string in the DTO but a
+        // parsed Record in the draft — convert via the same helper the load
+        // path uses.
+        setDraft({
+          name: ext.name,
+          bindModel: "",
+          system: ext.system,
+          jailbreak: ext.jailbreak,
+          prefill: ext.prefill,
+          authorsNote: ext.authorsNote,
+          authorsNoteDepth: ext.authorsNoteDepth,
+          authorsNotePosition: ext.authorsNotePosition,
+          authorsNoteRole: ext.authorsNoteRole,
+          summary: ext.summary,
+          tools: ext.tools,
+          nsfw: ext.nsfw,
+          enhanceDefinitions: ext.enhanceDefinitions,
+          scriptAiSystemPrompt: ext.scriptAiSystemPrompt,
+          aiAssistantPrompts: parseAiAssistantPrompts(ext.aiAssistantPrompts),
+          customInjections: ext.customInjections,
+          promptOrder: ext.promptOrder,
+          advancedMode: ext.advancedMode,
+        });
+        setDirty(true);
+        setSaveState("idle");
+      }
+      setImportModalOpen(false);
+      return;
+    }
     if (result.target === 'new') {
       const name = result.newPresetName || `${t('imported_preset')} ${new Date().toLocaleDateString()}`;
       void input.onCreate({

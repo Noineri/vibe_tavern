@@ -7,23 +7,7 @@ export async function listPromptPresets(): Promise<PromptPresetDto[]> {
   return unwrapRpc<PromptPresetDto[]>(response);
 }
 
-export async function createPromptPreset(input: {
-  name: string;
-  bindModel?: string;
-  system?: string;
-  jailbreak?: string;
-  prefill?: string;
-  authorsNote?: string;
-  authorsNoteDepth?: number;
-  authorsNotePosition?: "in_prompt" | "in_chat" | "after_chat";
-  authorsNoteRole?: "system" | "user" | "assistant";
-  summary?: string;
-  tools?: string;
-  customInjections?: PromptPresetDto["customInjections"];
-  promptOrder?: PromptPresetDto["promptOrder"];
-  advancedMode?: boolean;
-  scriptAiSystemPrompt?: string;
-}): Promise<PromptPresetDto> {
+export async function createPromptPreset(input: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">> & { name: string }): Promise<PromptPresetDto> {
   const response = await client.api["prompt-presets"].$post({ json: input });
   return unwrapRpc<PromptPresetDto>(response);
 }

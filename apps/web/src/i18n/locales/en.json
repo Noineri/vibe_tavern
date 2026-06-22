@@ -435,6 +435,7 @@
   "import_preset_btn": "Import preset",
   "preset_import_title": "Import ST Preset",
   "preset_import_sub": "Import prompt blocks from a SillyTavern preset file into the current preset.",
+  "preset_import_vt_badge": "Vibe Tavern · full fidelity",
   "preset_import_drop_title": "Click or drop a .json preset file",
   "preset_import_drop_sub": "Found in OpenAI Settings/ folder",
   "preset_import_target_system": "System prompt",
