@@ -1,6 +1,6 @@
-import type { StoredProviderProfileRecord } from '@vibe-tavern/domain';
+import type { StoredProviderProfileRecord, ModelSettingsOverlay } from '@vibe-tavern/domain';
 import { and, eq } from 'drizzle-orm';
-import { providerProfiles, cachedModels, providerModelFavorites } from '../db-schema.js';
+import { providerProfiles, cachedModels, providerModelFavorites, providerModelSettings } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 
@@ -36,6 +36,17 @@ export interface FavoriteModel {
   label: string | null;
   contextLength: number | null;
   createdAt: string;
+}
+
+/** Per-model settings overlay row. `settings` is the parsed {@link ModelSettingsOverlay};
+ *  absent fields mean "inherit the profile base" (see resolveEffectiveSettings). */
+export interface ProviderModelSettings {
+  id: string;
+  providerProfileId: string;
+  modelId: string;
+  settings: ModelSettingsOverlay;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ─── Input types ──────────────────────────────────────────────────────────────
@@ -76,6 +87,8 @@ export interface CreateProviderData {
   streamResponse?: boolean;
   customSamplers?: boolean;
   pinContextBudget?: boolean;
+  /** Per-model binding toggle — when true, sampler/context edits route to a per-model overlay. */
+  bindPerModel?: boolean;
   /** Optional vision model for image description fallback. */
   visionModel?: string | null;
 }
@@ -175,6 +188,7 @@ export class ProviderStore {
         streamResponse: data.streamResponse !== undefined ? (data.streamResponse ? 1 : 0) : 1,
         customSamplers: data.customSamplers ? 1 : 0,
         pinContextBudget: data.pinContextBudget ?? false,
+        bindPerModel: data.bindPerModel ?? false,
         visionModel: data.visionModel ?? null,
         isActive: 0,
         createdAt: now,
@@ -225,6 +239,7 @@ export class ProviderStore {
     if (data.streamResponse !== undefined) values.streamResponse = data.streamResponse ? 1 : 0;
     if (data.customSamplers !== undefined) values.customSamplers = data.customSamplers ? 1 : 0;
     if (data.pinContextBudget !== undefined) values.pinContextBudget = data.pinContextBudget;
+    if (data.bindPerModel !== undefined) values.bindPerModel = data.bindPerModel;
     if (data.visionModel !== undefined) values.visionModel = data.visionModel ?? null;
 
     console.log(`[DB] provider.update id=${id} visionModel_in=${data.visionModel} visionModel_set=${values.visionModel} fields=${Object.keys(values).join(',')}`);
@@ -300,6 +315,7 @@ export class ProviderStore {
         streamResponse: original.streamResponse,
         customSamplers: original.customSamplers,
         pinContextBudget: original.pinContextBudget,
+        bindPerModel: original.bindPerModel,
         visionModel: original.visionModel,
         isActive: 0,
         createdAt: now,
@@ -397,6 +413,99 @@ export class ProviderStore {
       .run();
   }
 
+  // ─── Per-model settings overlay ───────────────────────────────────────────
+
+  /** Parse a stored settingsJson row. Returns `{}` (empty overlay = inherit all base) on missing/invalid JSON. */
+  private parseSettingsJson(value: string): ModelSettingsOverlay {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return (parsed && typeof parsed === 'object' ? parsed : {}) as ModelSettingsOverlay;
+    } catch {
+      return {};
+    }
+  }
+
+  private mapModelSettingsRow(row: typeof providerModelSettings.$inferSelect): ProviderModelSettings {
+    return {
+      id: row.id,
+      providerProfileId: row.providerProfileId,
+      modelId: row.modelId,
+      settings: this.parseSettingsJson(row.settingsJson),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  /** Get a single model's overlay, or `null` if the model has no bound settings yet (inherit base). */
+  async getModelSettings(providerId: string, modelId: string): Promise<ProviderModelSettings | null> {
+    const row = await this.db
+      .select()
+      .from(providerModelSettings)
+      .where(and(
+        eq(providerModelSettings.providerProfileId, providerId),
+        eq(providerModelSettings.modelId, modelId),
+      ))
+      .get();
+    return row ? this.mapModelSettingsRow(row) : null;
+  }
+
+  /** List every model overlay for a profile (used to populate the binding UI). */
+  async listModelSettings(providerId: string): Promise<ProviderModelSettings[]> {
+    const rows = await this.db
+      .select()
+      .from(providerModelSettings)
+      .where(eq(providerModelSettings.providerProfileId, providerId))
+      .all();
+    return rows.map((row) => this.mapModelSettingsRow(row));
+  }
+
+  /** Insert or update (upsert) a model's overlay. Idempotent on `(providerId, modelId)`. */
+  async upsertModelSettings(providerId: string, modelId: string, settings: ModelSettingsOverlay): Promise<ProviderModelSettings> {
+    const now = this.clock.now();
+    const settingsJson = JSON.stringify(settings);
+    const existing = await this.db
+      .select()
+      .from(providerModelSettings)
+      .where(and(
+        eq(providerModelSettings.providerProfileId, providerId),
+        eq(providerModelSettings.modelId, modelId),
+      ))
+      .get();
+
+    if (existing) {
+      const [row] = await this.db
+        .update(providerModelSettings)
+        .set({ settingsJson, updatedAt: now })
+        .where(eq(providerModelSettings.id, existing.id))
+        .returning();
+      return this.mapModelSettingsRow(row!);
+    }
+
+    const [row] = await this.db
+      .insert(providerModelSettings)
+      .values({
+        id: this.idGen.next('pms'),
+        providerProfileId: providerId,
+        modelId,
+        settingsJson,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    return this.mapModelSettingsRow(row!);
+  }
+
+  /** Delete a model's overlay (the model reverts to the profile base). No-op if none exists. */
+  async deleteModelSettings(providerId: string, modelId: string): Promise<void> {
+    await this.db
+      .delete(providerModelSettings)
+      .where(and(
+        eq(providerModelSettings.providerProfileId, providerId),
+        eq(providerModelSettings.modelId, modelId),
+      ))
+      .run();
+  }
+
   // ─── Row mappers ───────────────────────────────────────────────────────────
 
   private mapRow(row: typeof providerProfiles.$inferSelect): ProviderProfile {
@@ -409,6 +518,7 @@ export class ProviderStore {
       defaultModel: row.defaultModel,
       contextBudget: row.contextBudget,
       pinContextBudget: row.pinContextBudget,
+      bindPerModel: row.bindPerModel,
       maxTokens: row.maxTokens,
       temperature: row.temperature,
       topP: row.topP,

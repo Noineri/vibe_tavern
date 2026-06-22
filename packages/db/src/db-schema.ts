@@ -371,6 +371,9 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   defaultModel: text('default_model'),
   contextBudget: integer('context_budget'),
   pinContextBudget: integer('pin_context_budget', { mode: 'boolean' }).notNull().default(false),
+  /** When true, sampler/context edits in the modal write to a per-model overlay
+   *  (providerModelSettings) instead of the profile base. See resolveEffectiveSettings. */
+  bindPerModel: integer('bind_per_model', { mode: 'boolean' }).notNull().default(false),
   maxTokens: integer('max_tokens').notNull().default(2000),
   temperature: real('temperature').notNull().default(1.0),
   topP: real('top_p').notNull().default(1.0),
@@ -432,7 +435,24 @@ export const providerModelFavorites = sqliteTable('provider_model_favorites', {
   providerModelUnique: uniqueIndex('idx_provider_model_favorites_unique').on(table.providerProfileId, table.modelId),
 }));
 
-// ─── promptTraces ──────────────────────────────────────────────────────────────
+// ─── providerModelSettings ─────────────────────────────────────────────────────
+// Per-model sampler/context overlay. When a profile's bindPerModel is ON, the
+// active model's overlay (looked up by modelId === profile.defaultModel at
+// generation time) merges over the profile base via resolveEffectiveSettings.
+// Rows survive un-starring a model (favorites are bookmarks; overlays are config).
+export const providerModelSettings = sqliteTable('provider_model_settings', {
+  id: text('id').primaryKey(),
+  providerProfileId: text('provider_profile_id').notNull().references(() => providerProfiles.id, { onDelete: 'cascade' }),
+  modelId: text('model_id').notNull(),
+  /** Stringified ModelSettingsOverlay JSON. Absent fields = inherit the profile base. */
+  settingsJson: text('settings_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  providerModelUnique: uniqueIndex('idx_provider_model_settings_unique').on(table.providerProfileId, table.modelId),
+}));
+
+// ─── promptTraces ──────────────────────────────────────────────────────────
 
 export const promptTraces = sqliteTable('prompt_traces', {
   id: text('id').primaryKey(),
