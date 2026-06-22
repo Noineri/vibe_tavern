@@ -1,5 +1,5 @@
-import { eq, and, desc, asc, lte, count } from 'drizzle-orm';
-import { chats, chatBranches, characters, messages, messageVariants } from '../db-schema.js';
+import { eq, and, desc, asc, lte, count, inArray } from 'drizzle-orm';
+import { chats, chatBranches, characters, messages, messageVariants, promptTraces } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 
@@ -319,9 +319,12 @@ export class ChatStore {
       // Batch: collect all new messages and variants, then insert in two bulk queries
       const newMessages: typeof messages.$inferInsert[] = [];
       const newVariants: typeof messageVariants.$inferInsert[] = [];
+      // oldMsgId → newMsgId map, reused to remap prompt_traces.messageId below.
+      const msgIdMap = new Map<string, string>();
 
       for (const msg of msgsToCopy) {
         const newMsgId = this.idGen.next('msg');
+        msgIdMap.set(msg.id, newMsgId);
         newMessages.push({
           id: newMsgId, chatId, branchId, role: msg.role, authorType: msg.authorType,
           position: msg.position, content: msg.content, state: msg.state,
@@ -343,6 +346,56 @@ export class ChatStore {
       }
       if (newVariants.length > 0) {
         await tx.insert(messageVariants).values(newVariants).run();
+      }
+
+      // Copy prompt_traces for the forked message range into the new branch.
+      // Only traces whose messageId was just copied (position <= fork point)
+      // are duplicated; traces for messages after the fork stay in the source
+      // branch. messageId is remapped via msgIdMap; every other column (JSON
+      // blobs, scalars, createdAt) is copied verbatim so the fork's trace
+      // history matches the parent up to the cut. New ids + the new branchId
+      // are assigned to keep rows independent. Fixes the defect where a forked
+      // branch started with zero trace history.
+      if (msgIdMap.size > 0) {
+        const tracesToCopy = await tx.select().from(promptTraces)
+          .where(and(
+            eq(promptTraces.branchId, sourceMsg.branchId),
+            inArray(promptTraces.messageId, [...msgIdMap.keys()]),
+          ))
+          .all();
+
+        if (tracesToCopy.length > 0) {
+          const newTraces: typeof promptTraces.$inferInsert[] = [];
+          for (const t of tracesToCopy) {
+            const newMessageId = msgIdMap.get(t.messageId);
+            // Defensive: the WHERE clause (messageId IN msgIdMap.keys())
+            // guarantees membership, but guard anyway rather than assert.
+            if (!newMessageId) continue;
+            newTraces.push({
+              id: this.idGen.next('trace'),
+              chatId,
+              branchId,
+              messageId: newMessageId,
+              model: t.model,
+              presetName: t.presetName,
+              assembledLayersJson: t.assembledLayersJson,
+              tokenAccountingJson: t.tokenAccountingJson,
+              finalPayloadJson: t.finalPayloadJson,
+              activatedLoreEntriesJson: t.activatedLoreEntriesJson,
+              activatedLoreDetailJson: t.activatedLoreDetailJson,
+              retrievedMemoriesJson: t.retrievedMemoriesJson,
+              scriptInjectionsJson: t.scriptInjectionsJson,
+              prefill: t.prefill,
+              compactionSummary: t.compactionSummary,
+              latencyMs: t.latencyMs,
+              sentConfigJson: t.sentConfigJson,
+              createdAt: t.createdAt,
+            });
+          }
+          if (newTraces.length > 0) {
+            await tx.insert(promptTraces).values(newTraces).run();
+          }
+        }
       }
     });
 
