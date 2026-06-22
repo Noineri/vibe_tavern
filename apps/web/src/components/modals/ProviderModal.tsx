@@ -16,12 +16,14 @@ import {
   ProviderModelSelector,
   ProviderCapabilityPanel,
   ProviderSamplerPanel,
+  ProviderBindingPanel,
 } from "../settings/provider/index.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
+import { getProviderModelSettingsAction } from "../../stores/api-actions/provider-actions.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 
 export interface FormState {
@@ -432,6 +434,103 @@ export function ProviderModal({
     dirty ? setConfirmClose(true) : onClose();
   };
 
+  // ── Per-model binding: re-hydrate form when the user picks a model to edit ──
+  // Fetch the model's overlay and merge it over the PERSISTED base profile, so
+  // the sampler panel shows that model's effective settings. The base comes from
+  // providerProfiles (always current — autoSaveField persists identity/sampler
+  // on every change when NOT in overlay mode). In overlay mode, sampler edits
+  // route to the overlay via Wave 4's save routing, so switching models reads
+  // the clean persisted base, not a stale form snapshot.
+  const handleSelectBindingModel = async (modelId: string) => {
+    if (!form) return;
+    const baseProfile = providerProfiles.find((p) => p.id === form.id);
+    if (!baseProfile) return;
+    let overlay = null;
+    try {
+      overlay = await getProviderModelSettingsAction(form.id, modelId);
+    } catch {
+      // Network/API error — fall through with null overlay (base passthrough).
+      overlay = null;
+    }
+    // Manual field-wise merge: overlay value if present, else base profile value.
+    // (Cannot use domain's resolveEffectiveSettings directly — web
+    // ProviderProfileRecord omits apiKey for security, so it isn't structurally
+    // assignable to StoredProviderProfileRecord.)
+    const ov = overlay?.settings ?? null;
+    const pick = <K extends keyof typeof effectiveFields>(k: K): (typeof effectiveFields)[K] =>
+      (ov && ov[k] != null ? ov[k] : effectiveFields[k]) as (typeof effectiveFields)[K];
+    const effectiveFields = {
+      temperature: baseProfile.temperature,
+      topP: baseProfile.topP,
+      minP: baseProfile.minP,
+      topK: baseProfile.topK,
+      topA: baseProfile.topA,
+      typicalP: baseProfile.typicalP,
+      tfsZ: baseProfile.tfsZ,
+      repeatLastN: baseProfile.repeatLastN,
+      mirostat: baseProfile.mirostat,
+      mirostatTau: baseProfile.mirostatTau,
+      mirostatEta: baseProfile.mirostatEta,
+      dryMultiplier: baseProfile.dryMultiplier,
+      dryBase: baseProfile.dryBase,
+      dryAllowedLength: baseProfile.dryAllowedLength,
+      drySequenceBreakers: baseProfile.drySequenceBreakers,
+      xtcThreshold: baseProfile.xtcThreshold,
+      xtcProbability: baseProfile.xtcProbability,
+      frequencyPenalty: baseProfile.frequencyPenalty,
+      presencePenalty: baseProfile.presencePenalty,
+      repetitionPenalty: baseProfile.repetitionPenalty,
+      maxTokens: baseProfile.maxTokens,
+      contextBudget: baseProfile.contextBudget,
+      pinContextBudget: baseProfile.pinContextBudget,
+      stopSequences: baseProfile.stopSequences,
+      logitBias: baseProfile.logitBias,
+      seed: baseProfile.seed,
+      reasoningEffort: baseProfile.reasoningEffort,
+      showReasoning: baseProfile.showReasoning,
+      streamResponse: baseProfile.streamResponse,
+    };
+    setForm((f) => {
+      if (!f) return f;
+      const next: FormState = {
+        ...f,
+        editingModelId: modelId,
+        temperature: pick("temperature"),
+        topP: pick("topP"),
+        minP: pick("minP"),
+        topK: pick("topK"),
+        topA: pick("topA"),
+        typicalP: pick("typicalP") ?? 1,
+        tfsZ: pick("tfsZ") ?? 1,
+        repeatLastN: pick("repeatLastN") ?? 0,
+        mirostat: pick("mirostat") ?? 0,
+        mirostatTau: pick("mirostatTau") ?? 5,
+        mirostatEta: pick("mirostatEta") ?? 0.1,
+        dryMultiplier: pick("dryMultiplier") ?? 0,
+        dryBase: pick("dryBase") ?? 1.75,
+        dryAllowedLength: pick("dryAllowedLength") ?? 2,
+        drySequenceBreakers: pick("drySequenceBreakers") ?? [],
+        xtcThreshold: pick("xtcThreshold") ?? 0.1,
+        xtcProbability: pick("xtcProbability") ?? 0,
+        frequencyPenalty: pick("frequencyPenalty"),
+        presencePenalty: pick("presencePenalty"),
+        repetitionPenalty: pick("repetitionPenalty"),
+        maxTokens: pick("maxTokens"),
+        contextBudget: pick("contextBudget") ?? 16000,
+        pinContextBudget: pick("pinContextBudget") ?? false,
+        stopSequences: pick("stopSequences"),
+        logitBias: pick("logitBias") ?? [],
+        seed: pick("seed") ?? null,
+        reasoningEffort: pick("reasoningEffort"),
+        showReasoning: pick("showReasoning"),
+        streamResponse: pick("streamResponse"),
+      };
+      latestFormRef.current = next;
+      return next;
+    });
+    setDirty(true);
+  };
+
   // ── Test connection ──
   const handleTestConnection = async () => {
     if (!form) return;
@@ -628,6 +727,13 @@ export function ProviderModal({
                       {t("refresh_models_vision_hint")}
                     </div>
                   )}
+
+                  <ProviderBindingPanel
+                    form={form}
+                    favorites={favoriteModelsByProfile[form.id] ?? []}
+                    updateForm={autoSaveField}
+                    onSelectBindingModel={handleSelectBindingModel}
+                  />
 
                   <ProviderCapabilityPanel capabilities={capabilities} />
                   <ProviderSamplerPanel form={form} updateForm={lazyAutoSaveField} capabilities={capabilities} />
