@@ -4,7 +4,7 @@ import type { ProviderProbeResponse } from "@vibe-tavern/domain";
 import { PROVIDER_TYPE } from "@vibe-tavern/domain";
 import { getT } from "../i18n/locale-helpers.js";
 import { computeHydration } from "./hydrate-provider.js";
-import { computeSavePatch, connectionToSavePatch, validateSavePatch, buildFavoriteModelSwitchPatch } from "./save-provider-patch.js";
+import { computeSavePatch, computeOverlayPatch, connectionToSavePatch, validateSavePatch, buildFavoriteModelSwitchPatch } from "./save-provider-patch.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import {
@@ -29,6 +29,7 @@ import {
   testProviderChatAction,
   fetchModelsByEndpointAction,
   toggleFavoriteModelAction,
+  upsertProviderModelSettingsAction,
 } from "../stores/api-actions/provider-actions.js";
 
 export function useProviderProfiles() {
@@ -477,15 +478,53 @@ export function useProviderProfiles() {
   async function handleSaveProviderProfileFromForm(
     form: FormState,
   ): Promise<ProviderProfileRecord | null> {
-    const patch = computeSavePatch(form);
-    const validationError = validateSavePatch(patch);
+    const basePatch = computeSavePatch(form);
+    const validationError = validateSavePatch(basePatch);
     if (validationError) return null;
 
+    // Binding routing (plan §Wave 4):
+    //  - Overlay mode (bindPerModel && editingModelId): identity fields → base
+    //    (partial PATCH), sampler/context → the model's overlay. The base's own
+    //    sampler columns stay put (the overlay is the bound model's override).
+    //  - Base mode (binding OFF, or no model picked): full PATCH — byte-identical
+    //    to today's behavior (identity + sampler + bindPerModel all on base).
+    //  - bindPerModel toggle is an identity-level field → always on the base.
+    const isInOverlayMode = form.bindPerModel && form.editingModelId != null;
+
     try {
-      const saved = form.id
-        ? await updateProviderProfileAction(form.id, patch)
-        : await saveProviderProfileAction(patch);
-      console.log('[handleSave] saved result:', { id: saved?.id, defaultModel: saved?.defaultModel, visionModel: saved?.visionModel });
+      let saved: ProviderProfileRecord | null;
+      if (isInOverlayMode) {
+        // Identity-only base write (partial PATCH — updateProviderProfileSchema
+        // is providerCoreSchema.partial(), so omitted sampler fields are not
+        // touched on the base).
+        const identityPatch = {
+          name: basePatch.name,
+          providerPreset: basePatch.providerPreset,
+          endpoint: basePatch.endpoint,
+          apiKey: basePatch.apiKey,
+          defaultModel: basePatch.defaultModel,
+          visionModel: basePatch.visionModel,
+          bindPerModel: basePatch.bindPerModel,
+        };
+        saved = form.id
+          ? await updateProviderProfileAction(form.id, identityPatch)
+          : await saveProviderProfileAction(basePatch);
+        // For a brand-new profile in overlay mode there's nothing sensible to
+        // overlay yet (no base to merge over + no favorites to pick from), so
+        // we fall back to the full base save and skip the overlay write.
+        if (form.id) {
+          await upsertProviderModelSettingsAction(
+            form.id,
+            form.editingModelId!,
+            computeOverlayPatch(form),
+          );
+        }
+      } else {
+        saved = form.id
+          ? await updateProviderProfileAction(form.id, basePatch)
+          : await saveProviderProfileAction(basePatch);
+      }
+      console.log('[handleSave] saved result:', { id: saved?.id, defaultModel: saved?.defaultModel, visionModel: saved?.visionModel, overlayMode: isInOverlayMode });
       if (saved && !form.id) {
         await activateProviderProfileAction(saved.id);
       }

@@ -118,6 +118,8 @@ function ProviderStep({
     maxTokens: existingProfile?.maxTokens ?? 512,
     contextBudget: existingProfile?.contextBudget ?? 16000,
     pinContextBudget: existingProfile?.pinContextBudget ?? false,
+    bindPerModel: existingProfile?.bindPerModel ?? false,
+    editingModelId: null,
     stopSequences: existingProfile?.stopSequences ?? [],
     logitBias: existingProfile?.logitBias ?? [],
     seed: existingProfile?.seed ?? null,
