@@ -13,6 +13,9 @@ const providerCoreSchema = z.object({
   apiKey: z.string().nullable().optional(),
   defaultModel: z.string().nullable().optional(),
   contextBudget: z.number().nullable().optional(),
+  pinContextBudget: z.boolean().optional(),
+  /** When true, sampler/context edits route to a per-model overlay (see modelSettingsOverlaySchema). */
+  bindPerModel: z.boolean().optional(),
   maxTokens: z.number().optional(),
   temperature: z.number().optional(),
   topP: z.number().optional(),
@@ -61,6 +64,56 @@ export const favoriteProviderModelSchema = z.object({
   label: z.string().nullable().optional(),
   contextLength: z.number().int().nullable().optional(),
 });
+
+/**
+ * Per-model sampler/context overlay. Mirrors `ModelSettingsOverlay` from
+ * @vibe-tavern/domain — every field optional (absent = inherit the profile base).
+ * Identity fields are deliberately excluded; the overlay cannot rename/rebind.
+ * Used for: PUT /api/providers/:id/model-settings/:modelId body validation,
+ * and (via samplerPresetPayloadSchema) clipboard copy/paste validation.
+ */
+export const modelSettingsOverlaySchema = z.object({
+  contextBudget: z.number().nullable().optional(),
+  pinContextBudget: z.boolean().optional(),
+  maxTokens: z.number().optional(),
+  temperature: z.number().optional(),
+  topP: z.number().optional(),
+  topK: z.number().optional(),
+  minP: z.number().optional(),
+  topA: z.number().optional(),
+  typicalP: z.number().optional(),
+  tfsZ: z.number().optional(),
+  repeatLastN: z.number().optional(),
+  mirostat: z.number().optional(),
+  mirostatTau: z.number().optional(),
+  mirostatEta: z.number().optional(),
+  dryMultiplier: z.number().optional(),
+  dryBase: z.number().optional(),
+  dryAllowedLength: z.number().optional(),
+  drySequenceBreakers: z.array(z.string()).optional(),
+  xtcThreshold: z.number().optional(),
+  xtcProbability: z.number().optional(),
+  frequencyPenalty: z.number().optional(),
+  presencePenalty: z.number().optional(),
+  repetitionPenalty: z.number().optional(),
+  stopSequences: z.array(z.string()).optional(),
+  logitBias: z.array(z.object({
+    tokenId: z.number().int(),
+    bias: z.number().min(-100).max(100),
+    text: z.string().optional(),
+    sourceText: z.string().optional(),
+    model: z.string().optional(),
+  })).optional(),
+  seed: z.string().nullable().optional(),
+  reasoningEffort: z.string().optional(),
+  showReasoning: z.boolean().optional(),
+  streamResponse: z.boolean().optional(),
+});
+
+/** Body for PUT /api/providers/:id/model-settings/:modelId — the overlay directly
+ *  (modelId is in the URL, so the body carries only the settings fields).
+ *  Reuses modelSettingsOverlaySchema: a sampler preset IS an overlay with no identity. */
+export const samplerPresetPayloadSchema = modelSettingsOverlaySchema;
 
 export const fetchModelsSchema = z.object({
   baseUrl: z.string().optional(),

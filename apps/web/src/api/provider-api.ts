@@ -1,5 +1,5 @@
-import type { ProviderProfileRecord, FavoriteProviderModelRecord, ProviderModelOption, TestChatResponse } from "./types.js";
-import type { ProviderProbeResponse } from "@vibe-tavern/domain";
+import type { ProviderProfileRecord, FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderModelOption, TestChatResponse } from "./types.js";
+import type { ProviderProbeResponse, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
 
@@ -141,6 +141,28 @@ export async function addFavoriteProviderModel(
 
 export async function removeFavoriteProviderModel(providerProfileId: string, modelId: string): Promise<{ ok: true }> {
   const response = await client.api.providers[":providerId"]["model-favorites"].$delete({ param: { providerId: providerProfileId }, json: { modelId } });
+  return unwrapRpc<{ ok: true }>(response);
+}
+
+// ── Per-model settings overlay (binding) ────────────────────────────────────
+
+export async function listProviderModelSettings(providerProfileId: string): Promise<ProviderModelSettingsRecord[]> {
+  const response = await client.api.providers[":providerId"]["model-settings"].$get({ param: { providerId: providerProfileId } });
+  return unwrapRpc<ProviderModelSettingsRecord[]>(response);
+}
+
+export async function getProviderModelSettings(providerProfileId: string, modelId: string): Promise<ProviderModelSettingsRecord | null> {
+  const response = await client.api.providers[":providerId"]["model-settings"][":modelId"].$get({ param: { providerId: providerProfileId, modelId } });
+  return unwrapRpc<ProviderModelSettingsRecord | null>(response);
+}
+
+export async function upsertProviderModelSettings(providerProfileId: string, modelId: string, settings: ModelSettingsOverlay): Promise<ProviderModelSettingsRecord> {
+  const response = await client.api.providers[":providerId"]["model-settings"][":modelId"].$put({ param: { providerId: providerProfileId, modelId }, json: settings });
+  return unwrapRpc<ProviderModelSettingsRecord>(response);
+}
+
+export async function deleteProviderModelSettings(providerProfileId: string, modelId: string): Promise<{ ok: true }> {
+  const response = await client.api.providers[":providerId"]["model-settings"][":modelId"].$delete({ param: { providerId: providerProfileId, modelId } });
   return unwrapRpc<{ ok: true }>(response);
 }
 

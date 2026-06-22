@@ -2,6 +2,7 @@ import type { ProviderRuntimeApi } from "../contract/runtime-api.js";
 import type { ClientProviderProfileRecord } from "../../runtime/session/session-runtime-dto.js";
 import { notFound } from "../../shared/errors.js";
 import type { StoreContainer } from "@vibe-tavern/db";
+import type { ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import {
 	probeProviderConnection,
@@ -84,6 +85,21 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 
 	removeFavoriteProviderModel = (providerProfileId: string, modelId: string) =>
 		this.providerProfileService.removeFavoriteProviderModel(providerProfileId, modelId);
+
+	listProviderModelSettings = (providerProfileId: string) =>
+		this.providerProfileService.listProviderModelSettings(providerProfileId);
+
+	getProviderModelSettings = (providerProfileId: string, modelId: string) =>
+		this.providerProfileService.getProviderModelSettings(providerProfileId, modelId);
+
+	upsertProviderModelSettings = (
+		providerProfileId: string,
+		modelId: string,
+		settings: ModelSettingsOverlay,
+	) => this.providerProfileService.upsertProviderModelSettings(providerProfileId, modelId, settings);
+
+	deleteProviderModelSettings = (providerProfileId: string, modelId: string) =>
+		this.providerProfileService.deleteProviderModelSettings(providerProfileId, modelId);
 
 	fetchModelsByEndpoint = async (baseUrl: string, apiKey?: string, providerType?: string) => {
 		const normalized = normalizeOpenAiCompatibleBaseUrl(baseUrl);

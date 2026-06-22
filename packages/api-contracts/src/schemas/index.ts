@@ -32,6 +32,8 @@ export {
   testChatSchema,
   testChatProfileSchema,
   tokenizeSchema,
+  modelSettingsOverlaySchema,
+  samplerPresetPayloadSchema,
 } from "./provider-schema.js";
 export {
   createPromptPresetSchema,
