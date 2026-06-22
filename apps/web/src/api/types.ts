@@ -5,7 +5,7 @@
  * receives and normalizes. DB/domain types live in @vibe-tavern/domain
  * and @vibe-tavern/db.
  */
-import type { Chat, ChatBranch, ChatId, Message, MessageVariant } from "@vibe-tavern/domain";
+import type { Chat, ChatBranch, ChatId, Message, MessageVariant, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 
 // ─── Chat ─────────────────────────────────────────────────────────────
@@ -282,6 +282,17 @@ export interface FavoriteProviderModelRecord {
   label: string | null;
   contextLength: number | null;
   createdAt: string;
+}
+
+/** Per-model sampler/context overlay (frontend mirror of the backend DTO).
+ *  Absent fields in `settings` = inherit the profile base. */
+export interface ProviderModelSettingsRecord {
+  id: string;
+  providerProfileId: string;
+  modelId: string;
+  settings: ModelSettingsOverlay;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ProviderModelOption {

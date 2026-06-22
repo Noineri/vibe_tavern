@@ -20,9 +20,11 @@ import type { PromptTraceRecordDto, PromptPresetDto } from "@vibe-tavern/domain"
 import type {
 	ChatSummary,
 	FavoriteModel,
+	ProviderModelSettings,
 	LorebookLink,
 	UiSettings,
 } from "@vibe-tavern/db";
+import type { ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { LorebookRow, LoreEntryRow, ScriptRow } from "@vibe-tavern/db";
 import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../../domain/providers/provider-gateway.js";
 import type { GenerateChatSummaryResult, SummarizeChatResult } from "../../domain/chat/chat-summary-service.js";
@@ -266,6 +268,10 @@ export interface ProviderRuntimeApi {
 	listFavoriteProviderModels: (providerProfileId: string) => Promise<FavoriteModel[]>;
 	addFavoriteProviderModel: (providerProfileId: string, body: { modelId: string; label?: string | null; contextLength?: number | null }) => Promise<FavoriteModel>;
 	removeFavoriteProviderModel: (providerProfileId: string, modelId: string) => Promise<void>;
+	listProviderModelSettings: (providerProfileId: string) => Promise<ProviderModelSettings[]>;
+	getProviderModelSettings: (providerProfileId: string, modelId: string) => Promise<ProviderModelSettings | null>;
+	upsertProviderModelSettings: (providerProfileId: string, modelId: string, settings: ModelSettingsOverlay) => Promise<ProviderModelSettings>;
+	deleteProviderModelSettings: (providerProfileId: string, modelId: string) => Promise<void>;
 	fetchModelsByEndpoint: (baseUrl: string, apiKey?: string, providerType?: string) => Promise<ProviderModelOption[]>;
 	testProviderChatByEndpoint: (opts: { baseUrl: string; apiKey: string; model: string; providerType?: string }) => Promise<TestChatResult>;
 	testProviderChatByProfile: (providerProfileId: string, model: string) => Promise<TestChatResult>;

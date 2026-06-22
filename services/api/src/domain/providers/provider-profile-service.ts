@@ -1,11 +1,12 @@
 import type { ProviderStore } from "@vibe-tavern/db";
-import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import type { StoredProviderProfileRecord, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import {
   toClientProviderProfile,
   resolveStoredApiKey,
   type ClientProviderProfileRecord,
   type CachedProviderModelsRecord,
   type FavoriteProviderModelRecord,
+  type ProviderModelSettingsRecord,
 } from "../../runtime/session/session-runtime-dto.js";
 import { notFound } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
@@ -35,6 +36,10 @@ export interface ProviderProfileService {
     model: { modelId: string; label?: string | null; contextLength?: number | null },
   ): Promise<FavoriteProviderModelRecord>;
   removeFavoriteProviderModel(providerProfileId: string, modelId: string): Promise<void>;
+  listProviderModelSettings(providerProfileId: string): Promise<ProviderModelSettingsRecord[]>;
+  getProviderModelSettings(providerProfileId: string, modelId: string): Promise<ProviderModelSettingsRecord | null>;
+  upsertProviderModelSettings(providerProfileId: string, modelId: string, settings: ModelSettingsOverlay): Promise<ProviderModelSettingsRecord>;
+  deleteProviderModelSettings(providerProfileId: string, modelId: string): Promise<void>;
 }
 
 // ─── Factory ─────────────────────────────────────────────────────────────
@@ -305,5 +310,59 @@ export function createProviderProfileService(providers: ProviderStore): Provider
       }
       await providers.removeFavoriteModel(providerProfileId, modelId);
     },
+
+    listProviderModelSettings: async (providerProfileId) => {
+      const profile = await providers.getById(providerProfileId);
+      if (!profile) {
+        throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
+      }
+      const rows = await providers.listModelSettings(providerProfileId);
+      return rows.map(toModelSettingsRecord);
+    },
+
+    getProviderModelSettings: async (providerProfileId, modelId) => {
+      const profile = await providers.getById(providerProfileId);
+      if (!profile) {
+        throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
+      }
+      const row = await providers.getModelSettings(providerProfileId, modelId);
+      return row ? toModelSettingsRecord(row) : null;
+    },
+
+    upsertProviderModelSettings: async (providerProfileId, modelId, settings) => {
+      const profile = await providers.getById(providerProfileId);
+      if (!profile) {
+        throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
+      }
+      const saved = await providers.upsertModelSettings(providerProfileId, modelId, settings);
+      return toModelSettingsRecord(saved);
+    },
+
+    deleteProviderModelSettings: async (providerProfileId, modelId) => {
+      const profile = await providers.getById(providerProfileId);
+      if (!profile) {
+        throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
+      }
+      await providers.deleteModelSettings(providerProfileId, modelId);
+    },
+  };
+}
+
+/** Map a store `ProviderModelSettings` row to its DTO. */
+function toModelSettingsRecord(row: {
+  id: string;
+  providerProfileId: string;
+  modelId: string;
+  settings: ModelSettingsOverlay;
+  createdAt: string;
+  updatedAt: string;
+}): ProviderModelSettingsRecord {
+  return {
+    id: row.id,
+    providerProfileId: row.providerProfileId,
+    modelId: row.modelId,
+    settings: row.settings,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }

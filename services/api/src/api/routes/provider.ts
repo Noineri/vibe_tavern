@@ -82,6 +82,22 @@ export function createProviderRoutes(runtime: ProviderRuntimeApi) {
       await runtime.removeFavoriteProviderModel(c.req.param("providerId"), c.req.valid("json").modelId);
       return c.json({ ok: true });
     })
+    // ── Per-model settings overlay (binding) ──
+    .get("/api/providers/:providerId/model-settings", async (c) => {
+      return c.json(await runtime.listProviderModelSettings(c.req.param("providerId")));
+    })
+    .get("/api/providers/:providerId/model-settings/:modelId", async (c) => {
+      const row = await runtime.getProviderModelSettings(c.req.param("providerId"), c.req.param("modelId"));
+      return c.json(row);
+    })
+    .put("/api/providers/:providerId/model-settings/:modelId", zValidator("json", schemas.modelSettingsOverlaySchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.upsertProviderModelSettings(c.req.param("providerId"), c.req.param("modelId"), body));
+    })
+    .delete("/api/providers/:providerId/model-settings/:modelId", async (c) => {
+      await runtime.deleteProviderModelSettings(c.req.param("providerId"), c.req.param("modelId"));
+      return c.json({ ok: true });
+    })
     .post("/api/providers/:providerId/test", async (c) => {
       return c.json(await runtime.testProviderProfile(c.req.param("providerId")));
     })

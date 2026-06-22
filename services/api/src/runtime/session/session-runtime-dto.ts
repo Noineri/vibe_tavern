@@ -1,4 +1,4 @@
-import { brandId, type ChatId, type ChatBranchId, type MessageId, type PromptTraceRecordDto } from "@vibe-tavern/domain";
+import { brandId, type ChatId, type ChatBranchId, type MessageId, type PromptTraceRecordDto, type ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { LoreEntry, Message, MessageVariant, Attachment } from "@vibe-tavern/domain";
 import { parseStoredAttachments } from "@vibe-tavern/domain";
 import type { PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
@@ -70,6 +70,17 @@ export interface FavoriteProviderModelRecord {
   label: string | null;
   contextLength: number | null;
   createdAt: string;
+}
+
+/** Per-model sampler/context overlay (DTO mirror of the store row). Absent
+ *  fields in `settings` = inherit the profile base (see resolveEffectiveSettings). */
+export interface ProviderModelSettingsRecord {
+  id: string;
+  providerProfileId: string;
+  modelId: string;
+  settings: ModelSettingsOverlay;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface MessageDto extends Message {

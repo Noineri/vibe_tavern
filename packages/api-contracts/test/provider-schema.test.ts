@@ -9,6 +9,8 @@ import {
   testChatSchema,
   testChatProfileSchema,
   tokenizeSchema,
+  modelSettingsOverlaySchema,
+  samplerPresetPayloadSchema,
 } from "../src/schemas/provider-schema.js";
 
 /**
@@ -326,5 +328,78 @@ describe("tokenizeSchema", () => {
 
   it("rejects a non-string text", () => {
     expectReject(tokenizeSchema.safeParse({ text: 42 }));
+  });
+});
+
+// ── pinContextBudget / bindPerModel persistence (strip-gap regression) ──────
+
+describe("pinContextBudget + bindPerModel survive zod validation", () => {
+  // Regression: providerCoreSchema previously omitted pinContextBudget, so the
+  // zod validator on PATCH/POST silently stripped it — pin NEVER persisted via
+  // the API (DB stayed at its false default), making the pin feature and the
+  // Wave 0 chat-input pin guard effectively no-ops. Both fields must survive.
+  it("updateProviderProfileSchema preserves pinContextBudget", () => {
+    const parsed = updateProviderProfileSchema.parse({ pinContextBudget: true });
+    expect(parsed.pinContextBudget).toBe(true);
+  });
+
+  it("updateProviderProfileSchema preserves bindPerModel", () => {
+    const parsed = updateProviderProfileSchema.parse({ bindPerModel: true });
+    expect(parsed.bindPerModel).toBe(true);
+  });
+
+  it("saveProviderDraftSchema preserves pinContextBudget + bindPerModel", () => {
+    const parsed = saveProviderDraftSchema.parse({
+      name: "x", providerPreset: "y", endpoint: "z",
+      pinContextBudget: true, bindPerModel: true,
+    });
+    expect(parsed.pinContextBudget).toBe(true);
+    expect(parsed.bindPerModel).toBe(true);
+  });
+});
+
+// ── Per-model overlay + clipboard payload ─────────────────────────────────
+
+describe("modelSettingsOverlaySchema", () => {
+  it("accepts an empty overlay (inherit all base)", () => {
+    expect(modelSettingsOverlaySchema.safeParse({}).success).toBe(true);
+  });
+
+  it("accepts a sparse overlay (only set fields)", () => {
+    const parsed = modelSettingsOverlaySchema.parse({ temperature: 0.3, contextBudget: 8000 });
+    expect(parsed.temperature).toBe(0.3);
+    expect(parsed.contextBudget).toBe(8000);
+  });
+
+  it("accepts pinContextBudget (per-model pin, V7)", () => {
+    const parsed = modelSettingsOverlaySchema.parse({ pinContextBudget: true });
+    expect(parsed.pinContextBudget).toBe(true);
+  });
+
+  it("strips unknown identity fields (overlay cannot rename/rebind)", () => {
+    const parsed = modelSettingsOverlaySchema.parse({ name: "sneaky", temperature: 0.5 });
+    expect(parsed).toEqual({ temperature: 0.5 });
+    expect("name" in parsed).toBe(false);
+  });
+
+  it("accepts arrays (stopSequences, drySequenceBreakers, logitBias)", () => {
+    const parsed = modelSettingsOverlaySchema.parse({
+      stopSequences: ["\n\nUser:"],
+      drySequenceBreakers: ["\n"],
+      logitBias: [{ tokenId: 1, bias: 5 }],
+    });
+    expect(parsed.stopSequences).toEqual(["\n\nUser:"]);
+    expect(parsed.logitBias).toEqual([{ tokenId: 1, bias: 5 }]);
+  });
+});
+
+describe("samplerPresetPayloadSchema (clipboard)", () => {
+  it("accepts the same surface as the overlay", () => {
+    const payload = { temperature: 0.7, topP: 0.9, stopSequences: ["x"] };
+    expect(samplerPresetPayloadSchema.safeParse(payload).success).toBe(true);
+  });
+
+  it("rejects malformed logitBias bias (shares the overlay's -100..100 bound)", () => {
+    expectReject(samplerPresetPayloadSchema.safeParse({ logitBias: [{ tokenId: 1, bias: 999 }] }));
   });
 });
