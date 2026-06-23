@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, readdir } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sql, eq } from "drizzle-orm";
@@ -33,21 +33,45 @@ async function listCharFiles(dataRoot: string, id: string): Promise<string[]> {
 	}
 }
 
-describe("CharacterStore folder storage (B1)", () => {
-	test("create writes {id}/card.json (no flat file)", async () => {
-		const { dataRoot, store } = await setup();
-		const char = await store.create({ name: "Aria", description: "storm mage" });
+async function readProfileMd(dataRoot: string, id: string): Promise<string> {
+	return readFile(join(dataRoot, CHARS, id, "profile.md"), "utf8");
+}
 
-		// folder file exists with the canonical body
-		const cardPath = join(dataRoot, CHARS, char.id, "card.json");
-		const raw = JSON.parse(await readFile(cardPath, "utf8"));
-		expect(raw.spec).toBe("chara_card_v3");
-		expect(raw.data.name).toBe("Aria");
+async function listCharFolder(dataRoot: string, id: string): Promise<string[]> {
+	try {
+		return await readdir(join(dataRoot, CHARS, id));
+	} catch {
+		return [];
+	}
+}
+
+describe("CharacterStore folder storage (B1)", () => {
+	test("create writes {id}/ VTF folder (profile.md + greetings/ + extensions.json, no flat file)", async () => {
+		const { dataRoot, store } = await setup();
+		const char = await store.create({ name: "Aria", description: "storm mage", firstMessage: "Hi!", alternateGreetings: ["Alt!"] });
+
+		// profile.md exists with the canonical body
+		const profile = await readProfileMd(dataRoot, char.id);
+		expect(profile).toContain("name: Aria");
+		expect(profile).toContain("# PERSONALITY");
+		expect(profile).toContain("storm mage");
+
+		// extensions.json + greetings/ exist inside the folder
+		const files = await listCharFolder(dataRoot, char.id);
+		expect(files).toContain("profile.md");
+		expect(files).toContain("instructions.json");
+		expect(files).toContain("extensions.json");
+		expect(files).toContain("greetings");
+
+		// greetings/ holds the manifest + one .md per greeting (firstMessage + 1 alt)
+		const greetingFiles = await readdir(join(dataRoot, CHARS, char.id, "greetings"));
+		expect(greetingFiles).toContain("_index.yaml");
+		expect(greetingFiles).toContain("g_0000.md");
+		expect(greetingFiles).toContain("g_0001.md");
 
 		// NO new flat file {id}.json or {id}.*.json is created for new characters
-		const allFiles = await listCharFiles(dataRoot, char.id);
-		expect(allFiles.some((f) => f === `${char.id}.json`)).toBe(false);
-		expect(allFiles.some((f) => f.startsWith(`${char.id}.`) && f.endsWith(".json"))).toBe(false);
+		expect(files.some((f) => f === `${char.id}.json`)).toBe(false);
+		expect(files.some((f) => f.startsWith(`${char.id}.`) && f.endsWith(".json"))).toBe(false);
 	});
 
 	test("getById returns the character and is idempotent on the file", async () => {
@@ -61,14 +85,14 @@ describe("CharacterStore folder storage (B1)", () => {
 		expect(fetched2?.id).toBe(created.id);
 	});
 
-	test("update rewrites {id}/card.json with the new content", async () => {
+	test("update rewrites {id}/profile.md with the new content", async () => {
 		const { dataRoot, store } = await setup();
 		const char = await store.create({ name: "Aria" });
 		await store.update(char.id, { name: "Aria Storm", description: "updated" });
 
-		const raw = JSON.parse(await readFile(join(dataRoot, CHARS, char.id, "card.json"), "utf8"));
-		expect(raw.data.name).toBe("Aria Storm");
-		expect(raw.data.description).toBe("updated");
+		const profile = await readProfileMd(dataRoot, char.id);
+		expect(profile).toContain("name: Aria Storm");
+		expect(profile).toContain("updated");
 	});
 
 	test("delete removes the DB row and the whole {id}/ folder", async () => {
@@ -84,7 +108,7 @@ describe("CharacterStore folder storage (B1)", () => {
 		await expect(readdir(folderPath)).rejects.toThrow();
 	});
 
-	test("duplicate writes a separate {newId}/card.json", async () => {
+	test("duplicate writes a separate {newId}/ VTF folder", async () => {
 		const { dataRoot, store } = await setup();
 		const original = await store.create({ name: "Aria", description: "unique" });
 		const copy = await store.duplicate(original.id);
@@ -92,9 +116,9 @@ describe("CharacterStore folder storage (B1)", () => {
 		expect(copy.id).not.toBe(original.id);
 		expect(copy.name).toContain("copy");
 
-		// copy has its own card.json with the duplicated content
-		const raw = JSON.parse(await readFile(join(dataRoot, CHARS, copy.id, "card.json"), "utf8"));
-		expect(raw.data.description).toBe("unique");
+		// copy has its own profile.md with the duplicated content
+		const profile = await readProfileMd(dataRoot, copy.id);
+		expect(profile).toContain("unique");
 	});
 
 	test("lazy migration: getById on a legacy flat file copies it to {id}/card.json and leaves the source", async () => {
@@ -228,5 +252,122 @@ describe("CharacterStore folder storage (B1)", () => {
 		const fetched = await store.getById(id);
 		expect(fetched?.avatarExt).toBeNull();
 		expect(fetched?.avatarAssetId).toBe("asset_gone");
+	});
+
+	// ── VTF-5: VTF folder storage + read-back ──────────────────────────────
+
+	test("VTF round-trip: create persists content to the folder; getById reads it back identical", async () => {
+		const { store } = await setup();
+		const created = await store.create({
+			name: "Silvius",
+			description: "[Base: calm]\nSilver-haired.",
+			personalitySummary: null,
+			defaultScenario: "A tavern.",
+			firstMessage: "The door creaks.",
+			mesExample: "<START>\n{{char}}: Hi.",
+			mesExampleMode: "depth",
+			mesExampleDepth: 4,
+			alternateGreetings: ["Alt opener."],
+			postHistoryInstructions: "Keep it brief.",
+			creatorNotes: "Author notes.",
+			depthPrompt: "Remember the scar.",
+			depthPromptDepth: 4,
+			depthPromptRole: "system",
+			systemPrompt: "Be vivid.",
+			tags: ["modern", "werewolf"],
+			extensions: { creator: "anonymous", character_version: "1.0", talkativeness: "0.5" },
+		});
+
+		const fetched = await store.getById(created.id);
+		expect(fetched).not.toBeNull();
+		// Every content field round-trips through the VTF folder.
+		expect(fetched?.name).toBe("Silvius");
+		expect(fetched?.description).toBe("[Base: calm]\nSilver-haired.");
+		expect(fetched?.defaultScenario).toBe("A tavern.");
+		expect(fetched?.firstMessage).toBe("The door creaks.");
+		expect(fetched?.mesExample).toBe("<START>\n{{char}}: Hi.");
+		expect(fetched?.mesExampleMode).toBe("depth");
+		expect(fetched?.mesExampleDepth).toBe(4);
+		expect(fetched?.alternateGreetings).toEqual(["Alt opener."]);
+		expect(fetched?.postHistoryInstructions).toBe("Keep it brief.");
+		expect(fetched?.creatorNotes).toBe("Author notes.");
+		expect(fetched?.depthPrompt).toBe("Remember the scar.");
+		expect(fetched?.depthPromptDepth).toBe(4);
+		expect(fetched?.depthPromptRole).toBe("system");
+		expect(fetched?.systemPrompt).toBe("Be vivid.");
+		expect(fetched?.tags).toEqual(["modern", "werewolf"]);
+		// creator / character_version re-merge from frontmatter; talkativeness passes through.
+		expect(fetched?.extensions.creator).toBe("anonymous");
+		expect(fetched?.extensions.character_version).toBe("1.0");
+		expect(fetched?.extensions.talkativeness).toBe("0.5");
+	});
+
+	test("VTF: update then getById reflects edited content through the folder", async () => {
+		const { store } = await setup();
+		const char = await store.create({ name: "Aria", description: "original" });
+		await store.update(char.id, { description: "edited", alternateGreetings: ["one", "two"] });
+		const fetched = await store.getById(char.id);
+		expect(fetched?.description).toBe("edited");
+		expect(fetched?.alternateGreetings).toEqual(["one", "two"]);
+	});
+
+	test("VTF: greetings folder is garbage-collected when alternates are removed", async () => {
+		const { dataRoot, store } = await setup();
+		const char = await store.create({ name: "Aria", firstMessage: "keep", alternateGreetings: ["drop1", "drop2"] });
+		// three greetings on disk
+		let greetingFiles = await readdir(join(dataRoot, CHARS, char.id, "greetings"));
+		expect(greetingFiles.filter((f) => f.endsWith(".md"))).toHaveLength(3);
+		// remove both alternates → only the primary remains
+		await store.update(char.id, { alternateGreetings: [] });
+		greetingFiles = await readdir(join(dataRoot, CHARS, char.id, "greetings"));
+		expect(greetingFiles.filter((f) => f.endsWith(".md"))).toEqual(["g_0000.md"]);
+		const fetched = await store.getById(char.id);
+		expect(fetched?.alternateGreetings).toEqual([]);
+	});
+
+	// ── VTF-8: migration ────────────────────────────────────────────────────
+
+	test("migrateToVtf rewrites the VTF folder from the DB row and is idempotent", async () => {
+		const { dataRoot, store } = await setup();
+		const created = await store.create({
+			name: "Silvius",
+			description: "[Base: calm]\nSilver-haired.",
+			firstMessage: "The door creaks.",
+			alternateGreetings: ["Alt opener."],
+			postHistoryInstructions: "Keep it brief.",
+			depthPrompt: "Remember the scar.",
+			depthPromptDepth: 4,
+			depthPromptRole: "system",
+			systemPrompt: "Be vivid.",
+			extensions: { creator: "anonymous", character_version: "1.0", talkativeness: "0.5" },
+		});
+		const folder = join(dataRoot, CHARS, created.id);
+		const before = await store.getById(created.id);
+		expect(before?.systemPrompt).toBe("Be vivid.");
+
+		// Simulate a pre-VTF character: wipe the VTF storage files (profile.md +
+		// instructions.json + extensions.json + greetings/). The DB row keeps all
+		// content, exactly like a legacy character that has not been edited since
+		// the VTF store shipped.
+		await rm(join(folder, "profile.md"));
+		await rm(join(folder, "instructions.json"));
+		await rm(join(folder, "extensions.json"));
+		await rm(join(folder, "greetings"), { recursive: true });
+
+		// Migrate: writes the split VTF folder back from the DB-row content.
+		const hash = await store.migrateToVtf(created.id);
+		expect(hash).not.toBeNull();
+		expect(await readdir(folder)).toContain("profile.md");
+		expect(await readdir(folder)).toContain("instructions.json");
+
+		// Functional fields now route through instructions.json; getById is identical.
+		const after = await store.getById(created.id);
+		expect(after).toEqual(before);
+		expect(after?.systemPrompt).toBe("Be vivid.");
+		expect(after?.depthPrompt).toBe("Remember the scar.");
+
+		// Idempotent: a second run skips (profile.md already exists).
+		const again = await store.migrateToVtf(created.id);
+		expect(again).toBeNull();
 	});
 });

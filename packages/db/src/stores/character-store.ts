@@ -4,6 +4,8 @@ import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import type { ContentStore } from '../content-store.js';
 import { STORAGE_FOLDERS, IMAGE_EXTENSIONS, hashCanonicalJson } from '../file-store.js';
+import { serializeCharacterFolder, parseCharacterFolder, type VtfCharacterContent, type FolderFileEntry } from '../vtf/index.js';
+import { parseGreetingsIndex } from '../vtf/greetings.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -177,7 +179,125 @@ export class CharacterStore {
       }
     }
 
-    return char;
+    return this.applyVtfContentOverride(id, char);
+  }
+
+  /**
+   * VTF-aware read: if the entity folder has a `profile.md`, parse the VTF
+   * folder (profile.md + instructions.json + extensions.json + greetings/)
+   * and override the DB-row content fields with it — the VTF folder is the
+   * source of truth for content
+   * once it exists. Falls back silently to the DB-row content when the folder
+   * is absent or unreadable (legacy card.json-only or pre-migration rows).
+   */
+  private async applyVtfContentOverride(id: string, char: Character): Promise<Character> {
+    if (!this.content) return char;
+    const profileText = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, 'profile.md');
+    if (profileText === null) return char;
+    const entries = await this.readVtfFolderEntries(id);
+    if (entries.length === 0) return char;
+    const merged = parseCharacterFolder(entries);
+    return this.mergeVtfContent(char, merged);
+  }
+
+  /**
+   * Serialize a character's content fields to the VTF folder
+   * (profile.md + instructions.json + extensions.json + greetings/) and return
+   * a combined sha256 hash over the canonical entry set (sorted by path). The
+   * combined hash is stored in `contentHash` so cache-busting and
+   * change-detection work across the whole multi-file folder. Greetings are
+   * rewritten wholesale (the old `greetings/` subfolder is removed first to
+   * garbage-collect stale files).
+   */
+  private async writeVtfFolder(id: string, char: Character): Promise<string> {
+    if (!this.content) throw new Error('ContentStore required for VTF writes');
+    const content = this.toVtfContent(char);
+    const entries = serializeCharacterFolder(content);
+    // Remove stale greetings first (rename-free ids mean content edits reuse
+    // filenames, but deleted alternates must not leave orphan .md files).
+    await this.content.removeEntitySubfolder(STORAGE_FOLDERS.characters, id, 'greetings');
+    for (const entry of entries) {
+      await this.content.writeEntityTextFile(STORAGE_FOLDERS.characters, id, entry.path, entry.content);
+    }
+    return this.hashVtfEntries(entries);
+  }
+
+  /** Read every VTF leaf file for an entity into a {@link FolderFileEntry} list. */
+  private async readVtfFolderEntries(id: string): Promise<FolderFileEntry[]> {
+    if (!this.content) return [];
+    const entries: FolderFileEntry[] = [];
+    const profileMd = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, 'profile.md');
+    if (profileMd !== null) entries.push({ path: 'profile.md', content: profileMd });
+    const instructionsJson = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, 'instructions.json');
+    if (instructionsJson !== null) entries.push({ path: 'instructions.json', content: instructionsJson });
+    const extensionsJson = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, 'extensions.json');
+    if (extensionsJson !== null) entries.push({ path: 'extensions.json', content: extensionsJson });
+    // Greetings are manifest-driven: read _index.yaml, then each referenced file.
+    const indexYaml = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, 'greetings/_index.yaml');
+    if (indexYaml !== null) {
+      entries.push({ path: 'greetings/_index.yaml', content: indexYaml });
+      const manifest = parseGreetingsIndex(indexYaml);
+      for (const row of manifest) {
+        if (!row.file) continue;
+        const body = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, `greetings/${row.file}`);
+        if (body !== null) entries.push({ path: `greetings/${row.file}`, content: body });
+      }
+    }
+    return entries;
+  }
+
+  /** Override the content fields of a DB-row character with VTF-parsed content. Media/avatar/status/timestamps are preserved. */
+  private mergeVtfContent(base: Character, vtf: VtfCharacterContent): Character {
+    return {
+      ...base,
+      name: vtf.name,
+      description: vtf.description,
+      personalitySummary: vtf.personalitySummary,
+      defaultScenario: vtf.defaultScenario,
+      firstMessage: vtf.firstMessage,
+      mesExample: vtf.mesExample,
+      mesExampleMode: vtf.mesExampleMode,
+      mesExampleDepth: vtf.mesExampleDepth,
+      alternateGreetings: vtf.alternateGreetings,
+      postHistoryInstructions: vtf.postHistoryInstructions,
+      creatorNotes: vtf.creatorNotes,
+      depthPrompt: vtf.depthPrompt,
+      depthPromptDepth: vtf.depthPromptDepth,
+      depthPromptRole: vtf.depthPromptRole,
+      systemPrompt: vtf.systemPrompt,
+      tags: vtf.tags,
+      extensions: vtf.extensions,
+    };
+  }
+
+  /** Project a {@link Character} onto the VTF content subset for serialization. */
+  private toVtfContent(char: Character): VtfCharacterContent {
+    return {
+      name: char.name,
+      description: char.description,
+      personalitySummary: char.personalitySummary,
+      defaultScenario: char.defaultScenario,
+      firstMessage: char.firstMessage ?? '',
+      mesExample: char.mesExample,
+      mesExampleMode: char.mesExampleMode,
+      mesExampleDepth: char.mesExampleDepth,
+      alternateGreetings: char.alternateGreetings,
+      postHistoryInstructions: char.postHistoryInstructions,
+      creatorNotes: char.creatorNotes,
+      depthPrompt: char.depthPrompt,
+      depthPromptDepth: char.depthPromptDepth,
+      depthPromptRole: char.depthPromptRole,
+      systemPrompt: char.systemPrompt,
+      tags: char.tags,
+      extensions: char.extensions,
+    };
+  }
+
+  /** Combined sha256 over canonical VTF entries (sorted by path, content concatenated). */
+  private hashVtfEntries(entries: FolderFileEntry[]): string {
+    const sorted = [...entries].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    const combined = sorted.map((e) => `${e.path}\u0000${e.content}`).join('\u0001');
+    return this.content!.hashText(combined);
   }
 
   async listAll(): Promise<Character[]> {
@@ -247,8 +367,7 @@ export class CharacterStore {
 
     // Dual write: persist content to {id}/card.json in the file store
     if (this.content) {
-      const fileData = this.toFileData(char);
-      const hash = await this.content.writeEntityFile(STORAGE_FOLDERS.characters, id, 'card', fileData);
+      const hash = await this.writeVtfFolder(id, char);
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -308,8 +427,7 @@ export class CharacterStore {
 
     // Dual write: update {id}/card.json in the file store
     if (this.content) {
-      const fileData = this.toFileData(updated);
-      const hash = await this.content.writeEntityFile(STORAGE_FOLDERS.characters, id, 'card', fileData);
+      const hash = await this.writeVtfFolder(id, updated);
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -377,8 +495,7 @@ export class CharacterStore {
 
     // Dual write: persist copy to {newId}/card.json in the file store
     if (this.content) {
-      const fileData = this.toFileData(copy);
-      const hash = await this.content.writeEntityFile(STORAGE_FOLDERS.characters, newId, 'card', fileData);
+      const hash = await this.writeVtfFolder(newId, copy);
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -398,6 +515,36 @@ export class CharacterStore {
     }
 
     return copy;
+  }
+
+  /**
+   * One-shot VTF migration (VTF-8): read the character's full content (DB row,
+   * with any existing profile.md override applied via getById) and (re)write
+   * the VTF folder (profile.md + instructions.json + extensions.json +
+   * greetings/). Stamps `contentHash` + `hasFileOnDisk`. Idempotent: returns
+   * null (skipped) when `profile.md` already exists and `force` is not set.
+   * The legacy `card.json` / flat file (if present) is left in place as a
+   * harmless backup — `getById` prefers `profile.md`. Media/avatar/status are
+   * untouched.
+   */
+  async migrateToVtf(id: string, opts?: { force?: boolean }): Promise<string | null> {
+    if (!this.content) throw new Error('ContentStore required for VTF migration');
+    if (!opts?.force) {
+      // Filesystem check (not the text cache, which may be stale if the file
+      // was removed out-of-band) — a character is VTF-native iff profile.md
+      // physically exists in its folder.
+      const exists = await this.content.entityLeafExists(STORAGE_FOLDERS.characters, id, 'profile.md');
+      if (exists) return null;
+    }
+    const char = await this.getById(id);
+    if (!char) throw new Error(`Character '${id}' not found`);
+    const hash = await this.writeVtfFolder(id, char);
+    await this.db
+      .update(characters)
+      .set({ contentHash: hash, hasFileOnDisk: 1 })
+      .where(eq(characters.id, id))
+      .run();
+    return hash;
   }
 
   // ─── Avatar ────────────────────────────────────────────────────────────────
