@@ -181,6 +181,7 @@ export function computeOverlayPatch(form: FormState): ModelSettingsOverlay {
     reasoningEffort: form.reasoningEffort,
     showReasoning: form.showReasoning,
     streamResponse: form.streamResponse,
+    customSamplers: form.customSamplers,
   };
   return overlay;
 }

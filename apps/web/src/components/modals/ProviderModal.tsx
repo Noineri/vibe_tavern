@@ -489,6 +489,7 @@ export function ProviderModal({
       reasoningEffort: baseProfile.reasoningEffort,
       showReasoning: baseProfile.showReasoning,
       streamResponse: baseProfile.streamResponse,
+      customSamplers: baseProfile.customSamplers,
     };
     setForm((f) => {
       if (!f) return f;
@@ -524,6 +525,7 @@ export function ProviderModal({
         reasoningEffort: pick("reasoningEffort"),
         showReasoning: pick("showReasoning"),
         streamResponse: pick("streamResponse"),
+        customSamplers: pick("customSamplers"),
       };
       latestFormRef.current = next;
       return next;

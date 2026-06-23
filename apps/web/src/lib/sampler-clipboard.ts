@@ -68,4 +68,5 @@ export function applySamplerPresetFields(
   if (fields.reasoningEffort != null) updateForm("reasoningEffort", fields.reasoningEffort);
   if (fields.showReasoning != null) updateForm("showReasoning", fields.showReasoning);
   if (fields.streamResponse != null) updateForm("streamResponse", fields.streamResponse);
+  if (fields.customSamplers != null) updateForm("customSamplers", fields.customSamplers);
 }
