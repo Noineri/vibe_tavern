@@ -394,7 +394,7 @@ describe("MessageStore — variant (swipe) semantics", () => {
       content: "V0",
     });
 
-    await messageStore.addVariant(msg.id, "V1 (regen)");
+    await messageStore.addVariant(msg.id, "V1 (regen)", undefined, undefined, undefined, "anthropic/claude-sonnet-4", "preset_1");
 
     // Fork from this message
     const forkedBranch = await store.forkBranch("chat_1", msg.id, "fork test");
@@ -411,6 +411,12 @@ describe("MessageStore — variant (swipe) semantics", () => {
     const selectedInFork = forkedVariants.find((v) => v.isSelected);
     expect(selectedInFork!.content).toBe("V1 (regen)");
     expect(selectedInFork!.variantIndex).toBe(1);
+
+    // Q5: per-variant provenance (model + preset) must survive the fork — was
+    // dropped before, causing forked branches to lose the metadata bar's
+    // model/preset segments.
+    expect(selectedInFork!.modelId).toBe("anthropic/claude-sonnet-4");
+    expect(selectedInFork!.presetId).toBe("preset_1");
   });
 
   test("addVariant does not duplicate content — regression for sentence cloning bug", async () => {

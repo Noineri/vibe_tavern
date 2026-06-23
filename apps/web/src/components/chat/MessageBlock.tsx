@@ -660,6 +660,7 @@ type VariantControlsProps = {
 function VariantControls(props: VariantControlsProps) {
   const { controlsRef, hidden = false, isBusy, selectedVariantIndex, variantCount, provenance, mobile = false, overlay = false, onSelectVariant } = props;
   const [jumpOpen, setJumpOpen] = useState(false);
+  const [jumpAnchor, setJumpAnchor] = useState<DOMRect | null>(null);
   const showJump = variantCount > 6 && provenance && provenance.length > 0 && !overlay;
 
   const canGoPrevious = !isBusy && selectedVariantIndex > 0;
@@ -727,13 +728,14 @@ function VariantControls(props: VariantControlsProps) {
           <button
             type="button"
             className="flex items-center gap-0.5 rounded-[3px] px-1 tabular-nums transition-colors duration-100 hover:bg-s2 hover:text-t1"
-            onClick={() => setJumpOpen((v) => !v)}
+            onClick={(e) => { setJumpAnchor(e.currentTarget.getBoundingClientRect()); setJumpOpen((v) => !v); }}
           >
             {selectedVariantIndex + 1}/{variantCount}
             <Icons.Caret direction={jumpOpen ? "u" : "d"} />
           </button>
           {jumpOpen && showJump && createPortal(
             <VariantJumpList
+              anchorRect={jumpAnchor}
               provenance={provenance!}
               selectedVariantIndex={selectedVariantIndex}
               onSelect={(index) => { onSelectVariant(index, index > selectedVariantIndex ? 1 : -1); setJumpOpen(false); }}
@@ -763,12 +765,13 @@ function VariantControls(props: VariantControlsProps) {
  */
 function VariantJumpList(props: {
   mobile?: boolean;
+  anchorRect?: DOMRect | null;
   provenance: { modelLabel: string; presetName: string | null }[];
   selectedVariantIndex: number;
   onSelect: (index: number) => void;
   onClose: () => void;
 }) {
-  const { mobile = false, provenance, selectedVariantIndex, onSelect, onClose } = props;
+  const { mobile = false, anchorRect, provenance, selectedVariantIndex, onSelect, onClose } = props;
 
   const rows = (
     <div className={cn("overflow-y-auto", mobile ? "max-h-[50vh] pb-2" : "max-h-64")}>
@@ -817,7 +820,13 @@ function VariantJumpList(props: {
     <>
       {/* close-on-outside-click overlay */}
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="absolute bottom-full left-1/2 z-50 mb-1 w-64 -translate-x-1/2 overflow-hidden rounded-lg border border-border bg-surface shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
+      <div
+        className="fixed z-50 w-64 overflow-hidden rounded-lg border border-border bg-surface shadow-[0_4px_16px_rgba(0,0,0,0.4)]"
+        style={anchorRect ? {
+          left: Math.max(8, Math.min(window.innerWidth - 264, anchorRect.left + anchorRect.width / 2 - 128)),
+          bottom: window.innerHeight - anchorRect.top + 4,
+        } : undefined}
+      >
         {rows}
       </div>
     </>
