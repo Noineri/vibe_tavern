@@ -102,6 +102,7 @@ export type ModelSettingsOverlay = Partial<
     | 'reasoningEffort'
     | 'showReasoning'
     | 'streamResponse'
+    | 'customSamplers'
   >
 >;
 

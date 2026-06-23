@@ -148,10 +148,10 @@ describe("computeOverlayPatch", () => {
     expect(overlay).not.toHaveProperty("bindPerModel");
   });
 
-  test("does NOT include customSamplers (profile-level toggle, not overlay)", () => {
+  test("includes customSamplers (per-model toggle for advanced samplers)", () => {
     const form = makeForm({ customSamplers: true });
     const overlay = computeOverlayPatch(form);
-    expect(overlay).not.toHaveProperty("customSamplers");
+    expect(overlay.customSamplers).toBe(true);
   });
 
   test("includes pinContextBudget (overlay can pin per-model)", () => {

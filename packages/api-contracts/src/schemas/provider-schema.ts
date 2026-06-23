@@ -108,6 +108,7 @@ export const modelSettingsOverlaySchema = z.object({
   reasoningEffort: z.string().optional(),
   showReasoning: z.boolean().optional(),
   streamResponse: z.boolean().optional(),
+  customSamplers: z.boolean().optional(),
 });
 
 /** Body for PUT /api/providers/:id/model-settings/:modelId — the overlay directly
