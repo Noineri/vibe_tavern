@@ -6,6 +6,7 @@ import { Markdown } from "../../lib/markdown.js";
 import { useDisplayMessage, useChatMeta, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
 import { useChatStore, useActiveGeneration, useIsSending } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useProviderStore } from "../../stores/provider-store.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { enqueueGenerateMore } from "../../hooks/use-generation-queue.js";
@@ -177,6 +178,17 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // Read the actual variant text directly.
   const selectedVariant = variants[selectedVariantIndex] ?? variants[0];
   const selectedVariantBackendIndex = selectedVariant?.variantIndex ?? selectedVariantIndex;
+
+  // Q5: resolve the selected variant's preset name for the metadata bar. Reads
+  // variant.presetId (per-variant provenance from Q2); falls back to null for
+  // old variants without preset data. The preset list is stable across the chat
+  // so subscribing here does not cause per-streaming-tick re-renders.
+  const promptPresets = useBootstrapStore((s) => s.data?.promptPresets ?? null);
+  const presetName = useMemo(() => {
+    const pid = selectedVariant?.presetId ?? null;
+    if (!pid || !promptPresets) return null;
+    return promptPresets.find((p) => p.id === pid)?.name ?? null;
+  }, [selectedVariant?.presetId, promptPresets]);
   const activeContent = selectedVariant ? selectedVariant.content : msg.displayContent;
 
   const renderContent = activeContent;
@@ -393,6 +405,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       canSwitchVariant={canSwitchVariant}
       tokenCount={msg.tokenCount}
       modelId={msg.modelId}
+      presetName={presetName}
       createdAt={msg.createdAt}
       copied={copied}
       slotExtras={{ reasoning: reasoningForSlot }}

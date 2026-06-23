@@ -15,8 +15,10 @@ export function PlayMode() {
   return (
     <>
       <MessageList key={activeScope} />
-      <QueueManager />
-      <InputArea />
+      <div className="relative shrink-0">
+        <QueueManager />
+        <InputArea />
+      </div>
     </>
   );
 }
