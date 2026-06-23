@@ -127,8 +127,8 @@ export async function sendChatMessageAction(chatId: ChatId, content: string, att
   syncSnapshot(snapshot);
 }
 
-export async function regenerateMessageAction(chatId: ChatId, messageId: string, signal?: AbortSignal): Promise<void> {
-  const snapshot = await regenerateChatMessage(chatId, messageId, { signal });
+export async function regenerateMessageAction(chatId: ChatId, messageId: string, signal?: AbortSignal, override?: { model?: string; promptPresetId?: string }): Promise<void> {
+  const snapshot = await regenerateChatMessage(chatId, messageId, { signal, override });
   syncSnapshot(snapshot);
 }
 

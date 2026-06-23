@@ -12,6 +12,7 @@ import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { summarizeChatAction, saveChatSummaryAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
+import { useGenerationQueue } from "../../hooks/use-generation-queue.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { usePresetController } from "../../hooks/use-preset-controller.js";
@@ -88,6 +89,8 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const personas = useBootstrapStore((s) => s.personas) ?? [];
   useEffect(() => { void fetchPersonasAction(); }, []);
   const chat = useChatController();
+  // Register the queue pump's runner (Q3) once runRegenerateJob is available.
+  useGenerationQueue(chat.runRegenerateJob);
   const character = useCharacterController();
   const provider = useProviderProfiles();
   const preset = usePresetController();
