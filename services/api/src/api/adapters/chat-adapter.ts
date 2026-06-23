@@ -1,5 +1,5 @@
 import type { ChatRuntimeApi } from "../contract/runtime-api.js";
-import { brandId, parseStoredAttachments, resolveEffectiveSettings, type ChatId, type ChatBranchId, type MessageId } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, resolveEffectiveSettings, type ChatId, type ChatBranchId, type MessageId, type PromptPresetId } from "@vibe-tavern/domain";
 import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { validation, notFound } from "../../shared/errors.js";
@@ -12,6 +12,7 @@ import type { ProviderProfileService } from "../../domain/providers/provider-pro
 import type { AssetService } from "../../domain/asset/asset-service.js";
 import { resolveCachedModels } from "../../domain/providers/model-cache-service.js";
 import { resolveVisionDescribePrompt } from "../../infrastructure/ai/vision-gate.js";
+import type { RegenerateOverride } from "@vibe-tavern/api-contracts";
 
 export class ChatAdapter implements ChatRuntimeApi {
 	constructor(
@@ -133,25 +134,27 @@ export class ChatAdapter implements ChatRuntimeApi {
 		}
 	};
 
-	regenerateMessage = async (chatId: string, messageId: string, _body: unknown, signal?: AbortSignal) => {
-		const profile = await this.resolveEffectiveProfileOrThrow();
+	regenerateMessage = async (chatId: string, messageId: string, override?: RegenerateOverride, signal?: AbortSignal) => {
+		const profile = await this.resolveEffectiveProfileOrThrow(override?.model);
 		const result = await this.liveChatOrchestrator.regenerateMessage({
 			chatId,
 			messageId,
 			profile,
 			model: profile.defaultModel,
+			presetId: override?.promptPresetId ? brandId<PromptPresetId>(override.promptPresetId) : undefined,
 			signal,
 		});
 		return result.snapshot;
 	};
 
-	regenerateMessageStream = async function* (this: ChatAdapter, chatId: string, messageId: string, _body: unknown, signal?: AbortSignal) {
-		const profile = await this.resolveEffectiveProfileOrThrow();
+	regenerateMessageStream = async function* (this: ChatAdapter, chatId: string, messageId: string, override?: RegenerateOverride, signal?: AbortSignal) {
+		const profile = await this.resolveEffectiveProfileOrThrow(override?.model);
 		yield* this.liveChatOrchestrator.regenerateMessageStream({
 			chatId,
 			messageId,
 			profile,
 			model: profile.defaultModel,
+			presetId: override?.promptPresetId ? brandId<PromptPresetId>(override.promptPresetId) : undefined,
 			signal,
 		});
 	};
@@ -371,16 +374,29 @@ export class ChatAdapter implements ChatRuntimeApi {
 	 * Identity fields (endpoint, apiKey, defaultModel, visionModel) come from the
 	 * base — the overlay cannot rename/rebind, only override sampler/context.
 	 */
-	private async resolveEffectiveProfileOrThrow() {
+	private async resolveEffectiveProfileOrThrow(modelOverride?: string | null) {
 		const profile = await this.resolveActiveProfileOrThrow();
-		if (!profile.bindPerModel) return profile;
-		const overlay = await this.providerProfileService.getProviderModelSettings(profile.id, profile.defaultModel);
-		// resolveEffectiveSettings returns StoredProviderProfileRecord (defaultModel:
-		// string | null), but the effective profile's defaultModel IS the base's
-		// (the overlay never touches identity) — already narrowed to `string` by
-		// resolveActiveProfileOrThrow. Re-pin the narrowing so callers keep their
-		// non-null model guarantee.
-		const effective = resolveEffectiveSettings(profile, overlay?.settings ?? null);
-		return { ...effective, defaultModel: profile.defaultModel };
+		// No override → existing path (byte-identical to pre-Q1a behavior): overlay
+		// loaded for profile.defaultModel, defaultModel re-pinned to the base's.
+		if (!modelOverride) {
+			if (!profile.bindPerModel) return profile;
+			const overlay = await this.providerProfileService.getProviderModelSettings(profile.id, profile.defaultModel);
+			// resolveEffectiveSettings returns StoredProviderProfileRecord (defaultModel:
+			// string | null), but the effective profile's defaultModel IS the base's
+			// (the overlay never touches identity) — already narrowed to `string` by
+			// resolveActiveProfileOrThrow. Re-pin the narrowing so callers keep their
+			// non-null model guarantee.
+			const effective = resolveEffectiveSettings(profile, overlay?.settings ?? null);
+			return { ...effective, defaultModel: profile.defaultModel };
+		}
+		// Override → load the TARGET model's overlay so its per-model binding
+		// (Waves 0-6: samplers/contextBudget/reasoning/toggles) applies, then
+		// re-pin defaultModel to the override. A naive `override ?? defaultModel`
+		// would bypass the overlay lookup for the override model and silently lose
+		// its settings — the queue feature would collide with per-model binding.
+		const base = profile.bindPerModel
+			? resolveEffectiveSettings(profile, (await this.providerProfileService.getProviderModelSettings(profile.id, modelOverride))?.settings ?? null)
+			: profile;
+		return { ...base, defaultModel: modelOverride };
 	}
 }

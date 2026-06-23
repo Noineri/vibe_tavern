@@ -26,6 +26,7 @@ import type {
 } from "@vibe-tavern/db";
 import type { ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { LorebookRow, LoreEntryRow, ScriptRow } from "@vibe-tavern/db";
+import type { RegenerateOverride } from "@vibe-tavern/api-contracts";
 import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../../domain/providers/provider-gateway.js";
 import type { GenerateChatSummaryResult, SummarizeChatResult } from "../../domain/chat/chat-summary-service.js";
 import type { LorebookImportResult } from "../../domain/lorebook/lorebook-import-service.js";
@@ -105,8 +106,8 @@ export interface ChatRuntimeApi {
 	// Messages
 	sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<MessageResponse>;
 	sendMessageStream: (chatId: string, body: { content: string }, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
-	regenerateMessage: (chatId: string, messageId: string, body: Record<string, unknown>, signal?: AbortSignal) => Promise<MessageResponse>;
-	regenerateMessageStream: (chatId: string, messageId: string, body: Record<string, unknown>, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
+	regenerateMessage: (chatId: string, messageId: string, override: RegenerateOverride, signal?: AbortSignal) => Promise<MessageResponse>;
+	regenerateMessageStream: (chatId: string, messageId: string, override: RegenerateOverride, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
 	generateReply: (chatId: string, signal?: AbortSignal) => Promise<MessageResponse>;
 	generateReplyStream: (chatId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
 	selectVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<VariantResponse>;

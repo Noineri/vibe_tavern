@@ -1,5 +1,5 @@
 import { brandId, EventBus } from "@vibe-tavern/domain";
-import type { ChatId, MessageId } from "@vibe-tavern/domain";
+import type { ChatId, MessageId, PromptPresetId } from "@vibe-tavern/domain";
 import type { ChatRuntime } from "../../runtime/session/session-runtime-chat.js";
 import type { SessionSnapshot, MessageResponse } from "../../api/contract/session-types.js";
 import type { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
@@ -175,6 +175,14 @@ export class LiveChatOrchestrator {
     messageId: string;
     profile: StoredProviderProfileRecord;
     model: string;
+    /**
+     * Optional per-request prompt preset override (Wave Q1b). When set, the
+     * assembled prompt uses this preset instead of the chat's `promptPresetId`,
+     * WITHOUT mutating the chat row. Undefined → existing cascade (unchanged).
+     * Wired into assemblePromptPreview in Q1b; accepted here from Q1a so the
+     * adapter can thread it without a second signature change.
+     */
+    presetId?: PromptPresetId;
     prefill?: string;
     signal?: AbortSignal;
   }): Promise<{
@@ -346,6 +354,8 @@ export class LiveChatOrchestrator {
     messageId: string;
     profile: StoredProviderProfileRecord;
     model: string;
+    /** Optional per-request prompt preset override (Wave Q1b). See regenerateMessage. */
+    presetId?: PromptPresetId;
     prefill?: string;
     signal?: AbortSignal;
   }): AsyncGenerator<{ event: string; data: string }> {
