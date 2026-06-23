@@ -88,6 +88,42 @@ export function isFrontmatterOwned(key: string): boolean {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// personalitySummary stash (lossless legacy preservation)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Reserved key under which a legacy non-null `personalitySummary` is stashed
+ * inside `extensions.json` / the monolith extensions block. VTF-native cards
+ * put the whole personality in `# PERSONALITY` → `description`; but a card
+ * IMPORTED from V3 may have both, and we must not silently drop the legacy
+ * field. Defined here (a leaf module) so both the storage facade (`index.ts`)
+ * and the exchange codec (`monolith.ts`) share a single source of truth
+ * without introducing a circular import.
+ */
+export const PERSONALITY_SUMMARY_STASH_KEY = "vt_personality_summary";
+
+/**
+ * Ensure a non-empty `personalitySummary` is stashed into the extensions blob
+ * (idempotent: if the stash key is already present it is overwritten with the
+ * canonical value; a null/empty summary leaves an existing stash untouched —
+ * callers that must clear it do so by editing `extensions` directly).
+ */
+export function stashPersonalitySummary(
+  extensions: Record<string, unknown>,
+  personalitySummary: string | null,
+): Record<string, unknown> {
+  if (personalitySummary === null || personalitySummary.trim().length === 0) return extensions;
+  return { ...extensions, [PERSONALITY_SUMMARY_STASH_KEY]: personalitySummary };
+}
+
+/** Read a stashed legacy `personalitySummary` back out of the extensions blob (null when absent/empty). */
+export function unstashPersonalitySummary(extensions: Record<string, unknown>): string | null {
+  const stashed = extensions[PERSONALITY_SUMMARY_STASH_KEY];
+  if (typeof stashed !== "string" || stashed.trim().length === 0) return null;
+  return stashed;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Internals
 // ───────────────────────────────────────────────────────────────────────────
 

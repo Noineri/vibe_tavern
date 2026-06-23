@@ -46,7 +46,19 @@ import {
   defaultGreetingName,
   type VtfGreeting,
 } from "./greetings.js";
-import { writeExtensions, readExtensions } from "./extensions.js";
+import {
+  writeExtensions,
+  readExtensions,
+  stashPersonalitySummary,
+  unstashPersonalitySummary,
+  PERSONALITY_SUMMARY_STASH_KEY,
+} from "./extensions.js";
+
+// Exchange codec (monolith `.md` for import/export/sharing). Re-exported here
+// for the facade's consumers; the codec lives in its own module so it can
+// import the storage codecs (profile-md/greetings/extensions) without a
+// runtime cycle back into this facade.
+export { packMonolith, unpackMonolith } from "./monolith.js";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Public types
@@ -224,21 +236,10 @@ function optionalString(value: unknown): string | null {
  * `# PERSONALITY` → `description`; but a card IMPORTED from V3 may have both,
  * and we must not silently drop the legacy field.
  */
-export const PERSONALITY_SUMMARY_STASH_KEY = "vt_personality_summary";
-
-function stashPersonalitySummary(
-  extensions: Record<string, unknown>,
-  personalitySummary: string | null,
-): Record<string, unknown> {
-  if (personalitySummary === null || personalitySummary.trim().length === 0) return extensions;
-  return { ...extensions, [PERSONALITY_SUMMARY_STASH_KEY]: personalitySummary };
-}
-
-function unstashPersonalitySummary(extensions: Record<string, unknown>): string | null {
-  const stashed = extensions[PERSONALITY_SUMMARY_STASH_KEY];
-  if (typeof stashed !== "string" || stashed.trim().length === 0) return null;
-  return stashed;
-}
+// `PERSONALITY_SUMMARY_STASH_KEY` + `stashPersonalitySummary` /
+// `unstashPersonalitySummary` are imported from `./extensions.js` (leaf) and
+// re-exported here for existing consumers (e.g. `folder.test.ts`).
+export { PERSONALITY_SUMMARY_STASH_KEY };
 
 // ───────────────────────────────────────────────────────────────────────────
 // Internals: path normalization
