@@ -67,18 +67,18 @@ describe("C1 avatar adapter: character", () => {
 		expect(row?.avatarFullExt).toBe("png");
 	});
 
-	test("upload does NOT rewrite {id}/card.json (point update only)", async () => {
+	test("upload does NOT rewrite {id}/profile.md (point update only)", async () => {
 		const { dataRoot, stores, characters } = await setup();
 		const char = await stores.characters.create({ name: "Aria", description: "original" });
-		const cardPath = join(dataRoot, CHARS, char.id, "card.json");
-		const cardMtimeBefore = (await stat(cardPath)).mtimeMs;
+		const profilePath = join(dataRoot, CHARS, char.id, "profile.md");
+		const profileMtimeBefore = (await stat(profilePath)).mtimeMs;
 
 		// small delay so mtime resolution can't mask a rewrite
 		await new Promise((r) => setTimeout(r, 30));
 		await characters.uploadCharacterAvatar(char.id, new File([PNG], "a.png", { type: "image/png" }));
 
-		const cardMtimeAfter = (await stat(cardPath)).mtimeMs;
-		expect(cardMtimeAfter).toBe(cardMtimeBefore); // untouched
+		const profileMtimeAfter = (await stat(profilePath)).mtimeMs;
+		expect(profileMtimeAfter).toBe(profileMtimeBefore); // untouched
 	});
 
 	test("serve returns folder avatar bytes + content-type", async () => {

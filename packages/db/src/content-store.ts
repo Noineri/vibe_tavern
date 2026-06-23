@@ -1,5 +1,5 @@
-import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir, mkdir } from "node:fs/promises";
+import { join, dirname } from "node:path";
 import type { FileStore, StorageFolder } from "./file-store.js";
 import { STORAGE_FOLDERS, hashCanonicalJson } from "./file-store.js";
 
@@ -233,6 +233,67 @@ export class ContentStore {
 	async deleteBinary(folder: StorageFolder, entityId: string, leafName: string): Promise<void> {
 		const path = this.resolveLeafPath(folder, entityId, leafName);
 		await this._fileStore.deleteFile(path);
+	}
+
+	// ─── VTF multi-file folder primitives ─────────────────────────────────
+	// VTF stores a character as a folder of named text files (profile.md,
+	// extensions.json, greetings/_index.yaml, greetings/g_0000.md, ...). These
+	// are the path-flexible text analogues of writeBinary/readBinary: `leafName`
+	// includes the extension and may be multi-segment (subfolders). Writes are
+	// byte-faithful (no auto-newline — codecs own canonical formatting) and
+	// atomic (tmp→rename via writeLocked). Subfolder parents are created on
+	// demand so `greetings/g_0000.md` works without a pre-create step.
+
+	/**
+	 * Write a named text file inside an entity folder:
+	 * data/{folder}/{entityId}/{leafName}. `leafName` includes the extension
+	 * and may be multi-segment (e.g. `profile.md`, `greetings/_index.yaml`).
+	 * Atomic (tmp→rename). Creates subfolders on demand. Returns sha256 hash of
+	 * the stored text. Byte-faithful: writes `text` exactly as given.
+	 */
+	async writeEntityTextFile(folder: StorageFolder, entityId: string, leafName: string, text: string): Promise<string> {
+		const path = this.resolveLeafPath(folder, entityId, leafName);
+		const hash = this.hashText(text);
+		await mkdir(dirname(path), { recursive: true });
+		await this._fileStore.writeText(path, text);
+		this.textCache.set(`${this.cacheKey(folder, entityId)}/${leafName}`, { hash, text });
+		return hash;
+	}
+
+	/** Read a named text file inside an entity folder. Null if missing. Never throws. */
+	async readEntityTextFile(folder: StorageFolder, entityId: string, leafName: string): Promise<string | null> {
+		const key = `${this.cacheKey(folder, entityId)}/${leafName}`;
+		const cached = this.textCache.get(key);
+		if (cached) return cached.text;
+		const path = this.resolveLeafPath(folder, entityId, leafName);
+		try {
+			const text = await this._fileStore.readText(path);
+			this.textCache.set(key, { hash: this.hashText(text), text });
+			return text;
+		} catch {
+			return null;
+		}
+	}
+
+	/** True if a named leaf file exists inside an entity folder. */
+	async entityLeafExists(folder: StorageFolder, entityId: string, leafName: string): Promise<boolean> {
+		const path = this.resolveLeafPath(folder, entityId, leafName);
+		return this._fileStore.pathExists(path);
+	}
+
+	/**
+	 * Remove a subfolder inside an entity folder (e.g. `greetings/`). No-op if
+	 * missing. Evicts every textCache entry under the subfolder path. Used by
+	 * the VTF character store to garbage-collect stale greeting files before
+	 * rewriting the greetings manifest.
+	 */
+	async removeEntitySubfolder(folder: StorageFolder, entityId: string, subdir: string): Promise<void> {
+		const path = this._fileStore.resolvePath(folder, `${entityId}/${subdir}`);
+		await this._fileStore.removeDir(path);
+		const prefix = `${this.cacheKey(folder, entityId)}/${subdir}/`;
+		for (const key of [...this.textCache.keys()]) {
+			if (key.startsWith(prefix)) this.textCache.delete(key);
+		}
 	}
 
 	/**

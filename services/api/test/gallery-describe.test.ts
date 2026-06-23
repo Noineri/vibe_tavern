@@ -187,15 +187,15 @@ describe("Vision describe (A6)", () => {
 		await expect(personas.describePersonaAvatar(persona.id)).rejects.toThrow(/no avatar/i);
 	});
 
-	test("point-update setMediaFields does NOT rewrite card.json (avatarDescription only)", async () => {
+	test("point-update setMediaFields does NOT rewrite profile.md (avatarDescription only)", async () => {
 		const { dataRoot, stores } = await setup();
 		const char = await stores.characters.create({ name: "Aria", description: "original" });
-		const cardPath = join(dataRoot, CHARS, char.id, "card.json");
-		const { mtimeMsMs } = await import("node:fs/promises").then((fs) => fs.stat(cardPath).then((s) => ({ mtimeMsMs: s.mtimeMs })));
+		const profilePath = join(dataRoot, CHARS, char.id, "profile.md");
+		const { mtimeMsMs } = await import("node:fs/promises").then((fs) => fs.stat(profilePath).then((s) => ({ mtimeMsMs: s.mtimeMs })));
 		await new Promise((r) => setTimeout(r, 30));
 		await stores.characters.setMediaFields(char.id, { avatarDescription: "x", includeAvatarInPrompt: true });
-		const after = await import("node:fs/promises").then((fs) => fs.stat(cardPath).then((s) => s.mtimeMs));
-		expect(after).toBe(mtimeMsMs); // card.json untouched
+		const after = await import("node:fs/promises").then((fs) => fs.stat(profilePath).then((s) => s.mtimeMs));
+		expect(after).toBe(mtimeMsMs); // profile.md untouched
 		// but the DB columns changed
 		const row = await stores.characters.getById(char.id);
 		expect(row?.avatarDescription).toBe("x");
