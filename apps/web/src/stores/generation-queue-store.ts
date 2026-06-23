@@ -185,6 +185,12 @@ function findJob(state: GenerationQueueState, jobId: string): QueueJob | undefin
   return undefined;
 }
 
+// Dev-only debug global (mirrors the chat-store / snapshot-store pattern) so the
+// QueueManager UI can be exercised without driving a real generation.
+if (typeof window !== "undefined") {
+  window.__useGenerationQueueStore = useGenerationQueueStore;
+}
+
 // ── Narrow selectors ───────────────────────────────────────────────────
 // Each selector projects only what its consumer renders, so unrelated job
 // field changes (e.g. an error on job A) do not re-render a subscriber that
@@ -244,4 +250,16 @@ export function useQueueDisplayTotal(chatId: string | null | undefined): number 
     useShallow((s) => (chatId ? !!s.generations[chatId]?.isSending : false)),
   );
   return queued + (isSending ? 1 : 0);
+}
+
+/**
+ * All jobs for a chat, in enqueue order. Subscribed to by the QueueManager so it
+ * re-renders on any status transition / error in the chat's queue. Returns a
+ * stable EMPTY array when there are no jobs (so callers can `.map` safely and
+ * referential identity holds when nothing changes).
+ */
+export function useQueueJobs(chatId: string | null | undefined): QueueJob[] {
+  return useGenerationQueueStore(
+    useShallow((s) => (chatId ? s.jobsByChat[chatId] ?? EMPTY : EMPTY)),
+  );
 }
