@@ -150,7 +150,12 @@ export class PromptTraceStore {
       .select()
       .from(promptTraces)
       .where(and(...conditions))
-      .orderBy(desc(promptTraces.createdAt))
+      // Secondary sort on id (monotonic per-prefix via IncrementingStoreIdGenerator)
+      // so traces sharing the same createdAt millisecond have a deterministic
+      // order: the most-recently-inserted id surfaces first. Without this,
+      // three traces saved in quick succession can tie on createdAt and return
+      // in arbitrary order (flaky `list-prompt-traces` test).
+      .orderBy(desc(promptTraces.createdAt), desc(promptTraces.id))
       .all();
     return rows.map((row) => this.mapRowTrace(row));
   }
