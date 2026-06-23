@@ -336,7 +336,12 @@ export class ChatStore {
           newVariants.push({
             id: this.idGen.next('mvar'), messageId: newMsgId, variantIndex: v.variantIndex,
             content: v.content, isSelected: v.isSelected, finishReason: v.finishReason,
-            reasoning: v.reasoning, reasoningDurationMs: v.reasoningDurationMs, createdAt: now,
+            reasoning: v.reasoning, reasoningDurationMs: v.reasoningDurationMs,
+            // Q5: preserve per-variant provenance so the fork keeps model + preset
+            // metadata for each swipe (was dropped, causing forked branches to lose
+            // the metadata bar's model/preset segments).
+            modelId: v.modelId, presetId: v.presetId,
+            createdAt: now,
           });
         }
       }
