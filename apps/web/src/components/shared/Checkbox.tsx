@@ -34,20 +34,26 @@ export const Checkbox = forwardRef<HTMLButtonElement | HTMLDivElement, CheckboxP
     const chip = (
       <span
         className={cn(
-          "relative flex h-[18px] min-w-[18px] items-center justify-center rounded-full border transition-all duration-150",
+          "relative flex h-[18px] min-w-[18px] items-center justify-center rounded-full border transition-[border-color,background-color] duration-150 ease-out",
           checked
             ? "border-accent bg-accent/15"
             : "border-border bg-s3",
           disabled && "pointer-events-none opacity-40",
         )}
       >
+        {/* Checkmark cross-fade: opacity + scale + blur per the contextual
+            icon-animation spec (scale 0.25→1, opacity 0→1, blur 4px→0).
+            cubic-bezier(0.2,0,0,1) approximates a spring without bounce. */}
         <svg
           viewBox="0 0 12 12"
           fill="none"
           className={cn(
-            "h-2.5 w-2.5 transition-all duration-150",
-            checked ? "text-accent scale-100" : "text-transparent scale-75",
+            "h-2.5 w-2.5 transition-[opacity,transform,filter] duration-300 ease-out",
+            checked
+              ? "text-accent scale-100 opacity-100 blur-0"
+              : "text-transparent scale-[0.25] opacity-0 blur-[4px]",
           )}
+          style={{ transitionTimingFunction: 'cubic-bezier(0.2, 0, 0, 1)' }}
         >
           <path
             d="M2.5 6L5 8.5L9.5 3.5"
@@ -61,6 +67,9 @@ export const Checkbox = forwardRef<HTMLButtonElement | HTMLDivElement, CheckboxP
     );
 
     if (!label) {
+      // Label-less variant: extend the 18px chip to a 40×40 hit area so the
+      // tiny checkbox stays easy to tap (min hit area rule). The pseudo-element
+      // is invisible and sits behind the chip so it never overlaps siblings.
       return (
         <button type="button"
           ref={ref as React.Ref<HTMLButtonElement>}
@@ -70,7 +79,12 @@ export const Checkbox = forwardRef<HTMLButtonElement | HTMLDivElement, CheckboxP
           disabled={disabled}
           onClick={handleClick}
           {...rest}
-          className={cn("cursor-pointer", className)}
+          className={cn(
+            "relative cursor-pointer flex h-[18px] w-[18px] items-center justify-center",
+            "after:absolute after:inset-0 after:-z-10",
+            "after:scale-[2.6] after:content-['']",
+            className,
+          )}
         >
           {chip}
         </button>

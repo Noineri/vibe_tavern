@@ -58,7 +58,9 @@ export function SegmentedControl({
             disabled={disabled}
             onClick={() => onChange(opt.value)}
             className={cn(
-              "cursor-pointer rounded-[5px] font-ui transition-all duration-150 select-none",
+              // Only the properties that actually change — `transition-all` watches
+              // every property and causes unexpected color/padding transitions.
+              "cursor-pointer rounded-[5px] font-ui transition-[background-color,color,box-shadow,transform] duration-150 ease-out select-none active:scale-[0.96]",
               (fill || mobileFill) && "flex min-w-0 flex-1 items-center justify-center truncate sm:flex-none",
               compact ? "min-h-9 px-2.5 py-1 text-[11px] sm:min-h-0" : "min-h-10 px-3 py-1.5 text-[13px] sm:min-h-0",
               active

@@ -26,7 +26,9 @@ function Ico({ icon, active, onClick, title }: { icon: React.ReactNode; active?:
   return (
     <div
       className={cn(
-        "flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-all duration-150 active:bg-s3 active:scale-95",
+        // Specific properties only (not `transition-all`); scale 0.96 is the
+        // tactile-press spec — anything below 0.95 feels exaggerated.
+        "flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-[background-color,color,border-radius,transform] duration-150 ease-out active:bg-s3 active:scale-[0.96]",
         active ? "rounded-xl bg-accent-dim text-accent-t" : "text-t3",
       )}
       onClick={onClick}
@@ -316,7 +318,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                 <div
                   key={c.id}
                   className={cn(
-                    "flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all duration-150 active:rounded-xl active:bg-s2 active:scale-95",
+                    "flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-[background-color,border-radius,transform] duration-150 ease-out active:rounded-xl active:bg-s2 active:scale-[0.96]",
                     selectedCharacterId === c.id && "rounded-xl bg-accent-dim ring-2 ring-accent",
                   )}
                   onClick={() => { useChatStore.getState().setSelectedCharacterId(c.id); }}
@@ -331,7 +333,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
               ))}
               {visibleChars.length > 5 && (
                 <div
-                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-s3 font-ui text-[11px] font-medium text-t2 transition-all duration-150 active:rounded-xl active:bg-s2 active:scale-95"
+                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-s3 font-ui text-[11px] font-medium text-t2 transition-[background-color,border-radius,transform] duration-150 ease-out active:rounded-xl active:bg-s2 active:scale-[0.96]"
                   onClick={() => setExpanded(true)}
                   title={t("more_characters") ?? `${visibleChars.length - 5} more`}
                 >
@@ -418,11 +420,11 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                 <>
                   {/* Create + Import grid */}
                   <div className="grid grid-cols-2 gap-1.5 px-1">
-                    <div className="flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border2 bg-s2/50 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors active:bg-s3 active:scale-[0.97]"
+                    <div className="flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border2 bg-s2/50 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-[background-color,transform] duration-150 ease-out active:bg-s3 active:scale-[0.96]"
                          onClick={() => { useModalStore.getState().setCreateCharacterModalOpen(true); close(); }}>
                       <Ic.plus /> <span className="truncate">{t("create_manual")}</span>
                     </div>
-                    <div className="flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border2 bg-s2/50 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors active:bg-s3 active:scale-[0.97]"
+                    <div className="flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border2 bg-s2/50 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-[background-color,transform] duration-150 ease-out active:bg-s3 active:scale-[0.96]"
                          onClick={() => { setImportOpen(true); close(); }}>
                       <Ic.import /> <span className="truncate">{t("import_char_short")}</span>
                     </div>
@@ -434,7 +436,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                       {/* Character row — soft card */}
                       <div
                         className={cn(
-                          "group relative flex min-h-[56px] cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 transition-colors active:bg-s3 active:scale-[0.97]",
+                          "group relative flex min-h-[56px] cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 transition-[background-color,transform] duration-150 ease-out active:bg-s3 active:scale-[0.96]",
                           selectedCharacterId === c.id ? "bg-s2 border border-accent/20" : "bg-s2/30",
                         )}
                         onClick={() => { useChatStore.getState().setSelectedCharacterId(c.id); }}
@@ -464,7 +466,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                           {activeCharChats.map((ch) => (
                             <div key={ch.id}
                                  className={cn(
-                                   "group relative flex min-h-[48px] cursor-pointer flex-col rounded-lg px-3 py-2 transition-colors active:scale-[0.97]",
+                                   "group relative flex min-h-[48px] cursor-pointer flex-col rounded-lg px-3 py-2 transition-[background-color,transform] duration-150 ease-out active:scale-[0.96]",
                                    ch.id === activeChatId
                                      ? "bg-accent-dim border border-accent/30"
                                      : "bg-s2/30 active:bg-s3",
