@@ -53,11 +53,11 @@ export async function syncBootstrapSnapshotForActiveChat(
   }
 }
 
-export async function fetchBootstrapAction(options?: { silent?: boolean }): Promise<void> {
+export async function fetchBootstrapAction(options?: { silent?: boolean; skipSnapshotSync?: boolean }): Promise<void> {
   if (!options?.silent) useBootstrapStore.setState({ isLoading: true });
   try {
     const boot = await bootstrapApp();
-    
+
     // Update the bootstrap store with the new data
     useBootstrapStore.setState({ data: boot });
 
@@ -66,8 +66,18 @@ export async function fetchBootstrapAction(options?: { silent?: boolean }): Prom
     // already have a different active chat. Never let a silent/global bootstrap
     // overwrite the active snapshot with another chat, or AppShell will briefly
     // see activeChat.id !== activeChatId and render the empty/select state.
-    await syncBootstrapSnapshotForActiveChat(boot);
-    
+    //
+    // `skipSnapshotSync` is for callers that already hold the authoritative
+    // snapshot for the active chat (e.g. character import returns the new
+    // chat's snapshot directly) and only need the global lists refreshed.
+    // Without this, a race emerges: the server moves initialChatId to the new
+    // chat while activeChatId still points at the old one, so
+    // syncBootstrapSnapshotForActiveChat re-fetches the OLD chat and clobbers
+    // the just-imported snapshot.
+    if (!options?.skipSnapshotSync) {
+      await syncBootstrapSnapshotForActiveChat(boot);
+    }
+
     // Assuming useChatStore is used to set the active chat ID during bootstrap
     if (boot.initialChatId && !useChatStore.getState().activeChatId) {
       useChatStore.getState().setActiveChatId(boot.initialChatId);
