@@ -579,7 +579,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 	private async assemblePrompt(
 		chatId: ChatId,
 		branchId?: ChatBranchId,
-		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call"; contextBudget?: number | null; responseReserve?: number },
+		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call"; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
 	) {
 		void await this.getActiveProviderProfile();
 		return this.promptService.assembleForChat({
@@ -591,6 +591,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			mode: options?.mode,
 			contextBudget: options?.contextBudget ?? null,
 			responseReserve: options?.responseReserve,
+			presetId: options?.presetId,
 		});
 	}
 

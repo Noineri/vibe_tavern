@@ -11,6 +11,7 @@ import type {
   LoreEntry,
   LoreEntryId,
   MessageId,
+  PromptPresetId,
   PromptTrace,
   PromptTraceId,
   RetrievedMemoryHit,
@@ -121,6 +122,13 @@ export interface AssemblePromptForChatInput {
   /** Tokens reserved for the model's response. Subtracted from contextBudget during compaction. */
   responseReserve?: number;
   mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call";
+  /**
+   * Optional per-request prompt preset override (Wave Q1b). When set, the
+   * assembled prompt uses this preset instead of the chat's `promptPresetId`,
+   * WITHOUT mutating the chat row. Undefined → existing cascade (chat's preset →
+   * global default). This is the queue's per-job preset key (frozen at enqueue).
+   */
+  presetId?: PromptPresetId;
 }
 
 export interface AssemblePromptForChatResult {
@@ -154,7 +162,7 @@ export class PromptAssemblyService {
     const allPersonas = await this.stores.personas.listAll();
     const effectivePersonaId = chat.personaId ?? allPersonas.find(p => p.defaultForNewChats)?.id ?? allPersonas[0]?.id ?? "";
     const persona = await this.resolver.getPersona(effectivePersonaId);
-    const promptPresetId = chat.promptPresetId
+    const promptPresetId = input.presetId ?? chat.promptPresetId
       ?? (await this.stores.presets.listAll()).find(p => !p.bindProviderPresetId)?.id;
     const promptPreset = promptPresetId ? await this.resolver.getPromptPreset(promptPresetId) : null;
 
