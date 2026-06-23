@@ -60,7 +60,7 @@ export function QueueManager(): ReactNode {
     : `${done}/${total}`;
 
   return (
-    <div className="relative z-10 flex shrink-0 items-center gap-2 border-t border-border bg-surface/80 px-3 py-1 backdrop-blur-sm">
+    <div className="absolute bottom-full left-1.5 z-20 mb-1 flex items-center gap-1.5">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -188,7 +188,7 @@ function ManagerHeader({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => voi
 
 function DesktopPopover({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => void }): ReactNode {
   return (
-    <div className="absolute bottom-full left-3 mb-1 w-80 overflow-hidden rounded-lg border border-border bg-surface shadow-[0_-4px_16px_rgba(0,0,0,0.4)]">
+    <div className="absolute bottom-full left-0 mt-1 w-80 overflow-hidden rounded-lg border border-border bg-surface shadow-[0_-4px_16px_rgba(0,0,0,0.4)]">
       <ManagerHeader jobs={jobs} onClose={onClose} />
       <div className="max-h-64 overflow-y-auto">
         {jobs.map((job, i) => (

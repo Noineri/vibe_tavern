@@ -88,6 +88,8 @@ export interface MessageShellProps {
   tokenCount: number;
   /** Model ID for metadata display. */
   modelId?: string | null;
+  /** Resolved preset name for metadata display (provenance of the selected variant). */
+  presetName?: string | null;
   /** Message creation timestamp. */
   createdAt: string;
   /** Whether the copy button was recently clicked (shows checkmark). */
@@ -142,6 +144,7 @@ export function MessageShell(props: MessageShellProps) {
     canSwitchVariant,
     tokenCount,
     modelId,
+    presetName,
     createdAt,
     copied,
     slotExtras,
@@ -333,6 +336,7 @@ export function MessageShell(props: MessageShellProps) {
               isUser={isUser}
               messageTokens={tokenCount}
               modelId={modelId}
+              presetName={presetName}
               tokensLabel={tokensLabel}
             />
           )}
@@ -420,14 +424,16 @@ function MessageMetadata(props: {
   isUser: boolean;
   messageTokens: number;
   modelId?: string | null;
+  presetName?: string | null;
   tokensLabel: string;
 }) {
-  const { createdLabel, isUser, messageTokens, modelId, tokensLabel } = props;
+  const { createdLabel, isUser, messageTokens, modelId, presetName, tokensLabel } = props;
   return (
     <div className="mt-1 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-4px)] text-t3/50">
       {createdLabel}
       <span className="tabular-nums">{messageTokens} {tokensLabel}</span>
       {!isUser && modelId && <span>{resolveModelLabel(modelId)}</span>}
+      {!isUser && presetName && <span>{presetName}</span>}
     </div>
   );
 }

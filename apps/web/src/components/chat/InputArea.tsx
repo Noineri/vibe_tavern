@@ -436,7 +436,6 @@ export function InputArea() {
             </div>
 
             <div className="absolute right-3 bottom-[9px] flex items-center gap-[9px]">
-              {!isSending && (
                 <div className="relative flex items-center" ref={modelDropRef}>
                   <CustomTooltip content={t("starred_models")}>
                     <button type="button"
@@ -474,7 +473,6 @@ export function InputArea() {
                     </div>
                   )}
                 </div>
-              )}
               {isSending ? (
                 <button type="button"
                   className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface px-3.5 font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
