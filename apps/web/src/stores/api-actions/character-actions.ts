@@ -37,7 +37,12 @@ export async function createCharacterAction(
   if (result.snapshot) {
     useSnapshotStore.getState().ingestSnapshot(result.snapshot);
   }
-  void fetchBootstrapAction({ silent: true });
+  // Refresh global lists only. See importCharacterAction for why the active
+  // snapshot sync is skipped: the server moves initialChatId to the new chat,
+  // while activeChatId still points at the prior one, so a syncing bootstrap
+  // would re-fetch and ingest the OLD chat and clobber this just-written
+  // snapshot. The create response already holds the authoritative snapshot.
+  await fetchBootstrapAction({ silent: true, skipSnapshotSync: true });
   return result;
 }
 
@@ -86,7 +91,14 @@ export async function importCharacterAction(input: {
   if (result.snapshot) {
     useSnapshotStore.getState().ingestSnapshot(result.snapshot);
   }
-  void fetchBootstrapAction({ silent: true });
+  // Refresh global lists (allCharacters, promptPresets, personas) WITHOUT
+  // syncing the active snapshot: the import response already holds the new
+  // chat's authoritative snapshot, and the caller (handleImportFiles) writes
+  // it. A fire-and-forget bootstrap here used to race the caller's
+  // writeSnapshot — the server had moved initialChatId to the new chat while
+  // activeChatId still pointed at the old one, so syncBootstrapSnapshotForActiveChat
+  // re-fetched and ingested the OLD chat, corrupting the store.
+  await fetchBootstrapAction({ silent: true, skipSnapshotSync: true });
   return result;
 }
 

@@ -49,16 +49,24 @@ export function useCharacterImport() {
         chatId: options?.chatId,
       });
 
-      // If we uploaded an avatar, attach it to the newly created character
+      // If we uploaded an avatar, attach it to the newly created character.
+      // The PATCH returns a ConfigPatchResponse (a partial snapshot carrying
+      // only `character` — no activeChat/messages/branches), so we MERGE its
+      // updated character into the import's authoritative snapshot rather than
+      // replacing it. Replacing used to drop activeChat, leaving the store in a
+      // half-corrupted state (activeChatId from the import, activeChat stale).
       if (avatarAssetId && result?.activeChatId) {
         try {
           const characterId = result.snapshot?.character?.id;
           if (characterId) {
-            const updatedSnapshot = await updateCharacterAvatar(characterId, result.activeChatId, avatarAssetId);
-            // Replace snapshot so the caller sees the avatar
-            result.snapshot = updatedSnapshot;
-            // Refresh bootstrap store so sidebar picks up the new avatarAssetId
-            await fetchBootstrapAction({ silent: true });
+            const patched = await updateCharacterAvatar(characterId, result.activeChatId, avatarAssetId);
+            if (patched.character && result.snapshot) {
+              result.snapshot = { ...result.snapshot, character: patched.character };
+            }
+            // Refresh global lists (allCharacters now carries the avatar
+            // asset id) without syncing the active snapshot — the import's
+            // snapshot above is authoritative.
+            await fetchBootstrapAction({ silent: true, skipSnapshotSync: true });
           }
         } catch (err) {
           console.warn("Failed to attach avatar to imported character:", err);

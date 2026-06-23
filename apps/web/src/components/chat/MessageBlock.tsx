@@ -123,8 +123,28 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     return !isBreakoutRole(input.prevRole) && !isBreakoutRole(msg.role);
   }, [input.index, input.prevRole, msg?.role]);
 
-  // ── EARLY RETURN — after all hooks ──
+  // ── All hooks below MUST run before any early return (React Rules of Hooks).
+  // During a chat switch, `clearMessages()` makes `msg` null on a already-mounted
+  // MessageBlock. If we early-return before finishing the hook list, React
+  // detects fewer hooks than the previous render → React error #300 → blank page.
   const isMobile = useIsMobile();
+  const promptPresets = useBootstrapStore((s) => s.data?.promptPresets ?? null);
+  const selectedVariant = variants[selectedVariantIndex] ?? variants[0];
+  const presetName = useMemo(() => {
+    const pid = selectedVariant?.presetId ?? null;
+    if (!pid || !promptPresets) return null;
+    return promptPresets.find((p) => p.id === pid)?.name ?? null;
+  }, [selectedVariant?.presetId, promptPresets]);
+  // Q5: per-variant provenance for the jump dropdown (>6 variants). Resolves
+  // modelLabel + presetName for EVERY variant once; the dropdown rows read from
+  // this. Skipped when variantCount <= 6 (the simple counter stays).
+  const variantProvenance = useMemo(() => {
+    if (variantCount <= 6) return EMPTY_PROVENANCE;
+    return variants.map((v) => ({
+      modelLabel: v.modelId ? resolveModelLabel(v.modelId) : "",
+      presetName: v.presetId && promptPresets ? promptPresets.find((p) => p.id === v.presetId)?.name ?? null : null,
+    }));
+  }, [variants, variantCount, promptPresets]);
 
   if (input.messageId === "__pending-user") {
     return <PendingUserMessage />;
@@ -181,19 +201,8 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // Server sets message.content = selected variant's content at load time,
   // but client-side switching only changes selectedVariantIndex.
   // Read the actual variant text directly.
-  const selectedVariant = variants[selectedVariantIndex] ?? variants[0];
   const selectedVariantBackendIndex = selectedVariant?.variantIndex ?? selectedVariantIndex;
 
-  // Q5: resolve the selected variant's preset name for the metadata bar. Reads
-  // variant.presetId (per-variant provenance from Q2); falls back to null for
-  // old variants without preset data. The preset list is stable across the chat
-  // so subscribing here does not cause per-streaming-tick re-renders.
-  const promptPresets = useBootstrapStore((s) => s.data?.promptPresets ?? null);
-  const presetName = useMemo(() => {
-    const pid = selectedVariant?.presetId ?? null;
-    if (!pid || !promptPresets) return null;
-    return promptPresets.find((p) => p.id === pid)?.name ?? null;
-  }, [selectedVariant?.presetId, promptPresets]);
   const activeContent = selectedVariant ? selectedVariant.content : msg.displayContent;
 
   const renderContent = activeContent;
@@ -267,18 +276,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       >▶</button>
     </span>
   ) : undefined;
-
-  // ── Variant controls (desktop) ──
-  // Q5: per-variant provenance for the jump dropdown (>6 variants). Resolves
-  // modelLabel + presetName for EVERY variant once; the dropdown rows read from
-  // this. Skipped when variantCount <= 6 (the simple counter stays).
-  const variantProvenance = useMemo(() => {
-    if (variantCount <= 6) return EMPTY_PROVENANCE;
-    return variants.map((v) => ({
-      modelLabel: v.modelId ? resolveModelLabel(v.modelId) : "",
-      presetName: v.presetId && promptPresets ? promptPresets.find((p) => p.id === v.presetId)?.name ?? null : null,
-    }));
-  }, [variants, variantCount, promptPresets]);
 
   const desktopVariantControls = (
     <VariantControls
