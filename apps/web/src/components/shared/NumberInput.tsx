@@ -117,7 +117,7 @@ export function NumberInput({
           tabIndex={-1}
           disabled={disabled || value <= min}
           onClick={() => adjustValue(-step)}
-          className="flex h-full w-8 shrink-0 items-center justify-center text-t3 transition-colors hover:bg-s3 hover:text-t1 disabled:pointer-events-none disabled:opacity-30"
+          className="flex h-full w-8 shrink-0 items-center justify-center text-t3 transition-[background-color,color,transform] duration-150 ease-out hover:bg-s3 hover:text-t1 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-30"
         >
           <MinusIcon />
         </button>
@@ -127,7 +127,9 @@ export function NumberInput({
         type="text"
         inputMode="decimal"
         className={cn(
-          "h-full w-full min-w-0 bg-transparent px-1 font-ui text-[13px] text-t1 outline-none",
+          // tabular-nums: digits are equal-width so the value doesn't shift the
+          // input width (and surrounding layout) as it changes via +/- buttons.
+          "h-full w-full min-w-0 bg-transparent px-1 font-ui text-[13px] tabular-nums text-t1 outline-none",
           hideControls ? "px-3 text-left" : "text-center",
           inputClassName
         )}
@@ -143,7 +145,7 @@ export function NumberInput({
           tabIndex={-1}
           disabled={disabled || value >= max}
           onClick={() => adjustValue(step)}
-          className="flex h-full w-8 shrink-0 items-center justify-center text-t3 transition-colors hover:bg-s3 hover:text-t1 disabled:pointer-events-none disabled:opacity-30"
+          className="flex h-full w-8 shrink-0 items-center justify-center text-t3 transition-[background-color,color,transform] duration-150 ease-out hover:bg-s3 hover:text-t1 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-30"
         >
           <PlusIcon />
         </button>

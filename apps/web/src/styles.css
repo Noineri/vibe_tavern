@@ -96,10 +96,24 @@
 
 @layer base {
   html, body { font-family: var(--font-ui); }
+  /* Font smoothing — crisper/thinner text rendering (macOS only; other platforms ignore it). */
+  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   button { border: 0; background: transparent; font: inherit; color: inherit; }
   ::selection { background: var(--sel-bg); color: var(--sel-text); }
 }
+
+/* ── Image outline — neutral 1px separator that adapts to theme lightness ──
+   Light themes: pure black/10. Dark themes (incl. default `:root`): pure white/10.
+   Never a tinted near-black/near-white (slate/zinc) — tinted outlines pick up the
+   surface underneath and read as dirt on the edge. `outline-offset: -1px` keeps
+   it inset so it adds no layout. See surfaces.md "Image Outlines". */
+:root,
+:root.mystic-night,
+:root.dark-lava { --img-outline: rgba(255, 255, 255, 0.1); }
+:root.milk-coffee,
+:root.light-lava { --img-outline: rgba(0, 0, 0, 0.1); }
+img { outline: 1px solid var(--img-outline); outline-offset: -1px; }
 
 
 html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overflow:hidden}
