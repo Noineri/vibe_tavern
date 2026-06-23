@@ -546,6 +546,7 @@ export class ChatStore {
               reasoning: null,
               reasoningDurationMs: null,
               modelId: null,
+              presetId: null,
               createdAt: this.clock.now(),
             }];
             changed = true;
@@ -587,6 +588,7 @@ export class ChatStore {
                 reasoning: null,
                 reasoningDurationMs: null,
                 modelId: null,
+                presetId: null,
                 createdAt: now,
               })),
             ];

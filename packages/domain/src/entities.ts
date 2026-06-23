@@ -377,6 +377,7 @@ export interface MessageVariant {
   reasoning?: string;
   reasoningDurationMs?: number;
   modelId?: string | null;
+  presetId?: string | null;
   createdAt: Timestamp;
 }
 

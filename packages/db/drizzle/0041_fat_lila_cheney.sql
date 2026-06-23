@@ -1,0 +1,1 @@
+ALTER TABLE `message_variants` ADD `preset_id` text REFERENCES prompt_presets(id);

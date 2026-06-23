@@ -189,7 +189,7 @@ export class ChatRuntime {
   async appendMessageVariant(
     chatId: ChatId,
     messageId: MessageId,
-    input: { content: string; finishReason?: string | null; latencyMs: number; reasoning?: string; reasoningDurationMs?: number },
+    input: { content: string; finishReason?: string | null; latencyMs: number; reasoning?: string; reasoningDurationMs?: number; presetId?: PromptPresetId | null },
   ): Promise<MessageResponse> {
     const { chats, messages, traces, buildMessageResponse } = this.deps;
     const trimmed = input.content.trim();
@@ -207,6 +207,7 @@ export class ChatRuntime {
       input.reasoning,
       input.reasoningDurationMs,
       pending?.draft.model ?? null,
+      input.presetId ?? null,
     );
 
     if (pending) {

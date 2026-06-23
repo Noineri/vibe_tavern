@@ -525,3 +525,61 @@ describe("MessageStore — variant (swipe) semantics", () => {
     expect(activeVariant!.variantIndex).toBe(0);
   });
 });
+
+describe("MessageStore — variant preset_id (Q2)", () => {
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+  let messageStore: MessageStore;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+    bootstrap(db);
+    clockTick = 0;
+    idCounters = new Map();
+    messageStore = new MessageStore(db, { clock: testClock, idGenerator: testIdGen });
+  });
+
+  test("addVariant without presetId → variant.presetId is null (backward compat)", async () => {
+    const msg = await messageStore.addMessage({
+      chatId: "chat_1", branchId: "brnch_1", role: "assistant", authorType: "assistant", content: "V0",
+    });
+    const v = await messageStore.addVariant(msg.id, "V1");
+    expect(v.presetId).toBeNull();
+
+    // Round-trips through getVariants.
+    const rows = await messageStore.getVariants(msg.id);
+    expect(rows.find((r) => r.variantIndex === v.variantIndex)?.presetId).toBeNull();
+  });
+
+  test("addVariant with presetId → persisted and round-trips", async () => {
+    const msg = await messageStore.addMessage({
+      chatId: "chat_1", branchId: "brnch_1", role: "assistant", authorType: "assistant", content: "V0",
+    });
+    // preset_1 is bootstrapped into prompt_presets, so the FK resolves.
+    const v = await messageStore.addVariant(
+      msg.id, "Queued reply", undefined, undefined, undefined, "gpt-4o", "preset_1",
+    );
+    expect(v.modelId).toBe("gpt-4o");
+    expect(v.presetId).toBe("preset_1");
+
+    const rows = await messageStore.getVariants(msg.id);
+    const queued = rows.find((r) => r.variantIndex === v.variantIndex)!;
+    expect(queued.modelId).toBe("gpt-4o");
+    expect(queued.presetId).toBe("preset_1");
+  });
+
+  test("mixed variants — only the override-tagged one carries presetId", async () => {
+    const msg = await messageStore.addMessage({
+      chatId: "chat_1", branchId: "brnch_1", role: "assistant", authorType: "assistant", content: "V0",
+    });
+    await messageStore.addVariant(msg.id, "standalone regen"); // no preset
+    const queued = await messageStore.addVariant(
+      msg.id, "queued job", undefined, undefined, undefined, "claude", "preset_1",
+    );
+
+    const rows = await messageStore.getVariants(msg.id);
+    const presets = rows.map((r) => r.presetId);
+    // Exactly one variant carries the preset; the others are null.
+    expect(presets.filter((p) => p === "preset_1")).toEqual(["preset_1"]);
+    expect(rows.find((r) => r.variantIndex === queued.variantIndex)!.presetId).toBe("preset_1");
+  });
+});

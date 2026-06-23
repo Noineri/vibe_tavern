@@ -238,6 +238,7 @@ export class LiveChatOrchestrator {
       content: reply,
       latencyMs,
       reasoning,
+      presetId: input.presetId,
     });
     logSendDebug("live.regenerate.append.done", { chatId: input.chatId, messageId: input.messageId, messageCount: snapshot.messages.length });
 
@@ -388,6 +389,7 @@ export class LiveChatOrchestrator {
             latencyMs,
             reasoning: reasoning || undefined,
             reasoningDurationMs,
+            presetId: input.presetId,
           });
         }
       },
@@ -397,6 +399,7 @@ export class LiveChatOrchestrator {
           latencyMs,
           reasoning,
           reasoningDurationMs,
+          presetId: input.presetId,
         });
         logSendDebug("live.regenerate-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
         return snapshot;
