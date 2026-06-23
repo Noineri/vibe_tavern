@@ -114,11 +114,16 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     .post("/api/chats/:chatId/messages/:messageId/regenerate", async (c) => {
       const chatId = c.req.param("chatId");
       const messageId = c.req.param("messageId");
-      const body = await readOptionalJson(c.req.raw);
+      // Validate the optional override body via the shared schema. readOptionalJson
+      // tolerates an empty/missing body (legacy single-flight regenerate sends
+      // no body), and regenerateOverrideSchema.parse shape-validates when present.
+      // zValidator("json", ...) is intentionally avoided here because it 400s on
+      // the empty body the hono RPC client sends for the non-stream regenerate.
+      const override = schemas.regenerateOverrideSchema.parse(await readOptionalJson(c.req.raw));
       const regenStartMs = Date.now();
       logSendDebug("api.route.regenerate.start", { chatId, messageId });
       try {
-        const result = await runtime.regenerateMessage(chatId, messageId, body, c.req.raw.signal);
+        const result = await runtime.regenerateMessage(chatId, messageId, override, c.req.raw.signal);
         logSendDebug("api.route.regenerate.done", { chatId, messageId, elapsedMs: Date.now() - regenStartMs });
         return c.json(result);
       } catch (err) {
@@ -134,10 +139,10 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     .post("/api/chats/:chatId/messages/:messageId/regenerate/stream", async (c) => {
       const chatId = c.req.param("chatId");
       const messageId = c.req.param("messageId");
-      const body = await readOptionalJson(c.req.raw);
+      const override = schemas.regenerateOverrideSchema.parse(await readOptionalJson(c.req.raw));
       logSendDebug("api.route.regenerate-stream.start", { chatId, messageId });
       const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.regenerate-stream", { chatId, messageId });
-      const gen = runtime.regenerateMessageStream(chatId, messageId, body, abortBridge.signal);
+      const gen = runtime.regenerateMessageStream(chatId, messageId, override, abortBridge.signal);
       return streamSSE(c, async (stream) => writeChatSseEvents(stream, gen, abortBridge));
     })
     .post("/api/chats/:chatId/messages/:messageId/variants/:variantIndex/select", async (c) => {

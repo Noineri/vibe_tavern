@@ -11,6 +11,8 @@ export {
   setGreetingIndexSchema,
   renameBranchSchema,
 } from "./chat-schema.js";
+export { regenerateOverrideSchema } from "./chat-regenerate-schema.js";
+export type { RegenerateOverride } from "./chat-regenerate-schema.js";
 export {
   createLorebookSchema,
   updateLorebookMetaSchema,
