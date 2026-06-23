@@ -1,6 +1,8 @@
 import { memo, useState, useMemo, useRef, useEffect, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useAnimationControls, type PanInfo } from "framer-motion";
 import { cn } from "../../lib/cn.js";
+import { resolveModelLabel } from "../../lib/model-resolve.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { Markdown } from "../../lib/markdown.js";
 import { useDisplayMessage, useChatMeta, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
@@ -24,6 +26,9 @@ import { StreamingMarkdown } from "./StreamingMarkdown.js";
 import { AttachmentGrid } from "./AttachmentGrid.js";
 
 type SwipeDirection = -1 | 1;
+
+/** Stable empty array for the variantProvenance fallback (variantCount <= 6). */
+const EMPTY_PROVENANCE: { modelLabel: string; presetName: string | null }[] = [];
 
 type VariantControlsOverlayState = {
   rect: DOMRectReadOnly;
@@ -264,6 +269,17 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   ) : undefined;
 
   // ── Variant controls (desktop) ──
+  // Q5: per-variant provenance for the jump dropdown (>6 variants). Resolves
+  // modelLabel + presetName for EVERY variant once; the dropdown rows read from
+  // this. Skipped when variantCount <= 6 (the simple counter stays).
+  const variantProvenance = useMemo(() => {
+    if (variantCount <= 6) return EMPTY_PROVENANCE;
+    return variants.map((v) => ({
+      modelLabel: v.modelId ? resolveModelLabel(v.modelId) : "",
+      presetName: v.presetId && promptPresets ? promptPresets.find((p) => p.id === v.presetId)?.name ?? null : null,
+    }));
+  }, [variants, variantCount, promptPresets]);
+
   const desktopVariantControls = (
     <VariantControls
       controlsRef={variantControlsRef}
@@ -271,6 +287,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       isBusy={isBusy}
       selectedVariantIndex={selectedVariantIndex}
       variantCount={variantCount}
+      provenance={variantProvenance}
       onSelectVariant={handleSelectVariant}
     />
   );
@@ -282,6 +299,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       isBusy={isBusy}
       selectedVariantIndex={selectedVariantIndex}
       variantCount={variantCount}
+      provenance={variantProvenance}
       onSelectVariant={handleSelectVariant}
     />
   );
@@ -630,6 +648,8 @@ type VariantControlsProps = {
   isBusy: boolean;
   selectedVariantIndex: number;
   variantCount: number;
+  /** Per-variant provenance for the jump dropdown (only populated when variantCount > 6). */
+  provenance?: { modelLabel: string; presetName: string | null }[];
   controlsRef?: React.RefObject<HTMLSpanElement | null>;
   hidden?: boolean;
   mobile?: boolean;
@@ -638,7 +658,9 @@ type VariantControlsProps = {
 };
 
 function VariantControls(props: VariantControlsProps) {
-  const { controlsRef, hidden = false, isBusy, selectedVariantIndex, variantCount, mobile = false, overlay = false, onSelectVariant } = props;
+  const { controlsRef, hidden = false, isBusy, selectedVariantIndex, variantCount, provenance, mobile = false, overlay = false, onSelectVariant } = props;
+  const [jumpOpen, setJumpOpen] = useState(false);
+  const showJump = variantCount > 6 && provenance && provenance.length > 0 && !overlay;
 
   const canGoPrevious = !isBusy && selectedVariantIndex > 0;
   const canGoNext = !isBusy && selectedVariantIndex < variantCount - 1;
@@ -654,13 +676,34 @@ function VariantControls(props: VariantControlsProps) {
           disabled={!canGoPrevious}
           onClick={selectPrevious}
         ><Icons.Caret direction="l" /></button>
-        <span className="min-w-12 text-center font-ui text-[13px] tabular-nums text-t2">{selectedVariantIndex + 1}/{variantCount}</span>
+        {showJump ? (
+          <button
+            type="button"
+            className="flex min-h-10 min-w-12 items-center justify-center gap-0.5 rounded-lg px-2 font-ui text-[13px] tabular-nums text-t2 active:bg-s2"
+            onClick={() => setJumpOpen((v) => !v)}
+          >
+            {selectedVariantIndex + 1}/{variantCount}
+            <Icons.Caret direction={jumpOpen ? "u" : "d"} />
+          </button>
+        ) : (
+          <span className="min-w-12 text-center font-ui text-[13px] tabular-nums text-t2">{selectedVariantIndex + 1}/{variantCount}</span>
+        )}
         <button
           type="button"
           className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:opacity-35 [&_svg]:h-5 [&_svg]:w-5"
           disabled={!canGoNext}
           onClick={selectNext}
         ><Icons.Caret direction="r" /></button>
+        {jumpOpen && showJump && createPortal(
+          <VariantJumpList
+            mobile
+            provenance={provenance!}
+            selectedVariantIndex={selectedVariantIndex}
+            onSelect={(index) => { onSelectVariant(index, index > selectedVariantIndex ? 1 : -1); setJumpOpen(false); }}
+            onClose={() => setJumpOpen(false)}
+          />,
+          document.body,
+        )}
       </div>
     );
   }
@@ -679,13 +722,105 @@ function VariantControls(props: VariantControlsProps) {
         disabled={!canGoPrevious}
         onClick={selectPrevious}
       ><Icons.Caret direction="l" /></button>
-      <span className="min-w-6 text-center tabular-nums">{selectedVariantIndex + 1}/{variantCount}</span>
+      {showJump ? (
+        <span className="relative flex min-w-6 items-center justify-center">
+          <button
+            type="button"
+            className="flex items-center gap-0.5 rounded-[3px] px-1 tabular-nums transition-colors duration-100 hover:bg-s2 hover:text-t1"
+            onClick={() => setJumpOpen((v) => !v)}
+          >
+            {selectedVariantIndex + 1}/{variantCount}
+            <Icons.Caret direction={jumpOpen ? "u" : "d"} />
+          </button>
+          {jumpOpen && showJump && createPortal(
+            <VariantJumpList
+              provenance={provenance!}
+              selectedVariantIndex={selectedVariantIndex}
+              onSelect={(index) => { onSelectVariant(index, index > selectedVariantIndex ? 1 : -1); setJumpOpen(false); }}
+              onClose={() => setJumpOpen(false)}
+            />,
+            document.body,
+          )}
+        </span>
+      ) : (
+        <span className="min-w-6 text-center tabular-nums">{selectedVariantIndex + 1}/{variantCount}</span>
+      )}
       <button type="button"
         className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-[3px] transition-colors duration-100 hover:bg-s2 hover:text-t1"
         disabled={!canGoNext}
         onClick={selectNext}
       ><Icons.Caret direction="r" /></button>
     </span>
+  );
+}
+
+/**
+ * Q5: jump-to-variant dropdown for messages with >6 variants. Each row shows
+ * provenance (model + preset); clicking jumps via the existing selectVariant
+ * path. Desktop renders as an upward absolute popover (parent is the relative
+ * counter wrapper); mobile renders as a portal bottom sheet reusing the
+ * QueueManager / Rail z-[500]/z-[501] pattern.
+ */
+function VariantJumpList(props: {
+  mobile?: boolean;
+  provenance: { modelLabel: string; presetName: string | null }[];
+  selectedVariantIndex: number;
+  onSelect: (index: number) => void;
+  onClose: () => void;
+}) {
+  const { mobile = false, provenance, selectedVariantIndex, onSelect, onClose } = props;
+
+  const rows = (
+    <div className={cn("overflow-y-auto", mobile ? "max-h-[50vh] pb-2" : "max-h-64")}>
+      {provenance.map((p, i) => (
+        <button
+          type="button"
+          key={i}
+          className={cn(
+            "flex w-full items-center gap-2 px-3 text-left transition-colors",
+            mobile ? "min-h-[52px] text-[calc(var(--ui-fs)+1px)] active:bg-s3" : "py-2 text-[calc(var(--ui-fs)-2px)] hover:bg-s2",
+            i === selectedVariantIndex ? "text-accent-t" : "text-t2",
+          )}
+          onClick={() => onSelect(i)}
+        >
+          <span className="w-6 shrink-0 text-t3">#{i + 1}</span>
+          <span className="shrink-0 font-medium text-t1">{p.modelLabel || "—"}</span>
+          {p.presetName && <span className="truncate text-t3">· {p.presetName}</span>}
+          {i === selectedVariantIndex && <span className="ml-auto shrink-0 text-accent-t">✓</span>}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (mobile) {
+    return (
+      <>
+        <div
+          className="fixed inset-0 z-[500] bg-black/50 backdrop-blur-sm"
+          style={{ animation: "fadeIn 0.15s ease-out" }}
+          onClick={onClose}
+        />
+        <div
+          className="fixed inset-x-0 bottom-0 z-[501] rounded-t-2xl border-t border-border2 bg-surface pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md"
+          style={{ animation: "slideUp 0.2s ease-out" }}
+        >
+          <div className="flex justify-center pt-2 pb-1">
+            <div className="h-1 w-10 rounded-full bg-border" />
+          </div>
+          {rows}
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {/* close-on-outside-click overlay */}
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="absolute bottom-full left-1/2 z-50 mb-1 w-64 -translate-x-1/2 overflow-hidden rounded-lg border border-border bg-surface shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
+        {rows}
+      </div>
+    </>
   );
 }
 
