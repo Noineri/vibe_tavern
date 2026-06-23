@@ -18,6 +18,10 @@ import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { NumberInput } from "../../shared/NumberInput.js";
+import { inputPad, inputCls, monoCls, lblCls } from "../fields/field-styles.js";
+import { TextAreaField, TokenBadge } from "../fields/TextAreaField.js";
+import { DepthPromptField } from "../fields/DepthPromptField.js";
+import { TagsField } from "../fields/TagsField.js";
 
 export interface CharacterFormProps {
   form: UseFormReturn<BuildCharacterDraft>;
@@ -63,23 +67,6 @@ function parseCardToDraft(raw: unknown): Partial<BuildCharacterDraft> {
   return result;
 }
 
-/* ── shared style constants for padding (Tailwind v4 numeric spacing bugs) ── */
-const inputPad = { padding: "6px 10px" } as React.CSSProperties;
-
-const inputCls = "w-full rounded-md border border-border bg-s2 font-ui text-t1 outline-none focus:border-accent resize-none overflow-hidden";
-const monoCls = inputCls + " font-mono text-xs";
-
-/** Styled inline select — matches the project style (TweaksPanel, ProviderEditHeader) */
-const selectCls =
-  "h-6 rounded-md border border-border bg-s2 pl-1.5 sel-arrow text-[11px] font-ui text-t1 outline-none focus:border-accent";
-
-/** Small inline token badge for character form fields */
-function TokenBadge({ text }: { text: string }) {
-  const count = useTokenCount(text);
-  const { t } = useT();
-  return <span className="flex justify-end font-ui text-[11px] tabular-nums text-t3">{count.toLocaleString()} {t("tokens_label")}</span>;
-}
-
 export function CharacterForm({
   form, avatarPreview, setAvatarPreview, isDirty, isSaving, avatarUrl, onSave, onReset, onAvatarUpload,
   onAfterImport,
@@ -89,7 +76,6 @@ export function CharacterForm({
   const { register, formState: { errors }, watch, setValue, handleSubmit } = form;
 
   const [altGreetIdx, setAltGreetIdx] = useState(0);
-  const [tagInput, setTagInput] = useState("");
   const [importError, setImportError] = useState("");
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [mdImportOpen, setMdImportOpen] = useState(false);
@@ -112,9 +98,6 @@ export function CharacterForm({
   const postHistoryInstructions = watch("postHistoryInstructions");
   const creatorNotes = watch("creatorNotes");
   const depthPrompt = watch("depthPrompt");
-  const depthPromptDepth = watch("depthPromptDepth");
-  const depthPromptRole = watch("depthPromptRole");
-  const tags = watch("tags") || [];
 
   const canSave = !isSaving && (name || "").trim();
   const isMobile = useIsMobile();
@@ -189,19 +172,6 @@ export function CharacterForm({
     }
   }
 
-  function toggleTag(tag: string) {
-    const newTags = tags.includes(tag) ? tags.filter((t: string) => t !== tag) : [...tags, tag];
-    setValue("tags", newTags, { shouldDirty: true });
-  }
-
-  function handleTagKey(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter" && tagInput.trim()) {
-      e.preventDefault();
-      if (!tags.includes(tagInput.trim())) setValue("tags", [...tags, tagInput.trim()], { shouldDirty: true });
-      setTagInput("");
-    }
-  }
-
   const displayAvatar = avatarPreview || avatarUrl;
 
   // Detect orientation for existing avatar on mount
@@ -213,7 +183,6 @@ export function CharacterForm({
     };
     img.src = displayAvatar;
   }, [displayAvatar, avatarOrientation]);
-  const lblCls = "block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3";
 
   // Token breakdown: permanent (all fields except greeting) + greeting
   const permanentTokens = useTokenCount([
@@ -405,17 +374,7 @@ export function CharacterForm({
               <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
               <input type="text" className={inputCls + mInput} style={inputPad} disabled={isSaving} {...register("name")} />
             </div>
-            <div>
-              <label className={lblCls + " mb-1.5 block"}>{t("char_tags_label")}</label>
-              <input type="text" className={inputCls + mInput} style={inputPad} value={tagInput} disabled={isSaving} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagKey} placeholder={t("tags_enter")} />
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {tags.map((tag: string) => (
-                  <span key={tag} className="cursor-pointer rounded bg-accent-dim px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => toggleTag(tag)}>
-                    {tag} ✕
-                  </span>
-                ))}
-              </div>
-            </div>
+            <TagsField form={form} isSaving={isSaving} />
           </div>
         </div>
       ) : (
@@ -449,17 +408,7 @@ export function CharacterForm({
             <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
             <input type="text" className={inputCls + mInput} style={inputPad} disabled={isSaving} {...register("name")} />
           </div>
-          <div>
-            <label className={lblCls + " mb-1.5 block"}>{t("char_tags_label")}</label>
-            <input type="text" className={inputCls + mInput} style={inputPad} value={tagInput} disabled={isSaving} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleTagKey} placeholder={t("tags_enter")} />
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {tags.map((tag: string) => (
-                <span key={tag} className="cursor-pointer rounded bg-accent-dim px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-all hover:bg-border2 hover:text-t1" onClick={() => toggleTag(tag)}>
-                  {tag} ✕
-                </span>
-              ))}
-            </div>
-          </div>
+          <TagsField form={form} isSaving={isSaving} />
         </div>
       </div>
       )}
@@ -593,69 +542,42 @@ export function CharacterForm({
       </div>
 
       {/* Post-History Instructions */}
-      <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("post_history_instructions")}</label>
-        <MobileExpandTextarea value={postHistoryInstructions || ""} onChange={(v) => setValue("postHistoryInstructions", v)} label={t("post_history_label")}>
-          <AutoTextarea className={monoCls + mInput} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("post_history_placeholder")} register={register("postHistoryInstructions")} />
-        </MobileExpandTextarea>
-        <TokenBadge text={postHistoryInstructions || ""} />
-      </div>
+      <TextAreaField
+        form={form}
+        field="postHistoryInstructions"
+        label={t("post_history_instructions")}
+        mobileExpandLabel={t("post_history_label")}
+        minHeight={60}
+        mono
+        placeholder={t("post_history_placeholder")}
+        isSaving={isSaving}
+      />
 
       {/* Creator Notes */}
-      <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("creator_notes")}</label>
-        <MobileExpandTextarea value={creatorNotes || ""} onChange={(v) => setValue("creatorNotes", v)} label={t("creator_notes_label")}>
-          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("creator_notes_placeholder")} register={register("creatorNotes")} />
-        </MobileExpandTextarea>
-        <TokenBadge text={creatorNotes || ""} />
-      </div>
+      <TextAreaField
+        form={form}
+        field="creatorNotes"
+        label={t("creator_notes")}
+        mobileExpandLabel={t("creator_notes_label")}
+        minHeight={60}
+        placeholder={t("creator_notes_placeholder")}
+        isSaving={isSaving}
+      />
 
       {/* Depth Prompt */}
-      <div className="mb-5">
-        <div className="mb-1.5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <label className={lblCls}>{t("depth_prompt")}</label>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="flex min-w-0 items-center gap-1 sm:min-w-fit">
-              <SegmentedControl
-                value={depthPromptRole || "system"}
-                options={[
-                  { value: "system", label: "system" },
-                  { value: "user", label: "user" },
-                  { value: "assistant", label: "assistant" },
-                ]}
-                onChange={(v) => setValue("depthPromptRole", v, { shouldDirty: true })}
-                disabled={isSaving}
-                compact
-                mobileFill
-              />
-            </div>
-            <div className="flex min-h-8 items-center justify-between gap-2 sm:justify-start">
-              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
-              <NumberInput
-                className="h-8 w-[100px] sm:h-6 sm:w-[90px]"
-                min={0}
-                max={999}
-                disabled={isSaving}
-                value={depthPromptDepth ?? 4}
-                onChange={(v) => setValue("depthPromptDepth", v, { shouldDirty: true })}
-              />
-            </div>
-          </div>
-        </div>
-        <MobileExpandTextarea value={depthPrompt || ""} onChange={(v) => setValue("depthPrompt", v)} label={t("depth_prompt_label")}>
-          <AutoTextarea className={monoCls + mInput} style={{ ...inputPad, minHeight: 60 }} disabled={isSaving} placeholder={t("depth_prompt_placeholder")} register={register("depthPrompt")} />
-        </MobileExpandTextarea>
-        <TokenBadge text={depthPrompt || ""} />
-      </div>
+      <DepthPromptField form={form} isSaving={isSaving} />
 
       {/* System Prompt Override */}
-      <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("system_prompt_override")}</label>
-        <MobileExpandTextarea value={systemPrompt || ""} onChange={(v) => setValue("systemPrompt", v)} label={t("system_prompt_label")}>
-          <AutoTextarea className={monoCls + mInput} style={{ ...inputPad, minHeight: 80 }} disabled={isSaving} placeholder={t("system_prompt_override_placeholder")} register={register("systemPrompt")} />
-        </MobileExpandTextarea>
-        <TokenBadge text={systemPrompt || ""} />
-      </div>
+      <TextAreaField
+        form={form}
+        field="systemPrompt"
+        label={t("system_prompt_override")}
+        mobileExpandLabel={t("system_prompt_label")}
+        minHeight={80}
+        mono
+        placeholder={t("system_prompt_override_placeholder")}
+        isSaving={isSaving}
+      />
 
       {/* Footer */}
       <div className={cn("mt-2 flex flex-wrap items-center gap-2", isMobile && "pb-8")}>
