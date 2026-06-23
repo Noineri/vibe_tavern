@@ -79,3 +79,4 @@ mobile/android/**/build/
 # Agentic slop
 AGENTS.md
 .codegraph
+.playwright-mcp
