@@ -6,6 +6,9 @@ import { Markdown } from "../../lib/markdown.js";
 import { useDisplayMessage, useChatMeta, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
 import { useChatStore, useActiveGeneration, useIsSending } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useProviderStore } from "../../stores/provider-store.js";
+import { useProviderDataStore } from "../../stores/provider-data-store.js";
+import { enqueueGenerateMore } from "../../hooks/use-generation-queue.js";
 import type { MessageBlockProps } from "../play/play-mode-types.js";
 import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
@@ -146,6 +149,23 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     isSending &&
     !pendingUserMessageContent &&
     isLastAssistant;
+
+  // Q4a: the "Generate more" header affordance shows ONLY on the message that
+  // is the active streaming target while a generation is in flight. The action
+  // bar is hidden during generation (MessageShell !isGenerating guards), so the
+  // header is the only stable entry point into the queue. isStreamingTarget is
+  // source-agnostic (covers non-stream `streamResponse` off runs too).
+  const showGenerateMore = isGenerating && isStreamingTarget;
+  const handleGenerateMore = (): void => {
+    // Snapshot model + preset as KEYS at enqueue time (values resolve live at
+    // pop on the backend — Q1a). Read via getState() so we don't subscribe the
+    // streaming-target block to two more stores (it already re-renders per tick).
+    const profile = useProviderDataStore.getState().profiles.find((p) => p.isActive) ?? null;
+    const model = profile?.defaultModel ?? useProviderStore.getState().connection.model ?? null;
+    if (!model) return; // no provider → can't queue; the standalone send would also fail.
+    const promptPresetId = useSnapshotStore.getState().activeChat?.promptPresetId ?? null;
+    enqueueGenerateMore(msg.id, model, promptPresetId);
+  };
 
   const canBranch = !isGreeting;
   const canRegenerate = !isGreeting && isLastAssistant;
@@ -379,6 +399,8 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       variantControlsOverlay={variantControlsOverlay}
       variantControlsRef={variantControlsRef}
       greetingControls={greetingControls}
+      showGenerateMore={showGenerateMore}
+      onGenerateMore={handleGenerateMore}
       desktopVariantControls={desktopVariantControls}
       mobileVariantControls={mobileVariantControls}
       actions={{
