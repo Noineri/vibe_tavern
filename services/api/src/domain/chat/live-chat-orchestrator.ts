@@ -197,6 +197,7 @@ export class LiveChatOrchestrator {
       model: provider.model,
       contextBudget: provider.profile.contextBudget,
       responseReserve: provider.profile.maxTokens,
+      presetId: input.presetId,
     });
     logSendDebug("live.regenerate.prompt.ready", {
       chatId: input.chatId,
@@ -366,6 +367,7 @@ export class LiveChatOrchestrator {
       model: provider.model,
       contextBudget: provider.profile.contextBudget,
       responseReserve: provider.profile.maxTokens,
+      presetId: input.presetId,
     });
     const prefill = prompt.prefill ?? undefined;
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider }, prompt);

@@ -1,5 +1,5 @@
 import type { AssemblePromptResponse, Message, PromptTrace } from "@vibe-tavern/domain";
-import { brandId, type ChatBranchId, type ChatId, type MessageId } from "@vibe-tavern/domain";
+import { brandId, type ChatBranchId, type ChatId, type MessageId, type PromptPresetId } from "@vibe-tavern/domain";
 import type { ChatStore, MessageStore, PromptTraceStore } from "@vibe-tavern/db";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import type {
@@ -35,7 +35,7 @@ export interface ChatRuntimeDeps {
   assemblePrompt: (
     chatId: ChatId,
     branchId?: ChatBranchId,
-    options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call"; contextBudget?: number | null; responseReserve?: number },
+    options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call"; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
   ) => Promise<{
     branchId: ChatBranchId;
     prompt: AssemblePromptResponse;
@@ -318,7 +318,7 @@ export class ChatRuntime {
 
   async assemblePromptPreview(
     chatId: ChatId,
-    options: { excludeMessageId?: MessageId; model: string; contextBudget?: number | null; responseReserve?: number },
+    options: { excludeMessageId?: MessageId; model: string; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
   ): Promise<AssemblePromptResponse> {
     const { assemblePrompt } = this.deps;
     const assembled = await assemblePrompt(chatId, undefined, {
@@ -326,6 +326,7 @@ export class ChatRuntime {
       model: options.model,
       contextBudget: options.contextBudget,
       responseReserve: options.responseReserve,
+      presetId: options.presetId,
     });
     if (options.excludeMessageId) {
       this.pendingPromptTraceByChat.set(chatId, {
