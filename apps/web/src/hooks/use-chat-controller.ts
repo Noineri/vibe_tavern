@@ -46,6 +46,9 @@ function restoreDraftAfterSendError(content?: string | null, attachments?: Attac
   }
 }
 
+/** Outcome of a single generation attempt, surfaced to the queue pump (Q3). */
+export type StreamOutcome = "done" | "cancelled" | "failed";
+
 export interface ChatControllerActions {
   handleSend: () => Promise<void>;
   handleCancelGeneration: () => void;
@@ -62,6 +65,20 @@ export interface ChatControllerActions {
   handleActivateBranch: (branchId: ChatBranchId) => Promise<void>;
   handleDeleteActiveBranch: () => Promise<void>;
   handleRenameBranch: (branchId: ChatBranchId, label: string) => Promise<void>;
+  /**
+   * Run ONE regenerate generation for the queue (Q3). Mirrors
+   * handleRegenerateMessage's stream/non-stream branching but threads an
+   * optional per-request { model, promptPresetId } override and returns the
+   * outcome so the queue pump can mark the job done/failed/cancelled. Does NOT
+   * show its own toasts (the stream path's existing toasts still fire); the
+   * queue manager owns job-row affordances. Throws nothing — failures surface
+   * as the `"failed"` outcome.
+   */
+  runRegenerateJob: (
+    chatId: ChatId,
+    messageId: string,
+    override?: { model?: string; promptPresetId?: string },
+  ) => Promise<StreamOutcome>;
 }
 
 export function useChatController(): ChatControllerActions {
@@ -137,7 +154,7 @@ export function useChatController(): ChatControllerActions {
      * ChatGenerationState.streamingMessageId.
      */
     streamingMessageId?: string | null,
-  ): Promise<void> {
+  ): Promise<StreamOutcome> {
     const controller = useChatStore.getState().startGeneration(chatId, pendingUserContent, pendingAttachments, streamingMessageId);
     const store = useChatStore.getState();
     store.setDraft("");
@@ -167,12 +184,13 @@ export function useChatController(): ChatControllerActions {
       useChatStore.getState().setPendingContent(chatId, null);
       await refreshChatSnapshotCache(chatId);
       void logClientSendDebug("web.hook.stream.success", { chatId, replyLength: collected.length });
+      return "done";
     } catch (error) {
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.stream.cancelled", { chatId });
         await refreshAfterAbort(chatId);
         toast.info(getT()("generation_cancelled"));
-        return;
+        return "cancelled";
       }
       void logClientSendDebug("web.hook.stream.error", {
         chatId,
@@ -192,6 +210,7 @@ export function useChatController(): ChatControllerActions {
         toast.error(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
       }
       useChatStore.getState().setGenerationStatus(chatId, "failed");
+      return "failed";
     } finally {
       useChatStore.getState().finishGeneration(chatId);
       reveal.clear();
@@ -503,6 +522,58 @@ export function useChatController(): ChatControllerActions {
     await renameBranchAction(activeChatId, branchId, label);
   }
 
+  /**
+   * Queue entry point (Q3): run ONE regenerate with an optional per-request
+   * override, returning the outcome. Reuses the SAME streaming/reveal +
+   * generation-state machinery as handleRegenerateMessage (no duplication) —
+   * the override is captured in the streamFn closure for the stream path and
+   * threaded as the json body for the non-stream path. Only the job lifecycle
+   * (enqueue / pump / status) lives in use-generation-queue.ts.
+   */
+  const runRegenerateJob = useCallback(
+    async (
+      chatId: ChatId,
+      messageId: string,
+      override?: { model?: string; promptPresetId?: string },
+    ): Promise<StreamOutcome> => {
+      useChatStore.getState().setMessageActionId(messageId);
+      try {
+        if (streamResponseRef.current) {
+          return await executeStreamAction(
+            chatId,
+            (opts) => regenerateChatMessageStream(chatId, messageId, opts, override),
+            undefined,
+            undefined,
+            messageId,
+          );
+        }
+        // Non-stream path: mirror handleRegenerateMessage's branch, threading override.
+        const controller = useChatStore.getState().startGeneration(chatId, undefined, undefined, messageId);
+        try {
+          await regenerateMessageAction(chatId, messageId, controller.signal, override);
+          const snapshot = useSnapshotStore.getState();
+          useChatStore.getState().setSelectedTraceId(snapshot.promptTrace?.id ?? null);
+          if (snapshot.promptTrace && snapshot.activeBranch?.id) {
+            useTraceHistoryStore.getState().upsertLatest(chatId, snapshot.activeBranch.id, snapshot.promptTrace);
+          }
+          return "done";
+        } catch (error) {
+          if (controller.signal.aborted) {
+            await refreshAfterAbort(chatId);
+            return "cancelled";
+          }
+          await refreshChatSnapshotCache(chatId);
+          return "failed";
+        } finally {
+          useChatStore.getState().finishGeneration(chatId);
+        }
+      } finally {
+        useChatStore.getState().setMessageActionId(null);
+      }
+    },
+    [],
+  );
+
   return {
     handleSend,
     handleCancelGeneration,
@@ -519,5 +590,6 @@ export function useChatController(): ChatControllerActions {
     handleActivateBranch,
     handleDeleteActiveBranch,
     handleRenameBranch,
+    runRegenerateJob,
   };
 }

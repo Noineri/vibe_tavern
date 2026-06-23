@@ -74,7 +74,9 @@ export const regenerateStream = (
   chatId: string,
   messageId: string,
   opts: StreamOpts,
-) => streamChatEndpoint(`/api/chats/${chatId}/messages/${messageId}/regenerate/stream`, {}, opts);
+  /** Optional per-request { model?, promptPresetId? } override (chat generation queue). Undefined → legacy empty body. */
+  override?: { model?: string; promptPresetId?: string },
+) => streamChatEndpoint(`/api/chats/${chatId}/messages/${messageId}/regenerate/stream`, override ?? {}, opts);
 
 /** Convenience: generate reply stream */
 export const generateReplyStream = (

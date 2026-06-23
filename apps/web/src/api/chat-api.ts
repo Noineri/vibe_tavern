@@ -72,10 +72,10 @@ export async function sendChatMessage(
 export async function regenerateChatMessage(
   chatId: ChatId,
   messageId: string,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; override?: { model?: string; promptPresetId?: string } },
 ): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].messages[":messageId"].regenerate.$post(
-    { param: { chatId, messageId } },
+    { param: { chatId, messageId }, ...(options?.override ? { json: options.override } : {}) },
     { init: { signal: options?.signal } },
   );
   const data = await unwrapRpc<AppSnapshot>(response);
