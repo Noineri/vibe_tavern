@@ -37,6 +37,7 @@ export interface MessageVariant {
   reasoning: string | null;
   reasoningDurationMs: number | null;
   modelId: string | null;
+  presetId: string | null;
   createdAt: string;
 }
 
@@ -270,6 +271,7 @@ export class MessageStore {
     reasoning?: string,
     reasoningDurationMs?: number,
     modelId?: string | null,
+    presetId?: string | null,
   ): Promise<MessageVariant> {
     // Find max variantIndex
     const lastVariant = await this.db
@@ -305,6 +307,7 @@ export class MessageStore {
           reasoning: reasoning ?? null,
           reasoningDurationMs: reasoningDurationMs ?? null,
           modelId: modelId ?? null,
+          presetId: presetId ?? null,
           createdAt: now,
         })
         .run();
@@ -478,6 +481,7 @@ export class MessageStore {
       reasoning: row.reasoning,
       reasoningDurationMs: row.reasoningDurationMs,
       modelId: row.modelId,
+      presetId: row.presetId,
       createdAt: row.createdAt,
     };
   }
