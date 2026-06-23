@@ -1,5 +1,6 @@
 import { InputArea } from "../chat/InputArea.js";
 import { MessageList } from "../chat/MessageList.js";
+import { QueueManager } from "../chat/QueueManager.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 
 export function PlayMode() {
@@ -14,6 +15,7 @@ export function PlayMode() {
   return (
     <>
       <MessageList key={activeScope} />
+      <QueueManager />
       <InputArea />
     </>
   );
