@@ -100,6 +100,16 @@ export interface MessageShellProps {
   variantControlsRef: React.RefObject<HTMLSpanElement | null>;
   /** Greeting counter controls (only rendered when isGreeting && variantCount > 1). */
   greetingControls?: ReactNode;
+  /**
+   * Q4a: whether to show the "Generate more" control in the header. True only
+   * on the message that is the CURRENT streaming target while a generation is
+   * in flight (the action bar is hidden during generation, so this header
+   * affordance is the only stable entry point into the queue). See
+   * CHAT_GENERATION_QUEUE_PLAN Q4a.
+   */
+  showGenerateMore?: boolean;
+  /** Q4a: enqueue another variant for this message with the current model+preset. */
+  onGenerateMore?: () => void;
   /** Desktop variant controls rendered in action bar. */
   desktopVariantControls?: ReactNode;
   /** Mobile variant controls rendered in mobile action bar. */
@@ -138,6 +148,8 @@ export function MessageShell(props: MessageShellProps) {
     variantControlsOverlay,
     variantControlsRef,
     greetingControls,
+    showGenerateMore,
+    onGenerateMore,
     desktopVariantControls,
     mobileVariantControls,
     children,
@@ -221,6 +233,24 @@ export function MessageShell(props: MessageShellProps) {
                 : initials(author.name)}
             </div>
             <span>{author.name}</span>
+
+            {/* Q4a: "Generate more" — queue entry point, visible ONLY while this
+                message is the active streaming target (the action bar is hidden
+                during generation, so the header is the only stable surface). */}
+            {showGenerateMore && onGenerateMore && (
+              <button
+                type="button"
+                onClick={onGenerateMore}
+                title={t("generate_more_tooltip")}
+                className={cn(
+                  "flex items-center gap-1 rounded px-1.5 py-0.5 text-[calc(var(--ui-fs)-3px)] font-medium tracking-normal opacity-70 transition-colors hover:bg-s2 hover:opacity-100",
+                  isMobile && "text-[calc(var(--ui-fs)-4px)]",
+                )}
+              >
+                <Icons.Plus />
+                <span>{t("generate_more_label")}</span>
+              </button>
+            )}
 
             {/* Greeting variant controls */}
             {greetingControls}

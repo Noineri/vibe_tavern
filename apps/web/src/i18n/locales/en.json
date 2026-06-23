@@ -581,6 +581,8 @@
   "failed_to_export_chat": "Failed to export chat.",
   "failed_to_export_trace": "Failed to export prompt trace.",
   "generation_cancelled": "Generation cancelled.",
+  "generate_more_label": "Generate more",
+  "generate_more_tooltip": "Queue another variant with the current model + preset",
   "message_send_failed": "Message sending failed.",
   "message_unavailable_no_provider": "Message sending is unavailable until a provider profile is activated.",
   "resend_unavailable_no_provider": "Resend is unavailable until a provider profile is activated.",
