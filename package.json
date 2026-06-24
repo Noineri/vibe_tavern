@@ -12,6 +12,9 @@
     "lightningcss",
     "rolldown"
   ],
+  "resolutions": {
+    "@codemirror/state": "6.7.0"
+  },
   "scripts": {
     "build": "bun run build:api-stack && bun run --filter @vibe-tavern/web build",
     "build:api-stack": "bun scripts/build.ts api-stack",
@@ -45,5 +48,8 @@
     "react-dom": "^19.2.7",
     "vite": "^8.0.9",
     "zustand": "^5.0.14"
+  },
+  "optionalDependencies": {
+    "@rolldown/binding-win32-x64-msvc": "1.1.2"
   }
 }

@@ -36,6 +36,21 @@
 }
 
 @font-face {
+  font-family: 'Literata';
+  src: url('/fonts/Literata-VariableFont_opsz,wght.ttf') format('truetype');
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Literata';
+  src: url('/fonts/Literata-Italic-VariableFont_opsz,wght.ttf') format('truetype');
+  font-weight: 200 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
   font-family: 'JetBrains Mono';
   src: url('/fonts/JetBrainsMonoNLNerdFont-Regular.ttf') format('truetype');
   font-weight: 400;
