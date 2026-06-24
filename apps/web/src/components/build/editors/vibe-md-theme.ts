@@ -96,6 +96,15 @@ const vibeMdBaseTheme = EditorView.theme(
       opacity: "0.75",
       color: "var(--accent)",
     },
+    // Active caret resting on a locked heading line: stronger tint + not-allowed
+    // cursor. The static lock badge (above) always marks headings; this is the
+    // interaction feedback explaining why typing on a placed caret does nothing.
+    // See vibe-md-locked-headings.ts (VTF-11).
+    "&.cm-focused .cm-vtf-locked-active": {
+      backgroundColor: "color-mix(in srgb, var(--accent) 16%, transparent)",
+      borderLeftColor: "var(--accent)",
+      cursor: "not-allowed",
+    },
     // Dimmed pseudo-code bracket trait marker (e.g. `[Base: ...]`).
     ".cm-vtf-bracket": {
       color: "var(--t3)",

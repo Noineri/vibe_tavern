@@ -12,6 +12,7 @@ import { useEffect, useRef } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { vibeMdBundle } from "./vibe-md-theme.js";
+import { lockedHeadings } from "./vibe-md-locked-headings.js";
 
 /** Representative sample exercising every theme surface (headings, traits, markdown). */
 const SAMPLE = `# PERSONALITY
@@ -52,7 +53,7 @@ export function VibeMdThemePreview() {
   useEffect(() => {
     if (!containerRef.current) return;
     const view = new EditorView({
-      state: EditorState.create({ doc: SAMPLE, extensions: vibeMdBundle() }),
+      state: EditorState.create({ doc: SAMPLE, extensions: [...vibeMdBundle(), ...lockedHeadings()] }),
       parent: containerRef.current,
     });
     viewRef.current = view;
@@ -65,10 +66,10 @@ export function VibeMdThemePreview() {
   return (
     <div style={{ maxWidth: 820, margin: "0 auto", padding: "32px 20px 80px" }}>
       <h1 style={{ fontFamily: "var(--font-ui)", fontSize: 18, color: "var(--t1)", marginBottom: 4 }}>
-        Vibe MD — theme preview <span style={{ color: "var(--t3)", fontWeight: 400 }}>(VTF-10)</span>
+        Vibe MD — theme preview <span style={{ color: "var(--t3)", fontWeight: 400 }}>(VTF-10/11)</span>
       </h1>
       <p style={{ fontFamily: "var(--font-ui)", fontSize: 13, color: "var(--t3)", marginBottom: 24 }}>
-        Янтарная тема CodeMirror (шрифт — Inter): H1 светятся акцентом с 🔒, bracket-traits (`[Base: …]`) приглушены, markdown (полужирный / курсив / списки / цитата / код) подсвечен. Обычная проза — полной яркостью.
+        Янтарная тема CodeMirror (шрифт — Inter): H1 светятся акцентом с 🔒, bracket-traits (`[Base: …]`) приглушены, markdown подсвечен. Заголовки залочены от ручного ввода — попробуй стереть `# PERSONALITY` (не дастся), тело текста редактируется свободно.
       </p>
       <div
         ref={containerRef}
