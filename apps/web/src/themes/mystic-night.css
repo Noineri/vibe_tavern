@@ -1,3 +1,24 @@
+/* ── Mystic Night: Literata с поправкой на x-height (size-adjust 87.5% ≈ −2px при 16px) ──
+   Отдельная family-name, чтобы не конфликтовать с глобальным @font-face в styles.css.
+   size-adjust масштабируется пропорционально: при любом --mfs из твика поправка
+   остаётся ~12.5% → Literata выглядит той же высотой, что Alegreya на том же кегле. */
+@font-face {
+  font-family: 'Literata-MN';
+  src: url('/fonts/Literata-VariableFont_opsz,wght.ttf') format('truetype');
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+  size-adjust: 87.5%;
+}
+@font-face {
+  font-family: 'Literata-MN';
+  src: url('/fonts/Literata-Italic-VariableFont_opsz,wght.ttf') format('truetype');
+  font-weight: 200 900;
+  font-style: italic;
+  font-display: swap;
+  size-adjust: 87.5%;
+}
+
 /* ══════════════════════════════════════════════════════════════
    Mystic Night Theme (Amethyst, Gold & Mint)
    Роскошная, многослойная палитра для комфортного чтения.
@@ -30,6 +51,9 @@
   --t2:        oklch(0.78 0.025 80);   /* Вторичный кремово-персиковый */
   --t3:        oklch(0.60 0.030 290);  /* Приглушенный лавандовый для неактивных элементов */
   --t4:        oklch(0.45 0.030 290);  
+
+  /* ─── Message / body font (Literata — книжный шрифт с засечками) ─── */
+  --font-body: 'Literata-MN', Georgia, serif;
 
   /* ─── Message text ─── */
   --msg-t1:    oklch(0.88 0.020 80);
