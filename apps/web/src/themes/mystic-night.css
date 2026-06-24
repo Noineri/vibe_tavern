@@ -56,8 +56,8 @@
   --font-body: 'Literata-MN', Georgia, serif;
 
   /* ─── Message text ─── */
-  --msg-t1:    oklch(0.88 0.020 80);
-  --msg-t2:    oklch(0.78 0.025 80);
+  --msg-t1:    oklch(0.78 0.025 80);
+  --msg-t2:    oklch(71.655% 0.05805 75.599);
 
   /* ─── Text selection (Мятное свечение) ─── */
   --sel-bg:    oklch(0.80 0.10 160 / 25%); 
