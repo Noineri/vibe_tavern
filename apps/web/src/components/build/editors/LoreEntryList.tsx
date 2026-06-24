@@ -18,6 +18,7 @@ import {
   type HTMLAttributes,
 } from "react";
 import { createPortal, flushSync } from "react-dom";
+import { animate, motion } from "framer-motion";
 import {
   DndContext,
   MouseSensor,
@@ -855,9 +856,21 @@ export function LoreEntryList({
         const y = Math.round(targetPreviewItem.rect.top - scrollDelta.y - baseOverlayRect.top);
         const settleTransform = `translate3d(${x}px, ${y}px, 0)`;
         overlayTransformRef.current = settleTransform;
-        overlayNode.style.transition = "transform 120ms cubic-bezier(0.2, 0, 0, 1)";
-        overlayNode.style.transform = settleTransform;
-        await wait(120);
+        // Spring the overlay into the target slot via motion's imperative
+        // animate(). The wrapper owned a raw translate3d() during the drag;
+        // motion takes over transform from here. onComplete replaces the old
+        // fixed 120ms wait so the FLIP/handoff below still starts only once the
+        // overlay has visually landed. Note: after this point nothing re-applies
+        // overlayTransformRef to style (drag is over), so the ref/sync string
+        // drift is harmless.
+        await new Promise<void>((resolve) => {
+          const controls = animate(
+            overlayNode,
+            { x, y },
+            { type: "spring", stiffness: 750, damping: 48, mass: 0.5, velocity: 0 },
+          );
+          controls.then(resolve).catch(resolve);
+        });
       }
 
       // React still has to replace the old list order with the committed one.
@@ -1021,6 +1034,20 @@ export function LoreEntryList({
                 willChange: "transform",
               }}
             >
+              {/* motion wrapper = visual juice only (lift + shadow on spring).
+                The outer wrapper still owns the translate3d() drag transform;
+                this inner layer never participates in positioning, so it cannot
+                affect hit-testing, collision, or the FLIP/cross-fade handoff. */}
+            <motion.div
+              className="h-full w-full"
+              initial={{ scale: 1, boxShadow: "0 1px 2px rgba(0,0,0,0.18)" }}
+              animate={{
+                scale: 1.025,
+                boxShadow: "0 10px 28px rgba(0,0,0,0.28)",
+              }}
+              transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
+              style={{ borderRadius: 8 }}
+            >
               <EntryCardVisual
                 entry={activeEntry}
                 isActive={activeEntry.id === activeEntryId}
@@ -1031,6 +1058,7 @@ export function LoreEntryList({
                 }}
                 overlay
               />
+            </motion.div>
             </div>,
             document.body
           )
