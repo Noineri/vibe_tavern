@@ -1024,9 +1024,7 @@
   "preview_input_placeholder": "Введите сообщение...",
   "vmd_editor_label": "Документ персонажа",
   "vmd_editor_hint": "Заголовки залочены. Редактируйте текст свободно; PERSONALITY присутствует всегда.",
-  "vmd_metadata_title": "Метаданные",
-  "vmd_greetings_title": "Приветствия",
-  "vmd_instructions_title": "Инструкции",
+  "vmd_advanced_title": "Расширенные поля",
   "vmd_examples_in_body_hint": "Примеры диалогов находятся в секции # EXAMPLES выше. Здесь настраивается их вставка в контекст.",
   "char_switch_to_md": "Переключиться на Markdown-редактор",
   "char_switch_to_form": "Переключиться на форму"

@@ -1024,9 +1024,7 @@
   "preview_input_placeholder": "Type a message...",
   "vmd_editor_label": "Character Document",
   "vmd_editor_hint": "Headings are locked. Edit the prose freely; PERSONALITY is always present.",
-  "vmd_metadata_title": "Metadata",
-  "vmd_greetings_title": "Greetings",
-  "vmd_instructions_title": "Instructions",
+  "vmd_advanced_title": "Advanced fields",
   "vmd_examples_in_body_hint": "Example messages live in the # EXAMPLES section above. This controls how they inject into context.",
   "char_switch_to_md": "Switch to Markdown editor",
   "char_switch_to_form": "Switch to Form editor"

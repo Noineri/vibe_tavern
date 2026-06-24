@@ -42,4 +42,11 @@ export {
   type VtfCharacterContent,
   type FolderFileEntry,
 } from './vtf/index.js';
+export {
+  compileGreetingsInline,
+  splitGreetingsInline,
+  greetingsFromCharacter,
+  characterFromGreetings,
+  type VtfGreeting,
+} from './vtf/greetings.js';
 export * from './stores/index.js';
