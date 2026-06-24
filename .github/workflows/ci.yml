@@ -80,13 +80,17 @@ jobs:
       - name: Set VERSION
         run: echo "VERSION=0.0.0-ci" >> "$GITHUB_ENV"
       - name: Set Android versionCode/versionName
+        env:
+          # CI artifacts are throwaway smoke-test builds, not releases. There's no
+          # real semver to derive versionCode from (the MAJOR*10000+... formula
+          # yields 0 for "0.0.0-ci", which Android rejects — must be a positive
+          # integer). Use github.run_number instead: always ≥ 1, unique, and
+          # monotonically increasing so each CI APK is installable as an "upgrade"
+          # over a previous CI build on a test device.
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-          # Strip any suffix like "-rc1" from PATCH for versionCode math
-          PATCH_NUM="${PATCH%%-*}"
-          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH_NUM))
           sed -i \
-            -e "s/versionCode = .*/versionCode = ${VERSION_CODE}/" \
+            -e "s/versionCode = .*/versionCode = ${RUN_NUMBER}/" \
             -e "s|versionName = \".*\"|versionName = \"${VERSION}\"|" \
             mobile/android/app/build.gradle.kts
       - uses: oven-sh/setup-bun@v2
