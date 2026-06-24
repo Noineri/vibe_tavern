@@ -1021,5 +1021,11 @@
   "remove_aria": "Remove",
   "preview_char_message": "\"The door groans as a tall figure steps from the shadows, silver eyes catching what little light remains.\"",
   "preview_user_message": "Hello? Are you... are you hurt?",
-  "preview_input_placeholder": "Type a message..."
+  "preview_input_placeholder": "Type a message...",
+  "vmd_editor_label": "Character Document",
+  "vmd_editor_hint": "Headings are locked. Edit the prose freely; PERSONALITY is always present.",
+  "vmd_metadata_title": "Metadata",
+  "vmd_greetings_title": "Greetings",
+  "vmd_instructions_title": "Instructions",
+  "vmd_examples_in_body_hint": "Example messages live in the # EXAMPLES section above. This controls how they inject into context."
 }
