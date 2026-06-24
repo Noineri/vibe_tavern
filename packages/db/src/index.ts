@@ -34,4 +34,12 @@ export {
   EMPTY_INSTRUCTIONS,
   type VtfInstructions,
 } from './vtf/instructions.js';
+export {
+  packMonolith,
+  unpackMonolith,
+  serializeCharacterFolder,
+  parseCharacterFolder,
+  type VtfCharacterContent,
+  type FolderFileEntry,
+} from './vtf/index.js';
 export * from './stores/index.js';

@@ -19,6 +19,7 @@ import {
   embedCharaMetadata,
   // exportCharaCardPng,  // canvas-dependent; covered indirectly via embed
 } from "./png-writer.js";
+import { packMonolith, type VtfCharacterContent } from "@vibe-tavern/db";
 
 // ── Minimal 1×1 PNG (IHDR + one IDAT + IEND). CRCs precomputed and valid. ──
 const PNG_SIG = [137, 80, 78, 71, 13, 10, 26, 10];
@@ -193,4 +194,61 @@ test("emitted PNG stays a valid PNG (signature + at least IEND)", () => {
     o += 12 + len;
   }
   expect(hasIend).toBe(true);
+});
+
+// ── VTF monolith `vtmd` chunk (VTF-14) ─────────────────────────────────────
+// The vtmd chunk carries the canonical VTF monolith `.md` (base64) ALONGSIDE
+// the ST-compatible chara/ccv3 chunks, so a PNG is readable by both VT
+// (lossless native form) and ST. It is omitted when no VTF content is supplied.
+const vtfContent: VtfCharacterContent = {
+  name: "Test Character",
+  description: "A test personality.",
+  personalitySummary: null,
+  defaultScenario: null,
+  firstMessage: "Hello there.",
+  mesExample: null,
+  mesExampleMode: "always",
+  mesExampleDepth: 4,
+  alternateGreetings: [],
+  postHistoryInstructions: null,
+  creatorNotes: null,
+  depthPrompt: null,
+  depthPromptDepth: null,
+  depthPromptRole: null,
+  systemPrompt: null,
+  tags: ["test"],
+  extensions: {},
+};
+
+test("vtmd chunk is written alongside chara/ccv3 when vtfContent is supplied", () => {
+  const png = embedCharaMetadata(minimalPng(), JSON.stringify(bareV3), vtfContent);
+  const kws = readTextChunks(png).map((c) => c.keyword);
+  expect(kws).toContain("chara");
+  expect(kws).toContain("ccv3");
+  expect(kws).toContain("vtmd");
+});
+
+test("vtmd chunk is absent when vtfContent is omitted (plain ST-compatible PNG)", () => {
+  const png = embedCharaMetadata(minimalPng(), JSON.stringify(bareV3));
+  const kws = readTextChunks(png).map((c) => c.keyword);
+  expect(kws).not.toContain("vtmd");
+});
+
+test("vtmd chunk carries the canonical monolith (byte-identical to packMonolith)", () => {
+  const png = embedCharaMetadata(minimalPng(), JSON.stringify(bareV3), vtfContent);
+  const vtmd = readTextChunks(png).find((c) => c.keyword === "vtmd")!.text;
+  const md = Buffer.from(vtmd, "base64").toString("utf-8");
+  expect(md).toBe(packMonolith(vtfContent));
+  expect(md).toContain("# PERSONALITY");
+  expect(md).toContain("A test personality.");
+  expect(md).toContain("name: Test Character");
+});
+
+test("re-embedding replaces existing vtmd chunk (no duplication)", () => {
+  const once = embedCharaMetadata(minimalPng(), JSON.stringify(bareV3), vtfContent);
+  const twice = embedCharaMetadata(once, JSON.stringify(bareV3), vtfContent);
+  const kws = readTextChunks(twice).map((c) => c.keyword);
+  expect(kws.filter((k) => k === "vtmd").length).toBe(1);
+  expect(kws.filter((k) => k === "chara").length).toBe(1);
+  expect(kws.filter((k) => k === "ccv3").length).toBe(1);
 });

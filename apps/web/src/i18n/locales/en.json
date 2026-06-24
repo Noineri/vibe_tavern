@@ -1027,5 +1027,7 @@
   "vmd_metadata_title": "Metadata",
   "vmd_greetings_title": "Greetings",
   "vmd_instructions_title": "Instructions",
-  "vmd_examples_in_body_hint": "Example messages live in the # EXAMPLES section above. This controls how they inject into context."
+  "vmd_examples_in_body_hint": "Example messages live in the # EXAMPLES section above. This controls how they inject into context.",
+  "char_switch_to_md": "Switch to Markdown editor",
+  "char_switch_to_form": "Switch to Form editor"
 }

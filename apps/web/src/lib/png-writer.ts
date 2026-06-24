@@ -4,9 +4,17 @@
  * Character Card V3 spec: inserts `tEXt` chunks with keywords "chara" (v2) and
  * "ccv3" (v3) containing base64-encoded card JSON. Chunks go before IEND.
  *
+ * VTF (Vibe Tavern Format): additionally inserts a `vtmd` tEXt chunk carrying
+ * the canonical monolith `.md` (base64) when VTF content is supplied. The
+ * `vtmd` chunk is written ALONGSIDE `chara`/`ccv3` — never replacing them — so
+ * the PNG stays SillyTavern-readable while also carrying the lossless native
+ * representation for VT re-import.
+ *
  * Based on SillyTavern's character-card-parser.js approach:
- *   decode chunks → remove old chara/ccv3 → insert new → re-encode
+ *   decode chunks → remove old chara/ccv3/vtmd → insert new → re-encode
  */
+
+import { packMonolith, type VtfCharacterContent } from "@vibe-tavern/db";
 
 const PNG_SIG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 
@@ -113,7 +121,12 @@ const V2_TOPLEVEL_FIELDS: ReadonlyArray<readonly [dataKey: string, v2Key: string
 /**
  * Embed character card JSON into a PNG buffer as SillyTavern-compatible
  * `chara` (v2) + `ccv3` (v3) tEXt chunks before IEND. Removes existing
- * chara/ccv3 chunks first.
+ * chara/ccv3/vtmd chunks first.
+ *
+ * When `vtfContent` is supplied, a `vtmd` tEXt chunk is ALSO inserted carrying
+ * the canonical VTF monolith `.md` (base64). The three chunks coexist so the
+ * PNG is readable by both VT (vtmd — lossless native form) and ST (chara/ccv3).
+ * Omit `vtfContent` to produce a plain ST-compatible PNG (chara/ccv3 only).
  *
  * The written payload mirrors what SillyTavern itself produces on export: the
  * canonical V3 structure stays under `data`, and the V2-era fields are
@@ -123,11 +136,11 @@ const V2_TOPLEVEL_FIELDS: ReadonlyArray<readonly [dataKey: string, v2Key: string
  * the character data where they expect it; emitting only `{spec, spec_version,
  * data}` makes such parsers see an empty card.
  */
-export function embedCharaMetadata(pngBytes: Uint8Array, json: string): Uint8Array {
+export function embedCharaMetadata(pngBytes: Uint8Array, json: string, vtfContent?: VtfCharacterContent): Uint8Array {
   const chunks = extractChunks(pngBytes);
   for (let i = chunks.length - 1; i >= 0; i--) {
     if (chunks[i].name !== "tEXt") continue;
-    if (["chara", "ccv3"].includes(decodeText(chunks[i].data).keyword.toLowerCase())) {
+    if (["chara", "ccv3", "vtmd"].includes(decodeText(chunks[i].data).keyword.toLowerCase())) {
       chunks.splice(i, 1);
     }
   }
@@ -167,6 +180,11 @@ export function embedCharaMetadata(pngBytes: Uint8Array, json: string): Uint8Arr
   // ST writes `chara` first, then `ccv3`, both carrying the identical payload.
   chunks.splice(-1, 0, { name: "tEXt", data: encodeText("chara", payload) });
   chunks.splice(-1, 0, { name: "tEXt", data: encodeText("ccv3", payload) });
+  // VTF native monolith (lossless) — alongside, not instead of, chara/ccv3.
+  // Omitted when no VTF content is supplied (plain ST-compatible PNG).
+  if (vtfContent) {
+    chunks.splice(-1, 0, { name: "tEXt", data: encodeText("vtmd", utf8ToBase64(packMonolith(vtfContent))) });
+  }
   return encodeChunks(chunks);
 }
 
@@ -174,10 +192,12 @@ export function embedCharaMetadata(pngBytes: Uint8Array, json: string): Uint8Arr
  * Convert any image to PNG with embedded character card metadata.
  * If already PNG → embed directly (preserves quality).
  * If JPEG/WebP/GIF → convert via Canvas first.
+ *
+ * `vtfContent` (optional) adds the `vtmd` monolith chunk alongside chara/ccv3.
  */
-export async function exportCharaCardPng(imageBytes: Uint8Array, json: string): Promise<Uint8Array> {
+export async function exportCharaCardPng(imageBytes: Uint8Array, json: string, vtfContent?: VtfCharacterContent): Promise<Uint8Array> {
   if (isPNG(imageBytes)) {
-    return embedCharaMetadata(imageBytes, json);
+    return embedCharaMetadata(imageBytes, json, vtfContent);
   }
   // Non-PNG: convert via Canvas
   const blob = new Blob([imageBytes.buffer.slice(imageBytes.byteOffset, imageBytes.byteOffset + imageBytes.byteLength) as ArrayBuffer]);
@@ -190,7 +210,7 @@ export async function exportCharaCardPng(imageBytes: Uint8Array, json: string): 
     const pngBlob = await new Promise<Blob>((res, rej) => {
       canvas.toBlob((b) => b ? res(b) : rej(new Error("Canvas toBlob failed")), "image/png");
     });
-    return embedCharaMetadata(new Uint8Array(await pngBlob.arrayBuffer()), json);
+    return embedCharaMetadata(new Uint8Array(await pngBlob.arrayBuffer()), json, vtfContent);
   } finally {
     URL.revokeObjectURL(url);
   }

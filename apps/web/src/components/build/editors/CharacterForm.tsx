@@ -22,6 +22,8 @@ import { inputPad, inputCls, monoCls, lblCls } from "../fields/field-styles.js";
 import { TextAreaField, TokenBadge } from "../fields/TextAreaField.js";
 import { DepthPromptField } from "../fields/DepthPromptField.js";
 import { TagsField } from "../fields/TagsField.js";
+import { VibeMdView } from "./VibeMdView.js";
+import { useCharacterStore } from "../../../stores/character-store.js";
 
 export interface CharacterFormProps {
   form: UseFormReturn<BuildCharacterDraft>;
@@ -82,6 +84,12 @@ export function CharacterForm({
   const avaInputRef = useRef<HTMLInputElement>(null);
   const [avatarOrientation, setAvatarOrientation] = useState<"portrait" | "landscape" | null>(null);
   const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
+
+  // VTF-14: Form↔MD authoring-surface toggle. State lives in the Zustand store
+  // (not local) so it survives Build tab switches — CharacterForm unmounts when
+  // the user leaves the "character" tab; the chosen surface must persist.
+  const mdViewMode = useCharacterStore((s) => s.mdViewMode);
+  const setMdViewMode = useCharacterStore((s) => s.setMdViewMode);
 
 
 
@@ -193,9 +201,23 @@ export function CharacterForm({
 
   return (
     <div>
+      {/* Action bar — sticky flush under the Build tabs header (the build
+          "topbar"). The scroll container carries `padding: 32px 40px`; a plain
+          `sticky top-0` pins to the INNER edge of that padding, leaving a 32px
+          gap that persists on scroll. `top: -32px` overcomes it: the bar sticks
+          at the scrollport's true top (= directly under the tabs header),
+          flush, no gap, no wasted colored strip. Side `-40px` margins + `px-10`
+          bleed the page-bg fill out to the container's full width so the bar
+          reads as attached to the header above, not a floating inset box.
+          Background is var(--page-bg) — identical to the transparent scroll
+          container's visible background, so it is seamless (not a boxed panel). */}
+      <div
+        className="sticky z-30 bg-[var(--page-bg,var(--bg))] py-2"
+        style={{ top: -32, marginLeft: -40, marginRight: -40, paddingLeft: 40, paddingRight: 40 }}
+      >
       {/* Header row */}
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <div className="mb-1.5 font-body text-[22px] font-medium text-t1 min-w-0 truncate">
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-body text-[22px] font-medium text-t1 min-w-0 truncate">
           {name || t("unnamed")}
         </div>
         {isMobile ? (
@@ -216,6 +238,17 @@ export function CharacterForm({
           <span className="font-ui text-[11px] tabular-nums text-t3">
             {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
           </span>
+          <CustomTooltip content={mdViewMode === "form" ? t("char_switch_to_md") : t("char_switch_to_form")}>
+          <button type="button"
+            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-all hover:border-accent hover:text-accent-t disabled:opacity-40"
+            style={{ height: 28, padding: "0 10px" }}
+            onClick={() => setMdViewMode(mdViewMode === "form" ? "md" : "form")}
+            disabled={isSaving}
+            aria-pressed={mdViewMode === "md"}
+          >
+            {mdViewMode === "form" ? "✎ MD" : "📋 Form"}
+          </button>
+          </CustomTooltip>
           <CustomTooltip content={t("char_export_json")}>
           <button type="button"
             className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
@@ -293,6 +326,15 @@ export function CharacterForm({
       {isMobile && (
         <div className="mb-3 flex items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button type="button"
+            className="flex min-h-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 px-3 font-ui text-[12px] font-medium text-t2 active:bg-s3"
+            style={{ whiteSpace: "nowrap" }}
+            onClick={() => setMdViewMode(mdViewMode === "form" ? "md" : "form")}
+            disabled={isSaving}
+            aria-pressed={mdViewMode === "md"}
+          >
+            {mdViewMode === "form" ? "✎ MD" : "📋 Form"}
+          </button>
+          <button type="button"
             className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
             onClick={() => setImportModalOpen(true)}
             disabled={isSaving}
@@ -338,6 +380,7 @@ export function CharacterForm({
           </button>
         </div>
       )}
+      </div>
 
       {importError && (
         <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-danger-text">
@@ -416,6 +459,10 @@ export function CharacterForm({
       {/* Gallery Accordion */}
       <GalleryAccordion characterId={characterId} />
 
+      {mdViewMode === "md" ? (
+        <VibeMdView form={form} characterId={characterId} isSaving={isSaving} />
+      ) : (
+      <>
       {/* Description */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("char_desc_label")}</label>
@@ -578,6 +625,8 @@ export function CharacterForm({
         placeholder={t("system_prompt_override_placeholder")}
         isSaving={isSaving}
       />
+      </>
+      )}
 
       {/* Footer */}
       <div className={cn("mt-2 flex flex-wrap items-center gap-2", isMobile && "pb-8")}>
