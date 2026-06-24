@@ -13,12 +13,14 @@
  *       A ref flag breaks the feedback loop (editor-originated changes don't
  *       bounce back through the subscription).
  *
- *   (2) **Accordions** — the non-prose draft fields, grouped:
- *        - Metadata: name, tags, creator notes, personality summary.
+ *   (2) **Accordions** — the non-prose draft fields that are NOT in the shared
+ *       top block (avatar/name/tags/gallery, owned by `CharacterForm` and
+ *       identical in both modes). Grouped:
+ *        - Metadata: creator notes, personality summary (name + tags are shared).
  *        - Greetings: first message, alternate greetings, example-injection mode.
  *        - Instructions: post-history, depth prompt, system prompt.
  *       These reuse the VTF-9 shared field components (TextAreaField,
- *       DepthPromptField, TagsField) so both views stay in lockstep.
+ *       DepthPromptField) so both views stay in lockstep.
  *
  * The frontmatter is NEVER visible in the MD area — it is re-kropped from the
  * Metadata fields server-side on save. The header (avatar / save / actions)
@@ -53,7 +55,6 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { inputPad, inputCls, lblCls } from "../fields/field-styles.js";
 import { TextAreaField, TokenBadge } from "../fields/TextAreaField.js";
 import { DepthPromptField } from "../fields/DepthPromptField.js";
-import { TagsField } from "../fields/TagsField.js";
 
 export interface VibeMdViewProps {
   /** The react-hook-form instance (shared with the parent BuildMode). */
@@ -68,7 +69,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const mInput = isMobile ? " text-base" : "";
-  const { register, watch, setValue } = form;
+  const { watch, setValue } = form;
 
   const editorHostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -158,21 +159,10 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
         <p className="mt-1.5 font-ui text-[11px] text-t4">{t("vmd_editor_hint")}</p>
       </div>
 
-      {/* Metadata accordion */}
+      {/* Metadata accordion — name + tags live in the shared top block
+          (CharacterForm avatar section, identical in Form/MD modes), so this
+          accordion holds only the remaining frontmatter fields. */}
       <Accordion title={t("vmd_metadata_title")} storageKey={`vmd:meta:${characterId}`} defaultOpen>
-        <div className="mb-4">
-          <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
-          <input
-            type="text"
-            className={inputCls + mInput}
-            style={inputPad}
-            disabled={isSaving}
-            {...register("name")}
-          />
-        </div>
-        <div className="mb-4">
-          <TagsField form={form} isSaving={isSaving} />
-        </div>
         <TextAreaField
           form={form}
           field="creatorNotes"

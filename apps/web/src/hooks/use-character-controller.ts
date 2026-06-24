@@ -1,5 +1,6 @@
 import { useState, type ChangeEvent, type DragEvent } from "react";
 import type { ChatId } from "@vibe-tavern/domain";
+import type { VtfCharacterContent } from "@vibe-tavern/db";
 import { toast } from "sonner";
 import { getT } from "../i18n/locale-helpers.js";
 import {
@@ -492,7 +493,7 @@ export function useCharacterController(): CharacterControllerActions {
       if (!resp.ok) throw new Error(`Avatar fetch failed: ${resp.status}`);
 
       const imageBytes = new Uint8Array(await resp.arrayBuffer());
-      const outputPng = await exportCharaCardPng(imageBytes, json);
+      const outputPng = await exportCharaCardPng(imageBytes, json, char ? appCharacterToVtfContent(char, data) : undefined);
 
       const blob = new Blob([outputPng.buffer.slice(outputPng.byteOffset, outputPng.byteOffset + outputPng.byteLength) as ArrayBuffer], { type: "image/png" });
       const url = URL.createObjectURL(blob);
@@ -559,5 +560,42 @@ export function useCharacterController(): CharacterControllerActions {
     handleExportPromptTrace,
     isSavingCharacter,
     isImporting,
+  };
+}
+
+/**
+ * Map an `AppCharacter` (frontend snapshot type) + the V3 export JSON to a
+ * `VtfCharacterContent` (the db storage/exchange type `packMonolith` consumes).
+ * Used by PNG export to embed the lossless `vtmd` monolith chunk alongside the
+ * ST-compatible `chara`/`ccv3` chunks. `scenario` → `defaultScenario` is the one
+ * field rename; `extensions` is lifted out of the V3 `data.extensions` block.
+ * Tolerant: a missing/malformed extensions block yields `{}` rather than throwing.
+ */
+function appCharacterToVtfContent(char: AppCharacter, v3Export: Record<string, unknown>): VtfCharacterContent {
+  const dataBlock = v3Export.data;
+  const ext = dataBlock && typeof dataBlock === "object" && !Array.isArray(dataBlock)
+    ? (dataBlock as Record<string, unknown>).extensions
+    : undefined;
+  const extensions = ext && typeof ext === "object" && !Array.isArray(ext)
+    ? (ext as Record<string, unknown>)
+    : {};
+  return {
+    name: char.name,
+    description: char.description,
+    personalitySummary: char.personalitySummary,
+    defaultScenario: char.scenario ?? null,
+    firstMessage: char.firstMessage ?? "",
+    mesExample: char.mesExample,
+    mesExampleMode: char.mesExampleMode,
+    mesExampleDepth: char.mesExampleDepth,
+    alternateGreetings: char.alternateGreetings,
+    postHistoryInstructions: char.postHistoryInstructions,
+    creatorNotes: char.creatorNotes,
+    depthPrompt: char.depthPrompt,
+    depthPromptDepth: char.depthPromptDepth,
+    depthPromptRole: char.depthPromptRole,
+    systemPrompt: char.systemPrompt,
+    tags: char.tags,
+    extensions,
   };
 }

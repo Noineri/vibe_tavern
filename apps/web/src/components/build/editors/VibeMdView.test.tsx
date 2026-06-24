@@ -98,18 +98,20 @@ describe("VibeMdView", () => {
 		expect(content.textContent ?? "").toContain("PERSONALITY");
 	});
 
-	it("renders the Metadata accordion open by default with the name field", () => {
+	it("renders the Metadata accordion open by default with the creator-notes field", () => {
 		render(<Harness draft={makeDraft()} />);
-		const nameField = document.querySelector('input[name="name"]') as HTMLInputElement;
-		expect(nameField).toBeTruthy();
-		expect(nameField.value).toBe("Silvius");
+		// name + tags live in the shared top block (not VibeMdView); the Metadata
+		// accordion holds creatorNotes + personalitySummary, and is open by default.
+		const notesField = document.querySelector('textarea[name="creatorNotes"]') as HTMLTextAreaElement;
+		expect(notesField).toBeTruthy();
+		expect(notesField.value).toBe("A butler OC.");
 	});
 
 	it("editing an accordion field updates the form draft", () => {
 		render(<Harness draft={makeDraft()} />);
-		const nameField = document.querySelector('input[name="name"]') as HTMLInputElement;
-		fireEvent.change(nameField, { target: { value: "Renamed" } });
-		expect((document.querySelector('input[name="name"]') as HTMLInputElement).value).toBe("Renamed");
+		const notesField = document.querySelector('textarea[name="creatorNotes"]') as HTMLTextAreaElement;
+		fireEvent.change(notesField, { target: { value: "Edited notes" } });
+		expect((document.querySelector('textarea[name="creatorNotes"]') as HTMLTextAreaElement).value).toBe("Edited notes");
 	});
 
 	it("opens the Greetings accordion and shows the first-message field", () => {
