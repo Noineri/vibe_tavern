@@ -38,6 +38,11 @@ const vibeMdBaseTheme = EditorView.theme(
       backgroundColor: "transparent",
       color: "var(--t1)",
       borderRadius: "8px",
+      // Auto-grow: no forced height. The editor sizes to its content and the
+      // PAGE scroll is the only scroll (VTF-13 rework — owner rejected the
+      // capped scrolling box). `.cm-scroller` overflow:hidden below ensures no
+      // inner scrollbar appears even transiently.
+      height: "auto",
     },
     ".cm-content": {
       fontFamily: "'Inter', system-ui, sans-serif",
@@ -67,7 +72,10 @@ const vibeMdBaseTheme = EditorView.theme(
     },
     ".cm-scroller": {
       fontFamily: "inherit",
-      overflow: "auto",
+      // Auto-grow companion: with `& { height: auto }` the scroller never has
+      // a constrained height, so hiding overflow never clips content — it just
+      // guarantees no inner scrollbar (the page scroll handles long content).
+      overflow: "hidden",
     },
     ".cm-focused": {
       outline: "none",
@@ -109,6 +117,90 @@ const vibeMdBaseTheme = EditorView.theme(
     ".cm-vtf-bracket": {
       color: "var(--t3)",
       fontStyle: "italic",
+    },
+    // ── Greetings section UI (VTF-13 rework) ──
+    // `# GREETINGS` heading gets the same amber H1 treatment automatically
+    // (cm-vtf-h1-line via the H1 plugin); this class is just a hook for the
+    // `+` add-button widget which sits at the line end.
+    ".cm-vtf-greet-h1": {
+      // (no extra styling — the H1 plugin already tints the line; kept as a hook.)
+    },
+    // `=== ALT N ===` sub-marker line: a muted, uppercase, tracked label —
+    // reads as a locked structural divider between greeting blocks.
+    ".cm-vtf-alt-marker": {
+      color: "var(--t3)",
+      fontSize: "calc(var(--ui-fs) - 2px)",
+      fontStyle: "normal",
+      fontWeight: "600",
+      letterSpacing: "0.08em",
+      textTransform: "uppercase",
+      opacity: "0.8",
+    },
+    // Shared greeting widget button base (the `+` and `✕`).
+    ".cm-vtf-greet-btn": {
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      width: "18px",
+      height: "18px",
+      marginLeft: "6px",
+      padding: "0",
+      border: "1px solid var(--border2)",
+      borderRadius: "4px",
+      backgroundColor: "var(--s2)",
+      color: "var(--t3)",
+      cursor: "pointer",
+      verticalAlign: "middle",
+      transition: "background-color .12s, color .12s, border-color .12s",
+    },
+    ".cm-vtf-greet-btn:hover": {
+      backgroundColor: "var(--accent-dim)",
+      color: "var(--accent)",
+      borderColor: "var(--accent)",
+    },
+    ".cm-vtf-greet-remove:hover": {
+      backgroundColor: "color-mix(in srgb, var(--danger) 16%, transparent)",
+      color: "var(--danger)",
+      borderColor: "var(--danger)",
+    },
+    // ── Heading folding — inline toggle button (VTF-13 rework) ──
+    // The chevron is an inline widget at the END of each structural line
+    // (no separate gutter column). It reads like a conventional accordion:
+    // `# GREETINGS ............... ▾ +`  (chevron BEFORE the greetings +/-✕).
+    // Shared button base mirrors the greeting widgets so the row stays tidy.
+    ".cm-vtf-fold-btn": {
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      width: "18px",
+      height: "18px",
+      marginLeft: "8px",
+      padding: "0",
+      border: "1px solid transparent",
+      borderRadius: "4px",
+      backgroundColor: "transparent",
+      color: "var(--t4)",
+      cursor: "pointer",
+      verticalAlign: "middle",
+      transition: "background-color .12s, color .12s, border-color .12s",
+    },
+    ".cm-vtf-fold-btn:hover": {
+      backgroundColor: "var(--s2)",
+      color: "var(--accent)",
+      borderColor: "var(--border2)",
+    },
+    ".cm-vtf-fold-closed": {
+      color: "var(--accent)",
+    },
+    // Folded-body placeholder marker (the `…` CodeMirror shows inline).
+    ".cm-foldPlaceholder": {
+      backgroundColor: "var(--s2)",
+      border: "1px solid var(--border2)",
+      color: "var(--t3)",
+      borderRadius: "3px",
+      margin: "0 4px",
+      padding: "0 4px",
+      fontSize: "calc(var(--ui-fs) - 2px)",
     },
   },
   { dark: true },
