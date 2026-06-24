@@ -153,6 +153,23 @@ describe("profile-md: canonical emission", () => {
     expect(md).toContain("# PERSONALITY");
   });
 
+  it("always emits # PERSONALITY even with an empty body (Threat 2 pinning)", () => {
+    // The required-section guarantee: a missing/renamed heading must self-heal
+    // on save. An empty description serializes to a bare heading (no body), and
+    // that bare heading parses back to an empty description — lossless round-trip.
+    const md = serializeProfileMd({
+      profile: { ...minimalProfile().profile, description: "" },
+    });
+    expect(md).toContain("# PERSONALITY");
+    // The body under the heading is empty (next line is EOF or another heading).
+    const personalityIdx = md.indexOf("# PERSONALITY");
+    const afterHeading = md.slice(personalityIdx + "# PERSONALITY".length);
+    expect(afterHeading.trim()).toBe("");
+    // Round-trip: bare heading → empty description.
+    const back = parseProfileMd(md);
+    expect(back.profile.description).toBe("");
+  });
+
   it("emits frontmatter keys in canonical order", () => {
     const md = serializeProfileMd(fullProfile());
     const lines = md.split("\n");

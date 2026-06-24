@@ -518,13 +518,22 @@ function serializeFrontmatter(input: ProfileMd): string[] {
 
 function serializeBody(input: ProfileMd): string[] {
   const p = input.profile;
-  const sections: { heading: string; body: string | null }[] = [
-    { heading: "PERSONALITY", body: p.description },
+  const lines: string[] = [];
+  // PERSONALITY is ALWAYS emitted (required section — Threat 2 structural
+  // pinning guarantee: a missing/renamed/broken heading must self-heal on
+  // save). An empty body is emitted as a bare heading so round-trip of an
+  // empty description stays lossless (`# PERSONALITY` with no body parses back
+  // to empty `description`). SCENARIO/EXAMPLES are optional — omitted when empty.
+  lines.push("");
+  lines.push("# PERSONALITY");
+  if (p.description.trim().length > 0) {
+    lines.push(p.description.replace(/^\n+|\n+$/g, ""));
+  }
+  const optional: { heading: string; body: string | null }[] = [
     { heading: "SCENARIO", body: p.scenario },
     { heading: "EXAMPLES", body: p.mesExample },
   ];
-  const lines: string[] = [];
-  for (const section of sections) {
+  for (const section of optional) {
     if (section.body && section.body.trim().length > 0) {
       lines.push("");
       lines.push(`# ${section.heading}`);
