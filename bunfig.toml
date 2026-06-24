@@ -5,9 +5,13 @@
 # Faster installs, uses less disk space. Works on Linux, macOS, Windows (NTFS).
 backend = "hardlink"
 
-# Do not install optionalDependencies — reduces install size.
-# None of our dependencies rely on optional deps for core functionality.
-optional = false
+# Do install optionalDependencies.
+# Required since the Vite 8 / rolldown upgrade: rolldown ships its native
+# binding as platform-specific optionalDependencies (standard napi-rs
+# pattern). napi-rs deps carry os/cpu filters, so bun still installs only the
+# one binding matching the host platform — the size saving from `optional = false`
+# was marginal and no longer worth the breakage.
+optional = true
 
 [install.cache]
 # Enable Bun's global package cache (default). Prevents re-downloading.
