@@ -62,7 +62,8 @@ export class LiveChatOrchestrator {
     let reply: string;
     let reasoning: string | undefined;
     try {
-      // TODO FW-AI5: when stream preference is true, forward the stream as SSE instead of collecting
+      // Non-streaming path: generateText() awaits the full reply, returned as JSON.
+      // The streaming equivalent (SSE text/reasoning deltas) lives in sendMessageStream() / startStream().
       const result = await nonstreamingProviderExecute({
         profile: provider.profile,
         model: provider.model,

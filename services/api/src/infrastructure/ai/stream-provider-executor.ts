@@ -1,8 +1,9 @@
 /**
  * Streaming-native provider executor using Vercel AI SDK.
  *
- * Uses streamText() exclusively — the route layer decides whether to collect
- * the full response (this brief) or forward as SSE (FW-AI5).
+ * Uses streamText() and exposes the chunk stream so the orchestrator can forward
+ * text/reasoning deltas as SSE. The non-streaming path uses a separate executor
+ * (nonstreaming-provider-executor.ts, generateText()).
  */
 
 import { streamText } from "ai";
