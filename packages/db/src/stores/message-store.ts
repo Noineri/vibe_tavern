@@ -88,6 +88,10 @@ export class MessageStore {
     chatId: string; branchId: string; role: string; authorType: string; content: string;
     reasoning?: string; reasoningDurationMs?: number;
     modelId?: string | null;
+    /** Prompt preset used for THIS message. Recorded on the selected variant
+     *  (the field the message footer reads) so every reply — send, continue,
+     *  regenerate, queue — carries its preset, not only the queue/variant path. */
+    presetId?: string | null;
     variants?: string[];
     selectedVariantIndex?: number;
     attachmentsJson?: string | null;
@@ -120,6 +124,7 @@ export class MessageStore {
         reasoning: variantIndex === selectedVariantIndex ? data.reasoning ?? null : null,
         reasoningDurationMs: variantIndex === selectedVariantIndex ? data.reasoningDurationMs ?? null : null,
         modelId: variantIndex === selectedVariantIndex ? data.modelId ?? null : null,
+        presetId: variantIndex === selectedVariantIndex ? data.presetId ?? null : null,
         createdAt: now,
       }))).run();
     });
