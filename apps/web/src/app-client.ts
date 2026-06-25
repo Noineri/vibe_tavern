@@ -16,6 +16,7 @@ export type {
   AppCharacter,
   AppPersona,
   AppCharacterEntry,
+  AppCharacterVersion,
   ChatListItem,
   ChatGenerationStatus,
   PersonaRecord,

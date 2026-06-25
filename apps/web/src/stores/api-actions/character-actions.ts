@@ -10,6 +10,12 @@ import {
   unarchiveCharacter,
   updateCharacter,
   uploadCharacterAvatar,
+  activateCharacterVersion,
+  createCharacterVersion,
+  deleteCharacterVersion,
+  listCharacterVersions,
+  renameCharacterVersion,
+  type AppCharacterVersion,
   type AppSnapshot,
   type ImportJsonResponse,
 } from "../../app-client.js";
@@ -17,6 +23,7 @@ import type { ChatId } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useChatStore } from "../chat-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
+import { fetchChat } from "../../app-client.js";
 
 // ---------------------------------------------------------------------------
 // Character Actions
@@ -114,6 +121,49 @@ export async function duplicateCharacterAction(characterId: string): Promise<Imp
   const result = await duplicateCharacter(characterId);
   void fetchBootstrapAction({ silent: true });
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Character Version Actions (VTF Phase 3)
+// ---------------------------------------------------------------------------
+
+/** List versions. Server lazily bootstraps an implicit "Base" if none exist. */
+export async function listCharacterVersionsAction(characterId: string): Promise<AppCharacterVersion[]> {
+  return await listCharacterVersions(characterId);
+}
+
+/** Branch: snapshot current root into the old active version, flip a new one active. */
+export async function createCharacterVersionAction(characterId: string, title: string): Promise<AppCharacterVersion> {
+  const version = await createCharacterVersion(characterId, title);
+  // No snapshot reload — the new version starts as an identical copy of the
+  // current root, so the open draft stays valid and editable.
+  return version;
+}
+
+/** Activate a version: folder swap + flag flip, then reload the active snapshot. */
+export async function activateCharacterVersionAction(characterId: string, versionId: string): Promise<AppCharacterVersion> {
+  const version = await activateCharacterVersion(characterId, versionId);
+  // The active version's content now lives at the root; reload the open chat's
+  // snapshot so the editor reflects it. Only ingest if the user hasn't since
+  // switched chats (avoids clobbering a different chat's state).
+  const activeChatId = useChatStore.getState().activeChatId;
+  if (activeChatId) {
+    const snapshot = await fetchChat(activeChatId);
+    if (useChatStore.getState().activeChatId === activeChatId) {
+      useSnapshotStore.getState().ingestSnapshot(snapshot);
+    }
+  }
+  return version;
+}
+
+/** Rename a version's title without touching content. */
+export async function renameCharacterVersionAction(characterId: string, versionId: string, title: string): Promise<AppCharacterVersion> {
+  return await renameCharacterVersion(characterId, versionId, title);
+}
+
+/** Delete a non-active version (refuses the active one server-side). */
+export async function deleteCharacterVersionAction(characterId: string, versionId: string): Promise<void> {
+  await deleteCharacterVersion(characterId, versionId);
 }
 
 export async function exportChatJsonlAction(chatId: ChatId): Promise<string> {

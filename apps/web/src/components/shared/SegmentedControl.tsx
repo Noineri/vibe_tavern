@@ -21,6 +21,11 @@ interface SegmentedControlProps {
   fill?: boolean;
   /** Stretch full width only on mobile; desktop keeps natural inline sizing */
   mobileFill?: boolean;
+  /** Allow segments to wrap to multiple rows when they exceed the container width.
+   *  Off by default (single inline row) to preserve the existing look of the
+   *  11 current call sites; opt in for option sets that grow (e.g. version
+   *  switcher). Wrapped segments still share one bordered container. */
+  wrap?: boolean;
 }
 
 /**
@@ -36,12 +41,14 @@ export function SegmentedControl({
   compact,
   fill,
   mobileFill,
+  wrap,
 }: SegmentedControlProps) {
   return (
     <div
       className={cn(
         "rounded-md border border-border bg-s3 p-0.5",
         fill ? "flex w-full" : mobileFill ? "flex w-full sm:inline-flex sm:w-auto" : "inline-flex",
+        wrap && "flex-wrap",
         compact ? "gap-0" : "gap-0.5",
         disabled && "pointer-events-none opacity-40",
         className,

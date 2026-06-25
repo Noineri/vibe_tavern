@@ -6,6 +6,7 @@ import { Ic } from "../../shared/icons";
 import { cn } from "../../../lib/cn";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CharacterImportModal } from "../../modals/ImportModals.js";
+import { VersionSwitcher } from "../VersionSwitcher.js";
 import { AiAssistantModal, type MdImportResult } from "../../shared/AiAssistantModal.js";
 import { extractPngMetadata, parseCharacterMetadata } from "../../../lib/png-reader";
 import { GalleryAccordion } from "./GalleryAccordion.js";
@@ -455,6 +456,16 @@ export function CharacterForm({
         </div>
       </div>
       )}
+
+      {/* VTF Phase 3 — version switcher. Mounted once after the avatar/name/tags
+          block so it is shared across Form/MD modes and both avatar orientations.
+          On activate the draft is reset from the reloaded character snapshot. */}
+      <VersionSwitcher
+        characterId={characterId}
+        isDirty={isDirty}
+        disabled={isSaving}
+        onAfterActivate={onReset}
+      />
 
       {/* Gallery Accordion */}
       <GalleryAccordion characterId={characterId} />

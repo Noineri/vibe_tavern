@@ -1027,5 +1027,19 @@
   "vmd_advanced_title": "Advanced fields",
   "vmd_examples_in_body_hint": "Example messages live in the # EXAMPLES section above. This controls how they inject into context.",
   "char_switch_to_md": "Switch to Markdown editor",
-  "char_switch_to_form": "Switch to Form editor"
+  "char_switch_to_form": "Switch to Form editor",
+  "version_label": "Versions",
+  "version_base_title": "Base",
+  "version_new_title": "New version",
+  "version_new_prompt": "Version name",
+  "version_branch": "New version",
+  "version_switch": "Switch to this version",
+  "version_switch_dirty_title": "Unsaved changes",
+  "version_switch_dirty_body": "Switching the version will discard your unsaved edits. Save first, or switch and lose them.",
+  "version_switch_confirm": "Switch & discard",
+  "version_rename": "Rename",
+  "version_delete": "Delete",
+  "version_delete_title": "Delete version",
+  "version_delete_body": "Delete version \"{title}\"? Its snapshot cannot be recovered.",
+  "version_delete_active": "The active version cannot be deleted."
 }
