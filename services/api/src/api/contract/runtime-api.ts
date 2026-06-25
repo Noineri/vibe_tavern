@@ -15,6 +15,7 @@ import type {
 	ChatListResponse,
 	ConfigPatchResponse,
 	SummaryResponse,
+	CharacterVersionResponse,
 } from "./session-types.js";
 import type { PromptTraceRecordDto, PromptPresetDto } from "@vibe-tavern/domain";
 import type {
@@ -169,6 +170,15 @@ export interface CharacterRuntimeApi {
 
 	// Vision describe (A6) — uses the active provider profile's visionModel.
 	describeCharacterAvatar: (characterId: string, signal?: AbortSignal) => Promise<{ description: string }>;
+
+	// ─── Character versions (VTF Phase 3 folder-snapshot branching) ─────────
+	// list lazily bootstraps an implicit "Base" active version for characters
+	// that predate this feature (createFromScratch creates one eagerly).
+	listCharacterVersions: (characterId: string) => Promise<CharacterVersionResponse[]>;
+	createCharacterVersion: (characterId: string, title: string) => Promise<CharacterVersionResponse>;
+	activateCharacterVersion: (characterId: string, versionId: string) => Promise<CharacterVersionResponse>;
+	renameCharacterVersion: (characterId: string, versionId: string, title: string) => Promise<CharacterVersionResponse>;
+	deleteCharacterVersion: (characterId: string, versionId: string) => Promise<void>;
 }
 
 // ─── Character media gallery ───────────────────────────────────────

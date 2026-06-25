@@ -1,5 +1,5 @@
 import type { ChatId } from "@vibe-tavern/domain";
-import type { AppSnapshot, ImportJsonResponse } from "./types.js";
+import type { AppSnapshot, AppCharacterVersion, ImportJsonResponse } from "./types.js";
 import { client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { normalizeSnapshot } from "./normalize.js";
@@ -80,6 +80,38 @@ export async function deleteCharacter(characterId: string): Promise<void> {
 export async function exportCharacter(characterId: string): Promise<Record<string, unknown>> {
   const response = await client.api.characters[":characterId"].export.$get({ param: { characterId } });
   return unwrapRpc<Record<string, unknown>>(response);
+}
+
+// ─── Character versions (VTF Phase 3 folder-snapshot branching) ─────────────
+
+export async function listCharacterVersions(characterId: string): Promise<AppCharacterVersion[]> {
+  const response = await client.api.characters[":characterId"].versions.$get({ param: { characterId } });
+  return unwrapRpc<AppCharacterVersion[]>(response);
+}
+
+export async function createCharacterVersion(characterId: string, title: string): Promise<AppCharacterVersion> {
+  const response = await client.api.characters[":characterId"].versions.$post({ param: { characterId }, json: { title } });
+  return unwrapRpc<AppCharacterVersion>(response);
+}
+
+export async function activateCharacterVersion(characterId: string, versionId: string): Promise<AppCharacterVersion> {
+  const response = await client.api.characters[":characterId"].versions[":versionId"].activate.$post({
+    param: { characterId, versionId },
+  });
+  return unwrapRpc<AppCharacterVersion>(response);
+}
+
+export async function renameCharacterVersion(characterId: string, versionId: string, title: string): Promise<AppCharacterVersion> {
+  const response = await client.api.characters[":characterId"].versions[":versionId"].$patch({
+    param: { characterId, versionId },
+    json: { title },
+  });
+  return unwrapRpc<AppCharacterVersion>(response);
+}
+
+export async function deleteCharacterVersion(characterId: string, versionId: string): Promise<void> {
+  const response = await client.api.characters[":characterId"].versions[":versionId"].$delete({ param: { characterId, versionId } });
+  if (!response.ok) throw await unwrapError(response);
 }
 
 export async function updateCharacterAvatar(

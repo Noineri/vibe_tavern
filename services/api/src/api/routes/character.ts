@@ -52,6 +52,41 @@ export function createCharacterRoutes(runtime: CharacterRuntimeApi & CharacterAs
     .post("/api/characters/:characterId/duplicate", async (c) => {
       return c.json(await runtime.duplicateCharacter(c.req.param("characterId")), 201);
     })
+    // ─── Character versions (VTF Phase 3 folder-snapshot branching) ──────
+    .get("/api/characters/:characterId/versions", async (c) => {
+      return c.json(await runtime.listCharacterVersions(c.req.param("characterId")));
+    })
+    .post("/api/characters/:characterId/versions", zValidator("json", schemas.createVersionSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.createCharacterVersion(c.req.param("characterId"), body.title), 201);
+    })
+    .post("/api/characters/:characterId/versions/:versionId/activate", async (c) => {
+      try {
+        return c.json(await runtime.activateCharacterVersion(c.req.param("characterId"), c.req.param("versionId")));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const status = message.includes("not found") ? 404 : message.includes("does not belong") ? 400 : 500;
+        return c.json({ error: message }, status);
+      }
+    })
+    .patch("/api/characters/:characterId/versions/:versionId", zValidator("json", schemas.renameVersionSchema), async (c) => {
+      const body = c.req.valid("json");
+      try {
+        return c.json(await runtime.renameCharacterVersion(c.req.param("characterId"), c.req.param("versionId"), body.title));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return c.json({ error: message }, message.includes("not found") ? 404 : 400);
+      }
+    })
+    .delete("/api/characters/:characterId/versions/:versionId", async (c) => {
+      try {
+        await runtime.deleteCharacterVersion(c.req.param("characterId"), c.req.param("versionId"));
+        return c.body(null, 204);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return c.json({ error: message }, message.includes("active") ? 409 : 400);
+      }
+    })
     .post("/api/characters/:characterId/avatar", async (c) => {
       const body = await c.req.parseBody();
       // `crop` (required) is the thumbnail avatar.{ext}; `full` (optional) is

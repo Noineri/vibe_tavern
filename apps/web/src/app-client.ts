@@ -91,6 +91,11 @@ export {
   unarchiveCharacter,
   deleteCharacter,
   exportCharacter,
+  listCharacterVersions,
+  createCharacterVersion,
+  activateCharacterVersion,
+  renameCharacterVersion,
+  deleteCharacterVersion,
 } from "./api/character-api.js";
 
 // ─── Persona ────────────────────────────────────────────────────────────

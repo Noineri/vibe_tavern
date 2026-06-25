@@ -1,5 +1,6 @@
 import type { CharacterRuntimeApi, CharacterAssetRuntimeApi } from "../contract/runtime-api.js";
-import { brandId, type CharacterId, type ChatId } from "@vibe-tavern/domain";
+import type { CharacterVersionResponse } from "../contract/session-types.js";
+import { brandId, type CharacterId, type ChatId, type CharacterVersion } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { AssetService } from "../../domain/asset/asset-service.js";
@@ -96,6 +97,42 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 
 	duplicateCharacter = (characterId: string) =>
 		this.sessionRuntime.character.duplicate(brandId<CharacterId>(characterId));
+
+	// ─── Character versions (VTF Phase 3 folder-snapshot branching) ──────────
+	private toVersionWire = (v: CharacterVersion): CharacterVersionResponse => ({
+		id: v.id,
+		characterId: v.characterId,
+		title: v.title,
+		isActive: v.isActive,
+		createdAt: v.createdAt,
+	});
+
+	/** List versions, lazily bootstrapping an implicit "Base" for characters that predate the feature. */
+	listCharacterVersions = async (characterId: string): Promise<CharacterVersionResponse[]> => {
+		await this.stores.versions.ensureBaseVersion(characterId);
+		const versions = await this.stores.versions.listVersions(characterId);
+		return versions.map(this.toVersionWire);
+	};
+
+	/** Branch: snapshot the current root into the old active version, flip a new version active. */
+	createCharacterVersion = async (characterId: string, title: string): Promise<CharacterVersionResponse> =>
+		this.toVersionWire(await this.stores.versions.createVersion(characterId, title));
+
+	/** Activate a version: folder swap (root ↔ versions/{vid}/) + flag flip. */
+	activateCharacterVersion = async (characterId: string, versionId: string): Promise<CharacterVersionResponse> =>
+		this.toVersionWire(await this.stores.versions.setActive(characterId, versionId));
+
+	/** Rename a version's title without touching content. */
+	renameCharacterVersion = async (characterId: string, versionId: string, title: string): Promise<CharacterVersionResponse> => {
+		const v = await this.stores.versions.renameVersion(versionId, title);
+		if (!v) throw new Error(`Version '${versionId}' not found`);
+		return this.toVersionWire(v);
+	};
+
+	/** Delete a non-active version's snapshot folder + DB row. Refuses the active version. */
+	deleteCharacterVersion = async (characterId: string, versionId: string): Promise<void> => {
+		await this.stores.versions.deleteVersion(characterId, versionId);
+	};
 
 	uploadCharacterAvatar = async (characterId: string, crop: File, full?: File): Promise<{ avatarExt: string; avatarFullExt: string | null }> => {
 		// Thumbnail (crop): written to {id}/avatar.{ext}, avatarExt set, legacy

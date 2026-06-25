@@ -111,6 +111,15 @@ export interface AppCharacterEntry {
   updatedAt: string;
 }
 
+/** A character version (VTF Phase 3 folder-snapshot branching). Meta only on the wire. */
+export interface AppCharacterVersion {
+  id: string;
+  characterId: string;
+  title: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
 // ─── Snapshot ──────────────────────────────────────────────────────────
 
 /*
