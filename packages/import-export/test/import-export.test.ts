@@ -483,6 +483,31 @@ describe("importStLorebookJson", () => {
     const result = importStLorebookJson(lorebook);
     expect(result.entries[0].enabled).toBe(false);
   });
+
+  it("sets sortOrder from the positional index, not the ST `order` priority", () => {
+    // ST `order` is an activation PRIORITY (higher = inserted earlier in the
+    // prompt). VT keeps that semantics in `LoreEntry.priority` and uses a
+    // SEPARATE `LoreEntry.sortOrder` for display/list position. `listEntries`
+    // sorts `ORDER BY sortOrder ASC`. So sortOrder must reflect the entry's
+    // POSITION IN THE FILE (0,1,2,...), not the ST priority — otherwise a
+    // file that lists entries with descending `order` (the common ST
+    // convention: top entry = highest priority) imports with descending
+    // sortOrder, and the ASC list sort reverses the file (first becomes
+    // last). This is the user-reported "reverse order" symptom.
+    const lorebook = {
+      name: "Order Test",
+      entries: [
+        { keys: ["a"], content: "First entry.", order: 30, extensions: { position: 0 } },
+        { keys: ["b"], content: "Second entry.", order: 20, extensions: { position: 0 } },
+        { keys: ["c"], content: "Third entry.", order: 10, extensions: { position: 0 } },
+      ],
+    };
+    const result = importStLorebookJson(lorebook);
+    // sortOrder = positional index → file order preserved.
+    expect(result.entries.map((e) => e.sortOrder)).toEqual([0, 1, 2]);
+    // priority is still read from ST `order` (activation priority).
+    expect(result.entries.map((e) => e.priority)).toEqual([30, 20, 10]);
+  });
 });
 
 // ─── flattenV2CompatFields (export shape: janitor.ai / V2-parser compat) ────
