@@ -70,3 +70,14 @@ export const buildCharacterDraftSchema = z.object({
 });
 
 export type BuildCharacterDraft = z.infer<typeof buildCharacterDraftSchema>;
+
+// ─── Character versions (VTF Phase 3) ──────────────────────────────────────
+// Branch a character into parallel editable variants stored as folder snapshots.
+// Title is the human label shown in the switcher (e.g. "Base", "Aggressive").
+export const createVersionSchema = z.object({
+  title: z.string().min(1),
+});
+
+export const renameVersionSchema = z.object({
+  title: z.string().min(1),
+});

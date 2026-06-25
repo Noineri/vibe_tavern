@@ -253,6 +253,11 @@ export class CharacterRuntime {
 
     const characterId = character.id as CharacterId;
 
+    // VTF Phase 3: every character starts with exactly one active "Base" version
+    // so the version switcher is never empty. Content lives at the folder root
+    // (the active version); ensureBaseVersion just stamps the meta row.
+    await this.deps.stores.versions.ensureBaseVersion(character.id);
+
     const created = await this.deps.chatApp.createChat({
       characterId,
       personaId: await this.deps.resolveDefaultPersonaId(),

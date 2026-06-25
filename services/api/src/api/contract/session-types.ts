@@ -207,6 +207,20 @@ export interface SummaryResponse {
 	summaries: SessionSnapshot["summaries"];
 }
 
+/**
+ * A character version (VTF Phase 3 folder-snapshot branching). Meta only on the
+ * wire — content lives in files. `isActive` is true for exactly one version per
+ * character; the active version's content is swapped into the character folder
+ * root and read by getById. See plans/VIBE_TAVERN_FORMAT.md (Phase 3).
+ */
+export interface CharacterVersionResponse {
+	id: string;
+	characterId: string;
+	title: string;
+	isActive: boolean;
+	createdAt: string;
+}
+
 /** Union of all per-endpoint builder responses (used to type route returns in B1.2+). */
 export type SessionPartialResponse =
 	| MessageResponse

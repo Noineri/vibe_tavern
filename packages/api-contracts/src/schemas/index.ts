@@ -1,5 +1,5 @@
 export { createPersonaSchema, updatePersonaSchema, setPersonaSchema } from "./persona-schema.js";
-export { createCharacterSchema, updateCharacterSchema, buildCharacterDraftSchema } from "./character-schema.js";
+export { createCharacterSchema, updateCharacterSchema, buildCharacterDraftSchema, createVersionSchema, renameVersionSchema } from "./character-schema.js";
 export type { BuildCharacterDraft } from "./character-schema.js";
 export {
   createChatSchema,
