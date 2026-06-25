@@ -11,6 +11,7 @@ import type {
   ChatListResponse,
 } from "./session-runtime.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
+import type { PromptTraceDraft } from "../../domain/prompt/prompt-assembly-service.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
 export interface PreparedLiveTurn {
@@ -24,7 +25,7 @@ export interface PreparedLiveTurn {
 
 interface PendingPromptTraceTurn {
   branchId: ChatBranchId;
-  draft: Omit<PromptTrace, "id" | "messageId" | "createdAt">;
+  draft: PromptTraceDraft;
 }
 
 export interface ChatRuntimeDeps {
@@ -39,7 +40,7 @@ export interface ChatRuntimeDeps {
   ) => Promise<{
     branchId: ChatBranchId;
     prompt: AssemblePromptResponse;
-    promptTraceDraft: Omit<PromptTrace, "id" | "messageId" | "createdAt">;
+    promptTraceDraft: PromptTraceDraft;
   }>;
   getSnapshot: (chatId: ChatId) => Promise<SessionSnapshot>;
   /** Narrowed message-path response (messages + contextPreview + latest trace; summaries optional). */
@@ -147,6 +148,7 @@ export class ChatRuntime {
       authorType: "assistant",
       content,
       modelId: pending?.draft.model ?? null,
+      presetId: pending?.draft.presetId ?? null,
       reasoning: reasoningData?.reasoning,
       reasoningDurationMs: reasoningData?.reasoningDurationMs,
     });
@@ -207,7 +209,7 @@ export class ChatRuntime {
       input.reasoning,
       input.reasoningDurationMs,
       pending?.draft.model ?? null,
-      input.presetId ?? null,
+      input.presetId ?? pending?.draft.presetId ?? null,
     );
 
     if (pending) {

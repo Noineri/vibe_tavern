@@ -544,6 +544,28 @@ describe("MessageStore — variant preset_id (Q2)", () => {
     messageStore = new MessageStore(db, { clock: testClock, idGenerator: testIdGen });
   });
 
+  test("addMessage with presetId → recorded on the selected variant (send/continue path)", async () => {
+    // Characterization for the message-meta preset bug. addMessage already
+    // wrote modelId to the selected variant but NOT presetId (only addVariant
+    // did). So ordinary sends / continues recorded the model in per-message
+    // meta but never the prompt preset, and the footer
+    // (время · токены · модель · пресет) showed no preset for non-queue replies
+    // — only the queue (addVariant) path recorded it. addMessage must now
+    // record presetId on the selected variant just like it records modelId.
+    const msg = await messageStore.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "assistant", authorType: "assistant",
+      content: "First reply",
+      modelId: "gpt-4o",
+      presetId: "preset_1",
+    });
+
+    const rows = await messageStore.getVariants(msg.id);
+    const selected = rows.find((r) => r.variantIndex === 0)!;
+    expect(selected.modelId).toBe("gpt-4o");
+    expect(selected.presetId).toBe("preset_1");
+  });
+
   test("addVariant without presetId → variant.presetId is null (backward compat)", async () => {
     const msg = await messageStore.addMessage({
       chatId: "chat_1", branchId: "brnch_1", role: "assistant", authorType: "assistant", content: "V0",
