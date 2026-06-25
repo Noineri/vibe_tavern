@@ -1,6 +1,8 @@
 export { CharacterStore } from './character-store.js';
 export type { CreateCharacterData, UpdateCharacterData } from './character-store.js';
 
+export { VersionStore } from './version-store.js';
+
 export { CharacterAssetStore } from './character-asset-store.js';
 export type {
   CharacterAsset as CharacterAssetRow,

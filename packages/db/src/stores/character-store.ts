@@ -222,28 +222,82 @@ export class CharacterStore {
     return this.hashVtfEntries(entries);
   }
 
-  /** Read every VTF leaf file for an entity into a {@link FolderFileEntry} list. */
-  private async readVtfFolderEntries(id: string): Promise<FolderFileEntry[]> {
+  /**
+   * Read every VTF leaf file for an entity into a {@link FolderFileEntry} list.
+   * `subdir` reads from a nested folder (e.g. `versions/{vid}`); the returned
+   * entry `path` is always relative to the entity ROOT (no subdir prefix), so a
+   * caller can write the entries back to any target unchanged.
+   */
+  private async readVtfEntriesAt(id: string, subdir: string): Promise<FolderFileEntry[]> {
     if (!this.content) return [];
+    const prefix = subdir ? `${subdir}/` : '';
     const entries: FolderFileEntry[] = [];
-    const profileMd = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, 'profile.md');
+    const profileMd = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, `${prefix}profile.md`);
     if (profileMd !== null) entries.push({ path: 'profile.md', content: profileMd });
-    const instructionsJson = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, 'instructions.json');
+    const instructionsJson = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, `${prefix}instructions.json`);
     if (instructionsJson !== null) entries.push({ path: 'instructions.json', content: instructionsJson });
-    const extensionsJson = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, 'extensions.json');
+    const extensionsJson = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, `${prefix}extensions.json`);
     if (extensionsJson !== null) entries.push({ path: 'extensions.json', content: extensionsJson });
     // Greetings are manifest-driven: read _index.yaml, then each referenced file.
-    const indexYaml = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, 'greetings/_index.yaml');
+    const indexYaml = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, `${prefix}greetings/_index.yaml`);
     if (indexYaml !== null) {
       entries.push({ path: 'greetings/_index.yaml', content: indexYaml });
       const manifest = parseGreetingsIndex(indexYaml);
       for (const row of manifest) {
         if (!row.file) continue;
-        const body = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, `greetings/${row.file}`);
+        const body = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, id, `${prefix}greetings/${row.file}`);
         if (body !== null) entries.push({ path: `greetings/${row.file}`, content: body });
       }
     }
     return entries;
+  }
+
+  /** Read the root VTF folder (alias for {@link readVtfEntriesAt} with no subdir). */
+  private async readVtfFolderEntries(id: string): Promise<FolderFileEntry[]> {
+    return this.readVtfEntriesAt(id, '');
+  }
+
+  // ─── Version folder snapshots (VTF Phase 3) ──────────────────────────────
+  // The active version's content lives at the entity root; non-active versions
+  // are full folder snapshots under versions/{versionId}/. These methods move
+  // the canonical VTF file set (profile.md + instructions.json + extensions.json
+  // + greetings/) between root and a version slot. VersionStore orchestrates
+  // them and owns the character_versions DB rows; getById stays version-agnostic
+  // (it always reads the root, which always reflects the active version).
+
+  /** Snapshot the current root VTF folder into versions/{versionId}/ (overwrites). */
+  async snapshotRootToVersion(id: string, versionId: string): Promise<void> {
+    if (!this.content) throw new Error('ContentStore required for VTF version snapshots');
+    const entries = await this.readVtfEntriesAt(id, '');
+    // Clear the target slot first so a stale snapshot leaves no orphaned greeting files.
+    await this.content.removeEntitySubfolder(STORAGE_FOLDERS.characters, id, `versions/${versionId}`);
+    for (const entry of entries) {
+      await this.content.writeEntityTextFile(STORAGE_FOLDERS.characters, id, `versions/${versionId}/${entry.path}`, entry.content);
+    }
+  }
+
+  /** Restore a version snapshot from versions/{versionId}/ to the root folder. */
+  async restoreVersionToRoot(id: string, versionId: string): Promise<void> {
+    if (!this.content) throw new Error('ContentStore required for VTF version snapshots');
+    const entries = await this.readVtfEntriesAt(id, `versions/${versionId}`);
+    if (entries.length === 0) return;
+    // Clear root greetings first (GC); profile/instructions/extensions are overwritten in place.
+    await this.content.removeEntitySubfolder(STORAGE_FOLDERS.characters, id, 'greetings');
+    for (const entry of entries) {
+      await this.content.writeEntityTextFile(STORAGE_FOLDERS.characters, id, entry.path, entry.content);
+    }
+  }
+
+  /** Remove the versions/{versionId}/ subfolder. No-op if missing. */
+  async removeVersionFolder(id: string, versionId: string): Promise<void> {
+    if (!this.content) return;
+    await this.content.removeEntitySubfolder(STORAGE_FOLDERS.characters, id, `versions/${versionId}`);
+  }
+
+  /** True if a version snapshot with a profile.md exists at versions/{versionId}/. */
+  async versionFolderExists(id: string, versionId: string): Promise<boolean> {
+    if (!this.content) return false;
+    return this.content.entityLeafExists(STORAGE_FOLDERS.characters, id, `versions/${versionId}/profile.md`);
   }
 
   /** Override the content fields of a DB-row character with VTF-parsed content. Media/avatar/status/timestamps are preserved. */
