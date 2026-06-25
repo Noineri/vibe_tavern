@@ -295,6 +295,13 @@
       "when": 1782178097005,
       "tag": "0041_fat_lila_cheney",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "6",
+      "when": 1782359486718,
+      "tag": "0042_jittery_vision",
+      "breakpoints": true
     }
   ]
 }

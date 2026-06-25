@@ -1,4 +1,4 @@
-import type { Character, CharacterVersion, CharacterId, ChatId, PersonaId, PromptPresetId } from "@vibe-tavern/domain";
+import type { Character, CharacterId, ChatId, PersonaId, PromptPresetId } from "@vibe-tavern/domain";
 import type { ChatStore, CharacterStore, StoreContainer } from "@vibe-tavern/db";
 import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 import type { ChatApplicationService } from "../chat/chat-application-service.js";
@@ -47,32 +47,20 @@ export type CharacterRecord = {
   includeGalleryInPrompt: boolean;
 };
 
-export function toCharacterRecord(
-  character: Character,
-  version: CharacterVersion | null,
-): CharacterRecord {
-  const definition = version?.definition ?? {};
-  const data =
-    definition && typeof definition.data === "object" && definition.data !== null
-      ? (definition.data as Record<string, unknown>)
-      : definition;
-  const tags = Array.isArray(data.tags)
-    ? data.tags.filter((tag): tag is string => typeof tag === "string")
-    : [];
-  const subtitleCandidate =
-    (typeof data.character_version === "string" && data.character_version.trim()) ||
-    tags[0] ||
-    version?.title ||
-    "";
-
+export function toCharacterRecord(character: Character): CharacterRecord {
+  // NOTE: subtitle is "" here. The version-definition fallback that previously
+  // derived it was dead (version was always null on this path), and Phase 3
+  // stores content in files — not a definition blob — so no field is sourced
+  // from a version. The listing path (session-runtime) independently derives
+  // subtitle = tags[0]; wiring that here is a separate behavior change.
   return {
     id: character.id,
     name: character.name,
     description: character.description,
     scenario: character.defaultScenario ?? "",
-    systemPrompt: character.systemPrompt ?? ((data.system_prompt as string) || ""),
-    personality: character.personalitySummary ?? ((data.personality as string) || null),
-    personalitySummary: character.personalitySummary ?? ((data.personality as string) || null),
+    systemPrompt: character.systemPrompt ?? "",
+    personality: character.personalitySummary ?? null,
+    personalitySummary: character.personalitySummary ?? null,
     firstMessage: character.firstMessage,
     mesExample: character.mesExample,
     mesExampleMode: character.mesExampleMode,
@@ -86,7 +74,7 @@ export function toCharacterRecord(
     depthPromptRole: character.depthPromptRole,
     extensions: character.extensions,
     tags: character.tags,
-    subtitle: subtitleCandidate,
+    subtitle: "",
     avatarAssetId: character.avatarAssetId,
     avatarFullAssetId: character.avatarFullAssetId,
     avatarCropJson: character.avatarCropJson,

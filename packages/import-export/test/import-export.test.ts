@@ -27,7 +27,6 @@ describe("importCharacterCardV3Json", () => {
     expect(result.character.description).toBe("A test character.");
     expect(result.character.personalitySummary).toBe("Cheerful");
     expect(result.character.defaultScenario).toBe("A test room.");
-    expect(result.version.cardFormat).toBe("st_v3");
     expect(result.warnings).toHaveLength(0);
   });
 

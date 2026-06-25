@@ -34,8 +34,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		if (!character) {
 			throw notFound("Character", `Character '${characterId}' was not found.`);
 		}
-		// No character versions in phase 1
-		return toCharacterRecord({ ...character, id: brandId<CharacterId>(character.id) }, null);
+		return toCharacterRecord({ ...character, id: brandId<CharacterId>(character.id) });
 	}
 
 	async getPersona(personaId: string): Promise<PersonaRecord | null> {

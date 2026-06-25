@@ -55,6 +55,24 @@ export const characters = sqliteTable('characters', {
   updatedAt: text('updated_at').notNull(),
 });
 
+// ─── character versions ────────────────────────────────────────────────────────
+// VTF Phase 3: branchable folder-snapshot variants. Content lives in FILES
+// (data/characters/{id}/versions/{versionId}/); this table is META ONLY (no
+// content columns, no definition blob). The active version's content is swapped
+// into the character folder root and read via CharacterStore.getById(). The
+// single-active invariant (exactly one is_active=1 per character) is enforced
+// in VersionStore; a partial unique index is intentionally omitted to keep the
+// migration portable.
+export const characterVersions = sqliteTable('character_versions', {
+  id: text('id').primaryKey(),
+  characterId: text('character_id').notNull().references(() => characters.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(false),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({
+  characterIdIdx: index('idx_character_versions_character_id').on(table.characterId),
+}));
+
 // ─── personas ──────────────────────────────────────────────────────────────────
 
 export const personas = sqliteTable('personas', {

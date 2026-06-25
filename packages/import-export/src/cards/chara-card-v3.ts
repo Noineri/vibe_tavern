@@ -49,7 +49,6 @@ export interface ImportedCharacterCardBundle {
 
 export interface ImportCharacterCardOptions {
   now?: string;
-  versionNumber?: number;
   characterStatus?: Character["status"];
 }
 
@@ -246,10 +245,7 @@ export function importCharacterCardV3Json(
   const version: CharacterVersion = {
     id: versionId,
     characterId,
-    versionNumber: options.versionNumber ?? 1,
     title: normalized.characterVersion ?? `${normalized.name} import`,
-    cardFormat: "st_v3",
-    definition: root,
     isActive: true,
     createdAt: importedAt,
   };
