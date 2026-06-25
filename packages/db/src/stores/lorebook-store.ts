@@ -1091,7 +1091,8 @@ export class LorebookStore {
     const rawEntries = parsed.entries;
     if (!Array.isArray(rawEntries)) return lorebook.id;
 
-    for (const raw of rawEntries) {
+    for (let index = 0; index < rawEntries.length; index++) {
+      const raw = rawEntries[index];
       if (!raw || typeof raw !== 'object') continue;
       const entry = raw as Record<string, unknown>;
 
@@ -1111,7 +1112,7 @@ export class LorebookStore {
         position: typeof entry.position === 'string' ? entry.position : 'before_char',
         depth: typeof entry.depth === 'number' ? entry.depth : 4,
         priority: typeof entry.priority === 'number' ? entry.priority : 10,
-        sortOrder: typeof entry.order === 'number' ? entry.order : 0,
+        sortOrder: index,
         constant: typeof entry.constant === 'boolean' ? entry.constant : false,
         probability: typeof entry.probability === 'number' ? entry.probability : 100,
         ignoreBudget: typeof entry.ignore_budget === 'boolean' ? entry.ignore_budget : false,

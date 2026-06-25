@@ -237,7 +237,13 @@ export function importStLorebookJson(
       characterFilterExclude: asBoolean(entry.character_filter_exclude, false),
       matchSources: [] as LoreMatchSource[],
       enabled: !asBoolean(entry.disable, false),
-      sortOrder: asNumber(entry.order, 100),
+      // sortOrder is the DISPLAY/LIST position, not the ST activation priority.
+      // ST `order` is a priority (higher = earlier in prompt); using it here
+      // would reverse descending-order files on import (listEntries sorts
+      // `ORDER BY sortOrder ASC`). Use the positional index so the file order
+      // is preserved; `priority` above keeps the ST `order` semantics.
+      // Mirrors the Janitor parser's `sortOrder: insertionOrder` convention.
+      sortOrder: index,
       automationId: asString(entry.automationId),
       metadata: {
         stUid: entry.uid ?? index,
