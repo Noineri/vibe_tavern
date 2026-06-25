@@ -1,12 +1,13 @@
 import { createDb, type AppDb } from './db-connection.js';
 import { ContentStore } from './content-store.js';
 import { createFileStore } from './file-store.js';
-import { CharacterStore, PersonaStore, ProviderStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, CharacterAssetStore, MessageStore, PromptTraceStore } from './stores/index.js';
+import { CharacterStore, PersonaStore, ProviderStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore } from './stores/index.js';
 
 export interface StoreContainer {
   db: AppDb;
   content: ContentStore;
   characters: CharacterStore;
+  versions: VersionStore;
   personas: PersonaStore;
   providers: ProviderStore;
   chats: ChatStore;
@@ -26,11 +27,13 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
   const content = new ContentStore({ fileStore });
   const chats = new ChatStore(db);
   await chats.migrateGreetingVariants();
+  const characters = new CharacterStore(db, { content });
 
   return {
     db,
     content,
-    characters: new CharacterStore(db, { content }),
+    characters,
+    versions: new VersionStore(db, { characters }),
     personas: new PersonaStore(db, { content }),
     providers: new ProviderStore(db),
     chats,
