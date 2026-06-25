@@ -10,6 +10,7 @@ import {
 } from "@vibe-tavern/domain";
 import { notFound } from "../../shared/errors.js";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
+import type { PromptTraceDraft } from "../../domain/prompt/prompt-assembly-service.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
 import type { PersonaRuntime } from "../../domain/persona/persona-runtime.js";
 import type {
@@ -60,7 +61,7 @@ export interface ChatLifecycleRuntimeDeps {
 	) => Promise<{
 		branchId: ChatBranchId;
 		prompt: import("@vibe-tavern/domain").AssemblePromptResponse;
-		promptTraceDraft: Omit<import("@vibe-tavern/domain").PromptTrace, "id" | "messageId" | "createdAt">;
+		promptTraceDraft: PromptTraceDraft;
 	}>;
 }
 
