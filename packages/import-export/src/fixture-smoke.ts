@@ -47,7 +47,7 @@ async function main(): Promise<void> {
 			kind: "character",
 			name: imported.character.name,
 			warnings: imported.warnings.length,
-			details: `slug=${imported.character.slug} format=${imported.version.cardFormat}`,
+			details: `slug=${imported.character.slug} format=${imported.format}`,
 		});
 	}
 

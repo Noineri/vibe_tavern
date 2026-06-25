@@ -102,17 +102,17 @@ export interface Character {
 }
 
 /**
- * A snapshot of a character card at a point in time (future multi-version support).
+ * A branchable character version (VTF Phase 3 folder-snapshot model).
  *
- * `definition` holds the raw card data whose schema is determined by `cardFormat`.
+ * Content lives in FILES under data/characters/{id}/versions/{versionId}/ — this
+ * row is META ONLY (no content columns, no definition blob). The active
+ * version's content is swapped into the character folder root and read via
+ * CharacterStore.getById(). See plans/VIBE_TAVERN_FORMAT.md (Phase 3).
  */
 export interface CharacterVersion {
   id: CharacterVersionId;
   characterId: CharacterId;
-  versionNumber: number;
   title: string;
-  cardFormat: CardFormat;
-  definition: Record<string, unknown>;
   isActive: boolean;
   createdAt: Timestamp;
 }
