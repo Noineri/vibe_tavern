@@ -92,6 +92,8 @@ Test coverage is thin on some critical paths. Before changing a module:
 2. **If there is no test, write one that reproduces the current behavior first** (a characterization test), then make it assert the new behavior. This is how subtle regressions get caught.
 3. A logic bug in clean, typed, documented code is the normal failure mode here — not "legacy workaround decay". Catch it with a test, not a rewrite.
 
+For the test patterns themselves (mocking, DOM tests, factories) and the three mechanism-level gotchas that have shipped silent cross-file failures, see [`docs/architecture/testing.md`](./docs/architecture/testing.md).
+
 ### Read critically, don't assume breakage
 
 Existing code is usually intentional. When something looks over-complicated, check `docs/architecture/decisions.md` for an ADR explaining the constraint before "fixing" it. If you still can't justify it, ask rather than assume it's wrong. **Rewrite only with named, concrete defects** — "it looked messy" is the #1 way to lose load-bearing behavior. Prefer targeted edits and extend existing patterns.
