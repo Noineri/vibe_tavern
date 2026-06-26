@@ -188,7 +188,7 @@ vibe_tavern/
 
 We welcome any contributions — code, translations, documentation, bug reports, or ideas.
 
-Find instructions for local launch and guidelines in [CONTRIBUTING.md](../CONTRIBUTING.md).
+Find instructions for local launch and guidelines in [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 **Where You can start:**
 
