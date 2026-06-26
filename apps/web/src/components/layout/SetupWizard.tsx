@@ -80,6 +80,7 @@ function ProviderStep({
 }) {
   const { t } = useT();
   const isMobile = useIsMobile();
+  const isArmServer = useBootstrapStore((s) => s.data?.isArmServer ?? false);
   const provider = useProviderProfiles();
 
   // Detect already-existing profile (e.g. created in a previous wizard run or from settings)
@@ -340,6 +341,7 @@ function ProviderStep({
         onTestChat={handleTestChat}
         hideConnectionFields={testOk === true && !showEdit}
         hideTestChat={showEdit}
+        isArmServer={isArmServer}
       />
       {testOk === true && !showEdit && (
         <div className="flex items-center gap-3 rounded-lg border border-success/20 bg-success/5 px-3 py-2">
