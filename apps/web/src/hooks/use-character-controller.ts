@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent, type DragEvent } from "react";
 import type { ChatId } from "@vibe-tavern/domain";
-import type { VtfCharacterContent } from "@vibe-tavern/db";
+import type { VtfCharacterContent } from "@vibe-tavern/db/codecs";
 import { toast } from "sonner";
 import { getT } from "../i18n/locale-helpers.js";
 import {

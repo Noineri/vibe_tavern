@@ -19,7 +19,7 @@ import {
   embedCharaMetadata,
   // exportCharaCardPng,  // canvas-dependent; covered indirectly via embed
 } from "./png-writer.js";
-import { packMonolith, type VtfCharacterContent } from "@vibe-tavern/db";
+import { packMonolith, type VtfCharacterContent } from "@vibe-tavern/db/codecs";
 
 // ── Minimal 1×1 PNG (IHDR + one IDAT + IEND). CRCs precomputed and valid. ──
 const PNG_SIG = [137, 80, 78, 71, 13, 10, 26, 10];
