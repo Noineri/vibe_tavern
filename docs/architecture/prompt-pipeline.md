@@ -219,6 +219,18 @@ Lore entries use SillyTavern position strings that map to pipeline positions:
 
 > For the full lorebook system — activation engine, budget & priority semantics, ST parity audit, and trace integration — see [Lorebooks](lorebooks.md).
 
+### Media / appearance layers (A7)
+
+Three built-in layers inject **vision-generated appearance text** — image descriptions produced by the avatar/gallery describe pipelines, emitted as plain text so they work with any model:
+
+| Layer | Source | Gate | Output text |
+|-------|--------|------|-------------|
+| Character avatar | `character.avatarDescription` | `character.includeAvatarInPrompt` + non-empty + canvas slot `characterAvatar` enabled | `[Character appearance: <desc>]` |
+| Character gallery | `character.gallery[]` | non-empty gallery + canvas slot `characterGallery` enabled | `[Character references:\n<each described item>]` |
+| Persona avatar | `persona.avatarDescription` | `persona.includeAvatarInPrompt` + non-empty + canvas slot `personaAvatar` enabled | `[Persona appearance: <desc>]` |
+
+All three route through `resolver.position()` with a `DEFAULT_PROMPT_ORDER` rank `< 100` (before-chat zone), so they behave like every other built-in slot: **canvas-toggleable in advanced mode, always-on in simple mode**, ordered adjacent to the character/persona block. Gating is two-level: the per-entity `includeXInPrompt` toggle + non-empty content, **and** `resolver.enabled(identifier)` (the canvas slot).
+
 ---
 
 ## Simple vs Advanced Mode
@@ -434,6 +446,7 @@ Before the fix, `{{scenario}}` inside a custom injection would return empty beca
 | `{{charFirstMessage}}` | `{{greeting}}` | First message / greeting |
 | `{{charCreatorNotes}}` | `{{creatorNotes}}` | Creator notes |
 | `{{charVersion}}` | `{{version}}`, `{{char_version}}` | Character version title |
+| `{{charDepthPrompt}}` | — | Character's depth-prompt text (ST `depth_prompt`); injection depth/role come from the character's `depthPromptDepth` / `depthPromptRole` fields |
 
 #### Chat Context
 
@@ -746,6 +759,7 @@ Test files:
 | `macros.test.ts` | Legacy macro tests (skipped — module removed) |
 | `prompt-order.test.ts` | Prompt order overrides, ST-compatible insertion positions, chatHistory-always-enabled invariant |
 | `st-injections.test.ts` | SillyTavern-style prompt injections, relative/absolute/depth placement |
+| `media-injection.test.ts` | A7 media layers — character avatar/gallery + persona avatar appearance blocks, two-level gating, canvas-slot routing |
 
 ### Mode-contract testing
 
