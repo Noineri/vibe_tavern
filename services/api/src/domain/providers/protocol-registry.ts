@@ -138,6 +138,38 @@ export interface ProtocolAdapter {
 
 // ── OpenAI-compatible (shared by openai_compat, llamaCpp, unsloth) ─────────
 
+/**
+ * Interpret a probe /models response into a ProviderProbeResult. Shared by
+ * the OpenAI-compatible / Google / Anthropic probes, which differ only in the
+ * JSON shape (where the model list lives) and which statuses count as auth
+ * failures (Google also treats 400 as auth-rejected).
+ */
+async function interpretProbeResponse(
+	response: Response,
+	readModelCount: (payload: unknown) => number | undefined,
+	authStatuses: number[] = [401, 403],
+): Promise<ProviderProbeResult> {
+	if (response.ok) {
+		let modelCount: number | undefined;
+		try {
+			modelCount = readModelCount(await response.json());
+		} catch {
+			modelCount = undefined;
+		}
+		return { success: true, modelCount };
+	}
+	if (authStatuses.includes(response.status)) {
+		return {
+			success: false,
+			error: `Authentication rejected (${response.status} ${response.statusText}).`,
+		};
+	}
+	if (response.status === 404) {
+		return { success: false, error: "Provider does not expose a /models endpoint." };
+	}
+	return { success: false, error: `Probe failed: ${response.status} ${response.statusText}` };
+}
+
 async function probeOpenAiCompatibleConnection(input: ProbeInput): Promise<ProviderProbeResult> {
 	const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
 	if (!baseUrl) {
@@ -168,36 +200,10 @@ async function probeOpenAiCompatibleConnection(input: ProbeInput): Promise<Provi
 		};
 	}
 
-	if (response.ok) {
-		let modelCount: number | undefined;
-		try {
-			const payload = (await response.json()) as OpenAiModelsResponse;
-			modelCount = Array.isArray(payload.data)
-				? payload.data.length
-				: undefined;
-		} catch {
-			modelCount = undefined;
-		}
-
-		return { success: true, modelCount };
-	}
-
-	if (response.status === 401 || response.status === 403) {
-		return {
-			success: false,
-			error: `Authentication rejected (${response.status} ${response.statusText}).`,
-		};
-	}
-	if (response.status === 404) {
-		return {
-			success: false,
-			error: "Provider does not expose a /models endpoint.",
-		};
-	}
-	return {
-		success: false,
-		error: `Probe failed: ${response.status} ${response.statusText}`,
-	};
+	return interpretProbeResponse(response, (payload) => {
+		const models = (payload as OpenAiModelsResponse).data;
+		return Array.isArray(models) ? models.length : undefined;
+	});
 }
 
 async function testOpenAiCompatChat(input: ProviderConnectionInput): Promise<TestChatResult> {
@@ -371,27 +377,10 @@ async function probeGoogleConnection(input: ProbeInput): Promise<ProviderProbeRe
 		};
 	}
 
-	if (response.ok) {
-		let modelCount: number | undefined;
-		try {
-			const payload = (await response.json()) as { models?: unknown[] };
-			modelCount = Array.isArray(payload.models) ? payload.models.length : undefined;
-		} catch {
-			modelCount = undefined;
-		}
-		return { success: true, modelCount };
-	}
-
-	if (response.status === 400 || response.status === 401 || response.status === 403) {
-		return {
-			success: false,
-			error: `Authentication rejected (${response.status} ${response.statusText}).`,
-		};
-	}
-	if (response.status === 404) {
-		return { success: false, error: "Provider does not expose a /models endpoint." };
-	}
-	return { success: false, error: `Probe failed: ${response.status} ${response.statusText}` };
+	return interpretProbeResponse(response, (payload) => {
+		const models = (payload as { models?: unknown[] }).models;
+		return Array.isArray(models) ? models.length : undefined;
+	}, [400, 401, 403]);
 }
 
 async function testGoogleChat(input: ProviderConnectionInput): Promise<TestChatResult> {
@@ -555,27 +544,10 @@ async function probeAnthropicConnection(input: ProbeInput): Promise<ProviderProb
 		};
 	}
 
-	if (response.ok) {
-		let modelCount: number | undefined;
-		try {
-			const payload = (await response.json()) as { data?: unknown[] };
-			modelCount = Array.isArray(payload.data) ? payload.data.length : undefined;
-		} catch {
-			modelCount = undefined;
-		}
-		return { success: true, modelCount };
-	}
-
-	if (response.status === 401 || response.status === 403) {
-		return {
-			success: false,
-			error: `Authentication rejected (${response.status} ${response.statusText}).`,
-		};
-	}
-	if (response.status === 404) {
-		return { success: false, error: "Provider does not expose a /models endpoint." };
-	}
-	return { success: false, error: `Probe failed: ${response.status} ${response.statusText}` };
+	return interpretProbeResponse(response, (payload) => {
+		const models = (payload as { data?: unknown[] }).data;
+		return Array.isArray(models) ? models.length : undefined;
+	});
 }
 
 async function testAnthropicChat(input: ProviderConnectionInput): Promise<TestChatResult> {
