@@ -3,7 +3,7 @@ import { EventBus } from "@vibe-tavern/domain";
 import { createApp } from "../src/server/app-factory.js";
 import { FeatureRegistry } from "../src/shared/feature-registry.js";
 import { createAiAssistantFeature } from "../src/domain/ai-assistant/ai-assistant-feature.js";
-import type { RuntimeApi } from "../src/api/routes/types.js";
+import type { AiAssistantRuntimeApi } from "../src/api/contract/runtime-api.js";
 
 describe("feature routes", () => {
   test("mount before final catch-all", async () => {
@@ -11,7 +11,7 @@ describe("feature routes", () => {
       async *streamAiAssistant() {
         yield { type: "done" };
       },
-    } as unknown as RuntimeApi;
+    } as unknown as AiAssistantRuntimeApi;
 
     const events = new EventBus();
     const features = new FeatureRegistry();
