@@ -22,6 +22,9 @@ concurrency:
 #     blocks builds and never fails the run.
 #   - The 4 platform builds fan out only after typecheck passes.
 # Nothing is published; the docker job only loads locally to prove the image builds.
+# Build artifacts are intentionally NOT uploaded — CI verifies compilation only,
+# not distribution. release.yml re-builds from the tag when cutting a real release;
+# uploading throwaway 0.0.0-ci artifacts here only burned Actions storage quota.
 
 jobs:
   typecheck:
@@ -53,46 +56,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Set VERSION
-        run: echo "VERSION=0.0.0-ci" >> "$GITHUB_ENV"
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
       - run: bun install --frozen-lockfile
       - run: bun scripts/install-platform-optionals.ts
       - run: bun scripts/build-linux-dist.ts
-      - name: Rename to release name
-        run: |
-          mv out/vibe-tavern-linux-x64.tar.gz \
-             out/Vibe-Tavern-v${VERSION}-linux.tar.gz
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ci-linux-tarball
-          path: out/Vibe-Tavern-v${{ env.VERSION }}-linux.tar.gz
-          if-no-files-found: error
-          retention-days: 7
 
   build-android:
     needs: [typecheck]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Set VERSION
-        run: echo "VERSION=0.0.0-ci" >> "$GITHUB_ENV"
-      - name: Set Android versionCode/versionName
-        env:
-          # CI artifacts are throwaway smoke-test builds, not releases. There's no
-          # real semver to derive versionCode from (the MAJOR*10000+... formula
-          # yields 0 for "0.0.0-ci", which Android rejects — must be a positive
-          # integer). Use github.run_number instead: always ≥ 1, unique, and
-          # monotonically increasing so each CI APK is installable as an "upgrade"
-          # over a previous CI build on a test device.
-          RUN_NUMBER: ${{ github.run_number }}
-        run: |
-          sed -i \
-            -e "s/versionCode = .*/versionCode = ${RUN_NUMBER}/" \
-            -e "s|versionName = \".*\"|versionName = \"${VERSION}\"|" \
-            mobile/android/app/build.gradle.kts
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
@@ -112,25 +87,12 @@ jobs:
       - name: Build APK
         run: ./gradlew assembleRelease
         working-directory: mobile/android
-      - name: Rename APK
-        run: |
-          mv mobile/android/app/build/outputs/apk/release/app-release.apk \
-             out/Vibe-Tavern-v${VERSION}-android.apk
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ci-android-apk
-          path: out/Vibe-Tavern-v${{ env.VERSION }}-android.apk
-          if-no-files-found: error
-          retention-days: 7
 
   build-windows:
     needs: [typecheck]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Set VERSION
-        shell: bash
-        run: echo "VERSION=0.0.0-ci" >> "$GITHUB_ENV"
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
@@ -142,25 +104,6 @@ jobs:
         env:
           ISCC_PATH: "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe"
       - run: bun scripts/build-windows-dist.ts
-      - name: Rename artifacts
-        shell: pwsh
-        run: |
-          Move-Item out/installer/vibe-tavern-setup.exe `
-                     out/Vibe-Tavern-v${{ env.VERSION }}-windows-setup.exe -Force
-          Move-Item out/vibe-tavern-windows-x64.zip `
-                     out/Vibe-Tavern-v${{ env.VERSION }}-windows.zip -Force
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ci-windows-installer
-          path: out/Vibe-Tavern-v${{ env.VERSION }}-windows-setup.exe
-          if-no-files-found: error
-          retention-days: 7
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ci-windows-zip
-          path: out/Vibe-Tavern-v${{ env.VERSION }}-windows.zip
-          if-no-files-found: error
-          retention-days: 7
 
   build-docker:
     needs: [typecheck]
