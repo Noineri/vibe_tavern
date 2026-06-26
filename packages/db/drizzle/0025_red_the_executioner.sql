@@ -1,1 +1,0 @@
-ALTER TABLE `prompt_presets` ADD `authors_note_role` text DEFAULT 'system' NOT NULL;

@@ -18,7 +18,7 @@ export interface StreamOpts {
  * Unified SSE streaming helper for chat endpoints.
  * Replaces the 3 duplicated fetch+parseSSEStream blocks in app-client.ts.
  */
-export async function streamChatEndpoint(
+async function streamChatEndpoint(
   url: string,
   body: unknown,
   opts: StreamOpts,

@@ -5,21 +5,33 @@
  * receives and normalizes. DB/domain types live in @vibe-tavern/domain
  * and @vibe-tavern/db.
  */
-import type { Chat, ChatBranch, ChatId, Message, MessageVariant, ModelSettingsOverlay } from "@vibe-tavern/domain";
+import type { Chat, ChatBranch, ChatId, Message, MessageVariant } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 
-// ─── Chat ─────────────────────────────────────────────────────────────
+// Wire-format output types shared with the backend (single source of truth in
+// @vibe-tavern/api-contracts). Two are imported under local aliases that the
+// frontend has historically used: ProviderProfileRecord (canonical:
+// ClientProviderProfileRecord) and CachedModelsRecord (canonical:
+// CachedProviderModelsRecord). Defining these in a shared package makes drift
+// a compile error instead of a silent runtime bug (see wire-types.ts).
+import type {
+	ClientProviderProfileRecord as ProviderProfileRecord,
+	CachedProviderModelsRecord as CachedModelsRecord,
+	FavoriteProviderModelRecord,
+	ProviderModelSettingsRecord,
+	PersonaRecord,
+	ChatListItem,
+} from "@vibe-tavern/api-contracts";
+export type {
+	ProviderProfileRecord,
+	CachedModelsRecord,
+	FavoriteProviderModelRecord,
+	ProviderModelSettingsRecord,
+	PersonaRecord,
+	ChatListItem,
+};
 
-export interface ChatListItem {
-  id: ChatId;
-  title: string;
-  characterId: string;
-  characterName: string;
-  subtitle: string;
-  activeBranchLabel: string;
-  messageCount: number;
-  updatedAt: string;
-}
+// ─── Chat ─────────────────────────────────────────────────────────────
 
 export interface AppMessage extends Message {
   variants: MessageVariant[];
@@ -170,30 +182,6 @@ export interface AppSnapshot {
   persona?: AppPersona | null;
 }
 
-// ─── Persona ───────────────────────────────────────────────────────────
-
-/** Canonical persona shape — frontend mirror of the backend domain `PersonaRecord`
- *  (services/api/src/domain/persona/persona-runtime.ts). Single source of truth
- *  for persona on the frontend. `updatedAt` is the avatar cache-bust key
- *  (?v= in resolveEntityAvatarUrl), symmetric with CharacterRecord.updatedAt. */
-export interface PersonaRecord {
-  id: string;
-  name: string;
-  description: string;
-  pronouns: string | null;
-  avatarAssetId: string | null;
-  avatarFullAssetId: string | null;
-  avatarCropJson: string | null;
-  avatarExt: string | null;
-  avatarFullExt: string | null;
-  defaultForNewChats: boolean;
-  // Avatar-appearance prompt injection (MEDIA_GALLERY).
-  includeAvatarInPrompt: boolean;
-  avatarDescription: string | null;
-  /** bumped on every persona update; used as ?v= cache-buster (immutable cache). */
-  updatedAt: string;
-}
-
 // ─── Settings ──────────────────────────────────────────────────────────
 
 export interface UiSettingsRecord {
@@ -229,81 +217,6 @@ export interface ChatSummaryRecord {
 }
 
 // ─── Provider ──────────────────────────────────────────────────────────
-
-export interface ProviderProfileRecord {
-  id: string;
-  name: string;
-  providerPreset: string;
-  endpoint: string;
-  defaultModel: string | null;
-  contextBudget: number | null;
-  pinContextBudget: boolean;
-  bindPerModel: boolean;
-  maxTokens: number;
-  temperature: number;
-  topP: number;
-  topK: number;
-  minP: number;
-  topA: number;
-  typicalP: number;
-  tfsZ: number;
-  repeatLastN: number;
-  mirostat: number;
-  mirostatTau: number;
-  mirostatEta: number;
-  dryMultiplier: number;
-  dryBase: number;
-  dryAllowedLength: number;
-  drySequenceBreakers: string[];
-  xtcThreshold: number;
-  xtcProbability: number;
-  frequencyPenalty: number;
-  presencePenalty: number;
-  repetitionPenalty: number;
-  stopSequences: string[];
-  logitBias: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
-  seed: string | null;
-  reasoningEffort: string;
-  showReasoning: boolean;
-  streamResponse: boolean;
-  customSamplers: boolean;
-  isActive: boolean;
-  visionModel: string | null;
-  createdAt: string;
-  updatedAt: string;
-  hasStoredApiKey: boolean;
-  cachedModels?: CachedModelsRecord;
-}
-
-export interface CachedModelsRecord {
-  models: Array<{
-    id: string;
-    label: string;
-    contextLength?: number;
-    capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean };
-  }>;
-  cachedAt: string;
-}
-
-export interface FavoriteProviderModelRecord {
-  id: string;
-  providerProfileId: string;
-  modelId: string;
-  label: string | null;
-  contextLength: number | null;
-  createdAt: string;
-}
-
-/** Per-model sampler/context overlay (frontend mirror of the backend DTO).
- *  Absent fields in `settings` = inherit the profile base. */
-export interface ProviderModelSettingsRecord {
-  id: string;
-  providerProfileId: string;
-  modelId: string;
-  settings: ModelSettingsOverlay;
-  createdAt: string;
-  updatedAt: string;
-}
 
 export interface ProviderModelOption {
   id: string;

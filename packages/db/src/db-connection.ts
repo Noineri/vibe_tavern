@@ -44,6 +44,76 @@ export async function resolveMigrationsFolder(): Promise<string> {
 }
 
 /**
+ * Rebase an existing DB onto a squashed migration baseline.
+ *
+ * When the migration history is squashed to a single baseline (see the squash
+ * that collapsed the 43-migration history into one `0000_baseline`), upgrading
+ * users still carry the OLD migration hashes in `__drizzle_migrations`. The
+ * squashed baseline has a different hash, so drizzle's `migrate()` would see it
+ * as pending and try to run its `CREATE TABLE` statements — which fail loudly on
+ * the already-present tables.
+ *
+ * migrate() decides what to apply purely by timestamp (`created_at` of the last
+ * stamped migration vs the journal entry's `when`), so stamping the baseline as
+ * applied here makes migrate() skip it. The safety gate: we ONLY stamp when every
+ * table the baseline creates ALREADY exists in the DB (a subset check, so extra
+ * columns like the deprecated `characters.is_system` zombie don't trip it). If the
+ * tables are not all present, we leave the migration unstamped and let migrate()
+ * run it for real — a fresh DB needs the schema, and a partial/ancient DB that's
+ * missing tables should surface a loud boot error rather than be silently skipped.
+ */
+async function rebaseToBaseline(sqlite: Database, migrationsFolder: string): Promise<void> {
+  // Only relevant once the migration meta table exists (an upgrading user).
+  // Fresh DBs (no meta) are handled by baselineLegacyDb returning false + migrate().
+  const hasMeta = sqlite
+    .prepare("SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name='__drizzle_migrations'")
+    .get() as { cnt: number } | null;
+  if (!hasMeta || hasMeta.cnt === 0) return;
+
+  const journalPath = resolve(migrationsFolder, 'meta', '_journal.json');
+  if (!await Bun.file(journalPath).exists()) return;
+  const journal = JSON.parse(await Bun.file(journalPath).text());
+
+  const stamped = new Set<string>(
+    (sqlite.prepare('SELECT hash FROM __drizzle_migrations').all() as { hash: string }[])
+      .map((r) => r.hash),
+  );
+
+  const existingTables = new Set(
+    (sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE '__drizzle%'")
+      .all() as { name: string }[])
+      .map((r) => r.name.toLowerCase()),
+  );
+
+  const insert = sqlite.prepare(
+    'INSERT OR IGNORE INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)',
+  );
+
+  let stampedCount = 0;
+  for (const entry of journal.entries) {
+    const sqlPath = resolve(migrationsFolder, `${entry.tag}.sql`);
+    const sqlContent = await Bun.file(sqlPath).text();
+    const hash = new Bun.CryptoHasher('sha256').update(sqlContent).digest('hex');
+    if (stamped.has(hash)) continue; // already applied
+
+    const createdTables = [...sqlContent.matchAll(/CREATE\s+(?:TABLE|VIRTUAL TABLE)\s+(?:IF NOT EXISTS\s+)?[`"']?(\w+)/gmi)]
+      .map((m) => m[1])
+      .filter((t) => !t.startsWith('__drizzle') && !t.startsWith('__new'));
+
+    if (createdTables.length > 0 && createdTables.every((t) => existingTables.has(t.toLowerCase()))) {
+      insert.run(hash, entry.when);
+      stamped.add(hash);
+      stampedCount++;
+      console.log(`[db] Rebase: migration ${entry.tag} schema already present — stamped as applied (SQL skipped).`);
+    }
+    // else: tables missing — leave unstamped so migrate() runs it (fresh/partial DB).
+  }
+  if (stampedCount > 0) {
+    console.log(`[db] Rebased onto squashed baseline — ${stampedCount} migration(s) pre-stamped.`);
+  }
+}
+
+/**
  * Detect a database created by the legacy ensureSchema() approach
  * (before drizzle migrations existed) and stamp only the migrations
  * whose tables already exist in the DB.
@@ -348,35 +418,55 @@ async function healPartialMigrations(sqlite: Database, migrationsFolder: string)
   }
 }
 
-export async function createDb(dbPath: string): Promise<AppDb> {
+export async function createDb(dbPath: string, migrationsFolderOverride?: string): Promise<AppDb> {
   await mkdir(resolve(dbPath, '..'), { recursive: true });
   const sqlite = new Database(dbPath);
   sqlite.exec('PRAGMA journal_mode = WAL');
   sqlite.exec('PRAGMA foreign_keys = ON');
 
   const db = drizzle(sqlite, { schema });
-  const migrationsFolder = await resolveMigrationsFolder();
+  const migrationsFolder = migrationsFolderOverride ?? await resolveMigrationsFolder();
 
   console.log(`[db] Migrations folder: ${migrationsFolder}`);
 
-  await baselineLegacyDb(sqlite, migrationsFolder);
-
-  // Try normal migration first
+  // ─── drizzle-orm #5782 defense ────────────────────────────────────────────
+  // drizzle-kit emits `PRAGMA foreign_keys=OFF;` at the top of every table-
+  // rebuild migration (CREATE __new_x → INSERT…SELECT → DROP x → RENAME) to
+  // disarm ON DELETE CASCADE during the rebuild. drizzle-orm's migrator then
+  // wraps each migration in BEGIN…COMMIT, and SQLite IGNORES PRAGMA foreign_keys
+  // inside a transaction. Result: the protective pragma is neutralized, FK stays
+  // ON, `DROP TABLE parent` becomes an implicit `DELETE FROM parent` which
+  // CASCADES — silently wiping every child table. This is exactly how
+  // lore_entries was emptied when 0037 rebuilt lorebooks (Olesya's loss).
+  // Workaround (upstream-recommended): flip FK OFF on the raw handle BEFORE
+  // migrate() opens its BEGIN, then restore ON for normal app queries.
+  sqlite.exec('PRAGMA foreign_keys = OFF');
   try {
-    migrate(db, { migrationsFolder });
-  } catch (migrateErr: any) {
-    // migrate() can fail when a previous ensureAlterColumns() pre-flight
-    // already added columns but didn't stamp the migration, leaving partial state.
-    // Heal by splitting unstamped migrations into individual statements
-    // and tolerating "already exists" / "duplicate column" errors.
-    console.warn(`[db] migrate() failed (${migrateErr?.message ?? migrateErr}), healing partial state...`);
-    await healPartialMigrations(sqlite, migrationsFolder);
-    migrate(db, { migrationsFolder });
-  }
+    await baselineLegacyDb(sqlite, migrationsFolder);
+    await rebaseToBaseline(sqlite, migrationsFolder);
 
-  // Post-migration integrity checks
-  await repairMissingTables(sqlite, migrationsFolder);
-  await ensureAlterColumns(sqlite, migrationsFolder);
+    // Try normal migration first
+    try {
+      migrate(db, { migrationsFolder });
+    } catch (migrateErr: any) {
+      // migrate() can fail when a previous ensureAlterColumns() pre-flight
+      // already added columns but didn't stamp the migration, leaving partial state.
+      // Heal by splitting unstamped migrations into individual statements
+      // and tolerating "already exists" / "duplicate column" errors.
+      console.warn(`[db] migrate() failed (${migrateErr?.message ?? migrateErr}), healing partial state...`);
+      await healPartialMigrations(sqlite, migrationsFolder);
+      migrate(db, { migrationsFolder });
+    }
+
+    // Post-migration integrity checks
+    await repairMissingTables(sqlite, migrationsFolder);
+    await ensureAlterColumns(sqlite, migrationsFolder);
+  } finally {
+    // Restore FK enforcement for normal app queries (the OFF above was scoped
+    // to the migration phase only). See the #5782 note above for why this is
+    // the correct place to flip it back on.
+    sqlite.exec('PRAGMA foreign_keys = ON');
+  }
 
   return db;
 }

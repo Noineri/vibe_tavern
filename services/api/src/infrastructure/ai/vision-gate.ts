@@ -240,10 +240,11 @@ export async function describeAttachments(
   const results = new Map<string, string>();
 
   // Lazy import to avoid circular deps at module level
-  const { mapProfileToSdkModel } = await import("./provider-profile-mapper.js");
+  const { resolveProtocol } = await import("../../domain/providers/protocol-registry.js");
+  const { normalizeProviderType } = await import("@vibe-tavern/domain");
   const { generateText } = await import("ai");
 
-  const { model } = mapProfileToSdkModel(profile, visionModel);
+  const model = resolveProtocol(normalizeProviderType(profile.providerPreset)).resolveModel(profile, visionModel);
   const resolvedPrompt = systemPrompt?.trim() || "Describe this image in detail.";
 
   for (const att of attachments) {

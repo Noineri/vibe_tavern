@@ -12,6 +12,9 @@
       "@vibe-tavern/db": [
         "../../packages/db/src/index.ts"
       ],
+      "@vibe-tavern/db/codecs": [
+        "../../packages/db/src/codecs.ts"
+      ],
       "@vibe-tavern/domain": [
         "../../packages/domain/src/index.ts"
       ],

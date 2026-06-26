@@ -11,7 +11,7 @@ interface SaveBarProps {
   className?: string;
 }
 
-export function SaveBar({ dirty, saveState, onSave, onReset, label, className }: SaveBarProps) {
+function SaveBar({ dirty, saveState, onSave, onReset, label, className }: SaveBarProps) {
   const { t } = useT();
   const isSaving = saveState === 'saving';
   const isSaved = saveState === 'saved';

@@ -1,1 +1,0 @@
-ALTER TABLE `lorebooks` ADD `token_budget_percent` integer;

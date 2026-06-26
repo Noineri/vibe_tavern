@@ -131,10 +131,16 @@ export interface AssemblePromptForChatInput {
   presetId?: PromptPresetId;
 }
 
+export type PromptTraceDraft = Omit<PromptTrace, "id" | "messageId" | "createdAt"> & {
+  /** Resolved prompt preset id (override → chat → global default), exported
+   *  by assembly so the message-meta path records the preset each reply used. */
+  presetId: string | null;
+};
+
 export interface AssemblePromptForChatResult {
   branchId: ChatBranchId;
   prompt: AssemblePromptResponse;
-  promptTraceDraft: Omit<PromptTrace, "id" | "messageId" | "createdAt">;
+  promptTraceDraft: PromptTraceDraft;
 }
 
 export class PromptAssemblyService {
@@ -378,6 +384,12 @@ export class PromptAssemblyService {
         branchId: branchId as ChatBranchId,
         model: input.model,
         presetName: promptPreset?.name ?? chat.promptPresetId ?? "(none)",
+        // The fully-resolved preset id (override → chat → global default; see
+        // the cascade above). Carried out of assembly so the message-meta path
+        // can record on each reply the preset that was ACTUALLY used — not just
+        // presetName for the trace. Read by ChatRuntime.appendAssistantReply /
+        // appendMessageVariant to populate messages/variants.presetId.
+        presetId: promptPresetId ?? null,
         assembledLayers: result.layers.map((layer) => mapPromptLayerDto(layer)),
         tokenAccounting: {
           total: result.totalTokenEstimate,

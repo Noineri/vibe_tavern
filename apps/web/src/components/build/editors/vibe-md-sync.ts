@@ -50,7 +50,7 @@ import {
   splitGreetingsInline,
   greetingsFromCharacter,
   characterFromGreetings,
-} from "@vibe-tavern/db";
+} from "@vibe-tavern/db/codecs";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Editor → storage prose fields (with structural pinning)
