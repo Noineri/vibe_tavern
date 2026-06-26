@@ -59,7 +59,7 @@ export interface GreetingFileEntry {
 // ───────────────────────────────────────────────────────────────────────────
 
 /** ID_PREFIX + 4-hex zero-padded index. `g_0000`, `g_0001`, ... `g_00ff`, `g_0100`, ... */
-export const GREETING_ID_PREFIX = "g_";
+const GREETING_ID_PREFIX = "g_";
 const ID_RADIX = 16;
 const ID_MIN_WIDTH = 4;
 
