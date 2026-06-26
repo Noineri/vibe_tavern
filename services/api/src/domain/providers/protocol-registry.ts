@@ -1217,9 +1217,10 @@ export function resolveProtocol(type: ProviderType): ProtocolAdapter {
 }
 
 /**
- * Derived capability map (keyed by provider type). Kept as an export so the
- * compatibility shim in `ai/provider-capabilities.ts` can re-export the legacy
- * `PROVIDER_CAPABILITIES` name without duplicating data.
+ * Derived capability map (keyed by provider type). The canonical capability
+ * surface — consumers read it directly (the legacy `PROVIDER_CAPABILITIES`
+ * alias and its compatibility shim were removed once all callers reached the
+ * registry directly).
  */
 export const PROTOCOL_CAPABILITIES: Record<ProviderType, ProviderCapabilityFlags> =
 	Object.fromEntries(
