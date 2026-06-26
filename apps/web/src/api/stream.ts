@@ -1,6 +1,8 @@
 import { getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { appendTokenQuery } from "../lib/mobile-token.js";
 import { parseSSEStream } from "../lib/sse-parser.js";
+import type { ProviderErrorCategory } from "@vibe-tavern/api-contracts";
+import { ProviderStreamError } from "./provider-stream-error.js";
 import type { ChatGenerationStatus } from "./types.js";
 import type { RpcErrorBody } from "./unwrap.js";
 import type { z } from "zod";
@@ -44,11 +46,15 @@ async function streamChatEndpoint(
     if (error && typeof error === "object" && error.code === "VISION_NOT_SUPPORTED") {
       throw new Error("VISION_NOT_SUPPORTED");
     }
+    const errorObj = typeof error === "object" ? error : undefined;
     const message =
-      (typeof error === "object" ? error?.message : undefined)
+      errorObj?.message
       || (typeof error === "string" ? error : undefined)
       || `Stream request failed: ${response.status}`;
-    throw new Error(message);
+    const category = typeof errorObj?.details?.category === "string"
+      ? (errorObj.details.category as ProviderErrorCategory)
+      : "unknown";
+    throw new ProviderStreamError(message, category);
   }
 
   opts.onStatus("streaming");

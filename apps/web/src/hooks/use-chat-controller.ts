@@ -32,6 +32,7 @@ import {
   deleteBranchAction,
   renameBranchAction,
 } from "../stores/api-actions/chat-actions.js";
+import { ProviderStreamError } from "../api/provider-stream-error.js";
 
 function restoreDraftAfterSendError(content?: string | null, attachments?: Attachment[]): void {
   const store = useChatStore.getState();
@@ -44,6 +45,44 @@ function restoreDraftAfterSendError(content?: string | null, attachments?: Attac
       if (!existingIds.has(att.id)) store.addDraftAttachment(att);
     });
   }
+}
+
+// Categories where the failure is likely transient (retry after a short wait) —
+// the message alone is enough; we just add a "try again" hint.
+const TRANSIENT_PROVIDER_CATEGORIES = new Set(["rate_limit", "timeout", "network", "server_error"]);
+
+/**
+ * Shows a category-aware toast for a provider/LLM generation failure. Reads the
+ * server-classified `category` from a {@link ProviderStreamError} and picks a
+ * description + (for auth) an action that opens provider settings — so the user
+ * gets actionable feedback instead of raw HTTP text. Mirrors the existing
+ * VISION_NOT_SUPPORTED toast shape. Falls back to the raw message for
+ * `unknown` (and for non-ProviderStreamError errors, e.g. network failures
+ * before the request reached the server).
+ */
+function showProviderErrorToast(error: unknown, t: (key: string) => string, fallbackKey = "message_send_failed"): void {
+  const message = error instanceof Error && error.message ? error.message : t(fallbackKey);
+  const category = error instanceof ProviderStreamError ? error.category : "unknown";
+
+  if (category === "authentication") {
+    toast.error(message, {
+      description: t("provider_error_auth_desc"),
+      action: {
+        label: t("open_provider_settings"),
+        onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
+      },
+    });
+    return;
+  }
+  if (TRANSIENT_PROVIDER_CATEGORIES.has(category)) {
+    toast.error(message, { description: t("provider_error_transient_desc") });
+    return;
+  }
+  if (category === "empty_response" || category === "parse_error") {
+    toast.error(message, { description: t("provider_error_empty_desc") });
+    return;
+  }
+  toast.error(message);
 }
 
 /** Outcome of a single generation attempt, surfaced to the queue pump (Q3). */
@@ -207,7 +246,7 @@ export function useChatController(): ChatControllerActions {
         restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
       } else {
         restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
-        toast.error(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
+        showProviderErrorToast(error, getT());
       }
       useChatStore.getState().setGenerationStatus(chatId, "failed");
       return "failed";
@@ -307,7 +346,7 @@ export function useChatController(): ChatControllerActions {
           restoreDraftAfterSendError(draft, currentAttachments);
         } else {
           restoreDraftAfterSendError(draft, currentAttachments);
-          toast.error(error instanceof Error && error.message ? error.message : getT()("message_send_failed"));
+          showProviderErrorToast(error, getT());
         }
       } finally {
         useChatStore.getState().finishGeneration(activeChatId);
@@ -351,7 +390,7 @@ export function useChatController(): ChatControllerActions {
           return;
         }
         await refreshChatSnapshotCache(activeChatId);
-        toast.error(error instanceof Error ? error.message : getT()("resend_failed"));
+        showProviderErrorToast(error, getT(), "resend_failed");
       } finally {
         useChatStore.getState().finishGeneration(activeChatId);
       }

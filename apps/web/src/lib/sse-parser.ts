@@ -1,4 +1,6 @@
 import type { ChatGenerationStatus } from "../api/types.js";
+import type { ProviderErrorCategory } from "@vibe-tavern/api-contracts";
+import { ProviderStreamError } from "../api/provider-stream-error.js";
 
 export interface ParseSSEStreamOptions {
   response: Response;
@@ -78,7 +80,8 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
             const message = typeof parsed.message === "string" && parsed.message.trim()
               ? parsed.message
               : "Provider request failed";
-            throw new Error(message);
+            const category = typeof parsed.category === "string" ? (parsed.category as ProviderErrorCategory) : "unknown";
+            throw new ProviderStreamError(message, category);
           } else if (currentEvent === "reasoning-delta") {
             if (parsed.delta !== undefined && opts.onReasoningChunk) {
               opts.onReasoningChunk(parsed.delta);
@@ -99,7 +102,12 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
         } catch (error) {
           if (currentEvent === "error") {
             opts.onStatus("failed");
-            throw error instanceof Error ? error : new Error(data || "Provider request failed");
+            // JSON parsed → the ProviderStreamError thrown above is re-thrown as-is
+            // (preserving category). JSON failed to parse → wrap the raw payload as
+            // an unknown-category ProviderStreamError so the UI still gets a typed error.
+            throw error instanceof ProviderStreamError
+              ? error
+              : new ProviderStreamError(data || "Provider request failed", "unknown");
           }
           /* skip malformed */
         }
