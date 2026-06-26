@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
 import { resolve } from "node:path";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "../shared/errors.js";
+import { ProviderExecutionError } from "../infrastructure/ai/provider-execution-types.js";
 import { logSendDebug } from "../shared/send-debug-log.js";
 import { createApiRouter, type RuntimeApi } from "../api/routes/index.js";
 import { createMobileAuthMiddleware, type MobileAccessTokenSource } from "../domain/mobile-access/mobile-auth.js";
@@ -73,6 +74,16 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 				message: err instanceof Error ? err.message : String(err),
 				stack: err instanceof Error ? err.stack : null,
 			});
+		}
+		if (err instanceof ProviderExecutionError) {
+			// Execution-boundary failure (see provider-error-categorization-reanimation.md).
+			// Not a DomainError, so it would otherwise fall through to the generic 500;
+			// map it to the same 502 the old providerError() DomainError yielded, and
+			// surface the category in error.details so the UI can react to it.
+			return c.json(
+				{ error: { kind: "Provider" as const, message: err.message, details: { category: err.category } } },
+				502,
+			);
 		}
 		if (isDomainError(err)) {
 			return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 401 | 404 | 409 | 500 | 502);
