@@ -161,11 +161,6 @@ export async function upsertProviderModelSettings(providerProfileId: string, mod
   return unwrapRpc<ProviderModelSettingsRecord>(response);
 }
 
-export async function deleteProviderModelSettings(providerProfileId: string, modelId: string): Promise<{ ok: true }> {
-  const response = await client.api.providers[":providerId"]["model-settings"][":modelId"].$delete({ param: { providerId: providerProfileId, modelId } });
-  return unwrapRpc<{ ok: true }>(response);
-}
-
 export async function fetchModelsByEndpoint(baseUrl: string, apiKey?: string, providerType?: string): Promise<{ models: ProviderModelOption[] }> {
   const response = await client.api.providers["fetch-models"].$post({ json: { baseUrl, apiKey: apiKey ?? "", providerType } });
   return unwrapRpc<{ models: ProviderModelOption[] }>(response);

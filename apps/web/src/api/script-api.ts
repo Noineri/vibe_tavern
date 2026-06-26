@@ -12,11 +12,6 @@ export async function listAllScripts(): Promise<ScriptRecord[]> {
   return unwrapRpc<ScriptRecord[]>(response);
 }
 
-export async function getScript(scriptId: string): Promise<ScriptRecord> {
-  const response = await client.api.scripts[":scriptId"].$get({ param: { scriptId } });
-  return unwrapRpc<ScriptRecord>(response);
-}
-
 export async function createScript(body: { name: string; description?: string; code?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }): Promise<ScriptRecord> {
   const response = await client.api.scripts.$post({ json: body });
   return unwrapRpc<ScriptRecord>(response);
