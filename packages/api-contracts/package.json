@@ -10,7 +10,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@vibe-tavern/domain": "0.3.7",
     "zod": "^3.24.4"
   },
   "devDependencies": {
