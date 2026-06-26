@@ -17,7 +17,7 @@
 | `<Modal>` | Custom dialogs | `Modal.tsx` | Radix Dialog, focus trap, scroll lock |
 | `<AutoTextarea>` | `<textarea>` | `auto-textarea.tsx` | Auto-resizing textarea |
 | `<CodeEditor>` | `<textarea>` for code | `CodeEditor.tsx` | CodeMirror 6 wrapper |
-| `<SaveBar>` | Custom save buttons | `SaveBar.tsx` | Sticky save bar with state |
+| `<SaveBar>` / `<SaveButton>` | Custom save buttons | `SaveBar.tsx` | Sticky save bar with dirty/saved state. Public export is `<SaveButton>`; `SaveBar` is the internal layout component |
 | `<TokenCounter>` | Custom token display | `TokenCounter.tsx` | "123 tokens" badge |
 | `<LinkBindingPopover>` | Custom avatar binding chips | `LinkBindingPopover.tsx` | Compact character/persona/lorebook binding pills + popover |
 | `<MobileExpandTextarea>` | — | `MobileExpandTextarea.tsx` | Fullscreen editor overlay on mobile |
@@ -29,7 +29,12 @@
 | `<AiQuickPill>` | — | `AiQuickPill.tsx` | Compact AI model quick-select pill |
 | `<AvatarCropModal>` | — | `AvatarCropModal.tsx` | Circular crop overlay using react-easy-crop |
 | `<TextDiffPreview>` | — | `TextDiffPreview.tsx` | Side-by-side or inline text diff view |
-| `<save-btn>` | `<button>` for save | `save-btn.tsx` | Save button with loading state |
+| `<AiAssistantModal>` | — | `AiAssistantModal.tsx` | AI Assistant modal (script/lore_entry/md_import generate, plus the AiQuickPill settings editor) |
+| `<MasterDetailModal>` | Custom two-pane modals | `MasterDetailModal.tsx` | Responsive master-detail modal: two-pane on desktop, drill-down stack on mobile |
+| `<ActionSheet>` | — | `ActionSheet.tsx` | Mobile bottom-sheet action menu (portaled) |
+| `<NumberInput>` | `<input type="number">` | `NumberInput.tsx` | Numeric input with +/- stepper controls |
+| `<OverflowTooltip>` | `title="..."` on names | `OverflowTooltip.tsx` | Single-line truncating text that reveals a tooltip only when it overflows |
+| `<Logo>` | Inline SVG | `Logo.tsx` | The `vt_sign` open-book logo mark (static or animated) |
 | `textarea-helpers` | — | `textarea-helpers.ts` | Shared utilities for textarea behavior (not a component) |
 
 ---
@@ -344,8 +349,12 @@ CodeMirror 6 with JS syntax highlighting, custom dark theme using CSS vars + okl
 
 **File:** `SaveBar.tsx`
 
+The public export is **`<SaveButton>`** — a sticky save bar with dirty/saved state. `SaveBar` is the internal layout component (not exported). Consumers import `SaveButton`:
+
 ```tsx
-<SaveBar
+import { SaveButton } from "../shared/SaveBar.js";
+
+<SaveButton
   dirty={isDirty}
   saveState={saveState}
   onSave={handleSave}
@@ -555,18 +564,78 @@ Use when AI-assisted edits or bulk transformations need a visible before/after r
 
 ---
 
-## save-btn
-
-**File:** `save-btn.tsx`
-**Purpose:** Shared save button helper/component.
-
-Use when a save action needs consistent disabled/loading/saved visual treatment but does not require the full sticky `<SaveBar>`.
-
----
-
 ## textarea-helpers
 
 **File:** `textarea-helpers.ts`
 **Purpose:** Shared textarea behavior utilities.
 
 Not a React component. Keep textarea sizing/selection helper logic here instead of duplicating it across editors.
+
+---
+
+## AiAssistantModal
+
+**File:** `AiAssistantModal.tsx` — the frontend of the [AI Assistant backend subsystem](./backend.md#ai-assistant). One modal with two shapes:
+
+- **Full mode** (`mode="full"`) — the lightbulb "assist" generator. `apiMode` selects what to generate: `"script"`, `"lore_entry"`, or `"md_import"` (the markdown-card importer). Lets the user pick a provider/model, feeds the relevant context (character/persona via `scopeContext`), and returns the result via `onInsert` / `onReplace` (text modes) or `onMdImportApply` (the structured `md_import` fields). Maps to the backend modes in `MODE_CONFIGS`.
+- **QuickPill mode** (`mode="quickpill"`) — the settings editor behind `<AiQuickPill>`: pick the quick-action model and toggle which options it shows (append toggle, key target, message count).
+
+The modal persists the last-used model per mode in `localStorage` so the lightbulb actions remember their model across sessions.
+
+---
+
+## MasterDetailModal
+
+**File:** `MasterDetailModal.tsx` — a responsive master/detail layout inside a `Modal`, used by the larger editor surfaces (e.g. script/lore management).
+
+- **Desktop:** two-pane — master list on the left, detail panel on the right.
+- **Mobile:** a single stack with drill-down navigation. Selecting a master item opens the detail as an overlay; `MasterDetailMobileDrillDown` is the chevron button that triggers `openDetail()`.
+
+State is shared via context: `useMasterDetail()` returns `{ isMobile, isDetailOpen, openDetail, closeDetail }`. Call it inside a `MasterDetailModal` to drive the mobile transition (e.g. showing a back button when `isDetailOpen`).
+
+---
+
+## ActionSheet
+
+**File:** `ActionSheet.tsx` — a mobile bottom-sheet action menu, portaled to `document.body`. Use it for the mobile equivalent of a desktop dropdown/hover action bar (message actions, list item menus).
+
+```tsx
+<ActionSheet open={open} title="Message" items={items} onClose={close} />
+```
+
+Each `ActionSheetItem` is `{ icon, label, danger?, action }`. `danger` styles the item red (delete/destroy). The sheet renders a backdrop scrim and slides up from the bottom; selecting an item runs its `action` and closes.
+
+---
+
+## NumberInput
+
+**File:** `NumberInput.tsx` — a numeric input with +/- stepper buttons. Use it for numeric settings where a plain `<input type="number">` is too bare (priority, depth, token counts).
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `value` / `onChange` | `number` / `(val: number) => void` | Controlled value |
+| `min` / `max` / `step` | `number?` | Bounds and increment |
+| `hideControls` | `boolean?` | Hide the +/- stepper buttons (plain input) |
+| `onBlur` | `() => void?` | Blur handler |
+
+Clamps to `[min, max]` and steps by `step`. Steppers disable at the bounds.
+
+---
+
+## OverflowTooltip
+
+**File:** `OverflowTooltip.tsx` — renders `text` in a single-line truncating div and shows a hover tooltip with the full text **only when the text actually overflows** its container. Use it for entity names / labels in sidebars and lists where truncation is expected but the full value should be reachable.
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `text` | `string` | The text to display |
+| `className` | `string?` | Classes on the text element (color, size). `truncate` is added automatically |
+| `side` | `"top" \| "right" \| ...?` | Tooltip side; defaults to `right` (sidebar-friendly) |
+
+Unlike `<CustomTooltip>` (which always shows a tooltip), this one shows it only when needed — so non-truncated text doesn't get a redundant popover.
+
+---
+
+## Logo
+
+**File:** `Logo.tsx` — the `vt_sign` open-book-with-three-stars logo mark. Static by default for sidebar/branding placements. Exposes an animated variant (the loading placeholder uses it for the startup splash). Prefer importing `<Logo>` over inlining the SVG so the mark stays consistent and the animation lives in one place.
