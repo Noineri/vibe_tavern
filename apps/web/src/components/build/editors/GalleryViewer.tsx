@@ -3,6 +3,14 @@ import { Icons } from "../../shared/icons.js";
 import { useT } from "../../../i18n/context.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
+import {
+  useImageZoomPan,
+  clamp,
+  MIN_ZOOM,
+  TOPBAR_HEIGHT,
+  getSidebarWidth,
+  getAttachedPosition,
+} from "../../../hooks/use-image-zoom-pan.js";
 import { serveCharacterAssetUrl } from "../../../api/gallery-api.js";
 import type { CharacterAsset } from "@vibe-tavern/domain";
 
@@ -20,22 +28,6 @@ interface GalleryViewerProps {
  * fit/100%, mobile pinch-zoom. This is the "quick inspect" surface; the fuller
  * description-edit experience lives in GalleryLightbox.
  */
-const MIN_ZOOM = 0.2;
-const TOPBAR_HEIGHT = 60;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-function getSidebarWidth(): number {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue("--sw").trim();
-  const parsed = Number.parseFloat(raw);
-  return Number.isFinite(parsed) ? parsed : 248;
-}
-
-function getAttachedPosition(): { x: number; y: number } {
-  return { x: getSidebarWidth() + 22, y: TOPBAR_HEIGHT + 16 };
-}
 
 function getFitZoom(naturalWidth: number, naturalHeight: number): number {
   const maxVisualWidth = Math.min(560, Math.max(300, window.innerWidth - getSidebarWidth() - 56));
@@ -257,11 +249,7 @@ function MobileLightbox({
   onClose: () => void;
 }) {
   const { t } = useT();
-  const [scale, setScale] = useState(1);
-  const [translate, setTranslate] = useState({ x: 0, y: 0 });
-  const lastTouchDist = useRef<number | null>(null);
-  const lastTouchCenter = useRef<{ x: number; y: number } | null>(null);
-  const lastTapRef = useRef<number>(0);
+  const { scale, translate, isPinching, touchHandlers, handleTap } = useImageZoomPan();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -269,63 +257,13 @@ function MobileLightbox({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      lastTouchDist.current = Math.sqrt(dx * dx + dy * dy);
-      lastTouchCenter.current = {
-        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-        y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
-      };
-    }
-  }, []);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2 && lastTouchDist.current !== null) {
-      e.preventDefault();
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const ratio = dist / lastTouchDist.current;
-      lastTouchDist.current = dist;
-      const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      setScale((prev) => clamp(prev * ratio, 0.5, 5));
-      if (lastTouchCenter.current) {
-        setTranslate((prev) => ({
-          x: prev.x + (centerX - lastTouchCenter.current!.x),
-          y: prev.y + (centerY - lastTouchCenter.current!.y),
-        }));
-      }
-      lastTouchCenter.current = { x: centerX, y: centerY };
-    }
-  }, []);
-
-  const handleTouchEnd = useCallback(() => {
-    lastTouchDist.current = null;
-    lastTouchCenter.current = null;
-  }, []);
-
-  const handleTap = useCallback(() => {
-    const now = Date.now();
-    if (now - lastTapRef.current < 300) {
-      setScale((prev) => {
-        if (Math.abs(prev - 1) < 0.1) { setTranslate({ x: 0, y: 0 }); return 2.5; }
-        setTranslate({ x: 0, y: 0 });
-        return 1;
-      });
-    }
-    lastTapRef.current = now;
-  }, []);
-
   return (
     <div
       className="fixed inset-0 z-[600] flex items-center justify-center bg-black/95"
       onClick={onClose}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+      onTouchStart={touchHandlers.onTouchStart}
+      onTouchMove={touchHandlers.onTouchMove}
+      onTouchEnd={touchHandlers.onTouchEnd}
     >
       <button type="button"
         className="absolute right-3 top-3 z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white active:bg-black/75"
@@ -340,7 +278,7 @@ function MobileLightbox({
         className="max-h-full max-w-full select-none object-contain"
         style={{
           transform: `scale(${scale}) translate(${translate.x}px, ${translate.y}px)`,
-          transition: lastTouchDist.current !== null ? "none" : "transform 0.15s ease-out",
+          transition: isPinching ? "none" : "transform 0.15s ease-out",
         }}
         draggable={false}
         onClick={(e) => { e.stopPropagation(); handleTap(); }}
