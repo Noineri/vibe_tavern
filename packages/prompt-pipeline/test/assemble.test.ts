@@ -346,6 +346,36 @@ describe("assemblePrompt", () => {
         .filter((id) => typeof id === "string" && id.startsWith("lore_"));
       expect(loreIds).toEqual(["lore_book_a_early", "lore_book_c_middle", "lore_book_b_late"]);
     });
+
+    // ── at_depth: in-chat injection at a specific depth (TEST 5 from stress lorebook) ──
+
+    it("places an at_depth lore entry into the chat at its configured depth", () => {
+      // Ported from stress-test lorebook TEST 5: position at_depth + depth 2
+      // means the lore layer is interleaved into chat history, not stacked
+      // before/after it. assemble.ts:720 maps this to in_chat + injectionDepth.
+      const result = assemblePrompt(baseContext({
+        lore: [
+          { id: "at_d2", title: "Depth", content: "Injected at depth 2.", priority: 10, position: "at_depth", depth: 2 },
+        ],
+      }));
+      const lore = result.layers.find((l) => l.id === "lore_at_d2");
+      expect(lore).toBeTruthy();
+      expect(lore.position).toBe("in_chat");
+      expect(lore.injectionDepth).toBe(2);
+    });
+
+    it("defaults at_depth injection to depth 4 when the entry omits depth (ST default)", () => {
+      // assemble.ts:721 — `loreEntry.depth ?? 4` matches the SillyTavern default.
+      const result = assemblePrompt(baseContext({
+        lore: [
+          { id: "at_default", title: "Depth", content: "No depth set.", priority: 10, position: "at_depth" },
+        ],
+      }));
+      const lore = result.layers.find((l) => l.id === "lore_at_default");
+      expect(lore).toBeTruthy();
+      expect(lore.position).toBe("in_chat");
+      expect(lore.injectionDepth).toBe(4);
+    });
   });
 
   describe("memory", () => {
