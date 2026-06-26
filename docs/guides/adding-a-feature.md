@@ -44,7 +44,7 @@ services/api/src/
 │   │   └── chat-mode-strategy.ts        per-mode hooks (resolveProvider, onMessageAppended)
 │   └── ai-assistant/
 │       ├── ai-assistant-feature.ts      mounts the /api/ai-assistant SSE route
-│       ├── ai-assistant-registry.ts     Case A: the mode registry
+│       ├── ai-assistant-modes.ts        Case A: MODE_CONFIGS — the per-mode registry
 │       └── ai-assistant-prompts.ts      prompt loaders per mode
 ├── server/
 │   └── server-runtime.ts        ← where FeatureRegistry.register() is called for each feature
@@ -70,13 +70,14 @@ The result is text (or tokens) returned to the caller. Nothing is persisted; no 
 
 ### Step 1 — Register the mode
 
-Add an entry to the AI-assistant registry (`services/api/src/domain/ai-assistant/ai-assistant-registry.ts`). A mode provides:
-- `systemPrompt` — loaded from `services/api/assets/*.md` (see `ai-assistant-prompts.ts` for the path-resolution pattern).
-- `outputFormat` — `text` | `json` (drives how the frontend parses the stream).
-- `userMessageBuilder` — turns the request body into the final user message.
-- `contextResolver` — what chat context (if any) to assemble.
+Add an entry to `MODE_CONFIGS` in `services/api/src/domain/ai-assistant/ai-assistant-modes.ts` (a `Record<AiAssistantMode, AiAssistantModeConfig>`). A mode config provides:
+- `presetKey` — key into the preset's per-mode settings (a custom-prompt override lives here).
+- `defaultPromptFile` — the fallback system prompt, loaded from `services/api/assets/*.md` via `ai-assistant-prompts.ts` (which resolves the path, caches, and applies any custom or legacy-column override).
+- `outputFormat` — `"text"` | `"json"` (drives how the frontend parses the stream).
+- `stripReasoning` — whether `<think>` blocks are stripped from SSE output (JSON modes strip; only the final parsed result is emitted).
+- `jsonSchemaHint` — a human-readable schema string baked into the prompt for JSON modes (`null` for text modes).
 
-Copy the closest existing mode (e.g. `vision_describe` for backend-only modes, `lore` for chat-context modes) and adapt. The registry dispatch is one switch arm.
+The request-body → user-message transform and context assembly are **not** per-mode fields: every mode shares `buildUserMessage(request, config)` (in `ai-assistant-stream.ts`) and the `context-resolver.ts` helpers (`toPipelineCharacters` / `toPipelinePersonas` / `toPipelineLore`). Copy the closest existing mode (e.g. `vision_describe` for a backend-only text mode, `lore_keys` for a JSON mode) and adapt the config. `getModeConfig(mode)` is the lookup; dispatch is a single switch arm in `ai-assistant-stream.ts`.
 
 ### Step 2 — Frontend caller
 
