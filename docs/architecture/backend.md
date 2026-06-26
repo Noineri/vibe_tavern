@@ -85,6 +85,30 @@ runtime/session/
 └── session-runtime-dto.ts        snapshot/DTO builders
 ```
 
+The live-chat **service layer** lives in `domain/chat/`, split by responsibility:
+
+```
+domain/chat/
+├── chat-application-service.ts   ChatApplicationService — pure CRUD/state mutations that
+│                                             don't need an LLM: create chat, append user
+│                                             message, edit/delete message, branch CRUD,
+│                                             attachment description updates. The "database
+│                                             writer" for chat state.
+├── live-chat-orchestrator.ts     LiveChatOrchestrator — the generation paths (send /
+│                                             generate-reply / regenerate). Composes
+│                                             ChatRuntime.prepareLiveTurn → provider
+│                                             executor → ChatRuntime.appendAssistantReply,
+│                                             delegating mode-specific decisions to a
+│                                             ChatModeStrategy (see Chat Modes).
+├── chat-mode-strategy.ts         ChatModeStrategy interface + the registered strategies.
+├── chat-summary-service.ts       ChatSummaryService — the actual summarization calls
+│                                             (manual + auto), uses BackgroundTaskLocks.
+└── chat-summary-feature.ts       FeatureModule wrapper registering the auto-summary
+                                              EventBus subscriber (see Feature Modules).
+```
+
+The split matters: `ChatApplicationService` holds every chat mutation that is a plain DB write, so non-generation endpoints (edit, branch, delete, attachment updates) never pull in the provider executor or prompt pipeline. Anything that calls an LLM routes through `LiveChatOrchestrator` instead.
+
 Domain sub-runtimes live with their own domain:
 
 ```
@@ -106,6 +130,44 @@ SessionRuntime also exposes direct methods for prompt trace history, bootstrap, 
 - `MobileAccessAdapter` → `MobileAccessService`
 
 **Why decomposition (not one god class):** Each sub-runtime owns a clear domain boundary. Dependencies flow one way — `ChatRuntime` uses `StoreContainer` but doesn't know about `PersonaRuntime`. The top-level `SessionRuntime` wires them together.
+
+---
+
+## Chat Modes (Strategy Pattern)
+
+`domain/chat/chat-mode-strategy.ts` defines how a chat mode prepares and processes turns. `LiveChatOrchestrator` owns the execution loop (provider call, streaming, SSE, error handling) and delegates only the parts that actually differ between modes to a `ChatModeStrategy`:
+
+```ts
+interface ChatModeStrategy {
+  readonly mode: ChatMode;
+  resolveProvider(input): Promise<{ profile; model }>;  // which provider/model this turn
+  onMessageAppended(input): Promise<void>;              // post-append background work
+}
+```
+
+The `ChatMode` union is declared as `"rp" | "novel" | "group" | "coauthor"`. **Only `rp` is implemented today** — `RpModeStrategy` is a pass-through (uses the caller's provider/model; no post-append work beyond EventBus subscribers). The `novel`, `group`, and `coauthor` cases are type-level stubs: the union is the forward-looking contract for the multimode roadmap (Novel Mode's flat text-completion axis, Group Mode's per-character provider selection, Co-Author Mode), but `getChatModeStrategy("novel")` throws today. New chats default to `"rp"`, and every existing chat reads as `"rp"`. The strategy seam exists so those modes can land without touching the orchestrator's execution loop — they override `resolveProvider` / `onMessageAppended` and register in the `strategies` map.
+
+The `textCompletion` capability flag on each `ProtocolAdapter` (see AI Execution Layer) is the provider-side counterpart: it's the single switch that opts a protocol into Novel Mode's flat-prompt assembler when that mode ships.
+
+---
+
+## Feature Modules & Lifecycle
+
+The server has two composition surfaces. **`SessionRuntime`** is the composition root for the core (chat, character, persona, prompt, providers — always-on). **`FeatureRegistry`** (`shared/feature-registry.ts`) is the plugin surface for opt-in features that extend the app without touching the core wiring.
+
+A `FeatureModule` (`shared/feature-module.ts`) is a self-contained unit that, during `activate()`, can: mount API routes on a Hono sub-router, subscribe to EventBus events, and register UI extensions (message slots, build panels). `FeatureDeps` gives it only `{ events, router }` — deliberately no direct handle on server internals, so features stay decoupled.
+
+```ts
+interface FeatureModule {
+  readonly id: string;          // "chat-summary", "ai-assistant"
+  activate(deps: FeatureDeps): void;   // register routes / events / UI extensions
+  deactivate?(): void;          // optional cleanup (mainly for tests)
+}
+```
+
+Lifecycle: `FeatureRegistry.register(feature)` before activation, then `activateAll({ events, router })` during server startup (after the core is wired). Two features are registered today: `chat-summary` (auto-summary EventBus subscriber) and `ai-assistant` (the AI assistant SSE routes). Both are currently always-on, but the registry is the seam for making features configurable and for adding new background-LLM features (objective, tracker, badge, dream) without modifying the server bootstrap — see [Adding a feature](../guides/adding-a-feature.md).
+
+The EventBus (`@vibe-tavern/domain`) is what connects the two composition surfaces: core runtimes emit events (`message.appended`, etc.), and features subscribe. This is why `RpModeStrategy.onMessageAppended` can be empty — auto-summary is a separate feature listening on the bus, not hard-wired into the strategy.
 
 ---
 
@@ -346,6 +408,40 @@ The fallback is acceptable for context-budget accounting, but **not** for logit 
 
 ---
 
+## AI Assistant
+
+A separate generation subsystem (`domain/ai-assistant/`) for the lightbulb-icon "assist" actions in the Build editor — generate a script, draft a lore entry, extract lore keys, impersonate a character, import a card from markdown. These are short, user-initiated, result-returning LLM calls distinct from the main chat generation path.
+
+### Six modes, one config table
+
+`MODE_CONFIGS` (`ai-assistant-modes.ts`) registers six modes. Five are user-facing in the AI Assistant modal; `vision_describe` is backend-only (it drives the attachment-description pipeline — see [Vision and Attachment Pipeline](#vision-and-attachment-pipeline)):
+
+| Mode | Output | Reasoning | Purpose |
+|------|--------|-----------|---------|
+| `script` | text | kept | Generate a script from a description |
+| `lore_entry` | text | kept | Draft a lorebook entry |
+| `lore_keys` | **JSON** | **stripped** | Extract `{ keys, secondaryKeys }` from text; only the parsed JSON is emitted |
+| `chat_impersonate` | text | stripped | Write a message in the character's voice |
+| `md_import` | **JSON** | stripped | Parse a markdown card into a structured character JSON |
+| `vision_describe` | text | stripped | Backend: caption an attachment (not in the modal) |
+
+The `outputFormat: "json"` modes (`lore_keys`, `md_import`) buffer the whole response, strip reasoning, then parse the remainder as JSON against a per-mode schema hint before emitting. Text modes stream directly.
+
+### Prompt fallback chain
+
+Each mode resolves its system prompt through the same chain (`resolveSystemPrompt(mode)` in `ai-assistant-prompts.ts`):
+1. **Preset override** — `aiAssistantPrompts[mode]` from the active prompt preset (user-editable in Settings).
+2. **Legacy column** — for the modes that predate the preset (`script` only: the old `scriptAiSystemPrompt` column).
+3. **Default `.md`** — `services/api/assets/<mode>-ai-prompt.md`, loaded + cached once.
+
+Registering `vision_describe` as a real mode (rather than a separate code path) is what unifies this chain across all six modes — see [AD-017](./decisions.md#ad-017-vision_describe-as-a-non-user-facing-ai-assistant-mode).
+
+### Runtime
+
+`ai-assistant-stream.ts` is the core runtime: resolve prompt → build pipeline context (`context-resolver.ts`) → `assemblePrompt()` → `streamText()`. It is exposed as the `ai-assistant` FeatureModule (routes: `POST /api/scripts/ai-assistant`, plus the lore/import generate endpoints), which is how the subsystem mounts without being hard-wired into the server bootstrap. `reasoning-split.ts` is the shared `<think>`-tag stripper used by both the assistant and the vision describe pipeline.
+
+---
+
 ## Vision and Attachment Pipeline
 
 **Modules:** `infrastructure/ai/vision-gate.ts`, `image-compress.ts`, the two provider executors, and `api/adapters/chat-adapter.ts`.
@@ -371,14 +467,7 @@ Runs in the executor **before** `resolveMultimodalContent`, only when `shouldDes
 
 ### Prompt resolution (unified with the AI Assistant)
 
-`vision_describe` is registered as a real `AiAssistantMode` in `domain/ai-assistant/ai-assistant-modes.ts` (`MODE_CONFIGS`). It is **not user-facing** in the AI Assistant modal — it exists solely so the describe pipeline resolves its prompt through the *same* `resolveSystemPrompt` fallback chain as the other modes, and so the Settings prompt editor's `vision_describe` key is backed by a real config rather than a phantom.
-
-Resolution order (in `resolveVisionDescribePrompt` → `resolveSystemPrompt("vision_describe")`):
-
-1. Preset override — `aiAssistantPrompts["vision_describe"]` from the active prompt preset.
-2. Default `.md` — `services/api/assets/vision-describe-ai-prompt.md` (loaded + cached by `ai-assistant-prompts.ts`).
-
-There is no legacy column for this mode (it is newer than the `scriptAiSystemPrompt` migration). The default `.md` instructs the model to describe only what is visible, stay sensory/specific, quote in-image text verbatim, and emit **no** meta-commentary ("The image shows…").
+`vision_describe` is the backend-only mode in the AI Assistant's `MODE_CONFIGS` — it is **not user-facing** in the modal, but registering it as a real mode means the describe pipeline resolves its prompt through the *same* `resolveSystemPrompt` fallback chain as the other modes (so the Settings prompt editor's `vision_describe` key is backed by a real config, not a phantom). Full mode table and fallback chain in [AI Assistant](#ai-assistant); the rationale for this design is [AD-017](./decisions.md#ad-017-vision_describe-as-a-non-user-facing-ai-assistant-mode). The default `.md` (`services/api/assets/vision-describe-ai-prompt.md`) instructs the model to describe only what is visible, stay sensory/specific, quote in-image text verbatim, and emit **no** meta-commentary ("The image shows…").
 
 ### Manual regeneration
 
@@ -493,7 +582,7 @@ Fire-and-forget background task triggered after `appendAssistantReply()`:
 - Creates a new summary covering messages since the last summary's `summarizedTo`
 - Range capped at `lastMessagePosition - 1` (excludes last user message)
 
-The dedup-lock + error-boundary pattern used here is shared by all background LLM features via `BackgroundTaskLocks`. To add a new feature of this shape (summary, objective, tracker, badge, dream), see [Adding a feature](../guides/adding-a-feature.md).
+The dedup-lock + error-boundary pattern used here is the `BackgroundTaskLocks` shared helper (`shared/background-task-locks.ts`). Any background LLM feature that subscribes to chat events and may fire on rapid successive triggers needs it: `runExclusive(key, task)` does an atomic check-and-acquire (no `await` between the `has` check and the `add`) so two concurrent triggers can't both start the same task. Each feature keeps its **own** `BackgroundTaskLocks` instance — an objective run and a summary run on the same chat+branch are independent keys and may proceed in parallel. This is the building block for every feature of this shape (summary, objective, tracker, badge, dream); the feature itself is then wrapped as a `FeatureModule` that subscribes on the EventBus (see [Feature Modules](#feature-modules--lifecycle) and [Adding a feature](../guides/adding-a-feature.md)).
 
 ---
 
