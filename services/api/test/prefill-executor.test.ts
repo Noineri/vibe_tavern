@@ -1,7 +1,9 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { resolveProtocol, PROTOCOL_CAPABILITIES } from "../src/domain/providers/protocol-registry.js";
+import { normalizeProviderType } from "@vibe-tavern/domain";
 import type { ProviderType } from "@vibe-tavern/domain";
 import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
+import { ProviderExecutionError } from "../src/infrastructure/ai/provider-execution-types.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Mock the 'ai' module — must be at top level before importing executors
@@ -203,5 +205,85 @@ describe.skip("streaming executor: prefill message injection", () => {
   it("skips prefill for google", async () => {
     await streamProviderExecutor(makeInput("google", "Ignored"));
     expect(capturedStreamTextMessages).toHaveLength(1);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// Part 4 — Error wrapping → ProviderExecutionError (reanimation Layer 2)
+// ═════════════════════════════════════════════════════════════════════════
+// The executors must normalize AI SDK failures at the execution boundary into
+// ProviderExecutionError, pre-classifying the category so it travels as
+// structured data to the SSE/HTTP emit sites. These guard that contract.
+// ═════════════════════════════════════════════════════════════════════════
+
+describe("executor error wrapping → ProviderExecutionError", () => {
+  // mock.module('ai') is process-global (AGENTS.md gotcha): a throwing impl
+  // set here would leak into every other test file in the run. Restore the
+  // happy-path implementations after each test so the default behavior is
+  // exactly what the top-of-file declarations established.
+  afterEach(() => {
+    fakeGenerateText.mockImplementation(async (opts: { messages: unknown }) => {
+      capturedGenerateTextMessages = opts.messages;
+      return { text: "Hello from AI", finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } };
+    });
+    fakeStreamText.mockImplementation((opts: { messages: unknown }) => {
+      capturedStreamTextMessages = opts.messages;
+      return {
+        textStream: (async function* () { yield "Hello from stream"; })(),
+        text: Promise.resolve("Hello from stream"),
+        finishReason: Promise.resolve("stop"),
+        usage: Promise.resolve({ inputTokens: 10, outputTokens: 5, totalTokens: 15 }),
+      };
+    });
+  });
+
+  it("nonstreaming executor wraps a 401 as ProviderExecutionError{authentication}", async () => {
+    fakeGenerateText.mockImplementation(() => {
+      throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
+    });
+    await expect(nonstreamingProviderExecute(makeInput("openai_compat"))).rejects.toMatchObject({
+      name: "ProviderExecutionError",
+      category: "authentication",
+      providerType: normalizeProviderType("openai_compat"),
+      statusCode: 401,
+    });
+  });
+
+  it("nonstreaming executor wraps a network errno as ProviderExecutionError{network}", async () => {
+    fakeGenerateText.mockImplementation(() => {
+      return Promise.reject(Object.assign(new Error("fetch failed"), { code: "ENOTFOUND" }));
+    });
+    await expect(nonstreamingProviderExecute(makeInput("ollama"))).rejects.toMatchObject({
+      name: "ProviderExecutionError",
+      category: "network",
+      providerType: normalizeProviderType("ollama"),
+    });
+  });
+
+  it("nonstreaming executor preserves the cause and classifies a 429", async () => {
+    const original = Object.assign(new Error("Too Many Requests"), { statusCode: 429 });
+    fakeGenerateText.mockImplementation(() => {
+      throw original;
+    });
+    try {
+      await nonstreamingProviderExecute(makeInput("openai_compat"));
+      throw new Error("should have rejected");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ProviderExecutionError);
+      expect((err as ProviderExecutionError).category).toBe("rate_limit");
+      expect((err as ProviderExecutionError).cause).toBe(original);
+    }
+  });
+
+  it("streaming executor wraps a setup error (streamText threw) as ProviderExecutionError", async () => {
+    fakeStreamText.mockImplementation(() => {
+      throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
+    });
+    await expect(streamProviderExecutor(makeInput("openai_compat"))).rejects.toMatchObject({
+      name: "ProviderExecutionError",
+      category: "authentication",
+      providerType: normalizeProviderType("openai_compat"),
+      statusCode: 403,
+    });
   });
 });
