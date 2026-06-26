@@ -3,9 +3,7 @@ import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { Database } from 'bun:sqlite';
 import { resolve } from 'node:path';
 import { mkdir } from 'node:fs/promises';
-import { eq, isNotNull } from 'drizzle-orm';
 import * as schema from './db-schema.js';
-import { characters } from './db-schema.js';
 
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -471,35 +469,3 @@ export async function createDb(dbPath: string, migrationsFolderOverride?: string
   return db;
 }
 
-/**
- * One-time migration: parse characterBookJson blobs into normalized lorebook + entry rows.
- * Call during server startup after stores are initialized:
- *   await migrateCharacterBooks(db, stores.lorebooks);
- */
-export async function migrateCharacterBooks(db: AppDb, lorebookStore: import('./stores/lorebook-store.js').LorebookStore): Promise<number> {
-  const rows = await db.select({ id: characters.id, characterBookJson: characters.characterBookJson })
-    .from(characters)
-    .where(isNotNull(characters.characterBookJson))
-    .all();
-
-  let migrated = 0;
-  for (const row of rows) {
-    if (!row.characterBookJson) continue;
-    try {
-      const lorebookId = await lorebookStore.migrateCharacterBookJson(row.id, row.characterBookJson);
-      if (lorebookId) {
-        await db.update(characters)
-          .set({ characterBookJson: null })
-          .where(eq(characters.id, row.id))
-          .run();
-        migrated++;
-      }
-    } catch (err) {
-      console.error(`[charbook-migration] Failed for character ${row.id}:`, err);
-    }
-  }
-  if (migrated > 0) {
-    console.log(`[charbook-migration] Migrated ${migrated} character book(s) to normalized lorebooks.`);
-  }
-  return migrated;
-}
