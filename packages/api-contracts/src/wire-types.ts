@@ -115,6 +115,32 @@ export interface ProviderModelSettingsRecord {
 	updatedAt: string;
 }
 
+// ─── Provider errors ──────────────────────────────────────────────────
+
+/**
+ * Stable category for a provider/LLM execution failure. Carried on the wire in
+ * two places so the UI can show category-appropriate feedback instead of raw
+ * HTTP text: (1) the SSE `error` event `{ message, category }` on the streaming
+ * endpoints, and (2) the JSON error body `error.details.category` returned by
+ * the non-streaming endpoints (`POST /api/chats/:chatId/messages`).
+ *
+ * The backend classifies via `classifyProviderError` (services/api) at the
+ * execution boundary and the SSE/HTTP emit sites; the frontend reads it in
+ * `sse-parser.ts` / `use-chat-controller.ts`. `unknown` means "no signal
+ * matched — show the raw message".
+ */
+export type ProviderErrorCategory =
+	| "network"
+	| "authentication"
+	| "rate_limit"
+	| "invalid_request"
+	| "server_error"
+	| "timeout"
+	| "aborted"
+	| "empty_response"
+	| "parse_error"
+	| "unknown";
+
 // ─── Persona ───────────────────────────────────────────────────────────
 
 /**
