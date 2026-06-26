@@ -212,7 +212,7 @@ Verify: `bun run typecheck` (the exhaustive `protocols` record makes TypeScript 
 | `samplers` | `SamplerCapabilityFlags` — which sampler fields are offered | Drives the sampler UI + gating | `set()` empty |
 | `textCompletion` | Can serve raw `/completions`-style flat prompt | Opt-in for Novel Mode (§below) | Chat-only |
 
-> `isUnsupportedProvider(type)` returns true only when **both** `nonStreamGeneration` and `streaming` are false — the "no generation possible" state.
+> There is no wrapper helper — consumers (`PROTOCOL_CAPABILITIES`, the executors, the UI capability panel) read the flags directly. The "no generation possible" state is simply `!nonStreamGeneration && !streaming` evaluated where needed; every built-in adapter sets at least one of the two `true`, so it is only reachable for a misconfigured custom protocol.
 
 ---
 
