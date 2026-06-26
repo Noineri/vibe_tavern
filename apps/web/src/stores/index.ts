@@ -2,7 +2,6 @@ export {
   useChatStore,
   useActiveGeneration,
   useIsSending,
-  abortActiveGeneration,
   type ChatStore,
   type ChatState,
   type ChatActions,
@@ -37,18 +36,13 @@ export {
 } from "./modal-store.js";
 
 export {
-  useTraceHistoryStore,
   useTraceHistory,
-  useTraceHistoryEntry,
   type TraceHistoryStatus,
   type TraceHistoryEntry,
 } from "./trace-history-store.js";
 
 export {
-  useDisplayMessage,
   useMessageOrder,
-  useChatMeta,
   useMacroContext,
-  useActiveTrace,
   type DisplayMessage,
 } from "./chat-selectors.js";
