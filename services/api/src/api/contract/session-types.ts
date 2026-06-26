@@ -30,17 +30,12 @@ import type { Chat, ChatBranch, UiSettings } from "@vibe-tavern/db";
 import type { MessageDto } from "../../runtime/session/session-runtime-dto.js";
 import type { CharacterRecord } from "../../domain/character/character-runtime.js";
 import type { PersonaRecord } from "../../domain/persona/persona-runtime.js";
+import type { ChatListItem } from "@vibe-tavern/api-contracts";
 
-export interface ChatListItem {
-	id: ChatId;
-	title: string;
-	characterId: CharacterId;
-	characterName: string;
-	subtitle: string;
-	activeBranchLabel: string;
-	messageCount: number;
-	updatedAt: string;
-}
+// ChatListItem lives in @vibe-tavern/api-contracts (shared with the frontend)
+// so drift becomes a compile error. Re-exported here so existing backend
+// importers keep resolving without changing their import paths.
+export type { ChatListItem };
 
 export interface SessionSnapshot {
 	/** Sidebar: ordered list of chats with metadata. Absent when endpoint returns partial data. */

@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { ChatId } from "@vibe-tavern/domain";
+import type { ChatId, CharacterId } from "@vibe-tavern/domain";
 import type { AppSnapshot } from "../../app-client.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { syncBootstrapSnapshotForActiveChat } from "./bootstrap-actions.js";
 
 const chatId = (id: string) => id as ChatId;
+const characterId = (id: string) => id as CharacterId;
 
 function snapshot(id: string, personaName = "Persona"): AppSnapshot {
   const typedId = chatId(id);
@@ -14,7 +15,7 @@ function snapshot(id: string, personaName = "Persona"): AppSnapshot {
       {
         id: typedId,
         title: `Chat ${id}`,
-        characterId: "char-1",
+        characterId: characterId("char-1"),
         characterName: "Character",
         subtitle: "",
         activeBranchLabel: "main",

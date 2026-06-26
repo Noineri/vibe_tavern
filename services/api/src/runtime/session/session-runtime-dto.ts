@@ -2,83 +2,25 @@ import { brandId, type ChatId, type ChatBranchId, type MessageId, type PromptTra
 import type { LoreEntry, Message, MessageVariant, Attachment } from "@vibe-tavern/domain";
 import { parseStoredAttachments } from "@vibe-tavern/domain";
 import type { PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
+import type {
+	ClientProviderProfileRecord,
+	CachedProviderModelsRecord,
+	FavoriteProviderModelRecord,
+	ProviderModelSettingsRecord,
+} from "@vibe-tavern/api-contracts";
 
-// Re-export canonical domain type — single source of truth
+// Re-export canonical types — single source of truth.
+// The wire-DTO interfaces live in @vibe-tavern/api-contracts (shared with the
+// frontend) so drift becomes a compile error. Re-exported here so existing
+// backend importers (provider-profile-service, runtime-api, provider-adapter)
+// keep resolving without changing their import paths.
 export type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
-
-export interface ClientProviderProfileRecord {
-  id: string;
-  name: string;
-  providerPreset: string;
-  endpoint: string;
-  defaultModel: string | null;
-  visionModel: string | null;
-  contextBudget: number | null;
-  pinContextBudget: boolean;
-  maxTokens: number;
-  temperature: number;
-  topP: number;
-  topK: number;
-  minP: number;
-  topA: number;
-  typicalP: number;
-  tfsZ: number;
-  repeatLastN: number;
-  mirostat: number;
-  mirostatTau: number;
-  mirostatEta: number;
-  dryMultiplier: number;
-  dryBase: number;
-  dryAllowedLength: number;
-  drySequenceBreakers: string[];
-  xtcThreshold: number;
-  xtcProbability: number;
-  frequencyPenalty: number;
-  presencePenalty: number;
-  repetitionPenalty: number;
-  stopSequences: string[];
-  logitBias: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
-  seed: string | null;
-  reasoningEffort: string;
-  showReasoning: boolean;
-  streamResponse: boolean;
-  customSamplers: boolean;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  hasStoredApiKey: boolean;
-  cachedModels?: CachedProviderModelsRecord;
-}
-
-export interface CachedProviderModelsRecord {
-  models: Array<{
-    id: string;
-    label: string;
-    contextLength?: number;
-    capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean };
-  }>;
-  cachedAt: string;
-}
-
-export interface FavoriteProviderModelRecord {
-  id: string;
-  providerProfileId: string;
-  modelId: string;
-  label: string | null;
-  contextLength: number | null;
-  createdAt: string;
-}
-
-/** Per-model sampler/context overlay (DTO mirror of the store row). Absent
- *  fields in `settings` = inherit the profile base (see resolveEffectiveSettings). */
-export interface ProviderModelSettingsRecord {
-  id: string;
-  providerProfileId: string;
-  modelId: string;
-  settings: ModelSettingsOverlay;
-  createdAt: string;
-  updatedAt: string;
-}
+export type {
+	ClientProviderProfileRecord,
+	CachedProviderModelsRecord,
+	FavoriteProviderModelRecord,
+	ProviderModelSettingsRecord,
+};
 
 export interface MessageDto extends Message {
   variants: MessageVariant[];
@@ -178,6 +120,7 @@ export function toClientProviderProfile(profile: import("@vibe-tavern/domain").S
     visionModel: profile.visionModel,
     contextBudget: profile.contextBudget,
     pinContextBudget: profile.pinContextBudget,
+    bindPerModel: profile.bindPerModel,
     maxTokens: profile.maxTokens,
     temperature: profile.temperature,
     topP: profile.topP,
